@@ -5,13 +5,13 @@ status: Draft
 owner: Project Owner
 updated: 2026-10-29
 links:
-  requirements: []
-  adr: [ADR-0001]
+  requirements: [NFR-002]
   experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009]
 ---
 # 실험 레지스트리
 
 모두 `Planned` 후보이며 수행 결과가 없다. 합성 데이터/부하는 운영 실적이 아니다. 전제, 환경, 명령, 반복, 지표 및 한계를 결과 보고에 기록한다.
+Traffic/capacity assumptions are not set. Define workload profiles in Gate 2, model constraints in Gate 3, and validate with synthetic experiments in Gate 4 per Issue #20 and `docs/09-delivery/roadmap.md`. All results remain Planned until measured.
 
 | ID | 상태 | 가설/검증 내용 | 주요 위험 |
 |---|---|---|---|

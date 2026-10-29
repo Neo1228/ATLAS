@@ -15,33 +15,39 @@ Gate 종료/진입에는 사용자 승인이 필요하다. 순서는 조정 가�
 
 | Gate / Milestone | 목적 | 상태 |
 |---|---|---|
-| Gate 0 | 헌장·문서 거버넌스 초안 및 미결정 목록 | 모든 문서 패킷 게시됨; Draft 상태, 사용자 승인 대기 |
-| Gate 1 | 문제/이해관계자/용어/핵심 도메인 충돌 발견 | 보류; Gate 0 승인 전 |
-| Gate 2 | FR/NFR·우선순위·예외·인수 조건·불변조건 정의 | 보류 |
-| Gate 3 | 모듈/상태/데이터 경계·계약·ADR·위험 모델 | 보류 |
+| Gate 0 | 헌장·문서 거버넌스 초안 및 미결정 목록 | 완료; 사용자 승인 (2026-10-29) |
+| Gate 1 | 문제/이해관계자/용어/핵심 도메인 충돌 발견 | 진행 중; Issue #19 / Q-010 |
+| Gate 2 | FR/NFR·우선순위·예외·인수 조건·불변조건 정의와 synthetic workload profile 합의 (Q-008) | 보류 |
+| Gate 3 | 모듈/상태/데이터 경계·계약·ADR·위험 모델 및 `docs/05-architecture/capacity-model.md` 초안 | 보류 |
 | M1 | 캠페인·재고 예약·주문 의도·동시성 | 계획 |
 | M2 | PayPal Sandbox/Fake PSP·결제 상태·복구·멱등성 | 계획 |
-| M3 | 대기열/캐시/이벤트 및 부하·병목 비교 | 계획 |
+| M3 | 합의된 synthetic traffic profile로 queue/cache/event·동시성·병목 비교 (EXP-001/002/008) | 계획 |
 | M4 | 테넌트 보안·원장·정산·대사·환불/정정 | 계획 |
-| M5 | 관측·보안·백업/복구·SLO 가설·장애 주입 | 계획 |
+| M5 | 관측·보안·백업/복구·SLO/RTO/RPO 가설의 측정·장애 주입 (EXP-009) | 계획 |
 | M6 | 대안 실험·ADR 정리·포트폴리오 근거 | 계획 |
+
+## 성능·트래픽 가정의 진행 순서
+- **Gate 2:** 합성 workload 유형, request mix, RPS/동시성, ramp-up/burst, p95/p99, budget을 사용자와 합의하고 목표와 가정을 구분한다. 합의 전 값은 TBD/ASSUMPTION.
+- **Gate 3:** `docs/05-architecture/capacity-model.md`에서 합의된 profile과 선택된 DB/인프라 제약으로 용량 추정·병목·민감도를 구조화한다. 추정값은 실측이 아니다.
+- **Gate 4:** EXP-001/002/009 등 합성 부하/장애 실험으로 모델을 검증·갱신한다. 재현 가능한 실측 전 성능 달성을 주장하지 않는다.
+- 추적: Q-008, NFR-002, Issue #20; EXP-001/002/009는 Planned.
 
 ## Gate 0 문서 PR 작업 묶음 — 제안
 
-아래는 추후 로컬 커밋과 PR을 작게 구성하기 위한 후보 작업 단위다. 아직 커밋/PR은 만들지 않았고, 저장소/원격 설정 이후 각 묶음을 검토해 순차적으로 처리한다. 파일 수보다 단일 목적과 추적성을 우선한다.
+아래는 문서 패킷을 위한 작업 단위 예시다. PR 경계는 파일 묶음에 자동 종속되지 않는다. 같은 목적/수락 기준을 가진 항목은 함께 검토하고, 독립 위험/목적은 나눈다. Issue는 작업 전 생성한다.
 
 | ID | 작업 범위 | 파일 후보 | 선행 조건 / 완료 기준 |
 |---|---|---|---|
 | WP-001 | 프로젝트 진입점 및 GitHub 기초 설정 | `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `.gitignore`, `.editorconfig`, `.markdownlint-cli2.yaml`, `.github/` | 설정 파일/템플릿 lint; 문서 실행 안내와 실제 설정 일치 |
 | WP-002 | 헌장·거버넌스·결정 기록 | `docs/README.md`, `docs/00-governance/{project-charter,assumptions-and-open-questions,decision-log,change-control,definition-of-done,reference-register}.md` | 사용자 확정/미결정 구분, 추적 ID와 상호 참조 검토 |
-| WP-003 | 발견 용어 및 요구사항 인덱스 | `docs/01-discovery/glossary.md`, `docs/02-requirements/requirements-index.md` | 각 제안 상태/열린 질문 연결, Gate 1 승인 전 Draft 유지 |
+| WP-003 | 발견 용어 및 요구사항 인덱스 | `docs/01-discovery/glossary.md`, `docs/01-discovery/personas-and-jobs.md`, `docs/02-requirements/requirements-index.md` | Q/요구사항 연결; 미확정 사실은 Draft/OPEN 유지 |
 | WP-004 | 아키텍처 제안 및 실험 계획 | `docs/06-decisions/adr/*`, `docs/08-experiments/*` | ADR Proposed 유지, 모든 실험 Planned이며 측정 결과를 만들지 않음 |
-| WP-005 | 로드맵 및 인계 이력 | `docs/09-delivery/*` | Gate 0 미승인 상태, 다음 작업, 실제 수행한 검증/커밋/PR만 기록 |
+| WP-005 | 로드맵 및 인계 이력 | `docs/09-delivery/*` | Gate 0 승인 및 Gate 1 진행 상태, 실제 Issue/PR/검증만 기록 |
 
 하나의 후보 묶음 내부라도 독립 리뷰 가능한 목적이 둘이면 더 나눈다. 묶음 간 참조에 필요한 파일만 최소한으로 함께 변경한다.
 PR은 커밋 수나 이슈 수마다 만들지 않는다. 같은 목적/수락 경계를 공유하는 관련 WP·Issue와 커밋은 하나의 PR로 묶을 수 있다. 독립된 위험/목적/릴리스 경계는 분리한다.
 
-WP-001~WP-005 are published on main. WP-001 bootstrap; WP-002 PR #9; WP-003 PR #10; WP-004 PR #11; WP-005 PR #12. Git conventions PR #4 and batching policy PR #16 are merged. Issue #17/PR #17 tracks this final handoff consistency update. Gate 0 remains unapproved.
+WP-001~WP-005 are merged to main. Git conventions PR #4, batching policy PR #16, and final delivery handoff PR #18 are merged. Gate 0 was user-approved on 2026-10-29. Gate 1 is in progress under Issue #19; capacity planning is tracked by Issue #20.
 
 ## 진행 원칙
 각 마일스톤 전 요구사항·정책·검증 계약을 정의한다. 예상 수치를 실측처럼 쓰지 않으며 성능/복구 주장은 재현 가능한 실험 결과와 연결한다.
