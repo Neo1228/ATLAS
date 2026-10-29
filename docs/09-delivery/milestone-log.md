@@ -47,3 +47,9 @@ links:
 - 기준: 사실/정책/미정 경계 보존. 명사형을 강제하지 않고 자연스러운 의미 우선.
 - 추적: [Issue #29](https://github.com/Neo1228/ATLAS/issues/29), [PR #30](https://github.com/Neo1228/ATLAS/pull/30), commit `3ff5d49`.
 - 로컬 확인: Markdown lint 통과, 138개 상대 링크 resolve, YAML 4개 parse, Cyrillic 검색 결과 없음, `git diff --check` 통과.
+
+## 2026-10-29 — 성능·부하 용어와 측정 범위
+- 추적: [Issue #31](https://github.com/Neo1228/ATLAS/issues/31), [PR #32](https://github.com/Neo1228/ATLAS/pull/32), commit `7665434`.
+- 범위: RPS/TPS/QPS 단위·scope, offered/achieved load, open/closed model, latency/error/queue/saturation metrics, RED/USE, Little’s Law; Q-008 수치와 성능 목표는 TBD.
+- 근거: [Reference Register REF-018~022](../00-governance/reference-register.md). 측정값·tool·infra 선택 없음.
+- 확인: Markdown lint 24 files, 140 local links resolve, YAML 4 files parse, Cyrillic/Han 검색 결과 없음, `git diff --check` 통과. PR checks 대기 중.
