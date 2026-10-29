@@ -31,5 +31,5 @@ Q-003의 남은 세부 경계를 한 작업 단위로 묶을지 사용자와 합
 
 ## 추적과 진행 기록
 - 현재 단계와 제안된 다음 단계는 [Roadmap](roadmap.md), 완료한 Issue/PR·커밋·검증 이력은 [Milestone Log](milestone-log.md)에 기록한다.
-- 문서 탐색, 처음 접하는 독자용 설명, 복잡한 변경 기록, PR checklist 자동 확인은 [Issue #26](https://github.com/Neo1228/ATLAS/issues/26) / [PR #27](https://github.com/Neo1228/ATLAS/pull/27) 한 작업 묶음으로 진행 중이다.
+- 문서 링크/작성 기준과 PR checklist는 [Issue #26](https://github.com/Neo1228/ATLAS/issues/26)으로 추적했고 [PR #27](https://github.com/Neo1228/ATLAS/pull/27)에서 병합했다. 병합 후 현재 상태를 아래 [Milestone Log](milestone-log.md)에 기록했다.
 - 새 작업은 먼저 Issue에 범위·완료 기준을 기록한다. 관련 커밋 여러 개와 이슈를 하나의 리뷰 가능한 PR로 묶는다 ([CONTRIBUTING](../../CONTRIBUTING.md)).
