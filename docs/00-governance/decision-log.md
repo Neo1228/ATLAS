@@ -27,5 +27,6 @@ links:
 | D-010 | Confirmed | 첫 가상 학습 시나리오는 재고/예약 경합과 공정한 구매 기회로 둔다. 실제 사용자 문제/검증된 요구사항이 아니며 정책·인수 기준은 미정. | 사용자 선택; Q-010, Q-002 |
 | D-011 | Confirmed | 계획된 작업은 Issue 선행으로 범위/수락 기준을 기록하고, 관련 브랜치·커밋·PR을 Issue에 연결한다. Issue는 작업 묶음 기준이며 커밋마다 만들지 않는다. | 사용자 지시; Issue #2, `CONTRIBUTING.md` |
 | D-012 | Confirmed | 사용자가 기존 bootstrap commit 제목의 규칙 정정을 승인했다. 공개 이력 재작성은 기본 금지하며, 명시 승인·백업 ref·force-with-lease·branch protection 복원을 전제로 예외 처리한다. | 사용자 선택; Issue #2 |
+| D-013 | Confirmed | 관련된 소단위 커밋과 Issue들을 목적/수락 경계가 일관된 PR 하나로 묶는다. 커밋/Issue마다 별도 PR을 만들지 않으며 독립 목적은 분리한다. | 사용자 지시; Issue #15, `CONTRIBUTING.md` |
 
 Gate 0 종료 및 Gate 1 진입은 아직 승인되지 않았다.
