@@ -16,7 +16,7 @@
 - 실제 진행 상태: `09-delivery/roadmap.md`, `milestone-log.md`, `session-handoff.md`
 - Change control / Definition of Done: `00-governance/change-control.md`, `definition-of-done.md`
 
-Gate 0은 2026-10-29 사용자 승인으로 완료됐다. Gate 1 discovery 진행 중이며 Issue #19(Q-010)와 Issue #20(성능/트래픽 계획)을 추적한다. 애플리케이션 코드·런타임 의존성·배포는 시작하지 않았다.
+Gate 0은 2026-10-29 사용자 승인으로 완료됐다. Gate 1 discovery는 Issue #24(Q-003 queue lifecycle)에서 진행 중이다. 공통 페르소나/목표는 Issue #19에서 정했고, 성능/용량 계획 순서는 Issue #20에 기록됐다. 애플리케이션 코드·런타임 의존성·배포는 시작하지 않았다.
 
 ## 문서 상태
 `Draft`는 작성 중, `Proposed`는 검토/승인 대기, `Accepted`는 사용자 승인된 결정에만 사용한다. 검증되지 않은 외부 자료는 reference register에서 미검증으로 표시한다.

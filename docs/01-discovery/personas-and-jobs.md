@@ -18,7 +18,7 @@ links:
 
 | 역할 | 상태 | 가상 목표 / Job | 아직 미정인 점 |
 |---|---|---|---|
-| 구매자 (Buyer) | 사용자 선택; 가상 목표 | 한정 판매에서 공정한 구매 기회를 얻고 재고/예약 상태를 정확히 알고 싶다. | 서버가 부여한 대기열 순번이 baseline (D-019); 입장/번호 발급 기준, 구매 제한, 판매 유형별 행동 OPEN (Q-002, Q-003, Q-010). |
+| 구매자 (Buyer) | 사용자 선택; 가상 목표 | 한정 판매에서 공정한 구매 기회를 얻고 재고/예약 상태를 정확히 알고 싶다. | 자격 통과 후 queue admission 때 서버 순번 발급; same-logical-request retry는 ticket 유지; worker restart 후 순번 보존 (D-019~D-022). Key/tie/expiry/re-entry/type-specific behavior OPEN (Q-002, Q-003, Q-010). |
 | 판매자 (Seller) | 사용자 선택; 가상 목표 | 여러 유형의 한정 판매를 공정하게 운영하면서 초과판매를 막고 싶다. | 판매 단위와 캠페인 재고 관계, 대기열 입장/운영 정책, 유형별 작업 차이 OPEN (Q-002, Q-003, Q-010). |
 
 ### 구매자 Job statement — Draft
@@ -29,7 +29,7 @@ links:
 
 ## 기준 시나리오와 실패 경계
 - 가상 기준 가설: 여러 구매 요청이 제한된 캠페인 재고/예약에 동시에 도달하고, 판매자는 초과판매 없이 공정한 결과를 원한다 (D-010).
-검토할 실패/경계: 남은 재고보다 동시에 많은 요청이 대기열에 들어올 때, 서버 대기열 번호와 재고/예약 확정 결과가 다르게 보이는 경우.
+검토할 실패/경계: 자격 통과 후 queue admission에 순번을 받고, 같은 logical request retry와 worker restart 뒤에도 순서를 보존하면서 남은 capacity를 놓고 경합하는 경우.
 - 목표는 재고 초과 판매 방지지만 알고리즘·합격 수치·실측 결과는 아직 정하지 않았다. `Available + Reserved + Sold = InitialStock`은 입고/조정이 없는 단순 모델에서만 쓸 수 있는 조건부 예시다.
 
 ## 판매 유형별 차이
@@ -37,5 +37,5 @@ links:
 
 ## 검증 및 추적
 - 실제 사용자·판매자 조사나 시장 수요가 검증됐다고 표현하지 않는다.
-`Q-003`의 baseline 순서는 서버가 부여한 대기열 번호(D-019)로 정했다. 번호 발급/입장 시점과 유형별 fairness 차이는 Issue #22에서 계속 논의한다.
+`Q-003` baseline은 eligibility 확인 후 queue admission에서 순번을 발급하고, same logical request retry와 restart에서 ticket/순번을 보존한다 (D-019~D-022). Atomic persistence/key/expiry/tie/bot/type variation은 Issue #24에서 OPEN.
 - 연계 후보: FR-001, NFR-002, EXP-001, EXP-003. 우선순위/인수 기준은 승인 전 Proposed로 유지한다.

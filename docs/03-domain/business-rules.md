@@ -16,13 +16,13 @@ Document type: Reference
 
 | ID | 규칙 | 상태 | 적용 범위 / 미정 경계 |
 |---|---|---|---|
-| BR-001 | 같은 논리적 대기열에서 구매 기회를 정할 때 서버가 발급한 대기열 순번을 기준 순서로 사용한다. 낮은 순번이 먼저다. | Confirmed baseline (D-019) | 번호 발급/승인 시점, 대기열 진입 기준, 중복/재시도, 재시작, bot fairness, 판매 유형 간 queue 경계는 Q-003 OPEN. 실제 운영 공정성 검증이 아니다. |
+| BR-001 | 같은 논리적 대기열에서 구매 기회를 정할 때 서버가 발급한 순번을 사용하며 낮은 순번이 먼저다. | Confirmed baseline (D-019) | 자격 확인 후 queue admission에서 발급 (D-020); 같은 논리 요청 retry는 ticket/순번 재사용 (D-021); worker/service 재시작 뒤 순번 보존 (D-022). Key 범위/보존기간, 변경 payload, 영속화 원자성, 만료/재입장, tie, bot fairness와 sale-type queue 경계는 Q-003/Issue #24 OPEN. |
 | BR-002 | 판매자는 정해진 판매 가능량을 초과해 확정하지 않기를 원한다. | Proposed (D-017) | 판매 가능량의 단위, 캠페인/전역 재고, 입고·조정·취소·반품의 처리 방식은 Q-002 OPEN. |
 
 ## 기준 타임라인 — 합성 시나리오
 1. 판매자가 제한된 판매 가능량을 가진 캠페인을 연다. 수량/상품 유형과 판매 정책은 아직 정하지 않는다.
-2. 동시에 도착한 구매 요청은 서버 대기열에서 순번을 받는다. 순번 발급의 정확한 linearization boundary는 OPEN이다.
+2. 자격 확인을 통과한 요청을 queue에 admission할 때 서버가 대기열 순번을 발급한다. 발급과 queue state 저장의 원자성/정본 저장소는 OPEN.
 3. 남은 capacity보다 요청이 많으면 순번과 재고/예약 결과가 일관되는지 검증한다. 예약/확정 처리의 세부 프로토콜은 설계 전에 정한다.
-4. 타임아웃, 중복 요청, 순번 할당 중 재시작이 공정성/초과판매 불변조건을 깨뜨리지 않는지 테스트로 검증한다.
+4. 같은 논리 요청 retry는 기존 ticket/순번을 재사용한다. worker/service 재시작 뒤 이미 발급된 순번은 유지한다. key retention, changed payload, 만료/취소/재입장 semantics는 OPEN.
 
 이 타임라인은 정책 결론이나 성능 결과가 아니다. 관련 불변조건은 `invariants.md`, 탐색 후보는 `../08-experiments/experiment-registry.md`를 참조한다.

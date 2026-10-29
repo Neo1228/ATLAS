@@ -16,7 +16,7 @@ Gate 종료/진입에는 사용자 승인이 필요하다. 순서는 조정 가�
 | Gate / Milestone | 목적 | 상태 |
 |---|---|---|
 | Gate 0 | 헌장·문서 거버넌스 초안 및 미결정 목록 | 완료; 사용자 승인 (2026-10-29) |
-| Gate 1 | 문제/이해관계자/용어/핵심 도메인 충돌 발견 | 진행 중; Issue #19/Q-010, Issue #22/Q-003 |
+| Gate 1 | 문제/이해관계자/용어/핵심 도메인 충돌 발견 | 진행 중; Issue #24/Q-003 |
 | Gate 2 | FR/NFR·우선순위·예외·인수 조건·불변조건 정의와 합성 workload profile 합의 (Q-008) | 보류 |
 | Gate 3 | 모듈/상태/데이터 경계·계약·ADR·위험 모델 및 `docs/05-architecture/capacity-model.md` 초안 | 보류 |
 | M1 | 캠페인·재고 예약·주문 의도·동시성 | 계획 |
@@ -45,7 +45,7 @@ Gate 종료/진입에는 사용자 승인이 필요하다. 순서는 조정 가�
 - 추적: Q-008, NFR-002, Issue #20; EXP-001/002/009는 Planned.
 
 ## 현재 상태
-WP-001~WP-005 문서가 main에 게시됐다. Git conventions/batching은 PR #4/#16, 최종 handoff는 PR #18로 merge됐다. Gate 0은 승인 완료; Gate 1은 Issue #22(Q-003/Q-010)에서 진행 중이다. Issue #19/#20은 PR #21로 완료됐다.
+WP-001~WP-005 are merged to main. Git conventions PR #4, batching policy PR #16, and final delivery handoff PR #18 are merged. Gate 0 was user-approved on 2026-10-29. Gate 1 is active under Issue #24; Issues #19, #20, and #22 are closed, and PR #21/#23 are merged.
 
-## 진행 원칙
+Next: resolve queue admission/retry/restart edge rules in Issue #24/Q-003. Q-008 traffic/capacity values remain TBD until Gate 2 workload profiles are agreed.
 각 마일스톤 전 요구사항·정책·검증 계약을 정의한다. 예상 수치를 실측처럼 쓰지 않으며 성능/복구 주장은 재현 가능한 실험 결과와 연결한다.
