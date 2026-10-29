@@ -26,7 +26,7 @@ links:
 ## 미정·다음
 - ADR-0001 Modular Monolith First: △ Proposed.
 - Q-003 잔여 boundary를 한 작업 묶음으로 논의. 경계별 Issue 분할 금지.
-- Performance 순서 (D-018, △ Proposed): Gate 2 workload profile → Gate 3 capacity estimate → 구현 승인 후 Gate 4 synthetic validation. 목표 수치/실측 없음 ([Issue #20](https://github.com/Neo1228/ATLAS/issues/20)).
+- Performance 순서 (D-018, △ Proposed): Gate 2 workload profile → Gate 3 capacity estimate → 구현 승인 후 Gate 4 synthetic validation. RPS/TPS/QPS scope와 용어는 [Glossary](../01-discovery/glossary.md); 목표값·실측 없음 ([Issue #20](https://github.com/Neo1228/ATLAS/issues/20)).
 - Q-002~Q-009: [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md). 다음 Gate/구현 진입은 별도 승인 전 보류.
 
 ## 이력
