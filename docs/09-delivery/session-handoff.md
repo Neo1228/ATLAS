@@ -38,3 +38,4 @@ GitHub Issue/PR templates, Issue-first 규칙, PR batching 규칙, Markdown lint
  [PR #23](https://github.com/Neo1228/ATLAS/pull/23) ([Issue #22](https://github.com/Neo1228/ATLAS/issues/22)) merged queue-order baseline and domain rules; commit `eb95982`.
 - [Issue #24](https://github.com/Neo1228/ATLAS/issues/24) is closed after documenting admission timing, idempotent retries and restart sequence preservation. Tie, expiry, durability/key details, bot and type differences remain OPEN in Q-003.
 Gate 0 is approved; Gate 1 continues. Do not enter Gate 2 or implementation without the next Gate's explicit approval.
+- 문서 탐색 링크: [Issue #26](https://github.com/Neo1228/ATLAS/issues/26), [PR #27](https://github.com/Neo1228/ATLAS/pull/27), commit `68febce`; Markdown lint와 상대 링크 검사 통과.

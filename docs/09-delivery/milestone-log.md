@@ -44,3 +44,8 @@ links:
 - D-020~D-022 ([Issue #24](https://github.com/Neo1228/ATLAS/issues/24)): queue sequence assigned after eligibility/admission; retries of same logical request reuse its ticket; restart preserves issued order. Persistence details, ties, expiry, bot and type-specific rules remain OPEN.
 - [PR #23](https://github.com/Neo1228/ATLAS/pull/23) / [Issue #22](https://github.com/Neo1228/ATLAS/issues/22) merged queue fairness baseline and domain rules as `eb95982`; Issue #22 closed.
 - [Issue #24](https://github.com/Neo1228/ATLAS/issues/24) closed after recording queue admission/retry/restart baseline; remaining tie/expiry/durability/type-specific rules stay OPEN in Q-003.
+
+## 2026-10-29 — 문서 간 탐색 링크 연결
+- 범위: 문서 인덱스와 관련 SSOT 간 상대 Markdown 링크, Issue/PR template 및 lint workflow 진입 링크.
+- 추적: [Issue #26](https://github.com/Neo1228/ATLAS/issues/26), [PR #27](https://github.com/Neo1228/ATLAS/pull/27), commit `68febce`.
+- 로컬 검증: Markdown lint 24개 파일 통과; 23개 Markdown 파일의 169개 상대 링크 대상 모두 resolve.
