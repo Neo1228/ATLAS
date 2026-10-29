@@ -2,6 +2,7 @@ name: Documentation lint
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, edited]
   push:
 
 permissions:
@@ -18,3 +19,37 @@ jobs:
           node-version: 22
       - name: Lint Markdown
         run: npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"
+
+  pr-checklist:
+    name: PR checklist
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Require every PR checklist item to be completed
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const body = (process.env.PR_BODY ?? "").replace(/```[\s\S]*?```/g, "");
+          const heading = /^## 검토 체크리스트\s*$/m;
+          const template = fs.readFileSync(".github/PULL_REQUEST_TEMPLATE.md", "utf8");
+          const checklist = (text) => {
+            const section = text.split(heading)[1]?.split(/^## /m)[0] ?? "";
+            return [...section.matchAll(/^[ \t]*[-*]\s+\[([ xX])\]\s+.+$/gm)];
+          };
+          const expected = checklist(template);
+          const provided = checklist(body);
+          if (expected.length === 0 || provided.length !== expected.length) {
+            console.error(`PR body must include all ${expected.length} items from the template review checklist.`);
+            process.exit(1);
+          }
+          const incomplete = [...body.matchAll(/^[ \t]*[-*]\s+\[([ xX])\]\s+.+$/gm)]
+            .filter(([, state]) => state.toLowerCase() !== "x");
+          if (incomplete.length > 0) {
+            console.error(`Complete all PR checklist items before merging (${incomplete.length} unchecked).`);
+            process.exit(1);
+          }
+          console.log(`Validated ${provided.length} review items and all PR checkboxes.`);
+          NODE

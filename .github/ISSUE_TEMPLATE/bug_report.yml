@@ -9,7 +9,7 @@ body:
     id: summary
     attributes:
       label: 관찰한 문제
-      description: 기대한 동작과 실제 관찰을 분리해 적어주세요.
+      description: 기대/실제 동작, 영향, 확인된 사실과 가정을 구분하세요. 복잡한 불일치는 Issue 본문에 설명하고 링크만 남기지 않습니다.
     validations:
       required: true
   - type: textarea
@@ -37,7 +37,14 @@ body:
     id: evidence
     attributes:
       label: 로그 또는 근거
-      description: 비밀/개인정보를 제거한 최소 근거만 붙여주세요.
+      description: 비밀/개인정보를 제거한 최소 근거만 붙여주세요. 복잡한 재현은 관찰 가능한 흐름/상태를 설명하고 필요하면 다이어그램을 포함하세요.
+    validations:
+      required: false
+  - type: textarea
+    id: model
+    attributes:
+      label: 영향 범위와 시각화 (필요한 경우)
+      description: 다단계 상태 전이/경합이 핵심이면 재현 흐름, 관련 불변조건 및 Mermaid 시퀀스/상태도를 적으세요. 이미 문서에 있는 근거는 링크와 짧은 설명을 함께 씁니다.
     validations:
       required: false
   - type: input

@@ -10,13 +10,13 @@ links:
   experiments: [EXP-001, EXP-005]
 ---
 # 도메인 불변조건
-Document type: Reference
+문서 유형: 기준 자료
 
-불변조건은 모든 정상/실패 전이 후 지켜야 할 성질이다. 수치/저장소 설계/검증은 Gate 2~4에서 결정한다.
+불변조건은 정상 처리와 실패/복구 뒤에도 계속 참이어야 하는 성질이다. 수치, 저장 방식과 검증 계약은 Gate 2~4에서 정한다. 용량/저장 용어는 [Glossary](../01-discovery/glossary.md)를 참조한다.
 
 | ID | 조건 | 상태 | 전제 / OPEN 경계 | 연결 |
 |---|---|---|---|---|
-| INV-001 | 한 판매 단위의 확정된 예약/판매 수량은 그 단위의 판매 가능 capacity를 넘지 않는다. | Proposed; seller objective에서 도출 | 판매 단위, 재입고·조정·취소·반품 semantics, 여러 캠페인 간 capacity 공유는 Q-002 OPEN. Capacity를 count하는 정본 저장소/원자성은 Gate 3 설계 대상. | BR-002, FR-001, EXP-001, EXP-005 |
-| INV-002 | 동일 대기열의 자원 경합에서 서버 순번이 낮은 유효 요청이 먼저 기회를 받는다. Admission은 자격 확인 후 순번을 발급하며, 같은 논리 retry는 ticket을 재사용하고 worker/service restart 후 순번을 보존한다. | Confirmed baseline (D-019~D-022); formal acceptance Proposed | Atomic/durable issuance, idempotency key scope/retention, changed payload, cancel/expiry/re-entry, tie, bot fairness and cross-type queue semantics remain Q-003 / Issue #24 OPEN. | BR-001, Q-003, D-019~D-022 |
+| INV-001 | 한 판매 단위에서 확정한 예약·판매 수량은 그 단위의 판매 가능 수량(capacity)을 넘지 않는다. | Proposed; 판매자 목표에서 도출 | 판매 단위, 재입고·조정·취소·반품 방식, 여러 캠페인의 재고 공유는 [Q-002](../00-governance/assumptions-and-open-questions.md)에서 미정. 수량을 보장하는 정본 저장소와 원자성은 Gate 3 설계 대상. | [BR-002](business-rules.md), [FR-001](../02-requirements/requirements-index.md), [EXP-001/005](../08-experiments/experiment-registry.md) |
+| INV-002 | 같은 대기열에서는 서버 순번이 작은 유효 요청이 먼저 기회를 얻는다. 자격 확인 뒤 입장할 때 순번을 발급하고, 같은 요청의 재시도는 기존 ticket을 사용하며, 서비스 재시작 뒤에도 발급 순서를 보존한다. | 기준은 Confirmed (D-019~D-022); 정식 완료 기준은 Proposed | 저장 원자성/영속성, idempotency key, 내용 변경, 취소·만료·재입장, 동순위, bot 방어와 유형별 대기열은 [Q-003](../00-governance/assumptions-and-open-questions.md)에서 OPEN. | [BR-001](business-rules.md), [Q-003](../00-governance/assumptions-and-open-questions.md), [D-019~D-022](../00-governance/decision-log.md) |
 
-현재까지 불변조건 위반이 측정/실험된 것은 없다. 합성 실험의 예정 기준은 `docs/08-experiments/experiment-registry.md`의 EXP 항목을 따른다.
+현재까지 불변조건 위반이 측정/실험된 것은 없다. 합성 실험의 예정 기준은 [Experiment Registry](../08-experiments/experiment-registry.md)의 EXP 항목을 따른다.
