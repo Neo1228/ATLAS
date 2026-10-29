@@ -9,38 +9,38 @@ links:
   adr: []
   experiments: [EXP-001, EXP-003]
 ---
-# 가상 페르소나와 사용자 목표 (Jobs-to-be-Done)
+# 가상 사용자 목표
 
-## 범위와 근거 상태
-이 문서는 Gate 1의 **가상 학습 시나리오**다. 실사용자 조사·인터뷰·거래에서 도출한 사실이 아니다. 공통 구매자/판매자 목표는 사용자가 선택했으며, 실제 행동과 판매 유형별 차이는 아직 정하지 않았다 ([D-005/D-007/D-015~D-017](../00-governance/decision-log.md); [Q-001/Q-010](../00-governance/assumptions-and-open-questions.md)).
+## 근거와 한계
+- ✓ 사용자가 선택한 Buyer/Seller 공통 목표.
+- 실제 인터뷰·거래·시장 검증 결과 아님.
+- 유형별 행동과 차이: ? OPEN (D-005, D-007, D-015~D-017; Q-001/Q-010).
 
-## 공통 핵심 페르소나
+## 공통 역할
 
-| 역할 | 근거 상태 | 가상 목표 | 아직 미정인 점 |
-|---|---|---|---|
-| 구매자 (Buyer) | 사용자 선택; 가상 목표 | 한정 판매에서 공정한 구매 기회를 얻고 재고/예약 상태를 정확히 알고 싶다. | 자격 확인 뒤 대기열 입장 시 서버가 순번 발급; 같은 요청 재시도는 기존 대기표(ticket) 재사용; 서비스 재시작 뒤 순서 보존 (D-019~D-022). 요청 식별 키, 동순위, 만료·재입장, 판매 유형별 동작은 미정 (Q-002/Q-003/Q-010). |
-| 판매자 (Seller) | 가상 목표 | 여러 유형의 한정 판매를 공정하게 운영하면서 초과판매를 막고 싶다. | 판매 단위/캠페인 재고 관계, 대기열 입장 조건과 유형별 운영 차이는 미정 (Q-002/Q-003/Q-010). |
+| 역할 | 가상 목표 | 미정 사항 |
+|---|---|---|
+| Buyer | 공정한 구매 기회, 정확한 재고/예약 상태 | 자격 조건, 판매 유형별 흐름 (Q-002/Q-010) |
+| Seller | 공정한 한정판매, overselling 방지 | 판매 단위, 재고 범위, 운영 차이 (Q-002/Q-003/Q-010) |
 
-### 구매자 목표 문장 (Job statement) — Draft
-한정 판매에 참여할 때 공정한 구매 기회를 얻고, 재고를 예약할 수 있었는지 정확히 확인하고 싶다. 이는 가상 목표의 표현이지 실제 구매자의 발언이 아니다.
+### Buyer job — Draft
+한정 판매에서 공정한 기회와 정확한 예약 결과를 원함. 실제 사용자 발언 아님.
 
-### 판매자 목표 문장 (Job statement) — Draft
-한정 판매를 운영할 때 정한 판매 가능량을 넘지 않고, 구매자에게 공정한 기회를 제공하며, 예약 결과를 확인하고 싶다. 이는 가상 목표의 표현이지 실제 판매자의 발언이 아니다.
+### Seller job — Draft
+정한 판매 가능량 안에서 공정하게 판매하고 예약 결과를 확인하려는 가상 목표. 실제 판매자 발언 아님.
 
-## 기준 시나리오와 실패 경계
-- 가상 기준 가설: 여러 구매 요청이 제한된 캠페인 재고에 동시에 도달하고, 판매자는 초과판매 없이 공정한 결과를 원한다 (D-010).
-- 검토할 실패 경계: 자격 통과 후 대기열 입장 시 순번 발급, 같은 요청의 재시도, 서비스 재시작이 겹치는 상황.
-- `가용 수량(Available) + 예약 수량(Reserved) + 판매 수량(Sold) = 초기 재고(Initial Stock)`은 입고·조정이 없는 단순 모델에서만 성립하는 예시다. 정책이나 합격 기준으로 채택한 공식은 아니다.
+## 기준 시나리오
+제한 재고에 여러 요청이 동시에 도달. 대기열 순서와 재고 예약 결과가 일치해야 하며 overselling 방지 필요 (D-010).
+
+## 실패/경계 조건
+- 자격 확인 후 대기열 입장·순번 발급.
+- 같은 논리 요청 retry, service restart 후에도 순서 유지.
+- 판매량 수식 `Available + Reserved + Sold = Initial Stock`은 입고/조정이 없는 단순 모델에만 적용. 승인된 invariant 아님.
 
 ## 판매 유형별 차이
-공통 구매자/판매자 목표를 사용하고, 실제 차이가 확인되면 유형별 행동·정책을 별도 시나리오로 추가한다. 수량/SKU, 좌석/티켓 등은 [Q-002](../00-governance/assumptions-and-open-questions.md)에서 논의할 예시이며 확정 목록이나 장기 범위의 제한이 아니다 (D-006).
+수량/SKU, 좌석/티켓은 Q-002 논의 예시. 확정 목록이나 범위 제한 아님 (D-006). 실제 차이가 확인되면 별도 scenario 추가.
 
-## 검증 및 추적
-- 실제 사용자·판매자 조사나 시장 수요가 검증됐다고 표현하지 않는다.
-Q-003의 기준은 자격 확인 뒤 대기열 입장 시 순번을 발급하고, 같은 논리 요청의 재시도와 서비스 재시작에서도 기존 ticket/순서를 유지하는 것이다 ([D-019~D-022](../00-governance/decision-log.md)). 저장 원자성, key 범위/보존 기간, 만료, 동순위, bot 방어, 판매 유형별 차이는 [Q-003](../00-governance/assumptions-and-open-questions.md)에서 미정이다. 기준 결정은 완료된 [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)에 기록됐다.
-
-## 관련 문서
-- [Glossary](glossary.md), [Requirements Index](../02-requirements/requirements-index.md)
-- [Business Rules](../03-domain/business-rules.md), [Invariants](../03-domain/invariants.md)
-- [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md)
-- 연계 ID: [FR-001/NFR-002](../02-requirements/requirements-index.md), [EXP-001/003](../08-experiments/experiment-registry.md).
+## 추적
+- 대기열 기준 D-019~D-022: 자격 통과 후 admission 시 순번 발급, 같은 요청 retry는 기존 ticket 재사용, restart 후 순서 보존.
+- 미정: 저장 원자성, key 범위/보존기간, 만료·재입장, 동순위, bot 방어, 유형별 차이 ([Q-003](../00-governance/assumptions-and-open-questions.md); [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)).
+- 연계: [Requirements](../02-requirements/requirements-index.md), [Business Rules](../03-domain/business-rules.md), [Invariants](../03-domain/invariants.md), [Experiments](../08-experiments/experiment-registry.md).

@@ -11,25 +11,33 @@ links:
 ---
 # 세션 인계
 
-## 현재 상태
-- 저장소는 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS)다. Gate 0 문서 검토는 2026-10-29 승인됐고 Gate 1 discovery(문제·도메인 탐색)는 진행 중이다.
-- 대기열 순번 발급, 같은 요청 재시도, 서비스 재시작 기준은 완료된 [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)에 기록됐다. 저장 방식, 만료, 동순위, bot 방어, 판매 유형별 차이는 Q-003에서 미정이다.
-- 애플리케이션 코드, 런타임 의존성, 실제 결제 호출, 배포는 시작하지 않았다. 코드는 후속 단계와 구현 진입을 별도 승인받은 뒤 시작한다.
+## 현재
+- 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
+- ✓ Gate 0 승인 (2026-10-29). → Gate 1 discovery 진행 중.
+- Queue baseline은 [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)에 기록. Q-003 저장·만료·tie·bot·유형별 policy는 ? OPEN.
+- 코드, runtime dependency, 실제 payment 호출, deployment 미착수. Gate 2/구현은 별도 승인 필요.
 
-## 승인된 범위와 기준
-- 장기 범위는 결제 신뢰성, 동시성 높은 한정판매, 정산·대사다 ([Project Charter](../00-governance/project-charter.md)).
-- 초기 결제 시험은 PayPal Sandbox와 별도 Fake PSP로 제한한다. 실제 결제·고객 개인정보·판매사 지급은 제외한다.
-- [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)의 Modular Monolith First는 제안된 가설이며 승인된 아키텍처가 아니다.
-- 구매자는 공정한 구매 기회와 정확한 재고/예약 상태, 판매자는 초과판매 방지를 목표로 한다. 이는 가상 목표이며 시장 검증 결과가 아니다 ([Personas & Jobs](../01-discovery/personas-and-jobs.md)).
-- 여러 판매 유형을 탐색하고 싶다는 선호는 전체 유형의 구현 약속이 아니다 (D-006).
-대기열 기준은 자격 확인 뒤 입장할 때 순번을 발급하고, 같은 논리 요청의 retry와 서비스 재시작 뒤에도 순서를 보존하는 것이다 (D-019~D-022). 저장·복구 방식과 나머지 Q-003 경계는 미정이며 [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md)에 기록한다.
+## 확정된 방향
+- 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).
+- 초기 시험: PayPal Sandbox와 Fake PSP. 실제 payment·개인정보·판매사 지급 제외.
+- 가상 Buyer: 공정한 기회와 정확한 재고/예약 상태. 가상 Seller: 공정한 한정판매와 overselling 방지 ([Personas & Jobs](../01-discovery/personas-and-jobs.md)).
+- Queue baseline: 자격 통과 후 admission 시 sequence 발급; 같은 논리 요청 retry는 기존 ticket 재사용; restart 후 sequence 보존 (D-019~D-022).
 
-[Issue #20](https://github.com/Neo1228/ATLAS/issues/20)은 성능·용량 계획을 추적한다: Gate 2에서 부하 프로필 합의, Gate 3에서 용량 추정, 구현 승인 뒤 Gate 4에서 부하/복구 검증. 목표 수치와 실측 결과는 없다. 자세한 내용은 [Roadmap](roadmap.md), 실험 후보는 [Experiment Registry](../08-experiments/experiment-registry.md)에 있다.
+## 미정·다음
+- ADR-0001 Modular Monolith First: △ Proposed.
+- Q-003 잔여 boundary를 한 작업 묶음으로 논의. 경계별 Issue 분할 금지.
+- Performance 순서 (D-018, △ Proposed): Gate 2 workload profile → Gate 3 capacity estimate → 구현 승인 후 Gate 4 synthetic validation. 목표 수치/실측 없음 ([Issue #20](https://github.com/Neo1228/ATLAS/issues/20)).
+- Q-002~Q-009: [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md). 다음 Gate/구현 진입은 별도 승인 전 보류.
 
-## 다음 논의
-Q-003의 남은 세부 경계를 한 작업 단위로 묶을지 사용자와 합의한다. 각 경계마다 Issue를 만들지 않는다. Gate 2와 코드 진입은 별도 승인을 받기 전 시작하지 않는다.
+## 이력
 
-## 추적과 진행 기록
-- 현재 단계와 제안된 다음 단계는 [Roadmap](roadmap.md), 완료한 Issue/PR·커밋·검증 이력은 [Milestone Log](milestone-log.md)에 기록한다.
-- 문서 링크/작성 기준과 PR checklist는 [Issue #26](https://github.com/Neo1228/ATLAS/issues/26)으로 추적했고 [PR #27](https://github.com/Neo1228/ATLAS/pull/27)에서 병합했다. 병합 후 현재 상태를 아래 [Milestone Log](milestone-log.md)에 기록했다.
-- 새 작업은 먼저 Issue에 범위·완료 기준을 기록한다. 관련 커밋 여러 개와 이슈를 하나의 리뷰 가능한 PR로 묶는다 ([CONTRIBUTING](../../CONTRIBUTING.md)).
+| 작업 | 기록 |
+|---|---|
+| WP-001 | seed `7ed5fac`; workflow `eb371ca`, `5151a15` |
+| WP-002~005 | PR #9/#10/#11/#12; Issue #5/#6/#8/#7 |
+| Git/PR 기준 | PR #4 (Issue #2); batching PR #16 (Issue #15); delivery PR #18 (Issue #17) |
+| Persona/capacity | PR #21 (Issues #19/#20) |
+| Queue fairness/lifecycle | PR #23 (Issue #22), commit `eb95982`; PR #25 (Issue #24), commit `154c31e` |
+| 문서 탐색·작성 기준 | Issue #26; PR #27 merged `a82e022`, closeout PR #28 merged `bc8d60b` |
+
+진행 상태는 [Roadmap](roadmap.md), 전체 변경 이력은 [Milestone Log](milestone-log.md). 새 작업은 Issue-first. 관련 commit/Issue는 하나의 reviewable PR로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).

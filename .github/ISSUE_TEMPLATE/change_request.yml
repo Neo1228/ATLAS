@@ -6,28 +6,28 @@ body:
     id: problem
     attributes:
       label: 해결할 문제 또는 미결정 질문
-      description: 배경/영향, 확인된 사실과 가정을 구분하고 미정 사항을 적어주세요. 복잡한 변경은 Issue 본문에 충분히 요약하며 문서 링크만 남기지 않습니다.
+      description: 문제·영향을 요약하고 사실/가정/미정을 구분. 복잡한 변경은 이유와 영향을 Issue 본문에 직접 작성.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: 제안과 대안
-      description: 선택한 접근의 이유, 검토한 대안과 트레이드오프를 설명해 주세요. 결정 전 정책은 Proposed 상태입니다.
+      description: 선택 이유와 주요 대안·trade-off. 미승인 정책은 `△ Proposed`.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: 성공/검증 기준
-      description: 관찰 가능한 정상 결과와 실패/경계 조건을 기록해 주세요.
+      description: 완료 시 관찰 가능한 결과와 실패/경계 조건.
     validations:
       required: true
   - type: textarea
     id: model
     attributes:
       label: 영향 범위와 시각화 또는 해당 없음
-      description: 복잡한 도메인/로직은 영향 받는 상태·규칙·불변조건과 근거를 요약하세요. 표준 기술 용어는 영어로 사용해도 되며, 프로젝트 전용 용어는 설명하세요. 흐름/상태/아키텍처가 모호하면 Mermaid 다이어그램을 포함하고, 기준 문서가 있으면 핵심 설명과 링크를 함께 남기세요. 단순 제안은 해당 없음과 이유를 적으세요.
+      description: 영향 상태·규칙·불변조건 요약. 복잡한 흐름은 Mermaid; 기준 문서가 있으면 핵심 설명과 링크 추가. 단순 변경은 N/A 사유.
     validations:
       required: true
   - type: input
@@ -41,6 +41,6 @@ body:
     id: scope
     attributes:
       label: 작업 단위 제안
-      description: 독립 리뷰 가능한 작업 범위를 적고, 넓으면 하위 Issue로 분리해 주세요.
+      description: 독립 검토 가능한 범위와 완료 기준. 큰 작업은 관련 sub-issues로 분해.
     validations:
       required: true
