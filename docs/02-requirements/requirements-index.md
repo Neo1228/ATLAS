@@ -19,7 +19,7 @@ links:
 | FR-002 | 기능 | Proposed | 결제 시도/웹훅/멱등성/불확실 상태/복구를 다룬다. PSP 세부 TBD. | TBD | Q-004, Q-005 |
 | FR-003 | 기능 | Proposed | 거래 대사와 내부 정산 기록 및 정정을 추적한다. 계약상 의미 TBD. | TBD | Q-006 |
 | NFR-001 | 비기능 | Proposed | 테넌트 간 데이터/권한 격리를 검증한다. 위협 경계 TBD. | TBD | Q-007 |
-| NFR-002 | 비기능 | Proposed | Gate 2에서 합의한 synthetic workload의 traffic mix/요청량/동시성/latency/recovery profiles를 검증한다. 목표값은 현재 TBD이며 실측이 아니다. | TBD | Q-008, Issue #20, EXP-001/002/009 |
+| NFR-002 | 비기능 | Proposed | Gate 2에서 합의한 synthetic workload의 traffic mix/요청량/동시성/latency/recovery profiles를 검증한다. 목표값은 사용자 합의 전 TBD이며 실측이 아니다. | TBD | Q-008, Issue #20, EXP-001/002/009 |
 
 ## 정책
 Gate 2에서 우선순위, 예외 시나리오, Given/When/Then 인수 기준, 불변조건 및 추적 링크를 구체화한다. 실제 목표값과 합성 실험 가정을 분리한다.
