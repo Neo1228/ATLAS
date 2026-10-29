@@ -2,7 +2,7 @@
 id: DOC-009
 title: Session Handoff
 status: Current
-owner: Project Owner / Agent
+owner: Project Owner
 updated: 2026-10-29
 links:
   requirements: []
@@ -12,30 +12,24 @@ links:
 # 세션 인계
 
 ## 현재 상태
-ATLAS 비공개 저장소 `Neo1228/ATLAS`에 WP-001~WP-005가 모두 게시됐다. 사용자가 2026-10-29 Gate 0을 승인해 Gate 1 discovery가 진행 중이다. Q-003 baseline은 완료된 [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)에 기록됐고, 세부 경계는 여전히 OPEN이다. 코드·런타임 의존성·배포는 시작하지 않았다.
+- 저장소는 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS)다. Gate 0 문서 검토는 2026-10-29 승인됐고 Gate 1 discovery(문제·도메인 탐색)는 진행 중이다.
+- 대기열 순번 발급, 같은 요청 재시도, 서비스 재시작 기준은 완료된 [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)에 기록됐다. 저장 방식, 만료, 동순위, bot 방어, 판매 유형별 차이는 Q-003에서 미정이다.
+- 애플리케이션 코드, 런타임 의존성, 실제 결제 호출, 배포는 시작하지 않았다. 코드는 후속 단계와 구현 진입을 별도 승인받은 뒤 시작한다.
 
-## 확정된 범위
-장기 A/B/C 도메인 전체 포함. PayPal Sandbox 우선 및 별도 Fake PSP. 초기 실험에서 실결제·실개인정보·실제 지급 제외.
+## 승인된 범위와 기준
+- 장기 범위는 결제 신뢰성, 동시성 높은 한정판매, 정산·대사다 ([Project Charter](../00-governance/project-charter.md)).
+- 초기 결제 시험은 PayPal Sandbox와 별도 Fake PSP로 제한한다. 실제 결제·고객 개인정보·판매사 지급은 제외한다.
+- [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)의 Modular Monolith First는 제안된 가설이며 승인된 아키텍처가 아니다.
+- 구매자는 공정한 구매 기회와 정확한 재고/예약 상태, 판매자는 초과판매 방지를 목표로 한다. 이는 가상 목표이며 시장 검증 결과가 아니다 ([Personas & Jobs](../01-discovery/personas-and-jobs.md)).
+- 여러 판매 유형을 탐색하고 싶다는 선호는 전체 유형의 구현 약속이 아니다 (D-006).
+대기열 기준은 자격 확인 뒤 입장할 때 순번을 발급하고, 같은 논리 요청의 retry와 서비스 재시작 뒤에도 순서를 보존하는 것이다 (D-019~D-022). 저장·복구 방식과 나머지 Q-003 경계는 미정이며 [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md)에 기록한다.
 
-## 제안/미결정
-- [ADR-0001 Modular Monolith First](../06-decisions/adr/ADR-0001-architecture-style.md): Proposed, 아직 승인되지 않음.
-- Q-001은 해결: 실제 문제 검증이 아닌 가상 학습 시나리오로 시작한다 ([D-005](../00-governance/decision-log.md)).
-- 여러 판매 유형을 모두 탐색하고 싶다는 선호를 기록했다 (D-006). 이는 전체 구현 범위를 확정하지 않는다.
-Q-010은 공통 핵심 buyer/seller persona+유형별 차이로 모델링 ([D-015](../00-governance/decision-log.md)). Buyer goal은 공정한 기회/정확한 재고·예약 상태 (D-016), Seller goal은 초과판매 없는 공정한 한정판매 (D-017). Q-003 baseline: eligibility 후 queue admission에서 순번 발급, same-request retry reuse, restart preserves position (D-019~D-022); tie/expiry/type details remain OPEN in [Q-003](../00-governance/assumptions-and-open-questions.md) after closed [Issue #24](https://github.com/Neo1228/ATLAS/issues/24).
-[Issue #20](https://github.com/Neo1228/ATLAS/issues/20) tracks traffic/capacity sequencing: Gate 2 workload profile/targets, Gate 3 capacity model, Gate 4 synthetic load/recovery experiments. Numeric targets and deployment assumptions remain TBD; none are measured results. See [Roadmap](roadmap.md) and [Experiment Registry](../08-experiments/experiment-registry.md).
+[Issue #20](https://github.com/Neo1228/ATLAS/issues/20)은 성능·용량 계획을 추적한다: Gate 2에서 부하 프로필 합의, Gate 3에서 용량 추정, 구현 승인 뒤 Gate 4에서 부하/복구 검증. 목표 수치와 실측 결과는 없다. 자세한 내용은 [Roadmap](roadmap.md), 실험 후보는 [Experiment Registry](../08-experiments/experiment-registry.md)에 있다.
 
-## 후속 작업 추적
-작은 작업 단위와 커밋으로 기록하고, 관련 작업은 PR 단위로 묶는다. 각 PR/커밋의 범위·연결 결정/요구사항·검증 결과를 [Milestone Log](milestone-log.md)와 이 인계 문서에 남긴다. 실제 생성된 기록만 보고한다.
+## 다음 논의
+Q-003의 남은 세부 경계를 한 작업 단위로 묶을지 사용자와 합의한다. 각 경계마다 Issue를 만들지 않는다. Gate 2와 코드 진입은 별도 승인을 받기 전 시작하지 않는다.
 
-## 현재 상태와 다음 단계
-GitHub Issue/PR templates, Issue-first 규칙, PR batching 규칙, Markdown lint와 main 보호 설정이 배포되어 있다.
-- WP-001 GitHub 기초: seed commit `7ed5fac`, CI 보정 `eb371ca`, `5151a15`.
-- WP-002 거버넌스: PR #9 / Issue #5, commit `6049755`.
-- WP-003 발견·요구사항: PR #10 / Issue #6, commit `f73a7e9`.
-- WP-004 ADR·실험: PR #11 / Issue #8, commit `6b2b379`; ADR-0001 Proposed, EXP-001~009 Planned.
-- WP-005 로드맵·인계: PR #12 / Issue #7, commit `8c71869`.
-- Git conventions: PR #4 / Issue #2, commit `a76016e`; PR batching rule: PR #16 / Issue #15, commit `80dd964`.
- [PR #23](https://github.com/Neo1228/ATLAS/pull/23) ([Issue #22](https://github.com/Neo1228/ATLAS/issues/22)) merged queue-order baseline and domain rules; commit `eb95982`.
-- [Issue #24](https://github.com/Neo1228/ATLAS/issues/24) is closed after documenting admission timing, idempotent retries and restart sequence preservation. Tie, expiry, durability/key details, bot and type differences remain OPEN in Q-003.
-Gate 0 is approved; Gate 1 continues. Do not enter Gate 2 or implementation without the next Gate's explicit approval.
-- 문서 탐색 링크: [Issue #26](https://github.com/Neo1228/ATLAS/issues/26), [PR #27](https://github.com/Neo1228/ATLAS/pull/27), commit `68febce`; Markdown lint와 상대 링크 검사 통과.
+## 추적과 진행 기록
+- 현재 단계와 제안된 다음 단계는 [Roadmap](roadmap.md), 완료한 Issue/PR·커밋·검증 이력은 [Milestone Log](milestone-log.md)에 기록한다.
+- 문서 탐색, 처음 접하는 독자용 설명, 복잡한 변경 기록, PR checklist 자동 확인은 [Issue #26](https://github.com/Neo1228/ATLAS/issues/26) / [PR #27](https://github.com/Neo1228/ATLAS/pull/27) 한 작업 묶음으로 진행 중이다.
+- 새 작업은 먼저 Issue에 범위·완료 기준을 기록한다. 관련 커밋 여러 개와 이슈를 하나의 리뷰 가능한 PR로 묶는다 ([CONTRIBUTING](../../CONTRIBUTING.md)).
