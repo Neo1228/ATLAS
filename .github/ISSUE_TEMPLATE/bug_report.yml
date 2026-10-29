@@ -1,6 +1,6 @@
 name: 버그/불일치 보고
 description: 재현 가능한 구현 또는 문서 불일치를 기록합니다.
-title: "[Bug]: "
+title: "[버그]: "
 body:
   - type: markdown
     attributes:
@@ -17,6 +17,20 @@ body:
     attributes:
       label: 재현 조건
       description: 단계, 입력(합성 데이터만), 환경/버전을 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 수정 후 기대 결과 / 완료 기준
+      description: 재현 가능한 결과와 통과 조건을 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 예정 작업 단위
+      description: 진단/수정 범위를 적어주세요. 넓으면 하위 Issue로 나눕니다.
     validations:
       required: true
   - type: textarea

@@ -1,6 +1,6 @@
 name: 설계/요구사항 제안
 description: 미결정 사항 또는 범위 내 개선을 추적합니다.
-title: "[Proposal]: "
+title: "[제안]: "
 body:
   - type: textarea
     id: problem
@@ -34,6 +34,6 @@ body:
     id: scope
     attributes:
       label: 작업 단위 제안
-      description: 독립 리뷰 가능한 소단위로 분리 가능한 범위를 적어주세요.
+      description: 독립 리뷰 가능한 작업 범위를 적고, 넓으면 하위 Issue로 분리해 주세요.
     validations:
-      required: false
+      required: true
