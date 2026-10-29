@@ -1,56 +1,57 @@
 # 기여 및 작업 절차
+모든 변경은 Issue부터 기록. 현재 Gate 0 승인, Gate 1 discovery 진행 중. Gate 2·아키텍처·구현·의존성·배포는 별도 승인 전 보류.
 
-ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니다. Gate 0은 승인됐고 현재 Gate 1 discovery를 진행 중입니다. Gate 2·아키텍처/구현·의존성·배포 작업은 해당 단계의 별도 승인 전 시작하지 않습니다.
+## 1. 작업과 Issue
+1. 착수 전 GitHub Issue 생성. [버그 양식](.github/ISSUE_TEMPLATE/bug_report.yml) 또는 [제안 양식](.github/ISSUE_TEMPLATE/change_request.yml) 사용.
+2. 문제·근거·범위·완료/검증 기준·관련 ID(Q/FR/NFR/BR/INV/ADR/EXP) 기록.
+3. 복잡한 변경은 본문에 사실/가정, 결정 이유, 대안·trade-off, 영향 상태/불변조건을 요약. 링크만 남기지 않음.
+4. 한 Issue는 한 응집된 작업 묶음. 커밋마다 Issue를 만들지 않음. 관계된 Issue/commit은 하나의 PR에 통합 가능.
+5. 이슈 번호를 branch명에 포함. 모든 관련 PR/commit 연결. 완료 시 `Closes #N`, 일부만 반영 시 `Refs #N`.
+6. 완료 후 실제 범위·검증·commit SHA·PR URL을 [Milestone Log](docs/09-delivery/milestone-log.md)와 [Session Handoff](docs/09-delivery/session-handoff.md)에 기록.
+7. Issue 제목은 한국어. `[버그]:`/`[제안]:` 접두사 유지.
 
-## 작업 단위와 Issue 선행
-1. 계획된 코드·문서·설정 변경은 시작 전에 GitHub 이슈 하나를 만든다. 버그는 [bug report form](.github/ISSUE_TEMPLATE/bug_report.yml), 기능/정책/문서 제안은 [change request form](.github/ISSUE_TEMPLATE/change_request.yml)을 사용한다.
-2. 이슈에는 문제/근거, 제안 또는 재현 조건, 인수·검증 기준, 관련 Q/FR/NFR/BR/INV/ADR/EXP ID, 독립된 작업 범위를 기록한다. 복잡한 변경은 사실/가정, 결정 이유, 대안/트레이드오프, 영향을 받는 상태·불변조건을 본문에 요약하고, 문서 링크만 남기지 않는다. 범위가 크면 하위 이슈로 나눈다.
-3. 한 이슈는 하나의 응집된 작업 묶음을 추적한다. 여러 작은 커밋은 같은 이슈 아래 둘 수 있으므로 커밋마다 이슈를 만들지 않는다.
-4. 이슈 번호를 브랜치명에 넣고, 모든 관련 PR/커밋을 이슈에 연결한다. 단일 PR이 수락 기준을 끝내면 `Closes #N`; 일부만 처리하면 `Refs #N`을 쓴다. 여러 PR에 걸친 경우 마지막 완료 PR만 이슈를 닫는다.
-5. 이슈가 생성되고 범위/검증 기준이 분명해진 뒤에만 파일 변경을 시작한다. 긴급 복구도 가능한 즉시 이슈를 만들고 기록한다. 사소한 변경은 기존 관련 이슈에 묶는다.
-6. 독립 검토가 가능한 소단위 PR은 [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)을 따르고, 최초 문서 전체를 한꺼번에 업로드하지 않는다.
-7. 완료 후 실제 이슈/커밋/PR 식별자, 변경 범위, 실행한 검증과 결과를 [Milestone Log](docs/09-delivery/milestone-log.md) 및 [Session Handoff](docs/09-delivery/session-handoff.md)에 기록한다.
-이슈 제목은 한국어로 작성하고, 양식에서 붙이는 `[버그]:`/`[제안]:` 접두사를 유지한다. PR/커밋 제목은 `<type>(<scope>): <한국어 요약>` 형식을 따른다.
+## 2. 문장·용어
+- 짧은 문장, 한 문단 한 핵심. 자연스러운 경우 명사형/개조식 종결 우선; 조사·수식어 최소화.
+- 수치·범위·날짜·완료 기준은 단위/기준과 함께 표 또는 불릿으로 표시.
+- 일반적인 backend 용어(API, retry, queue, transaction)는 English 사용 가능. 어색한 직역·반복 병기 금지.
+- 프로젝트 고유 용어·약어는 처음 등장 때 풀이하거나 [Glossary](docs/01-discovery/glossary.md) 연결.
 
-## 검증
-- Markdown 문서 변경: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
-- 문서 링크·용어·결정 상태도 검토합니다. 실행하지 않은 검증을 성공으로 보고하지 않습니다.
-- 향후 애플리케이션 스택과 품질 도구는 별도 결정 후 추가합니다. 현재 린트 설정은 Markdown 문서에만 적용됩니다.
+## 3. 검증
+- Markdown: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
+- 링크·용어·결정 상태도 확인. 실행하지 않은 검증은 성공으로 기록하지 않음.
+- 현재 자동화는 Markdown lint와 PR checklist. 앱 품질 도구는 기술 스택 승인 뒤 추가.
 
-## 문장과 기술 용어
-- 자연스러운 한국어를 기본으로 하고, API, PR, commit, retry 등 널리 쓰이는 영문 기술 용어는 그대로 사용한다. 모든 단어를 억지로 한영 병기하거나 직역하지 않는다.
-- 프로젝트 전용 약어·도메인 개념·미정 경계는 첫 등장 때 풀이하고 [Glossary](docs/01-discovery/glossary.md) 또는 기준 문서로 연결한다. 저장소 밖 대화만 아는 독자를 전제로 쓰지 않는다.
+## 4. Branch
+- 기본 branch: `main`; 직접 push 금지 (최초 seed 제외).
+- 이름: `<type>/<primary-issue>-<short-topic>`; 예: `docs/123-pr-rules`, `fix/42-timeout`.
+- type: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `ci`, `build`, `chore`, `revert`.
+- topic은 ASCII 소문자 kebab-case. 한 branch는 한 목적.
 
-## 브랜치 규칙
-- 기본 브랜치는 `main`이며 직접 push하지 않는다. 빈 저장소의 최초 seed만 예외로 둔다.
-- 작업 브랜치는 `<type>/<primary-issue>-<short-topic>` 형식으로 만든다. PR이 관련 이슈 여러 개를 묶으면 대표 Issue 하나를 브랜치명에 넣고 나머지도 PR에서 연결한다. 예: `docs/123-issues-and-pr-batching`, `fix/42-timeout`.
-- type은 `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `ci`, `build`, `chore`, `revert` 중 목적에 맞게 고르고, topic은 소문자 ASCII kebab-case로 쓴다. 한 브랜치에는 한 목적만 담는다.
+## 5. Commit
+- 제목: `<type>(<scope>): <한국어 요약>`; scope 생략 가능.
+- type/scope는 영문 소문자, 요약은 한국어. 짧은 명령형, 마침표 없음.
+- 예: `docs(git): 브랜치와 PR 규칙 정리`
+- 한 commit은 한 논리 변경. 이유가 불분명하거나 정책/호환성 영향이 있으면 본문에 이유·제약·추적 ID 기록.
+- 과거 제목 수정은 기본 금지. 사용자 명시 승인과 별도 절차 필요.
 
-## 커밋 규칙
-- 제목 형식: `<type>(<scope>): <한국어 요약>`; scope가 불필요하면 생략한다.
-- prefix/type/scope는 영문 소문자로, 제목 끝부분 요약은 한국어로 작성한다. 짧은 명령형 문구를 쓰고 마침표는 붙이지 않는다. 예: `docs(git): 브랜치와 PR 규칙 정리`.
-- type은 `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`를 사용한다. 과거 제목 수정은 일반 작업에서 하지 않고, 명시적 사용자 승인 및 절차가 있는 예외만 허용한다.
-- 커밋 하나에는 하나의 논리적 변경만 둔다. 관련 파일은 같은 변경 목적에 필요한 만큼만 포함하고, 무관한 변경은 별도 커밋/PR로 분리한다.
-- 제목만으로 이유가 불명확하거나 호환성/정책 영향이 있으면 본문에 이유, 제약, 추적 ID(Q/FR/NFR/ADR/EXP)를 기록한다. 변경 이력에 비밀이나 개인정보를 넣지 않는다.
+## 6. Pull Request
+- 하나의 목적·완료 기준·검토 경계로 구성. 관련 commit과 Issue는 함께 묶고, 커밋/이슈마다 PR을 만들지 않음.
+- 독립 목적·위험·배포/복구 경계는 분리. 파일 수·commit 수만으로 나누지 않음.
+- [PR template](.github/PULL_REQUEST_TEMPLATE.md) 사용. 복잡한 변경은 문제·결정 근거·대안·영향·검증을 본문에 직접 작성.
+- 흐름·상태·아키텍처가 복잡하면 Mermaid 사용. 기존 도식이 있으면 요약 후 링크. 모든 checkbox 완료; 해당 없음은 이유 작성.
+- `main` 필수 checks: `Markdown lint`, `PR checklist`. Squash merge만 허용, linear history 필수, force push/deletion 금지. 승인자 수 0, 자동 branch 삭제.
 
-## PR 규칙
-- PR은 `main`을 대상으로 하나의 응집된 검토/수락 경계를 다룬다. 하나의 PR에 작은 관련 커밋 여러 개와 서로 의존/관련된 이슈 여러 개를 함께 묶을 수 있다. 커밋마다 또는 이슈마다 PR 하나씩 만들지 않는다.
-- 서로 무관한 목적, 위험, 수락 기준은 PR을 분리한다. 분리 기준은 commit count가 아니라 독립 리뷰 가능성, 릴리스/복구 경계, 변경 간 의존성이다.
-- PR 제목도 `<type>(<scope>): <한국어 요약>` 형식을 따른다. 설명은 [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)을 작성한다.
-- 복잡한 도메인/로직/아키텍처 PR은 본문에 문제 배경·결정 근거·대안·영향·검증 결과를 보여준다. 흐름/상태/아키텍처가 리뷰를 명확히 하면 Mermaid 등을 사용한다. 기준 도식이 이미 있으면 PR에 요약과 직접 링크를 둔다. 링크만으로 설명을 대체하지 않는다.
-- 연관된 이슈를 모두 명시하고, 완료된 이슈만 각각 `Closes #N`; 부분 작업/다음 PR이 남으면 `Refs #N`을 쓴다.
-- `main`은 PR 필수, `Markdown lint` 및 `PR checklist` 필수, 선형 이력, force push/브랜치 삭제 금지로 보호한다. 1인 프로젝트이므로 승인자 수는 0이다. 병합은 Squash and merge만 허용하며 병합 후 작업 브랜치는 자동 삭제한다.
+## 7. 안전한 Git
+- 시작 전 `git status --short --branch`.
+- stage 전 `git diff`, stage 후 `git diff --cached`와 `git status` 확인.
+- 관련 경로만 `git add <path>`. 다른 변경 여부 확인 전 `git add .`/`git add -A` 금지.
+- 공유 이력 amend/rebase 금지. 명시 승인된 예외는 별도 Issue, 대상 SHA, 백업 ref, `--force-with-lease`, protection 복원 기록 필요.
+- `main` 직접 push·무승인 force push·미추적 작업을 지우는 reset/clean 금지. 충돌 해결 뒤 diff 및 관련 lint/test 재실행.
 
-## 동기화와 안전한 Git 사용
-- 시작 전 `git status --short --branch`; stage 전에 `git diff`; stage 후 `git diff --cached`와 `git status`를 확인한다.
-- 관련 파일 경로만 `git add <path>`로 stage한다. `git add .`/`git add -A`는 보류 중인 다른 작업이 없음을 확인하기 전 사용하지 않는다.
-- 공유 이력은 기본적으로 amend/rebase로 재작성하지 않는다. 사용자가 이력 정정을 명시 승인하면 별도 Issue에 대상 SHA/영향을 기록하고 백업 ref를 만든 뒤 `--force-with-lease`로만 반영한다. branch protection은 최소 시간만 완화하고 즉시 복원하며, 관련 브랜치/PR/SHA를 모두 갱신한다. `main` 직접 push와 무승인 force push는 금지한다.
-- 충돌은 변경 의도를 확인해 해결하고, 해결 후 diff 및 관련 lint/test를 다시 실행한다. 강제 reset/clean 등 미추적 작업을 지울 수 있는 명령은 사용하지 않는다.
+## 8. 계정·민감정보
+- Git 작성자 정보는 local repository에만 설정. GitHub no-reply 주소 사용.
+- API key/token, 개인정보, 실제 결제 정보를 코드·로그·Issue/PR에 기록 금지. 예시는 placeholder만 사용. 유출 시 즉시 폐기/교체.
 
-## 작성자 및 민감정보
-- 로컬 저장소에만 Git 작성자 정보를 설정한다. GitHub 설정의 no-reply 이메일을 사용하고 계정과 일치하는지 확인한다.
-- API key/token, 고객정보, 실결제 정보는 파일·로그·Issue/PR에 넣지 않는다. 예제 설정에는 placeholder만 사용한다. 유출 시 해당 credential을 즉시 폐기/교체한다.
-
-## 추적 및 병합 후
-- 작업 ID/목적/변경 파일/검증과 실제 commit SHA·PR URL을 milestone log와 session handoff에 기록한다. 생성 전 항목은 Planned로만 표시한다.
-- 병합 후 원격 PR 상태와 CI를 확인하고, 다음 작은 작업은 별도 브랜치/PR로 시작한다. Gate 종료·범위 변경은 별도 사용자 승인 대상이다.
+## 9. 병합 후
+- 실제 Issue/commit/PR 상태·SHA·검증만 [Milestone Log](docs/09-delivery/milestone-log.md)와 [Session Handoff](docs/09-delivery/session-handoff.md)에 기록.
+- 병합과 CI 확인 후 다음 작업은 별도 branch에서 시작. Gate 종료·범위 변경은 사용자 승인 필요.

@@ -1,5 +1,5 @@
 name: 버그/불일치 보고
-description: 재현 가능한 구현 또는 문서 불일치를 기록합니다.
+description: 재현 조건과 기대 결과 기록.
 title: "[버그]: "
 body:
   - type: markdown
@@ -9,42 +9,42 @@ body:
     id: summary
     attributes:
       label: 관찰한 문제
-      description: 기대/실제 동작, 영향, 확인된 사실과 가정을 구분하세요. 복잡한 불일치는 Issue 본문에 설명하고 링크만 남기지 않습니다.
+      description: 기대/실제 동작과 영향 구분. 복잡한 불일치는 Issue 본문에서 설명하며 링크만 두지 않음.
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
       label: 재현 조건
-      description: 단계, 입력(합성 데이터만), 환경/버전을 적어주세요.
+      description: 재현 단계, 합성 입력, 환경/버전.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: 수정 후 기대 결과 / 완료 기준
-      description: 재현 가능한 결과와 통과 조건을 적어주세요.
+      description: 재현 가능한 기대 결과와 통과 조건.
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: 예정 작업 단위
-      description: 진단/수정 범위를 적어주세요. 넓으면 하위 Issue로 나눕니다.
+      description: 진단/수정 범위. 독립 검토 가능한 작업 단위로 기록.
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
       label: 로그 또는 근거
-      description: 비밀/개인정보를 제거한 최소 근거만 붙여주세요. 복잡한 재현은 관찰 가능한 흐름/상태를 설명하고 필요하면 다이어그램을 포함하세요.
+      description: 비밀/개인정보 제거. 복잡한 재현은 흐름과 영향 불변조건을 설명.
     validations:
       required: false
   - type: textarea
     id: model
     attributes:
       label: 영향 범위와 시각화 (필요한 경우)
-      description: 다단계 상태 전이/경합이 핵심이면 재현 흐름, 관련 불변조건 및 Mermaid 시퀀스/상태도를 적으세요. 이미 문서에 있는 근거는 링크와 짧은 설명을 함께 씁니다.
+      description: 다단계 상태 변화는 Mermaid sequence/state diagram으로 표현. 기준 도식이 있으면 요약과 링크.
     validations:
       required: false
   - type: input

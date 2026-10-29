@@ -15,37 +15,39 @@ links:
 - 담당: Project Owner
 - 갱신일: 2026-10-29
 
-## 승인 필요
-장기 A/B/C 범위 변경, 외부 결제 제공자 변경, 개인정보/금전 정책, 주요 도메인 정책, 핵심 아키텍처, Gate 종료/진입은 사용자 승인 후 반영한다.
+## 사용자 승인
+사전 승인 대상:
+- 장기 범위 A/B/C, PSP, 개인정보·금전 정책.
+- 핵심 도메인 정책, 아키텍처, Gate 진입/종료.
 
-## 작업 원칙
-제안은 Proposed로 기록한다. 이미 확정된 사실과 충돌하면 영향 및 대안을 먼저 제시한다. 과거 ADR을 소급 수정하지 않고 새 ADR에서 대체 관계를 기록한다. 요구사항과 테스트/실험, 관련 SSOT 문서를 연결한다.
+## 결정 원칙
+- 미승인 결정: `△ Proposed`.
+- 기존 승인 내용과 충돌 시 영향·대안부터 제시.
+- 기존 ADR 소급 수정 금지. 변경 시 새 ADR에서 대체 관계 기록.
+- 요구사항·테스트/실험·SSOT 연결.
 
-## Issue/PR 설명 근거 및 시각화
-- 복잡한 도메인·정책·로직·아키텍처 변경은 Issue와 PR 본문에서 문제/배경, 확인된 사실과 가정, 결정 이유, 대안/트레이드오프, 영향 받는 상태·불변조건, 검증 근거를 요약한다. 관련 문서 링크만으로 설명을 대체하지 않는다.
-- 구조/상태/흐름이 이해를 돕는 경우 Mermaid 등으로 시각화한다. Issue/PR에서 바로 읽히게 하거나, 기준 문서의 도식을 직접 연결하고 본문에 핵심 설명을 둔다.
-- 중복되거나 장식적인 그림은 만들지 않는다. 승인된 사실과 OPEN 경계를 구분하고, 도식이 바뀌면 기준 문서도 갱신한다. 단순 변경은 시각화하지 않아도 된다.
-- 변경 설명은 무엇을 왜 바꾸는지, 배경과 한계를 밝히고 하나의 자체 완결된 검토 단위를 다룬다. 커밋 줄 수로 기계적으로 나누지 않는다 ([REF-014/015](reference-register.md)).
-- 자연스러운 한국어를 기본으로 하고 널리 쓰이는 영문 기술 용어는 유지한다. 프로젝트 전용 약어·도메인 개념은 첫 등장 때 설명하며 불필요한 직역/이중 표기를 피한다.
+## Issue/PR 설명
+- 복잡한 변경은 문제/배경, 사실/가정, 결정 이유, 대안·trade-off, 영향 상태/invariant, 검증 근거를 본문에 기록.
+- 링크만으로 설명 대체 금지.
+- 복잡한 flow/state/component boundary는 Mermaid 사용. 중복 도식 금지, OPEN 경계 표시.
+- 짧고 자연스러운 한국어. 일반 technical term은 English 사용 가능. 프로젝트 용어는 첫 등장에 설명.
+- PR 크기는 검토 독립성으로 결정; 줄 수 기준 금지 ([REF-014/015](reference-register.md)).
 
-## 작업 추적 및 통합
-- 구현/문서 변경은 추적 가능한 작은 작업 단위로 나눈다. 각 단위에 목적, 연결 요구사항/결정, 변경 파일, 검증 방법과 실제 결과를 기록한다.
-- 각 작업 단위는 검토 가능한 작은 커밋으로 남긴다. 관련 작업 커밋을 PR 하나로 묶어 검토·통합하고, PR에는 범위·근거·검증·리스크를 기록한다.
-- 커밋/PR 링크 또는 식별자를 마일스톤 로그와 세션 인계에 기록한다. 아직 만들지 않은 커밋/PR을 완료된 것처럼 표현하지 않는다.
-- 저장소/원격/권한이 준비되지 않았으면 로컬 작업 기록과 상태를 남기고, 커밋/PR 생성 전 필요한 조건을 확인한다. 이 규칙은 사용자 선호로 확정하며 Gate 0 승인 여부와 별개로 적용한다.
+## Issue·commit·PR 추적
+- 계획 작업은 착수 전 Issue 생성: 문제, trace ID, 범위, acceptance/verification.
+- 하나의 Issue는 하나의 응집된 작업 묶음. 관련 commit/Issue는 공통 목적·완료 기준의 PR로 통합 가능.
+- Branch/commit/PR에 Issue 연결. 완료 시 `Closes #N`, 부분 작업은 `Refs #N`.
+- 작은 논리 변경은 별도 commit. 독립 목적·위험·배포 경계는 별도 PR.
+- 실제 Issue/PR 상태, SHA, checks를 [Milestone Log](../09-delivery/milestone-log.md)와 [Session Handoff](../09-delivery/session-handoff.md)에 기록.
 
-## Issue 선행 및 완료 추적
-- 계획된 변경은 Issue를 생성해 문제/근거, 관련 추적 ID, 작업 범위, 인수·검증 기준을 적은 뒤 착수한다.
-- 하나의 Issue는 응집된 작업 묶음 기준이다. 그 아래 소규모 커밋을 여러 개 만들 수 있으며, 범위가 넓으면 하위 Issue/PR로 분리한다.
-- 브랜치·커밋·PR에 Issue 번호/링크를 연결한다. 전체 인수 기준을 만족하는 마지막 PR만 `Closes #N`; 중간 PR은 `Refs #N`으로 남긴다.
-- GitHub Issue/PR의 실제 상태, commit SHA, 검사 결과만 마일스톤 로그와 세션 인계에 기록한다.
-- 공개 이력 재작성은 기본 금지다. 사용자가 명시 승인한 이력 정정만 별도 Issue/사유/백업 ref를 갖추고 `--force-with-lease`로 실행한다. branch protection은 작업 직후 원복하고 변경 SHA 및 연관 PR을 추적한다.
+## Git 안전
+- 공개 이력 재작성은 기본 금지.
+- 승인된 예외: 별도 Issue, 대상 SHA/영향, backup ref, `--force-with-lease`, branch protection 즉시 복원.
+- `main` direct push, 무승인 force push, 작업 손실 가능성이 있는 reset/clean 금지.
+- Stage 전후 `status`/`diff` 확인. 관련 경로만 stage.
 
-## PR 준비 및 소단위 통합
-- [Pull Request Template](../../.github/PULL_REQUEST_TEMPLATE.md)를 공통 검토 형식으로 사용한다.
-- 문서 전반의 대규모 변경은 하나의 거대한 PR로 올리지 않는다. 먼저 템플릿/추적 규칙을 고정한 뒤, 사용자 검토가 가능한 논리적 묶음을 순차적으로 처리한다.
-- Issue/commit 수에 맞춰 PR을 만들지 않는다. 여러 작고 관련된 커밋과 이슈를 하나의 PR로 묶되, 하나의 일관된 목적/리뷰/수락 경계를 유지한다.
-- 서로 독립되거나 위험/배포/복구 경계가 다른 변경은 분리한다. 변경 파일 수나 커밋 수만으로 PR 분할을 결정하지 않는다.
-- PR template는 본문을 채워줄 뿐 완료를 강제하지 않는다. `PR checklist` required status check와 main branch protection이 모든 체크박스 완료를 병합 조건으로 강제한다.
-
-관련 절차: [CONTRIBUTING](../../CONTRIBUTING.md), [Definition of Done](definition-of-done.md), [Milestone Log](../09-delivery/milestone-log.md).
+## PR 통합
+- [PR Template](../../.github/PULL_REQUEST_TEMPLATE.md) 사용.
+- commit/Issue마다 PR 생성 금지. 관련 변경을 하나의 review/acceptance boundary로 묶음.
+- 독립 목표·위험·release/recovery boundary는 분리.
+- `Markdown lint`와 `PR checklist` 통과 후 병합. 보호 설정은 [CONTRIBUTING](../../CONTRIBUTING.md) 참조.

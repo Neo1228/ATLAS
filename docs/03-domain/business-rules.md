@@ -12,21 +12,20 @@ links:
 # 비즈니스 규칙
 문서 유형: 기준 자료
 
-Gate 1에서 승인된 baseline, 제안된 규칙, 남은 미결 경계를 구분한다. 예시는 가상 시나리오이며 구현/실험 결과가 아니다. queue admission, ticket, idempotency key 같은 용어는 [Glossary](../01-discovery/glossary.md)에 설명했다.
+규칙 상태: `✓ Confirmed baseline`, `△ Proposed`, `? OPEN`. 가상 scenario 기준이며 구현/실험 결과 아님. queue admission, ticket, idempotency key는 [Glossary](../01-discovery/glossary.md) 참조.
 
-| ID | 규칙 | 상태 | 적용 범위 / 미정 경계 |
+| ID | 규칙 | 상태 | 미정 경계 |
 |---|---|---|---|
-| BR-001 | 같은 대기열에서는 서버 순번이 작은 유효 요청에 먼저 기회를 준다. | Confirmed baseline (D-019) | 발급은 자격 확인 뒤 대기열 입장 시, 재시도는 기존 ticket 재사용, 재시작은 발급 순서 보존 (D-020~D-022). 저장·재입장·동순위·bot·판매 유형별 정책은 [Q-003](../00-governance/assumptions-and-open-questions.md)에서 미정; 기준은 완료된 [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)에 기록. |
-| BR-002 | 판매자는 정해진 판매 가능량을 넘겨 확정하지 않기를 원한다. | Proposed (D-017) | 판매 단위, 캠페인/전역 재고, 재입고·조정·취소·반품 방식은 [Q-002](../00-governance/assumptions-and-open-questions.md)에서 미정. |
+| BR-001 | Queue 내 낮은 sequence 우선. Admission 후 발급 (D-020), retry ticket 재사용 (D-021), restart 후 순서 유지 (D-022). | ✓ Baseline (D-019) | Q-003: storage/key/payload/lifecycle/tie/bot/type policy ? OPEN. Issue #24에 기록. |
+| BR-002 | 판매 가능량 초과 확정 금지. | △ Proposed (D-017) | 판매 단위·campaign/global inventory·조정/취소 ? OPEN (Q-002). |
 
-## 기준 타임라인 — 합성 시나리오
-1. 판매자가 제한된 판매 가능량을 가진 캠페인을 연다. 수량/상품 유형과 판매 정책은 아직 정하지 않는다.
-2. 자격 확인을 통과한 요청이 대기열에 입장할 때 서버가 순번을 발급한다. 순번과 대기 상태를 함께 저장하는 방법은 미정이다.
-3. 요청 수가 남은 재고보다 많을 때, 대기 순서와 재고/예약 결과가 모순되지 않는지 검증한다. 예약/확정 처리 절차는 아직 정하지 않았다.
-4. 같은 논리 요청의 재시도는 기존 대기표(ticket)와 순번을 재사용한다. 서비스/작업 처리기(worker) 재시작 뒤 발급된 순서는 유지한다. 저장 키, 요청 내용 변경, 만료·취소·재입장 방식은 미정이다.
+## 기준 흐름 — 합성 scenario
+1. Seller가 제한 재고의 campaign을 연다. 단위/정책은 미정.
+2. 자격 통과 요청을 queue에 admission하고 server sequence 발급. 저장 방식은 미정.
+3. 요청 수가 잔여 재고보다 많을 때 순서·예약 결과의 일관성 확인. 세부 protocol 미정.
+4. 같은 논리 요청의 retry는 ticket/sequence 재사용. service/worker restart 후 발급 순서 유지.
 
-## 대기열 처리 기준 (Queue lifecycle)
-아래 도식은 승인된 D-019~D-022만 나타낸다. 저장 방식, 원자성, 요청 식별 키 범위, 만료/재입장, 동순위, 자동화 봇 방어와 판매 유형별 차이는 아직 정하지 않았으며, 이 도식은 구현 설계가 아니다.
+다음 Mermaid는 D-019~D-022만 표시. 저장/만료/동순위/bot/유형별 정책은 ? OPEN이며 구현 설계 아님.
 
 ```mermaid
 sequenceDiagram
@@ -51,6 +50,4 @@ sequenceDiagram
     Note over Queue: 서비스 재시작 뒤 발급 순서를 보존; 저장·복구 방식은 미정
 ```
 
-이 도식은 대기 순서 기준만 설명한다. 미정인 운영·보안 정책은 [Q-003](../00-governance/assumptions-and-open-questions.md)에 남아 있다.
-
-이 타임라인은 정책 결정이나 성능 결과가 아니다. 관련 불변조건은 [Invariants](invariants.md), 검증 후보는 [Experiment Registry](../08-experiments/experiment-registry.md)를 참조한다.
+도식은 queue ordering baseline만 설명한다. 미정 경계는 [Q-003](../00-governance/assumptions-and-open-questions.md). 이 흐름은 정책·성능 결과가 아니다. [Invariants](invariants.md), [Experiment Registry](../08-experiments/experiment-registry.md) 참조.
