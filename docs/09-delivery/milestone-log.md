@@ -44,8 +44,8 @@ links:
 - [PR #23](https://github.com/Neo1228/ATLAS/pull/23)/[Issue #22](https://github.com/Neo1228/ATLAS/issues/22)은 대기 순서 기준을 기록하고 병합됐다 (`eb95982`); Issue #22 closed.
 - [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)는 순번 발급/재시도/재시작 기준을 기록해 닫혔다. Q-003의 다른 세부사항은 계속 OPEN이다.
 
-## 2026-10-29 — 문서 연결·작성 기준·PR 검사 (PR 검토 중)
-- 범위: 문서 링크와 인덱스, 독자용 용어/상태 설명, 복잡한 변경의 Issue/PR 기록 기준, Mermaid 사용 기준, PR checklist 병합 검사.
-- 추적: [Issue #26](https://github.com/Neo1228/ATLAS/issues/26), [PR #27](https://github.com/Neo1228/ATLAS/pull/27); commits `68febce`, `9da5dd8`. PR은 아직 main에 병합되지 않았다.
-- 로컬 확인: Markdown lint 24개 파일 통과; 23개 Markdown 파일의 210개 상대 링크 resolve; YAML workflow/Issue form 4개 파일 파싱 성공; PR checklist 검사에서 완료·누락·미체크 상황을 확인.
-- GitHub 확인: PR #27의 `Markdown lint`와 `PR checklist` 성공. main branch protection은 두 검사를 required status checks로 설정하며, strict checks/linear history 유지, force push/deletion 차단.
+## 2026-10-29 — 문서 연결·작성 기준·PR 검사
+- 범위: 문서 인덱스/링크, 처음 접하는 독자를 위한 용어·상태 설명, 복잡한 변경의 Issue/PR 작성 원칙, Mermaid 사용 기준, 필수 PR checklist.
+- 추적: [Issue #26](https://github.com/Neo1228/ATLAS/issues/26), [PR #27](https://github.com/Neo1228/ATLAS/pull/27), 병합 commit `a82e022`. Issue #26은 병합 상태를 진행 기록에 동기화할 때까지 열려 있다.
+- 로컬/CI 확인: Markdown lint 24개 파일; 23개 Markdown 파일의 211개 상대 링크 대상 resolve; YAML workflow/Issue form 4개 파싱; checklist 완료/누락/미체크 smoke cases 확인. PR #27에서 `Markdown lint`와 `PR checklist` 통과.
+- main 보호: `Markdown lint`와 `PR checklist` 필수, strict checks/linear history 활성, force push/deletion 차단.
