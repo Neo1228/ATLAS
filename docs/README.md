@@ -10,6 +10,7 @@
 - 요구사항: `02-requirements/requirements-index.md`
 - 도메인 용어: `01-discovery/glossary.md`
 - 페르소나·Jobs-to-be-Done: `01-discovery/personas-and-jobs.md`
+- 도메인 규칙/불변조건: `03-domain/README.md`
 - 아키텍처 결정: `06-decisions/adr/`
 - 실험 계획: `08-experiments/experiment-registry.md`
 - 실제 진행 상태: `09-delivery/roadmap.md`, `milestone-log.md`, `session-handoff.md`

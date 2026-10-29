@@ -40,3 +40,4 @@ links:
 - D-016: 가상 구매자의 우선 목표는 공정한 구매 기회와 정확한 재고/예약 상태 (Issue #19). 실제 시장 요구로 검증된 사실은 아님; 판매자 목표는 OPEN.
 - D-017: 가상 판매자 목표는 초과판매 없이 공정한 한정판매 운영 (Issue #19), 실제 사용자 근거는 아님.
 - D-018 Proposed: Gate2 workload profile → Gate3 capacity model → Gate4 synthetic experiments. Traffic/concurrency/latency/SLO/RTO/RPO numbers remain TBD until agreed/measured (Issue #20/Q-008).
+- D-019: 서버가 부여한 대기열 순번을 가상 fairness baseline으로 선택했다; 발급/입장 규칙 및 type-specific differences는 OPEN (Issue #22/Q-003).

@@ -33,5 +33,6 @@ links:
 | D-016 | Confirmed | 가상 구매자의 우선 목표는 한정 판매에서 공정한 구매 기회를 얻고 재고/예약 상태를 정확히 아는 것으로 둔다. 실제 시장 검증 요구는 아니다. | 사용자 선택; Issue #19, Q-010 |
 | D-017 | Confirmed | 가상 판매자는 여러 유형의 한정 판매를 공정하게 운영하고 초과판매를 막는 것을 우선 목표로 둔다. 실제 판매자 조사 결과가 아니다. | 사용자 선택; Issue #19, Q-010 |
 | D-018 | Proposed | 성능/traffic 가정은 Gate 2에서 workload profile로 정의, Gate 3에서 capacity model로 구조화, Gate 4에서 synthetic experiments로 검증한다. 값은 합의/측정 전 TBD. | 사용자 요청 및 제안; Issue #20, Q-008 |
+| D-019 | Confirmed | 가상 기준 시나리오의 공정성 순서는 서버가 부여한 대기열 번호로 둔다. 번호 발급/대기열 입장 규칙과 유형별 차이는 OPEN; 실제 운영 공정성이 검증된 것은 아니다. | 사용자 선택; Issue #22, Q-003 |
 
 Gate 0 종료 승인은 기록됨 (D-014). Gate 1 discovery가 진행 중이며, Gate 2/3 및 구현 진입 승인은 받지 않았다.
