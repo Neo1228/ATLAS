@@ -25,7 +25,7 @@ ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니�
 ## 커밋 규칙
 - 제목 형식: `<type>(<scope>): <한국어 요약>`; scope가 불필요하면 생략한다.
 - prefix/type/scope는 영문 소문자로, 제목 끝부분 요약은 한국어로 작성한다. 짧은 명령형 문구를 쓰고 마침표는 붙이지 않는다. 예: `docs(git): 브랜치와 PR 규칙 정리`.
-- type은 `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`를 사용한다. 기존 이력은 재작성하지 않는다.
+- type은 `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`를 사용한다. 과거 제목 수정은 일반 작업에서 하지 않고, 명시적 사용자 승인 및 절차가 있는 예외만 허용한다.
 - 커밋 하나에는 하나의 논리적 변경만 둔다. 관련 파일은 같은 변경 목적에 필요한 만큼만 포함하고, 무관한 변경은 별도 커밋/PR로 분리한다.
 - 제목만으로 이유가 불명확하거나 호환성/정책 영향이 있으면 본문에 이유, 제약, 추적 ID(Q/FR/NFR/ADR/EXP)를 기록한다. 변경 이력에 비밀이나 개인정보를 넣지 않는다.
 
@@ -39,7 +39,7 @@ ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니�
 ## 동기화와 안전한 Git 사용
 - 시작 전 `git status --short --branch`; stage 전에 `git diff`; stage 후 `git diff --cached`와 `git status`를 확인한다.
 - 관련 파일 경로만 `git add <path>`로 stage한다. `git add .`/`git add -A`는 보류 중인 다른 작업이 없음을 확인하기 전 사용하지 않는다.
-- 작업 브랜치는 최신 `origin/main`에서 시작한다. 공유/게시된 커밋은 amend/rebase로 재작성하지 않고, 수정은 새 커밋으로 추가한다. `main` 직접 push와 force push는 하지 않는다.
+- 공유 이력은 기본적으로 amend/rebase로 재작성하지 않는다. 사용자가 이력 정정을 명시 승인하면 별도 Issue에 대상 SHA/영향을 기록하고 백업 ref를 만든 뒤 `--force-with-lease`로만 반영한다. branch protection은 최소 시간만 완화하고 즉시 복원하며, 관련 브랜치/PR/SHA를 모두 갱신한다. `main` 직접 push와 무승인 force push는 금지한다.
 - 충돌은 변경 의도를 확인해 해결하고, 해결 후 diff 및 관련 lint/test를 다시 실행한다. 강제 reset/clean 등 미추적 작업을 지울 수 있는 명령은 사용하지 않는다.
 
 ## 작성자 및 민감정보
