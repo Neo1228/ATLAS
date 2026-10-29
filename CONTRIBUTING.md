@@ -19,7 +19,7 @@ ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니�
 
 ## 브랜치 규칙
 - 기본 브랜치는 `main`이며 직접 push하지 않는다. 빈 저장소의 최초 seed만 예외로 둔다.
-- 작업 브랜치는 `<type>/<issue>-<short-topic>` 형식, 이슈가 없으면 `<type>/<short-topic>` 형식으로 만든다. 예: `docs/123-git-conventions`, `fix/checkout-timeout`, `docs/git-conventions`.
+- 작업 브랜치는 `<type>/<primary-issue>-<short-topic>` 형식으로 만든다. PR이 관련 이슈 여러 개를 묶으면 대표 Issue 하나를 브랜치명에 넣고 나머지도 PR에서 연결한다. 예: `docs/123-issues-and-pr-batching`, `fix/42-timeout`.
 - type은 `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `ci`, `build`, `chore`, `revert` 중 목적에 맞게 고르고, topic은 소문자 ASCII kebab-case로 쓴다. 한 브랜치에는 한 목적만 담는다.
 
 ## 커밋 규칙
@@ -30,10 +30,10 @@ ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니�
 - 제목만으로 이유가 불명확하거나 호환성/정책 영향이 있으면 본문에 이유, 제약, 추적 ID(Q/FR/NFR/ADR/EXP)를 기록한다. 변경 이력에 비밀이나 개인정보를 넣지 않는다.
 
 ## PR 규칙
-- PR은 `main`을 대상으로 하며, 단일 목적의 검토 가능한 작업 묶음으로 제한한다. 여러 작은 관련 커밋은 PR 하나로 묶을 수 있다.
+- PR은 `main`을 대상으로 하나의 응집된 검토/수락 경계를 다룬다. 하나의 PR에 작은 관련 커밋 여러 개와 서로 의존/관련된 이슈 여러 개를 함께 묶을 수 있다. 커밋마다 또는 이슈마다 PR 하나씩 만들지 않는다.
+- 서로 무관한 목적, 위험, 수락 기준은 PR을 분리한다. 분리 기준은 commit count가 아니라 독립 리뷰 가능성, 릴리스/복구 경계, 변경 간 의존성이다.
 - PR 제목도 `<type>(<scope>): <한국어 요약>` 형식을 따른다. 설명은 `.github/PULL_REQUEST_TEMPLATE.md`를 작성한다.
-- 관련 Issue가 실제 존재할 때만 `Closes #N`을 쓴다. 없으면 요구사항/질문/ADR ID를 연결하고 Issue를 허위로 만들지 않는다.
-- 미완성 공유/피드백 단계는 Draft PR로 연다. 검토 요청 전 로컬 lint/test, staged diff, CI 상태를 확인한다.
+- 연관된 이슈를 모두 명시하고, 완료된 이슈만 각각 `Closes #N`; 부분 작업/다음 PR이 남으면 `Refs #N`을 쓴다.
 - `main`은 PR 필수, `Markdown lint` 필수, 선형 이력, force push/브랜치 삭제 금지로 보호한다. 1인 프로젝트이므로 승인자 수는 0이다. 병합은 Squash and merge만 허용하며 병합 후 작업 브랜치는 자동 삭제한다.
 
 ## 동기화와 안전한 Git 사용

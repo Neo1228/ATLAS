@@ -39,7 +39,7 @@ Gate 종료/진입에는 사용자 승인이 필요하다. 순서는 조정 가�
 | WP-005 | 로드맵 및 인계 이력 | `docs/09-delivery/*` | Gate 0 미승인 상태, 다음 작업, 실제 수행한 검증/커밋/PR만 기록 |
 
 하나의 후보 묶음 내부라도 독립 리뷰 가능한 목적이 둘이면 더 나눈다. 묶음 간 참조에 필요한 파일만 최소한으로 함께 변경한다.
-Git 작업 묶음은 코드/문서/설정 변경 전에 GitHub Issue를 먼저 만든다. 한 Issue당 한 응집된 작업 단위이며, 여러 커밋을 연결하고 필요 시 여러 PR로 나눈다. 마지막 완료 PR만 Issue를 닫는다.
+PR은 커밋 수나 이슈 수마다 만들지 않는다. 같은 목적/수락 경계를 공유하는 관련 WP·Issue와 커밋은 하나의 PR로 묶을 수 있다. 독립된 위험/목적/릴리스 경계는 분리한다.
 
 WP-001~WP-005 are merged to main (WP-001 bootstrap, WP-002 PR #9, WP-003 PR #10, WP-004 PR #11, WP-005 PR #12). All five Issues are closed. Issue #13 tracks the final handoff status update. Gate 0 remains unapproved.
 
