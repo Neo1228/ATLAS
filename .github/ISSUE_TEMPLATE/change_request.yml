@@ -1,0 +1,39 @@
+name: 설계/요구사항 제안
+description: 미결정 사항 또는 범위 내 개선을 추적합니다.
+title: "[Proposal]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 해결할 문제 또는 미결정 질문
+      description: 현재 사실, 가정, 미결정을 구분해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안과 대안
+      description: 선택지와 트레이드오프를 적어주세요. 사용자 승인 전 정책은 Proposed 상태입니다.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 성공/검증 기준
+      description: 관찰 가능한 기대 결과, 실패/경계 시나리오를 적어주세요.
+    validations:
+      required: true
+  - type: input
+    id: trace
+    attributes:
+      label: 관련 추적 ID
+      description: Q/FR/NFR/BR/INV/ADR/EXP/TEST 또는 milestone ID
+    validations:
+      required: false
+  - type: textarea
+    id: scope
+    attributes:
+      label: 작업 단위 제안
+      description: 독립 리뷰 가능한 소단위로 분리 가능한 범위를 적어주세요.
+    validations:
+      required: false

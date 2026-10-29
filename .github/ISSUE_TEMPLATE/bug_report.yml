@@ -1,0 +1,35 @@
+name: 버그/불일치 보고
+description: 재현 가능한 구현 또는 문서 불일치를 기록합니다.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "민감 정보, 실제 결제 정보, 토큰, 개인정보를 입력하지 마세요."
+  - type: textarea
+    id: summary
+    attributes:
+      label: 관찰한 문제
+      description: 기대한 동작과 실제 관찰을 분리해 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 재현 조건
+      description: 단계, 입력(합성 데이터만), 환경/버전을 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 로그 또는 근거
+      description: 비밀/개인정보를 제거한 최소 근거만 붙여주세요.
+    validations:
+      required: false
+  - type: input
+    id: trace
+    attributes:
+      label: 관련 ID
+      description: 요구사항, 규칙, 불변조건, ADR, 실험 또는 PR ID
+    validations:
+      required: false

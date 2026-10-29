@@ -1,0 +1,9 @@
+frontMatter: '(^---\s*$[\s\S]*?^---\s*$)(\r\n|\r|\n|$)'
+config:
+  MD003: false # Keep ATX heading style throughout the docs
+  MD013: false # Korean prose and tables are not wrapped mechanically
+  MD022: false # Existing compact templates; spacing is introduced incrementally
+  MD032: false # Existing compact templates; spacing is introduced incrementally
+  MD034: false # URLs may appear in reference tables
+  MD041: false # Governance docs begin with YAML metadata
+  MD060: false # Keep readable Markdown table spacing consistent with current docs
