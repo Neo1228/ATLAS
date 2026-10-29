@@ -22,3 +22,7 @@ links:
 | Reconciliation (대사) | ATLAS 내부 기록과 외부 PSP 기록을 비교해 차이를 찾고 해결 상태를 추적하는 과정. | 초안 |
 | Settlement Ledger (정산 원장) | 내부 정산 계산·정정·감사 기록. PSP 실제 자금 이동이나 판매사 지급과 동일하지 않다. | 초안 |
 | Idempotency (멱등성) | 같은 논리적 요청 재수행이 중복 효과를 만들지 않도록 하는 성질. 키 범위/보존기간 미결정. | 초안 |
+
+## 관련 문서
+- 목표/역할: [Personas & Jobs](personas-and-jobs.md)
+- 요구사항과 정책 근거: [Requirements Index](../02-requirements/requirements-index.md), [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md)

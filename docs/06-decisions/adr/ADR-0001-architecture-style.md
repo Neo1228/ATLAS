@@ -40,4 +40,4 @@ Gate 3에서 모듈별 데이터 소유권·호출 규칙·주요 트랜잭션 �
 팀/배포 독립성 요구, 모듈 간 변경·장애 결합 관측, 단일 배포/저장소의 입증된 병목, 데이터 소유권 변경 또는 요구량 실측 결과가 현재 가설을 반증할 때.
 
 ## References
-- `docs/00-governance/reference-register.md`의 REF-001~003은 참고 후보이며 미검증.
+- [Reference Register](../../00-governance/reference-register.md)의 REF-001~003은 참고 후보이며 미검증.

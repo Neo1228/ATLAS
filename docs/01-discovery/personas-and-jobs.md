@@ -12,7 +12,7 @@ links:
 # 페르소나와 Jobs-to-be-Done
 
 ## 범위와 근거 상태
-이 문서는 Gate 1의 **가상 학습 시나리오**다. 실사용자, 인터뷰, 거래, 시장 검증에서 도출한 페르소나가 아니다. 사용자가 승인한 공통 구매자/판매자 틀과 목표만 반영하며, 세부 행동·유형별 차이는 `OPEN`으로 둔다 (D-005, D-007, D-015~D-017; Q-001, Q-010).
+이 문서는 Gate 1의 **가상 학습 시나리오**다. 실사용자, 인터뷰, 거래, 시장 검증에서 도출한 페르소나가 아니다. 사용자가 승인한 공통 구매자/판매자 틀과 목표만 반영하며, 세부 행동·유형별 차이는 `OPEN`으로 둔다 ([D-005/D-007/D-015~D-017](../00-governance/decision-log.md); [Q-001/Q-010](../00-governance/assumptions-and-open-questions.md)).
 
 ## 공통 핵심 페르소나
 
@@ -37,5 +37,10 @@ links:
 
 ## 검증 및 추적
 - 실제 사용자·판매자 조사나 시장 수요가 검증됐다고 표현하지 않는다.
-`Q-003` baseline은 eligibility 확인 후 queue admission에서 순번을 발급하고, same logical request retry와 restart에서 ticket/순번을 보존한다 (D-019~D-022). Atomic persistence/key/expiry/tie/bot/type variation은 Issue #24에서 OPEN.
-- 연계 후보: FR-001, NFR-002, EXP-001, EXP-003. 우선순위/인수 기준은 승인 전 Proposed로 유지한다.
+`Q-003` baseline: eligibility 확인 후 queue admission에서 순번을 발급하고, 같은 logical request retry와 restart에서 ticket/순번을 보존한다 ([D-019~D-022](../00-governance/decision-log.md)). Atomic persistence/key/expiry/tie/bot/type variation remain OPEN in Q-003; baseline decision is in closed [Issue #24](https://github.com/Neo1228/ATLAS/issues/24).
+
+## 관련 문서
+- [Glossary](glossary.md), [Requirements Index](../02-requirements/requirements-index.md)
+- [Business Rules](../03-domain/business-rules.md), [Invariants](../03-domain/invariants.md)
+- [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md)
+- 연계 ID: [FR-001/NFR-002](../02-requirements/requirements-index.md), [EXP-001/003](../08-experiments/experiment-registry.md).

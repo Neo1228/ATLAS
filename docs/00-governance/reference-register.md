@@ -25,3 +25,7 @@ links:
 | REF-008 | OpenAPI Specification / 표준 | https://spec.openapis.org/oas/latest.html | TBD | API 계약 | 구현 단계에서 버전 확인 |
 
 PayPal API/지역/계정/자금흐름 관련 사실은 구현 시점 공식 문서로 별도 확인한다. 이 목록만으로 PayPal 기능이나 법률 사항이 검증된 것은 아니다.
+
+## 관련 문서
+- [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)는 REF-001~003을 후보 근거로 참조한다.
+- [Project Charter](project-charter.md)에서 확인되지 않은 정책/성능 주장을 제한한다.

@@ -25,3 +25,8 @@ links:
 - 포트폴리오 주장은 측정/코드/문서 근거와 연결되고 합성 결과는 명확히 표시됨.
 
 이 체크리스트는 제안 초안이며 프로젝트 전반의 절차/품질 정책은 Gate 0/2에서 검토한다.
+
+## 관련 문서
+- [Requirements Index](../02-requirements/requirements-index.md): 범위와 검증 가능한 조건.
+- [Experiment Registry](../08-experiments/experiment-registry.md): 성능/복구 주장의 실험 근거.
+- [Change Control](change-control.md) 및 [Roadmap](../09-delivery/roadmap.md): 승인·추적 단계.

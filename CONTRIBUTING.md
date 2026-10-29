@@ -1,15 +1,15 @@
 # 기여 및 작업 절차
 
-ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니다. 현재 Gate 0 단계에서는 요구사항·결정·문서 규칙을 먼저 다루며, Gate 0 승인 전 코드·의존성·배포 작업은 하지 않습니다.
+ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니다. Gate 0은 승인됐고 현재 Gate 1 discovery를 진행 중입니다. Gate 2·아키텍처/구현·의존성·배포 작업은 해당 단계의 별도 승인 전 시작하지 않습니다.
 
 ## 작업 단위와 Issue 선행
-1. 계획된 코드·문서·설정 변경은 시작 전에 GitHub 이슈 하나를 만든다. 버그는 버그 이슈 양식, 기능/정책/문서 제안은 변경 제안 이슈 양식을 사용한다.
+1. 계획된 코드·문서·설정 변경은 시작 전에 GitHub 이슈 하나를 만든다. 버그는 [bug report form](.github/ISSUE_TEMPLATE/bug_report.yml), 기능/정책/문서 제안은 [change request form](.github/ISSUE_TEMPLATE/change_request.yml)을 사용한다.
 2. 이슈에는 문제/근거, 제안 또는 재현 조건, 인수·검증 기준, 관련 Q/FR/NFR/BR/INV/ADR/EXP ID, 독립된 작업 범위를 기록한다. 범위가 크면 하위 이슈로 나눈다.
 3. 한 이슈는 하나의 응집된 작업 묶음을 추적한다. 여러 작은 커밋은 같은 이슈 아래 둘 수 있으므로 커밋마다 이슈를 만들지 않는다.
 4. 이슈 번호를 브랜치명에 넣고, 모든 관련 PR/커밋을 이슈에 연결한다. 단일 PR이 수락 기준을 끝내면 `Closes #N`; 일부만 처리하면 `Refs #N`을 쓴다. 여러 PR에 걸친 경우 마지막 완료 PR만 이슈를 닫는다.
 5. 이슈가 생성되고 범위/검증 기준이 분명해진 뒤에만 파일 변경을 시작한다. 긴급 복구도 가능한 즉시 이슈를 만들고 기록한다. 사소한 변경은 기존 관련 이슈에 묶는다.
-6. 독립 검토가 가능한 소단위 PR은 `.github/PULL_REQUEST_TEMPLATE.md`를 따르고, 최초 문서 전체를 한꺼번에 업로드하지 않는다.
-7. 완료 후 실제 이슈/커밋/PR 식별자, 변경 범위, 실행한 검증과 결과를 `docs/09-delivery/milestone-log.md` 및 `session-handoff.md`에 기록한다.
+6. 독립 검토가 가능한 소단위 PR은 [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)을 따르고, 최초 문서 전체를 한꺼번에 업로드하지 않는다.
+7. 완료 후 실제 이슈/커밋/PR 식별자, 변경 범위, 실행한 검증과 결과를 [Milestone Log](docs/09-delivery/milestone-log.md) 및 [Session Handoff](docs/09-delivery/session-handoff.md)에 기록한다.
 이슈 제목은 한국어로 작성하고, 양식에서 붙이는 `[버그]:`/`[제안]:` 접두사를 유지한다. PR/커밋 제목은 `<type>(<scope>): <한국어 요약>` 형식을 따른다.
 
 ## 검증
@@ -32,7 +32,7 @@ ATLAS는 문서와 코드의 변경 이력을 추적 가능하게 유지합니�
 ## PR 규칙
 - PR은 `main`을 대상으로 하나의 응집된 검토/수락 경계를 다룬다. 하나의 PR에 작은 관련 커밋 여러 개와 서로 의존/관련된 이슈 여러 개를 함께 묶을 수 있다. 커밋마다 또는 이슈마다 PR 하나씩 만들지 않는다.
 - 서로 무관한 목적, 위험, 수락 기준은 PR을 분리한다. 분리 기준은 commit count가 아니라 독립 리뷰 가능성, 릴리스/복구 경계, 변경 간 의존성이다.
-- PR 제목도 `<type>(<scope>): <한국어 요약>` 형식을 따른다. 설명은 `.github/PULL_REQUEST_TEMPLATE.md`를 작성한다.
+- PR 제목도 `<type>(<scope>): <한국어 요약>` 형식을 따른다. 설명은 [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)을 작성한다.
 - 연관된 이슈를 모두 명시하고, 완료된 이슈만 각각 `Closes #N`; 부분 작업/다음 PR이 남으면 `Refs #N`을 쓴다.
 - `main`은 PR 필수, `Markdown lint` 필수, 선형 이력, force push/브랜치 삭제 금지로 보호한다. 1인 프로젝트이므로 승인자 수는 0이다. 병합은 Squash and merge만 허용하며 병합 후 작업 브랜치는 자동 삭제한다.
 

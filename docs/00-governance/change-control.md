@@ -35,7 +35,9 @@ links:
 - 공개 이력 재작성은 기본 금지다. 사용자가 명시 승인한 이력 정정만 별도 Issue/사유/백업 ref를 갖추고 `--force-with-lease`로 실행한다. branch protection은 작업 직후 원복하고 변경 SHA 및 연관 PR을 추적한다.
 
 ## PR 준비 및 소단위 통합
-- `.github/PULL_REQUEST_TEMPLATE.md`를 공통 검토 형식으로 사용한다.
-- 현재 Gate 0 문서 전체를 한 번에 원격에 올리거나 하나의 대형 PR로 만들지 않는다. 먼저 템플릿과 추적 규칙을 고정하고, 사용자 검토 후 준비된 논리적 묶음만 순차적으로 커밋/PR 처리한다.
+- [Pull Request Template](../../.github/PULL_REQUEST_TEMPLATE.md)를 공통 검토 형식으로 사용한다.
+- 문서 전반의 대규모 변경은 하나의 거대한 PR로 올리지 않는다. 먼저 템플릿/추적 규칙을 고정한 뒤, 사용자 검토가 가능한 논리적 묶음을 순차적으로 처리한다.
 - Issue/commit 수에 맞춰 PR을 만들지 않는다. 여러 작고 관련된 커밋과 이슈를 하나의 PR로 묶되, 하나의 일관된 목적/리뷰/수락 경계를 유지한다.
 - 서로 독립되거나 위험/배포/복구 경계가 다른 변경은 분리한다. 변경 파일 수나 커밋 수만으로 PR 분할을 결정하지 않는다.
+
+관련 절차: [CONTRIBUTING](../../CONTRIBUTING.md), [Definition of Done](definition-of-done.md), [Milestone Log](../09-delivery/milestone-log.md).

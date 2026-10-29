@@ -8,4 +8,6 @@
 - 비즈니스 규칙: [`business-rules.md`](business-rules.md)
 - 불변조건: [`invariants.md`](invariants.md)
 
+- 요구사항·용어·미결정 근거: [Requirements Index](../02-requirements/requirements-index.md), [Glossary](../01-discovery/glossary.md), [Assumptions & Open Questions](../00-governance/assumptions-and-open-questions.md)
+
 규칙/불변조건은 Proposed와 Confirmed baseline을 구분한다. Q-002/Q-003 등 OPEN 항목은 사용자 결정 전까지 확정하지 않는다. 구현 계약/측정 기준은 Gate 2 이후에 정한다.

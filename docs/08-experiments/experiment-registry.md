@@ -11,7 +11,7 @@ links:
 # 실험 레지스트리
 
 모두 `Planned` 후보이며 수행 결과가 없다. 합성 데이터/부하는 운영 실적이 아니다. 전제, 환경, 명령, 반복, 지표 및 한계를 결과 보고에 기록한다.
-Traffic/capacity assumptions are not set. Define workload profiles in Gate 2, model constraints in Gate 3, and validate with synthetic experiments in Gate 4 per Issue #20 and `docs/09-delivery/roadmap.md`. All results remain Planned until measured.
+Traffic/capacity assumptions are not set. Define workload profiles in Gate 2, model constraints in Gate 3, and validate with synthetic experiments in Gate 4 per [Issue #20](https://github.com/Neo1228/ATLAS/issues/20) and [Roadmap](../09-delivery/roadmap.md). All results remain Planned until measured.
 
 | ID | 상태 | 가설/검증 내용 | 주요 위험 |
 |---|---|---|---|
@@ -25,4 +25,4 @@ Traffic/capacity assumptions are not set. Define workload profiles in Gate 2, mo
 | EXP-008 | Planned | 캐시 갱신 역전, 이벤트 중복/역순, 소비자 재시작 영향 검증. | 캐시/메시징 기술 선택 미정 |
 | EXP-009 | Planned | 장애 주입으로 복구 시간/데이터 손실 가설을 측정. | RTO/RPO/SLO 및 환경 TBD |
 
-세부 실험은 `TEMPLATE.md` 형식을 사용한다. 실험 전 연결된 요구사항·불변조건과 명시적 합격 기준을 정의한다.
+세부 실험은 [Experiment Template](TEMPLATE.md) 형식을 사용한다. 실험 전 연결된 요구사항·불변조건과 명시적 합격 기준을 정의한다.

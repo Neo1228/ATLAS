@@ -17,6 +17,6 @@ Document type: Reference
 | ID | 조건 | 상태 | 전제 / OPEN 경계 | 연결 |
 |---|---|---|---|---|
 | INV-001 | 한 판매 단위의 확정된 예약/판매 수량은 그 단위의 판매 가능 capacity를 넘지 않는다. | Proposed; seller objective에서 도출 | 판매 단위, 재입고·조정·취소·반품 semantics, 여러 캠페인 간 capacity 공유는 Q-002 OPEN. Capacity를 count하는 정본 저장소/원자성은 Gate 3 설계 대상. | BR-002, FR-001, EXP-001, EXP-005 |
-| INV-002 | 동일 대기열의 자원 경합에서 서버 순번이 낮은 유효 요청이 먼저 기회를 받는다. Admission은 자격 확인 후 순번을 발급하며, 같은 논리 retry는 ticket을 재사용하고 worker/service restart 후 순번을 보존한다. | Confirmed baseline (D-019~D-022); formal acceptance Proposed | Atomic/durable issuance, idempotency key scope/retention, changed payload, cancel/expiry/re-entry, tie, bot fairness and cross-type queue semantics remain Q-003 / Issue #24 OPEN. | BR-001, Q-003, D-019~D-022 |
+| INV-002 | 동일 대기열의 자원 경합에서 서버 순번이 낮은 유효 요청이 먼저 기회를 받는다. Admission은 자격 확인 후 순번을 발급하며, 같은 논리 retry는 ticket을 재사용하고 worker/service restart 후 순번을 보존한다. | Confirmed baseline (D-019~D-022); formal acceptance Proposed | Atomic/durable issuance, idempotency key scope/retention, changed payload, cancel/expiry/re-entry, tie, bot fairness and cross-type queue semantics remain OPEN in [Q-003](../00-governance/assumptions-and-open-questions.md); baseline is recorded in closed [Issue #24](https://github.com/Neo1228/ATLAS/issues/24). | [BR-001](business-rules.md), [Q-003](../00-governance/assumptions-and-open-questions.md), [D-019~D-022](../00-governance/decision-log.md) |
 
-현재까지 불변조건 위반이 측정/실험된 것은 없다. 합성 실험의 예정 기준은 `docs/08-experiments/experiment-registry.md`의 EXP 항목을 따른다.
+현재까지 불변조건 위반이 측정/실험된 것은 없다. 합성 실험의 예정 기준은 [Experiment Registry](../08-experiments/experiment-registry.md)의 EXP 항목을 따른다.
