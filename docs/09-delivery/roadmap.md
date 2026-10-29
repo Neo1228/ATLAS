@@ -15,7 +15,7 @@ Gate 종료/진입에는 사용자 승인이 필요하다. 순서는 조정 가�
 
 | Gate / Milestone | 목적 | 상태 |
 |---|---|---|
-| Gate 0 | 헌장·문서 거버넌스 초안 및 미결정 목록 | 진행 중; 사용자가 추가 보완을 요청함, 미승인 |
+| Gate 0 | 헌장·문서 거버넌스 초안 및 미결정 목록 | 모든 문서 패킷 게시됨; Draft 상태, 사용자 승인 대기 |
 | Gate 1 | 문제/이해관계자/용어/핵심 도메인 충돌 발견 | 보류; Gate 0 승인 전 |
 | Gate 2 | FR/NFR·우선순위·예외·인수 조건·불변조건 정의 | 보류 |
 | Gate 3 | 모듈/상태/데이터 경계·계약·ADR·위험 모델 | 보류 |
@@ -41,7 +41,7 @@ Gate 종료/진입에는 사용자 승인이 필요하다. 순서는 조정 가�
 하나의 후보 묶음 내부라도 독립 리뷰 가능한 목적이 둘이면 더 나눈다. 묶음 간 참조에 필요한 파일만 최소한으로 함께 변경한다.
 PR은 커밋 수나 이슈 수마다 만들지 않는다. 같은 목적/수락 경계를 공유하는 관련 WP·Issue와 커밋은 하나의 PR로 묶을 수 있다. 독립된 위험/목적/릴리스 경계는 분리한다.
 
-WP-001~WP-005 are merged to main (WP-001 bootstrap, WP-002 PR #9, WP-003 PR #10, WP-004 PR #11, WP-005 PR #12). All five Issues are closed. Issue #13 tracks the final handoff status update. Gate 0 remains unapproved.
+WP-001~WP-005 are published on main. WP-001 bootstrap; WP-002 PR #9; WP-003 PR #10; WP-004 PR #11; WP-005 PR #12. Git conventions PR #4 and batching policy PR #16 are merged. Issue #17/PR #17 tracks this final handoff consistency update. Gate 0 remains unapproved.
 
 ## 진행 원칙
 각 마일스톤 전 요구사항·정책·검증 계약을 정의한다. 예상 수치를 실측처럼 쓰지 않으며 성능/복구 주장은 재현 가능한 실험 결과와 연결한다.
