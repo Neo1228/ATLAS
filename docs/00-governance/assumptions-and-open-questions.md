@@ -18,7 +18,7 @@ links:
 | Q-001 | Resolved | 실제 사용자 문제를 검증된 것으로 주장하지 않고, 가상 학습 시나리오를 출발점으로 삼는다. 구체 페르소나/Jobs-to-be-Done은 Q-010에서 미정. | 결정됨; 상세 페르소나 논의 별도 | D-005 |
 | Q-010 | OPEN | 구매자·판매자의 공통 목표/문제와 판매 유형별 차이는 무엇인가? 공통 핵심 페르소나+유형별 차이를 사용(D-015); 구매자 목표는 공정한 기회와 정확한 재고/예약 상태(D-016), 판매자는 초과판매 없이 공정한 한정판매 운영(D-017). 유형별 행동은 미정. | Gate 1 discovery; Issue #19 | `01-discovery/personas-and-jobs.md` |
 | Q-002 | OPEN | 판매 단위가 SKU/수량인지 좌석·예약권 등인지, 캠페인 재고와 전역 재고는 어떤 관계인가? | Q-010 논의 뒤 | domain / inventory |
-| Q-003 | OPEN | 공정성 baseline은 서버가 부여한 대기열 순번(D-019). 발급/대기열 입장 시점, 재시도·중복·재시작, 유형별 매핑과 봇 방어는 어떻게 정의할까? | Issue #22; Q-002 유형 논의와 함께 | `03-domain/business-rules.md`, `invariants.md` |
+| Q-003 | OPEN | Fairness baseline: 서버가 자격 확인 후 대기열 입장 시 순번을 발급한다(D-020). 동일 논리 요청 retry는 기존 ticket/순번을 재사용(D-021), worker 재시작 뒤 순번을 보존(D-022). 영속화 원자성/idempotency-key 범위, 변경 payload, tie, 만료/재입장, 유형별 매핑과 bot 방어는 어떻게 정의할까? | Issue #24; Q-002 유형 논의와 함께 | `docs/03-domain/business-rules.md`, `invariants.md` |
 | Q-004 | OPEN | 예약 TTL 만료와 결제 진행/성공이 경합하면 주문·재고·결제는 어떻게 수렴해야 할까? | Q-002 뒤 | payment / inventory |
 | Q-005 | OPEN | Authorization/Capture 시점, 재시도, 결제 UNKNOWN 처리와 환불 정책은 무엇인가? | Q-010 논의 뒤 | payment |
 | Q-006 | OPEN | 내부 정산 원장과 PSP 실제 지급의 경계, 수수료·주기·보류·사후 정정은 무엇인가? | PSP 제품/지역 조사 필요 | settlement |

@@ -41,3 +41,6 @@ links:
 - D-017: 가상 판매자 목표는 초과판매 없이 공정한 한정판매 운영 (Issue #19), 실제 사용자 근거는 아님.
 - D-018 Proposed: Gate2 workload profile → Gate3 capacity model → Gate4 synthetic experiments. Traffic/concurrency/latency/SLO/RTO/RPO numbers remain TBD until agreed/measured (Issue #20/Q-008).
 - D-019: 서버가 부여한 대기열 순번을 가상 fairness baseline으로 선택했다; 발급/입장 규칙 및 type-specific differences는 OPEN (Issue #22/Q-003).
+- D-020~D-022 (Issue #24): queue sequence assigned after eligibility/admission; retries of same logical request reuse its ticket; restart preserves issued order. Persistence details, ties, expiry, bot and type-specific rules remain OPEN.
+- PR #23 / Issue #22 merged queue fairness baseline and domain rules as `eb95982`; Issue #22 closed.
+- Issue #24 is active for admission timing, idempotent retries and restart sequence preservation; remaining tie/expiry/durability/type-specific rules stay OPEN.
