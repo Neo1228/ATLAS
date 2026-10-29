@@ -41,7 +41,7 @@ Gate 종료/진입에는 사용자 승인이 필요하다. 순서는 조정 가�
 하나의 후보 묶음 내부라도 독립 리뷰 가능한 목적이 둘이면 더 나눈다. 묶음 간 참조에 필요한 파일만 최소한으로 함께 변경한다.
 Git 작업 묶음은 코드/문서/설정 변경 전에 GitHub Issue를 먼저 만든다. 한 Issue당 한 응집된 작업 단위이며, 여러 커밋을 연결하고 필요 시 여러 PR로 나눈다. 마지막 완료 PR만 Issue를 닫는다.
 
-WP-001 through WP-004 are merged to main. Latest: WP-004 Issue #8 / PR #11 (`6b2b379`). WP-005 Issue #7 is the final local documentation packet; publish it as a separate Issue-linked PR.
+WP-001~WP-005 are merged to main (WP-001 bootstrap, WP-002 PR #9, WP-003 PR #10, WP-004 PR #11, WP-005 PR #12). All five Issues are closed. Issue #13 tracks the final handoff status update. Gate 0 remains unapproved.
 
 ## 진행 원칙
 각 마일스톤 전 요구사항·정책·검증 계약을 정의한다. 예상 수치를 실측처럼 쓰지 않으며 성능/복구 주장은 재현 가능한 실험 결과와 연결한다.

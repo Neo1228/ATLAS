@@ -28,14 +28,15 @@ ATLAS의 private GitHub 저장소 `Neo1228/ATLAS`를 만들었다. Gate 0은 사
 작은 작업 단위와 커밋으로 기록하고, 관련 작업은 PR 단위로 묶는다. 각 PR/커밋의 범위·연결 결정/요구사항·검증 결과를 마일스톤 로그와 인계 문서에 남긴다. 실제 생성된 기록만 보고한다.
 
 ## PR 진행 방식
-`.github/PULL_REQUEST_TEMPLATE.md`와 Issue Forms가 private 저장소 main에 배포됐다. Gate 0 문서 전체를 한꺼번에 올리지 않고 WP 단위로 분리한다.
-`WP-001` GitHub 기초 설정은 main에 게시됐고, Git conventions는 PR #4에서 merge됐다. Issue #2는 closed.
-`WP-002` 거버넌스 문서는 Issue #5 / PR #9로 merge됐으며 commit `6049755`가 main에 있다. `docs/README.md`와 `docs/00-governance/`가 main에 게시됐다.
-이전 PR #1은 base history rewrite로, PR #3는 branch rename으로 자동 종료됐고 둘 다 병합되지 않았다. 두 PR의 변경은 최종 PR #4에서 merge됐다.
-`WP-003` 발견/요구사항은 Issue #6 / PR #10으로 main에 merge됐으며 commit `f73a7e9`가 main에 있다. `docs/01-discovery/`와 `docs/02-requirements/`가 게시됐다.
-`WP-004` 아키텍처/실험은 Issue #8 / PR #11로 main에 merge됐으며 commit `6b2b379`가 main에 있다. ADR-0001은 Proposed, 실험들은 Planned로 유지된다.
-`WP-005` Issue #7(delivery 기록)만 로컬 미추적 상태다. 이슈 범위 내 `roadmap.md`, `milestone-log.md`, `session-handoff.md`를 갱신해 별도 PR로 게시한다.
-PR #11의 Markdown lint CI가 통과했다. `main` 보호는 PR/Markdown lint 필수, linear history, force push/삭제 금지, squash-only로 유지된다.
+## PR / publication status
+GitHub Issue/PR templates, Issue-first conventions, Markdown lint and branch protection are active in private `Neo1228/ATLAS`.
+WP-001 foundation is on main (seed `7ed5fac`, CI corrections `eb371ca`, `5151a15`); Git convention PR #4 merged as `a76016e`, closing Issue #2.
+WP-002 governance PR #9 merged as `6049755`, closing Issue #5.
+WP-003 discovery/requirements PR #10 merged as `f73a7e9`, closing Issue #6.
+WP-004 ADR/experiments PR #11 merged as `6b2b379`, closing Issue #8. ADR-0001 remains Proposed; EXP-001~009 remain Planned.
+WP-005 delivery records PR #12 merged as `8c71869`, closing Issue #7. All planned doc packets WP-001~WP-005 are on main.
+PR #1 and #3 were closed unmerged during the authorized history/branch corrections; their changes were carried into merged PR #4.
 
-## 다음 작업
-Issue #7에 최신 병합 PR/commit/CI와 미완료 상태를 반영하고 WP-005를 게시한다. Gate 0은 미승인 유지, Gate 1/코드는 보류.
+## Verification and next step
+Post-merge CI run `40827886802` and local Markdown lint passed. `docs/` has no remaining unpublished packet.
+Gate 0 is still Draft/unapproved; do not enter Gate 1 or start code until the user reviews and approves Gate 0. Issue #13 records this final handoff-status refresh.
