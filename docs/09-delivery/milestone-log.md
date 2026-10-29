@@ -26,11 +26,11 @@ links:
 - PR 준비: `.github/PULL_REQUEST_TEMPLATE.md` 생성. 초기 문서 전체를 한 번에 올리지 않고 작은 논리 묶음을 순차 처리하기로 합의 (D-009).
 - 후보 묶음: 거버넌스/진입점 → 발견·요구사항·용어 → ADR·실험 → 로드맵·인계. PR은 각 묶음 검토 후 다음 단계 진행.
 - Private GitHub 저장소 `Neo1228/ATLAS`: `https://github.com/Neo1228/ATLAS`, Issues 활성화.
-- WP-001 seed + Git conventions are merged to main. Bootstrap subjects were corrected per user approval.
-- WP-002 governance packet: Issue #5 / PR #9 merged to main as commit `6049755`; `docs/README.md` and `docs/00-governance/` are now published.
-- CI for PR #9 passed; local Markdown lint passed.
-- PR #1 (base rewrite) and PR #3 (branch rename) were closed unmerged by GitHub; their changes are included in replacement PR #4, which was merged.
-- PR #4 merged commit subject: `docs(issue): 이슈 선행 규칙과 기록 컨벤션 정리 (#4)`. It closes Issue #2.
-- WP-003 discovery/requirements: Issue #6 / PR #10 merged to main as `f73a7e9`.
-- WP-004 ADR/experiments: Issue #8 / PR #11 merged to main as `6b2b379`; ADR Proposed and experiments Planned. Required CI passed.
-- WP-005 Issue #7 delivery records remains the only local untracked documentation packet.
+- WP-001 foundation is on main: seed `7ed5fac`, CI fixes `eb371ca` and `5151a15`; all subjects follow the Korean-suffix convention.
+- WP-002 governance: PR #9 merged as `6049755`, Issue #5 closed.
+- WP-003 discovery/requirements: PR #10 merged as `f73a7e9`, Issue #6 closed.
+- WP-004 ADR/experiments: PR #11 merged as `6b2b379`, Issue #8 closed. ADR-0001 stays Proposed; all experiments stay Planned.
+- WP-005 delivery records: PR #12 merged as `8c71869`, Issue #7 closed. All WP-001~WP-005 documents are on main.
+- PR #1 and #3 closed unmerged by GitHub after explicit history/branch corrections; their work was carried into merged PR #4 (`a76016e`), which closed Issue #2.
+- Post-merge CI run `40827886802` and local Markdown lint passed. Issue #13 tracks this final status refresh.
+- Gate 0 remains Draft and unapproved; no Gate 1/code work is authorized. Main protection remains enabled and force-push disabled.
