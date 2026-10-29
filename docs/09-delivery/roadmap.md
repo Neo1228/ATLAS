@@ -39,7 +39,10 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 | WP-005 | roadmap·delivery records | [PR #12](https://github.com/Neo1228/ATLAS/pull/12), [#18](https://github.com/Neo1228/ATLAS/pull/18) 병합 |
 
 ## Capacity/performance 순서 (D-018, △ Proposed)
-- **Gate 2:** request mix, RPS, concurrency, burst, p95/p99, budget 합의. 사전 목표값 TBD.
+- **Gate 2 — load:** request/transaction mix; offered/achieved RPS; TPS with explicit business/DB transaction scope; QPS only if DB scope applies.
+- **Gate 2 — model:** concurrency; open/closed model; payload; burst/ramp; test duration.
+- **Gate 2 — targets:** p95/p99 latency; error rate; budget; SLO/RTO/RPO.
+- 목표 수치와 profile 값은 합의 전 TBD.
 - **Gate 3:** `docs/05-architecture/capacity-model.md` 작성 예정; 현재 파일 없음. 합의된 profile과 DB/infra 조건으로 용량 추정. 추정은 측정값 아님.
 - **Gate 4:** 구현 승인 뒤 synthetic load/failure로 추정 검증. EXP-001/002/009는 ○ Planned.
 - 추적: [Q-008/NFR-002](../00-governance/assumptions-and-open-questions.md), [Issue #20](https://github.com/Neo1228/ATLAS/issues/20).

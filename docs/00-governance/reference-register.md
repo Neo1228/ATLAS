@@ -11,7 +11,7 @@ links:
 ---
 # 외부 참고자료 레지스트리
 
-REF-001~008: 미확인 후보. 설계 근거로 사용 전 확인 필요. REF-009~013: 2026-10-29 확인한 GitHub 제품 문서. REF-014~017: 같은 날 확인한 공개 엔지니어링 자료. 각 행에 적용 범위와 한계 기록. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
+REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. 적용 범위와 한계는 각 행 참조. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
 |---|---|---|---|---|---|
@@ -32,6 +32,11 @@ REF-001~008: 미확인 후보. 설계 근거로 사용 전 확인 필요. REF-00
 | REF-015 | Google Engineering Practices, 작은 변경 / 실무 자료 | https://google.github.io/eng-practices/review/developer/small-cls.html | 2026-10-29 | commit/PR 크기 | ✓ 확인; 자체 완결 변경 우선, 줄 수 기준 없음 |
 | REF-016 | ADR GitHub Community, ADR templates / 커뮤니티 자료 | https://adr.github.io/adr-templates/ | 2026-10-29 | ADR rationale/대안 | ✓ 확인; 양식마다 trade-off와 context/decision/consequence 강조 차이 |
 | REF-017 | arc42, Building Block/Runtime View / 설계 문서 자료 | https://docs.arc42.org/section-5/ ; https://docs.arc42.org/section-6/ | 2026-10-29 | 구성요소·핵심 실행 흐름 | ✓ 확인; 중요/복잡/위험한 부분만 시각화 |
+| REF-018 | AWS Prescriptive Guidance, Load test types / 실무 가이드 | https://docs.aws.amazon.com/prescriptive-guidance/latest/load-testing/test-types.html | 2026-10-29 | RPS·latency·concurrency와 multi-step transaction 분리 | ✓ 확인; 단위와 test 대상 경계를 명시. AWS 권고를 ATLAS 목표로 간주하지 않음 |
+| REF-019 | Grafana k6, Open and closed models / 부하 모델 설명 | https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/open-vs-closed/ | 2026-10-29 | Arrival rate와 response time 관계 | ✓ 확인; k6 executor 구현 설명이며 k6 채택 결정 아님 |
+| REF-020 | Google SRE Book, Monitoring Distributed Systems / SRE reference | https://sre.google/sre-book/monitoring-distributed-systems/ | 2026-10-29 | Latency·traffic·errors·saturation, RPS/TPS 예시, tail latency | ✓ 확인; Google production practice, ATLAS SLO/도구 결정 아님 |
+| REF-021 | Grafana Labs, The RED Method / observability practice | https://grafana.com/blog/the-red-method-how-to-instrument-your-services/ | 2026-10-29 | Rate·Errors·Duration 및 resource USE metrics | ✓ 확인; monitoring taxonomy, tool/architecture 선택 아님 |
+| REF-022 | Wolfram MathWorld, Little's Law / queueing reference | https://mathworld.wolfram.com/LittlesLaw.html | 2026-10-29 | Arrival rate·시간·in-flight 수 관계 | ✓ 확인; steady state 관계식, capacity target 아님 |
 
 PayPal API/지역/계정/자금 흐름은 구현 시점의 공식 문서로 확인. 현재 목록은 PayPal 기능이나 법률을 검증하지 않음.
 

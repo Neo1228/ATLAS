@@ -26,11 +26,12 @@ links:
 | Q-008 | ? OPEN | Workload profile, performance/recovery targets. 값은 합의 전 TBD. | Gate 2 | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Requirements](../02-requirements/requirements-index.md) |
 | Q-009 | ? OPEN | Java/Spring/DB/infra version, PayPal 제품별 API 범위 | ADR/구현 직전 공식 확인 | [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Reference Register](reference-register.md) |
 
-## Q-008 측정 항목
-- 요청: RPS, concurrency, request mix, burst.
-- 성능/비용: p95/p99 latency, budget.
-- 복구/환경: SLO, RTO, RPO, deployment.
-- 제안 순서: Gate 2 profile → Gate 3 capacity model → Gate 4 validation (D-018, △ Proposed).
+## Q-008 측정 항목 — 모두 ? OPEN
+- 요청률: offered/achieved RPS. Transaction TPS는 transaction 범위 정의; DB QPS는 DB 측정 시에만 사용.
+- Workload: open/closed model, request/transaction mix, concurrency, payload, burst, 지속 시간.
+- 결과: throughput, p95/p99 latency, error rate, queue depth/saturation, budget.
+- 복구/환경: SLO, RTO, RPO, deployment 조건.
+- 수치 목표는 합의 전 TBD. 제안 순서 (D-018, △ Proposed): Gate 2 profile → Gate 3 capacity model → 구현 승인 후 Gate 4 validation.
 
 ## ✓ 기존 제약
 - 장기 범위 A/B/C 유지.

@@ -10,13 +10,19 @@ links:
 ---
 # 실험 레지스트리
 
-상태: 모든 실험 ○ Planned. 실행/결과 없음. 표의 숫자는 테스트 후보이며 목표값 아님. Synthetic workload는 실제 트래픽과 다름.
+상태: 모든 실험 ○ Planned. 실행/결과 없음. 재고 100/1,000은 테스트 후보이지 목표 아님. Synthetic workload는 실제 traffic과 다름.
 
 제안 순서 (D-018, △ Proposed):
 - Gate 2: workload profile 합의.
-- Gate 3: capacity model 작성·추정.
-- Gate 4: implementation approval 후 load/failure validation.
-- 추적: [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Roadmap](../09-delivery/roadmap.md), [Glossary](../01-discovery/glossary.md).
+- Gate 3: capacity model 추정.
+- Implementation approval 후 Gate 4 validation.
+- [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Roadmap](../09-delivery/roadmap.md), [Glossary](../01-discovery/glossary.md).
+
+각 run에서 metric unit/scope를 명시:
+- Offered vs achieved RPS. TPS는 transaction 범위, QPS는 DB query 범위 정의.
+- Throughput, concurrency, p95/p99 latency, error rate.
+- Load model (open/closed), request mix, payload, burst/ramp, duration.
+- Queue depth/age와 resource saturation (측정 대상인 경우).
 
 | ID | 테스트 가설 | 주요 제약 |
 |---|---|---|
@@ -30,4 +36,4 @@ links:
 | EXP-008 | cache update 역전·event 중복/순서 변경·consumer restart 영향 | cache/messaging stack TBD |
 | EXP-009 | failure injection 후 recovery time·허용 데이터 손실 측정 | RTO/RPO/SLO/environment TBD |
 
-실험 전 requirements/invariants 연결, acceptance criteria, 환경, 명령, 반복 횟수, 지표, 한계를 정의. 기록 형식: [Experiment Template](TEMPLATE.md).
+Run 기록에 requirements/invariants, acceptance, 환경, commands, repetitions, metrics, confounders, limits 포함. 형식: [Experiment Template](TEMPLATE.md).
