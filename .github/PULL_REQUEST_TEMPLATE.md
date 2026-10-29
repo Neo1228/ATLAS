@@ -1,4 +1,5 @@
 # Pull Request
+<!-- PR title: <type>(<scope>): <한국어 요약> (예: docs(git): 브랜치와 PR 규칙 정리) -->
 
 ## 목적
 <!-- 해결하려는 문제와 이 PR이 필요한 이유 -->
