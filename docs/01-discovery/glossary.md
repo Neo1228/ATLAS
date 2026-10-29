@@ -58,6 +58,9 @@ links:
 |---|---|---|
 | Synthetic workload | 테스트용 생성 traffic; 실제 사용자 traffic 아님. | △ Proposed |
 | Workload profile | Request/transaction mix, offered rate, arrival model, payload, concurrency, duration. | Values ? OPEN |
+| Ramp-up | Offered rate/concurrency를 선언된 시간 구간에 점진적으로 높이는 방식. | Workload parameter |
+| Burst | 기준 부하보다 높은 offered rate를 짧게 발생시키는 profile. | Workload parameter |
+| Steady state | workload와 측정 동작이 비교 목적에 충분히 안정된다고 선언한 구간. | Test interval |
 | Open workload model | 작업 도착을 response completion과 독립 예약. Offered arrival rate 유지. | Reference |
 | Closed workload model | 이전 작업 완료 후 다음 작업 시작. 응답 지연 시 arrival rate 감소 가능. | Reference |
 | Throughput | 단위 시간당 완료 작업량. Unit(요청/transaction/query) 명시. | Metric |
