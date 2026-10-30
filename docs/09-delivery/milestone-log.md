@@ -115,3 +115,9 @@ links:
 - Numeric values remain OPEN: scale levels, phase rates/duration, think time, concurrency, environment and thresholds.
 - Measurement: offered/admitted/dropped sessions, per-stage RPS, resolved-session TPS, p95/p99, errors, queue/hold occupancy, expiry/abandonment, oversell invariant.
 - Records: [D-032](../00-governance/decision-log.md), [Q-008](../00-governance/assumptions-and-open-questions.md), [NFR-002](../02-requirements/requirements-index.md), [EXP-010](../08-experiments/experiment-registry.md), [REF-018/019/043](../00-governance/reference-register.md).
+
+## 2026-10-30 — Ticketing-scale synthetic scenario
+- Selection: [Issue #56](https://github.com/Neo1228/ATLAS/issues/56); 10k Buyer sessions/60m baseline (~2.8 sessions/s), then 2×/4× geometric steps (~5.6/11.1 sessions/s). Synthetic assumption only; report-only; separate burst factor/duration OPEN.
+- Evidence: [REF-044](../00-governance/reference-register.md) provides a rough anchor only. 1.5M code invites/52 dates × historical 40% conversion ≈11.5k buyers/date if evenly distributed; actual per-date unique count not reported. 3.5B system requests include bots/repeats and are not users.
+- Measurement: offered/admitted/dropped sessions, stage RPS, resolved-session TPS, p95/p99, errors, hold occupancy/expiry, oversell invariant. No production demand/SLO claim.
+- Records: [D-033](../00-governance/decision-log.md), [Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-010](../08-experiments/experiment-registry.md).
