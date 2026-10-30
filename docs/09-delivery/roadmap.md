@@ -49,8 +49,8 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 
 ## 현재 상태
 - WP-001~WP-005 main 게시. Git 규칙 [PR #4](https://github.com/Neo1228/ATLAS/pull/4), batching [PR #16](https://github.com/Neo1228/ATLAS/pull/16), delivery [PR #18](https://github.com/Neo1228/ATLAS/pull/18) 병합.
-- 종료: [Issues #19](https://github.com/Neo1228/ATLAS/issues/19), [#20](https://github.com/Neo1228/ATLAS/issues/20), [#22](https://github.com/Neo1228/ATLAS/issues/22), [#24](https://github.com/Neo1228/ATLAS/issues/24), [#31](https://github.com/Neo1228/ATLAS/issues/31), [#33](https://github.com/Neo1228/ATLAS/issues/33), [#35](https://github.com/Neo1228/ATLAS/issues/35), [#38](https://github.com/Neo1228/ATLAS/issues/38). Trace audit [PR #39](https://github.com/Neo1228/ATLAS/pull/39) merged `2897ff1`; next open decision [Issue #37](https://github.com/Neo1228/ATLAS/issues/37).
-- Gate 1 진행 중. [D-023~D-025](../00-governance/decision-log.md)는 domain/recovery baseline이며 구현 승인 아님.
-- [Q-003](../00-governance/assumptions-and-open-questions.md)의 storage/key/payload/expiry/re-entry/tie/bot 경계는 ? OPEN. 관련 결정은 묶어서 논의; 경계별 Issue 금지.
-- [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)는 TTL, auth/capture mapping, PSP-specific contract, retry limit, 장기 UNKNOWN 복구·보상 정책 ? OPEN.
+- [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 `AUTHORIZE → CAPTURE` 선택; [D-026](../00-governance/decision-log.md)에 capture success 확인 후 inventory claim으로 기록. [PR #41](https://github.com/Neo1228/ATLAS/pull/41)에 반영.
+- Gate 1 진행 중. [D-023~D-026](../00-governance/decision-log.md)은 초기 domain/recovery 기준; 구현 승인 아님.
+- [Q-003](../00-governance/assumptions-and-open-questions.md)의 storage/key/payload/expiry/re-entry/tie/bot 정책은 OPEN. 관련 경계는 Issue를 나누지 않고 함께 논의.
+- [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md): inventory TTL, authorization expiry, capture/void/cancel 복구, provider endpoint/idempotency/retry contract는 OPEN.
 - [Q-008](../00-governance/assumptions-and-open-questions.md) 성능/트래픽 목표는 Gate 2 전까지 TBD. 코드·runtime dependency·deployment 미선택.

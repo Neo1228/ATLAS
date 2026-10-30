@@ -73,3 +73,9 @@ links:
 - 범위: canonical links in 23 Markdown docs and 8 Issue/9 PR bodies; Issue/PR forms require clickable source links.
 - 확인: 294 local Markdown links and 125 GitHub document links resolve; Markdown lint, YAML 4 forms, no Cyrillic/Han. Required PR checks [PR #39](https://github.com/Neo1228/ATLAS/pull/39) passed.
 - 의도적 N/A: seed-only [PR #1](https://github.com/Neo1228/ATLAS/pull/1)/[PR #3](https://github.com/Neo1228/ATLAS/pull/3)는 독립 implementation docs가 아니라 [PR #4](https://github.com/Neo1228/ATLAS/pull/4)에 superseded.
+
+## 2026-10-30 — PayPal authorize/capture 흐름 결정
+- 결정: [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 `AUTHORIZE → CAPTURE` 선택. [D-026](../00-governance/decision-log.md)은 capture success 확인 후에만 inventory claim하도록 기록. [FR-002](../02-requirements/requirements-index.md), [BR-003/INV-003](../03-domain/business-rules.md), [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md).
+- 근거: [REF-030~033](../00-governance/reference-register.md). PayPal contract는 해당 provider에만 적용; Shopify/Coinbase 사례는 on-chain practitioner reference이며 PayPal 근거 아님. Authorization은 최종 청구나 inventory claim이 아님.
+- 미정: endpoint/version, operation별 idempotency 지원/retention과 retry, inventory/auth expiry, capture/void/cancel 복구, compensation. 구현·production behavior 승인 아님.
+- Verification: Markdown lint, local links and PR #41 required checks passed.

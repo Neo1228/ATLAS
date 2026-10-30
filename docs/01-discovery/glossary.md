@@ -19,8 +19,8 @@ links:
 | Campaign | 판매 기간/조건이 있는 한정 판매 단위. | 초기 시나리오는 campaign 소유 pool 1개 ([D-023](../00-governance/decision-log.md)); 전체 재고 연결 방식 ? OPEN |
 | SKU | 재고 추적에 쓰는 상품/variant 식별 코드. 초기 시나리오에서는 같은 SKU 수량을 서로 대체 가능한 단위로 취급. | 초기 시나리오만 ([D-023](../00-governance/decision-log.md)); 전체 catalog model ? OPEN |
 | Inventory pool | 판매 가능 재고를 campaign/product/location/channel 범위로 묶은 집합. | 초기: campaign별 독립 pool 1개 ([D-023](../00-governance/decision-log.md)); 다른 범위 ? OPEN |
-| Reservation | PSP 요청 직전에 재고를 임시 점유. Terminal success 확인 후 claim, definitive failure 후 release. | [D-025](../00-governance/decision-log.md) baseline; TTL 값/terminal success stage/장기 UNKNOWN 처리 ? OPEN |
-| Inventory claim | PSP 결과가 terminal success로 확인된 뒤 hold를 판매 확정 재고로 전환. | [D-025](../00-governance/decision-log.md); auth/capture mapping ? OPEN |
+| Reservation | PSP request 전 inventory를 임시 점유. Capture success 확인 후 claim으로 전환; authorization success만으로 claim하지 않음. | [D-025/D-026](../00-governance/decision-log.md); TTL/expiry/recovery ? OPEN |
+| Inventory claim | Capture success 확인 후 hold를 판매 확정 inventory로 전환. Authorization은 final payment success가 아님. | [D-026](../00-governance/decision-log.md); failure/cancel recovery ? OPEN |
 | Order Intent | 구매 요청을 나타내는 내부 기록. | △ Proposed |
 
 ## Payment, transaction and storage
@@ -30,8 +30,8 @@ links:
 | PSP | 외부 결제 제공자. PSP status와 주문 status는 별도 관리. | ○ Draft |
 | Fake PSP | 결제 응답 유실/지연 재현용 test provider. 실제 PayPal 장애 증거 아님. | ✓ 범위 확정 |
 | Webhook | 외부 시스템이 status 변경을 알리는 HTTP request. | ○ Draft |
-| Authorization / Capture | Authorization: 결제 금액 승인. Capture: 승인 금액 청구. | 연동 방식 ? OPEN |
-| UNKNOWN payment outcome | PSP 요청 결과를 확정하지 못한 상태. Failure와 다름; 같은 attempt를 reconcile하기 전 새 attempt 금지. | [D-025](../00-governance/decision-log.md); provider-specific retry/key contract ? OPEN |
+| Authorization / Capture | Authorization은 buyer funds를 hold하고, capture는 승인된 funds를 청구. 초기 scenario는 `AUTHORIZE → CAPTURE`; capture success 확인 후 inventory claim. | [D-026](../00-governance/decision-log.md); provider endpoint/recovery contract ? OPEN |
+| UNKNOWN payment outcome | Operation 결과가 미확정된 상태; 실패와 다름. 같은 attempt를 확인하기 전 새 attempt 금지. | [D-025/D-026](../00-governance/decision-log.md); provider별 retry/key contract ? OPEN |
 | Business transaction | Checkout 등 사용자 흐름 단위. 여러 API request/DB transaction으로 구성 가능. | Metric scope는 test에서 지정 |
 | Database transaction | DB operation의 commit/rollback 단위. Isolation/locking semantics는 DB별 차이. | DB 선택 없음 |
 | Conditional update | 조건이 맞을 때만 row를 갱신하는 SQL pattern. 동시성 보장은 DB semantics 확인 필요. | Reference |
