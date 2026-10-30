@@ -41,7 +41,10 @@ links:
 | D-024 | ✓ Confirmed | 초기 시나리오는 sale open 전 admission 없음; open 후 자격 통과 요청을 순번화하고 기존 FIFO 유지. Pre-sale lottery 없음; D-019~D-022 변경 없음 | [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [Q-003](assumptions-and-open-questions.md); [REF-024/026](reference-register.md) |
 | D-025 | ✓ Confirmed | 초기 lifecycle: PSP 요청 직전 hold; terminal success→claim, 확정 실패→release. UNKNOWN은 같은 attempt로 reconcile하고, 결과 전 새 attempt 금지. TTL 중 UNKNOWN이면 reconciliation까지 pool unavailable (`EXPIRED_PENDING_PAYMENT`). | [Issue #35](https://github.com/Neo1228/ATLAS/issues/35), [Q-004/Q-005](assumptions-and-open-questions.md); [REF-023/027~029](reference-register.md) |
 | D-026 | ✓ Confirmed | 초기 PayPal sale scenario는 `AUTHORIZE → CAPTURE`. Authorization success는 중간 단계; capture success 확인 후에만 inventory claim. | [Issue #37](https://github.com/Neo1228/ATLAS/issues/37), [Q-005/Q-009](assumptions-and-open-questions.md); [FR-002](../02-requirements/requirements-index.md), [BR-003/INV-003](../03-domain/business-rules.md); [REF-030~033](reference-register.md) |
+| D-027 | ✓ Confirmed | Inventory TTL/cancel 시 capture 상태를 먼저 확인. Capture success면 claim; 캡처되지 않았고 authorization이 유효하면 void. Capture/void UNKNOWN은 same-attempt reconcile. Confirmed non-payment와 void/expiry 확인 후 inventory release. | [Issue #42](https://github.com/Neo1228/ATLAS/issues/42), [Q-004/Q-005](assumptions-and-open-questions.md); [BR-003/INV-003](../03-domain/business-rules.md); [REF-034~038](reference-register.md) |
 
-D-026은 초기 scenario의 순서와 claim 기준만 결정. Auth/capture/void failure 및 cancellation recovery, expiry, retry/retention, TTL·compensation은 [Q-004/Q-005/Q-009](assumptions-and-open-questions.md)에서 계속 OPEN. 구현 승인 아님.
+D-027은 release 조건만 확정. Inventory TTL·PayPal deadline·retry/key retention·escalation/compensation 수치는 [Q-004/Q-005/Q-009](assumptions-and-open-questions.md)에서 OPEN.
+
+D-026은 초기 flow 순서와 claim 기준을 정한다. TTL/cancel 후 capture 확인, active authorization void, confirmed non-payment 후 release는 [D-027](decision-log.md) 및 [Q-004/Q-005](assumptions-and-open-questions.md) 참조. TTL·deadline·retry/retention·escalation/compensation 수치는 OPEN. 구현 승인 아님.
 
 ✓ Gate 0 승인. Gate 1 진행 중. Gate 2/3과 구현 진입은 미승인.
