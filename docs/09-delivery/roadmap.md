@@ -49,7 +49,7 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 
 ## 현재 상태
 - WP-001~WP-005 main 게시. Git 규칙 [PR #4](https://github.com/Neo1228/ATLAS/pull/4), batching [PR #16](https://github.com/Neo1228/ATLAS/pull/16), delivery [PR #18](https://github.com/Neo1228/ATLAS/pull/18) 병합.
-- [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 `AUTHORIZE → CAPTURE` 선택; [D-026](../00-governance/decision-log.md)에 capture success 확인 후 inventory claim으로 기록. 관련 문서 PR 하나로 진행 중.
+- [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 `AUTHORIZE → CAPTURE` 선택; [D-026](../00-governance/decision-log.md)에 capture success 확인 후 inventory claim으로 기록. [PR #41](https://github.com/Neo1228/ATLAS/pull/41)에 반영.
 - Gate 1 진행 중. [D-023~D-026](../00-governance/decision-log.md)은 초기 domain/recovery 기준; 구현 승인 아님.
 - [Q-003](../00-governance/assumptions-and-open-questions.md)의 storage/key/payload/expiry/re-entry/tie/bot 정책은 OPEN. 관련 경계는 Issue를 나누지 않고 함께 논의.
 - [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md): inventory TTL, authorization expiry, capture/void/cancel 복구, provider endpoint/idempotency/retry contract는 OPEN.

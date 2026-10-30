@@ -78,4 +78,4 @@ links:
 - 결정: [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 `AUTHORIZE → CAPTURE` 선택. [D-026](../00-governance/decision-log.md)은 capture success 확인 후에만 inventory claim하도록 기록. [FR-002](../02-requirements/requirements-index.md), [BR-003/INV-003](../03-domain/business-rules.md), [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md).
 - 근거: [REF-030~033](../00-governance/reference-register.md). PayPal contract는 해당 provider에만 적용; Shopify/Coinbase 사례는 on-chain practitioner reference이며 PayPal 근거 아님. Authorization은 최종 청구나 inventory claim이 아님.
 - 미정: endpoint/version, operation별 idempotency 지원/retention과 retry, inventory/auth expiry, capture/void/cancel 복구, compensation. 구현·production behavior 승인 아님.
-- Verification: local Markdown lint and links passed. [PR #41](https://github.com/Neo1228/ATLAS/pull/41) open; required checks pending.
+- Verification: Markdown lint, local links and PR #41 required checks passed.
