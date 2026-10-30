@@ -18,11 +18,12 @@ links:
 - Implementation approval 후 Gate 4 validation.
 - [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Roadmap](../09-delivery/roadmap.md), [Glossary](../01-discovery/glossary.md).
 
-각 run에서 metric unit/scope를 명시:
-- Offered vs achieved RPS. TPS는 transaction 범위, QPS는 DB query 범위 정의.
-- Throughput, concurrency, p95/p99 latency, error rate.
-- Load model (open/closed), request mix, payload, burst/ramp, duration.
-- Queue depth/age와 resource saturation (측정 대상인 경우).
+Each run records metric units/scopes:
+- Offered/admitted Buyer sessions/s and dropped sessions/iterations.
+- Offered/achieved request RPS by stage. TPS is resolved business Buyer-session completions; QPS only when DB query scope is explicit.
+- Throughput, concurrency, p95/p99 latency, error/expiry/abandonment.
+- Load model, request/transaction mix, payload, think time, burst/ramp and duration.
+- Queue depth/age, inventory hold occupancy and resource saturation where measured.
 
 | ID | 테스트 가설 | 주요 제약 |
 |---|---|---|
@@ -35,5 +36,6 @@ links:
 | EXP-007 | ID 변경으로 다른 tenant 데이터 접근 시도 (IDOR) | 권한/threat boundary TBD |
 | EXP-008 | cache update 역전·event 중복/순서 변경·consumer restart 영향 | cache/messaging stack TBD |
 | EXP-009 | failure injection 후 recovery time·허용 데이터 손실 측정 | RTO/RPO/SLO/environment TBD |
+| EXP-010 | [D-031](../00-governance/decision-log.md): Full Buyer session under hybrid model (open-loop arrivals; sequential per-session steps) across baseline, sale-open burst and step-up phases. | Numeric rates/durations, think-time distribution, test environment and acceptance TBD ([Q-008](../00-governance/assumptions-and-open-questions.md)); record offered/admitted sessions/s, dropped arrivals, RPS by stage, resolved-session TPS, p95/p99, errors, backlog/hold occupancy, expiry and invariant results. |
 
 Run 기록에 requirements/invariants, acceptance, 환경, commands, repetitions, metrics, confounders, limits 포함. 형식: [Experiment Template](TEMPLATE.md).

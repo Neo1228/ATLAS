@@ -103,3 +103,9 @@ links:
 - Scope: synthetic-test parameter only, not production TTL/SLO. Re-evaluate after collecting hold-to-submission p50/p95/p99, expiry/abandonment, hold occupancy and oversell invariant.
 - Evidence/trade-off: [REF-039~041](../00-governance/reference-register.md) are product-specific examples. 10 minutes is an initial test value, not an industry standard.
 - Records: [D-030](../00-governance/decision-log.md), [Q-004/Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-005](../08-experiments/experiment-registry.md).
+
+## 2026-10-30 — Gate 2 synthetic workload shape
+- Selection: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51) A/C/A — full Buyer session, hybrid open arrivals with sequential per-session steps, baseline + sale-open burst + step-up phases.
+- Metrics: offered/admitted sessions/s, dropped arrivals, request RPS by stage, resolved Buyer-session TPS, p95/p99 latency, errors, queue/hold occupancy, expiry/abandonment and oversell invariant.
+- Numeric workload, think-time distribution, phase duration, environment and thresholds remain OPEN ([Q-008](../00-governance/assumptions-and-open-questions.md)); no production profile or implementation approved.
+- Evidence: AWS/K6 guidance in [REF-018/019](../00-governance/reference-register.md); [REF-042](../00-governance/reference-register.md) describes Artillery’s hybrid model, a vendor case rather than universal rule.
