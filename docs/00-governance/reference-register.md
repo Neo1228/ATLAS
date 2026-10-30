@@ -11,7 +11,7 @@ links:
 ---
 # 외부 참고자료 레지스트리
 
-REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~026: 2026-10-30 확인한 practitioner/product 자료. 적용 범위와 한계는 각 행 참조. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
+REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~029: 2026-10-30 확인한 practitioner/product 자료. 적용 범위와 한계는 각 행 참조. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
 |---|---|---|---|---|---|
@@ -41,6 +41,9 @@ REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 
 | REF-024 | SeatGeek, Virtual Waiting Room / InfoQ QCon practitioner presentation | https://www.infoq.com/presentations/ticketing-system-virtual-waiting-room/ | 2026-10-30 | Sale 전 waiting room과 on-sale queue의 FIFO/drain rate | ✓ 검토; SeatGeek 운영 맥락, 일반적 fairness 증명 아님 |
 | REF-025 | commercetools, Inventory Management / product modeling guide | https://docs.commercetools.com/learning-model-your-product-catalog/inventory-modeling/inventory-management | 2026-10-30 | Product variant/location/channel별 재고 범위와 available/reservation 구분 | ✓ 검토; vendor model의 사례, 보편적 best practice 아님 |
 | REF-026 | Queue-it, Online Fairness / vendor practitioner blog | https://queue-it.com/blog/online-fairness | 2026-10-30 | 예정된 sale 전 무작위 배치 후 FIFO 제안 | ✓ 검토; vendor 관점/이해관계 존재, 일반적 fairness 근거 아님 |
+| REF-027 | Brandur Leach, Implementing Stripe-like Idempotency Keys in Postgres / practitioner engineering article | https://brandur.org/idempotency-keys | 2026-10-30 | Same-attempt retry, recovery point, ambiguous external charge | ✓ 검토; Stripe-like/Postgres example, PayPal contract 아님 |
+| REF-028 | Stripe Engineering, Designing robust and predictable APIs with idempotency / engineering blog | https://stripe.com/blog/idempotency | 2026-10-30 | Idempotency key로 charge retry의 중복 효과 방지 | ✓ 검토; Stripe API/SDK 사례, 타 PSP로 일반화하지 않음 |
+| REF-029 | Stripe, Advanced error handling / API guidance | https://docs.stripe.com/error-low-level | 2026-10-30 | Network/5xx outcome uncertainty와 reconcile-before-new-operation | ✓ 검토; key retention/retry window는 Stripe-specific, ATLAS/PayPal 기준값 아님 |
 
 PayPal API/지역/계정/자금 흐름은 구현 시점의 공식 문서로 확인. 현재 목록은 PayPal 기능이나 법률을 검증하지 않음.
 

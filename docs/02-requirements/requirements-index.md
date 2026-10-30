@@ -16,7 +16,7 @@ links:
 | ID | 유형 | 상태 | 요구사항 후보 | 우선순위 | 연결 |
 |---|---|---|---|---|---|
 | FR-001 | 기능 | △ Proposed | 초기 시나리오: campaign 하나, 대체 가능한 수량형 SKU 1종, 독립 inventory pool (D-023). Reservation/order intent 후보 흐름에서 pool 초과 판매 방지. Sale open 후에만 queue admission (D-024). 다른 유형·재고 규칙·acceptance TBD. | TBD | [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md), [Business Rules](../03-domain/business-rules.md), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33) |
-| FR-002 | 기능 | △ Proposed | payment attempt, webhook, idempotency, UNKNOWN 상태와 recovery 처리. PSP 정책 TBD. | TBD | [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md) |
+| FR-002 | 기능 | △ Proposed | PSP payment attempt의 UNKNOWN 결과를 failure로 오인하지 않고 동일 attempt를 reconcile. D-025: PSP 요청 직전 inventory hold; terminal success 후 claim, definitive failure 후 release; UNKNOWN/TTL expiry 중 hold 유지. Auth/capture mapping, TTL, PSP-specific retry/refund policy TBD. | TBD | [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [Issue #35](https://github.com/Neo1228/ATLAS/issues/35) |
 | FR-003 | 기능 | △ Proposed | reconciliation, 내부 settlement ledger, 정정 내역 추적. 계약 TBD. | TBD | [Q-006](../00-governance/assumptions-and-open-questions.md) |
 | NFR-001 | 비기능 | △ Proposed | tenant 간 데이터/권한 격리 검증. threat boundary TBD. | TBD | [Q-007](../00-governance/assumptions-and-open-questions.md), [EXP-007](../08-experiments/experiment-registry.md) |
 | NFR-002 | 비기능 | △ Proposed | 합의된 workload에서 offered/achieved throughput, latency, error, recovery 검증. Rate 단위/transaction scope 명시; 목표/실측 없음. | TBD | [Q-008](../00-governance/assumptions-and-open-questions.md), EXP-001/002/009 |
