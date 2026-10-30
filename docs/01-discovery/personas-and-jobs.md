@@ -14,7 +14,7 @@ links:
 ## 근거와 한계
 - ✓ 사용자가 선택한 Buyer/Seller 공통 목표.
 - 실제 인터뷰·거래·시장 검증 결과 아님.
-- 초기 합성 시나리오: campaign별 독립 pool에 수량형 SKU 1종 ([D-023](../00-governance/decision-log.md)). 다른 판매 유형별 행동은 ? OPEN ([Q-002/Q-010](../00-governance/assumptions-and-open-questions.md)).
+- 초기 합성 시나리오: campaign별 독립 pool에 수량형 SKU 1종 ([D-023](../00-governance/decision-log.md)). Gate 2도 이 흐름 유지 ([D-036](../00-governance/decision-log.md)); assigned-seat/time-slot 제외. 장기 판매 유형 범위는 ? OPEN ([Q-002/Q-010](../00-governance/assumptions-and-open-questions.md)).
 
 ## 공통 역할
 
@@ -37,11 +37,19 @@ links:
 ## 실패·미정 경계
 - Sale open 전 queue entry/sequence 발급 없음. Open 후 자격을 통과한 요청만 admission.
 - 같은 논리 요청 retry는 ticket 재사용. Service restart 후에도 순서 유지 ([D-021/D-022](../00-governance/decision-log.md)).
-- Reservation TTL, payment 경합, 재고 조정·취소, 다른 판매 유형은 OPEN.
-- Available + Reserved + Sold = Initial Stock는 상태·조정 규칙 결정 전 확정 invariant 아님.
+- 장기 OPEN: production TTL·payment recovery 세부사항, 재고 조정·재입고, post-claim 취소·환불, 다른 판매 유형 ([Q-002/Q-004/Q-005/Q-010](../00-governance/assumptions-and-open-questions.md)). 초기 재고 계약과 범위는 [D-035](../00-governance/decision-log.md).
+- 초기 pool: `available + reserved + claimed = initial capacity`, 각 수량 0 이상 ([INV-001](../03-domain/invariants.md), [D-035](../00-governance/decision-log.md)). 조정·재입고·post-claim 취소·환불은 범위 제외.
 
 ## 판매 유형별 차이
-초기 시나리오는 수량형 SKU 1종. 좌석/티켓 등 다른 단위는 이 시나리오에서 제외하지만 장기 탐색 범위에는 유지 ([D-006/D-023](../00-governance/decision-log.md); [Q-002/Q-010](../00-governance/assumptions-and-open-questions.md)).
+
+| 유형 | 재고 단위 | 핵심 충돌 | 추가 경계 |
+|---|---|---|---|
+| Assigned seat | 고유 좌석 ID, section/row/seat map | 같은 좌석의 동시 선택·hold | 좌석 map/label, 좌석별 hold, 접근·가격 tier |
+| Time-slot admission | 날짜·시간 구간별 정원 | 같은 slot의 잔여 capacity 동시 차감 | slot 길이·정원, 도착 제한, 지각·미방문·walk-in·accessibility |
+
+근거: [Eventbrite](../00-governance/reference-register.md) reserved-seat guide와 [TixTrack](../00-governance/reference-register.md) venue case는 개별 좌석·seat map·hold 흐름을 보여준다. [Museums Association](../00-governance/reference-register.md)와 [Techniquest case](../00-governance/reference-register.md)는 slot별 정원, 도착·미방문·점유 차이를 다룬다. 제품 문서·vendor 사례는 ATLAS backend 설계나 보편적 best practice의 근거가 아니다. 실제 사용자·시장 조사도 없음.
+
+사용자 선택: Gate 2는 현재 quantity-SKU 기준으로 진행. Assigned-seat/time-slot은 추가하지 않고 [Q-010](../00-governance/assumptions-and-open-questions.md) OPEN으로 유지 ([D-036](../00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64)).
 
 ## 추적
 - [D-024](../00-governance/decision-log.md): sale open 전 admission 없음. Open 후 자격 통과 요청은 [D-019](../00-governance/decision-log.md) 기준 FIFO.
