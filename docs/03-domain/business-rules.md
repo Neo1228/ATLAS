@@ -18,16 +18,16 @@ links:
 |---|---|---|---|
 | BR-001 | 초기 시나리오: sale open 후 자격 통과 요청만 대기열에 등록. 등록 시 sequence 발급 ([D-020](../00-governance/decision-log.md)), 낮은 순번 우선 ([D-019](../00-governance/decision-log.md)), 같은 요청 retry ticket 재사용 ([D-021](../00-governance/decision-log.md)), restart 후 순서 보존 ([D-022](../00-governance/decision-log.md)). | ✓ Baseline (D-019~D-024) | [Q-003](../00-governance/assumptions-and-open-questions.md): storage/key/payload/expiry/re-entry/tie/bot/다른 유형 정책 ? OPEN. [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33). |
 | BR-002 | 초기 시나리오: 대체 가능한 수량형 SKU 1종과 campaign별 독립 pool ([D-023](../00-governance/decision-log.md)). 예약·판매 수량은 pool capacity 이내. | △ Proposed ([D-017/D-023](../00-governance/decision-log.md)) | [Q-002/Q-004](../00-governance/assumptions-and-open-questions.md): 재고 생명주기, 조정·취소·환불·결제 경합 ? OPEN. |
-| BR-003 | [D-025/D-026](../00-governance/decision-log.md): inventory hold before PSP request; initial flow `AUTHORIZE → CAPTURE`. Authorization success is intermediate; only confirmed capture success claims inventory. Definitive authorization failure releases hold. UNKNOWN at any operation is reconciled on same attempt before a new attempt. | ✓ Baseline | [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md): TTL, expiry, capture/void failure and cancellation recovery, endpoint/key/retry contract, long-lived UNKNOWN ? OPEN. [Issue #37](https://github.com/Neo1228/ATLAS/issues/37); [REF-030~032](../00-governance/reference-register.md). |
+| BR-003 | [D-025/D-026](../00-governance/decision-log.md): PSP 요청 전 inventory hold; 초기 flow는 `AUTHORIZE → CAPTURE`. Authorization success는 중간 단계이며 capture success 확인 후에만 inventory claim. Authorization의 확정 실패 시 hold 해제. 각 operation의 UNKNOWN은 같은 attempt로 확인하기 전 새 attempt 금지. | ✓ Baseline | [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md): TTL, expiry, capture/void 실패·취소 복구, endpoint/key/retry contract, 장기 UNKNOWN ? OPEN. [Issue #37](https://github.com/Neo1228/ATLAS/issues/37); [REF-030~032](../00-governance/reference-register.md). |
 
 ## 기준 흐름 — 합성 scenario
 1. Seller가 한 campaign에 수량형 SKU 1종과 독립 재고 pool을 설정. 실제 수량은 실험 profile에서 결정.
 2. Sale open 전에는 queue admission과 sequence 발급 없음 ([D-024](../00-governance/decision-log.md)).
 3. Sale open 후 자격 통과 Buyer 요청을 admission하고 server sequence 발급. 낮은 sequence 우선 ([D-019/D-020](../00-governance/decision-log.md)).
 4. 같은 논리 queue 요청 retry는 기존 ticket/sequence 재사용. service/worker restart 후 순서 유지 ([D-021/D-022](../00-governance/decision-log.md)).
-5. Payment attempt 전에 inventory hold. Authorization success는 funds hold이며 inventory claim 아님. Capture success 확정 후 hold를 claim으로 전환 ([D-025/D-026](../00-governance/decision-log.md)).
-6. Authorization이 definitive failure면 hold release. Timeout/통신 단절/ambiguous response는 operation별 UNKNOWN; same attempt를 reconcile하기 전 새 attempt 금지.
-7. Capture failure, void/cancel 및 auth expiry의 stock/funds recovery policy는 OPEN. Authorization confirmed 상태에서는 capture/expiry policy가 합의될 때까지 재고 해제 여부를 추정하지 않음 ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)).
+5. Payment attempt 전 inventory hold. Authorization success는 buyer funds hold이며 inventory claim이 아님. Capture success 확인 후 hold를 claim으로 전환 ([D-025/D-026](../00-governance/decision-log.md)).
+6. Authorization의 확정 실패 시 hold 해제. Timeout, 통신 단절, 모호한 응답은 operation별 UNKNOWN으로 처리; 같은 attempt를 확인하기 전 새 attempt 금지.
+7. Capture 실패, void/cancel, authorization expiry의 stock/funds 복구 정책은 미정. 정책 합의 전 authorization이 확인된 hold를 해제하지 않음 ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)).
 
 ```mermaid
 sequenceDiagram
