@@ -26,9 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Require every PR checklist item to be completed
+      - name: 체크리스트와 Issue 추적 형식 확인
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           node <<'NODE'
           const fs = require("node:fs");
@@ -42,14 +43,29 @@ jobs:
           const expected = checklist(template);
           const provided = checklist(body);
           if (expected.length === 0 || provided.length !== expected.length) {
-            console.error(`PR body must include all ${expected.length} items from the template review checklist.`);
+            console.error(`PR 본문에 template 기준 ${expected.length}개 검토 항목을 포함해야 합니다.`);
             process.exit(1);
           }
           const incomplete = [...body.matchAll(/^[ \t]*[-*]\s+\[([ xX])\]\s+.+$/gm)]
             .filter(([, state]) => state.toLowerCase() !== "x");
           if (incomplete.length > 0) {
-            console.error(`Complete all PR checklist items before merging (${incomplete.length} unchecked).`);
+            console.error(`체크하지 않은 항목 ${incomplete.length}개를 완료해야 병합할 수 있습니다.`);
             process.exit(1);
           }
-          console.log(`Validated ${provided.length} review items and all PR checkboxes.`);
+          const issueLine = body.split(/\r?\n/).find((line) => /^[ \t]*[-*]\s+Issues:\s*/.test(line));
+          const entries = issueLine
+            ?.replace(/^[ \t]*[-*]\s+Issues:\s*/, "")
+            .split(/;\s*/)
+            .filter(Boolean) ?? [];
+          const invalidTrace = entries.some((entry) => {
+            const match = entry.match(/^(Closes|Refs) #(\d+) — \[Issue #(\d+)\]\((https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+)\)$/);
+            return !match
+              || match[2] !== match[3]
+              || match[4] !== `https://github.com/${process.env.REPOSITORY}/issues/${match[2]}`;
+          });
+          if (entries.length === 0 || invalidTrace) {
+            console.error("Issues 항목에 plain-text Closes #N — [Issue #N](URL) 또는 Refs #N — [Issue #N](URL)을 작성하세요. Closes/Refs와 #N을 Markdown link로 감싸지 마세요.");
+            process.exit(1);
+          }
+          console.log(`${provided.length}개 검토 항목, 전체 checkbox, ${entries.length}개 Issue link 확인 완료.`);
           NODE

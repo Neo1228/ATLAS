@@ -13,21 +13,32 @@ links:
 
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
-- ✓ Gate 0 승인 (2026-10-29). → Gate 1 discovery 진행 중.
-- Gate 1: initial sale/queue [D-023/D-024](../00-governance/decision-log.md) ([PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged). Payment recovery [D-025~D-030](../00-governance/decision-log.md) ([Issues #35](https://github.com/Neo1228/ATLAS/issues/35), [#37](https://github.com/Neo1228/ATLAS/issues/37), [#42](https://github.com/Neo1228/ATLAS/issues/42), [#44](https://github.com/Neo1228/ATLAS/issues/44), [#46](https://github.com/Neo1228/ATLAS/issues/46), [#48](https://github.com/Neo1228/ATLAS/issues/48); [PRs #36](https://github.com/Neo1228/ATLAS/pull/36), [#41](https://github.com/Neo1228/ATLAS/pull/41), [#43](https://github.com/Neo1228/ATLAS/pull/43), [#45](https://github.com/Neo1228/ATLAS/pull/45), [#47](https://github.com/Neo1228/ATLAS/pull/47), [#49](https://github.com/Neo1228/ATLAS/pull/49)). Workload profile [D-031~D-033](../00-governance/decision-log.md): [Issues #51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56); values are synthetic assumptions.
-- Gate 2 profile [D-031~D-033](../00-governance/decision-log.md): full Buyer session, hybrid arrivals, report-only; 10k sessions/60m with 2×/4× synthetic stress ([Issue #56](https://github.com/Neo1228/ATLAS/issues/56)). Burst and production targets OPEN; no implementation approval.
-- 코드, runtime dependency, 실제 payment 호출, deployment 미착수. Gate 2/구현은 별도 승인 필요.
+- ✓ Gate 0 승인 (2026-10-29). Gate 1 진행 중.
+- 초기 판매/queue: [D-023/D-024](../00-governance/decision-log.md), [PR #34](https://github.com/Neo1228/ATLAS/pull/34) 병합.
+- 결제 복구 [D-025~D-030](../00-governance/decision-log.md):
+  - Issues: [#35](https://github.com/Neo1228/ATLAS/issues/35), [#37](https://github.com/Neo1228/ATLAS/issues/37), [#42](https://github.com/Neo1228/ATLAS/issues/42), [#44](https://github.com/Neo1228/ATLAS/issues/44), [#46](https://github.com/Neo1228/ATLAS/issues/46), [#48](https://github.com/Neo1228/ATLAS/issues/48).
+  - PRs: [#36](https://github.com/Neo1228/ATLAS/pull/36), [#41](https://github.com/Neo1228/ATLAS/pull/41), [#43](https://github.com/Neo1228/ATLAS/pull/43), [#45](https://github.com/Neo1228/ATLAS/pull/45), [#47](https://github.com/Neo1228/ATLAS/pull/47), [#49](https://github.com/Neo1228/ATLAS/pull/49).
+- Gate 2 profile [D-031~D-033](../00-governance/decision-log.md): full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress; report-only.
+  - 추적 Issue: [#51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56).
+- 병합 PR:
+  - [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14)
+  - [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454)
+  - [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd)
+  - OPEN: production demand/SLO, burst factor/duration, capacity, implementation.
+  - 코드·runtime dependency·실제 payment 호출·deployment 미착수. Gate 2·구현 진입은 별도 승인 대상.
 
 ## 확정된 방향
 - 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).
-- 초기 시험: PayPal Sandbox와 Fake PSP. 실제 payment·개인정보·판매사 지급 제외.
-- 가상 Buyer: 공정한 기회와 정확한 재고/예약 상태. 가상 Seller: 공정한 한정판매와 overselling 방지 ([Personas & Jobs](../01-discovery/personas-and-jobs.md)).
-- Queue 기준 [D-019~D-022](../00-governance/decision-log.md)과 sale-open 기준 [D-024](../00-governance/decision-log.md) 유지. Payment [D-025~D-027](../00-governance/decision-log.md): PSP 요청 전 hold, authorize 후 capture, capture success 후 claim; TTL/cancel 시 capture 확인 및 active authorization void; confirmed non-payment와 void/expiry 후 release.
+- 초기 시험: PayPal Sandbox와 Fake PSP. 실제 결제·개인정보·판매사 지급 제외.
+- 가상 Buyer: 공정한 구매 기회와 정확한 재고/예약 상태. 가상 Seller: 공정한 한정판매와 overselling 방지 ([Personas & Jobs](../01-discovery/personas-and-jobs.md)).
+- Queue: [D-019~D-022](../00-governance/decision-log.md), 판매 시작 기준 [D-024](../00-governance/decision-log.md).
+- Payment: PSP 요청 전 hold; AUTHORIZE/CAPTURE; capture success 확인 후 inventory claim.
+- TTL/cancel 시 capture 확인. Active authorization은 void. 확정된 non-payment와 void/expiry 확인 후에만 stock release ([D-025~D-027](../00-governance/decision-log.md)).
 
 ## 미정·다음
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md) Modular Monolith First: △ Proposed.
-- [Q-008](../00-governance/assumptions-and-open-questions.md): [D-031~D-033](../00-governance/decision-log.md) set profile shape, 10k/60m test-only baseline, 2×/4× stress, and report-only acceptance. Separate burst and production demand/SLO remain OPEN. [Issues #51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56); no implementation approval.
-- Performance 순서 ([D-018](../00-governance/decision-log.md), △ Proposed): Gate 2 workload profile → Gate 3 capacity estimate → implementation 승인 후 Gate 4 synthetic validation. RPS/TPS/QPS scope와 용어는 [Glossary](../01-discovery/glossary.md); 목표값·실측 없음 ([Issue #20](https://github.com/Neo1228/ATLAS/issues/20)).
+- [Q-008](../00-governance/assumptions-and-open-questions.md) OPEN: burst multiplier/duration, think-time, environment, production audience/SLO. 10k/60m은 synthetic input이며 capacity target이나 구현 승인이 아님.
+- 성능 검증 순서 ([D-018](../00-governance/decision-log.md), △ Proposed): Gate 2 profile → Gate 3 capacity estimate → 구현 승인 후 Gate 4 synthetic test. RPS/TPS/QPS 정의는 [Glossary](../01-discovery/glossary.md); 목표·실측 없음 ([Issue #20](https://github.com/Neo1228/ATLAS/issues/20)).
 
 ## 이력
 
@@ -36,15 +47,16 @@ links:
 | [WP-001](roadmap.md) | seed [`7ed5fac`](https://github.com/Neo1228/ATLAS/commit/7ed5fac); workflow [`eb371ca`](https://github.com/Neo1228/ATLAS/commit/eb371ca), [`5151a15`](https://github.com/Neo1228/ATLAS/commit/5151a15) |
 | [WP-002~005](roadmap.md) | [PR #9](https://github.com/Neo1228/ATLAS/pull/9)/[#10](https://github.com/Neo1228/ATLAS/pull/10)/[#11](https://github.com/Neo1228/ATLAS/pull/11)/[#12](https://github.com/Neo1228/ATLAS/pull/12); [Issue #5](https://github.com/Neo1228/ATLAS/issues/5)/[#6](https://github.com/Neo1228/ATLAS/issues/6)/[#8](https://github.com/Neo1228/ATLAS/issues/8)/[#7](https://github.com/Neo1228/ATLAS/issues/7) |
 | Git/PR 기준 | [PR #4](https://github.com/Neo1228/ATLAS/pull/4) ([Issue #2](https://github.com/Neo1228/ATLAS/issues/2)); [PR #16](https://github.com/Neo1228/ATLAS/pull/16) ([Issue #15](https://github.com/Neo1228/ATLAS/issues/15)); [PR #18](https://github.com/Neo1228/ATLAS/pull/18) ([Issue #17](https://github.com/Neo1228/ATLAS/issues/17)) |
-| Persona/capacity | [PR #21](https://github.com/Neo1228/ATLAS/pull/21) ([Issue #19](https://github.com/Neo1228/ATLAS/issues/19)/[#20](https://github.com/Neo1228/ATLAS/issues/20)) |
-| 초기 판매 시나리오 | [Issue #33](https://github.com/Neo1228/ATLAS/issues/33); [PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged; [D-023/D-024](../00-governance/decision-log.md) |
-| 결제 중 hold/recovery | [Issue #35](https://github.com/Neo1228/ATLAS/issues/35); [PR #36](https://github.com/Neo1228/ATLAS/pull/36) merged; [D-025](../00-governance/decision-log.md) |
-| 문서·Issue·PR 추적 링크 | [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) closed; [PR #39](https://github.com/Neo1228/ATLAS/pull/39) merged `2897ff1` |
-| PayPal auth/capture flow | [Issue #37](https://github.com/Neo1228/ATLAS/issues/37); [PR #41](https://github.com/Neo1228/ATLAS/pull/41); selected `AUTHORIZE → CAPTURE`; [D-026](../00-governance/decision-log.md); implementation details OPEN |
-| Payment TTL/recovery | [Issue #42](https://github.com/Neo1228/ATLAS/issues/42); [PR #43](https://github.com/Neo1228/ATLAS/pull/43); [D-027](../00-governance/decision-log.md); numeric deadlines OPEN |
-| Checkout TTL policy | [Issue #44](https://github.com/Neo1228/ATLAS/issues/44); [PR #45](https://github.com/Neo1228/ATLAS/pull/45); [D-028](../00-governance/decision-log.md): fixed initial window; duration/start trigger TBD |
-| Checkout timer contract | [Issue #46](https://github.com/Neo1228/ATLAS/issues/46); [PR #47](https://github.com/Neo1228/ATLAS/pull/47); [D-029](../00-governance/decision-log.md): starts on confirmed hold; AUTHORIZE before expiry; no extension |
-| 문서 작성 기준 | [Issue #26](https://github.com/Neo1228/ATLAS/issues/26); [PR #27](https://github.com/Neo1228/ATLAS/pull/27) merged [`a82e022`](https://github.com/Neo1228/ATLAS/commit/a82e022); closeout [PR #28](https://github.com/Neo1228/ATLAS/pull/28) merged [`bc8d60b`](https://github.com/Neo1228/ATLAS/commit/bc8d60b) |
-| Gate 2 workload profile | [Issues #51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56); [D-031~D-033](../00-governance/decision-log.md); 10k/60m test-only baseline, 2×/4× steps, report-only |
+| 페르소나·용량 계획 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19), [#20](https://github.com/Neo1228/ATLAS/issues/20); [PR #21](https://github.com/Neo1228/ATLAS/pull/21) |
+| 초기 판매 범위 | [Issue #33](https://github.com/Neo1228/ATLAS/issues/33); [PR #34](https://github.com/Neo1228/ATLAS/pull/34) 병합; [D-023/D-024](../00-governance/decision-log.md) |
+| 결제 중 hold·복구 | [Issue #35](https://github.com/Neo1228/ATLAS/issues/35); [PR #36](https://github.com/Neo1228/ATLAS/pull/36) 병합; [D-025](../00-governance/decision-log.md) |
+| 문서 추적성 정비 | [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) 종료; [PR #39](https://github.com/Neo1228/ATLAS/pull/39) 병합 [`2897ff1`](https://github.com/Neo1228/ATLAS/commit/2897ff1) |
+| PayPal 승인·청구 | [Issue #37](https://github.com/Neo1228/ATLAS/issues/37); [PR #41](https://github.com/Neo1228/ATLAS/pull/41); [D-026](../00-governance/decision-log.md). 구현 세부 OPEN |
+| 결제 hold 복구 | [Issue #42](https://github.com/Neo1228/ATLAS/issues/42); [PR #43](https://github.com/Neo1228/ATLAS/pull/43); [D-027](../00-governance/decision-log.md). 기한 수치 OPEN |
+| Checkout 시간 제한 | [Issue #44](https://github.com/Neo1228/ATLAS/issues/44); [PR #45](https://github.com/Neo1228/ATLAS/pull/45); [D-028](../00-governance/decision-log.md). 방식 선택, duration/start trigger OPEN |
+| Buyer timer 계약 | [Issue #46](https://github.com/Neo1228/ATLAS/issues/46); [PR #47](https://github.com/Neo1228/ATLAS/pull/47); [D-029](../00-governance/decision-log.md). Confirmed hold부터 시작, expiry 전 AUTHORIZE 제출, extension 없음 |
+| 문서 작성 기준 | [Issue #26](https://github.com/Neo1228/ATLAS/issues/26); [PR #27](https://github.com/Neo1228/ATLAS/pull/27) 병합 [`a82e022`](https://github.com/Neo1228/ATLAS/commit/a82e022); [PR #28](https://github.com/Neo1228/ATLAS/pull/28) closeout 병합 [`bc8d60b`](https://github.com/Neo1228/ATLAS/commit/bc8d60b) |
 
-진행 상태는 [Roadmap](roadmap.md), 전체 변경 이력은 [Milestone Log](milestone-log.md). 새 작업은 Issue-first. 관련 commit/Issue는 하나의 reviewable PR로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).
+- 진행 현황: [Roadmap](roadmap.md).
+- 완료 이력: [Milestone Log](milestone-log.md).
+- 작업 방식: Issue-first. 관련 commit은 같은 목적이면 PR 하나로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).
