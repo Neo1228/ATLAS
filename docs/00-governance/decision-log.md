@@ -39,5 +39,6 @@ links:
 | D-022 | ✓ Confirmed | service/worker 재시작 후 발급된 ticket/sequence 보존 | [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), Q-003 |
 | D-023 | ✓ Confirmed | 첫 합성 판매 시나리오: campaign 1개, 수량형 SKU 1종, campaign 소유의 독립 재고 pool. 다른 유형/공유 재고는 이 시나리오에서 제외 | [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), Q-002/Q-010; [REF-023/025](reference-register.md) |
 | D-024 | ✓ Confirmed | 초기 시나리오는 sale open 전 admission 없음; open 후 자격 통과 요청을 순번화하고 기존 FIFO 유지. Pre-sale lottery 없음; D-019~D-022 변경 없음 | [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), Q-003; [REF-024/026](reference-register.md) |
+| D-025 | ✓ Confirmed | 초기 lifecycle: PSP 요청 직전 hold; terminal success→claim, 확정 실패→release. UNKNOWN은 같은 attempt로 reconcile하고, 결과 전 새 attempt 금지. TTL 중 UNKNOWN이면 reconciliation까지 pool unavailable (`EXPIRED_PENDING_PAYMENT`). | [Issue #35](https://github.com/Neo1228/ATLAS/issues/35), Q-004/Q-005; [REF-023/027~029](reference-register.md) |
 
 ✓ Gate 0 승인. Gate 1 진행 중. Gate 2/3과 구현 진입은 미승인.
