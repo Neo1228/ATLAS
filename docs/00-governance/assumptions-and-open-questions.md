@@ -23,16 +23,16 @@ links:
 | Q-005 | ? OPEN | [D-025~D-030](decision-log.md): UNKNOWN은 failure 아님; same attempt reconcile. Capture success만 claim; `PENDING`/UNKNOWN 동안 hold. Confirmed non-payment 후 active authorization void; confirmed void/expiry 후 release. Provider/API/recovery deadlines are separate from synthetic checkout TTL. Retry/key retention, deadlines, escalation/compensation OPEN. | Q-004와 lifecycle 정책 합의 | [FR-002](../02-requirements/requirements-index.md), [EXP-003/004/005](../08-experiments/experiment-registry.md), [Issue #48](https://github.com/Neo1228/ATLAS/issues/48); [REF-034~041](reference-register.md) |
 | Q-006 | ? OPEN | 내부 settlement ledger와 PSP 지급 경계, fee·정산 주기·보류·정정 | PSP/지역 조사 뒤 | [FR-003](../02-requirements/requirements-index.md) |
 | Q-007 | ? OPEN | 지역·통화·세금·privacy·security/regulation·합성 데이터 범위 | 테스트 계획 전 | [NFR-001](../02-requirements/requirements-index.md), [EXP-007](../08-experiments/experiment-registry.md) |
-| Q-008 | ? OPEN | [D-018/D-031/D-032](decision-log.md): profile shape selected (full Buyer session; hybrid open arrivals + sequential session steps; baseline/burst/step-up). Use synthetic scale ladder, offered Buyer sessions/s as primary, report-only acceptance. Numeric values, phase durations, think time, concurrency, environment, thresholds and production targets remain TBD. | Gate 2; settle campaign assumptions/parameters as one workload profile | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [NFR-002](../02-requirements/requirements-index.md), [EXP-010](../08-experiments/experiment-registry.md) |
+| Q-008 | ? OPEN | [D-018/D-031~D-033](decision-log.md): Full Buyer journey, hybrid arrivals, baseline/burst/step-up; synthetic test baseline 10k sessions/60m (~2.8 sessions/s), geometric 2×/4× steps (~5.6/11.1 sessions/s). Values are synthetic, not production demand. Separate burst multiplier/duration, audience evidence, think time, environment and SLO remain OPEN. | Gate 2; refine one workload profile with stated assumptions | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56), [NFR-002](../02-requirements/requirements-index.md), [EXP-010](../08-experiments/experiment-registry.md) |
 | Q-009 | ? OPEN | Java/Spring/DB/infra version, PayPal 제품별 API 범위 | ADR/구현 직전 공식 확인 | [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Reference Register](reference-register.md) |
 
-## Q-008 measurement contract — fields selected; values OPEN
-- Arrival: offered/admitted Buyer sessions/s; dropped sessions/iterations from the generator.
+## Q-008 measurement contract — report-only; some test inputs selected
+- Synthetic baseline: 10,000 Buyer sessions/60m (~2.8 offered sessions/s); geometric 2×/4× stress rates (~5.6/11.1 sessions/s). Test inputs only.
+- Arrival: offered/admitted Buyer sessions/s; generator-dropped sessions/iterations.
 - Requests: offered/achieved request RPS by stage; QPS only for explicitly measured DB query scope.
-- Transactions: resolved Buyer-session TPS only; unresolved PENDING/UNKNOWN remains in-flight/backlog.
-- Shape: hybrid open arrivals with sequential dependent steps per Buyer; baseline/burst/step-up. Numeric rates, phase duration, ramp and concurrency TBD.
-- Results: p95/p99 latency with boundaries, errors, expiry/abandonment, queue/hold occupancy, resource saturation, oversell invariant.
-- Acceptance: report-only; no pass/fail SLO. Environment, target thresholds and measured results remain TBD.
+- Transactions: resolved Buyer-session TPS only; unresolved PENDING/UNKNOWN is in-flight/backlog.
+- Remaining inputs OPEN: separate burst multiplier/duration, arrival curve/think time, phase durations, concurrency, environment and production targets.
+- Results: p95/p99 latency boundaries, errors, expiry/abandonment, queue/hold occupancy, resource saturation, oversell invariant. No pass/fail SLO.
 
 ## ✓ 기존 제약
 - 장기 범위 A/B/C 유지.
