@@ -17,7 +17,7 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 |---|---|---|
 | Gate 0 | 프로젝트 범위·문서 기준 | ✓ 완료, 2026-10-29 승인 |
 | Gate 1 | 문제·사용자 목표·도메인 탐색 | ✓ 초기 single-SKU scenario 완료 (2026-10-30). 추가 판매 유형·재고 정책·queue 세부 경계는 [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md) OPEN |
-| Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | → 진행 ([D-036](../00-governance/decision-log.md)); full Buyer journey, 현재 single-SKU baseline |
+| Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | → 진행 ([D-036](../00-governance/decision-log.md); [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65)); full Buyer journey, 현재 single-SKU baseline |
 | Gate 3 | 모듈·상태·데이터·계약·위험·용량 추정 | ? 대기 |
 | Gate 4 | 구현 승인된 기능의 synthetic load/failure 검증 | △ Proposed; 별도 Gate 승인 아님 |
 | M1 | Campaign, inventory reservation, order intent, 동시성 | ○ 계획 |
@@ -52,7 +52,7 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 - Gate 1 baseline 완료, Gate 2 진행: [D-023~D-036](../00-governance/decision-log.md). Assigned-seat/time-slot은 현재 범위 밖 ([Q-010](../00-governance/assumptions-and-open-questions.md)).
 - [Q-003](../00-governance/assumptions-and-open-questions.md): [D-034](../00-governance/decision-log.md)에서 active ticket retry, payload 불일치 거절, 만료 후 새 key·tail sequence를 결정. [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61). OPEN: key scope/retention, payload 비교 필드, expiry trigger/duration, storage/atomicity, bot 방어, 다른 판매 유형.
 - [Q-002](../00-governance/assumptions-and-open-questions.md): [D-035](../00-governance/decision-log.md)에서 reservation당 1개와 재고 conservation invariant 확정. [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63). 조정·재입고·다중 수량·post-claim 취소/환불 정책은 OPEN; D-027 checkout recovery 유지.
-- [Q-010](../00-governance/assumptions-and-open-questions.md): [Issue #64](https://github.com/Neo1228/ATLAS/issues/64)에서 assigned-seat/time-slot 비교 후 현재 Gate 2에 추가하지 않기로 선택. [Personas & Jobs](../01-discovery/personas-and-jobs.md), [REF-045~049](../00-governance/reference-register.md).
+- [Q-010](../00-governance/assumptions-and-open-questions.md): [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65)에서 assigned-seat/time-slot 비교 후 현재 Gate 2에 추가하지 않기로 선택. [Personas & Jobs](../01-discovery/personas-and-jobs.md), [REF-045~049](../00-governance/reference-register.md).
 - [Q-008](../00-governance/assumptions-and-open-questions.md): full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress, report-only.
   - Issues: [#51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56).
 - Merged PRs:

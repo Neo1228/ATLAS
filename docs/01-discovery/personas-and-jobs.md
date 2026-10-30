@@ -49,7 +49,7 @@ links:
 
 근거: [Eventbrite](../00-governance/reference-register.md) reserved-seat guide와 [TixTrack](../00-governance/reference-register.md) venue case는 개별 좌석·seat map·hold 흐름을 보여준다. [Museums Association](../00-governance/reference-register.md)와 [Techniquest case](../00-governance/reference-register.md)는 slot별 정원, 도착·미방문·점유 차이를 다룬다. 제품 문서·vendor 사례는 ATLAS backend 설계나 보편적 best practice의 근거가 아니다. 실제 사용자·시장 조사도 없음.
 
-사용자 선택: Gate 2는 현재 quantity-SKU 기준으로 진행. Assigned-seat/time-slot은 추가하지 않고 [Q-010](../00-governance/assumptions-and-open-questions.md) OPEN으로 유지 ([D-036](../00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64)).
+사용자 선택: Gate 2는 현재 quantity-SKU 기준으로 진행. Assigned-seat/time-slot은 추가하지 않고 [Q-010](../00-governance/assumptions-and-open-questions.md) OPEN으로 유지 ([D-036](../00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65)).
 
 ## 추적
 - [D-024](../00-governance/decision-log.md): sale open 전 admission 없음. Open 후 자격 통과 요청은 [D-019](../00-governance/decision-log.md) 기준 FIFO.
