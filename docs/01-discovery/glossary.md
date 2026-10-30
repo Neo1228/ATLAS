@@ -51,9 +51,9 @@ links:
 | 용어 | 설명 | ATLAS 상태 |
 |---|---|---|
 | Queue admission | 자격을 통과한 요청을 대기열에 등록. 초기 시나리오는 sale-open 후에만 admission/sequence 발급 ([D-020/D-024](../00-governance/decision-log.md)). | ✓ Baseline |
-| Queue ticket | Queue entry 식별자. 같은 요청 retry 시 기존 ticket 재사용 ([D-021](../00-governance/decision-log.md)). | ✓ Baseline |
-| Sequence number | Server가 발급하는 대기 순서. 작은 값이 우선인 가상 기준 ([D-019~D-022](../00-governance/decision-log.md)). | ✓ Baseline |
-| Worker | Background job을 처리하는 process. Restart 후 queue 순서 보존; 저장 방식은 OPEN ([D-022](../00-governance/decision-log.md)). | ○ Draft |
+| Queue ticket | Queue entry 식별자. 같은 key·payload의 active retry는 기존 ticket/sequence 반환. Payload가 다르면 거절; expiry 후 재입장은 새 key ([D-021/D-034](../00-governance/decision-log.md)). | ✓ Baseline |
+| Idempotency key | 한 논리적 queue-join 요청의 식별자. 같은 key·payload는 기존 결과 재사용; payload 변경은 거절 ([D-034](../00-governance/decision-log.md)). Scope·retention OPEN ([Q-003](../00-governance/assumptions-and-open-questions.md)). | 동작 기준 선택; 저장 방식·보존 기간 OPEN |
+| Sequence number | Server 순번. Campaign queue 안에서 unique; 낮은 값 우선. Expiry 후 재입장은 새 sequence를 tail에 발급 ([D-019/D-034](../00-governance/decision-log.md)). | ✓ Baseline |
 | Queue depth / backlog | 처리 대기 중인 작업 수. Queue age와 함께 해석. | Metric |
 | Backpressure | Downstream 지연·한계에 맞춰 upstream 입력을 늦추거나 거절하는 흐름 제어. | Concept |
 

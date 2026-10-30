@@ -45,7 +45,7 @@ updated: 2026-10-30
 - 필수 검사: [Markdown lint·PR checklist workflow](../.github/workflows/docs-lint.yml)
 
 - 현재 Gate: Gate 0 승인, Gate 1 진행 중. [Roadmap](09-delivery/roadmap.md), [Session Handoff](09-delivery/session-handoff.md).
-- Queue 기준: [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Q-003](00-governance/assumptions-and-open-questions.md), [Business Rules](03-domain/business-rules.md).
+- Queue 기준: [D-019~D-022/D-024/D-034](00-governance/decision-log.md), [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [#60](https://github.com/Neo1228/ATLAS/issues/60); [Q-003](00-governance/assumptions-and-open-questions.md), [Business Rules](03-domain/business-rules.md).
 - 초기 판매 범위: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34), [D-023/D-024](00-governance/decision-log.md).
 - Gate 2 profile: [D-031~D-033](00-governance/decision-log.md); [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56).
   - [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14)

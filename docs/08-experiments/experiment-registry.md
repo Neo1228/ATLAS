@@ -6,7 +6,7 @@ owner: Project Owner
 updated: 2026-10-30
 links:
   requirements: [NFR-002]
-  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011]
 ---
 # 실험 레지스트리
 
@@ -37,5 +37,6 @@ links:
 | EXP-008 | Cache update 역전, event 중복·순서 변경, consumer restart 영향 | Cache/messaging stack TBD |
 | EXP-009 | Failure injection 뒤 recovery time과 허용 data loss 측정 | RTO/RPO/SLO/environment TBD |
 | EXP-010 | [D-031~D-033](../00-governance/decision-log.md): full Buyer journey, hybrid arrivals, 10k/60m baseline, 2×/4× stress; report-only. | Ticketmaster는 균등 분배 가정의 rough estimate. Sessions/s, stage RPS, resolved TPS, p95/p99, errors, hold, expiry, oversell 측정. Burst/env/production target OPEN ([Q-008](../00-governance/assumptions-and-open-questions.md)) |
+| EXP-011 | [D-034](../00-governance/decision-log.md): active ticket의 same key·same payload retry가 기존 ticket/sequence를 재사용하는지, payload 변경이 거절되는지 확인. Expiry 후 새 key로 재입장하면 새 unique sequence가 tail에 발급되는지, 동시 admission·restart 뒤에도 순서와 ticket이 보존되는지 검증. | Key scope/retention, payload 비교 필드, expiry trigger/duration, storage/atomicity는 OPEN ([Q-003](../00-governance/assumptions-and-open-questions.md)) |
 
 실험 기록: 요구사항·불변조건, 완료 기준, 환경, 명령, 반복 횟수, 지표, 교란 요인, 한계. 형식: [Experiment Template](TEMPLATE.md).
