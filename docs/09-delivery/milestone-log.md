@@ -93,7 +93,7 @@ links:
 - 추적: [D-028](../00-governance/decision-log.md), [Q-004/Q-005/Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-005](../08-experiments/experiment-registry.md).
 
 ## 2026-10-30 — Buyer checkout timer contract
-- 선택: [Issue #46](https://github.com/Neo1228/ATLAS/issues/46); timer starts at confirmed inventory hold, initial `AUTHORIZE` submission required before expiry, no grace extension.
+- 선택: [Issue #46](https://github.com/Neo1228/ATLAS/issues/46)/[PR #47](https://github.com/Neo1228/ATLAS/pull/47); timer starts at confirmed inventory hold, initial `AUTHORIZE` submission required before expiry, no grace extension.
 - Expiry UX: close checkout; if payment request was submitted, show pending status until D-027 reconciliation resolves. No new payment attempt before resolution.
 - Numeric TTL and start point measurement remain OPEN. Eventbrite/FareHarbor/Ticketmaster examples are product-specific, not ATLAS values ([REF-039~041](../00-governance/reference-register.md)).
 - Records: [D-029](../00-governance/decision-log.md), [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [BR-003/INV-003](../03-domain/business-rules.md), [EXP-005](../08-experiments/experiment-registry.md).
