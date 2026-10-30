@@ -32,7 +32,8 @@ links:
 | Webhook | 외부 시스템이 status 변경을 알리는 HTTP request. | ○ Draft |
 | Authorization / Capture | Authorization은 buyer funds를 hold하고, capture는 승인된 funds를 청구. 초기 scenario는 `AUTHORIZE → CAPTURE`; capture success 확인 후 inventory claim. | [D-026](../00-governance/decision-log.md); provider endpoint/recovery contract ? OPEN |
 | UNKNOWN payment outcome | Operation 결과가 미확정된 상태; 실패와 다름. 같은 attempt를 확인하기 전 새 attempt 금지. | [D-025/D-026](../00-governance/decision-log.md); provider별 retry/key contract ? OPEN |
-| Business transaction | Checkout 등 사용자 흐름 단위. 여러 API request/DB transaction으로 구성 가능. | Metric scope는 test에서 지정 |
+| Buyer session | Initial synthetic journey from sale-open admission/FIFO through inventory hold, checkout think time, AUTHORIZE submission and resolved payment outcome ([D-031](../00-governance/decision-log.md)). | Initial scope selected; workload values OPEN |
+| Business transaction | User-flow unit that may contain multiple API/DB transactions. Initial checkout TPS counts a resolved Buyer session from sale-open admission through confirmed capture or definitive non-payment; pending/UNKNOWN sessions remain in-flight, not completed ([D-031](../00-governance/decision-log.md)). | Metric scope explicit; target OPEN |
 | Database transaction | DB operation의 commit/rollback 단위. Isolation/locking semantics는 DB별 차이. | DB 선택 없음 |
 | Conditional update | 조건이 맞을 때만 row를 갱신하는 SQL pattern. 동시성 보장은 DB semantics 확인 필요. | Reference |
 | Pessimistic lock | 쓰기 전에 lock 획득; 충돌 작업은 대기. | Reference |

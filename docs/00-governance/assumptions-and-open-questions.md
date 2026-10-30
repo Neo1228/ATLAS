@@ -23,15 +23,16 @@ links:
 | Q-005 | ? OPEN | [D-025~D-030](decision-log.md): UNKNOWN은 failure 아님; same attempt reconcile. Capture success만 claim; `PENDING`/UNKNOWN 동안 hold. Confirmed non-payment 후 active authorization void; confirmed void/expiry 후 release. Provider/API/recovery deadlines are separate from synthetic checkout TTL. Retry/key retention, deadlines, escalation/compensation OPEN. | Q-004와 lifecycle 정책 합의 | [FR-002](../02-requirements/requirements-index.md), [EXP-003/004/005](../08-experiments/experiment-registry.md), [Issue #48](https://github.com/Neo1228/ATLAS/issues/48); [REF-034~041](reference-register.md) |
 | Q-006 | ? OPEN | 내부 settlement ledger와 PSP 지급 경계, fee·정산 주기·보류·정정 | PSP/지역 조사 뒤 | [FR-003](../02-requirements/requirements-index.md) |
 | Q-007 | ? OPEN | 지역·통화·세금·privacy·security/regulation·합성 데이터 범위 | 테스트 계획 전 | [NFR-001](../02-requirements/requirements-index.md), [EXP-007](../08-experiments/experiment-registry.md) |
-| Q-008 | ? OPEN | Workload profile, performance/recovery targets. 값은 합의 전 TBD. 제안 순서 [D-018](decision-log.md). | Gate 2 | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Requirements](../02-requirements/requirements-index.md) |
+| Q-008 | ? OPEN | [D-018/D-031](decision-log.md): Initial profile shape selected (full Buyer session, hybrid open arrivals + sequential session steps, baseline/burst/step-up); workload/traffic values and performance/recovery targets remain TBD. | Gate 2; agree campaign/audience assumptions and numeric values as one profile | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [NFR-002](../02-requirements/requirements-index.md), [Experiments](../08-experiments/experiment-registry.md) |
 | Q-009 | ? OPEN | Java/Spring/DB/infra version, PayPal 제품별 API 범위 | ADR/구현 직전 공식 확인 | [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Reference Register](reference-register.md) |
 
-## Q-008 측정 항목 — 모두 ? OPEN
-- 요청률: offered/achieved RPS. Transaction TPS는 transaction 범위 정의; DB QPS는 DB 측정 시에만 사용.
-- Workload: open/closed model, request/transaction mix, concurrency, payload, burst, 지속 시간.
-- 결과: throughput, p95/p99 latency, error rate, queue depth/saturation, budget.
-- 복구/환경: SLO, RTO, RPO, deployment 조건.
-- Q-008의 measurement fields는 설계됐으나 workload/target values와 실측 결과는 OPEN.
+## Q-008 measurement contract — metric fields chosen; values OPEN
+- Arrival: offered/admitted Buyer sessions/s; dropped sessions/iterations from the generator.
+- Requests: offered/achieved RPS by stage. QPS only for an explicitly measured DB query scope.
+- Transactions: initial Buyer-session TPS counts resolved sessions only (capture confirmed or definitive non-payment resolved); unresolved PENDING/UNKNOWN is in-flight/backlog, not a completed transaction.
+- Load shape: hybrid open arrivals with sequential dependent steps per Buyer; baseline, sale-open burst, step-up. Rates, burst/ramp, concurrency and durations TBD.
+- Results: p50/p95/p99 latency with named boundaries; error/expiry/abandonment, queue depth/age, hold occupancy, resource saturation, oversell invariant.
+- Environment/acceptance: audience assumptions, hardware, SLO/RTO/RPO, numerical thresholds and measured results remain TBD.
 
 ## ✓ 기존 제약
 - 장기 범위 A/B/C 유지.
