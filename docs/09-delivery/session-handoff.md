@@ -14,7 +14,7 @@ links:
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
 - ✓ Gate 0 승인 (2026-10-29). → Gate 1 discovery 진행 중.
-- Gate 1: [D-023/D-024](../00-governance/decision-log.md) 초기 판매·queue scope; [PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged. [D-025](../00-governance/decision-log.md) hold/payment recovery, [Issue #35](https://github.com/Neo1228/ATLAS/issues/35)/[PR #36](https://github.com/Neo1228/ATLAS/pull/36) merged. [Issue #38](https://github.com/Neo1228/ATLAS/issues/38)/[PR #39](https://github.com/Neo1228/ATLAS/pull/39) link audit in review; PayPal auth/capture [Issue #37](https://github.com/Neo1228/ATLAS/issues/37) queued.
+- Gate 1: [D-023/D-024](../00-governance/decision-log.md) 초기 판매·queue scope ([PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged). [D-025](../00-governance/decision-log.md) hold/payment recovery ([Issue #35](https://github.com/Neo1228/ATLAS/issues/35)/[PR #36](https://github.com/Neo1228/ATLAS/pull/36) merged). Trace audit [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) closed by [PR #39](https://github.com/Neo1228/ATLAS/pull/39) (`2897ff1`); next auth/capture [Issue #37](https://github.com/Neo1228/ATLAS/issues/37).
 - 코드, runtime dependency, 실제 payment 호출, deployment 미착수. Gate 2/구현은 별도 승인 필요.
 
 ## 확정된 방향
@@ -39,7 +39,7 @@ links:
 | Persona/capacity | [PR #21](https://github.com/Neo1228/ATLAS/pull/21) ([Issue #19](https://github.com/Neo1228/ATLAS/issues/19)/[#20](https://github.com/Neo1228/ATLAS/issues/20)) |
 | 초기 판매 시나리오 | [Issue #33](https://github.com/Neo1228/ATLAS/issues/33); [PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged; [D-023/D-024](../00-governance/decision-log.md) |
 | 결제 중 hold/recovery | [Issue #35](https://github.com/Neo1228/ATLAS/issues/35); [PR #36](https://github.com/Neo1228/ATLAS/pull/36) merged; [D-025](../00-governance/decision-log.md) |
-| 문서·Issue·PR 추적 링크 | [Issue #38](https://github.com/Neo1228/ATLAS/issues/38); [PR #39](https://github.com/Neo1228/ATLAS/pull/39) open |
+| 문서·Issue·PR 추적 링크 | [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) closed; [PR #39](https://github.com/Neo1228/ATLAS/pull/39) merged `2897ff1` |
 | 문서 작성 기준 | [Issue #26](https://github.com/Neo1228/ATLAS/issues/26); [PR #27](https://github.com/Neo1228/ATLAS/pull/27) merged [`a82e022`](https://github.com/Neo1228/ATLAS/commit/a82e022); closeout [PR #28](https://github.com/Neo1228/ATLAS/pull/28) merged [`bc8d60b`](https://github.com/Neo1228/ATLAS/commit/bc8d60b) |
 
 진행 상태는 [Roadmap](roadmap.md), 전체 변경 이력은 [Milestone Log](milestone-log.md). 새 작업은 Issue-first. 관련 commit/Issue는 하나의 reviewable PR로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).
