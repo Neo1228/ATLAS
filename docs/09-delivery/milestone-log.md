@@ -79,3 +79,9 @@ links:
 - 근거: [REF-030~033](../00-governance/reference-register.md). PayPal contract는 해당 provider에만 적용; Shopify/Coinbase 사례는 on-chain practitioner reference이며 PayPal 근거 아님. Authorization은 최종 청구나 inventory claim이 아님.
 - 미정: endpoint/version, operation별 idempotency 지원/retention과 retry, inventory/auth expiry, capture/void/cancel 복구, compensation. 구현·production behavior 승인 아님.
 - Verification: Markdown lint, local links and PR #41 required checks passed.
+
+## 2026-10-30 — 결제 hold 만료·복구 기준
+- 선택: [Issue #42](https://github.com/Neo1228/ATLAS/issues/42)/[PR #43](https://github.com/Neo1228/ATLAS/pull/43). B: TTL/cancel 시 capture 확인; active uncaptured authorization은 void. Capture success면 claim; release는 confirmed non-payment와 void/expiry 이후.
+- 기록: [D-027](../00-governance/decision-log.md), [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [BR-003/INV-003](../03-domain/business-rules.md), [EXP-003/004/005](../08-experiments/experiment-registry.md).
+- 근거: [REF-034~038](../00-governance/reference-register.md). PayPal authorization 기간 문구가 29/30일로 달라 provider TTL 미선택; ATLAS inventory TTL과 구분.
+- 미정: TTL/deadline 수치, retry/key retention, escalation·compensation. Implementation/production payment 미착수.

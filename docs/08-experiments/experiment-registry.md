@@ -28,9 +28,9 @@ links:
 |---|---|---|
 | EXP-001 | [D-023](../00-governance/decision-log.md) 초기 범위: campaign 소유 pool 하나에서 수량형 SKU 1종의 동시 reservation 중 초과 예약·판매 발생 여부 확인 | 100/1,000은 실험 후보 수량이지 목표값 아님. 정책/acceptance TBD |
 | EXP-002 | conditional UPDATE, pessimistic/optimistic lock의 throughput·p95/p99·대기 비교 | 동일 DB·환경·부하 필요 |
-| EXP-003 | [D-025/D-026](../00-governance/decision-log.md): authorize 후 capture. Capture success 확인 전 claim 금지. 각 operation에서 ambiguous response를 주입하고 same-attempt reconciliation, 중복 claim/new attempt 방지를 검증. | Operation별 idempotency 지원/retention, retry policy 미정 ([Q-005](../00-governance/assumptions-and-open-questions.md)) |
-| EXP-004 | [D-025/D-026](../00-governance/decision-log.md): authorization/capture 응답 유실·지연, 늦은 webhook, restart 상황. Authorization만으로 claim하지 않고 operation별 UNKNOWN을 reconcile하는지 확인. | Fake PSP는 PayPal 장애 증거가 아님; recovery acceptance 미정 ([Q-005](../00-governance/assumptions-and-open-questions.md)) |
-| EXP-005 | [D-025/D-026](../00-governance/decision-log.md): authorization 또는 capture UNKNOWN 중 inventory TTL 경과. Reconciliation 전 재고가 unavailable인지 확인. | TTL, authorization 확정 후 expiry, capture/void recovery, compensation 미정 ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)) |
+| EXP-003 | [D-025~D-027](../00-governance/decision-log.md): Capture success only claim; capture UNKNOWN/PENDING blocks release. Verify same-attempt reconciliation, no duplicate claim/retry. | Endpoint retry/idempotency support/retention and limit TBD ([Q-005](../00-governance/assumptions-and-open-questions.md)) |
+| EXP-004 | [D-025~D-027](../00-governance/decision-log.md): TTL/cancel, capture pending/declined/unknown, void pending/unknown, delayed webhook and restart. Verify capture check → void active auth → release only after confirmed void/expiry and non-payment. | Fake PSP does not prove PayPal behavior; deadlines/escalation TBD ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)) |
+| EXP-005 | [D-025~D-027](../00-governance/decision-log.md): expiry during capture/void UNKNOWN and post-expiry success reconciliation. Verify stock remains unavailable until capture success or confirmed non-payment+void/expiry. | TTL, provider validity, deadline/recovery limits and compensation TBD ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)) |
 | EXP-006 | refund·adjustment·fee 변경 뒤 settlement ledger 정합성 | settlement policy TBD |
 | EXP-007 | ID 변경으로 다른 tenant 데이터 접근 시도 (IDOR) | 권한/threat boundary TBD |
 | EXP-008 | cache update 역전·event 중복/순서 변경·consumer restart 영향 | cache/messaging stack TBD |
