@@ -11,7 +11,7 @@ links:
 ---
 # 외부 참고자료 레지스트리
 
-REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~029: 2026-10-30 확인한 practitioner/product 자료. 적용 범위와 한계는 각 행 참조. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
+REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~029: 2026-10-30 확인한 practitioner/product 자료. REF-030~033: 2026-10-30 PayPal contract와 practitioner 사례 확인. 적용 범위와 한계는 각 행 참조. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
 |---|---|---|---|---|---|
@@ -44,8 +44,12 @@ REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 
 | REF-027 | Brandur Leach, Implementing Stripe-like Idempotency Keys in Postgres / practitioner engineering article | https://brandur.org/idempotency-keys | 2026-10-30 | Same-attempt retry, recovery point, ambiguous external charge | ✓ 검토; Stripe-like/Postgres example, PayPal contract 아님 |
 | REF-028 | Stripe Engineering, Designing robust and predictable APIs with idempotency / engineering blog | https://stripe.com/blog/idempotency | 2026-10-30 | Idempotency key로 charge retry의 중복 효과 방지 | ✓ 검토; Stripe API/SDK 사례, 타 PSP로 일반화하지 않음 |
 | REF-029 | Stripe, Advanced error handling / API guidance | https://docs.stripe.com/error-low-level | 2026-10-30 | Network/5xx outcome uncertainty와 reconcile-before-new-operation | ✓ 검토; key retention/retry window는 Stripe-specific, ATLAS/PayPal 기준값 아님 |
+| REF-030 | PayPal, Authorize a payment and capture funds later / API guide | https://developer.paypal.com/platforms/checkout/standard/customize/auth-capture/ | 2026-10-30 | Authorization/capture 순서 및 funds hold와 later capture 의미 | ✓ 검토; PayPal flow/eligibility·validity 조건은 provider-specific |
+| REF-031 | PayPal Orders v2, Checkout payment intent / API definition | https://developer.paypal.com/api/orders/v2/definitions/checkout_payment_intent/ | 2026-10-30 | `CAPTURE` immediate capture와 `AUTHORIZE` separate capture 차이 | ✓ 검토; 3-day honor/29-day validity 및 purchase-unit 제한은 PayPal-specific, ATLAS TTL 아님 |
+| REF-032 | PayPal REST API, Idempotency / API guidance | https://developer.paypal.com/api/rest/reference/idempotency/ | 2026-10-30 | `PayPal-Request-Id` retry identity | ✓ 검토; endpoint마다 support/retention이 다름; ATLAS key/retry policy 아님 |
+| REF-033 | Shopify & Coinbase Engineering, Commerce Payments Protocol / practitioner article | https://shopify.engineering/commerce-payments-protocol | 2026-10-30 | Authorize/capture 사례, cancellation/partial capture trade-offs | ✓ 검토; on-chain protocol, PayPal/card flow의 direct implementation 근거 아님 |
 
-PayPal API/지역/계정/자금 흐름은 구현 시점의 공식 문서로 확인. 현재 목록은 PayPal 기능이나 법률을 검증하지 않음.
+PayPal API/지역/계정/자금 흐름은 구현 시점의 공식 문서로 확인. Authorization validity와 honor window는 provider-specific이며 ATLAS inventory TTL로 사용하지 않음. REF-030~033은 초기 flow 선택 근거; production behavior, endpoint support, legal obligations의 검증이 아님.
 
 ## 관련 문서
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): REF-001~003은 미확인 후보.
