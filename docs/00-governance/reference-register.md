@@ -11,7 +11,7 @@ links:
 ---
 # 외부 참고자료 레지스트리
 
-REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~029: 2026-10-30 확인한 practitioner/product 자료. REF-030~038: 2026-10-30 PayPal 계약 문서와 capture 사례 확인. 범위와 한계는 각 행 참조; 외부 자료가 ATLAS 정책을 대신 결정하지 않음.
+REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~029: 2026-10-30 확인한 practitioner/product 자료. REF-030~041: 2026-10-30 결제 provider·checkout 사례 확인. 범위와 한계는 각 행 참조; 외부 자료가 ATLAS 정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
 |---|---|---|---|---|---|
@@ -53,8 +53,11 @@ REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 
 | REF-036 | PayPal, Webhook event names / API reference | https://developer.paypal.com/api/rest/webhooks/event-names/ | 2026-10-30 | Authorization voided, capture pending/declined/completed/reversed events | ✓ 검토; event delivery/order 보장이나 ATLAS state policy 아님 |
 | REF-037 | PayPal, Authorization and honor period / API guidance | https://developer.paypal.com/payment-methods/auth-honor | 2026-10-30 | PayPal authorization/honor-period semantics | ✓ 검토; 29-day guide와 webhook 문서의 30-day 문구 차이 존재; ATLAS TTL 아님 |
 | REF-038 | Stripe, Payment capture strategies / practitioner/product guide | https://stripe.com/resources/more/payment-capture-strategies-timing-risks-and-what-businesses-need-to-know | 2026-10-30 | Delayed capture, cancellation, failed capture trade-offs | ✓ 참고 사례; card-focused, PayPal/ATLAS contract 근거 아님 |
+| REF-039 | Ticketmaster Help, Checkout time limit / customer policy | https://help.ticketmaster.com/hc/en-us/articles/9642204793617-Why-is-there-a-time-limit-for-checking-out | 2026-10-30 | Checkout hold duration varies with ticket demand | ✓ 검토; Ticketmaster policy, no universal numeric recommendation |
+| REF-040 | Broadleaf, Checkout inventory reservations / product docs | https://developer.broadleafcommerce.com/services/inventory-services/checkout-inventory-reservations | 2026-10-30 | Soft reservation expiration after unsuccessful checkout | ✓ 검토; configurable 5-minute product example, ATLAS default 아님 |
+| REF-041 | PayPal, Integrate webhooks / API guide | https://developer.paypal.com/api/rest/webhooks/rest | 2026-10-30 | Failed webhook delivery retried up to 25 times over 3 days | ✓ 검토; delivery retry contract, checkout TTL/API deadline 아님 |
 
-PayPal API/지역/계정/자금 흐름은 구현 시점 공식 문서로 확인. Authorization validity/honor window는 provider-specific이며 ATLAS inventory TTL로 사용하지 않음. REF-030~038은 기능/사례를 설명하며 production behavior·endpoint support·법률 의무를 검증하지 않음.
+PayPal API/지역/계정/자금 흐름은 구현 시점 공식 문서로 확인. Authorization validity/honor window는 provider-specific이며 ATLAS inventory TTL로 사용하지 않음. Webhook delivery retry 역시 buyer checkout TTL/API deadline과 별개. REF-030~041은 기능/사례를 설명하며 production behavior·endpoint support·법률 의무를 검증하지 않음.
 
 ## 관련 문서
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): REF-001~003은 미확인 후보.

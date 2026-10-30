@@ -85,3 +85,9 @@ links:
 - 기록: [D-027](../00-governance/decision-log.md), [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [BR-003/INV-003](../03-domain/business-rules.md), [EXP-003/004/005](../08-experiments/experiment-registry.md).
 - 근거: [REF-034~038](../00-governance/reference-register.md). PayPal authorization 기간 문구가 29/30일로 달라 provider TTL 미선택; ATLAS inventory TTL과 구분.
 - 미정: TTL/deadline 수치, retry/key retention, escalation·compensation. Implementation/production payment 미착수.
+
+## 2026-10-30 — 초기 checkout TTL 방식
+- 선택: [Issue #44](https://github.com/Neo1228/ATLAS/issues/44) A — fixed window. 초기 synthetic sale에는 하나의 checkout window 적용; demand-based TTL은 제외.
+- 미정: duration, TTL start trigger, checkout journey/expiry UX, p50/p95/p99 측정값 및 acceptance. PSP delivery/API/recovery deadline은 별도.
+- 근거: [REF-039~041](../00-governance/reference-register.md). Ticketmaster는 event demand에 따라 timer 변경; Broadleaf 5분은 configurable product example; PayPal 3일은 webhook redelivery period. 어느 것도 ATLAS TTL 값 아님.
+- 추적: [D-028](../00-governance/decision-log.md), [Q-004/Q-005/Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-005](../08-experiments/experiment-registry.md).

@@ -14,7 +14,7 @@ links:
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
 - ✓ Gate 0 승인 (2026-10-29). → Gate 1 discovery 진행 중.
-- Gate 1: 초기 판매/queue scope [D-023/D-024](../00-governance/decision-log.md) ([PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged). Hold/recovery [D-025](../00-governance/decision-log.md) ([Issue #35](https://github.com/Neo1228/ATLAS/issues/35)/[PR #36](https://github.com/Neo1228/ATLAS/pull/36) merged). Trace audit [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) closed by [PR #39](https://github.com/Neo1228/ATLAS/pull/39) (`2897ff1`). [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)/[PR #41](https://github.com/Neo1228/ATLAS/pull/41): `AUTHORIZE → CAPTURE`, claim after confirmed capture. [Issue #42](https://github.com/Neo1228/ATLAS/issues/42)/[PR #43](https://github.com/Neo1228/ATLAS/pull/43): release after confirmed non-payment and void/expiry.
+- Gate 1: 초기 판매/queue scope [D-023/D-024](../00-governance/decision-log.md) ([PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged). Hold/recovery [D-025](../00-governance/decision-log.md) ([Issue #35](https://github.com/Neo1228/ATLAS/issues/35)/[PR #36](https://github.com/Neo1228/ATLAS/pull/36) merged). Trace audit [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) closed by [PR #39](https://github.com/Neo1228/ATLAS/pull/39) (`2897ff1`). [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)/[PR #41](https://github.com/Neo1228/ATLAS/pull/41): `AUTHORIZE → CAPTURE`, claim after confirmed capture. [Issue #42](https://github.com/Neo1228/ATLAS/issues/42)/[PR #43](https://github.com/Neo1228/ATLAS/pull/43): release after confirmed non-payment and void/expiry. [Issue #44](https://github.com/Neo1228/ATLAS/issues/44) selected one fixed checkout window; numeric values OPEN.
 - 코드, runtime dependency, 실제 payment 호출, deployment 미착수. Gate 2/구현은 별도 승인 필요.
 
 ## 확정된 방향
@@ -26,7 +26,7 @@ links:
 ## 미정·다음
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md) Modular Monolith First: △ Proposed.
 - [Q-003](../00-governance/assumptions-and-open-questions.md) 잔여 storage/key/payload/expiry/re-entry/tie/bot policy OPEN. [Q-002/Q-010](../00-governance/assumptions-and-open-questions.md)은 공유 재고·다른 판매 유형 미정.
-- [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md): [D-027](../00-governance/decision-log.md) release boundary 확정. TTL/deadline, retry/key retention, long-lived UNKNOWN 처리와 escalation/compensation은 OPEN. [Issue #42](https://github.com/Neo1228/ATLAS/issues/42); 구현 미승인.
+- [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md): [D-027/D-028](../00-governance/decision-log.md) define release boundary and fixed checkout window. TTL duration/start trigger, workload measurement, provider deadlines, retry/key retention, escalation/compensation OPEN. [Issue #44](https://github.com/Neo1228/ATLAS/issues/44); implementation not approved.
 - Performance 순서 ([D-018](../00-governance/decision-log.md), △ Proposed): Gate 2 workload profile → Gate 3 capacity estimate → implementation 승인 후 Gate 4 synthetic validation. RPS/TPS/QPS scope와 용어는 [Glossary](../01-discovery/glossary.md); 목표값·실측 없음 ([Issue #20](https://github.com/Neo1228/ATLAS/issues/20)).
 
 ## 이력
@@ -42,6 +42,7 @@ links:
 | 문서·Issue·PR 추적 링크 | [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) closed; [PR #39](https://github.com/Neo1228/ATLAS/pull/39) merged `2897ff1` |
 | PayPal auth/capture flow | [Issue #37](https://github.com/Neo1228/ATLAS/issues/37); [PR #41](https://github.com/Neo1228/ATLAS/pull/41); selected `AUTHORIZE → CAPTURE`; [D-026](../00-governance/decision-log.md); implementation details OPEN |
 | Payment TTL/recovery | [Issue #42](https://github.com/Neo1228/ATLAS/issues/42); [PR #43](https://github.com/Neo1228/ATLAS/pull/43); [D-027](../00-governance/decision-log.md); numeric deadlines OPEN |
+| Checkout TTL policy | [Issue #44](https://github.com/Neo1228/ATLAS/issues/44); [D-028](../00-governance/decision-log.md): fixed initial window; duration/start trigger TBD |
 | 문서 작성 기준 | [Issue #26](https://github.com/Neo1228/ATLAS/issues/26); [PR #27](https://github.com/Neo1228/ATLAS/pull/27) merged [`a82e022`](https://github.com/Neo1228/ATLAS/commit/a82e022); closeout [PR #28](https://github.com/Neo1228/ATLAS/pull/28) merged [`bc8d60b`](https://github.com/Neo1228/ATLAS/commit/bc8d60b) |
 
 진행 상태는 [Roadmap](roadmap.md), 전체 변경 이력은 [Milestone Log](milestone-log.md). 새 작업은 Issue-first. 관련 commit/Issue는 하나의 reviewable PR로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).
