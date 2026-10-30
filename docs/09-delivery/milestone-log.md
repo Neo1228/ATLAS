@@ -118,8 +118,9 @@ links:
 - PR #57의 close keyword가 Markdown link 안에 있어 Issue #56은 병합 후 수동 종료. 자동 검사 보완은 [Issue #58](https://github.com/Neo1228/ATLAS/issues/58).
 
 ## 2026-10-30 — Queue ticket 수명주기
-- 선택: [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), A/A/A. Active ticket의 same-key/same-payload retry는 기존 ticket 재사용. Payload 변경은 거절하고 기존 ticket 유지. 만료 후 재입장은 새 key와 새 sequence로 tail 배치. Campaign 안에서 sequence unique.
+- 선택: [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61), A/A/A. Active ticket의 same-key/same-payload retry는 기존 ticket 재사용. Payload 변경은 거절하고 기존 ticket 유지. 만료 후 재입장은 새 key와 새 sequence로 tail 배치. Campaign 안에서 sequence unique.
 - 기록: [D-034](../00-governance/decision-log.md), [Q-003](../00-governance/assumptions-and-open-questions.md), [BR-001](../03-domain/business-rules.md), [INV-002](../03-domain/invariants.md), [EXP-011](../08-experiments/experiment-registry.md).
+- Commit: [523e564](https://github.com/Neo1228/ATLAS/commit/523e564). PR #61에 required checks와 최종 merge SHA 기록.
 - 미정: key scope/retention, payload 비교 필드, expiry trigger/duration, storage/atomicity, bot 방어, 다른 판매 유형. Runtime/API/DB 구현 미착수.
 
 - 실행 결과 없음. [EXP-011](../08-experiments/experiment-registry.md)는 ○ Planned.

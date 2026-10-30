@@ -15,7 +15,7 @@ links:
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
 - ✓ Gate 0 승인 (2026-10-29). Gate 1 진행 중.
 - 초기 판매 범위: [D-023/D-024](../00-governance/decision-log.md), [PR #34](https://github.com/Neo1228/ATLAS/pull/34) 병합.
-- Queue ticket 수명주기: [D-034](../00-governance/decision-log.md), [Issue #60](https://github.com/Neo1228/ATLAS/issues/60).
+- Queue ticket 수명주기: [D-034](../00-governance/decision-log.md), [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61).
 - 결제 복구 [D-025~D-030](../00-governance/decision-log.md):
   - Issues: [#35](https://github.com/Neo1228/ATLAS/issues/35), [#37](https://github.com/Neo1228/ATLAS/issues/37), [#42](https://github.com/Neo1228/ATLAS/issues/42), [#44](https://github.com/Neo1228/ATLAS/issues/44), [#46](https://github.com/Neo1228/ATLAS/issues/46), [#48](https://github.com/Neo1228/ATLAS/issues/48).
   - PRs: [#36](https://github.com/Neo1228/ATLAS/pull/36), [#41](https://github.com/Neo1228/ATLAS/pull/41), [#43](https://github.com/Neo1228/ATLAS/pull/43), [#45](https://github.com/Neo1228/ATLAS/pull/45), [#47](https://github.com/Neo1228/ATLAS/pull/47), [#49](https://github.com/Neo1228/ATLAS/pull/49).
@@ -57,7 +57,7 @@ links:
 | Checkout 시간 제한 | [Issue #44](https://github.com/Neo1228/ATLAS/issues/44); [PR #45](https://github.com/Neo1228/ATLAS/pull/45); [D-028](../00-governance/decision-log.md). 방식 선택, duration/start trigger OPEN |
 | Buyer timer 계약 | [Issue #46](https://github.com/Neo1228/ATLAS/issues/46); [PR #47](https://github.com/Neo1228/ATLAS/pull/47); [D-029](../00-governance/decision-log.md). Confirmed hold부터 시작, expiry 전 AUTHORIZE 제출, extension 없음 |
 | 문서 작성 기준 | [Issue #26](https://github.com/Neo1228/ATLAS/issues/26); [PR #27](https://github.com/Neo1228/ATLAS/pull/27) 병합 [`a82e022`](https://github.com/Neo1228/ATLAS/commit/a82e022); [PR #28](https://github.com/Neo1228/ATLAS/pull/28) closeout 병합 [`bc8d60b`](https://github.com/Neo1228/ATLAS/commit/bc8d60b) |
-| Queue ticket 수명주기 | [Issue #60](https://github.com/Neo1228/ATLAS/issues/60); [D-034](../00-governance/decision-log.md): retry·payload mismatch·expiry 후 재입장 기준 |
+| Queue ticket 수명주기 | [Issue #60](https://github.com/Neo1228/ATLAS/issues/60); [PR #61](https://github.com/Neo1228/ATLAS/pull/61); [D-034](../00-governance/decision-log.md): retry·payload mismatch·expiry 후 재입장 기준 |
 
 - 진행 현황: [Roadmap](roadmap.md).
 - 완료 이력: [Milestone Log](milestone-log.md).
