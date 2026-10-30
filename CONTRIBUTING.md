@@ -3,7 +3,7 @@
 
 ## 1. 작업과 Issue
 1. 착수 전 GitHub Issue 생성. [버그 양식](.github/ISSUE_TEMPLATE/bug_report.yml) 또는 [제안 양식](.github/ISSUE_TEMPLATE/change_request.yml) 사용.
-2. 문제·근거·범위·완료/검증 기준·관련 ID(Q/FR/NFR/BR/INV/ADR/EXP) 기록.
+2. 문제·근거·범위·완료/검증 기준·관련 ID(Q/FR/NFR/BR/INV/ADR/EXP)를 기록. ID마다 기준 문서로 이동하는 Markdown link 제공; bare ID만 나열하지 않음.
 3. 복잡한 변경은 본문에 사실/가정, 결정 이유, 대안·trade-off, 영향 상태/불변조건을 요약. 링크만 남기지 않음.
 4. 한 Issue는 한 응집된 작업 묶음. 커밋마다 Issue를 만들지 않음. 관계된 Issue/commit은 하나의 PR에 통합 가능.
 5. 이슈 번호를 branch명에 포함. 모든 관련 PR/commit 연결. 완료 시 `Closes #N`, 일부만 반영 시 `Refs #N`.

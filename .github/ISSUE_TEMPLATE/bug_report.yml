@@ -47,10 +47,10 @@ body:
       description: 다단계 상태 변화는 Mermaid sequence/state diagram으로 표현. 기준 도식이 있으면 요약과 링크.
     validations:
       required: false
-  - type: input
+  - type: textarea
     id: trace
     attributes:
       label: 관련 ID
-      description: 요구사항, 규칙, 불변조건, ADR, 실험 또는 PR ID
+      description: 관련 ID를 기준 문서로 가는 Markdown link로 연결. Bare ID만 나열하지 않음.
     validations:
       required: false

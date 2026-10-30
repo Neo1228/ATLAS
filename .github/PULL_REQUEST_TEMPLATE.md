@@ -22,8 +22,9 @@
 - 도식 또는 N/A 사유:
 
 ## 추적
-- Issues: <!-- 완료 시 Closes #N, 미완료면 Refs #N -->
-- Requirement/decision/rule IDs:
+- Issues: <!-- 완료 시 Closes #N, 미완료면 Refs #N. Issue와 관련 기준 문서를 직접 링크. -->
+- Requirement/decision/rule IDs: <!-- 각 ID를 기준 문서로 가는 Markdown link로 작성; bare ID만 나열하지 않음. -->
+- 기준 문서/근거 자료: <!-- 변경한 기준 문서와 외부 근거에 직접 link. 본문에도 이유·영향 설명을 유지. -->
 - Commits:
 
 ## 변경

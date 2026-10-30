@@ -12,7 +12,7 @@ links:
 
 상태: 모든 실험 ○ Planned. 실행/결과 없음. 재고 100/1,000은 테스트 후보이지 목표 아님. Synthetic workload는 실제 traffic과 다름.
 
-제안 순서 (D-018, △ Proposed):
+제안 순서 ([D-018](../00-governance/decision-log.md), △ Proposed):
 - Gate 2: workload profile 합의.
 - Gate 3: capacity model 추정.
 - Implementation approval 후 Gate 4 validation.
@@ -26,11 +26,11 @@ links:
 
 | ID | 테스트 가설 | 주요 제약 |
 |---|---|---|
-| EXP-001 | D-023 초기 범위: campaign 소유 pool 하나에서 수량형 SKU 1종의 동시 reservation 중 초과 예약·판매 발생 여부 확인 | 100/1,000은 실험 후보 수량이지 목표값 아님. 정책/acceptance TBD |
+| EXP-001 | [D-023](../00-governance/decision-log.md) 초기 범위: campaign 소유 pool 하나에서 수량형 SKU 1종의 동시 reservation 중 초과 예약·판매 발생 여부 확인 | 100/1,000은 실험 후보 수량이지 목표값 아님. 정책/acceptance TBD |
 | EXP-002 | conditional UPDATE, pessimistic/optimistic lock의 throughput·p95/p99·대기 비교 | 동일 DB·환경·부하 필요 |
-| EXP-003 | Payment timeout 뒤 같은 attempt identity로 재시도/reconcile; order/payment effect 중복 여부 확인 | PSP idempotency-key 지원/retention, retry limit TBD |
-| EXP-004 | PSP response 유실·늦은 webhook·restart 뒤 UNKNOWN attempt reconcile | Fake PSP는 PayPal 실제 장애 증거 아님; recovery acceptance TBD |
-| EXP-005 | Hold TTL이 PSP outcome UNKNOWN 중 만료되는 경합 | D-025: `EXPIRED_PENDING_PAYMENT` 동안 재고 unavailable; TTL 수치·장기 미해결 보상 정책 TBD |
+| EXP-003 | [D-025](../00-governance/decision-log.md): payment timeout 뒤 같은 attempt identity로 재시도/reconcile; order/payment effect 중복 여부 확인 | PSP idempotency-key 지원/retention, retry limit TBD ([Q-005](../00-governance/assumptions-and-open-questions.md)) |
+| EXP-004 | PSP response 유실·늦은 webhook·restart 뒤 UNKNOWN attempt reconcile ([D-025](../00-governance/decision-log.md)) | Fake PSP는 PayPal 실제 장애 증거 아님; recovery acceptance TBD ([Q-005](../00-governance/assumptions-and-open-questions.md)) |
+| EXP-005 | [D-025](../00-governance/decision-log.md): Hold TTL이 PSP outcome UNKNOWN 중 만료되는 경합 | `EXPIRED_PENDING_PAYMENT` 동안 재고 unavailable; TTL 수치·장기 미해결 보상 정책 TBD ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)) |
 | EXP-006 | refund·adjustment·fee 변경 뒤 settlement ledger 정합성 | settlement policy TBD |
 | EXP-007 | ID 변경으로 다른 tenant 데이터 접근 시도 (IDOR) | 권한/threat boundary TBD |
 | EXP-008 | cache update 역전·event 중복/순서 변경·consumer restart 영향 | cache/messaging stack TBD |

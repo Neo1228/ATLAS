@@ -16,11 +16,11 @@ links:
 | Term | Meaning | ATLAS state |
 |---|---|---|
 | Tenant | 판매사/조직별 data·permission boundary. | Account model ? OPEN |
-| Campaign | 판매 기간/조건이 있는 한정 판매 단위. | 초기 시나리오는 campaign 소유 pool 1개 (D-023); 전체 재고 연결 방식 ? OPEN |
-| SKU | 재고 추적에 쓰는 상품/variant 식별 코드. 초기 시나리오에서는 같은 SKU 수량을 서로 대체 가능한 단위로 취급. | 초기 시나리오만 (D-023); 전체 catalog model ? OPEN |
-| Inventory pool | 판매 가능 재고를 campaign/product/location/channel 범위로 묶은 집합. | 초기: campaign별 독립 pool 1개 (D-023); 다른 범위 ? OPEN |
-| Reservation | PSP 요청 직전에 재고를 임시 점유. Terminal success 확인 후 claim, definitive failure 후 release. | D-025 baseline; TTL 값/terminal success stage/장기 UNKNOWN 처리 ? OPEN |
-| Inventory claim | PSP 결과가 terminal success로 확인된 뒤 hold를 판매 확정 재고로 전환. | D-025; auth/capture mapping ? OPEN |
+| Campaign | 판매 기간/조건이 있는 한정 판매 단위. | 초기 시나리오는 campaign 소유 pool 1개 ([D-023](../00-governance/decision-log.md)); 전체 재고 연결 방식 ? OPEN |
+| SKU | 재고 추적에 쓰는 상품/variant 식별 코드. 초기 시나리오에서는 같은 SKU 수량을 서로 대체 가능한 단위로 취급. | 초기 시나리오만 ([D-023](../00-governance/decision-log.md)); 전체 catalog model ? OPEN |
+| Inventory pool | 판매 가능 재고를 campaign/product/location/channel 범위로 묶은 집합. | 초기: campaign별 독립 pool 1개 ([D-023](../00-governance/decision-log.md)); 다른 범위 ? OPEN |
+| Reservation | PSP 요청 직전에 재고를 임시 점유. Terminal success 확인 후 claim, definitive failure 후 release. | [D-025](../00-governance/decision-log.md) baseline; TTL 값/terminal success stage/장기 UNKNOWN 처리 ? OPEN |
+| Inventory claim | PSP 결과가 terminal success로 확인된 뒤 hold를 판매 확정 재고로 전환. | [D-025](../00-governance/decision-log.md); auth/capture mapping ? OPEN |
 | Order Intent | 구매 요청을 나타내는 내부 기록. | △ Proposed |
 
 ## Payment, transaction and storage
@@ -31,17 +31,17 @@ links:
 | Fake PSP | 결제 응답 유실/지연 재현용 test provider. 실제 PayPal 장애 증거 아님. | ✓ 범위 확정 |
 | Webhook | 외부 시스템이 status 변경을 알리는 HTTP request. | ○ Draft |
 | Authorization / Capture | Authorization: 결제 금액 승인. Capture: 승인 금액 청구. | 연동 방식 ? OPEN |
-| UNKNOWN payment outcome | PSP 요청 결과를 확정하지 못한 상태. Failure와 다름; 같은 attempt를 reconcile하기 전 새 attempt 금지. | D-025; provider-specific retry/key contract ? OPEN |
+| UNKNOWN payment outcome | PSP 요청 결과를 확정하지 못한 상태. Failure와 다름; 같은 attempt를 reconcile하기 전 새 attempt 금지. | [D-025](../00-governance/decision-log.md); provider-specific retry/key contract ? OPEN |
 | Business transaction | Checkout 등 사용자 흐름 단위. 여러 API request/DB transaction으로 구성 가능. | Metric scope는 test에서 지정 |
 | Database transaction | DB operation의 commit/rollback 단위. Isolation/locking semantics는 DB별 차이. | DB 선택 없음 |
 | Conditional update | 조건이 맞을 때만 row를 갱신하는 SQL pattern. 동시성 보장은 DB semantics 확인 필요. | Reference |
 | Pessimistic lock | 쓰기 전에 lock 획득; 충돌 작업은 대기. | Reference |
 | Optimistic locking | version/condition 확인 후 갱신; 충돌 시 retry/failure 처리. | Reference |
-| Reconciliation | ATLAS와 PSP 기록을 대조하고 차이를 추적. UNKNOWN 결과는 동일 payment attempt로 확인 (D-025). | ○ Draft; PSP-specific recovery ? OPEN |
+| Reconciliation | ATLAS와 PSP 기록을 대조하고 차이를 추적. UNKNOWN 결과는 동일 payment attempt로 확인 ([D-025](../00-governance/decision-log.md)). | ○ Draft; PSP-specific recovery ? OPEN |
 | Settlement Ledger | 내부 정산·정정·audit 기록. 실제 자금 이동과 별개. | ○ Draft |
-| Idempotency key | 같은 논리 요청을 식별해 중복 효과를 막는 key. D-025: provider가 지원하면 같은 payment attempt의 key 재사용. | Scope/retention/provider support ? OPEN |
-| TTL (Time to Live) | 상태가 유효한 기간. D-025: TTL 중 PSP outcome UNKNOWN이면 pool unavailable 유지. | 값/장기 미해결 복구 ? OPEN |
-| EXPIRED_PENDING_PAYMENT | Reservation TTL이 지났지만 PSP 결과는 UNKNOWN. Reconciliation 전까지 pool 수량을 계속 unavailable로 유지. | D-025; TTL/장기 복구 정책 ? OPEN |
+| Idempotency key | 같은 논리 요청을 식별해 중복 효과를 막는 key. [D-025](../00-governance/decision-log.md): provider가 지원하면 같은 payment attempt의 key 재사용. | Scope/retention/provider support ? OPEN |
+| TTL (Time to Live) | 상태가 유효한 기간. [D-025](../00-governance/decision-log.md): TTL 중 PSP outcome UNKNOWN이면 pool unavailable 유지. | 값/장기 미해결 복구 ? OPEN |
+| EXPIRED_PENDING_PAYMENT | Reservation TTL이 지났지만 PSP 결과는 UNKNOWN. Reconciliation 전까지 pool 수량을 계속 unavailable로 유지. | [D-025](../00-governance/decision-log.md); TTL/장기 복구 정책 ? OPEN |
 | IDOR | Object ID 직접 조작으로 타 사용자/tenant resource에 권한 없이 접근하는 취약점. | Security test candidate |
 
 ## Queue
@@ -49,10 +49,10 @@ links:
 
 | Term | Meaning | ATLAS state |
 |---|---|---|
-| Queue admission | 자격을 통과한 요청을 대기열에 등록. 초기 시나리오에서는 sale open 후에만 admission/sequence 발급 (D-024). | ✓ Baseline (D-020, D-024) |
-| Queue ticket | Queue entry를 식별. 같은 요청 retry 시 기존 ticket 재사용. | ✓ Baseline (D-021) |
-| Sequence number | Server 발급 queue 순서. 작은 값 우선이라는 가상 기준. | ✓ Baseline (D-019~D-022) |
-| Worker | Background job을 처리하는 process. Restart 후 queue 순서 보존은 기준, 저장 방식 ? OPEN. | ○ Draft |
+| Queue admission | 자격을 통과한 요청을 대기열에 등록. 초기 시나리오에서는 sale open 후에만 admission/sequence 발급 ([D-020/D-024](../00-governance/decision-log.md)). | ✓ Baseline |
+| Queue ticket | Queue entry를 식별. 같은 요청 retry 시 기존 ticket 재사용 ([D-021](../00-governance/decision-log.md)). | ✓ Baseline |
+| Sequence number | Server 발급 queue 순서. 작은 값 우선이라는 가상 기준 ([D-019~D-022](../00-governance/decision-log.md)). | ✓ Baseline |
+| Worker | Background job을 처리하는 process. Restart 후 queue 순서 보존은 기준 ([D-022](../00-governance/decision-log.md)); 저장 방식 ? OPEN. | ○ Draft |
 | Queue depth / backlog | 처리 대기 중인 작업 수. Queue age와 함께 해석. | Metric |
 | Backpressure | Downstream 지연/한계가 upstream 입력을 늦추거나 거절하는 흐름 제어. | Concept |
 

@@ -3,7 +3,7 @@ id: DOC-010
 title: Change Control
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: []
   adr: []
@@ -13,7 +13,7 @@ links:
 # 변경 통제
 - 상태: Draft
 - 담당: Project Owner
-- 갱신일: 2026-10-29
+- 갱신일: 2026-10-30
 
 ## 사용자 승인
 사전 승인 대상:
@@ -29,6 +29,7 @@ links:
 ## Issue/PR 설명
 - 복잡한 변경은 문제/배경, 사실/가정, 결정 이유, 대안·trade-off, 영향 상태/invariant, 검증 근거를 본문에 기록.
 - 링크만으로 설명 대체 금지.
+- Issue/PR의 trace ID와 변경 대상은 관련 기준 문서로 직접 가는 Markdown link로 작성. PR은 관련 Issue와 실제 변경 문서를 연결.
 - 복잡한 flow/state/component boundary는 Mermaid 사용. 중복 도식 금지, OPEN 경계 표시.
 - 짧고 자연스러운 한국어. 일반 technical term은 English 사용 가능. 프로젝트 용어는 첫 등장에 설명.
 - PR 크기는 검토 독립성으로 결정; 줄 수 기준 금지 ([REF-014/015](reference-register.md)).
@@ -36,7 +37,7 @@ links:
 ## Issue·commit·PR 추적
 - 계획 작업은 착수 전 Issue 생성: 문제, trace ID, 범위, acceptance/verification.
 - 하나의 Issue는 하나의 응집된 작업 묶음. 관련 commit/Issue는 공통 목적·완료 기준의 PR로 통합 가능.
-- Branch/commit/PR에 Issue 연결. 완료 시 `Closes #N`, 부분 작업은 `Refs #N`.
+- Branch/commit/PR에 Issue 연결. 완료 시 `Closes #N`, 일부만 반영 시 `Refs #N`. 번호는 GitHub record로 직접 링크.
 - 작은 논리 변경은 별도 commit. 독립 목적·위험·배포 경계는 별도 PR.
 - 실제 Issue/PR 상태, SHA, checks를 [Milestone Log](../09-delivery/milestone-log.md)와 [Session Handoff](../09-delivery/session-handoff.md)에 기록.
 
