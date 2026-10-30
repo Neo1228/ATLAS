@@ -11,7 +11,7 @@ links:
 ---
 # 외부 참고자료 레지스트리
 
-REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~029: 2026-10-30 확인한 practitioner/product 자료. REF-030~042: 2026-10-30 결제, checkout, load-model 사례 확인. 범위와 한계는 각 행 참조; 외부 자료가 ATLAS 정책을 대신 결정하지 않음.
+REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~029: 2026-10-30 확인한 practitioner/product 자료. REF-030~043: 2026-10-30 결제, checkout, load-model 사례 확인. 범위와 한계는 각 행 참조; 외부 자료가 ATLAS 정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
 |---|---|---|---|---|---|
@@ -57,8 +57,9 @@ REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 
 | REF-040 | Broadleaf, Checkout inventory reservations / product docs | https://developer.broadleafcommerce.com/services/inventory-services/checkout-inventory-reservations | 2026-10-30 | Soft reservation expiration after unsuccessful checkout | ✓ 검토; configurable 5-minute product example, ATLAS default 아님 |
 | REF-041 | PayPal, Integrate webhooks / API guide | https://developer.paypal.com/api/rest/webhooks/rest | 2026-10-30 | Failed webhook delivery retried up to 25 times over 3 days | ✓ 검토; delivery retry contract, checkout TTL/API deadline 아님 |
 | REF-042 | Artillery, Understanding workload models / engineering blog | https://www.artillery.io/blog/load-testing-workload-models | 2026-10-30 | Open arrivals with sequential per-user work (hybrid workload) | ✓ 검토; load-generator vendor explanation, universal workload choice 아님 |
+| REF-043 | Google Cloud, Backend service load-testing guidelines / cloud guidance | https://docs.cloud.google.com/load-balancing/docs/backend-service-load-testing | 2026-10-30 | Open-loop arrivals, throughput/concurrency/latency/error dimensions, overload testing | ✓ 검토; Cloud Load Balancing context, ATLAS target/tool/infra decision 아님 |
 
-PayPal API/지역/계정/자금 흐름은 구현 시점 공식 문서로 확인. Authorization validity/honor window는 provider-specific이며 ATLAS inventory TTL로 사용하지 않음. Webhook delivery retry 역시 buyer checkout TTL/API deadline과 별개. REF-030~042는 기능/사례를 설명하며 production behavior·endpoint support·법률 의무를 검증하지 않음.
+PayPal API/지역/계정/자금 흐름은 구현 시점 공식 문서로 확인. Authorization validity/honor window는 provider-specific이며 ATLAS inventory TTL로 사용하지 않음. Webhook delivery retry 역시 buyer checkout TTL/API deadline과 별개. REF-030~043은 기능/사례를 설명하며 production behavior·endpoint support·법률 의무를 검증하지 않음.
 
 ## 관련 문서
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): REF-001~003은 미확인 후보.

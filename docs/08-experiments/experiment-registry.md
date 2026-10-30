@@ -36,6 +36,6 @@ Each run records metric units/scopes:
 | EXP-007 | ID 변경으로 다른 tenant 데이터 접근 시도 (IDOR) | 권한/threat boundary TBD |
 | EXP-008 | cache update 역전·event 중복/순서 변경·consumer restart 영향 | cache/messaging stack TBD |
 | EXP-009 | failure injection 후 recovery time·허용 데이터 손실 측정 | RTO/RPO/SLO/environment TBD |
-| EXP-010 | [D-031](../00-governance/decision-log.md): Full Buyer session under hybrid model (open-loop arrivals; sequential per-session steps) across baseline, sale-open burst and step-up phases. | Numeric rates/durations, think-time distribution, test environment and acceptance TBD ([Q-008](../00-governance/assumptions-and-open-questions.md)); record offered/admitted sessions/s, dropped arrivals, RPS by stage, resolved-session TPS, p95/p99, errors, backlog/hold occupancy, expiry and invariant results. |
+| EXP-010 | [D-031/D-032](../00-governance/decision-log.md): Full Buyer session, hybrid open-loop arrivals with sequential per-session steps, baseline/burst/step-up. Use synthetic scale ladder; Buyer sessions/s primary; report-only acceptance. | Numeric scale/rates, phase duration, think-time, environment and thresholds TBD ([Q-008](../00-governance/assumptions-and-open-questions.md)); report offered/admitted sessions, dropped arrivals, stage RPS, resolved-session TPS, p95/p99, errors, backlog/hold occupancy, expiry and oversell invariant. |
 
 Run 기록에 requirements/invariants, acceptance, 환경, commands, repetitions, metrics, confounders, limits 포함. 형식: [Experiment Template](TEMPLATE.md).
