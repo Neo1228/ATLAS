@@ -51,6 +51,7 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 - [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 AUTHORIZE → CAPTURE 선택. [D-026](../00-governance/decision-log.md): capture success 확인 후 inventory claim. [PR #41](https://github.com/Neo1228/ATLAS/pull/41) 병합.
 - Gate 1: [D-023~D-030](../00-governance/decision-log.md) 초기 도메인·결제 경계. [D-031~D-033](../00-governance/decision-log.md)은 Gate 2 synthetic workload shape와 측정 입력. 실제 traffic/capacity 목표와 구현은 미승인.
 - [Q-003](../00-governance/assumptions-and-open-questions.md): [D-034](../00-governance/decision-log.md)에서 active ticket retry, payload 불일치 거절, 만료 후 새 key·tail sequence를 결정. [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61). OPEN: key scope/retention, payload 비교 필드, expiry trigger/duration, storage/atomicity, bot 방어, 다른 판매 유형.
+- [Q-002](../00-governance/assumptions-and-open-questions.md): [D-035](../00-governance/decision-log.md)에서 reservation당 1개와 재고 conservation invariant 확정. [Issue #62](https://github.com/Neo1228/ATLAS/issues/62). 조정·재입고·다중 수량·post-claim 취소/환불 정책은 OPEN; D-027 checkout recovery 유지.
 - [Q-008](../00-governance/assumptions-and-open-questions.md): full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress, report-only.
   - Issues: [#51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56).
 - Merged PRs:
