@@ -63,7 +63,7 @@ links:
 | Term | Meaning | ATLAS state |
 |---|---|---|
 | Synthetic workload | 테스트용 생성 traffic; 실제 사용자 traffic 아님. | △ Proposed |
-| Workload profile | Request/transaction mix, offered rate, arrival model, payload, concurrency, duration. | Values ? OPEN |
+| Workload profile | Buyer journey, request/transaction mix, offered rate, arrival model, payload, concurrency and duration for a declared test. | [D-031/D-032](../00-governance/decision-log.md): full Buyer session, hybrid arrivals, synthetic scale ladder; sessions/s primary; report-only; numeric values OPEN |
 | Ramp-up | Offered rate/concurrency를 선언된 시간 구간에 점진적으로 높이는 방식. | Workload parameter |
 | Burst | 기준 부하보다 높은 offered rate를 짧게 발생시키는 profile. | Workload parameter |
 | Steady state | workload와 측정 동작이 비교 목적에 충분히 안정된다고 선언한 구간. | Test interval |
