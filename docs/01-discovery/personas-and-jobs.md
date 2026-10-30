@@ -3,7 +3,7 @@ id: DOC-013
 title: Personas and Jobs to Be Done
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: [FR-001, NFR-002]
   adr: []
@@ -14,7 +14,7 @@ links:
 ## 근거와 한계
 - ✓ 사용자가 선택한 Buyer/Seller 공통 목표.
 - 실제 인터뷰·거래·시장 검증 결과 아님.
-- 유형별 행동과 차이: ? OPEN (D-005, D-007, D-015~D-017; Q-001/Q-010).
+- 초기 합성 시나리오: campaign별 독립 pool에 수량형 SKU 1종 (D-023). 다른 판매 유형별 행동은 ? OPEN (Q-002/Q-010).
 
 ## 공통 역할
 
@@ -30,17 +30,17 @@ links:
 정한 판매 가능량 안에서 공정하게 판매하고 예약 결과를 확인하려는 가상 목표. 실제 판매자 발언 아님.
 
 ## 기준 시나리오
-제한 재고에 여러 요청이 동시에 도달. 대기열 순서와 재고 예약 결과가 일치해야 하며 overselling 방지 필요 (D-010).
+초기 시나리오: 한 campaign의 단일 수량형 SKU/pool. Sale open 후 동시 요청을 받아 queue 순서와 예약량이 pool capacity를 넘지 않는지 검증 (D-010, D-019, D-023, D-024). 사용자 조사 결과가 아닌 선택된 학습 시나리오.
 
 ## 실패/경계 조건
-- 자격 확인 후 대기열 입장·순번 발급.
-- 같은 논리 요청 retry, service restart 후에도 순서 유지.
-- 판매량 수식 `Available + Reserved + Sold = Initial Stock`은 입고/조정이 없는 단순 모델에만 적용. 승인된 invariant 아님.
+- Sale open 전 요청은 queue entry/sequence를 만들지 않음. Open 후 자격 통과 요청만 admission.
+- 같은 논리 요청 retry는 ticket을 재사용하고, service restart 후 순서 유지 (D-021/D-022).
+- Reservation TTL, payment 경합, 재고 조정/취소, 다른 판매 유형은 ? OPEN. `Available + Reserved + Sold = Initial Stock`은 상태와 조정 규칙이 정해지기 전 승인된 invariant가 아님.
 
 ## 판매 유형별 차이
-수량/SKU, 좌석/티켓은 Q-002 논의 예시. 확정 목록이나 범위 제한 아님 (D-006). 실제 차이가 확인되면 별도 scenario 추가.
+초기 시나리오는 수량형 SKU 1종. 좌석/티켓 등 다른 단위는 이번 시나리오에서 제외하되 장기 탐색 범위에서 제거하지 않음 (D-006, D-023; Q-002/Q-010).
 
 ## 추적
-- 대기열 기준 D-019~D-022: 자격 통과 후 admission 시 순번 발급, 같은 요청 retry는 기존 ticket 재사용, restart 후 순서 보존.
-- 미정: 저장 원자성, key 범위/보존기간, 만료·재입장, 동순위, bot 방어, 유형별 차이 ([Q-003](../00-governance/assumptions-and-open-questions.md); [Issue #24](https://github.com/Neo1228/ATLAS/issues/24)).
+- 초기 queue 경계 D-024: sale open 전 admission 없음; open 후 자격 통과 요청은 D-019 FIFO. D-021 retry ticket 재사용, D-022 restart 후 순서 보존.
+- 미정: storage atomicity, key 범위/보존기간, payload 변경, expiry/re-entry, tie, bot 방어, 재고 조정/취소, 공유 재고, 다른 판매 유형 ([Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md); [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)).
 - 연계: [Requirements](../02-requirements/requirements-index.md), [Business Rules](../03-domain/business-rules.md), [Invariants](../03-domain/invariants.md), [Experiments](../08-experiments/experiment-registry.md).

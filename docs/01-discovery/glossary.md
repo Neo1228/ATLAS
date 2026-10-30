@@ -3,7 +3,7 @@ id: DOC-005
 title: Glossary
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: []
   adr: []
@@ -16,8 +16,9 @@ links:
 | Term | Meaning | ATLAS state |
 |---|---|---|
 | Tenant | 판매사/조직별 data·permission boundary. | Account model ? OPEN |
-| Campaign | 판매 기간/조건이 있는 한정 판매 단위. | Inventory link ? OPEN |
-| Reservation | 주문 처리를 위해 가용 재고를 임시 점유. | TTL/결제 경합 ? OPEN |
+| Campaign | 판매 기간/조건이 있는 한정 판매 단위. | 초기 시나리오는 campaign 소유 pool 1개 (D-023); 전체 재고 연결 방식 ? OPEN |
+| SKU | 재고 추적에 쓰는 상품/variant 식별 코드. 초기 시나리오에서는 같은 SKU 수량을 서로 대체 가능한 단위로 취급. | 초기 시나리오만 (D-023); 전체 catalog model ? OPEN |
+| Inventory pool | 판매 가능 재고를 campaign/product/location/channel 범위로 묶은 집합. | 초기: campaign별 독립 pool 1개 (D-023); 다른 범위 ? OPEN |
 | Order Intent | 구매 요청을 나타내는 내부 기록. | △ Proposed |
 
 ## Payment, transaction and storage
@@ -44,7 +45,7 @@ links:
 
 | Term | Meaning | ATLAS state |
 |---|---|---|
-| Queue admission | 자격 통과 요청을 queue에 등록. 현재 기준: 등록 시 server sequence 발급. | ✓ Baseline (D-020) |
+| Queue admission | 자격을 통과한 요청을 대기열에 등록. 초기 시나리오에서는 sale open 후에만 admission/sequence 발급 (D-024). | ✓ Baseline (D-020, D-024) |
 | Queue ticket | Queue entry를 식별. 같은 요청 retry 시 기존 ticket 재사용. | ✓ Baseline (D-021) |
 | Sequence number | Server 발급 queue 순서. 작은 값 우선이라는 가상 기준. | ✓ Baseline (D-019~D-022) |
 | Worker | Background job을 처리하는 process. Restart 후 queue 순서 보존은 기준, 저장 방식 ? OPEN. | ○ Draft |

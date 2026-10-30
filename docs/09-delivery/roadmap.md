@@ -3,7 +3,7 @@ id: DOC-008
 title: Roadmap
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: []
   adr: [ADR-0001]
@@ -16,7 +16,7 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | 단계 | 결과 | 상태 |
 |---|---|---|
 | Gate 0 | 프로젝트 범위·문서 기준 | ✓ 완료, 2026-10-29 승인 |
-| Gate 1 | 문제·사용자 목표·도메인 충돌 탐색 | → 진행 중; Q-003 잔여 경계 ? OPEN |
+| Gate 1 | 문제·사용자 목표·도메인 충돌 탐색 | → 진행 중; D-023/D-024 초기 scenario 확정, Q-002/Q-003/Q-010 잔여 범위 ? OPEN |
 | Gate 2 | 요구사항·예외·acceptance/invariants·workload profile | ? 대기 |
 | Gate 3 | 모듈·상태·데이터·계약·위험·capacity estimate | ? 대기 |
 | Gate 4 | 구현 및 별도 승인된 기능의 synthetic load/failure 검증 | △ 제안; 독립 승인된 Gate 아님 |
@@ -49,6 +49,7 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 
 ## 현재 상태
 - WP-001~WP-005 main 게시. Git 규칙 PR #4, batching PR #16, delivery 기록 PR #18 병합.
-- Gate 0 ✓ 완료, Gate 1 → 진행 중. Issues #19/#20/#22/#24 닫힘.
-- Q-003 잔여 queue policy는 ? OPEN. 경계별 Issue 대신 응집된 한 작업으로 논의.
-- Q-008 traffic/capacity 목표는 Gate 2 전까지 TBD. 코드·runtime dependency·deployment 미착수.
+- 종료: Issues #19/#20/#22/#24/#31. [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)는 초기 domain batch 추적; PR 미생성.
+- Gate 1 진행 중. D-023/D-024는 시나리오 baseline이며 구현 승인 아님.
+- Q-003의 storage/key/payload/expiry/re-entry/tie/bot 경계는 계속 ? OPEN. 관련 결정은 한 묶음으로 논의; 경계별 Issue 금지.
+- Q-008 traffic/capacity 목표는 Gate 2 전까지 TBD. 코드·runtime dependency·deployment 미선택.

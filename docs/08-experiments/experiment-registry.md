@@ -3,7 +3,7 @@ id: DOC-007
 title: Experiment Registry
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: [NFR-002]
   experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009]
@@ -26,7 +26,7 @@ links:
 
 | ID | 테스트 가설 | 주요 제약 |
 |---|---|---|
-| EXP-001 | 재고 100/1,000개에서 동시 reservation 시 overselling 발생 여부 | 테스트 후보 수치; policy TBD |
+| EXP-001 | D-023 초기 범위: campaign 소유 pool 하나에서 수량형 SKU 1종의 동시 reservation 중 초과 예약·판매 발생 여부 확인 | 100/1,000은 실험 후보 수량이지 목표값 아님. 정책/acceptance TBD |
 | EXP-002 | conditional UPDATE, pessimistic/optimistic lock의 throughput·p95/p99·대기 비교 | 동일 DB·환경·부하 필요 |
 | EXP-003 | 동일 order request N회 전달 시 order/payment intent 중복 여부 | idempotency 범위/보존 기간 TBD |
 | EXP-004 | PSP response 유실·늦은 webhook·restart 뒤 상태 대사와 recovery | Fake PSP는 PayPal 실제 장애 재현 아님 |

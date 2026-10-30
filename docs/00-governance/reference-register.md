@@ -3,7 +3,7 @@ id: DOC-006
 title: Reference Register
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: []
   adr: [ADR-0001]
@@ -11,7 +11,7 @@ links:
 ---
 # 외부 참고자료 레지스트리
 
-REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. 적용 범위와 한계는 각 행 참조. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
+REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 확인한 GitHub 제품 문서. REF-014~022: 2026-10-29 확인한 공개 실무·기술 자료. REF-023~026: 2026-10-30 확인한 practitioner/product 자료. 적용 범위와 한계는 각 행 참조. 외부 자료가 ATLAS 요구/정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
 |---|---|---|---|---|---|
@@ -37,6 +37,10 @@ REF-001~008: 미확인 후보, 근거로 사용 전 검토 필요. REF-009~013: 
 | REF-020 | Google SRE Book, Monitoring Distributed Systems / SRE reference | https://sre.google/sre-book/monitoring-distributed-systems/ | 2026-10-29 | Latency·traffic·errors·saturation, RPS/TPS 예시, tail latency | ✓ 확인; Google production practice, ATLAS SLO/도구 결정 아님 |
 | REF-021 | Grafana Labs, The RED Method / observability practice | https://grafana.com/blog/the-red-method-how-to-instrument-your-services/ | 2026-10-29 | Rate·Errors·Duration 및 resource USE metrics | ✓ 확인; monitoring taxonomy, tool/architecture 선택 아님 |
 | REF-022 | Wolfram MathWorld, Little's Law / queueing reference | https://mathworld.wolfram.com/LittlesLaw.html | 2026-10-29 | Arrival rate·시간·in-flight 수 관계 | ✓ 확인; steady state 관계식, capacity target 아님 |
+| REF-023 | Shopify Engineering, Inventory Reservations / practitioner engineering post | https://shopify.engineering/scaling-inventory-reservations | 2026-10-30 | 상품/location별 재고 식별, 임시 reservation과 claim 분리 | ✓ 검토; Shopify production 규모와 MySQL 설계는 맥락 의존. ATLAS architecture 권고 아님 |
+| REF-024 | SeatGeek, Virtual Waiting Room / InfoQ QCon practitioner presentation | https://www.infoq.com/presentations/ticketing-system-virtual-waiting-room/ | 2026-10-30 | Sale 전 waiting room과 on-sale queue의 FIFO/drain rate | ✓ 검토; SeatGeek 운영 맥락, 일반적 fairness 증명 아님 |
+| REF-025 | commercetools, Inventory Management / product modeling guide | https://docs.commercetools.com/learning-model-your-product-catalog/inventory-modeling/inventory-management | 2026-10-30 | Product variant/location/channel별 재고 범위와 available/reservation 구분 | ✓ 검토; vendor model의 사례, 보편적 best practice 아님 |
+| REF-026 | Queue-it, Online Fairness / vendor practitioner blog | https://queue-it.com/blog/online-fairness | 2026-10-30 | 예정된 sale 전 무작위 배치 후 FIFO 제안 | ✓ 검토; vendor 관점/이해관계 존재, 일반적 fairness 근거 아님 |
 
 PayPal API/지역/계정/자금 흐름은 구현 시점의 공식 문서로 확인. 현재 목록은 PayPal 기능이나 법률을 검증하지 않음.
 
