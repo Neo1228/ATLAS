@@ -5,7 +5,7 @@
 - 프로젝트 방향: [`docs/00-governance/project-charter.md`](docs/00-governance/project-charter.md)
 - 문서 인덱스: [`docs/README.md`](docs/README.md)
 - 현재 진행 및 미결정: [`docs/09-delivery/session-handoff.md`](docs/09-delivery/session-handoff.md)
-- 문서 추적 링크 정비: [Issue #38](https://github.com/Neo1228/ATLAS/issues/38). PayPal authorization/capture 선택 [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)은 audit PR 병합 뒤 재개.
+- 문서 추적 링크 정비: [Issue #38](https://github.com/Neo1228/ATLAS/issues/38)/[PR #39](https://github.com/Neo1228/ATLAS/pull/39) 검토 중. PayPal authorization/capture 선택 [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)은 이 작업 병합 뒤 재개.
 
 - 기여·작업 단위: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - GitHub PR 템플릿: [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)

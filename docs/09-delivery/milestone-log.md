@@ -67,3 +67,9 @@ links:
 - 근거: [REF-023/027~029](../00-governance/reference-register.md). Stripe/Brandur 사례를 PayPal contract로 일반화하지 않음.
 - 잔여: [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md) TTL, auth/capture mapping, provider support/retention, retry limit, irrecoverable UNKNOWN/refund policy OPEN.
 - 로컬 확인: Markdown lint 24 files, 145 local links, YAML 4 forms, 두 Mermaid diagram render, `git diff --check` 통과. PR required checks [PR #36](https://github.com/Neo1228/ATLAS/pull/36) 통과.
+
+## 2026-10-30 — Issue/PR/document traceability cleanup
+- 추적: [Issue #38](https://github.com/Neo1228/ATLAS/issues/38), [PR #39](https://github.com/Neo1228/ATLAS/pull/39); content commit [`226dad4`](https://github.com/Neo1228/ATLAS/commit/226dad4).
+- 범위: canonical links in 23 Markdown docs and 8 Issue/9 PR bodies; Issue/PR forms require clickable source links.
+- 확인: 294 local Markdown links and 125 GitHub document links resolve; Markdown lint, YAML 4 forms, no Cyrillic/Han. PR checks tracked on [PR #39](https://github.com/Neo1228/ATLAS/pull/39).
+- 의도적 N/A: seed-only [PR #1](https://github.com/Neo1228/ATLAS/pull/1)/[PR #3](https://github.com/Neo1228/ATLAS/pull/3)는 독립 implementation docs가 아니라 [PR #4](https://github.com/Neo1228/ATLAS/pull/4)에 superseded.
