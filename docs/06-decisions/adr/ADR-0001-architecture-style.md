@@ -2,7 +2,7 @@
 - Status: △ Proposed; 사용자 승인 전 아키텍처 아님
 - Date: 2026-10-29
 - Owner: Project Owner
-- Related: FR-001~003, NFR-001~002
+- Related: [FR-001~003](../../02-requirements/requirements-index.md), [NFR-001~002](../../02-requirements/requirements-index.md)
 
 ## 맥락
 - 문제: 주문·재고·결제·정산의 정합성과 recovery 실험 필요.

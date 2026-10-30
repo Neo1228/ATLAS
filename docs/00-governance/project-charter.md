@@ -3,7 +3,7 @@ id: DOC-001
 title: Project Charter
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: []
   adr: [ADR-0001]
@@ -29,7 +29,7 @@ links:
 ## Discovery 기준 — ✓ Confirmed
 - 가상 시나리오 기반. 실제 사용자 인터뷰/데이터 아님.
 - 핵심 시나리오: 한정 재고 경쟁, 공정한 대기열, overselling 방지.
-- 공통 buyer/seller 목표는 선택됨. 판매 유형별 행동은 ? OPEN (D-010, D-015~D-017; Q-002/Q-010).
+- 공통 buyer/seller 목표는 선택됨. 유형별 행동은 ? OPEN ([D-010, D-015~D-017](decision-log.md); [Q-002/Q-010](assumptions-and-open-questions.md)).
 
 ## 초기 제한 — ✓ Confirmed
 - 실제 결제·고객 개인정보·판매사 지급 제외. Sandbox 및 합성/가명 데이터만 사용.
@@ -41,7 +41,7 @@ links:
 - 정책/불변조건을 검증 가능한 시나리오와 연결.
 - 장애·경합·복구를 재현 가능한 절차와 한계로 기록.
 - 성능/recovery 주장은 환경을 명시한 반복 가능한 측정으로 뒷받침.
-- SLO, RPS, p95/p99 목표는 ? OPEN. 합의·측정 전 가정 처리 ([Glossary](../01-discovery/glossary.md)).
+- SLO, RPS, p95/p99 목표는 ? OPEN. 합의·측정 전 가정 처리 ([Glossary](../01-discovery/glossary.md); [Q-008](assumptions-and-open-questions.md)).
 
 ## 열린 주제
 사용자 조사, 판매 단위/유형, queue fairness, reservation/payment/refund, settlement/fees, region/currency/tax/regulation, privacy, capacity targets, stack/deployment — [Assumptions & Open Questions](assumptions-and-open-questions.md).

@@ -2,7 +2,7 @@
 
 - 상태: Draft
 - 담당: 프로젝트 책임자
-- 갱신일: 2026-10-29
+updated: 2026-10-30
 
 ## 기준 문서 (SSOT)
 
@@ -20,7 +20,7 @@
 
 ## 빠른 안내
 - **Gate**: 사용자 승인 단계. ✓ Gate 0 완료, → Gate 1 진행 중. [Roadmap](09-delivery/roadmap.md)
-- **추적 ID**: `D` 결정, `Q` 질문, `FR/NFR` 요구사항, `BR/INV` 규칙·불변조건, `ADR` 설계 결정, `EXP` 실험, `M` 장기 milestone, `WP` 초기 문서 묶음.
+- **추적 ID:** [D](00-governance/decision-log.md), [Q](00-governance/assumptions-and-open-questions.md), [FR/NFR](02-requirements/requirements-index.md), [BR](03-domain/business-rules.md), [INV](03-domain/invariants.md), [ADR](06-decisions/adr/ADR-0001-architecture-style.md), [EXP](08-experiments/experiment-registry.md), [REF](00-governance/reference-register.md), [M/WP](09-delivery/roadmap.md).
 | 상태 | 표기 |
 |---|---|
 | 확정/완료 | ✓ Confirmed |
@@ -40,7 +40,7 @@
 - GitHub 양식: [PR template](../.github/PULL_REQUEST_TEMPLATE.md), [Bug form](../.github/ISSUE_TEMPLATE/bug_report.yml), [Change form](../.github/ISSUE_TEMPLATE/change_request.yml)
 - 필수 검사: [Markdown lint·PR checklist workflow](../.github/workflows/docs-lint.yml)
 
-- ✓ Gate 0 승인 (2026-10-29), Gate 1 진행 중.
-- Queue baseline: [Issue #24](https://github.com/Neo1228/ATLAS/issues/24). Q-003 잔여 경계 ? OPEN.
-- Buyer/Seller 가상 goals: [Issue #19](https://github.com/Neo1228/ATLAS/issues/19). Capacity 계획: [Issue #20](https://github.com/Neo1228/ATLAS/issues/20).
-- 코드·runtime dependency·deployment 미착수.
+- ✓ Gate 0 승인, Gate 1 discovery 진행 중. [Roadmap](09-delivery/roadmap.md), [Session Handoff](09-delivery/session-handoff.md).
+- Queue 기준: [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), 초기 판매 범위 [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)/[PR #34](https://github.com/Neo1228/ATLAS/pull/34); [Q-003](00-governance/assumptions-and-open-questions.md), [Business Rules](03-domain/business-rules.md).
+- Payment hold/recovery: [Issue #35](https://github.com/Neo1228/ATLAS/issues/35)/[PR #36](https://github.com/Neo1228/ATLAS/pull/36) 병합; [D-025](00-governance/decision-log.md), [Business Rules](03-domain/business-rules.md). PayPal auth/capture ? OPEN ([Q-005](00-governance/assumptions-and-open-questions.md), [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)).
+- 문서·Issue·PR 간 링크 전수 점검 중 ([Issue #38](https://github.com/Neo1228/ATLAS/issues/38)). 코드·runtime·실결제·배포 미착수.
