@@ -3,7 +3,7 @@ id: DOC-012
 title: Milestone Log
 status: Current
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: []
   adr: [ADR-0001]
@@ -53,3 +53,10 @@ links:
 - 범위: RPS/TPS/QPS 단위·scope, offered/achieved load, ramp-up/burst/steady state, open/closed model, latency/error/queue/saturation metrics, RED/USE, Little’s Law; Q-008 수치와 성능 목표는 TBD.
 - 근거: [Reference Register REF-018~022](../00-governance/reference-register.md). 측정값·tool·infra 선택 없음.
 - 확인: Markdown lint 24 files, 141 local links resolve, YAML 4 files parse, Cyrillic/Han 검색 결과 없음, `git diff --check` 통과. PR required checks `Markdown lint`, `PR checklist` 통과.
+
+## 2026-10-30 — 초기 판매 시나리오 경계
+- 추적: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34); 문서 결정 commit `abcfa69`.
+- 범위: campaign 1개·수량형 SKU 1종·독립 pool; sale open 전 queue 미운영, open 후 FIFO.
+- 근거: [REF-023~026](../00-governance/reference-register.md). 구현·architecture·성능 목표는 선택하지 않음.
+- 잔여: Q-002/Q-003/Q-010은 공유 재고, 다른 판매 유형, queue edge policy 등 미해결 경계 때문에 OPEN.
+- 확인: Markdown lint 24 files, 144 local links, YAML 4 forms, Mermaid render, `git diff --check` 통과. PR required checks는 PR #34에서 추적.

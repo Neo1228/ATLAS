@@ -3,7 +3,7 @@ id: DOC-015
 title: Domain Invariants
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: [FR-001, NFR-002]
   adr: []
@@ -16,7 +16,7 @@ Invariant는 정상 처리와 실패/recovery 뒤에도 유지할 성질. 수치
 
 | ID | 불변조건 | 상태 | 미정 경계 | Trace |
 |---|---|---|---|---|
-| INV-001 | 확정 예약·판매량 ≤ 해당 판매 단위 capacity. | △ Proposed | Q-002: 판매 단위/재입고/조정/취소/campaign 공유. Gate 3: storage/atomicity. | BR-002, FR-001, EXP-001/005 |
-| INV-002 | 낮은 sequence 우선. Admission 후 발급; retry ticket 재사용; restart 후 순서 유지. | ✓ Baseline; acceptance △ Proposed | Q-003: storage/key/payload/lifecycle/tie/bot/type policy. | BR-001, Q-003, D-019~D-022 |
+| INV-001 | 초기 시나리오: 수량형 SKU 1종의 campaign pool에서 예약·판매 수량 합이 capacity 이하 (D-023). | △ Proposed | Q-002/Q-004: 다른 판매 단위, 공유 재고, 예약·결제·취소·조정 상태 전이와 acceptance. Gate 3 storage/atomicity. | BR-002, FR-001, EXP-001/005 |
+| INV-002 | Sale open 후 admission; 자격 통과 뒤 낮은 server sequence 우선. Retry는 ticket 재사용, restart 후 순서 보존. | ✓ Baseline; acceptance △ Proposed | Q-003: storage/key/payload/lifecycle/tie/bot/other types. | BR-001, Q-003, D-019~D-024 |
 
 위반 측정 결과 없음. 검증 후보: [Experiment Registry](../08-experiments/experiment-registry.md). 경계 상세: [Q-002/Q-003](../00-governance/assumptions-and-open-questions.md), [Business Rules](business-rules.md).

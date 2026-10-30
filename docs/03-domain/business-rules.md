@@ -3,7 +3,7 @@ id: DOC-014
 title: Business Rules
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: [FR-001]
   adr: []
@@ -16,38 +16,43 @@ links:
 
 | ID | 규칙 | 상태 | 미정 경계 |
 |---|---|---|---|
-| BR-001 | Queue 내 낮은 sequence 우선. Admission 후 발급 (D-020), retry ticket 재사용 (D-021), restart 후 순서 유지 (D-022). | ✓ Baseline (D-019) | Q-003: storage/key/payload/lifecycle/tie/bot/type policy ? OPEN. Issue #24에 기록. |
-| BR-002 | 판매 가능량 초과 확정 금지. | △ Proposed (D-017) | 판매 단위·campaign/global inventory·조정/취소 ? OPEN (Q-002). |
+| BR-001 | 초기 시나리오: sale open 후 자격 통과 요청만 대기열에 등록. 등록 시 sequence 발급 (D-020), 낮은 순번 우선 (D-019), 같은 요청 retry ticket 재사용 (D-021), restart 후 순서 보존 (D-022). | ✓ Baseline (D-019~D-024) | Q-003: storage/key/payload/expiry/re-entry/tie/bot/다른 유형 정책 ? OPEN. [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33). |
+| BR-002 | 초기 시나리오: 대체 가능한 수량형 SKU 1종과 campaign별 독립 pool (D-023). 예약·판매 수량은 pool capacity 이내. | △ Proposed (D-017, D-023) | Q-002/Q-004: 재고 생명주기, 조정·취소·환불·결제 경합 ? OPEN. |
 
 ## 기준 흐름 — 합성 scenario
-1. Seller가 제한 재고의 campaign을 연다. 단위/정책은 미정.
-2. 자격 통과 요청을 queue에 admission하고 server sequence 발급. 저장 방식은 미정.
-3. 요청 수가 잔여 재고보다 많을 때 순서·예약 결과의 일관성 확인. 세부 protocol 미정.
-4. 같은 논리 요청의 retry는 ticket/sequence 재사용. service/worker restart 후 발급 순서 유지.
-
-다음 Mermaid는 D-019~D-022만 표시. 저장/만료/동순위/bot/유형별 정책은 ? OPEN이며 구현 설계 아님.
+1. Seller가 한 campaign에 수량형 SKU 1종과 독립 재고 pool을 설정. 실제 수량은 실험 profile에서 결정.
+2. Sale open 전에는 queue admission과 sequence 발급 없음 (D-024).
+3. Sale open 후 자격 통과 Buyer 요청을 admission하고 server sequence 발급. 낮은 sequence 우선 (D-019/D-020).
+4. 예약·판매량은 pool capacity 초과 금지 (BR-002). 상태 전이와 acceptance는 미정.
+5. 같은 논리 요청 retry는 기존 ticket/sequence 재사용. service/worker restart 후 순서 유지 (D-021/D-022).
+6. Storage, key scope/retention, expiry/re-entry, tie, bot, 다른 판매 유형은 ? OPEN.
 
 ```mermaid
 sequenceDiagram
     actor Buyer as 구매자
-    participant API as 대기열 API
+    participant API as Campaign API
     participant Queue as 대기열 상태
-    Buyer->>API: 구매 요청 제출
-    API->>API: 자격 확인
-    alt 자격 미달
-        API-->>Buyer: 대기열 입장 거절
-    else 자격 통과
-        API->>Queue: 대기열 입장 및 서버 순번 발급
-        Queue-->>API: 대기표와 순번
-        API-->>Buyer: 대기표와 순번
-        opt 같은 논리 요청 재시도
-            Buyer->>API: 같은 요청 재시도
-            API->>Queue: 기존 대기표 조회
-            Queue-->>API: 기존 대기표와 순번
-            API-->>Buyer: 기존 대기표와 순번
+    Buyer->>API: Campaign access 요청
+    API->>API: Sale-open 상태 확인
+    alt Sale open 전
+        API->>API: Admission 생략, queue entry와 sequence 없음
+    else Sale open
+        API->>API: 구매 자격 확인
+        alt 자격 미달
+            API->>API: 자격 미달로 admission 생략
+        else 자격 통과
+            API->>Queue: Admission 및 server sequence 발급
+            Queue-->>API: Ticket과 sequence
+            API-->>Buyer: Ticket과 sequence
+            opt 같은 논리 요청 재시도
+                Buyer->>API: 같은 요청 retry
+                API->>Queue: 기존 ticket 조회
+                Queue-->>API: 기존 ticket과 sequence
+                API-->>Buyer: 기존 ticket과 sequence
+            end
         end
     end
-    Note over Queue: 서비스 재시작 뒤 발급 순서를 보존; 저장·복구 방식은 미정
+    Note over Queue: D-019 낮은 sequence 우선, restart 후 순서 보존. 저장·복구 방식 미정
 ```
 
-도식은 queue ordering baseline만 설명한다. 미정 경계는 [Q-003](../00-governance/assumptions-and-open-questions.md). 이 흐름은 정책·성능 결과가 아니다. [Invariants](invariants.md), [Experiment Registry](../08-experiments/experiment-registry.md) 참조.
+도식은 D-019~D-024의 초기 시나리오만 표현. Queue 미정 경계는 [Q-003](../00-governance/assumptions-and-open-questions.md). 저장/결제/성능 구현을 정한 것이 아님. [Invariants](invariants.md), [Experiment Registry](../08-experiments/experiment-registry.md), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33) 참조.

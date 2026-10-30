@@ -3,7 +3,7 @@ id: DOC-002
 title: Assumptions and Open Questions
 status: Draft
 owner: Project Owner
-updated: 2026-10-29
+updated: 2026-10-30
 links:
   requirements: []
   adr: [ADR-0001]
@@ -16,9 +16,9 @@ links:
 | ID | 상태 | 질문/리스크 | 권장 논의 순서 | 추적 |
 |---|---|---|---|---|
 | Q-001 | ✓ Resolved | 가상 학습 시나리오로 시작. 실제 시장/사용자 검증은 없음. Buyer/seller 목표는 D-015~D-017에 기록. | 완료 | [D-005](decision-log.md) |
-| Q-010 | ? OPEN | 판매 유형별 행동과 공통 목표 차이 | Gate 1; 기본 목표는 [Issue #19](https://github.com/Neo1228/ATLAS/issues/19)에서 정리 | [Personas & Jobs](../01-discovery/personas-and-jobs.md) |
-| Q-002 | ? OPEN | 판매 단위(SKU/수량/좌석 등), 캠페인 재고와 전체 재고의 관계 | 유형별 행동과 함께 논의 | [Business Rules](../03-domain/business-rules.md), [Personas](../01-discovery/personas-and-jobs.md) |
-| Q-003 | ? OPEN | Queue persistence, key scope/retention, payload change, expiry/re-entry, tie, bot, type policy | Q-002와 함께 합의 | baseline [Issue #24](https://github.com/Neo1228/ATLAS/issues/24); [Rules](../03-domain/business-rules.md) |
+| Q-010 | ? OPEN | 첫 합성 시나리오는 수량형 SKU 1종 (D-023). 다른 판매 유형별 Buyer/Seller 행동은 미정. | Gate 1; 공통 목표 [Issue #19](https://github.com/Neo1228/ATLAS/issues/19), 초기 범위 [Issue #33](https://github.com/Neo1228/ATLAS/issues/33) | [Personas & Jobs](../01-discovery/personas-and-jobs.md) |
+| Q-002 | ? OPEN | D-023: 초기 시나리오는 대체 가능한 SKU 1종과 campaign 소유 pool 1개. 공유/global/location 재고, 다른 단위, 재입고·조정·취소 정책은 OPEN. | Q-010과 함께 논의; 초기 경계만 선택 | [Business Rules](../03-domain/business-rules.md), [Personas](../01-discovery/personas-and-jobs.md), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33) |
+| Q-003 | ? OPEN | 초기 시나리오는 sale open 전 admission 없음, open 후 D-019/D-020 적용. Storage, key/retention, payload 변경, expiry/re-entry, tie, bot, 다른 유형의 queue policy는 OPEN. | Q-002/Q-010과 묶어 논의; 경계별 Issue 금지 | baseline [Issue #24](https://github.com/Neo1228/ATLAS/issues/24); [Issue #33](https://github.com/Neo1228/ATLAS/issues/33); [Rules](../03-domain/business-rules.md) |
 | Q-004 | ? OPEN | 예약 TTL 만료와 결제 진행/성공 경합 시 주문·재고·결제 결과 | Q-002 뒤 | [FR-002](../02-requirements/requirements-index.md), [Experiments](../08-experiments/experiment-registry.md) |
 | Q-005 | ? OPEN | Authorization/capture 시점, retry, UNKNOWN 결제, refund policy | Q-010 뒤 | [FR-002](../02-requirements/requirements-index.md), [Experiments](../08-experiments/experiment-registry.md) |
 | Q-006 | ? OPEN | 내부 settlement ledger와 PSP 지급 경계, fee·정산 주기·보류·정정 | PSP/지역 조사 뒤 | [FR-003](../02-requirements/requirements-index.md) |
