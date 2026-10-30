@@ -111,7 +111,7 @@ links:
 - Evidence: AWS/K6 guidance in [REF-018/019](../00-governance/reference-register.md); [REF-042](../00-governance/reference-register.md) describes Artillery’s hybrid model, a vendor case rather than universal rule.
 
 ## 2026-10-30 — Gate 2 workload values policy
-- Selection: [Issue #54](https://github.com/Neo1228/ATLAS/issues/54) B/A/A — synthetic scale ladder, offered Buyer sessions/s primary, report-only acceptance.
+- Selection: [Issue #54](https://github.com/Neo1228/ATLAS/issues/54)/[PR #55](https://github.com/Neo1228/ATLAS/pull/55) B/A/A — synthetic scale ladder, offered Buyer sessions/s primary, report-only acceptance.
 - Numeric values remain OPEN: scale levels, phase rates/duration, think time, concurrency, environment and thresholds.
 - Measurement: offered/admitted/dropped sessions, per-stage RPS, resolved-session TPS, p95/p99, errors, queue/hold occupancy, expiry/abandonment, oversell invariant.
 - Records: [D-032](../00-governance/decision-log.md), [Q-008](../00-governance/assumptions-and-open-questions.md), [NFR-002](../02-requirements/requirements-index.md), [EXP-010](../08-experiments/experiment-registry.md), [REF-018/019/043](../00-governance/reference-register.md).
