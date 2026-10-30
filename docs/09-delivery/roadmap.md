@@ -49,7 +49,7 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 
 ## 현재 상태
 - WP-001~WP-005 main 게시. Git 규칙 PR #4, batching PR #16, delivery 기록 PR #18 병합.
-- 종료: Issues #19/#20/#22/#24/#31. [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)는 초기 domain batch 추적; PR 미생성.
+- 종료: Issues #19/#20/#22/#24/#31. [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)와 [PR #34](https://github.com/Neo1228/ATLAS/pull/34)에서 초기 domain batch 추적.
 - Gate 1 진행 중. D-023/D-024는 시나리오 baseline이며 구현 승인 아님.
 - Q-003의 storage/key/payload/expiry/re-entry/tie/bot 경계는 계속 ? OPEN. 관련 결정은 한 묶음으로 논의; 경계별 Issue 금지.
 - Q-008 traffic/capacity 목표는 Gate 2 전까지 TBD. 코드·runtime dependency·deployment 미선택.

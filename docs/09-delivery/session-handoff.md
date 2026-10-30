@@ -14,7 +14,7 @@ links:
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
 - ✓ Gate 0 승인 (2026-10-29). → Gate 1 discovery 진행 중.
-- Gate 1, Issue #33에서 선택한 범위: campaign 하나, 수량형 SKU 1종, 독립 pool (D-023); sale open 전 queue 미운영, open 후 FIFO (D-024; D-019~D-022 유지). PR 미생성.
+- Gate 1, Issue #33에서 선택한 범위: campaign 하나, 수량형 SKU 1종, 독립 pool (D-023); sale open 전 queue 미운영, open 후 FIFO (D-024; D-019~D-022 유지). [PR #34](https://github.com/Neo1228/ATLAS/pull/34) 검토 중.
 - 코드, runtime dependency, 실제 payment 호출, deployment 미착수. Gate 2/구현은 별도 승인 필요.
 
 ## 확정된 방향
@@ -37,7 +37,7 @@ links:
 | WP-002~005 | PR #9/#10/#11/#12; Issue #5/#6/#8/#7 |
 | Git/PR 기준 | PR #4 (Issue #2); batching PR #16 (Issue #15); delivery PR #18 (Issue #17) |
 | Persona/capacity | PR #21 (Issues #19/#20) |
-| 초기 판매 시나리오 | Issue #33; D-023/D-024 기록; PR 미생성 |
+| 초기 판매 시나리오 | Issue #33; PR #34 open; D-023/D-024 |
 | 문서 탐색·작성 기준 | Issue #26; PR #27 merged `a82e022`, closeout PR #28 merged `bc8d60b` |
 
 진행 상태는 [Roadmap](roadmap.md), 전체 변경 이력은 [Milestone Log](milestone-log.md). 새 작업은 Issue-first. 관련 commit/Issue는 하나의 reviewable PR로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).
