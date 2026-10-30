@@ -50,7 +50,7 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 ## 현재 상태
 - WP-001~WP-005 main 게시. Git 규칙 [PR #4](https://github.com/Neo1228/ATLAS/pull/4), batching [PR #16](https://github.com/Neo1228/ATLAS/pull/16), delivery [PR #18](https://github.com/Neo1228/ATLAS/pull/18) 병합.
 - [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 `AUTHORIZE → CAPTURE` 선택; [D-026](../00-governance/decision-log.md)에 capture success 확인 후 claim으로 기록. [PR #41](https://github.com/Neo1228/ATLAS/pull/41) 병합.
-- Gate 1 진행 중. [D-023~D-027](../00-governance/decision-log.md)은 초기 domain/recovery 기준; 구현 승인 아님.
+- Gate 1: [D-023~D-030](../00-governance/decision-log.md) initial domain/payment boundaries; [D-031](../00-governance/decision-log.md) selects Gate 2 workload shape only. No workload values or implementation approval yet.
 - [Q-003](../00-governance/assumptions-and-open-questions.md)의 storage/key/payload/expiry/re-entry/tie/bot 정책은 OPEN. 관련 경계는 Issue를 나누지 않고 함께 논의.
-- [Q-008](../00-governance/assumptions-and-open-questions.md): [D-031](../00-governance/decision-log.md) selects full Buyer session, hybrid open arrivals, baseline/burst/step-up. [Issue #51](https://github.com/Neo1228/ATLAS/issues/51). Numeric traffic/target/environment values OPEN; Gate 2 agreement does not approve implementation.
+- [Q-008](../00-governance/assumptions-and-open-questions.md): [D-031](../00-governance/decision-log.md) selects full Buyer session, hybrid open arrivals, baseline/burst/step-up. [Issue #51](https://github.com/Neo1228/ATLAS/issues/51)/[PR #53](https://github.com/Neo1228/ATLAS/pull/53). Numeric traffic, think-time, phase and environment values OPEN; Gate 2 profile does not approve implementation.
 - [Q-008](../00-governance/assumptions-and-open-questions.md) 성능/트래픽 목표는 Gate 2 전까지 TBD. 코드·runtime dependency·deployment 미선택.
