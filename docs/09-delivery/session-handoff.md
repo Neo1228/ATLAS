@@ -40,7 +40,7 @@ links:
 | 초기 판매 시나리오 | [Issue #33](https://github.com/Neo1228/ATLAS/issues/33); [PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged; [D-023/D-024](../00-governance/decision-log.md) |
 | 결제 중 hold/recovery | [Issue #35](https://github.com/Neo1228/ATLAS/issues/35); [PR #36](https://github.com/Neo1228/ATLAS/pull/36) merged; [D-025](../00-governance/decision-log.md) |
 | 문서·Issue·PR 추적 링크 | [Issue #38](https://github.com/Neo1228/ATLAS/issues/38) closed; [PR #39](https://github.com/Neo1228/ATLAS/pull/39) merged `2897ff1` |
-| PayPal auth/capture flow | [Issue #37](https://github.com/Neo1228/ATLAS/issues/37); selected `AUTHORIZE → CAPTURE`; [D-026](../00-governance/decision-log.md); implementation details OPEN |
+| PayPal auth/capture flow | [Issue #37](https://github.com/Neo1228/ATLAS/issues/37); [PR #41](https://github.com/Neo1228/ATLAS/pull/41) open; selected `AUTHORIZE → CAPTURE`; [D-026](../00-governance/decision-log.md); implementation details OPEN |
 | 문서 작성 기준 | [Issue #26](https://github.com/Neo1228/ATLAS/issues/26); [PR #27](https://github.com/Neo1228/ATLAS/pull/27) merged [`a82e022`](https://github.com/Neo1228/ATLAS/commit/a82e022); closeout [PR #28](https://github.com/Neo1228/ATLAS/pull/28) merged [`bc8d60b`](https://github.com/Neo1228/ATLAS/commit/bc8d60b) |
 
 진행 상태는 [Roadmap](roadmap.md), 전체 변경 이력은 [Milestone Log](milestone-log.md). 새 작업은 Issue-first. 관련 commit/Issue는 하나의 reviewable PR로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).

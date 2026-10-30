@@ -78,4 +78,4 @@ links:
 - Decision: [Issue #37](https://github.com/Neo1228/ATLAS/issues/37) selected `AUTHORIZE → CAPTURE`; [D-026](../00-governance/decision-log.md) records capture-success-only inventory claim. [FR-002](../02-requirements/requirements-index.md), [BR-003/INV-003](../03-domain/business-rules.md), [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md).
 - Evidence: [REF-030~033](../00-governance/reference-register.md). PayPal contract is provider-specific; Shopify/Coinbase is a non-PayPal practitioner example. Authorization success is not final charge or inventory claim.
 - Open: endpoint/version, per-operation idempotency support/retention and retries, inventory/auth expiry, capture/void/cancel recovery, compensation. No implementation or production behavior approved.
-- Verification/PR: pending.
+- Verification: local Markdown lint and links passed. [PR #41](https://github.com/Neo1228/ATLAS/pull/41) open; required checks pending.
