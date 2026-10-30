@@ -60,3 +60,10 @@ links:
 - 근거: [REF-023~026](../00-governance/reference-register.md). 구현·architecture·성능 목표는 선택하지 않음.
 - 잔여: Q-002/Q-003/Q-010은 공유 재고, 다른 판매 유형, queue edge policy 등 미해결 경계 때문에 OPEN.
 - 확인: Markdown lint 24 files, 144 local links, YAML 4 forms, Mermaid render, `git diff --check` 통과. PR required checks는 PR #34에서 추적.
+
+## 2026-10-30 — 결제 결과와 재고 hold lifecycle
+- 추적: [Issue #35](https://github.com/Neo1228/ATLAS/issues/35), [PR #36](https://github.com/Neo1228/ATLAS/pull/36); decision commit `4138367`.
+- 범위: PSP 요청 전 hold, terminal success 후 claim/definitive failure 후 release, UNKNOWN same-attempt reconcile, expiry 중 재고 보류.
+- 근거: [REF-023/027~029](../00-governance/reference-register.md). Stripe/Brandur 사례를 PayPal contract로 일반화하지 않음.
+- 잔여: Q-004/Q-005는 TTL, auth/capture mapping, provider support/retention, retry limit, irrecoverable UNKNOWN/refund policy 때문에 OPEN.
+- 로컬 확인: Markdown lint 24 files, 145 local links, YAML 4 forms, 두 Mermaid diagram render, `git diff --check` 통과. PR required checks는 PR #36에서 추적.

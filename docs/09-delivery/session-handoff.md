@@ -14,7 +14,7 @@ links:
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
 - ✓ Gate 0 승인 (2026-10-29). → Gate 1 discovery 진행 중.
-- Gate 1: D-023/D-024 초기 판매·queue scope; [PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged. [Issue #35](https://github.com/Neo1228/ATLAS/issues/35)에서 D-025 hold/payment recovery를 선택; docs PR 미생성.
+- Gate 1: D-023/D-024 초기 판매·queue scope; [PR #34](https://github.com/Neo1228/ATLAS/pull/34) merged. D-025 hold/payment recovery는 [Issue #35](https://github.com/Neo1228/ATLAS/issues/35), [PR #36](https://github.com/Neo1228/ATLAS/pull/36)에서 검토 중.
 - 코드, runtime dependency, 실제 payment 호출, deployment 미착수. Gate 2/구현은 별도 승인 필요.
 
 ## 확정된 방향
@@ -38,7 +38,7 @@ links:
 | Git/PR 기준 | PR #4 (Issue #2); batching PR #16 (Issue #15); delivery PR #18 (Issue #17) |
 | Persona/capacity | PR #21 (Issues #19/#20) |
 | 초기 판매 시나리오 | Issue #33; PR #34 merged; D-023/D-024 |
-| 결제 중 hold/recovery | Issue #35; D-025 선택; docs PR 미생성 |
+| 결제 중 hold/recovery | Issue #35; PR #36 open; D-025 |
 | 문서 탐색·작성 기준 | Issue #26; PR #27 merged `a82e022`, closeout PR #28 merged `bc8d60b` |
 
 진행 상태는 [Roadmap](roadmap.md), 전체 변경 이력은 [Milestone Log](milestone-log.md). 새 작업은 Issue-first. 관련 commit/Issue는 하나의 reviewable PR로 통합 ([CONTRIBUTING](../../CONTRIBUTING.md)).
