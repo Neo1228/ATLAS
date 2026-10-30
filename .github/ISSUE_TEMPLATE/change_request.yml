@@ -6,41 +6,41 @@ body:
     id: problem
     attributes:
       label: 해결할 문제 또는 미결정 질문
-      description: 문제·영향을 요약하고 사실/가정/미정을 구분. 복잡한 변경은 이유와 영향을 Issue 본문에 직접 작성.
+      description: 문제와 영향을 요약하고 사실·가정·미정을 구분. 복잡한 내용은 이유·대안을 Issue 본문에 직접 설명.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: 제안과 대안
-      description: 선택 이유와 주요 대안·trade-off. 미승인 정책은 `△ Proposed`.
+      description: 선택 이유, 대안, 절충을 간단히 기록. 미승인 정책은 `△ Proposed`.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: 성공/검증 기준
-      description: 완료 시 관찰 가능한 결과와 실패/경계 조건.
+      description: 완료 시 확인할 결과와 실패·경계 조건.
     validations:
       required: true
   - type: textarea
     id: model
     attributes:
       label: 영향 범위와 시각화 또는 해당 없음
-      description: 영향 상태·규칙·불변조건 요약. 복잡한 흐름은 Mermaid; 기준 문서가 있으면 핵심 설명과 링크 추가. 단순 변경은 N/A 사유.
+      description: 영향받는 상태·규칙을 요약. 복잡한 흐름만 Mermaid로 표현; 기준 도식이 있으면 요점과 링크 추가. 단순 변경은 N/A 사유.
     validations:
       required: true
   - type: textarea
     id: trace
     attributes:
       label: 관련 추적 ID
-      description: Q/FR/NFR/BR/INV/ADR/EXP/TEST ID를 관련 기준 문서로 가는 Markdown link로 작성. Bare ID만 남기지 않음.
+      description: Q/FR/NFR/BR/INV/ADR/EXP/TEST ID를 기준 문서에 직접 연결. ID만 적지 않음.
     validations:
       required: false
   - type: textarea
     id: scope
     attributes:
       label: 작업 단위 제안
-      description: 독립 검토 가능한 범위와 완료 기준. 큰 작업은 관련 sub-issues로 분해.
+      description: 한 목적과 완료 기준에 맞춰 범위 설정. 같은 목적의 후속 결정은 이 Issue에서 이어감. 독립 목적·위험·완료 기준일 때만 관련 하위 Issue 생성.
     validations:
       required: true

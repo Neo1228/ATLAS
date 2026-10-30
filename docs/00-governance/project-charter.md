@@ -19,12 +19,12 @@ links:
 
 | 영역 | 주요 내용 |
 |---|---|
-| A. Payment Reliability | Authorization/capture, webhook, retry, idempotency, refund, 불확실한 결제 상태, recovery |
-| B. Flash Commerce | Tenant/seller, campaign, queue admission, reservation, order, 고동시성 |
-| C. Settlement & Reconciliation | 거래 대사, fee, 내부 ledger, 정정, audit trail |
+| A. 결제 신뢰성 (Payment Reliability) | Authorization/capture, webhook, retry, idempotency, refund, 불확실한 결제 상태와 recovery |
+| B. 고동시성 한정판매 (Flash Commerce) | Tenant/seller, campaign, queue admission, reservation, order |
+| C. 정산·대사 (Settlement & Reconciliation) | 거래 대사, fee, 내부 ledger, 정정, audit trail |
 
 - 세 영역 모두 장기 범위. 마일스톤별 순차 진행.
-- 우선 PSP: PayPal Sandbox. Fake PSP는 장애 반복 재현용이며 실제 PayPal 동작의 증거가 아님.
+- 우선 PSP: PayPal Sandbox. Fake PSP는 장애 재현 도구이며 실제 PayPal 동작의 증거가 아님.
 
 ## Discovery 기준 — ✓ Confirmed
 - 가상 시나리오 기반. 실제 사용자 인터뷰/데이터 아님.
@@ -38,10 +38,14 @@ links:
 - Gate 0 승인은 구현 허가 아님. Gate 2와 구현 진입 별도 승인 필요.
 
 ## 성공 기준 — Draft
-- 정책/불변조건을 검증 가능한 시나리오와 연결.
-- 장애·경합·복구를 재현 가능한 절차와 한계로 기록.
-- 성능/recovery 주장은 환경을 명시한 반복 가능한 측정으로 뒷받침.
-- SLO, RPS, p95/p99 목표는 ? OPEN. 합의·측정 전 가정 처리 ([Glossary](../01-discovery/glossary.md); [Q-008](assumptions-and-open-questions.md)).
+- 정책·invariant를 검증 가능한 시나리오에 연결.
+- 장애·경합·복구를 재현 절차와 한계까지 기록.
+- 성능·복구 주장은 환경을 명시한 반복 측정으로 뒷받침.
+- SLO, RPS, p95/p99 목표는 ? OPEN. 합의·측정 전까지 가정 ([Glossary](../01-discovery/glossary.md), [Q-008](assumptions-and-open-questions.md)).
 
 ## 열린 주제
-사용자 조사, 판매 단위/유형, queue fairness, reservation/payment/refund, settlement/fees, region/currency/tax/regulation, privacy, capacity targets, stack/deployment — [Assumptions & Open Questions](assumptions-and-open-questions.md).
+- 사용자 조사, 판매 단위·유형, queue 공정성.
+- 예약·결제·환불, 정산·수수료.
+- 지역·통화·세금·규제, 개인정보 보호.
+- 용량 목표, 기술 스택, 배포 방식.
+- 세부 항목: [Assumptions & Open Questions](assumptions-and-open-questions.md).

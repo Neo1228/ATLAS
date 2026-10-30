@@ -15,8 +15,9 @@
 - 흐름/상태가 복잡한 경우 Mermaid 등으로 시각화. 중복 그림 금지, 미정 경계 표시. 단순 변경에 도식 강제 금지.
 - PR 템플릿 모든 체크박스 완료. 병합 전 `PR checklist`와 `Markdown lint` 필수 검사 통과.
 - 외부 PSP 상태와 주문 상태, 내부 정산과 실제 지급 구분. 초기 범위에서 실결제·개인정보·판매사 지급 제외.
-- 모든 작업에 Issue·요구사항/결정 ID·변경 파일·검증·commit/PR 기록 연결.
-- 한 목적·완료 기준의 여러 Issue/commit은 하나의 PR로 통합. 커밋마다/이슈마다 PR 생성 금지.
+- 모든 작업은 Issue, trace ID, 변경 파일, 검증, commit/PR로 추적. 같은 목적의 후속 선택은 기존 Issue에서 이어가기.
+- 독립된 목적·완료 기준·위험 경계만 분리. 병합 PR은 plain-text Closes #N, 일부 반영은 Refs #N; 같은 줄에 Issue link 추가.
+- Markdown link 안에 close keyword를 넣지 않음. 필수 checks 통과 후 실제 merge SHA와 Issue 상태 기록.
 
 ## 진입점
 - 문서 인덱스: [docs/README.md](docs/README.md)

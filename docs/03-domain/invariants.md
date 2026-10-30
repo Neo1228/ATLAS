@@ -12,12 +12,12 @@ links:
 # 도메인 불변조건
 문서 유형: 기준 자료
 
-Invariant는 정상 처리와 실패/recovery 뒤에도 유지할 성질. 수치·저장 방식·검증 계약은 Gate 2~4에서 결정. 용어는 [Glossary](../01-discovery/glossary.md) 참조.
+불변조건(invariant)은 정상 처리와 실패·복구 뒤에도 유지해야 하는 성질. 수치·저장 방식·검증 계약은 Gate 2~4에서 결정. 용어는 [Glossary](../01-discovery/glossary.md) 참조.
 
-| ID | 불변조건 | 상태 | 미정 경계 | Trace |
+| ID | 불변조건 | 상태 | 미정 경계 | 근거 |
 |---|---|---|---|---|
 | INV-001 | 초기 시나리오: 수량형 SKU 1종의 campaign pool에서 예약·판매 수량 합이 capacity 이하 ([D-023](../00-governance/decision-log.md)). | △ Proposed | [Q-002/Q-004](../00-governance/assumptions-and-open-questions.md): 다른 판매 단위, 공유 재고, 예약·결제·취소·조정 상태 전이와 acceptance. Gate 3 storage/atomicity. | [BR-002](business-rules.md), [FR-001](../02-requirements/requirements-index.md), [EXP-001/005](../08-experiments/experiment-registry.md) |
 | INV-002 | Sale open 후 admission; 자격 통과 뒤 낮은 server sequence 우선. Retry는 ticket 재사용, restart 후 순서 보존 ([D-019~D-024](../00-governance/decision-log.md)). | ✓ Baseline; acceptance △ Proposed | [Q-003](../00-governance/assumptions-and-open-questions.md): storage/key/payload/lifecycle/tie/bot/other types. | [BR-001](business-rules.md), [Q-003](../00-governance/assumptions-and-open-questions.md) |
 | INV-003 | Capture success가 확인된 경우에만 inventory claim. TTL/cancel 시 capture를 먼저 확인하고, 미캡처 active authorization은 void. Capture/void `PENDING`·UNKNOWN 동안 stock unavailable; release는 confirmed non-payment와 void/expiry 후에만 가능 ([D-025~D-027](../00-governance/decision-log.md)). | ✓ Baseline; recovery acceptance △ Proposed | [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md): TTL/deadline, retry/key retention, escalation/compensation. | [BR-003](business-rules.md), [FR-002](../02-requirements/requirements-index.md), [EXP-003/004/005](../08-experiments/experiment-registry.md), [Issue #42](https://github.com/Neo1228/ATLAS/issues/42) |
 
-위반 측정 결과 없음. 검증 후보: [Experiment Registry](../08-experiments/experiment-registry.md). 경계 상세: [Q-002/Q-003](../00-governance/assumptions-and-open-questions.md), [Business Rules](business-rules.md).
+위반 측정 결과 없음. 검증 후보는 [Experiment Registry](../08-experiments/experiment-registry.md). 남은 경계: [Q-002/Q-003](../00-governance/assumptions-and-open-questions.md), [Business Rules](business-rules.md).

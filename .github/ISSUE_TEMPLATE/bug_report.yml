@@ -1,5 +1,5 @@
 name: 버그/불일치 보고
-description: 재현 조건과 기대 결과 기록.
+description: 재현 조건과 기대 결과를 기록합니다.
 title: "[버그]: "
 body:
   - type: markdown
@@ -9,48 +9,48 @@ body:
     id: summary
     attributes:
       label: 관찰한 문제
-      description: 기대/실제 동작과 영향 구분. 복잡한 불일치는 Issue 본문에서 설명하며 링크만 두지 않음.
+      description: 기대 결과, 실제 결과, 영향을 구분. 복잡한 문제는 배경·근거를 Issue에 직접 설명하고 링크만 남기지 않음.
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
       label: 재현 조건
-      description: 재현 단계, 합성 입력, 환경/버전.
+      description: 재현 단계, 합성 입력, 실행 환경과 버전.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: 수정 후 기대 결과 / 완료 기준
-      description: 재현 가능한 기대 결과와 통과 조건.
+      description: 재현 가능한 기대 결과와 확인 조건.
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: 예정 작업 단위
-      description: 진단/수정 범위. 독립 검토 가능한 작업 단위로 기록.
+      description: 진단·수정 범위와 완료 기준. 같은 목적의 수정은 한 작업으로 묶고 독립된 목적·위험만 분리.
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
       label: 로그 또는 근거
-      description: 비밀/개인정보 제거. 복잡한 재현은 흐름과 영향 불변조건을 설명.
+      description: 비밀·개인정보를 제거. 복잡한 재현은 흐름과 영향받는 invariant를 설명.
     validations:
       required: false
   - type: textarea
     id: model
     attributes:
       label: 영향 범위와 시각화 (필요한 경우)
-      description: 다단계 상태 변화는 Mermaid sequence/state diagram으로 표현. 기준 도식이 있으면 요약과 링크.
+      description: 다단계 상태 변화는 Mermaid sequence/state diagram으로 표시. 기준 도식이 있으면 요약과 링크.
     validations:
       required: false
   - type: textarea
     id: trace
     attributes:
       label: 관련 ID
-      description: 관련 ID를 기준 문서로 가는 Markdown link로 연결. Bare ID만 나열하지 않음.
+      description: 관련 ID를 기준 문서에 직접 연결. ID만 단독으로 쓰지 않음.
     validations:
       required: false

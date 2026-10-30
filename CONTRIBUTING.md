@@ -5,16 +5,19 @@
 1. 착수 전 GitHub Issue 생성. [버그 양식](.github/ISSUE_TEMPLATE/bug_report.yml) 또는 [제안 양식](.github/ISSUE_TEMPLATE/change_request.yml) 사용.
 2. 문제·근거·범위·완료/검증 기준·관련 ID(Q/FR/NFR/BR/INV/ADR/EXP)를 기록. ID마다 기준 문서로 이동하는 Markdown link 제공; bare ID만 나열하지 않음.
 3. 복잡한 변경은 본문에 사실/가정, 결정 이유, 대안·trade-off, 영향 상태/불변조건을 요약. 링크만 남기지 않음.
-4. 한 Issue는 한 응집된 작업 묶음. 커밋마다 Issue를 만들지 않음. 관계된 Issue/commit은 하나의 PR에 통합 가능.
-5. 이슈 번호를 branch명에 포함. 모든 관련 PR/commit 연결. 완료 시 `Closes #N`, 일부만 반영 시 `Refs #N`.
-6. 완료 후 실제 범위·검증·commit SHA·PR URL을 [Milestone Log](docs/09-delivery/milestone-log.md)와 [Session Handoff](docs/09-delivery/session-handoff.md)에 기록.
-7. Issue 제목은 한국어. `[버그]:`/`[제안]:` 접두사 유지.
+4. Issue 하나에 목적과 완료 기준을 묶기. 같은 묶음의 조사·선택은 기존 Issue에서 이어가기.
+5. 관련 결정과 commit은 PR 하나로 검토. 질문·metric·파일마다 Issue/PR을 만들지 않음.
+6. 목적·위험·책임자·완료 기준·배포/복구 경계가 독립될 때만 분리.
+7. Branch명에 Issue 번호 포함. 관련 PR/commit 연결.
+8. 완료 PR은 plain-text Closes #N, 일부 반영은 Refs #N. 같은 Issues 줄에 Issue link를 별도로 추가; close keyword는 Markdown link로 감싸지 않음.
+9. 범위·검증·commit SHA·PR URL·merge SHA를 [Milestone Log](docs/09-delivery/milestone-log.md), [Session Handoff](docs/09-delivery/session-handoff.md)에 기록.
+10. Issue 제목은 한국어. [버그]:/[제안]: 접두사 유지.
 
 ## 2. 문장·용어
-- 짧은 문장, 한 문단 한 핵심. 자연스러운 경우 명사형/개조식 종결 우선; 조사·수식어 최소화.
-- 수치·범위·날짜·완료 기준은 단위/기준과 함께 표 또는 불릿으로 표시.
-- 일반적인 backend 용어(API, retry, queue, transaction)는 English 사용 가능. 어색한 직역·반복 병기 금지.
-- 프로젝트 고유 용어·약어는 처음 등장 때 풀이하거나 [Glossary](docs/01-discovery/glossary.md) 연결.
+- 핵심부터, 한 문단 한 요점. 짧은 문장과 자연스러운 개조식 우선.
+- 수치·범위·날짜는 단위와 기준을 함께 표시.
+- API, retry, queue, transaction 등 표준 backend 용어는 English 사용 가능. 일반 설명에 불필요한 전문 용어·영한 병기 금지.
+- 프로젝트 용어·약어는 첫 등장에 풀이하거나 [Glossary](docs/01-discovery/glossary.md) 연결.
 
 ## 3. 검증
 - Markdown: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
@@ -35,11 +38,11 @@
 - 과거 제목 수정은 기본 금지. 사용자 명시 승인과 별도 절차 필요.
 
 ## 6. Pull Request
-- 하나의 목적·완료 기준·검토 경계로 구성. 관련 commit과 Issue는 함께 묶고, 커밋/이슈마다 PR을 만들지 않음.
-- 독립 목적·위험·배포/복구 경계는 분리. 파일 수·commit 수만으로 나누지 않음.
-- [PR template](.github/PULL_REQUEST_TEMPLATE.md) 사용. 복잡한 변경은 문제·결정 근거·대안·영향·검증을 본문에 직접 작성.
-- 흐름·상태·아키텍처가 복잡하면 Mermaid 사용. 기존 도식이 있으면 요약 후 링크. 모든 checkbox 완료; 해당 없음은 이유 작성.
-- `main` 필수 checks: `Markdown lint`, `PR checklist`. Squash merge만 허용, linear history 필수, force push/deletion 금지. 승인자 수 0, 자동 branch 삭제.
+- 한 목적·완료 기준·검토 경계에 관련 commit과 Issue를 PR 하나로 묶기.
+- 같은 목적의 후속 결정은 기존 Issue 댓글로 누적. 독립 목적·위험·책임자·완료 기준·배포/복구 경계만 분리.
+- [PR template](.github/PULL_REQUEST_TEMPLATE.md) 필수. 복잡한 변경은 근거·대안·영향·검증을 짧은 한국어로 작성.
+- 복잡한 flow/state에만 Mermaid 사용. 모든 checkbox 완료; N/A는 구체적 이유 작성.
+- 필수 checks: Markdown lint, PR checklist. Squash merge, linear history 사용. force push와 branch 삭제 금지.
 
 ## 7. 안전한 Git
 - 시작 전 `git status --short --branch`.

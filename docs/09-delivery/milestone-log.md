@@ -68,56 +68,51 @@ links:
 - 잔여: [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md) TTL, auth/capture mapping, provider support/retention, retry limit, irrecoverable UNKNOWN/refund policy OPEN.
 - 로컬 확인: Markdown lint 24 files, 145 local links, YAML 4 forms, 두 Mermaid diagram render, `git diff --check` 통과. PR required checks [PR #36](https://github.com/Neo1228/ATLAS/pull/36) 통과.
 
-## 2026-10-30 — Issue/PR/document traceability cleanup
-- 추적: [Issue #38](https://github.com/Neo1228/ATLAS/issues/38), [PR #39](https://github.com/Neo1228/ATLAS/pull/39) merged; commits [`226dad4`](https://github.com/Neo1228/ATLAS/commit/226dad4), [`58d44e6`](https://github.com/Neo1228/ATLAS/commit/58d44e6); squash merge [`2897ff1`](https://github.com/Neo1228/ATLAS/commit/2897ff1).
-- 범위: canonical links in 23 Markdown docs and 8 Issue/9 PR bodies; Issue/PR forms require clickable source links.
-- 확인: 294 local Markdown links and 125 GitHub document links resolve; Markdown lint, YAML 4 forms, no Cyrillic/Han. Required PR checks [PR #39](https://github.com/Neo1228/ATLAS/pull/39) passed.
-- 의도적 N/A: seed-only [PR #1](https://github.com/Neo1228/ATLAS/pull/1)/[PR #3](https://github.com/Neo1228/ATLAS/pull/3)는 독립 implementation docs가 아니라 [PR #4](https://github.com/Neo1228/ATLAS/pull/4)에 superseded.
+## 2026-10-30 — Issue·PR·문서 추적성 정비
+- 추적: [Issue #38](https://github.com/Neo1228/ATLAS/issues/38), [PR #39](https://github.com/Neo1228/ATLAS/pull/39) 병합. 커밋 [`226dad4`](https://github.com/Neo1228/ATLAS/commit/226dad4), [`58d44e6`](https://github.com/Neo1228/ATLAS/commit/58d44e6); merge [`2897ff1`](https://github.com/Neo1228/ATLAS/commit/2897ff1).
+- 범위: 23개 Markdown 문서와 8개 Issue/9개 PR 본문의 기준 링크 정비. Issue/PR 양식에 직접 연결을 요구.
+- 확인: local link 294개, GitHub 문서 링크 125개 resolve. Markdown lint, YAML 4개, PR #39 필수 checks 통과.
+- 제외: seed PR [#1](https://github.com/Neo1228/ATLAS/pull/1)/[#3](https://github.com/Neo1228/ATLAS/pull/3)는 [PR #4](https://github.com/Neo1228/ATLAS/pull/4)에 superseded.
 
-## 2026-10-30 — PayPal authorize/capture 흐름 결정
-- 결정: [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 `AUTHORIZE → CAPTURE` 선택. [D-026](../00-governance/decision-log.md)은 capture success 확인 후에만 inventory claim하도록 기록. [FR-002](../02-requirements/requirements-index.md), [BR-003/INV-003](../03-domain/business-rules.md), [Q-004/Q-005/Q-009](../00-governance/assumptions-and-open-questions.md).
-- 근거: [REF-030~033](../00-governance/reference-register.md). PayPal contract는 해당 provider에만 적용; Shopify/Coinbase 사례는 on-chain practitioner reference이며 PayPal 근거 아님. Authorization은 최종 청구나 inventory claim이 아님.
-- 미정: endpoint/version, operation별 idempotency 지원/retention과 retry, inventory/auth expiry, capture/void/cancel 복구, compensation. 구현·production behavior 승인 아님.
-- Verification: Markdown lint, local links and PR #41 required checks passed.
+## 2026-10-30 — PayPal authorize/capture 결정
+- 결정: [Issue #37](https://github.com/Neo1228/ATLAS/issues/37), [PR #41](https://github.com/Neo1228/ATLAS/pull/41) 병합 [`375645e`](https://github.com/Neo1228/ATLAS/commit/375645e). AUTHORIZE 후 CAPTURE; capture success 확인 후 inventory claim ([D-026](../00-governance/decision-log.md)).
+- 영향: Authorization success는 최종 결제나 inventory claim이 아님. [FR-002](../02-requirements/requirements-index.md), [BR-003/INV-003](../03-domain/business-rules.md).
+- 근거: [REF-030~033](../00-governance/reference-register.md). Provider별 PayPal contract만 적용; Shopify/Coinbase 사례를 PayPal 정책으로 일반화하지 않음.
+- OPEN: endpoint/version, operation별 idempotency 지원·retention·retry, inventory/auth expiry, capture/void/cancel recovery와 compensation.
+- 검증: PR #41의 Markdown lint와 PR checklist 통과.
 
-## 2026-10-30 — 결제 hold 만료·복구 기준
-- 선택: [Issue #42](https://github.com/Neo1228/ATLAS/issues/42)/[PR #43](https://github.com/Neo1228/ATLAS/pull/43). B: TTL/cancel 시 capture 확인; active uncaptured authorization은 void. Capture success면 claim; release는 confirmed non-payment와 void/expiry 이후.
-- 기록: [D-027](../00-governance/decision-log.md), [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [BR-003/INV-003](../03-domain/business-rules.md), [EXP-003/004/005](../08-experiments/experiment-registry.md).
-- 근거: [REF-034~038](../00-governance/reference-register.md). PayPal authorization 기간 문구가 29/30일로 달라 provider TTL 미선택; ATLAS inventory TTL과 구분.
-- 미정: TTL/deadline 수치, retry/key retention, escalation·compensation. Implementation/production payment 미착수.
+## 2026-10-30 — 결제 hold 만료·복구
+- 결정: [Issue #42](https://github.com/Neo1228/ATLAS/issues/42), [PR #43](https://github.com/Neo1228/ATLAS/pull/43) 병합 [`0e8fe43`](https://github.com/Neo1228/ATLAS/commit/0e8fe43). TTL/cancel 시 capture 확인; active authorization은 void. Capture success면 claim, release는 확정된 non-payment와 void/expiry 이후 ([D-027](../00-governance/decision-log.md)).
+- 근거: [REF-034~038](../00-governance/reference-register.md). PayPal authorization 기간 문구가 29/30일로 달라 provider TTL은 미선택. ATLAS inventory TTL과 별도.
+- OPEN: TTL/deadline, retry/key retention, escalation/compensation. 구현·production payment 미착수.
+- 기록: [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [BR-003/INV-003](../03-domain/business-rules.md), [EXP-003/004/005](../08-experiments/experiment-registry.md).
 
-## 2026-10-30 — 초기 checkout TTL 방식
-- 선택: [Issue #44](https://github.com/Neo1228/ATLAS/issues/44)/[PR #45](https://github.com/Neo1228/ATLAS/pull/45) A — fixed window. 초기 synthetic sale에는 하나의 checkout window 적용; demand-based TTL은 제외.
-- 미정: duration, TTL start trigger, checkout journey/expiry UX, p50/p95/p99 측정값 및 acceptance. PSP delivery/API/recovery deadline은 별도.
-- 근거: [REF-039~041](../00-governance/reference-register.md). Ticketmaster는 event demand에 따라 timer 변경; Broadleaf 5분은 configurable product example; PayPal 3일은 webhook redelivery period. 어느 것도 ATLAS TTL 값 아님.
-- 추적: [D-028](../00-governance/decision-log.md), [Q-004/Q-005/Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-005](../08-experiments/experiment-registry.md).
+## 2026-10-30 — 초기 checkout window
+- 선택: [Issue #44](https://github.com/Neo1228/ATLAS/issues/44), [PR #45](https://github.com/Neo1228/ATLAS/pull/45) 병합 [`48eb215`](https://github.com/Neo1228/ATLAS/commit/48eb215). 초기 synthetic sale에 fixed window 1개; demand-based TTL 제외 ([D-028](../00-governance/decision-log.md)).
+- OPEN: duration, TTL 시작 시점, checkout/expiry UX, p50/p95/p99와 acceptance. PSP/API/recovery deadline은 별도.
+- 근거: [REF-039~041](../00-governance/reference-register.md). Ticketmaster·Broadleaf·PayPal 수치는 각 제품 사례이며 ATLAS 기준값이 아님.
 
-## 2026-10-30 — Buyer checkout timer contract
-- 선택: [Issue #46](https://github.com/Neo1228/ATLAS/issues/46)/[PR #47](https://github.com/Neo1228/ATLAS/pull/47); timer starts at confirmed inventory hold, initial `AUTHORIZE` submission required before expiry, no grace extension.
-- Expiry UX: close checkout; if payment request was submitted, show pending status until D-027 reconciliation resolves. No new payment attempt before resolution.
-- Numeric TTL and start point measurement remain OPEN. Eventbrite/FareHarbor/Ticketmaster examples are product-specific, not ATLAS values ([REF-039~041](../00-governance/reference-register.md)).
-- Records: [D-029](../00-governance/decision-log.md), [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [BR-003/INV-003](../03-domain/business-rules.md), [EXP-005](../08-experiments/experiment-registry.md).
+## 2026-10-30 — Buyer checkout timer
+- 선택: [Issue #46](https://github.com/Neo1228/ATLAS/issues/46), [PR #47](https://github.com/Neo1228/ATLAS/pull/47) 병합 [`28939a6`](https://github.com/Neo1228/ATLAS/commit/28939a6). Confirmed hold에서 timer 시작; 만료 전 initial AUTHORIZE 제출; grace extension 없음 ([D-029](../00-governance/decision-log.md)).
+- 만료 후 UX: 미제출이면 checkout 종료. 제출된 요청은 reconciliation까지 pending 표시; 해결 전 새 attempt 금지.
+- OPEN: numeric TTL와 start-point 측정. Eventbrite/FareHarbor/Ticketmaster 사례는 ATLAS 기준값이 아님.
 
-## 2026-10-30 — Initial synthetic TTL parameter
-- Selection: [Issue #48](https://github.com/Neo1228/ATLAS/issues/48)/[PR #49](https://github.com/Neo1228/ATLAS/pull/49), 10-minute fixed window from confirmed hold; initial AUTHORIZE submission required before expiry; no extension.
-- Scope: synthetic-test parameter only, not production TTL/SLO. Re-evaluate after collecting hold-to-submission p50/p95/p99, expiry/abandonment, hold occupancy and oversell invariant.
-- Evidence/trade-off: [REF-039~041](../00-governance/reference-register.md) are product-specific examples. 10 minutes is an initial test value, not an industry standard.
-- Records: [D-030](../00-governance/decision-log.md), [Q-004/Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-005](../08-experiments/experiment-registry.md).
+## 2026-10-30 — Initial synthetic TTL
+- 선택: [Issue #48](https://github.com/Neo1228/ATLAS/issues/48), [PR #49](https://github.com/Neo1228/ATLAS/pull/49) 병합 [`c0eef73`](https://github.com/Neo1228/ATLAS/commit/c0eef73). Confirmed hold부터 initial AUTHORIZE 제출까지 10분. Test-only, no extension ([D-030](../00-governance/decision-log.md)).
+- 재평가 지표: hold-to-submission p50/p95/p99, expiry/abandonment, hold occupancy, oversell invariant. Production TTL/SLO 아님.
+- 근거: [REF-039~041](../00-governance/reference-register.md)은 제품별 사례. 10분은 industry standard가 아니라 초기 test input.
+- Issue #48 closeout은 누락된 PR link를 보완한 [PR #50](https://github.com/Neo1228/ATLAS/pull/50) 병합 [`2e34fed`](https://github.com/Neo1228/ATLAS/commit/2e34fed)에서 완료. 별도 closeout이 필요했던 trace 누락은 이번 audit [Issue #58](https://github.com/Neo1228/ATLAS/issues/58)에서 방지 기준 보완.
 
-## 2026-10-30 — Gate 2 synthetic workload shape
-- Selection: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51)/[PR #53](https://github.com/Neo1228/ATLAS/pull/53) A/C/A — full Buyer session, hybrid open arrivals with sequential per-session steps, baseline + sale-open burst + step-up phases.
-- Metrics: offered/admitted sessions/s, dropped arrivals, request RPS by stage, resolved Buyer-session TPS, p95/p99 latency, errors, queue/hold occupancy, expiry/abandonment and oversell invariant.
-- Numeric workload, think-time distribution, phase duration, environment and thresholds remain OPEN ([Q-008](../00-governance/assumptions-and-open-questions.md)); no production profile or implementation approved.
-- Evidence: AWS/K6 guidance in [REF-018/019](../00-governance/reference-register.md); [REF-042](../00-governance/reference-register.md) describes Artillery’s hybrid model, a vendor case rather than universal rule.
+## 2026-10-30 — Gate 2 부하 프로파일
 
-## 2026-10-30 — Gate 2 workload values policy
-- Selection: [Issue #54](https://github.com/Neo1228/ATLAS/issues/54)/[PR #55](https://github.com/Neo1228/ATLAS/pull/55) B/A/A — synthetic scale ladder, offered Buyer sessions/s primary, report-only acceptance.
-- Numeric values remain OPEN: scale levels, phase rates/duration, think time, concurrency, environment and thresholds.
-- Measurement: offered/admitted/dropped sessions, per-stage RPS, resolved-session TPS, p95/p99, errors, queue/hold occupancy, expiry/abandonment, oversell invariant.
-- Records: [D-032](../00-governance/decision-log.md), [Q-008](../00-governance/assumptions-and-open-questions.md), [NFR-002](../02-requirements/requirements-index.md), [EXP-010](../08-experiments/experiment-registry.md), [REF-018/019/043](../00-governance/reference-register.md).
+| 결정 | 내용 | 추적 |
+|---|---|---|
+| [D-031](../00-governance/decision-log.md) | Full Buyer journey, hybrid open-loop arrival, 순차 per-session step, baseline/burst/step-up | [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [`5266d14`](https://github.com/Neo1228/ATLAS/commit/5266d14) |
+| [D-032](../00-governance/decision-log.md) | Synthetic scale ladder, offered Buyer sessions/s primary, report-only; pass/fail SLO 없음 | [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [`a82b454`](https://github.com/Neo1228/ATLAS/commit/a82b454) |
+| [D-033](../00-governance/decision-log.md) | 10,000 sessions/60m (~2.8/s), 2×/4× geometric stress (~5.6/11.1/s). Synthetic input, not production demand. | [Issue #56](https://github.com/Neo1228/ATLAS/issues/56), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [`6cf28dd`](https://github.com/Neo1228/ATLAS/commit/6cf28dd) |
 
-## 2026-10-30 — Ticketing-scale synthetic scenario
-- Selection: [Issue #56](https://github.com/Neo1228/ATLAS/issues/56); 10k Buyer sessions/60m baseline (~2.8 sessions/s), then 2×/4× geometric steps (~5.6/11.1 sessions/s). Synthetic assumption only; report-only; separate burst factor/duration OPEN.
-- Evidence: [REF-044](../00-governance/reference-register.md) provides a rough anchor only. 1.5M code invites/52 dates × historical 40% conversion ≈11.5k buyers/date if evenly distributed; actual per-date unique count not reported. 3.5B system requests include bots/repeats and are not users.
-- Measurement: offered/admitted/dropped sessions, stage RPS, resolved-session TPS, p95/p99, errors, hold occupancy/expiry, oversell invariant. No production demand/SLO claim.
-- Records: [D-033](../00-governance/decision-log.md), [Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-010](../08-experiments/experiment-registry.md).
+### 근거·측정·검증
+- [REF-044](../00-governance/reference-register.md): 1.5M invitations/52 dates × historical 40% conversion ≈11.5K buyers/date는 균등 분배 가정일 때만 성립. 실제 날짜별 unique buyer 수는 미공개. 3.5B system requests는 user/session 수가 아님.
+- 측정 항목: offered/admitted/dropped sessions, stage RPS, resolved-session TPS, latency, errors, queue/hold occupancy, expiry/abandonment, oversell invariant. 실행 결과와 production SLO는 없음.
+- PR #53, #55, #57에서 `Markdown lint`와 `PR checklist` 통과.
+- PR #57의 close keyword가 Markdown link 안에 있어 Issue #56은 병합 후 수동 종료. 자동 검사 보완은 [Issue #58](https://github.com/Neo1228/ATLAS/issues/58).
