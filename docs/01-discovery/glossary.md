@@ -40,7 +40,7 @@ links:
 | Reconciliation | ATLAS와 PSP 기록을 대조하고 차이를 추적. UNKNOWN 결과는 동일 payment attempt로 확인 ([D-025](../00-governance/decision-log.md)). | ○ Draft; PSP-specific recovery ? OPEN |
 | Settlement Ledger | 내부 정산·정정·audit 기록. 실제 자금 이동과 별개. | ○ Draft |
 | Idempotency key | 같은 논리 요청을 식별해 중복 효과를 막는 key. [D-025](../00-governance/decision-log.md): provider가 지원하면 같은 payment attempt의 key 재사용. | Scope/retention/provider support ? OPEN |
-| TTL (Time to Live) | 상태의 유효 기간. [D-027/D-028](../00-governance/decision-log.md): initial checkout inventory hold는 단일 fixed window; expiry 시 capture 확인 후 void/release 규칙 적용. | Duration/start trigger와 checkout measurement OPEN ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)); PSP/API deadline과 구분 |
+| TTL (Time to Live) | Status validity period. [D-028/D-029](../00-governance/decision-log.md): initial checkout uses one fixed window starting when inventory hold is confirmed; Buyer must submit initial `AUTHORIZE` before expiry, with no extension. | Numeric duration/completion-time evidence OPEN ([Q-004/Q-008](../00-governance/assumptions-and-open-questions.md)); separate from provider/API deadlines |
 | EXPIRED_PENDING_PAYMENT | Inventory TTL이 지났지만 PSP outcome이 UNKNOWN/PENDING. Same-attempt reconciliation 전까지 stock unavailable ([D-025/D-027](../00-governance/decision-log.md)). | 장기 미해결 escalation ? OPEN |
 | IDOR | Object ID 직접 조작으로 타 사용자/tenant resource에 권한 없이 접근하는 취약점. | Security test candidate |
 
