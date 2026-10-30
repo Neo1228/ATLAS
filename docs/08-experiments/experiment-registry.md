@@ -27,7 +27,7 @@ links:
 
 | ID | 테스트 가설 | 주요 제약 |
 |---|---|---|
-| EXP-001 | [D-023](../00-governance/decision-log.md) 초기 범위의 campaign-owned pool에서 동시 reservation이 SKU 수량을 넘는지 확인 | 100/1,000은 테스트 후보; 목표·완료 기준 아님 |
+| EXP-001 | [D-023/D-035](../00-governance/decision-log.md) 초기 campaign pool: reservation당 1개. 동시 reservation과 claim/release 전이 뒤 oversell이 없고, `available + reserved + claimed = initial capacity`, 각 수량 ≥ 0이 유지되는지 확인. | 100/1,000은 후보 입력만; 목표값 아님. 실험 미실행. [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63). |
 | EXP-002 | Conditional UPDATE와 pessimistic/optimistic lock의 throughput·p95/p99·대기시간 비교 | 같은 DB·환경·부하 조건 필요 |
 | EXP-003 | [D-025~D-027](../00-governance/decision-log.md): capture success 후 claim; UNKNOWN/PENDING 중 release 금지. Same-attempt reconciliation, 중복 claim/retry 없음 검증. | Endpoint retry/idempotency support·retention·limit TBD ([Q-005](../00-governance/assumptions-and-open-questions.md)) |
 | EXP-004 | [D-025~D-027](../00-governance/decision-log.md): TTL/cancel, capture/void states, delayed webhook, restart. Capture 확인 → active authorization void → non-payment와 void/expiry 확인 후 release. | Fake PSP는 PayPal 동작 증거 아님; deadline/escalation TBD ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)) |

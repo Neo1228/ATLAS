@@ -124,3 +124,11 @@ links:
 - 미정: key scope/retention, payload 비교 필드, expiry trigger/duration, storage/atomicity, bot 방어, 다른 판매 유형. Runtime/API/DB 구현 미착수.
 
 - 실행 결과 없음. [EXP-011](../08-experiments/experiment-registry.md)는 ○ Planned.
+
+## 2026-10-30 — 초기 재고 예약·수량 보존
+- 선택: [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63). Reservation당 1개, `available + reserved + claimed = initial capacity`, 각 수량 0 이상.
+- 상태 전이: hold 확정 시 reserved, capture success 시 claimed. Confirmed non-payment 후 release; authorization이 있으면 void/expiry 확인 필요.
+- 추적: [D-035](../00-governance/decision-log.md), [Q-002/Q-004](../00-governance/assumptions-and-open-questions.md), [FR-001](../02-requirements/requirements-index.md), [BR-002](../03-domain/business-rules.md), [INV-001](../03-domain/invariants.md), [EXP-001](../08-experiments/experiment-registry.md).
+- Commit: [7863415](https://github.com/Neo1228/ATLAS/commit/7863415). Required checks와 merge metadata는 [PR #63](https://github.com/Neo1228/ATLAS/pull/63)에서 확인.
+- 제외: multi-unit reservation, 판매 중 재고 조정·재입고, post-claim 취소·환불 정책. D-027 checkout expiry/authorization void 복구는 유지. Storage/atomicity 미정.
+- 실험 미실행. [EXP-001](../08-experiments/experiment-registry.md)는 ○ Planned.
