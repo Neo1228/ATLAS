@@ -99,7 +99,7 @@ links:
 - Records: [D-029](../00-governance/decision-log.md), [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), [BR-003/INV-003](../03-domain/business-rules.md), [EXP-005](../08-experiments/experiment-registry.md).
 
 ## 2026-10-30 — Initial synthetic TTL parameter
-- Selection: [Issue #48](https://github.com/Neo1228/ATLAS/issues/48), 10-minute fixed window from confirmed hold; initial AUTHORIZE submission required before expiry; no extension.
+- Selection: [Issue #48](https://github.com/Neo1228/ATLAS/issues/48)/[PR #49](https://github.com/Neo1228/ATLAS/pull/49), 10-minute fixed window from confirmed hold; initial AUTHORIZE submission required before expiry; no extension.
 - Scope: synthetic-test parameter only, not production TTL/SLO. Re-evaluate after collecting hold-to-submission p50/p95/p99, expiry/abandonment, hold occupancy and oversell invariant.
 - Evidence/trade-off: [REF-039~041](../00-governance/reference-register.md) are product-specific examples. 10 minutes is an initial test value, not an industry standard.
 - Records: [D-030](../00-governance/decision-log.md), [Q-004/Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-005](../08-experiments/experiment-registry.md).
