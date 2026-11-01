@@ -16,8 +16,8 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | 단계 | 결과 | 상태 |
 |---|---|---|
 | Gate 0 | 프로젝트 범위·문서 기준 | ✓ 완료, 2026-10-29 승인 |
-| Gate 1 | 문제·사용자 목표·도메인 탐색 | → 진행 중; [D-023~D-025](../00-governance/decision-log.md) 초기 기준 선택. [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md) 잔여 범위, [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md) 세부 정책 OPEN |
-| Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | ? 대기 |
+| Gate 1 | 문제·사용자 목표·도메인 탐색 | ✓ 초기 single-SKU scenario 완료 (2026-10-30). 추가 판매 유형·재고 정책·queue 세부 경계는 [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md) OPEN |
+| Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | → 진행 ([D-036](../00-governance/decision-log.md); [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65)); full Buyer journey, 현재 single-SKU baseline |
 | Gate 3 | 모듈·상태·데이터·계약·위험·용량 추정 | ? 대기 |
 | Gate 4 | 구현 승인된 기능의 synthetic load/failure 검증 | △ Proposed; 별도 Gate 승인 아님 |
 | M1 | Campaign, inventory reservation, order intent, 동시성 | ○ 계획 |
@@ -49,9 +49,10 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 ## 현재 상태
 - WP-001~WP-005 main 게시. Git 규칙 [PR #4](https://github.com/Neo1228/ATLAS/pull/4), batching [PR #16](https://github.com/Neo1228/ATLAS/pull/16), delivery [PR #18](https://github.com/Neo1228/ATLAS/pull/18) 병합.
 - [Issue #37](https://github.com/Neo1228/ATLAS/issues/37)에서 AUTHORIZE → CAPTURE 선택. [D-026](../00-governance/decision-log.md): capture success 확인 후 inventory claim. [PR #41](https://github.com/Neo1228/ATLAS/pull/41) 병합.
-- Gate 1: [D-023~D-030](../00-governance/decision-log.md) 초기 도메인·결제 경계. [D-031~D-033](../00-governance/decision-log.md)은 Gate 2 synthetic workload shape와 측정 입력. 실제 traffic/capacity 목표와 구현은 미승인.
+- Gate 1 baseline 완료, Gate 2 진행: [D-023~D-036](../00-governance/decision-log.md). Assigned-seat/time-slot은 현재 범위 밖 ([Q-010](../00-governance/assumptions-and-open-questions.md)).
 - [Q-003](../00-governance/assumptions-and-open-questions.md): [D-034](../00-governance/decision-log.md)에서 active ticket retry, payload 불일치 거절, 만료 후 새 key·tail sequence를 결정. [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61). OPEN: key scope/retention, payload 비교 필드, expiry trigger/duration, storage/atomicity, bot 방어, 다른 판매 유형.
 - [Q-002](../00-governance/assumptions-and-open-questions.md): [D-035](../00-governance/decision-log.md)에서 reservation당 1개와 재고 conservation invariant 확정. [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63). 조정·재입고·다중 수량·post-claim 취소/환불 정책은 OPEN; D-027 checkout recovery 유지.
+- [Q-010](../00-governance/assumptions-and-open-questions.md): [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65)에서 assigned-seat/time-slot 비교 후 현재 Gate 2에 추가하지 않기로 선택. [Personas & Jobs](../01-discovery/personas-and-jobs.md), [REF-045~049](../00-governance/reference-register.md).
 - [Q-008](../00-governance/assumptions-and-open-questions.md): full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress, report-only.
   - Issues: [#51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56).
 - Merged PRs:

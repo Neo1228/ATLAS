@@ -132,3 +132,10 @@ links:
 - Commit: [7863415](https://github.com/Neo1228/ATLAS/commit/7863415). Required checks와 merge metadata는 [PR #63](https://github.com/Neo1228/ATLAS/pull/63)에서 확인.
 - 제외: multi-unit reservation, 판매 중 재고 조정·재입고, post-claim 취소·환불 정책. D-027 checkout expiry/authorization void 복구는 유지. Storage/atomicity 미정.
 - 실험 미실행. [EXP-001](../08-experiments/experiment-registry.md)는 ○ Planned.
+
+## 2026-10-30 — 판매 유형 비교·Gate 2 범위
+- 비교·선택: [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Assigned-seat는 seat identity/map·개별 hold, time-slot은 시간대별 capacity·도착/미방문 경계를 추가. 제품/vendor 사례는 backend best practice 근거 아님.
+- 선택 A: 기존 quantity-SKU scenario 유지, Gate 2 full Buyer journey 진행. Assigned-seat/time-slot은 현재 범위에 넣지 않음; 장기 판매 유형은 [Q-010](../00-governance/assumptions-and-open-questions.md) OPEN.
+- 결정·근거: [D-036](../00-governance/decision-log.md), [REF-045~049](../00-governance/reference-register.md), [Personas & Jobs](../01-discovery/personas-and-jobs.md).
+- Commit: [7dc9ca6](https://github.com/Neo1228/ATLAS/commit/7dc9ca6). Required checks와 merge metadata는 [PR #65](https://github.com/Neo1228/ATLAS/pull/65)에서 확인.
+- 제약: production demand/SLO, storage/API/queue tech, architecture 및 runtime 구현 미선택. Gate 3 이후 별도 승인.

@@ -63,11 +63,16 @@ REF-030~044는 2026-10-30에 확인한 payment·checkout·load model 자료.
 | REF-042 | Artillery, Understanding workload models / engineering blog | https://www.artillery.io/blog/load-testing-workload-models | 2026-10-30 | Open arrivals with sequential per-user work (hybrid workload) | ✓ 검토; load-generator vendor explanation, universal workload choice 아님 |
 | REF-043 | Google Cloud, Backend service load-testing guidelines / cloud guidance | https://docs.cloud.google.com/load-balancing/docs/backend-service-load-testing | 2026-10-30 | Open-loop arrivals, throughput/concurrency/latency/error dimensions, overload testing | ✓ 검토; Cloud Load Balancing context, ATLAS target/tool/infra decision 아님 |
 | REF-044 | Ticketmaster Business, Taylor Swift Eras Tour Onsale Explained / operator statement | https://business.ticketmaster.com/press-release/taylor-swift-the-eras-tour-onsale-explained/ | 2026-10-30 | 3.5M 사전 등록, 52 dates에 1.5M code invitation, 과거 40% 구매 전환, 하루 2M tickets 판매, 3.5B system requests | ✓ 운영자 1차 자료. 날짜별 고유 Buyer 분포 미공개; requests에 bots/repeats/non-code traffic 포함 |
+| REF-045 | Eventbrite Help, Reserved seating event / product guide | https://www.eventbrite.com/help/en-us/articles/683914/how-to-set-up-a-reserved-seating-event | 2026-10-30 | Seat map, individual seat selection/labels, seat holds, access/price tiers | ✓ 제품 운영 사례; backend 설계·범용 best practice 근거 아님 |
+| REF-046 | TixTrack, Coliseo de Puerto Rico / vendor case study | https://tixtrack.com/providing-the-ticketing-technology-for-our-regional-partner-for-coliseo-de-puerto-rico/ | 2026-10-30 | Reserved seating과 general admission, seat-map selection 사례 | ✓ Vendor case; 성능 수치·구현 구조 검증 자료 아님 |
+| REF-047 | Museums Association / Digital Culture Network, Timed entry ticketing / practitioner guide | https://www.museumsassociation.org/museums-journal/in-practice/2020/08/introduction-to-ticketing-for-museums-and-galleries/ | 2026-10-30 | Slot별 정원, 도착 제한, drop-off, walk-in, accessibility 운영 항목 | ✓ 2020 museum 운영 맥락; backend·현재 수요 기준 아님 |
+| REF-048 | Hoxton AI / Techniquest, Occupancy by time slot / vendor case study | https://www.hoxton.ai/blog/case-study-how-techniquest-use-occupancy-data-to-maximise-the-visitor-experience-and-create-positive-growth-for-the-company | 2026-10-30 | Slot별 arrival/occupancy variation과 운영자 조정 사례 | ✓ 특정 venue·vendor 사례; 수치/정원 ATLAS에 일반화 금지 |
+| REF-049 | Let’s Build Solutions, Time-slotted booking concurrency / practitioner design article | https://letsbuildsolutions.com/blog/system-design/designing-a-reservation-and-booking-system-inventory-holds-double-booking-prevention-and-concurrency-control/ | 2026-10-30 | Slot/window/rule-based modeling과 동시 예약 경계 | △ 설계 해설; production 실측·성능 검증 아님, architecture 권고로 채택하지 않음 |
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인.
 - Authorization validity/honor period는 provider 정책이며 ATLAS inventory TTL과 별개.
 - Webhook 재전송도 Buyer checkout TTL/API deadline과 별도.
-- REF-030~044는 사례·기능 설명. Production behavior, endpoint support, 법적 의무를 보증하지 않음.
+REF-030~049는 provider/product/practitioner 사례·기능 설명. ATLAS의 production behavior, 보편적 best practice, API support나 법적 의무를 보증하지 않음.
 
 ## 관련 문서
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): REF-001~003은 미확인 후보.

@@ -13,7 +13,7 @@ links:
 
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
-- ✓ Gate 0 승인 (2026-10-29). Gate 1 진행 중.
+- ✓ Gate 0 승인 (2026-10-29). Gate 1 initial scenario 완료, Gate 2 승인·진행 (2026-10-30; [D-036](../00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65)).
 - 초기 판매 범위: [D-023/D-024](../00-governance/decision-log.md), [PR #34](https://github.com/Neo1228/ATLAS/pull/34) 병합.
 - Queue ticket 수명주기: [D-034](../00-governance/decision-log.md), [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61).
 - Inventory baseline: [D-035](../00-governance/decision-log.md), [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63), [BR-002](../03-domain/business-rules.md), [INV-001](../03-domain/invariants.md). Reservation당 1개; 재고 합계 보존.
@@ -27,7 +27,7 @@ links:
   - [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454)
   - [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd)
   - OPEN: production demand/SLO, burst factor/duration, capacity, implementation.
-  - 코드·runtime dependency·실제 payment 호출·deployment 미착수. Gate 2·구현 진입은 별도 승인 대상.
+  - 코드·runtime dependency·실제 payment 호출·deployment 미착수. Gate 3 architecture/data 계약과 구현은 별도 승인 대상.
 
 ## 확정된 방향
 - 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).
@@ -60,6 +60,7 @@ links:
 | 문서 작성 기준 | [Issue #26](https://github.com/Neo1228/ATLAS/issues/26); [PR #27](https://github.com/Neo1228/ATLAS/pull/27) 병합 [`a82e022`](https://github.com/Neo1228/ATLAS/commit/a82e022); [PR #28](https://github.com/Neo1228/ATLAS/pull/28) closeout 병합 [`bc8d60b`](https://github.com/Neo1228/ATLAS/commit/bc8d60b) |
 | Queue ticket 수명주기 | [Issue #60](https://github.com/Neo1228/ATLAS/issues/60); [PR #61](https://github.com/Neo1228/ATLAS/pull/61); [D-034](../00-governance/decision-log.md): retry·payload mismatch·expiry 후 재입장 기준 |
 | Inventory reservation/conservation | [Issue #62](https://github.com/Neo1228/ATLAS/issues/62); [PR #63](https://github.com/Neo1228/ATLAS/pull/63); [D-035](../00-governance/decision-log.md); [BR-002](../03-domain/business-rules.md); [INV-001](../03-domain/invariants.md); [EXP-001](../08-experiments/experiment-registry.md) |
+| 판매 유형 비교·Gate 2 범위 | [Issue #64](https://github.com/Neo1228/ATLAS/issues/64); [PR #65](https://github.com/Neo1228/ATLAS/pull/65); [D-036](../00-governance/decision-log.md); [Q-010](../00-governance/assumptions-and-open-questions.md); [Personas & Jobs](../01-discovery/personas-and-jobs.md); [REF-045~049](../00-governance/reference-register.md). 선택: 현재 SKU 흐름으로 Gate 2 |
 
 - 진행 현황: [Roadmap](roadmap.md).
 - 완료 이력: [Milestone Log](milestone-log.md).

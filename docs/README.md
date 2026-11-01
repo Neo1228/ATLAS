@@ -44,10 +44,10 @@ updated: 2026-10-30
 - GitHub 양식: [PR template](../.github/PULL_REQUEST_TEMPLATE.md), [버그 양식](../.github/ISSUE_TEMPLATE/bug_report.yml), [변경 제안 양식](../.github/ISSUE_TEMPLATE/change_request.yml)
 - 필수 검사: [Markdown lint·PR checklist workflow](../.github/workflows/docs-lint.yml)
 
-- 현재 Gate: Gate 0 승인, Gate 1 진행 중. [Roadmap](09-delivery/roadmap.md), [Session Handoff](09-delivery/session-handoff.md).
+- 현재 Gate: Gate 0 승인, Gate 1 initial scenario 완료, Gate 2 진행. [Roadmap](09-delivery/roadmap.md), [Session Handoff](09-delivery/session-handoff.md).
 - Queue 기준: [D-019~D-022/D-024/D-034](00-governance/decision-log.md), [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61); [Q-003](00-governance/assumptions-and-open-questions.md), [Business Rules](03-domain/business-rules.md).
 - Inventory 기준: [D-023/D-035](00-governance/decision-log.md), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63), [BR-002](03-domain/business-rules.md), [INV-001](03-domain/invariants.md); [Q-002](00-governance/assumptions-and-open-questions.md).
-- 초기 판매 범위: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34), [D-023/D-024](00-governance/decision-log.md).
+- 초기 판매 범위: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34), [D-023/D-024/D-036](00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Gate 2에서는 quantity-SKU만 유지.
 - Gate 2 profile: [D-031~D-033](00-governance/decision-log.md); [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56).
   - [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14)
   - [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454)
