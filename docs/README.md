@@ -20,6 +20,7 @@ updated: 2026-11-02
 
 ## 빠른 안내
 - **Gate**: Gate 0/1 완료, Gate 2 Buyer journey 승인, Gate 3 architecture·stack 완료. Local runtime은 [PR #73](https://github.com/Neo1228/ATLAS/pull/73)로 병합; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) 완료. Gate 4 load/failure validation은 다음 단계; production 목표는 OPEN.
+- 조회·API 오류·기술 선택 검토: [Issue #78](https://github.com/Neo1228/ATLAS/issues/78) · [PR #79](https://github.com/Neo1228/ATLAS/pull/79) 검토 중.
 - 장기 제품 역량과 미결정 범위: [Project Charter](00-governance/project-charter.md), [Requirements Index](02-requirements/requirements-index.md).
 - 추적 ID:
   - 결정·질문: [D](00-governance/decision-log.md), [Q](00-governance/assumptions-and-open-questions.md)
