@@ -7,7 +7,7 @@ import java.util.Objects;
 import java.util.Queue;
 import org.springframework.stereotype.Component;
 
-/** Local deterministic provider simulator; intentionally does not reproduce PayPal behavior. */
+/** 결과를 순서대로 반환하는 로컬 PSP 시뮬레이터. 실제 PayPal 동작·상태 지속성은 재현하지 않음. */
 @Component
 public final class FakePsp {
 
@@ -28,7 +28,7 @@ public final class FakePsp {
         for (Operation operation : Operation.values()) plannedTransitions.put(operation, new ArrayDeque<>());
     }
 
-    /** Queue the next operation's progression; each provider call advances one entry. */
+    /** 다음 provider operation의 결과 순서를 등록. 호출마다 다음 결과를 하나씩 소비. */
     public synchronized void enqueue(Operation operation, Result... progression) {
         Objects.requireNonNull(operation, "operation");
         if (progression == null || progression.length == 0) throw new IllegalArgumentException("A provider progression is required");

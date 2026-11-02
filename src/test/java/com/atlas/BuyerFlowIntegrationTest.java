@@ -2,8 +2,12 @@ package com.atlas;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.admission.AdmissionApi;
+import com.atlas.admission.CheckoutSlotReleaseReason;
 import com.atlas.admission.IdempotencyPayloadMismatchException;
 import com.atlas.admission.JoinQueueCommand;
 import com.atlas.admission.QueueTicketView;
@@ -31,20 +35,23 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
+@AutoConfigureMockMvc
 @SpringBootTest
-@Import(BuyerFlowIntegrationTest.ClockConfiguration.class)
 class BuyerFlowIntegrationTest {
 
     @Container
@@ -71,10 +78,41 @@ class BuyerFlowIntegrationTest {
     @Autowired private OrderApi orders;
     @Autowired private FakePsp fakePsp;
     @Autowired private AdjustableClock clock;
+    @Autowired private MockMvc mockMvc;
 
     @BeforeEach
     void resetClock() {
         clock.set(Instant.parse("2026-11-02T00:00:00Z"));
+    }
+
+    @Test
+    void requestValidationAndMissingResourcesUseOneApiErrorContract() throws Exception {
+        mockMvc.perform(post("/api/campaigns")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":"","inventoryCapacity":0,"queueTicketTtlSeconds":0,"maxActiveCheckouts":0}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(result -> {
+                    assertThat(result.getResponse().getContentType())
+                            .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+                    assertThat(result.getResponse().getContentAsString())
+                            .contains("\"code\":\"INVALID_REQUEST\"", "\"detail\":\"Request validation failed\"");
+                });
+
+        mockMvc.perform(get("/api/campaigns/{campaignId}", UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"CAMPAIGN_NOT_FOUND\""));
+        mockMvc.perform(get("/api/campaigns/{campaignId}/tickets/{ticketId}",
+                        UUID.randomUUID(), UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"TICKET_NOT_FOUND\""));
+        mockMvc.perform(get("/api/orders/{orderId}", UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"ORDER_NOT_FOUND\""));
     }
 
     @Test
@@ -224,12 +262,48 @@ class BuyerFlowIntegrationTest {
     }
 
     @Test
+    void ticketLookupDoesNotExpireTicketsOrPromoteWaitingBuyers() {
+        CampaignView campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        QueueTicketView first = join(campaign, "buyer-read-a", "read-key-a");
+        clock.advance(Duration.ofMinutes(4));
+        QueueTicketView second = join(campaign, "buyer-read-b", "read-key-b");
+        clock.advance(Duration.ofMinutes(2));
+
+        assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
+                .isEqualTo(TicketStatus.WAITING);
+
+        admissionExpiryScheduler.expireDueTickets();
+        assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
+                .isEqualTo(TicketStatus.EXPIRED);
+        assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+    }
+
+    @Test
+    void releasingAnExpiredTicketPreservesExpiryAndPromotesTheNextLiveTicket() {
+        CampaignView campaign = openCampaign(2, 1, Duration.ofMinutes(2));
+        QueueTicketView expired = join(campaign, "buyer-expired-release", "expired-release-key");
+        clock.advance(Duration.ofMinutes(1));
+        QueueTicketView waiting = join(campaign, "buyer-waiting-release", "waiting-release-key");
+        clock.advance(Duration.ofMinutes(1).plusSeconds(1));
+
+        admission.releaseCheckoutSlot(campaign.campaignId(), expired.ticketId(), CheckoutSlotReleaseReason.BUYER_CANCELLED);
+
+        assertThat(admission.find(campaign.campaignId(), expired.ticketId()).status()).isEqualTo(TicketStatus.EXPIRED);
+        assertThat(admission.find(campaign.campaignId(), waiting.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+    }
+
+    @Test
     void expiredQueueTicketRemainsAnIdempotentTombstoneAndNewKeyRejoinsAtTail() {
         CampaignView campaign = openCampaign(2, 1, Duration.ofMinutes(2));
         QueueTicketView first = join(campaign, "buyer-reentry", "first-key");
         clock.advance(Duration.ofMinutes(1));
         QueueTicketView second = join(campaign, "buyer-next", "second-key");
         clock.advance(Duration.ofMinutes(1).plusSeconds(1));
+        admissionExpiryScheduler.expireDueTickets();
 
         assertThat(admission.find(campaign.campaignId(), first.ticketId()).status()).isEqualTo(TicketStatus.EXPIRED);
         assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
