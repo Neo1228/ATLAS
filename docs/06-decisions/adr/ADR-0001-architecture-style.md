@@ -24,10 +24,10 @@
 
 ## 승인된 방향
 - **Architecture:** Modular Monolith First. 한 deployment 안에서 module boundary와 data ownership 유지.
-- **Stack:** Java + Spring Boot + PostgreSQL. 버전, infrastructure, PayPal product/API는 미정.
-- PostgreSQL을 초기 durable system of record로 선택. Module ownership·short transaction 원칙은 [D-038](../../00-governance/decision-log.md), campaign counter row 방식은 [D-039](../../00-governance/decision-log.md). Physical schema, isolation, lock timeout/recovery는 Gate 3 설계에서 구체화.
+- **Stack:** JDK 25 LTS, Spring Boot 4.1.2, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Spring Modulith 2.1.2 and Testcontainers 2.0.5 are test-scope; Flyway uses the Boot 4 starter ([D-040](../../00-governance/decision-log.md), [REF-066/067](../../00-governance/reference-register.md)). CI uses Temurin 25; production JDK distribution/license remains OPEN.
+- PostgreSQL is the durable system of record. Module ownership and short-transaction rules are [D-038](../../00-governance/decision-log.md); campaign counter-row allocation is [D-039](../../00-governance/decision-log.md). Local schema/migrations are implemented under [Issue #72](https://github.com/Neo1228/ATLAS/issues/72); production isolation and lock recovery remain OPEN.
 - 초기 설계에 별도 queue/cache/broker 없음. Load test에서 bottleneck과 비교 가능한 이점을 확인한 경우에만 추가 검토 ([EXP-012](../../08-experiments/experiment-registry.md)).
-- Gate 2 current Buyer journey 승인. Gate 3 설계 승인; runtime implementation/deployment는 별도 승인 대상.
+- Gate 2 current Buyer journey와 Gate 3 design 기준 승인. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)에서 local current-flow runtime만 추가 승인; live payment·deployment·production capacity claim은 별도 대상.
 
 ## 상위 아키텍처
 
@@ -35,7 +35,7 @@
 flowchart LR
     Buyer[Buyer / Seller] --> App["ATLAS application<br/>Java + Spring Boot<br/>single deployment"]
     App --> DB[("PostgreSQL<br/>durable system of record")]
-    App --> PSP["Payment provider boundary<br/>product/API OPEN"]
+    App --> PSP["Fake PSP<br/>local only; live API OPEN"]
     App -. "load test에서 benefit 확인 시" .-> Optional["Optional queue / cache / broker"]
 ```
 
@@ -55,7 +55,8 @@ Tenant security, 확장 catalog, Settlement/Reconciliation은 장기 capability 
 ```mermaid
 flowchart LR
     Buyer[Buyer] --> Admission
-    Campaign -->|"sale state"| Admission
+    Admission -->|"public eligibility API"| Campaign
+    Campaign -->|"public pool-creation API"| Inventory
     Buyer --> Checkout["Order / Checkout"]
     Checkout -->|"public API"| Admission
     Checkout -->|"public API"| Inventory
@@ -65,16 +66,16 @@ flowchart LR
     Inventory --> DB
     Checkout --> DB
     Payment --> DB
-    Payment --> PSP["Payment provider<br/>API OPEN"]
+    Payment --> PSP["Fake PSP<br/>local only; live API OPEN"]
 ```
 
 - **Data ownership:** 한 PostgreSQL database/schema. Module별 table과 write ownership, cross-module 호출은 public API. 다른 module의 repository에 직접 접근 금지.
 - **Transaction:** 필요한 domain invariant만 원자화하는 짧은 transaction. Module API는 같은 local transaction에 참여할 수 있으나, PSP network call은 transaction 밖. Isolation, 실제 경계·schema·lock recovery는 미정.
-- **Queue sequence:** campaign counter row 증가와 ticket insert를 한 transaction으로 commit ([D-039](../../00-governance/decision-log.md)). 같은 campaign의 입장은 직렬화될 수 있어 accepted workload로 검증. PostgreSQL sequence는 rollback 후 gap과 commit order 차이가 있어 선택하지 않음 ([REF-057](../../00-governance/reference-register.md)).
-- **Boundary checks:** Spring Modulith의 cycle/public API 검증은 후보 도구일 뿐 ([REF-055](../../00-governance/reference-register.md)); dependency/version 선택은 미정.
+- **Queue sequence:** Admission initializes/locks its campaign counter row and inserts the ticket in the same transaction ([D-039](../../00-governance/decision-log.md)). First eligible join creates the row lazily; committed order is stored in PostgreSQL. Same-campaign contention remains an approved workload measurement target, not an observed result. PostgreSQL sequence gaps/commit-order mismatch make it unsuitable here ([REF-057](../../00-governance/reference-register.md)).
+- **Boundary checks:** Spring Modulith 2.1.2 test scope; `ApplicationModules.verify()` is part of Gradle checks ([REF-055/063/064](../../00-governance/reference-register.md)). It verifies package boundaries/cycles, not domain correctness or performance.
 - Capacity envelope는 승인된 Q-008 profile 사용. 단위·계산·미정 입력은 아래 표에 정리; production target은 없음.
-- Inventory reservation의 conditional UPDATE/locking 선택은 [EXP-002](../../08-experiments/experiment-registry.md) 비교 전까지 미정.
-- Runtime code·deployment·capacity claim은 별도 승인과 측정 전 보류.
+- Local inventory baseline: atomic conditional `UPDATE` and per-order transaction lock. Production lock strategy/performance comparison remains [EXP-002](../../08-experiments/experiment-registry.md); no capacity claim.
+- Local runtime code and failure-path tests are tracked by [Issue #72](https://github.com/Neo1228/ATLAS/issues/72). Live provider, deployment, and load verification remain separate.
 
 ## Capacity envelope — synthetic, report-only
 

@@ -28,7 +28,7 @@ links:
 - 복잡한 flow/state/architecture는 Mermaid 또는 짧은 설명과 기준 도식 link.
 - 모든 PR checkbox 완료; required PR checklist 통과. N/A에는 구체적 사유.
 
-현재 Buyer journey 기준은 Gate 2 승인. 세부 구현·운영 기준은 Gate 3 설계에서 확정; 실행 검증은 별도 구현 승인 뒤 진행. Issue/PR 설명 기준과 checklist는 즉시 적용.
+Gate 2 Buyer 기준은 승인됨. Local current-flow runtime은 [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)에서 승인; `./gradlew check`와 PostgreSQL 통합 테스트, 실제 local Buyer flow smoke 필요. Live provider·deployment·production load verification은 별도 승인·환경 대상.
 
 ## 관련 문서
 - [Requirements Index](../02-requirements/requirements-index.md)
