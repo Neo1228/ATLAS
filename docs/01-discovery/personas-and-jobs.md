@@ -54,5 +54,5 @@ links:
 ## 추적
 - [D-024](../00-governance/decision-log.md): sale open 전 admission 없음. Open 후 자격 통과 요청은 [D-019](../00-governance/decision-log.md) 기준 FIFO.
 - Retry ticket 재사용과 restart 후 순서 유지: [D-021/D-022](../00-governance/decision-log.md).
-- 미정: storage atomicity, key 범위/보존, payload 변경, expiry/re-entry, tie, bot 방어, 재고 조정·취소, 공유 재고, 판매 유형 ([Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md); [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)).
+- Queue 순번: campaign counter row + ticket 단일 transaction은 [D-039](../00-governance/decision-log.md)에서 선택. Exact schema·lock recovery, key scope/retention, payload 비교, expiry/re-entry, bot 방어, 재고 조정·취소, 공유 재고, 판매 유형은 미정 ([Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md); [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)).
 - 연계: [Requirements](../02-requirements/requirements-index.md), [Business Rules](../03-domain/business-rules.md), [Invariants](../03-domain/invariants.md), [Experiments](../08-experiments/experiment-registry.md).
