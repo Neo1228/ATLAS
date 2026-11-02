@@ -2,7 +2,7 @@
 
 - 상태: Draft
 - 담당: 프로젝트 책임자
-updated: 2026-10-30
+updated: 2026-11-02
 
 ## 기준 문서 (SSOT)
 
@@ -19,7 +19,8 @@ updated: 2026-10-30
 | 진행·이력 | [로드맵](09-delivery/roadmap.md), [마일스톤 로그](09-delivery/milestone-log.md), [세션 인계](09-delivery/session-handoff.md) |
 
 ## 빠른 안내
-- **Gate**: 사용자 승인 단계. ✓ Gate 0 완료, → Gate 1 진행 중. [Roadmap](09-delivery/roadmap.md)
+- **Gate**: Gate 0/1 완료, Gate 2의 current Buyer journey 승인, Gate 3의 modular monolith·Java/Spring/PostgreSQL 설계 진행. [Roadmap](09-delivery/roadmap.md)
+- 장기 제품 역량과 미결정 범위: [Project Charter](00-governance/project-charter.md), [Requirements Index](02-requirements/requirements-index.md).
 - 추적 ID:
   - 결정·질문: [D](00-governance/decision-log.md), [Q](00-governance/assumptions-and-open-questions.md)
   - 요구사항·규칙: [FR/NFR](02-requirements/requirements-index.md), [BR](03-domain/business-rules.md), [INV](03-domain/invariants.md)
@@ -36,6 +37,7 @@ updated: 2026-10-30
 | 미정 수치/값 | `TBD` |
 
 - 문장: 핵심부터. 한 문단에 한 가지 내용. 가능하면 짧은 명사형·개조식으로 작성.
+- 독자: 프로젝트 맥락을 모르는 사람도 이해하도록 개념·이유를 본문에 짧게 설명. ID만 단독으로 남기지 않음.
 - 수치·단계: 단위와 기준을 붙여 표나 불릿으로 표시.
 - 기술 용어: API, retry, queue, transaction처럼 정확한 backend 용어는 English 사용 가능. 일반 설명은 한국어 우선; 불필요한 전문 용어·병기 금지.
 
@@ -44,12 +46,10 @@ updated: 2026-10-30
 - GitHub 양식: [PR template](../.github/PULL_REQUEST_TEMPLATE.md), [버그 양식](../.github/ISSUE_TEMPLATE/bug_report.yml), [변경 제안 양식](../.github/ISSUE_TEMPLATE/change_request.yml)
 - 필수 검사: [Markdown lint·PR checklist workflow](../.github/workflows/docs-lint.yml)
 
-- 현재 Gate: Gate 0 승인, Gate 1 initial scenario 완료, Gate 2 진행. [Roadmap](09-delivery/roadmap.md), [Session Handoff](09-delivery/session-handoff.md).
-- Queue 기준: [D-019~D-022/D-024/D-034](00-governance/decision-log.md), [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61); [Q-003](00-governance/assumptions-and-open-questions.md), [Business Rules](03-domain/business-rules.md).
-- Inventory 기준: [D-023/D-035](00-governance/decision-log.md), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63), [BR-002](03-domain/business-rules.md), [INV-001](03-domain/invariants.md); [Q-002](00-governance/assumptions-and-open-questions.md).
-- 초기 판매 범위: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34), [D-023/D-024/D-036](00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Gate 2에서는 quantity-SKU만 유지.
-- Gate 2 profile: [D-031~D-036](00-governance/decision-log.md); full Buyer journey, 10k sessions/60m, 2×/4× synthetic stress, report-only. [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67).
-  - [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14)
-  - [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454)
-  - [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd)
-- 선택된 입력: Buyer 10k sessions/60m, 2×/4× stress, report-only. Production demand/SLO와 burst factor/duration OPEN.
+## 주요 도메인 결정과 이력
+- 대기열: [D-019~D-022/D-024/D-034](00-governance/decision-log.md), [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61), [Q-003](00-governance/assumptions-and-open-questions.md), [도메인 규칙](03-domain/business-rules.md).
+- 재고: [D-023/D-035](00-governance/decision-log.md), [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63), [BR-002](03-domain/business-rules.md), [INV-001](03-domain/invariants.md), [Q-002](00-governance/assumptions-and-open-questions.md).
+- 초기 판매 범위: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34), [D-023/D-024/D-036](00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Gate 2는 quantity-SKU만 포함.
+- Gate 2 workload: [D-031~D-036](00-governance/decision-log.md), [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). 10k sessions/60m, 2×/4× synthetic stress, report-only; production target은 미정.
+- Workload 기록: [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
+- Gate 3 방향: [D-037](00-governance/decision-log.md), [ADR-0001](06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68). Modular Monolith First, Java + Spring Boot + PostgreSQL. 별도 queue/cache/broker는 병목과 비교 이점을 측정한 뒤 검토. Runtime implementation 미승인.

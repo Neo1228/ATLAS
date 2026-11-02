@@ -67,5 +67,19 @@ jobs:
             console.error("Issues 항목에 plain-text Closes #N — [Issue #N](URL) 또는 Refs #N — [Issue #N](URL)을 작성하세요. Closes/Refs와 #N을 Markdown link로 감싸지 마세요.");
             process.exit(1);
           }
-          console.log(`${provided.length}개 검토 항목, 전체 checkbox, ${entries.length}개 Issue link 확인 완료.`);
+          const traceLine = body.split(/\r?\n/).find((line) =>
+            /^[ \t]*[-*]\s+요구사항·결정·규칙 ID:\s*/.test(line)
+          );
+          const traceValue = traceLine
+            ?.replace(/^[ \t]*[-*]\s+요구사항·결정·규칙 ID:\s*/, "")
+            .replace(/<!--[\s\S]*?-->/g, "")
+            .trim() ?? "";
+          const hasDirectTraceLink = /\[[^\]]+\]\([^)]+\)/.test(traceValue);
+          const explicitNoTrace = /^(N\/A|해당 없음)\s*[:：]\s*\S/i.test(traceValue);
+          if (!hasDirectTraceLink && !explicitNoTrace) {
+            console.error("요구사항·결정·규칙 ID에 직접 링크를 넣거나, 해당 없음과 구체적 사유를 작성하세요.");
+            process.exit(1);
+          }
+
+          console.log(`${provided.length}개 검토 항목, 전체 checkbox, ${entries.length}개 Issue link, 직접 연결된 추적 기준 확인 완료.`);
           NODE

@@ -3,7 +3,7 @@ id: DOC-010
 title: Change Control
 status: Draft
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: []
   adr: []
@@ -13,7 +13,7 @@ links:
 # 변경 통제
 - 상태: Draft
 - 담당: Project Owner
-- 갱신일: 2026-10-30
+- 갱신일: 2026-11-02
 
 ## 사용자 승인
 사전 승인 대상:
@@ -28,6 +28,7 @@ links:
 
 ## Issue/PR 설명
 - 복잡한 변경은 문제·사실/가정·선택 이유·대안·영향 상태/invariant·검증을 본문에 기록.
+- 프로젝트 맥락이 없는 독자를 기준으로 작성. 내부 shorthand·ID만 남기지 말고 핵심 개념·이유를 본문에 설명.
 - 링크는 근거를 보완할 뿐, 설명을 대체하지 않음.
 - trace ID와 변경 대상은 기준 문서로 직접 연결. PR은 관련 Issue와 변경 문서를 모두 연결.
 - 복잡한 flow/state는 Mermaid로 설명. 중복 도식 금지; OPEN 경계 표시.
