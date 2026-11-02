@@ -15,6 +15,7 @@ updated: 2026-11-02
 - Backend build·PostgreSQL tests: [workflow](.github/workflows/backend-ci.yml).
 
 - 진행: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture 기준 확정. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)·[PR #73](https://github.com/Neo1228/ATLAS/pull/73) local runtime 완료. Fake PSP only; live payment, cloud deployment, production load는 별도 상태.
+- 기술 비교와 shared API/error rules: [ADR-0002](docs/06-decisions/adr/ADR-0002-runtime-technology-review.md), [Decision Log](docs/00-governance/decision-log.md), [Issue #78](https://github.com/Neo1228/ATLAS/issues/78), [PR #79](https://github.com/Neo1228/ATLAS/pull/79).
 
 ## Local runtime
 

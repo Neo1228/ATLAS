@@ -1,6 +1,7 @@
 package com.atlas.campaign.internal;
 
 import com.atlas.campaign.CampaignApi;
+import com.atlas.campaign.CampaignNotFoundException;
 import com.atlas.campaign.CampaignNotEligibleException;
 import com.atlas.campaign.CampaignStatus;
 import com.atlas.campaign.CampaignView;
@@ -62,7 +63,7 @@ public class CampaignService implements CampaignApi {
     @Transactional
     public CampaignView open(UUID campaignId) {
         int changed = jdbc.update("UPDATE campaign SET status = 'OPEN' WHERE campaign_id = ?", campaignId);
-        if (changed == 0) throw new IllegalArgumentException("Unknown campaign: " + campaignId);
+        if (changed == 0) throw new CampaignNotFoundException(campaignId);
         return find(campaignId);
     }
 
@@ -70,7 +71,8 @@ public class CampaignService implements CampaignApi {
     @Transactional(readOnly = true)
     public CampaignView requireOpen(UUID campaignId, String skuId) {
         CampaignView campaign = find(campaignId);
-        if (campaign == null || campaign.status() != CampaignStatus.OPEN || !campaign.skuId().equals(skuId)) {
+        if (campaign == null) throw new CampaignNotFoundException(campaignId);
+        if (campaign.status() != CampaignStatus.OPEN || !campaign.skuId().equals(skuId)) {
             throw new CampaignNotEligibleException(campaignId, skuId);
         }
         return campaign;

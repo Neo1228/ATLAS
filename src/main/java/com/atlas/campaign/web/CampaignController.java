@@ -1,6 +1,7 @@
 package com.atlas.campaign.web;
 
 import com.atlas.campaign.CampaignApi;
+import com.atlas.campaign.CampaignNotFoundException;
 import com.atlas.campaign.CampaignView;
 import com.atlas.campaign.CreateCampaignCommand;
 import jakarta.validation.Valid;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/campaigns")
@@ -44,17 +44,13 @@ public class CampaignController {
 
     @PostMapping("/{campaignId}/open")
     public CampaignView open(@PathVariable UUID campaignId) {
-        try {
-            return campaigns.open(campaignId);
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
-        }
+        return campaigns.open(campaignId);
     }
 
     @GetMapping("/{campaignId}")
     public CampaignView find(@PathVariable UUID campaignId) {
         CampaignView campaign = campaigns.find(campaignId);
-        if (campaign == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found");
+        if (campaign == null) throw new CampaignNotFoundException(campaignId);
         return campaign;
     }
 }

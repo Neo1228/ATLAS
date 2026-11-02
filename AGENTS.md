@@ -14,6 +14,10 @@
 - library·plugin 도입은 회피하거나 자동 선택하지 않음. 기존 JDK/Spring/DB 기능, 유지관리 중인 library, 직접 구현을 비교. 성숙한 library가 요구 기능·호환성·운영 비용에 맞으면 직접 재구현보다 우선 사용. capability gap, 대안, maintenance·security·license 비용, runtime/test/build scope를 Issue/PR에 기록.
 - Repository split은 기본 금지. 독립 release/team/data ownership 또는 측정된 scaling·security 경계와 승인된 ADR이 있을 때만 분리.
 - Java implementation code: FQCN 금지. Type import 사용. Gradle `check`의 Checkstyle 검사로 강제.
+- Java 주석은 자연스러운 한국어 우선. 표준 type/API/protocol 이름은 English 유지. 주석은 코드 반복 대신 이유·invariant·외부 제약 설명.
+- HTTP error는 module-owned exception을 root `AtlasApiExceptionHandler`에서 RFC 9457 `ProblemDetail` + stable `code`로 변환. Controller별 응답 envelope 금지.
+- HTTP GET/read query는 domain state를 변경하지 않음. Expiry/retry/promotion은 command 또는 scheduler 소유; 조회는 last persisted state 반환.
+- Cross-cutting utility를 위해 `common` package/module을 선제 생성하지 않음. Clock/error mapping처럼 실제 application-wide policy만 root composition에 두고, 반복된 domain ownership이 생기면 ADR 검토.
 - 문서·Issue·PR은 프로젝트 맥락을 모르는 독자를 기준으로 작성. 내부 shorthand/ID만 나열하지 말고, 복잡한 변경은 배경·사실/가정·선택 이유·대안·영향·검증을 본문에 설명하고 기준 문서에 연결.
 - 흐름/상태가 복잡한 경우 Mermaid 등으로 시각화. 중복 그림 금지, 미정 경계 표시. 단순 변경에 도식 강제 금지.
 - PR 템플릿 모든 체크박스 완료. 병합 전 `Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks` 통과.

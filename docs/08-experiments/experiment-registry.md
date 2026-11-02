@@ -5,19 +5,22 @@ status: Draft
 owner: Project Owner
 updated: 2026-11-02
 links:
-  requirements: [NFR-002]
+  requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
+  adr: [ADR-0001, ADR-0002]
   experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012]
 ---
 # 실험 레지스트리
 
-모든 실험 상태는 ○ Planned. 실행 결과 없음. 재고 100/1,000은 후보 입력이며 목표값 아님. 합성 부하는 실제 traffic을 뜻하지 않음.
+All registered experiments remain `○ Planned`; no formal experiment runs or measurement reports. M1 runtime behavior has integration/HTTP smoke coverage, but those checks are not load/failure experiments. No production performance claim.
 
-- Gate 2의 report-only workload 기준 승인: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). 런타임 실행·결과 없음.
+- Gate 2 report-only workload approved: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67).
+- Local M1 runtime implemented and merged in [PR #73](https://github.com/Neo1228/ATLAS/pull/73); no capacity/load experiment run.
 
-제안 순서 ([D-018](../00-governance/decision-log.md), △ Proposed):
-- Gate 2 workload profile 승인 완료.
-- Gate 3 capacity estimate 설계.
-- 구현 승인 뒤 Gate 4 검증.
+Proposed verification sequence ([D-018](../00-governance/decision-log.md), △ Proposed):
+- Gate 2 workload profile approved.
+- Gate 3 capacity model incomplete; assumptions remain distinct from measurements.
+- Local M1 runtime complete.
+- Gate 4 report-only load/failure run after environment, request mix/phase, and explicit entry approval are set.
 - [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Roadmap](../09-delivery/roadmap.md), [용어집](../01-discovery/glossary.md).
 
 각 실행에서 지표의 단위와 측정 범위를 함께 기록:

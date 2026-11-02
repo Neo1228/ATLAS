@@ -5,9 +5,9 @@ status: Draft
 owner: Project Owner
 updated: 2026-11-02
 links:
-  requirements: []
-  adr: [ADR-0001]
-  experiments: []
+  requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
+  adr: [ADR-0001, ADR-0002]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012]
 ---
 # 요구사항 인덱스
 
@@ -17,7 +17,7 @@ FR-001/FR-002/NFR-002의 current Buyer journey 기준 승인. 우선순위와 pr
 |---|---|---|---|---|---|
 | FR-001 | 기능 | ✓ Gate 2 기준 | Campaign 1개, 수량형 SKU 1종, 독립 inventory pool ([D-023/D-036/D-037](../00-governance/decision-log.md)). Reservation당 1개; `available + reserved + claimed = initial capacity`; oversell 금지. Sale open 후 matching campaign/SKU request만 admission. Local runtime은 bounded FIFO checkout window, campaign-scoped idempotency, `skuId` + synthetic `buyerRef` payload 비교 ([D-041](../00-governance/decision-log.md)). Production K/TTL, auth/bot rules는 OPEN. | 미정 | [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md), [BR-001/002](../03-domain/business-rules.md), [INV-001/002](../03-domain/invariants.md), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md) |
 | FR-002 | 기능 | ✓ Gate 2 기준 | Inventory hold 후 AUTHORIZE → CAPTURE; capture success 뒤 claim. Confirmed hold부터 첫 AUTHORIZE 제출까지 10분 local test window, 연장 없음. Submission/expiry 시 queue slot 반환. PENDING/UNKNOWN이면 inventory hold 유지하고 같은 attempt로 reconciliation. 미해결 payment가 있는 same campaign + synthetic `buyerRef`의 추가 payment submission 차단 ([D-041/D-042](../00-governance/decision-log.md)). Fake PSP only; provider deadline/production policy 미정. | 미정 | [Q-004/Q-005/Q-008](../00-governance/assumptions-and-open-questions.md), [BR-003](../03-domain/business-rules.md), [INV-003](../03-domain/invariants.md), [EXP-003/004/005](../08-experiments/experiment-registry.md), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) |
-| FR-003 | 기능 | △ Proposed | Reconciliation, 내부 settlement ledger, 조정 내역 추적. Contract 미정. | 미정 | [Q-006](../00-governance/assumptions-and-open-questions.md) |
+| FR-003 | 기능 | △ Proposed | PSP transaction 대사, 내부 settlement ledger, fee, 정정과 audit trail. Contract·seller payout policy 미정. Refund execution과 post-claim 재고 처리 미결정 ([Q-002/Q-006](../00-governance/assumptions-and-open-questions.md)); 이 행에서 승인하지 않음. | 미정 | [Q-002/Q-006](../00-governance/assumptions-and-open-questions.md) |
 | NFR-001 | 비기능 | △ Proposed | Tenant 간 데이터·권한 격리 검증. Threat boundary 미정. | 미정 | [Q-007](../00-governance/assumptions-and-open-questions.md), [EXP-007](../08-experiments/experiment-registry.md) |
 | NFR-002 | 비기능 | ✓ Gate 2 report profile | Full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress. Report-only; production SLO/threshold 없음. Offered/admitted/missed sessions, stage RPS, resolved TPS, p95/p99, errors, queue/hold, expiry, oversell 기록. | 미정 | [Q-008](../00-governance/assumptions-and-open-questions.md), [EXP-001/002/009/010/012](../08-experiments/experiment-registry.md), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66) |
 
@@ -27,7 +27,7 @@ FR-001/FR-002/NFR-002의 current Buyer journey 기준 승인. 우선순위와 pr
 - Gate 2 workload profile 승인. Concurrency, latency/error threshold, environment, production objective는 미정. 수치 목표를 추정하지 않음.
 
 ## Gate 2 승인 기준 — 현재 Buyer 여정
-상태: ✓ 승인 (2026-11-02). Runtime 구현·실험 실행 없음.
+상태: ✓ Gate 2 기준 승인 (2026-11-02). M1 local runtime implemented in [PR #73](https://github.com/Neo1228/ATLAS/pull/73). Functional integration tests/HTTP smoke executed; registered load/failure experiments remain unrun. No performance result.
 
 | 흐름 | 승인된 기준 | 근거 |
 |---|---|---|
@@ -46,8 +46,8 @@ FR-001/FR-002/NFR-002의 current Buyer journey 기준 승인. 우선순위와 pr
 | 판매사·Tenant·권한 | Tenant별 데이터 격리와 권한 경계, 개인정보·지역·규제 요구 | [NFR-001](requirements-index.md), [Q-007](../00-governance/assumptions-and-open-questions.md), Roadmap M4. 보안 요구 Proposed; 위협 분석·규제 범위 미정 |
 | 상품·campaign·재고 | Catalog/SKU, 판매 단위, inventory pool, 재고 조정·재입고 | [FR-001](requirements-index.md), [Q-002/Q-010](../00-governance/assumptions-and-open-questions.md), Roadmap M1. 현재 기준은 campaign/SKU/pool 각 1개; 다른 유형·공유 재고·조정 미정 |
 | 대기열·판매 입장 | 참가 자격, 판매 개시 admission, FIFO, ticket 재시도·재입장, bot/access policy | [D-019~D-036](../00-governance/decision-log.md), [Q-003](../00-governance/assumptions-and-open-questions.md), Roadmap M3. FIFO 기준 확정; eligibility·storage·bot 정책 미정 |
-| 주문·결제 복구 | Reservation/hold, AUTHORIZE/CAPTURE, 미확정 결과 대사, void/release | [FR-002](requirements-index.md), [Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), Roadmap M2. Synthetic flow 승인; provider·production 정책 미정 |
-| 정산·대사 | Internal ledger, 수수료, seller payout, refund/adjustment, audit trail | [FR-003](requirements-index.md), [Q-006](../00-governance/assumptions-and-open-questions.md), Roadmap M4. 요구사항 Proposed |
+| 주문·결제 복구·환불 | Reservation/hold, AUTHORIZE/CAPTURE, provider outcome 복구, void와 장기 refund | [FR-002](requirements-index.md), [Q-002/Q-004/Q-005](../00-governance/assumptions-and-open-questions.md), Roadmap M3/M4. Synthetic flow만 승인; refund execution/partial refund/post-claim stock effect는 OPEN |
+| 정산·대사 | PSP transaction 대사, internal ledger, 수수료, seller payout, 회계 조정/audit trail | [FR-003](requirements-index.md), [Q-006](../00-governance/assumptions-and-open-questions.md), Roadmap M4. Proposed; refund ledger treatment와 Payment/Settlement ownership 미정 |
 | 성능·복구·운영 | Capacity, observability, backup/recovery, SLO/RTO/RPO, failure test | [NFR-002](requirements-index.md), [Q-008](../00-governance/assumptions-and-open-questions.md), Roadmap M3/M5. 합성 report-only profile; production 목표·환경 미정 |
 
 Gate 2 승인은 current single-SKU Buyer journey에 한정. 장기 역량 전체나 구현 완료를 뜻하지 않음.

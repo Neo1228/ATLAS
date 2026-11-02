@@ -1,12 +1,12 @@
 package com.atlas.admission.web;
 
+import com.atlas.admission.AdmissionApi;
+import com.atlas.admission.AdmissionTicketNotFoundException;
+import com.atlas.admission.JoinQueueCommand;
+import com.atlas.admission.QueueTicketView;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import org.springframework.web.server.ResponseStatusException;
-import com.atlas.admission.AdmissionApi;
-import com.atlas.admission.JoinQueueCommand;
-import com.atlas.admission.QueueTicketView;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,7 +43,7 @@ public class AdmissionController {
     @GetMapping("/{ticketId}")
     public QueueTicketView find(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
         QueueTicketView ticket = admission.find(campaignId, ticketId);
-        if (ticket == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found");
+        if (ticket == null) throw new AdmissionTicketNotFoundException(campaignId, ticketId);
         return ticket;
     }
 }

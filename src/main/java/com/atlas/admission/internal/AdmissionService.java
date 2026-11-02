@@ -1,6 +1,7 @@
 package com.atlas.admission.internal;
 
 import com.atlas.admission.AdmissionApi;
+import com.atlas.admission.AdmissionTicketNotFoundException;
 import com.atlas.admission.CheckoutSlotReleaseReason;
 import com.atlas.admission.CheckoutSlotUnavailableException;
 import com.atlas.admission.IdempotencyPayloadMismatchException;
@@ -55,7 +56,7 @@ public class AdmissionService implements AdmissionApi {
         }
         QueueTicketView prior = findByKey(command.campaignId(), command.idempotencyKey());
         if (prior != null) {
-            lockCounter(command.campaignId());
+            if (!lockCounter(command.campaignId())) throw new IllegalStateException("Admission counter is missing for an existing ticket");
             prior = findByKey(command.campaignId(), command.idempotencyKey());
             if (prior != null) {
                 requireSamePayload(prior, command);
@@ -66,10 +67,10 @@ public class AdmissionService implements AdmissionApi {
         CampaignView campaign = campaigns.requireOpen(command.campaignId(), command.skuId());
         jdbc.update("INSERT INTO admission_counter (campaign_id, last_sequence) VALUES (?, 0) ON CONFLICT (campaign_id) DO NOTHING",
                 command.campaignId());
-        lockCounter(command.campaignId());
+        if (!lockCounter(command.campaignId())) throw new IllegalStateException("Admission counter initialization failed");
         Instant now = clock.instant();
         expireDueTicketsForCampaign(command.campaignId(), now);
-        // The counter-row lock serializes concurrent first-use requests and FIFO allocation.
+        // Counter row 잠금으로 첫 요청의 초기화와 FIFO 순번 발급을 직렬화.
         prior = findByKey(command.campaignId(), command.idempotencyKey());
         if (prior != null) {
             requireSamePayload(prior, command);
@@ -95,11 +96,7 @@ public class AdmissionService implements AdmissionApi {
         return requireTicket(command.campaignId(), ticketId);
     }
     @Override
-    @Transactional
     public QueueTicketView find(UUID campaignId, UUID ticketId) {
-        if (!counterExists(campaignId)) return null;
-        lockCounter(campaignId);
-        expireDueTicketsForCampaign(campaignId, clock.instant());
         List<QueueTicketView> rows = jdbc.query(
                 "SELECT " + TICKET_COLUMNS + " FROM admission_ticket WHERE campaign_id = ? AND ticket_id = ?",
                 (rs, n) -> map(rs), campaignId, ticketId);
@@ -109,7 +106,7 @@ public class AdmissionService implements AdmissionApi {
     @Override
     @Transactional
     public QueueTicketView requireCheckoutSlot(UUID campaignId, UUID ticketId) {
-        lockCounter(campaignId);
+        if (!lockCounter(campaignId)) throw new AdmissionTicketNotFoundException(campaignId, ticketId);
         expireDueTicketsForCampaign(campaignId, clock.instant());
         QueueTicketView ticket = requireTicket(campaignId, ticketId);
         if (!ticket.checkoutSlotHeld()
@@ -118,10 +115,11 @@ public class AdmissionService implements AdmissionApi {
         }
         return ticket;
     }
+
     @Override
     @Transactional
     public QueueTicketView startCheckout(UUID campaignId, UUID ticketId) {
-        lockCounter(campaignId);
+        if (!lockCounter(campaignId)) throw new AdmissionTicketNotFoundException(campaignId, ticketId);
         expireDueTicketsForCampaign(campaignId, clock.instant());
         QueueTicketView ticket = requireTicket(campaignId, ticketId);
         if (ticket.status() == TicketStatus.CHECKOUT_ACTIVE && ticket.checkoutSlotHeld()) {
@@ -135,11 +133,13 @@ public class AdmissionService implements AdmissionApi {
         }
         return requireTicket(campaignId, ticketId);
     }
+
     @Override
     @Transactional
     public QueueTicketView releaseCheckoutSlot(UUID campaignId, UUID ticketId, CheckoutSlotReleaseReason reason) {
         if (reason == null) throw new IllegalArgumentException("Release reason is required");
-        lockCounter(campaignId);
+        if (!lockCounter(campaignId)) throw new AdmissionTicketNotFoundException(campaignId, ticketId);
+        expireDueTicketsForCampaign(campaignId, clock.instant());
         QueueTicketView ticket = requireTicket(campaignId, ticketId);
         if (!ticket.checkoutSlotHeld()) return ticket;
         TicketStatus status = switch (reason) {
@@ -166,7 +166,7 @@ public class AdmissionService implements AdmissionApi {
                 """, (rs, n) -> rs.getObject(1, UUID.class), Timestamp.from(now));
         int expired = 0;
         for (UUID campaignId : campaignsToProcess) {
-            lockCounter(campaignId);
+            if (!lockCounter(campaignId)) throw new IllegalStateException("Admission counter is missing for expired tickets");
             expired += expireDueTicketsForCampaign(campaignId, now);
         }
         return expired;
@@ -196,20 +196,14 @@ public class AdmissionService implements AdmissionApi {
         return prior;
     }
 
-    private void lockCounter(UUID campaignId) {
+    private boolean lockCounter(UUID campaignId) {
         List<Long> rows = jdbc.query("SELECT last_sequence FROM admission_counter WHERE campaign_id = ? FOR UPDATE",
                 (rs, n) -> rs.getLong(1), campaignId);
-        if (rows.isEmpty()) throw new IllegalArgumentException("Unknown campaign: " + campaignId);
+        return !rows.isEmpty();
     }
-    private boolean counterExists(UUID campaignId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM admission_counter WHERE campaign_id = ?)",
-                Boolean.class, campaignId));
-    }
-
     private QueueTicketView requireTicket(UUID campaignId, UUID ticketId) {
         QueueTicketView ticket = find(campaignId, ticketId);
-        if (ticket == null) throw new IllegalArgumentException("Unknown ticket: " + ticketId);
+        if (ticket == null) throw new AdmissionTicketNotFoundException(campaignId, ticketId);
         return ticket;
     }
 
