@@ -3,7 +3,7 @@ id: DOC-013
 title: Personas and Jobs to Be Done
 status: Draft
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: [FR-001, NFR-002]
   adr: []

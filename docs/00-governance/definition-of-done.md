@@ -3,7 +3,7 @@ id: DOC-011
 title: 완료 기준
 status: Draft
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: []
   adr: []
@@ -14,7 +14,7 @@ links:
 
 - 상태: ○ Draft
 - 담당: 프로젝트 책임자
-- 갱신일: 2026-10-30
+- 갱신일: 2026-11-02
 
 ## 완료 조건
 - 요구사항·정책·실패 시나리오를 문서·구현에 연결.
@@ -28,7 +28,7 @@ links:
 - 복잡한 flow/state/architecture는 Mermaid 또는 짧은 설명과 기준 도식 link.
 - 모든 PR checkbox 완료; required PR checklist 통과. N/A에는 구체적 사유.
 
-상세 product/implementation 기준은 Gate 2에서 구체화. Issue/PR 설명 기준과 checklist는 즉시 적용.
+현재 Buyer journey 기준은 Gate 2 승인. 세부 구현·운영 기준은 Gate 3 설계에서 확정; 실행 검증은 별도 구현 승인 뒤 진행. Issue/PR 설명 기준과 checklist는 즉시 적용.
 
 ## 관련 문서
 - [Requirements Index](../02-requirements/requirements-index.md)

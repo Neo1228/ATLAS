@@ -3,7 +3,7 @@ id: DOC-006
 title: Reference Register
 status: Draft
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: []
   adr: [ADR-0001]
@@ -68,12 +68,15 @@ REF-030~044는 2026-10-30에 확인한 payment·checkout·load model 자료.
 | REF-047 | Museums Association / Digital Culture Network, Timed entry ticketing / practitioner guide | https://www.museumsassociation.org/museums-journal/in-practice/2020/08/introduction-to-ticketing-for-museums-and-galleries/ | 2026-10-30 | Slot별 정원, 도착 제한, drop-off, walk-in, accessibility 운영 항목 | ✓ 2020 museum 운영 맥락; backend·현재 수요 기준 아님 |
 | REF-048 | Hoxton AI / Techniquest, Occupancy by time slot / vendor case study | https://www.hoxton.ai/blog/case-study-how-techniquest-use-occupancy-data-to-maximise-the-visitor-experience-and-create-positive-growth-for-the-company | 2026-10-30 | Slot별 arrival/occupancy variation과 운영자 조정 사례 | ✓ 특정 venue·vendor 사례; 수치/정원 ATLAS에 일반화 금지 |
 | REF-049 | Let’s Build Solutions, Time-slotted booking concurrency / practitioner design article | https://letsbuildsolutions.com/blog/system-design/designing-a-reservation-and-booking-system-inventory-holds-double-booking-prevention-and-concurrency-control/ | 2026-10-30 | Slot/window/rule-based modeling과 동시 예약 경계 | △ 설계 해설; production 실측·성능 검증 아님, architecture 권고로 채택하지 않음 |
+| REF-050 | Shopify Engineering, Deconstructing the Monolith / engineering case | https://shopify.engineering/deconstructing-monolith-designing-software-maximizes-developer-productivity | 2026-11-02 | One deployment with enforced module boundaries vs microservices trade-offs | ✓ Shopify Rails case, 1,000+ developer codebase; not a small-system universal rule |
+| REF-051 | AWS Architecture Blog / SeatGeek, Virtual Waiting Room / practitioner architecture case | https://aws.amazon.com/blogs/architecture/build-a-virtual-waiting-room-with-amazon-dynamodb-and-aws-lambda-at-seatgeek/ | 2026-11-02 | Token queue and controlled admission protecting ticket selection | ✓ SeatGeek/AWS-specific design; no evidence ATLAS needs a separate queue or AWS |
+| REF-052 | Arika, Modular Monoliths in Practice / practitioner guide | https://www.arika.dev/blog/architecture/modular-monolith-in-practice/ | 2026-11-02 | Module APIs, logical DB ownership, boundary checks, extraction paths | △ Practitioner design article; not benchmark or independent performance evidence |
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인.
 - Authorization validity/honor period는 provider 정책이며 ATLAS inventory TTL과 별개.
 - Webhook 재전송도 Buyer checkout TTL/API deadline과 별도.
-REF-030~049는 provider/product/practitioner 사례·기능 설명. ATLAS의 production behavior, 보편적 best practice, API support나 법적 의무를 보증하지 않음.
+REF-030~052는 provider/product/practitioner 사례·설계 설명. ATLAS의 production behavior, 성능 보장, 보편적 best practice, API support나 법적 의무를 보증하지 않음.
 
 ## 관련 문서
-- [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): REF-001~003은 미확인 후보.
+- [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): D-037 uses REF-023/050~052 as context-specific evidence; no source is adopted as a universal architecture prescription.
 - [Project Charter](project-charter.md): 확인되지 않은 정책/성능 주장을 제한.

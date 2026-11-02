@@ -9,9 +9,9 @@
 - 짧고 스캔하기 쉬운 문장. 자연스러운 경우 명사형/개조식 종결, 조사·수식어 최소화. 수치/단계는 표·불릿.
 - 상태 구분: `✓ Confirmed`, `△ Proposed`, `? OPEN`, `ASSUMPTION`, `Measured`. 사용자 승인 전 제안을 확정으로 변경하지 않음.
 - 미결정 정책은 [Assumptions & Open Questions](docs/00-governance/assumptions-and-open-questions.md)에 기록.
-- Gate 0 승인 완료, Gate 1 진행 중. Gate 2·아키텍처·구현·의존성·결제 호출·배포는 별도 승인 전 보류.
+- 진행 상태: Gate 0/1 완료. Gate 2의 current Buyer journey 기준 승인. Gate 3 아키텍처 설계 진행. Runtime implementation·deployment·추가 infrastructure는 별도 승인 전 보류.
 - 코드 변경 전 요구사항·정책·검증 계약 확인. 중요한 설계 선택은 ADR로 기록.
-- 복잡한 Issue/PR 본문에 배경·사실/가정·결정 이유·대안·영향·검증 근거 명시. 문서 링크만으로 설명 대체 금지.
+- 문서·Issue·PR은 프로젝트 맥락을 모르는 독자를 기준으로 작성. 내부 shorthand/ID만 나열하지 말고, 복잡한 변경은 배경·사실/가정·선택 이유·대안·영향·검증을 본문에 설명하고 기준 문서에 연결.
 - 흐름/상태가 복잡한 경우 Mermaid 등으로 시각화. 중복 그림 금지, 미정 경계 표시. 단순 변경에 도식 강제 금지.
 - PR 템플릿 모든 체크박스 완료. 병합 전 `PR checklist`와 `Markdown lint` 필수 검사 통과.
 - 외부 PSP 상태와 주문 상태, 내부 정산과 실제 지급 구분. 초기 범위에서 실결제·개인정보·판매사 지급 제외.
