@@ -30,9 +30,10 @@ links:
 - TTL/cancel 시 capture 확인. Active authorization은 void. 확정된 non-payment와 void/expiry 확인 후에만 stock release ([D-025~D-027](../00-governance/decision-log.md)).
 
 ## 미정·다음
-- Local verification: JDK 25.0.5/Gradle Wrapper 9.8.2, PostgreSQL 18.6/Testcontainers 2.0.5. `./gradlew check`: 13 passed, 0 failed, 0 skipped; Spring Modulith boundary test 포함.
-- HTTP smoke: campaign 생성/open → queue sequence 1 → checkout hold → Fake PSP CAPTURED/PAID, inventory CLAIMED. App 재시작 후 PostgreSQL 유지 상태에서 다음 ticket sequence 2 확인. Provider-side restart recovery와 load/performance는 미검증.
+- Final local verification: JDK 25.0.5, PostgreSQL 18.6/Testcontainers 2.0.5; `./gradlew check` 14 passed, 0 failed, 0 skipped, including Checkstyle and Spring Modulith. Markdown lint: 24 files, 0 issues.
+- Final HTTP smoke after Issue #75 code changes: campaign create/open → queue sequence 1 → checkout → Fake PSP `CAPTURED` → order `PAID`, inventory `CLAIMED`. No load/performance claim.
 - Next: Gate 4 synthetic load/failure scope. 10k/60m, 2×/4× profile은 report-only; environment, request mix, latency, production SLO/capacity는 OPEN ([Q-008](../00-governance/assumptions-and-open-questions.md)). Live PSP/deployment는 별도 승인 대상.
+- 현재 작업: [Issue #75](https://github.com/Neo1228/ATLAS/issues/75)에서 FQCN enforcement, Order persistence 책임 분리, Admission/Order expiry scheduler 공개 API 제거. 구조·회고 근거는 [Milestone Log](milestone-log.md); Gate 4는 이 변경 병합 후 이어서 진행.
 
 ## 이력
 
