@@ -72,9 +72,21 @@ flowchart LR
 - **Transaction:** 필요한 domain invariant만 원자화하는 짧은 transaction. Module API는 같은 local transaction에 참여할 수 있으나, PSP network call은 transaction 밖. Isolation, 실제 경계·schema·lock recovery는 미정.
 - **Queue sequence:** campaign counter row 증가와 ticket insert를 한 transaction으로 commit ([D-039](../../00-governance/decision-log.md)). 같은 campaign의 입장은 직렬화될 수 있어 accepted workload로 검증. PostgreSQL sequence는 rollback 후 gap과 commit order 차이가 있어 선택하지 않음 ([REF-057](../../00-governance/reference-register.md)).
 - **Boundary checks:** Spring Modulith의 cycle/public API 검증은 후보 도구일 뿐 ([REF-055](../../00-governance/reference-register.md)); dependency/version 선택은 미정.
-- **Capacity model input:** full Buyer journey, hybrid arrivals, 10,000 sessions/60m (average ~2.8 sessions/s), 2×/4× stress (~5.6/11.1 sessions/s). Synthetic report-only; these are session arrival rates, not request RPS/TPS or production demand. Record stage RPS and resolved-session TPS separately. Burst, concurrency, environment and production SLO remain OPEN.
+- Capacity envelope는 승인된 Q-008 profile 사용. 단위·계산·미정 입력은 아래 표에 정리; production target은 없음.
 - Inventory reservation의 conditional UPDATE/locking 선택은 [EXP-002](../../08-experiments/experiment-registry.md) 비교 전까지 미정.
 - Runtime code·deployment·capacity claim은 별도 승인과 측정 전 보류.
+
+## Capacity envelope — synthetic, report-only
+
+| 항목 | 현재 입력·계산 | 해석 |
+|---|---|---|
+| Session arrival | 10,000 sessions/60m ≈ 2.8 sessions/s; 2×/4× ≈ 5.6/11.1 sessions/s ([D-031~D-033](../../00-governance/decision-log.md)) | 합성 input. production demand나 처리량 목표 아님 |
+| Stage request rate | Stage별 offered/achieved RPS를 측정 | sessions/s만으로 계산 불가. Session당 request 수와 phase별 분포 필요 |
+| Completed-session TPS | 측정 구간 내 완료된 Buyer session / 초 | offered arrival rate와 별도. PENDING/UNKNOWN은 완료가 아니라 in-flight/backlog |
+| In-flight concurrency | 안정 구간에서 `L ≈ λ × W` ([REF-022](../../00-governance/reference-register.md)) | 같은 stage의 arrival rate λ와 latency W 필요. 현재 W 미측정이므로 숫자 산출 불가 |
+| DB QPS | 선언한 query 범위의 query/초만 기록 | API RPS와 다른 단위. 현재 DB QPS 실측 없음 |
+
+10k/60m과 2×/4×는 report-only synthetic profile. Burst duration, think time, phase, concurrency, request mix, test environment, resource configuration, production SLO는 OPEN ([Q-008](../../00-governance/assumptions-and-open-questions.md)). 따라서 현재는 resource sizing이나 production capacity를 주장하지 않음. Baseline 대비 stress 결과와 bottleneck을 비교하는 설계 기준만 제공 ([EXP-010/012](../../08-experiments/experiment-registry.md)).
 
 ## 재검토 조건
 - 독립된 team/deployment 필요 발생.
