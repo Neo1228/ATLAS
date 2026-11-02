@@ -1,5 +1,6 @@
 package com.atlas.inventory;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface InventoryApi {
@@ -9,7 +10,7 @@ public interface InventoryApi {
     ReservationView reserve(ReserveInventoryCommand command);
 
     ReservationView claim(UUID orderId);
-    java.util.Optional<ReservationView> tryReserve(ReserveInventoryCommand command);
+    Optional<ReservationView> tryReserve(ReserveInventoryCommand command);
     ReservationView findReservation(UUID orderId);
 
     ReservationView release(UUID orderId);
