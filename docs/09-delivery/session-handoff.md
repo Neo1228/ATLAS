@@ -13,10 +13,10 @@ links:
 
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
-- 진행: Gate 0/1 완료. Gate 2의 current Buyer journey 기준 승인. Gate 3 아키텍처 설계 진행 ([D-037](../00-governance/decision-log.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68)).
+- 진행: Gate 0/1 완료. Gate 2의 current Buyer journey 기준 승인. Gate 3 초기 module·data 기준 설계 중 ([D-037~D-039](../00-governance/decision-log.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68)).
 - Gate 2 범위: [D-031~D-033](../00-governance/decision-log.md)의 full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress. Report-only; 실험 결과 없음.
 - Gate 2 승인 기록: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67), merge [`b85a0ec`](https://github.com/Neo1228/ATLAS/commit/b85a0ec). 기준만 승인; runtime 결과 없음.
-- Gate 3 방향: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), modular monolith, Java + Spring Boot + PostgreSQL. 별도 queue/cache/broker는 측정된 병목과 비교 가능한 이점 확인 전 미도입. 버전, schema/locking, infrastructure, provider API 미정.
+- Gate 3 방향: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), modular monolith, Java + Spring Boot + PostgreSQL. 초기 module map: Campaign, Admission, Inventory, Order/Checkout, Payment. 단일 schema와 module별 write ownership. Campaign counter row + ticket transaction 선택. 별도 queue/cache/broker는 측정된 bottleneck과 비교 이점 확인 전 미도입.
 - 관련 성능 이슈: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56).
 - 이전 병합 PR: [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
 - Runtime implementation/deployment 미착수. Gate 3는 설계만 승인; 구현은 설계 검토 뒤 별도 사용자 승인 필요.
@@ -30,9 +30,9 @@ links:
 - TTL/cancel 시 capture 확인. Active authorization은 void. 확정된 non-payment와 void/expiry 확인 후에만 stock release ([D-025~D-027](../00-governance/decision-log.md)).
 
 ## 미정·다음
-- Gate 3 설계: module ownership·API·data access, PostgreSQL schema·transaction/isolation/locking, queue sequence atomicity·recovery, 가정이 명시된 capacity model.
-- 별도 queue/cache/broker는 PostgreSQL baseline에서 bottleneck과 비교 가능한 이점이 확인된 경우에만 검토 ([EXP-002/012](../08-experiments/experiment-registry.md)).
-- 버전, infrastructure/deployment, PayPal product/API, production SLO·환경은 미정. Gate 3는 설계만 승인; runtime implementation/deployment는 별도 사용자 승인 대상 ([Issue #68](https://github.com/Neo1228/ATLAS/issues/68)).
+- Gate 3 design: 첫 Buyer flow module/data ownership 확정. Public API, physical schema, transaction isolation/lock recovery, capacity estimate 세부 설계 진행.
+- Queue sequence: campaign counter row와 ticket을 한 transaction으로 기록하는 기준 선택 ([D-039](../00-governance/decision-log.md)). Key/expiry/bot 정책과 exact schema·lock handling은 OPEN ([Q-003](../00-governance/assumptions-and-open-questions.md)).
+- 버전, infrastructure/deployment, PayPal product/API, production SLO·환경은 미정. Runtime implementation/deployment는 별도 사용자 승인 대상 ([Issue #68](https://github.com/Neo1228/ATLAS/issues/68)).
 
 ## 이력
 
@@ -54,7 +54,8 @@ links:
 | Inventory reservation/conservation | [Issue #62](https://github.com/Neo1228/ATLAS/issues/62); [PR #63](https://github.com/Neo1228/ATLAS/pull/63); [D-035](../00-governance/decision-log.md); [BR-002](../03-domain/business-rules.md); [INV-001](../03-domain/invariants.md); [EXP-001](../08-experiments/experiment-registry.md) |
 | 판매 유형 비교·Gate 2 범위 | [Issue #64](https://github.com/Neo1228/ATLAS/issues/64); [PR #65](https://github.com/Neo1228/ATLAS/pull/65); [D-036](../00-governance/decision-log.md); [Q-010](../00-governance/assumptions-and-open-questions.md); [Personas & Jobs](../01-discovery/personas-and-jobs.md); [REF-045~049](../00-governance/reference-register.md). 선택: 현재 SKU 흐름으로 Gate 2 |
 | Gate 2 Buyer journey acceptance | [Issue #66](https://github.com/Neo1228/ATLAS/issues/66); [PR #67](https://github.com/Neo1228/ATLAS/pull/67); [D-037](../00-governance/decision-log.md); [FR-001/FR-002/NFR-002](../02-requirements/requirements-index.md); merge [`b85a0ec`](https://github.com/Neo1228/ATLAS/commit/b85a0ec) |
-| Gate 3 아키텍처 기준 | [Issue #68](https://github.com/Neo1228/ATLAS/issues/68); [D-037](../00-governance/decision-log.md); [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md); [EXP-002/012](../08-experiments/experiment-registry.md). Runtime code 미착수 |
+| Gate 3 아키텍처 방향 | [Issue #68](https://github.com/Neo1228/ATLAS/issues/68); [PR #69](https://github.com/Neo1228/ATLAS/pull/69) 병합; merge [`638514d`](https://github.com/Neo1228/ATLAS/commit/638514d8fa166ef57c6591ca2efbd43741eea45f); commits [`6694fe2`](https://github.com/Neo1228/ATLAS/commit/6694fe2), [`cf93b73`](https://github.com/Neo1228/ATLAS/commit/cf93b73); [D-037](../00-governance/decision-log.md); [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md). Runtime code 미착수 |
+| Gate 3 초기 module/data 설계 | [Issue #68 결정 댓글](https://github.com/Neo1228/ATLAS/issues/68#issuecomment-6566630187); [D-038/D-039](../00-governance/decision-log.md); [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md); [REF-050/052~058](../00-governance/reference-register.md). Runtime 구현·배포 미승인 |
 
 - 진행 현황: [Roadmap](roadmap.md).
 - 완료 이력: [Milestone Log](milestone-log.md).
