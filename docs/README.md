@@ -19,7 +19,7 @@ updated: 2026-11-02
 | 진행·이력 | [로드맵](09-delivery/roadmap.md), [마일스톤 로그](09-delivery/milestone-log.md), [세션 인계](09-delivery/session-handoff.md) |
 
 ## 빠른 안내
-- **Gate**: Gate 0/1 완료, Gate 2 Buyer journey 승인, Gate 3 architecture·stack 설계 완료. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), [PR #73](https://github.com/Neo1228/ATLAS/pull/73)에서 local runtime 구현·검증; merge 대기. Live payment·deployment·load test 별도 범위.
+- **Gate**: Gate 0/1 완료, Gate 2 Buyer journey 승인, Gate 3 architecture·stack 완료. Local runtime은 [PR #73](https://github.com/Neo1228/ATLAS/pull/73)로 병합; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) 완료. Gate 4 load/failure validation은 다음 단계; production 목표는 OPEN.
 - 장기 제품 역량과 미결정 범위: [Project Charter](00-governance/project-charter.md), [Requirements Index](02-requirements/requirements-index.md).
 - 추적 ID:
   - 결정·질문: [D](00-governance/decision-log.md), [Q](00-governance/assumptions-and-open-questions.md)
