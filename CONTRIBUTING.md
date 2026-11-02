@@ -44,6 +44,7 @@
 - [PR template](.github/PULL_REQUEST_TEMPLATE.md) 필수. 복잡한 변경은 근거·대안·영향·검증을 짧은 한국어로 작성.
 - 복잡한 flow/state에만 Mermaid 사용. 모든 checkbox 완료; N/A는 구체적 이유 작성.
 - `main` 보호 설정: PR 필수, strict required checks (`Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks`), linear history. 관리자도 적용 대상. Required reviewer는 0명; 승인 리뷰 정책은 별도 합의 필요.
+- Merge policy: repository currently allows squash only. Keep logical commits separately on the branch; PR preserves their individual links, main receives one squash commit.
 
 ## 7. 안전한 Git
 - 시작 전 `git status --short --branch`.
