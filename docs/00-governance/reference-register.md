@@ -105,8 +105,9 @@ REF-087/089/092/094/095/096/097/098은 module boundary·계층·JPA persistence 
 | REF-097 | Spring Data JPA, Defining Repository Interfaces / framework documentation | https://docs.spring.io/spring-data/jpa/reference/repositories/definition.html | 2026-11-02 | Typed `JpaRepository`가 CRUD 기능을 제공하는 계약 | ✓ Official API documentation; JPA adoption does not prove performance improvement |
 | REF-098 | ArchUnit 1.5.1, User Guide / architecture test documentation | https://www.archunit.org/userguide/html/000_Index.html | 2026-11-02 | Explicitly tests package dependency rules without package metadata | ✓ Official tool guide; tests enforce only the package rules ATLAS writes, not correctness of the chosen boundaries |
 | REF-099 | Google Testing Blog, Increase Test Fidelity By Avoiding Mocks / practitioner testing guidance | https://testing.googleblog.com/2024/02/increase-test-fidelity-by-avoiding-mocks.html | 2026-11-03 | Test doubles can diverge from production behavior; choose a real dependency when fidelity matters | △ Practitioner guidance, not a blanket ban on mocks or a test-count formula |
+| REF-100 | Grafana k6 2.3.0 documentation, Constant-arrival-rate executor / tool documentation | https://grafana.com/docs/k6/latest/using-k6/scenarios/executors/constant-arrival-rate | 2026-11-03 | Open-loop arrival-rate execution for EXP-013 | △ Vendor tool documentation; describes executor behavior, not ATLAS performance or capacity |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099은 기존 결정과 최근 module/persistence review에 사용한 vendor·practitioner·기술 자료. ATLAS production behavior, 성능 보장, 보편적 best practice를 입증하지 않음.
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100은 기존 결정과 recent module/persistence/load-test review에 사용한 vendor·practitioner·기술 자료. ATLAS production behavior, 성능 보장, 보편적 best practice를 입증하지 않음.
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인.
 - Authorization validity/honor period는 provider 정책이며 ATLAS inventory TTL과 별개.
@@ -114,5 +115,5 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 
 ## 관련 문서
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): D-037 uses context-specific REF-023/050~052; D-038/D-039 use REF-050/053~058; D-040/D-041 use REF-059~067; D-043 uses REF-068; Issue #75 review uses REF-053~055/069~073. [ADR-0002](../06-decisions/adr/ADR-0002-runtime-technology-review.md): technology/common-processing comparison uses REF-059~086; sources are contextual, not universal recommendations.
-- [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md): D-047 uses REF-087/089/092/094/095/096/098 for modularity, naming, Gradle boundaries, practical layer guidance and ArchUnit package checks; its test-scope guidance uses REF-099. [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md): D-048 uses REF-056/057/072/073/095/097 for CRUD vs database-specific SQL; all practitioner claims retain their stated limits.
+- [Experiment Registry](../08-experiments/experiment-registry.md): EXP-013 uses REF-100 for arrival-rate scheduling; k6 vendor documentation is not independent workload or capacity evidence.
 - [Project Charter](project-charter.md): 확인되지 않은 정책/성능 주장을 제한.
