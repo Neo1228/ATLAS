@@ -14,5 +14,4 @@ public interface OrderApi {
 
     OrderView find(UUID orderId);
 
-    int expireCheckoutWindows();
 }

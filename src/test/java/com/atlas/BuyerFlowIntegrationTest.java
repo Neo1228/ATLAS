@@ -8,6 +8,7 @@ import com.atlas.admission.IdempotencyPayloadMismatchException;
 import com.atlas.admission.JoinQueueCommand;
 import com.atlas.admission.QueueTicketView;
 import com.atlas.admission.TicketStatus;
+import com.atlas.admission.internal.AdmissionExpiryScheduler;
 import com.atlas.campaign.CampaignApi;
 import com.atlas.campaign.CampaignView;
 import com.atlas.campaign.CreateCampaignCommand;
@@ -18,6 +19,7 @@ import com.atlas.order.OrderApi;
 import com.atlas.order.OrderConflictException;
 import com.atlas.order.OrderState;
 import com.atlas.order.OrderView;
+import com.atlas.order.internal.CheckoutExpiryScheduler;
 import com.atlas.payment.PaymentState;
 import com.atlas.payment.internal.FakePsp;
 import java.time.Clock;
@@ -60,6 +62,9 @@ class BuyerFlowIntegrationTest {
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
     }
 
+    @Autowired private CheckoutExpiryScheduler checkoutExpiryScheduler;
+
+    @Autowired private AdmissionExpiryScheduler admissionExpiryScheduler;
     @Autowired private CampaignApi campaigns;
     @Autowired private AdmissionApi admission;
     @Autowired private InventoryApi inventory;
@@ -171,13 +176,23 @@ class BuyerFlowIntegrationTest {
     }
 
     @Test
+    void scheduledAdmissionExpiryRemainsInternalAndExpiresDueTickets() {
+        CampaignView campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketView ticket = join(campaign, "buyer-queue-expiry", "queue-expiry-key");
+        clock.advance(Duration.ofMinutes(6));
+
+        admissionExpiryScheduler.expireDueTickets();
+        assertThat(admission.find(campaign.campaignId(), ticket.ticketId()).status()).isEqualTo(TicketStatus.EXPIRED);
+    }
+
+    @Test
     void unsubmittedCheckoutExpiryReleasesHoldAndExpiresTicket() {
         CampaignView campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketView ticket = join(campaign, "buyer-expiry", "expiry-key");
         OrderView order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
         clock.advance(Duration.ofMinutes(10));
+        assertThat(checkoutExpiryScheduler.expireDueCheckouts()).isEqualTo(1);
 
-        assertThat(orders.expireCheckoutWindows()).isEqualTo(1);
         OrderView expired = orders.find(order.orderId());
         assertThat(expired.state()).isEqualTo(OrderState.EXPIRED);
         assertThat(expired.paymentAttemptId()).isNull();

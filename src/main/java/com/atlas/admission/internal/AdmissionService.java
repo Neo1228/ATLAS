@@ -10,6 +10,9 @@ import com.atlas.admission.TicketStatus;
 
 import com.atlas.campaign.CampaignApi;
 import com.atlas.campaign.CampaignView;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -19,7 +22,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.scheduling.annotation.Scheduled;
 
 @Service
 public class AdmissionService implements AdmissionApi {
@@ -88,8 +90,8 @@ public class AdmissionService implements AdmissionApi {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN CAST(? AS TIMESTAMPTZ) ELSE NULL END)
                 """, ticketId, command.campaignId(), command.skuId(), command.buyerRef(), command.idempotencyKey(),
                 sequence, slot ? TicketStatus.CHECKOUT_ACTIVE.name() : TicketStatus.WAITING.name(),
-                java.sql.Timestamp.from(expiresAt), java.sql.Timestamp.from(now),
-                slot, slot, java.sql.Timestamp.from(now));
+                Timestamp.from(expiresAt), Timestamp.from(now),
+                slot, slot, Timestamp.from(now));
         return requireTicket(command.campaignId(), ticketId);
     }
     @Override
@@ -154,16 +156,14 @@ public class AdmissionService implements AdmissionApi {
         return requireTicket(campaignId, ticketId);
     }
 
-    @Override
-    @Scheduled(fixedDelayString = "${atlas.admission.expiry-poll-interval:PT1S}")
     @Transactional
-    public int expireDueTickets() {
+    int expireDueTickets() {
         Instant now = clock.instant();
         List<UUID> campaignsToProcess = jdbc.query("""
                 SELECT DISTINCT campaign_id FROM admission_ticket
                 WHERE status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ?
                 ORDER BY campaign_id
-                """, (rs, n) -> rs.getObject(1, UUID.class), java.sql.Timestamp.from(now));
+                """, (rs, n) -> rs.getObject(1, UUID.class), Timestamp.from(now));
         int expired = 0;
         for (UUID campaignId : campaignsToProcess) {
             lockCounter(campaignId);
@@ -176,7 +176,7 @@ public class AdmissionService implements AdmissionApi {
         int expired = jdbc.update("""
                 UPDATE admission_ticket SET status = 'EXPIRED', checkout_slot_held = false
                 WHERE campaign_id = ? AND status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ?
-                """, campaignId, java.sql.Timestamp.from(now));
+                """, campaignId, Timestamp.from(now));
         if (expired > 0) promote(campaignId);
         return expired;
     }
@@ -223,15 +223,15 @@ public class AdmissionService implements AdmissionApi {
         List<UUID> waiting = jdbc.query("""
                 SELECT ticket_id FROM admission_ticket WHERE campaign_id = ? AND status = 'WAITING' AND expires_at > ?
                 ORDER BY sequence LIMIT ? FOR UPDATE
-                """, (rs, n) -> rs.getObject(1, UUID.class), campaignId, java.sql.Timestamp.from(now), slots);
+                """, (rs, n) -> rs.getObject(1, UUID.class), campaignId, Timestamp.from(now), slots);
         for (UUID ticketId : waiting) {
             jdbc.update("UPDATE admission_ticket SET status = 'CHECKOUT_ACTIVE', checkout_slot_held = true, checkout_slot_acquired_at = ? WHERE campaign_id = ? AND ticket_id = ? AND status = 'WAITING'",
-                    java.sql.Timestamp.from(now), campaignId, ticketId);
+                    Timestamp.from(now), campaignId, ticketId);
         }
     }
 
-    private static QueueTicketView map(java.sql.ResultSet rs) throws java.sql.SQLException {
-        java.sql.Timestamp expiresAt = rs.getTimestamp("expires_at");
+    private static QueueTicketView map(ResultSet rs) throws SQLException {
+        Timestamp expiresAt = rs.getTimestamp("expires_at");
         return new QueueTicketView(rs.getObject("ticket_id", UUID.class), rs.getObject("campaign_id", UUID.class),
                 rs.getString("sku_id"), rs.getString("buyer_ref"), rs.getLong("sequence"), TicketStatus.valueOf(rs.getString("status")),
                 expiresAt == null ? null : expiresAt.toInstant(), rs.getBoolean("checkout_slot_held"));
