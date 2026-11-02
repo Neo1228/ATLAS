@@ -19,7 +19,7 @@ updated: 2026-11-02
 | 진행·이력 | [로드맵](09-delivery/roadmap.md), [마일스톤 로그](09-delivery/milestone-log.md), [세션 인계](09-delivery/session-handoff.md) |
 
 ## 빠른 안내
-- **Gate**: Gate 0/1 완료, Gate 2의 current Buyer journey 승인, Gate 3의 modular monolith·Java/Spring/PostgreSQL 설계 진행. [Roadmap](09-delivery/roadmap.md)
+- **Gate**: Gate 0/1 완료, Gate 2 Buyer journey 승인, Gate 3 architecture·stack 설계 완료. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), [PR #73](https://github.com/Neo1228/ATLAS/pull/73)에서 local runtime 구현·검증; merge 대기. Live payment·deployment·load test 별도 범위.
 - 장기 제품 역량과 미결정 범위: [Project Charter](00-governance/project-charter.md), [Requirements Index](02-requirements/requirements-index.md).
 - 추적 ID:
   - 결정·질문: [D](00-governance/decision-log.md), [Q](00-governance/assumptions-and-open-questions.md)
@@ -44,7 +44,7 @@ updated: 2026-11-02
 ## 도구와 작업 규칙
 - 저장소 안내: [README](../README.md), [작업 규칙](../AGENTS.md), [기여 안내](../CONTRIBUTING.md)
 - GitHub 양식: [PR template](../.github/PULL_REQUEST_TEMPLATE.md), [버그 양식](../.github/ISSUE_TEMPLATE/bug_report.yml), [변경 제안 양식](../.github/ISSUE_TEMPLATE/change_request.yml)
-- 필수 검사: [Markdown lint·PR checklist workflow](../.github/workflows/docs-lint.yml)
+- 필수 검사: [Markdown lint·PR checklist](../.github/workflows/docs-lint.yml), [Java/PostgreSQL CI](../.github/workflows/backend-ci.yml).
 
 ## 주요 도메인 결정과 이력
 - 대기열: [D-019~D-022/D-024/D-034](00-governance/decision-log.md), [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61), [Q-003](00-governance/assumptions-and-open-questions.md), [도메인 규칙](03-domain/business-rules.md).
@@ -52,4 +52,4 @@ updated: 2026-11-02
 - 초기 판매 범위: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34), [D-023/D-024/D-036](00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Gate 2는 quantity-SKU만 포함.
 - Gate 2 workload: [D-031~D-036](00-governance/decision-log.md), [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). 10k sessions/60m, 2×/4× synthetic stress, report-only; production target은 미정.
 - Workload 기록: [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
-- Gate 3 설계: [D-037~D-039](00-governance/decision-log.md), [ADR-0001](06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68). 현재 Buyer 흐름 5개 module, 단일 PostgreSQL schema, campaign counter row. Capacity envelope: 10k sessions/60m, 2×/4× synthetic; production resource sizing·SLO 미정.
+- Gate 3/runtime: [D-037~D-042](00-governance/decision-log.md), [ADR-0001](06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72). Current runtime is single-SKU and Fake PSP only; no production sizing or deployment claim.

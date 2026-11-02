@@ -1,5 +1,5 @@
 # 기여 및 작업 절차
-모든 변경은 GitHub Issue부터 기록. Gate 0/1 완료, Gate 2의 current Buyer journey 승인, Gate 3 아키텍처 설계 진행. Runtime implementation·dependency·payment call·deployment는 별도 승인 전 보류.
+모든 변경은 GitHub Issue부터 기록. Gate 2 Buyer 기준과 Gate 3 architecture/stack 기준 승인. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) 범위의 local Buyer runtime은 승인됨. Live payment·cloud deployment·production load claim은 별도 승인 전 보류.
 
 ## 1. 작업과 Issue
 1. 착수 전 GitHub Issue 생성. [버그 양식](.github/ISSUE_TEMPLATE/bug_report.yml) 또는 [제안 양식](.github/ISSUE_TEMPLATE/change_request.yml) 사용.
@@ -23,7 +23,7 @@
 ## 3. 검증
 - Markdown: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
 - 링크·용어·결정 상태도 확인. 실행하지 않은 검증은 성공으로 기록하지 않음.
-- 현재 자동화는 Markdown lint와 PR checklist. 앱 품질 도구는 기술 스택 승인 뒤 추가.
+- CI: Markdown lint·PR checklist와 JDK 25 `./gradlew check`; PostgreSQL/Testcontainers 통합 테스트에는 Docker 필요. Colima 설정은 [README](README.md). CI의 Temurin은 build/test 전용; production JDK 배포판 선택 아님.
 
 ## 4. Branch
 - 기본 branch: `main`; 직접 push 금지 (최초 seed 제외).
@@ -43,7 +43,7 @@
 - 같은 목적의 후속 결정은 기존 Issue 댓글로 누적. 독립 목적·위험·책임자·완료 기준·배포/복구 경계만 분리.
 - [PR template](.github/PULL_REQUEST_TEMPLATE.md) 필수. 복잡한 변경은 근거·대안·영향·검증을 짧은 한국어로 작성.
 - 복잡한 flow/state에만 Mermaid 사용. 모든 checkbox 완료; N/A는 구체적 이유 작성.
-- `main` 보호 설정: PR 필수, strict required checks (`Markdown lint`, `PR checklist`), linear history. 관리자도 적용 대상. Required reviewer는 0명; 승인 리뷰 정책은 별도 합의 필요.
+- `main` 보호 설정: PR 필수, strict required checks (`Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks`), linear history. 관리자도 적용 대상. Required reviewer는 0명; 승인 리뷰 정책은 별도 합의 필요.
 
 ## 7. 안전한 Git
 - 시작 전 `git status --short --branch`.

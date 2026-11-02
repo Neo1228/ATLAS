@@ -18,13 +18,13 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | Gate 0 | 프로젝트 범위·문서 기준 | ✓ 완료, 2026-10-29 승인 |
 | Gate 1 | 문제·사용자 목표·도메인 탐색 | ✓ 초기 single-SKU 시나리오 완료 (2026-10-30). 판매 유형·재고 정책·대기열 세부는 [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md) 미정 |
 | Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | ✓ 현재 Buyer journey 기준 승인. 정산·보안 범위는 미정 |
-| Gate 3 | Module·state·data·contract·risk·capacity estimate | → 진행 중: modular monolith, Java + Spring Boot + PostgreSQL; 초기 module/data 기준과 synthetic capacity envelope 기록. Physical schema·resource sizing은 미정 ([D-037~D-039](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)). 구현 미승인 |
-| Gate 4 | 승인된 구현의 synthetic load/failure 검증 | △ 제안 단계. 별도 Gate 승인 아님 |
-| M1 | Campaign, inventory reservation, order intent, 동시성 | ○ 계획 |
-| M2 | PayPal Sandbox/Fake PSP, payment state/recovery/idempotency | ○ 계획 |
-| M3 | 대기열 및 cache/event 대안 비교. 병목 측정 시에만 검토 ([EXP-001/002/008](../08-experiments/experiment-registry.md)) | ○ 조건부 계획 |
-| M4 | Tenant security, ledger, settlement, reconciliation, refund/adjustment | ○ 계획 |
-| M5 | Observability, backup/recovery, SLO/RTO/RPO 실험 | ○ 계획 |
+| Gate 3 | Module·state·data·contract·risk·capacity estimate | ✓ 설계 완료. Local runtime은 Issue #72에서 별도 승인; production sizing·deployment는 미정 ([D-037~D-042](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)) |
+| Gate 4 | Synthetic load/failure 검증 | ○ Local runtime 뒤 진행. 승인된 workload로 report-only; production SLO 아님 ([Q-008](../00-governance/assumptions-and-open-questions.md)) |
+| M1 | Local single-SKU Buyer flow: Campaign, Admission, Inventory, Order/Checkout, PostgreSQL, Fake PSP, tests/CI | ✓ 구현·검증 완료; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), [PR #73](https://github.com/Neo1228/ATLAS/pull/73) checks/merge pending |
+| M2 | Synthetic load/failure verification, report-only | ○ Gate 4 뒤 승인 환경에서 진행 |
+| M3 | PayPal Sandbox adapter, webhook·payment recovery; provider/API 결정 뒤 | ○ 계획 |
+| M4 | 장기 역량 확장: Tenant/security, catalog·판매 유형, settlement·reconciliation, refund/adjustment | ○ 계획 ([Project Charter](../00-governance/project-charter.md), [Q-002/Q-006/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md)) |
+| M5 | Observability, backup/recovery, SLO/RTO/RPO | ○ 운영 환경 선택 뒤 계획 |
 | M6 | 대안 비교, ADR 정리, portfolio 근거 | ○ 계획 |
 
 ## 초기 문서 작업 묶음
@@ -54,6 +54,6 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 - [Q-002](../00-governance/assumptions-and-open-questions.md): [D-035](../00-governance/decision-log.md)에서 reservation당 1개와 재고 conservation invariant 확정. [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63). 조정·재입고·다중 수량·post-claim 취소/환불 정책은 미정; D-027 recovery 기준 유지.
 - Gate 2 승인 기록: current Buyer journey와 report-only workload 기준 ([Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67)). Production SLO·환경·성능 보장은 승인 범위 밖.
 - Workload 이력: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56); [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
-- Gate 3 방향·초기 module/data 기준: modular monolith, Java + Spring Boot + PostgreSQL; 현재 Buyer 흐름의 Campaign/Admission/Inventory/Order-Checkout/Payment만 우선 설계. PostgreSQL 단일 schema, module별 write ownership, public API, invariant 단위의 짧은 transaction ([D-037~D-039](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68)).
-- 미정: exact versions, physical schema/isolation/lock recovery, infrastructure/deployment, provider API, production capacity/SLO. ADR의 synthetic envelope는 resource sizing 아님. 장기 Tenant security·Settlement/Reconciliation module 경계도 미고정. Runtime implementation 미승인.
-- [Q-008](../00-governance/assumptions-and-open-questions.md): burst factor/duration, production demand/SLO, capacity target, runtime dependencies와 deployment 방식 미정.
+- Gate 3: modular monolith, current-flow modules, PostgreSQL ownership/transactions, queue counter-row baseline, stack and runtime contract recorded ([D-037~D-042](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)).
+- Local implementation and verification complete on `feat/72-buyer-flow-runtime`. PR merge pending; live payment, deployment, production sizing and load claims remain outside the approval.
+- [Q-008](../00-governance/assumptions-and-open-questions.md): burst factor/duration, production demand/SLO, capacity target and deployment remain OPEN.
