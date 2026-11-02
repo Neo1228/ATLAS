@@ -18,7 +18,7 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | Gate 0 | 프로젝트 범위·문서 기준 | ✓ 완료, 2026-10-29 승인 |
 | Gate 1 | 문제·사용자 목표·도메인 탐색 | ✓ 초기 single-SKU 시나리오 완료 (2026-10-30). 판매 유형·재고 정책·대기열 세부는 [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md) 미정 |
 | Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | ✓ 현재 Buyer journey 기준 승인. 정산·보안 범위는 미정 |
-| Gate 3 | Module·state·data·contract·risk·capacity estimate | → 진행 중: modular monolith, Java + Spring Boot + PostgreSQL ([D-037](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)). 구현 미승인 |
+| Gate 3 | Module·state·data·contract·risk·capacity estimate | → 진행 중: modular monolith, Java + Spring Boot + PostgreSQL; 초기 module/data 기준과 synthetic capacity envelope 기록. Physical schema·resource sizing은 미정 ([D-037~D-039](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)). 구현 미승인 |
 | Gate 4 | 승인된 구현의 synthetic load/failure 검증 | △ 제안 단계. 별도 Gate 승인 아님 |
 | M1 | Campaign, inventory reservation, order intent, 동시성 | ○ 계획 |
 | M2 | PayPal Sandbox/Fake PSP, payment state/recovery/idempotency | ○ 계획 |
@@ -55,5 +55,5 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 - Gate 2 승인 기록: current Buyer journey와 report-only workload 기준 ([Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67)). Production SLO·환경·성능 보장은 승인 범위 밖.
 - Workload 이력: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56); [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
 - Gate 3 방향·초기 module/data 기준: modular monolith, Java + Spring Boot + PostgreSQL; 현재 Buyer 흐름의 Campaign/Admission/Inventory/Order-Checkout/Payment만 우선 설계. PostgreSQL 단일 schema, module별 write ownership, public API, invariant 단위의 짧은 transaction ([D-037~D-039](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68)).
-- 미정: exact versions, physical schema, isolation/lock recovery, infrastructure/deployment, provider API, production capacity/SLO. 장기 Tenant security·Settlement/Reconciliation module 경계는 미고정. Runtime implementation 미승인.
+- 미정: exact versions, physical schema/isolation/lock recovery, infrastructure/deployment, provider API, production capacity/SLO. ADR의 synthetic envelope는 resource sizing 아님. 장기 Tenant security·Settlement/Reconciliation module 경계도 미고정. Runtime implementation 미승인.
 - [Q-008](../00-governance/assumptions-and-open-questions.md): burst factor/duration, production demand/SLO, capacity target, runtime dependencies와 deployment 방식 미정.

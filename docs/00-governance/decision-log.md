@@ -32,7 +32,7 @@ links:
 | D-015 | ✓ Confirmed | 공통 Buyer/Seller 목표 + 유형별 차이를 탐색 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19) |
 | D-016 | ✓ Confirmed | 가상 Buyer goal: 공정한 구매 기회, 정확한 재고/예약 상태 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19), [Q-010](assumptions-and-open-questions.md) |
 | D-017 | ✓ Confirmed | 가상 Seller goal: 공정한 한정판매, overselling 방지 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19), [Q-010](assumptions-and-open-questions.md) |
-| D-018 | △ Proposed | Gate 2의 합성 report-only workload profile은 승인됨 ([D-031~D-033](decision-log.md)). Gate 3 capacity model 설계 진행 중. Gate 4 검증은 구현 승인 뒤 진행. Production 목표·환경은 미정. | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Q-008](assumptions-and-open-questions.md), [D-031~D-037](decision-log.md) |
+| D-018 | △ Proposed | Gate 2의 합성 report-only workload profile은 승인됨 ([D-031~D-033](decision-log.md)). Gate 3 capacity envelope는 [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)에 기록. Resource sizing, burst/environment, production SLO는 OPEN. Gate 4 검증은 구현 승인 뒤 진행. | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Q-008](assumptions-and-open-questions.md), [D-031~D-039](decision-log.md) |
 | D-019 | ✓ Confirmed | 가상 queue fairness 기준: 서버 sequence 오름차순. 운영 공정성 미검증 | [Issue #22](https://github.com/Neo1228/ATLAS/issues/22), [Q-003](assumptions-and-open-questions.md) |
 | D-020 | ✓ Confirmed | 자격 통과 후 queue admission 시 server sequence 발급 | [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Q-003](assumptions-and-open-questions.md) |
 | D-021 | ✓ Confirmed | 같은 논리 요청의 retry/중복 전달은 기존 ticket/sequence 재사용 | [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Q-003](assumptions-and-open-questions.md) |
