@@ -3,10 +3,10 @@ id: DOC-014
 title: Business Rules
 status: Draft
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: [FR-001]
-  adr: []
+  adr: [ADR-0001]
   experiments: [EXP-001]
 ---
 # 비즈니스 규칙
@@ -66,13 +66,13 @@ sequenceDiagram
             end
         end
     end
-    Note over Queue: 낮은 sequence 우선, campaign 안에서 unique. Restart 후 발급 순서 보존. Storage 방식 미정
+    Note over Queue: campaign 안에서 sequence unique. 재시작 뒤 발급 순서 보존. PostgreSQL 선택; schema·atomic allocation 미정
 ```
 
-Queue sequence diagram은 [D-019~D-024/D-034](../00-governance/decision-log.md) 기준. 남은 경계: [Q-003](../00-governance/assumptions-and-open-questions.md). [Issue #60](https://github.com/Neo1228/ATLAS/issues/60).
+대기열 흐름은 [D-019~D-024/D-034](../00-governance/decision-log.md) 기준. 남은 경계: [Q-003](../00-governance/assumptions-and-open-questions.md). [Issue #60](https://github.com/Neo1228/ATLAS/issues/60).
 
 ## 결제 중 재고 hold 흐름 — 초기 시나리오
-[D-025~D-030/D-035](../00-governance/decision-log.md)의 inventory/payment 경계. 초기 pool은 reservation당 1개이며 각 상태 전이 뒤 `available + reserved + claimed = initial capacity`; 각 값은 0 이상. PSP API, DB transaction, 저장 방식은 미정. TTL·recovery deadline도 OPEN ([Q-002/Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)).
+[D-025~D-030/D-035](../00-governance/decision-log.md)의 inventory/payment 경계. 초기 pool은 reservation당 1개이며 각 상태 전이 뒤 `available + reserved + claimed = initial capacity`; 각 값은 0 이상. PostgreSQL 선택; schema·transaction/locking, PSP API, TTL·recovery deadline은 미정 ([Q-002/Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)).
 
 ```mermaid
 stateDiagram-v2
@@ -106,4 +106,4 @@ stateDiagram-v2
     VoidPending --> Unknown: void 결과 불명
 ```
 
-Buyer-facing timer는 initial AUTHORIZE 제출 시 끝남. D-027 reconciliation이나 PSP operation deadline에는 영향 없음. TTL·recovery deadline 수치 OPEN ([Q-004/Q-005/Q-008](../00-governance/assumptions-and-open-questions.md)).
+Buyer에게 보여주는 timer는 첫 AUTHORIZE 제출 시 종료. D-027 reconciliation이나 PSP operation deadline에는 영향 없음. TTL·recovery deadline 수치는 미정 ([Q-004/Q-005/Q-008](../00-governance/assumptions-and-open-questions.md)).

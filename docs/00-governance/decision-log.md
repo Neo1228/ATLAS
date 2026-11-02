@@ -3,7 +3,7 @@ id: DOC-003
 title: Decision Log
 status: Current
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: []
   adr: [ADR-0001]
@@ -32,7 +32,7 @@ links:
 | D-015 | ✓ Confirmed | 공통 Buyer/Seller 목표 + 유형별 차이를 탐색 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19) |
 | D-016 | ✓ Confirmed | 가상 Buyer goal: 공정한 구매 기회, 정확한 재고/예약 상태 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19), [Q-010](assumptions-and-open-questions.md) |
 | D-017 | ✓ Confirmed | 가상 Seller goal: 공정한 한정판매, overselling 방지 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19), [Q-010](assumptions-and-open-questions.md) |
-| D-018 | △ Proposed | Gate 2 workload profile → Gate 3 capacity estimate → Gate 4 synthetic validation. 수치 TBD, 미승인 | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Q-008](assumptions-and-open-questions.md) |
+| D-018 | △ Proposed | Gate 2의 합성 report-only workload profile은 승인됨 ([D-031~D-033](decision-log.md)). Gate 3 capacity model 설계 진행 중. Gate 4 검증은 구현 승인 뒤 진행. Production 목표·환경은 미정. | [Issue #20](https://github.com/Neo1228/ATLAS/issues/20), [Q-008](assumptions-and-open-questions.md), [D-031~D-037](decision-log.md) |
 | D-019 | ✓ Confirmed | 가상 queue fairness 기준: 서버 sequence 오름차순. 운영 공정성 미검증 | [Issue #22](https://github.com/Neo1228/ATLAS/issues/22), [Q-003](assumptions-and-open-questions.md) |
 | D-020 | ✓ Confirmed | 자격 통과 후 queue admission 시 server sequence 발급 | [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Q-003](assumptions-and-open-questions.md) |
 | D-021 | ✓ Confirmed | 같은 논리 요청의 retry/중복 전달은 기존 ticket/sequence 재사용 | [Issue #24](https://github.com/Neo1228/ATLAS/issues/24), [Q-003](assumptions-and-open-questions.md) |
@@ -51,6 +51,7 @@ links:
 | D-034 | ✓ Confirmed | Queue ticket 수명주기: active ticket의 same key·same payload 재시도는 기존 ticket/sequence 반환. Payload 변경은 거절하고 ticket 유지. Expiry 후 re-entry는 새 key·unique sequence로 tail 배치. | [Issue #60](https://github.com/Neo1228/ATLAS/issues/60), [PR #61](https://github.com/Neo1228/ATLAS/pull/61), [D-019~D-022](decision-log.md); [Q-003](assumptions-and-open-questions.md), [BR-001](../03-domain/business-rules.md), [INV-002](../03-domain/invariants.md), [EXP-011](../08-experiments/experiment-registry.md); [REF-027/028](reference-register.md) |
 | D-035 | ✓ Confirmed | 초기 재고 계약: campaign 소유 pool에서 reservation당 1개. `available + reserved + claimed = initial capacity`, 각 수량은 0 이상. Hold 시 reserved, capture success 시 claimed, confirmed non-payment 및 필요한 authorization void/expiry 확인 뒤 release. 판매 중 조정·재입고와 post-claim 취소·환불 정책은 초기 범위 제외. | [Issue #62](https://github.com/Neo1228/ATLAS/issues/62), [PR #63](https://github.com/Neo1228/ATLAS/pull/63), [D-017/D-023/D-025~D-030](decision-log.md); [Q-002/Q-004](assumptions-and-open-questions.md), [FR-001](../02-requirements/requirements-index.md), [BR-002](../03-domain/business-rules.md), [INV-001](../03-domain/invariants.md), [EXP-001](../08-experiments/experiment-registry.md) |
 | D-036 | ✓ Confirmed | Gate 2는 D-023/D-024/D-035의 single quantity-SKU Buyer journey를 대상으로 진행. Assigned-seat와 time-slot은 현재 scenario에 추가하지 않으며 Q-010 장기 범위로 OPEN. Production target·implementation 미승인. | [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67), [D-023/D-024/D-031~D-035](decision-log.md); [Q-002/Q-010](assumptions-and-open-questions.md), [FR-001](../02-requirements/requirements-index.md), [Personas & Jobs](../01-discovery/personas-and-jobs.md); [REF-045~049](reference-register.md) |
+| D-037 | ✓ Confirmed | Gate 2의 current Buyer journey 기준 승인. Gate 3 baseline: Modular Monolith First, Java + Spring Boot + PostgreSQL, PostgreSQL을 durable system of record로 사용. 별도 queue/cache/broker는 bottleneck을 측정하고 비교 가능한 부하 테스트에서 이점을 확인한 경우에만 검토. 버전, schema, transaction/locking, infrastructure, PayPal product/API는 미정. 구현은 미승인. | [Issue #68](https://github.com/Neo1228/ATLAS/issues/68), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Q-003/Q-008/Q-009](assumptions-and-open-questions.md) |
 
 D-033의 Ticketmaster 기반 날짜별 구매자 계산은 합성 test input을 가늠하기 위한 근사치. 초대와 전환이 균등하다는 가정이며, 실제 날짜별 고유 구매자 수는 공개되지 않음. 실측·대표 수요로 해석 금지.
 
@@ -68,4 +69,4 @@ D-027은 release 조건만 확정. Inventory TTL·PayPal deadline·retry/key ret
 
 D-026은 초기 AUTHORIZE → CAPTURE 순서와 claim 기준만 결정. TTL/cancel recovery는 [D-027](decision-log.md)/[Q-004/Q-005](assumptions-and-open-questions.md) 참조. 수치·retry/retention·compensation OPEN. 구현 승인 아님.
 
-✓ Gate 0 승인. Gate 1 진행 중. Gate 2/3과 구현 진입은 미승인.
+✓ Gate 0/1 완료. Gate 2의 current Buyer journey 기준 승인. Gate 3 아키텍처 설계 진행. Runtime implementation/deployment는 별도 승인 대상.

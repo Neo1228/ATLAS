@@ -3,7 +3,7 @@ id: DOC-012
 title: Milestone Log
 status: Current
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: []
   adr: [ADR-0001]
@@ -133,15 +133,21 @@ links:
 - 제외: multi-unit reservation, 판매 중 재고 조정·재입고, post-claim 취소·환불 정책. D-027 checkout expiry/authorization void 복구는 유지. Storage/atomicity 미정.
 - 실험 미실행. [EXP-001](../08-experiments/experiment-registry.md)는 ○ Planned.
 
-## 2026-10-30 — 판매 유형 비교·Gate 2 범위
-- 비교·선택: [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Assigned-seat는 seat identity/map·개별 hold, time-slot은 시간대별 capacity·도착/미방문 경계를 추가. 제품/vendor 사례는 backend best practice 근거 아님.
-- 선택 A: 기존 quantity-SKU scenario 유지, Gate 2 full Buyer journey 진행. Assigned-seat/time-slot은 현재 범위에 넣지 않음; 장기 판매 유형은 [Q-010](../00-governance/assumptions-and-open-questions.md) OPEN.
-- 결정·근거: [D-036](../00-governance/decision-log.md), [REF-045~049](../00-governance/reference-register.md), [Personas & Jobs](../01-discovery/personas-and-jobs.md).
-- Commit: [7dc9ca6](https://github.com/Neo1228/ATLAS/commit/7dc9ca6). Required checks와 merge metadata는 [PR #65](https://github.com/Neo1228/ATLAS/pull/65)에서 확인.
-- 제약: production demand/SLO, storage/API/queue tech, architecture 및 runtime 구현 미선택. Gate 3 이후 별도 승인.
+## 2026-10-30 — 판매 유형 비교와 Gate 2 범위 선택
+- 비교·선택: [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Assigned-seat는 좌석 식별·seat map·개별 hold, time-slot은 시간대별 capacity·도착/미방문 경계를 추가. 제품/vendor 사례는 backend best practice의 증거가 아님.
+- 선택 A: 기존 quantity-SKU 시나리오로 Gate 2 full Buyer journey 진행. Assigned-seat/time-slot은 현재 범위 밖; 장기 판매 유형은 [Q-010](../00-governance/assumptions-and-open-questions.md) 미정.
+- 근거: [D-036](../00-governance/decision-log.md), [REF-045~049](../00-governance/reference-register.md), [Personas & Jobs](../01-discovery/personas-and-jobs.md).
+- Commit: [7dc9ca6](https://github.com/Neo1228/ATLAS/commit/7dc9ca6). Required checks와 merge 기록은 [PR #65](https://github.com/Neo1228/ATLAS/pull/65) 참조.
 
-## 2026-11-02 — Gate 2 Buyer journey acceptance candidates
-- 제안: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). Full Buyer journey의 queue·inventory·payment recovery·report-only workload 기준을 기존 D-019~D-036에서 합성.
-- 범위: FR-001/FR-002/NFR-002 Proposed 유지. Security/settlement, provider-specific deadlines, production SLO, burst/environment, runtime/technology는 OPEN.
-- 추적: [BR-001/002/003](../03-domain/business-rules.md), [INV-001/002/003](../03-domain/invariants.md), [EXP-001/003/004/005/010/011](../08-experiments/experiment-registry.md). No experiment or runtime result.
-- Commit: [2884e94](https://github.com/Neo1228/ATLAS/commit/2884e94). Required checks와 merge metadata는 [PR #67](https://github.com/Neo1228/ATLAS/pull/67)에서 확인.
+## 2026-11-02 — Gate 2 Buyer 여정 기준 승인
+- 승인 기록: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). 현재 single-SKU Buyer journey와 report-only workload 기준 승인. Production readiness 승인은 아님.
+- 범위: FR-001/FR-002/NFR-002 Gate 2 기준 승인. FR-003 정산과 NFR-001 보안은 Proposed. Provider deadline, production SLO, burst/environment는 미정.
+- 추적: [BR-001/002/003](../03-domain/business-rules.md), [INV-001/002/003](../03-domain/invariants.md), [EXP-001/003/004/005/010/011](../08-experiments/experiment-registry.md). 실험·runtime 결과 없음.
+- Commit: [2884e94](https://github.com/Neo1228/ATLAS/commit/2884e94), [773ea6f](https://github.com/Neo1228/ATLAS/commit/773ea6f). Merge: [`b85a0ec1ec6f0d0c0a72089176b513a1bce47d3f`](https://github.com/Neo1228/ATLAS/commit/b85a0ec1ec6f0d0c0a72089176b513a1bce47d3f).
+
+## 2026-11-02 — Gate 3 아키텍처 방향 승인
+- 선택: [Issue #68](https://github.com/Neo1228/ATLAS/issues/68). Gate 2 current Buyer journey 기준 승인. Modular Monolith First와 Java + Spring Boot + PostgreSQL 선택.
+- 방향: PostgreSQL을 초기 durable system of record로 사용. Application module이 domain logic과 data access를 소유. 별도 queue/cache/broker는 bottleneck과 비교 가능한 load test 이점을 확인한 경우에만 검토.
+- 근거·한계: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [REF-023](../00-governance/reference-register.md), [REF-050~052](../00-governance/reference-register.md). 각 사례는 해당 환경에 한정되며 ATLAS capacity를 입증하지 않음.
+- 미정: exact versions, module/API boundaries, schema/locking/transactions, infrastructure, PayPal product/API, security·settlement contracts. Runtime implementation 미승인.
+- 실험: [EXP-012](../08-experiments/experiment-registry.md) ○ Planned. Gate 4 검증·runtime implementation 미실행.

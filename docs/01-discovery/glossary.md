@@ -3,7 +3,7 @@ id: DOC-005
 title: Glossary
 status: Draft
 owner: Project Owner
-updated: 2026-10-30
+updated: 2026-11-02
 links:
   requirements: []
   adr: []
@@ -62,7 +62,7 @@ links:
 
 | 용어 | 설명 | ATLAS 상태 |
 |---|---|---|
-| Synthetic workload | 테스트용으로 생성한 traffic; 실제 사용자 traffic과 다름. | △ Proposed |
+| Synthetic workload | 테스트용으로 생성한 traffic; 실제 사용자 traffic과 다름. | ✓ Gate 2 report-only 기준 |
 | Workload profile | 선언된 test의 Buyer journey, request/transaction mix, offered rate, arrival model, payload, concurrency, duration. | [D-031~D-033](../00-governance/decision-log.md): full Buyer session, hybrid arrivals, 10k sessions/60m synthetic baseline, geometric 2×/4× stress, sessions/s primary, report-only. Production demand/SLO와 burst parameters OPEN |
 | Ramp-up | 선언된 시간 동안 offered rate/concurrency를 점진적으로 높이는 방식. | Workload parameter |
 | Burst | 기준보다 높은 offered rate를 짧게 발생시키는 부하. | Workload parameter |
