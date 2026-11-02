@@ -6,7 +6,7 @@ owner: Project Owner
 updated: 2026-11-02
 links:
   requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
-  adr: [ADR-0001, ADR-0002]
+  adr: [ADR-0001, ADR-0003, ADR-0004]
   experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012]
 ---
 # 로드맵
@@ -56,4 +56,6 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 - Workload 이력: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56); [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
 - Gate 3: modular monolith, current-flow modules, PostgreSQL ownership/transactions, queue counter-row baseline, stack and runtime contract recorded ([D-037~D-042](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)).
 - Local implementation and verification merged in [PR #73](https://github.com/Neo1228/ATLAS/pull/73), merge [`223a09320c3206b066bc224bde63c09e4ac6b0c5`](https://github.com/Neo1228/ATLAS/commit/223a09320c3206b066bc224bde63c09e4ac6b0c5). Live payment, deployment, production sizing and load claims remain outside the approval.
+- Current package/persistence structure: [D-047/D-048](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md). Five `*-module` domains plus `application-module`; public `.service`/`.dto.request`/`.dto.response`/`.exception`, lifecycle enums shared from `.persistence.state`, entity/repository kept module-private; implementation in `.service.impl`/`.persistence.*`. CRUD uses JPA; concurrency-specific SQL remains JDBC/native. ArchUnit checks package dependencies. No package-info markers, CQRS or `.internal`.
+- Current verification (2026-11-03): `./gradlew check :application-module:bootJar` passed, including Campaign/Admission unit suites and the PostgreSQL/Testcontainers application suites; JPA `ddl-auto=validate` passed. `bootRun` with Compose PostgreSQL applied V1–V5 and GET of an unknown campaign returned 404 `CAMPAIGN_NOT_FOUND`. Markdown lint: 33 files, 0 issues. [PR #83](https://github.com/Neo1228/ATLAS/pull/83) is open; [Issue #82](https://github.com/Neo1228/ATLAS/issues/82) uses the current scope and closes on merge. No production/load claim.
 - [Q-008](../00-governance/assumptions-and-open-questions.md): burst factor/duration, production demand/SLO, capacity target and deployment remain OPEN.

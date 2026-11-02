@@ -24,7 +24,7 @@
 
 ## 승인된 방향
 - **Architecture:** Modular Monolith First. 한 deployment 안에서 module boundary와 data ownership 유지.
-- **Stack:** JDK 25 LTS, Spring Boot 4.1.2, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Spring Modulith 2.1.2 and Testcontainers 2.0.5 are test-scope; Flyway uses the Boot 4 starter ([D-040](../../00-governance/decision-log.md), [REF-066/067](../../00-governance/reference-register.md)). CI uses Temurin 25; production JDK distribution/license remains OPEN.
+- **Stack:** JDK 25 LTS, Spring Boot 4.1.2, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Testcontainers 2.0.5 verifies PostgreSQL behavior in test scope; ArchUnit 1.5.1 enforces package dependency rules without package-info markers. Boot 4 Flyway uses its starter ([D-040](../../00-governance/decision-log.md), [REF-065~067/098](../../00-governance/reference-register.md)). CI uses Temurin 25; production JDK distribution/license remains OPEN.
 - PostgreSQL is the durable system of record. Module ownership and short-transaction rules are [D-038](../../00-governance/decision-log.md); campaign counter-row allocation is [D-039](../../00-governance/decision-log.md). Local schema/migrations are implemented under [Issue #72](https://github.com/Neo1228/ATLAS/issues/72); production isolation and lock recovery remain OPEN.
 - 초기 설계에 별도 queue/cache/broker 없음. Load test에서 bottleneck과 비교 가능한 이점을 확인한 경우에만 추가 검토 ([EXP-012](../../08-experiments/experiment-registry.md)).
 - Gate 2 current Buyer journey와 Gate 3 design 기준 승인. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)에서 local current-flow runtime만 추가 승인; live payment·deployment·production capacity claim은 별도 대상.
@@ -72,7 +72,7 @@ flowchart LR
 - **Data ownership:** 한 PostgreSQL database/schema. Module별 table과 write ownership, cross-module 호출은 public API. 다른 module의 repository에 직접 접근 금지.
 - **Transaction:** 필요한 domain invariant만 원자화하는 짧은 transaction. Module API는 같은 local transaction에 참여할 수 있으나, PSP network call은 transaction 밖. Isolation, 실제 경계·schema·lock recovery는 미정.
 - **Queue sequence:** Admission initializes/locks its campaign counter row and inserts the ticket in the same transaction ([D-039](../../00-governance/decision-log.md)). First eligible join creates the row lazily; committed order is stored in PostgreSQL. Same-campaign contention remains an approved workload measurement target, not an observed result. PostgreSQL sequence gaps/commit-order mismatch make it unsuitable here ([REF-057](../../00-governance/reference-register.md)).
-- **Boundary checks:** Spring Modulith 2.1.2 test scope; `ApplicationModules.verify()` is part of Gradle checks ([REF-055/063/064](../../00-governance/reference-register.md)). It verifies package boundaries/cycles, not domain correctness or performance.
+- **Boundary checks:** ArchUnit 1.5.1 test-scope rules enforce the allowed Gradle-module package dependencies without package-info annotations ([REF-098](../../00-governance/reference-register.md)). Rules validate only the dependencies written for ATLAS, not domain correctness or performance.
 - Capacity envelope는 승인된 Q-008 profile 사용. 단위·계산·미정 입력은 아래 표에 정리; production target은 없음.
 - Local inventory baseline: atomic conditional `UPDATE` and per-order transaction lock. Production lock strategy/performance comparison remains [EXP-002](../../08-experiments/experiment-registry.md); no capacity claim.
 - Local runtime code and failure-path tests are tracked by [Issue #72](https://github.com/Neo1228/ATLAS/issues/72). Live provider, deployment, and load verification remain separate.
@@ -99,5 +99,5 @@ flowchart LR
 
 ## 근거와 한계
 - [REF-023](../../00-governance/reference-register.md): Shopify의 inventory 사례는 MySQL·Shopify 환경에 한정. PostgreSQL schema나 처리량 목표로 일반화하지 않음.
-- [REF-050/052~055](../../00-governance/reference-register.md): modular monolith, boundary, package 설계 사례. Shopify 회고는 domain 이름만으로 runtime dependency를 추정하지 말라고 경고. Thoughtworks 자료는 설계 의견이며 benchmark 아님. Spring Modulith는 경계 검사 도구 후보일 뿐.
+- [REF-050/052~055/098](../../00-governance/reference-register.md): modular monolith and boundary-check examples. Shopify warns semantic package names/static rules may diverge from runtime dependencies. ArchUnit enforces only the dependency rules ATLAS defines; it does not establish domain correctness.
 - [REF-056~058](../../00-governance/reference-register.md): PostgreSQL lock/sequence semantics와 vendor inventory 사례. 배포 PostgreSQL version은 OPEN. Vendor 성능 주장은 독립 검증되지 않음.

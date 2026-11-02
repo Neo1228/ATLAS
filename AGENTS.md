@@ -13,13 +13,17 @@
 - 코드 변경 전 요구사항·정책·검증 계약 확인. 중요한 설계 선택은 ADR로 기록.
 - library·plugin 도입은 회피하거나 자동 선택하지 않음. 기존 JDK/Spring/DB 기능, 유지관리 중인 library, 직접 구현을 비교. 성숙한 library가 요구 기능·호환성·운영 비용에 맞으면 직접 재구현보다 우선 사용. capability gap, 대안, maintenance·security·license 비용, runtime/test/build scope를 Issue/PR에 기록.
 - Repository split은 기본 금지. 독립 release/team/data ownership 또는 측정된 scaling·security 경계와 승인된 ADR이 있을 때만 분리.
-- Java implementation code: FQCN 금지. Type import 사용. Gradle `check`의 Checkstyle 검사로 강제.
+- Java implementation code: FQCN 금지, import 사용. Gradle `check`의 Checkstyle 검사로 강제.
 - Java 주석은 자연스러운 한국어 우선. 표준 type/API/protocol 이름은 English 유지. 주석은 코드 반복 대신 이유·invariant·외부 제약 설명.
-- HTTP error는 module-owned exception을 root `AtlasApiExceptionHandler`에서 RFC 9457 `ProblemDetail` + stable `code`로 변환. Controller별 응답 envelope 금지.
-- HTTP GET/read query는 domain state를 변경하지 않음. Expiry/retry/promotion은 command 또는 scheduler 소유; 조회는 last persisted state 반환.
+- 각 도메인은 하나의 `*Exception`과 `Code` enum으로 업무 실패를 표현하고, `application-module`의 단일 `application.exception.GlobalExceptionHandler`가 이를 RFC 9457 `ProblemDetail` + stable `code`로 변환. Raw `IllegalArgumentException`을 client validation 응답으로 노출하지 않음.
+- HTTP GET/read query는 domain state를 변경하지 않음. 만료·retry·promotion은 상태 변경 요청 또는 scheduler 소유; 조회는 last persisted state 반환.
 - Cross-cutting utility를 위해 `common` package/module을 선제 생성하지 않음. Clock/error mapping처럼 실제 application-wide policy만 root composition에 두고, 반복된 domain ownership이 생기면 ADR 검토.
+- 도메인 코드는 `<capability>-module`에 둠. 직접 하위 `.service`는 contract, `.dto.request`는 입력, `.dto.response`는 출력, `.exception`은 모듈 오류. Lifecycle state enum은 `.persistence.state`에서 소유하고 필요한 cross-module contract에 공유하되, JPA entity/repository는 공개하지 않음. 구현·scheduled workflow는 `.service.impl`, JPA mapping/CRUD는 `.persistence.entity`·`.persistence.repository`, provider는 nested `.provider.*`. HTTP는 `application-module`의 `.application.controller.<domain>`·`.application.controller.dto`; 공통 설정·오류도 application 소유. Direct/nested package 경계로 public contract와 내부 구현을 구분하며 `package-info.java` marker 금지.
+- CRUD는 JPA; 근거 있는 PostgreSQL 동시성 SQL만 repository 내부 JDBC/native query로 작성. Flyway가 schema를 소유하고 Hibernate는 `validate`만 수행. 범용 base, mapper, forwarding-only scheduler, speculative layer 금지.
+- CQRS·CommandBus·command/query handler·mediator 및 `internal` 금지. Module input은 `*Request` record. HTTP request record는 transport field shape/validation이 domain request와 다를 때만 별도로 둠; mapping 없는 거울 DTO 금지.
 - 문서·Issue·PR은 프로젝트 맥락을 모르는 독자를 기준으로 작성. 내부 shorthand/ID만 나열하지 말고, 복잡한 변경은 배경·사실/가정·선택 이유·대안·영향·검증을 본문에 설명하고 기준 문서에 연결.
 - 흐름/상태가 복잡한 경우 Mermaid 등으로 시각화. 중복 그림 금지, 미정 경계 표시. 단순 변경에 도식 강제 금지.
+- 테스트는 소비자 관찰 가능 동작, 경계, 상태 전이, 불변조건, 동시성, 오류 계약에서 아직 막지 못한 구체적 회귀 위험이 있을 때만 추가. Wiring·forwarding·단순 mapping·우연한 기본값·중복 assertion만 고정하는 테스트 금지; 같은 동작을 반복 검증하는 테스트는 제거. PostgreSQL SQL/locking 의미가 대상이면 실제 PostgreSQL 경계에서 검증하고, 그 외에는 동작을 증명하는 가장 작은 테스트 경계를 사용. Mock은 fidelity 위험이 있을 때 피할 수 있지만 전면 금지하지 않음 ([REF-099](docs/00-governance/reference-register.md)).
 - PR 템플릿 모든 체크박스 완료. 병합 전 `Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks` 통과.
 - 외부 PSP 상태와 주문 상태, 내부 정산과 실제 지급 구분. 초기 범위에서 실결제·개인정보·판매사 지급 제외.
 - 모든 작업은 Issue, trace ID, 변경 파일, 검증, commit/PR로 추적. 같은 목적의 후속 선택은 기존 Issue에서 이어가기.

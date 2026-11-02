@@ -1,0 +1,24 @@
+plugins {
+    id 'org.springframework.boot' version '4.1.2'
+}
+
+dependencies {
+    implementation project(':campaign-module')
+    implementation project(':admission-module')
+    implementation project(':inventory-module')
+    implementation project(':order-module')
+    implementation project(':payment-module')
+
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation 'com.tngtech.archunit:archunit:1.5.1'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+}

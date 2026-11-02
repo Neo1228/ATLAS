@@ -15,7 +15,7 @@ updated: 2026-11-02
 | 사용자 목표·용어 | [가상 사용자 목표](01-discovery/personas-and-jobs.md), [용어집](01-discovery/glossary.md) |
 | 요구사항 | [요구사항 인덱스](02-requirements/requirements-index.md) |
 | 도메인 규칙·불변조건 | [비즈니스 규칙](03-domain/business-rules.md), [불변조건](03-domain/invariants.md) |
-| 설계·실험 | [ADR-0001 — architecture](06-decisions/adr/ADR-0001-architecture-style.md), [ADR-0002 — technology/shared processing](06-decisions/adr/ADR-0002-runtime-technology-review.md), [ADR 양식](06-decisions/adr/TEMPLATE.md), [실험 목록](08-experiments/experiment-registry.md), [실험 양식](08-experiments/TEMPLATE.md) |
+| 설계·실험 | [ADR-0001 — architecture](06-decisions/adr/ADR-0001-architecture-style.md), [ADR-0002 — technology/shared processing](06-decisions/adr/ADR-0002-runtime-technology-review.md), [ADR-0003 — Gradle module boundaries](06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004 — JPA and SQL boundary](06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md), [실험 목록](08-experiments/experiment-registry.md), [실험 양식](08-experiments/TEMPLATE.md) |
 | 진행·이력 | [로드맵](09-delivery/roadmap.md), [마일스톤 로그](09-delivery/milestone-log.md), [세션 인계](09-delivery/session-handoff.md) |
 
 ## 빠른 안내
