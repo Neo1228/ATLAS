@@ -13,7 +13,7 @@
 - 코드 변경 전 요구사항·정책·검증 계약 확인. 중요한 설계 선택은 ADR로 기록.
 - 문서·Issue·PR은 프로젝트 맥락을 모르는 독자를 기준으로 작성. 내부 shorthand/ID만 나열하지 말고, 복잡한 변경은 배경·사실/가정·선택 이유·대안·영향·검증을 본문에 설명하고 기준 문서에 연결.
 - 흐름/상태가 복잡한 경우 Mermaid 등으로 시각화. 중복 그림 금지, 미정 경계 표시. 단순 변경에 도식 강제 금지.
-- PR 템플릿 모든 체크박스 완료. 병합 전 `PR checklist`와 `Markdown lint` 필수 검사 통과.
+- PR 템플릿 모든 체크박스 완료. 병합 전 `Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks` 통과.
 - 외부 PSP 상태와 주문 상태, 내부 정산과 실제 지급 구분. 초기 범위에서 실결제·개인정보·판매사 지급 제외.
 - 모든 작업은 Issue, trace ID, 변경 파일, 검증, commit/PR로 추적. 같은 목적의 후속 선택은 기존 Issue에서 이어가기.
 - 독립된 목적·완료 기준·위험 경계만 분리. 병합 PR은 plain-text Closes #N, 일부 반영은 Refs #N; 같은 줄에 Issue link 추가.
