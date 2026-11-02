@@ -13,7 +13,7 @@ links:
 
 ## 현재
 - 저장소: 비공개 [Neo1228/ATLAS](https://github.com/Neo1228/ATLAS).
-- 진행: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture/stack 확정. [Issue #78](https://github.com/Neo1228/ATLAS/issues/78) 범위는 [PR #79](https://github.com/Neo1228/ATLAS/pull/79)에서 검토 중; `refactor/78-architecture-review`. 완료 기록 전 PR merge와 required checks 확인 필요.
+- 진행: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture/stack 확정. [Issue #78](https://github.com/Neo1228/ATLAS/issues/78) closed; [PR #79](https://github.com/Neo1228/ATLAS/pull/79) squash-merged to `main` at [`d954d4f4981298c5740f9aef31abb28b05e77e9f`](https://github.com/Neo1228/ATLAS/commit/d954d4f4981298c5740f9aef31abb28b05e77e9f).
 - Gate 2 범위: [D-031~D-033](../00-governance/decision-log.md)의 full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress. Report-only; 실험 결과 없음.
 - Gate 2 승인 기록: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67), merge [`b85a0ec`](https://github.com/Neo1228/ATLAS/commit/b85a0ec). 기준만 승인; runtime 결과 없음.
 - Gate 3 방향: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), modular monolith, Java + Spring Boot + PostgreSQL. 초기 module map: Campaign, Admission, Inventory, Order/Checkout, Payment. 단일 schema와 module별 write ownership. Campaign counter row + ticket transaction 선택. 별도 queue/cache/broker는 측정된 bottleneck과 비교 이점 확인 전 미도입.
@@ -30,7 +30,7 @@ links:
 - TTL/cancel 시 capture 확인. Active authorization은 void. 확정된 non-payment와 void/expiry 확인 후에만 stock release ([D-025~D-027](../00-governance/decision-log.md)).
 
 ## 미정·다음
-- Issue #78 현재 검증: JDK 25 + PostgreSQL/Testcontainers `./gradlew check` 18 passed, 0 failed/skipped. Markdown lint 25 files, 0 issues; relative link check 25 files, missing 0. PR #79의 GitHub required checks는 별도 확인 중.
+- Issue #78 verification: JDK 25 + PostgreSQL/Testcontainers `./gradlew check` 18 passed, 0 failed/skipped; Markdown lint 25 files, 0 issues; relative link check 25 files, missing 0. PR #79 required Java/PostgreSQL, Markdown lint and PR checklist all passed; post-merge Backend CI run [41395666245](https://github.com/Neo1228/ATLAS/actions/runs/41395666245) passed.
 - Final HTTP smoke after Issue #75 code changes: campaign create/open → queue sequence 1 → checkout → Fake PSP `CAPTURED` → order `PAID`, inventory `CLAIMED`. No load/performance claim.
 - Next: Gate 4 synthetic load/failure scope. 10k/60m, 2×/4× profile은 report-only; environment, request mix, latency, production SLO/capacity는 OPEN ([Q-008](../00-governance/assumptions-and-open-questions.md)). Live PSP/deployment는 별도 승인 대상.
 - 완료: [Issue #75](https://github.com/Neo1228/ATLAS/issues/75) closed; [PR #76](https://github.com/Neo1228/ATLAS/pull/76) squash-merged. Main merge SHA [`d2f9e53766b983902d3bc4ad1e2cfea40a2888ce`](https://github.com/Neo1228/ATLAS/commit/d2f9e53766b983902d3bc4ad1e2cfea40a2888ce). Merge details and commit grouping: [Milestone Log](milestone-log.md).
@@ -59,7 +59,7 @@ links:
 | Gate 3 초기 module/data 설계 | [Issue #68 결정 댓글](https://github.com/Neo1228/ATLAS/issues/68#issuecomment-6566630187); [PR #70](https://github.com/Neo1228/ATLAS/pull/70) 병합; commits [`2456d08`](https://github.com/Neo1228/ATLAS/commit/2456d08), [`893b138`](https://github.com/Neo1228/ATLAS/commit/893b138); merge [`9bd90ff`](https://github.com/Neo1228/ATLAS/commit/9bd90ffdc25321573d2e43bb88225f4bdf2578a8); [D-038/D-039](../00-governance/decision-log.md); [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md); [REF-050/052~058](../00-governance/reference-register.md). Runtime 승인·기록은 [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) |
 | Local Buyer runtime | [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) closed; [PR #73](https://github.com/Neo1228/ATLAS/pull/73) squash-merged; merge [`223a09320c3206b066bc224bde63c09e4ac6b0c5`](https://github.com/Neo1228/ATLAS/commit/223a09320c3206b066bc224bde63c09e4ac6b0c5). 13 PostgreSQL tests passed; HTTP smoke verified queue sequence after app restart. |
 | FQCN·Order·expiry 경계 리뷰 | [Issue #75](https://github.com/Neo1228/ATLAS/issues/75) closed; [PR #76](https://github.com/Neo1228/ATLAS/pull/76) squash-merged; main merge [`d2f9e53766b983902d3bc4ad1e2cfea40a2888ce`](https://github.com/Neo1228/ATLAS/commit/d2f9e53766b983902d3bc4ad1e2cfea40a2888ce); 3 logical branch commits; 14 tests, Checkstyle, PR/Markdown CI passed. Performance limits and external evidence: [Milestone Log](milestone-log.md), [REF-053~055/068~073](../00-governance/reference-register.md). |
-| 조회·API 오류·기술 선택 검토 | [Issue #78](https://github.com/Neo1228/ATLAS/issues/78); [PR #79](https://github.com/Neo1228/ATLAS/pull/79) 검토 중; [ADR-0002](../06-decisions/adr/ADR-0002-runtime-technology-review.md), [D-044~D-046](../00-governance/decision-log.md). JDK 25/PostgreSQL 통합 18 tests 통과; Gate 4 실험 미실행 |
+| 조회·API 오류·기술 선택 검토 | [Issue #78](https://github.com/Neo1228/ATLAS/issues/78) closed; [PR #79](https://github.com/Neo1228/ATLAS/pull/79) squash-merged [`d954d4f`](https://github.com/Neo1228/ATLAS/commit/d954d4f4981298c5740f9aef31abb28b05e77e9f); [ADR-0002](../06-decisions/adr/ADR-0002-runtime-technology-review.md), [D-044~D-046](../00-governance/decision-log.md). 18 PostgreSQL tests; required PR and post-merge CI passed; Gate 4 experiment not run |
 
 - 진행 현황: [Roadmap](roadmap.md).
 - 완료 이력: [Milestone Log](milestone-log.md).
