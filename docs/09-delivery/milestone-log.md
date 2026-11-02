@@ -146,8 +146,14 @@ links:
 - Commit: [2884e94](https://github.com/Neo1228/ATLAS/commit/2884e94), [773ea6f](https://github.com/Neo1228/ATLAS/commit/773ea6f). Merge: [`b85a0ec1ec6f0d0c0a72089176b513a1bce47d3f`](https://github.com/Neo1228/ATLAS/commit/b85a0ec1ec6f0d0c0a72089176b513a1bce47d3f).
 
 ## 2026-11-02 — Gate 3 아키텍처 방향 승인
-- 선택: [Issue #68](https://github.com/Neo1228/ATLAS/issues/68). Gate 2 current Buyer journey 기준 승인. Modular Monolith First와 Java + Spring Boot + PostgreSQL 선택.
-- 방향: PostgreSQL을 초기 durable system of record로 사용. Application module이 domain logic과 data access를 소유. 별도 queue/cache/broker는 bottleneck과 비교 가능한 load test 이점을 확인한 경우에만 검토.
-- 근거·한계: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [REF-023](../00-governance/reference-register.md), [REF-050~052](../00-governance/reference-register.md). 각 사례는 해당 환경에 한정되며 ATLAS capacity를 입증하지 않음.
-- 미정: exact versions, module/API boundaries, schema/locking/transactions, infrastructure, PayPal product/API, security·settlement contracts. Runtime implementation 미승인.
-- 실험: [EXP-012](../08-experiments/experiment-registry.md) ○ Planned. Gate 4 검증·runtime implementation 미실행.
+- 선택: [Issue #68](https://github.com/Neo1228/ATLAS/issues/68). Gate 2 current Buyer journey 기준 승인. Modular Monolith First, Java + Spring Boot + PostgreSQL.
+- 방향: PostgreSQL을 초기 durable system of record로 사용. 별도 queue/cache/broker는 bottleneck과 비교 가능한 load test 이점을 확인한 경우에만 검토.
+- PR #69 병합: [기록](https://github.com/Neo1228/ATLAS/pull/69), commits [6694fe2](https://github.com/Neo1228/ATLAS/commit/6694fe2)/[cf93b73](https://github.com/Neo1228/ATLAS/commit/cf93b73), merge [`638514d8fa166ef57c6591ca2efbd43741eea45f`](https://github.com/Neo1228/ATLAS/commit/638514d8fa166ef57c6591ca2efbd43741eea45f). Required Markdown lint/PR checklist 통과.
+- 근거·한계: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [REF-023/050~052](../00-governance/reference-register.md). 사례는 context-specific이며 ATLAS capacity를 입증하지 않음.
+- 미정: exact versions, physical schema/isolation/lock recovery, infrastructure, PayPal product/API, production capacity/SLO. Runtime implementation 미승인.
+
+## 2026-11-02 — Gate 3 초기 module/data 설계 결정
+- D-038: 사용자가 module scope 선택을 위임. 비교 검토 후 현재 Buyer 흐름의 Campaign/Admission/Inventory/Order-Checkout/Payment만 우선 설계. Tenant security·확장 catalog·Settlement/Reconciliation module 경계는 장기 capability map에 유지.
+- D-039: campaign counter row와 ticket을 한 transaction으로 commit해 D-019/D-020 FIFO 기준 유지. Same-campaign contention은 합성 workload로 측정; inventory lock 전략은 EXP-002 비교 전까지 미선택.
+- 근거·선택: [Issue #68 설계 결정 댓글](https://github.com/Neo1228/ATLAS/issues/68#issuecomment-6566630187), [REF-050/052~058](../00-governance/reference-register.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md). 상세 근거와 한계는 Issue 본문에 기록.
+- 미정: physical schema, isolation/lock timeout/deadlock recovery, key/expiry/bot policy, production SLO/environment. Runtime implementation/deployment 별도 승인 대상.

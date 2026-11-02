@@ -71,12 +71,18 @@ REF-030~044는 2026-10-30에 확인한 payment·checkout·load model 자료.
 | REF-050 | Shopify Engineering, Deconstructing the Monolith / engineering case | https://shopify.engineering/deconstructing-monolith-designing-software-maximizes-developer-productivity | 2026-11-02 | One deployment with enforced module boundaries vs microservices trade-offs | ✓ Shopify Rails case, 1,000+ developer codebase; not a small-system universal rule |
 | REF-051 | AWS Architecture Blog / SeatGeek, Virtual Waiting Room / practitioner architecture case | https://aws.amazon.com/blogs/architecture/build-a-virtual-waiting-room-with-amazon-dynamodb-and-aws-lambda-at-seatgeek/ | 2026-11-02 | Token queue and controlled admission protecting ticket selection | ✓ SeatGeek/AWS-specific design; no evidence ATLAS needs a separate queue or AWS |
 | REF-052 | Arika, Modular Monoliths in Practice / practitioner guide | https://www.arika.dev/blog/architecture/modular-monolith-in-practice/ | 2026-11-02 | Module APIs, logical DB ownership, boundary checks, extraction paths | △ Practitioner design article; not benchmark or independent performance evidence |
+| REF-053 | Shopify Engineering, A Packwerk Retrospective / engineering retrospective | https://shopify.engineering/a-packwerk-retrospective | 2026-11-02 | Domain labels may not match runtime dependencies; strict isolation can add indirection; tools have blind spots | △ Shopify Rails monolith context; no ATLAS module map or performance evidence |
+| REF-054 | Thoughtworks, When (modular) monolith is the better way / practitioner design article | https://www.thoughtworks.com/insights/blog/microservices/modular-monolith-better-way-build-software | 2026-11-02 | E-commerce capability modules and conditions for later extraction | △ Design perspective; not an independently measured architecture comparison |
+| REF-055 | Spring Modulith, Verifying Application Module Structure / framework documentation | https://docs.spring.io/spring-modulith/reference/verification.html | 2026-11-02 | Checks cyclic dependencies, public API access and declared module dependencies | ✓ Boundary-checking candidate only; does not identify correct domain modules. Dependency version OPEN |
+| REF-056 | PostgreSQL 18, Explicit Locking / database documentation | https://www.postgresql.org/docs/18/explicit-locking.html | 2026-11-02 | Row-lock behavior, transaction lifetime, deadlocks, consistent lock order | ✓ Version-specific semantics; no ATLAS capacity or design proof |
+| REF-057 | PostgreSQL 18, Transaction Isolation / database documentation | https://www.postgresql.org/docs/18/transaction-iso.html | 2026-11-02 | Isolation behavior and non-transactional sequence value changes | ✓ Version-specific semantics; deployment version OPEN |
+| REF-058 | EcomLinx, Inventory OS SELECT FOR UPDATE / vendor engineering blog | https://www.ecomlinx.com/blog/inventory-os-select-for-update | 2026-11-02 | Vendor example combining row locks and guarded inventory updates | △ Vendor marketing; quantitative claims not independently verified, not ATLAS recommendation |
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인.
 - Authorization validity/honor period는 provider 정책이며 ATLAS inventory TTL과 별개.
 - Webhook 재전송도 Buyer checkout TTL/API deadline과 별도.
-REF-030~052는 provider/product/practitioner 사례·설계 설명. ATLAS의 production behavior, 성능 보장, 보편적 best practice, API support나 법적 의무를 보증하지 않음.
+REF-030~058 are provider/product/practitioner cases, technical references, or design explanations. They do not establish ATLAS production behavior, performance guarantees, universal best practices, API support, or legal obligations.
 
 ## 관련 문서
-- [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): D-037 uses REF-023/050~052 as context-specific evidence; no source is adopted as a universal architecture prescription.
+- [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): D-037 uses context-specific REF-023/050~052; D-038/D-039 use REF-050/053~058. No source is adopted as a universal architecture prescription.
 - [Project Charter](project-charter.md): 확인되지 않은 정책/성능 주장을 제한.

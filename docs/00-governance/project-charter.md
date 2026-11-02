@@ -35,7 +35,7 @@ links:
 ## 초기 제한 — ✓ Confirmed
 - 실제 결제·고객 개인정보·판매사 지급 제외. Sandbox와 합성/가명 데이터만 사용.
 - 주문 상태와 PSP 상태 분리. 내부 정산과 실제 자금 이동 분리.
-- Modular Monolith First 승인 ([ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [D-037](decision-log.md)). Module/data 경계와 구현 세부는 Gate 3 설계 대상.
+- Modular Monolith First와 초기 module/data 방향 승인 ([ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [D-037~D-039](decision-log.md)). Physical schema·lock recovery·구현 세부는 Gate 3 설계 대상.
 - Gate 2의 current Buyer journey 기준 승인. Runtime code 작성·배포는 별도 승인 대상.
 
 ## 성공 기준 — △ Proposed
