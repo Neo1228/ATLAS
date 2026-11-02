@@ -5,9 +5,9 @@ status: Draft
 owner: Project Owner
 updated: 2026-11-02
 links:
-  requirements: []
-  adr: [ADR-0001]
-  experiments: []
+  requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
+  adr: [ADR-0001, ADR-0002]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012]
 ---
 # ATLAS 프로젝트 헌장
 

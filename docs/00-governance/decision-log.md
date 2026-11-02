@@ -5,9 +5,9 @@ status: Current
 owner: Project Owner
 updated: 2026-11-02
 links:
-  requirements: []
-  adr: [ADR-0001]
-  experiments: []
+  requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
+  adr: [ADR-0001, ADR-0002]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012]
 ---
 # 결정 로그
 
@@ -58,6 +58,9 @@ links:
 | D-041 | ✓ Confirmed | Local runtime slice: per-campaign bounded FIFO checkout window; K is required configuration. Slot release at initial AUTHORIZE submission or 10-minute unsubmitted checkout-window expiry; unavailable inventory releases immediately without payment attempt. PENDING/UNKNOWN keeps inventory hold and same-attempt reconciliation but frees queue slot. Campaign-scoped idempotency key; local payload is `skuId` + synthetic `buyerRef`; explicit per-campaign ticket TTL. Eligibility is sale-open + matching campaign/SKU; no Tenant/auth/bot rule. Fake PSP only; its scripted provider state is in-memory and resets on app restart, so provider-side restart recovery is not claimed. Inventory baseline is guarded UPDATE plus per-order transaction lock; EXP-002 comparison and production performance remain OPEN. | [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), [queue policy selection](https://github.com/Neo1228/ATLAS/issues/72#issuecomment-6567073717), [runtime notes](https://github.com/Neo1228/ATLAS/issues/72#issuecomment-6567921461), [D-019/D-020/D-025/D-029/D-030](decision-log.md), [Q-003/Q-005/Q-007/Q-008](assumptions-and-open-questions.md), [BR-001](../03-domain/business-rules.md), [INV-001/002/003](../03-domain/invariants.md), [REF-024/026/051](reference-register.md) |
 | D-042 | ✓ Confirmed | Local recovery guard: unresolved payment blocks a new payment submission for the same campaign + synthetic `buyerRef`; same-order reconciliation remains available. No completed-purchase limit or identity/security claim. Derived from the no-new-attempt-before-resolution rule. | [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), [runtime notes](https://github.com/Neo1228/ATLAS/issues/72#issuecomment-6567921461), [D-025/D-027](decision-log.md), [Q-005](assumptions-and-open-questions.md), [INV-003](../03-domain/invariants.md) |
 | D-043 | ✓ Confirmed | Java implementation code에서 FQCN 금지, import 사용. Checkstyle이 Gradle `check`에서 강제하며 package/import 선언은 예외. | [Issue #75](https://github.com/Neo1228/ATLAS/issues/75), [AGENTS](../../AGENTS.md), [기여 안내](../../CONTRIBUTING.md), [REF-068](reference-register.md) |
+| D-044 | ✓ Confirmed | D-040 stack 유지: Java 25 + Spring Boot 4.1.2/MVC + PostgreSQL 18.6 + Gradle 9.8.2. Kotlin, Boot 3.5, Quarkus, MySQL, Maven, WebFlux, JPA alternatives와 trade-offs는 [ADR-0002](../06-decisions/adr/ADR-0002-runtime-technology-review.md)에 비교. 기존 user choice이며 universal/performance superiority claim 아님; runtime migration 없음. | [Issue #68](https://github.com/Neo1228/ATLAS/issues/68), [Issue #78](https://github.com/Neo1228/ATLAS/issues/78), [D-040](decision-log.md), [Q-009](assumptions-and-open-questions.md), [REF-059~086](reference-register.md) |
+| D-045 | ✓ Confirmed | `AdmissionApi.find`는 마지막 저장된 ticket 상태만 반환. GET/OrderView read에서 expiry·FIFO promotion·DB write 없음. 만료와 promotion은 scheduler 또는 명시적 state-changing operation 소유; sweep 전에는 persisted status가 잠시 stale할 수 있음. | [Issue #78](https://github.com/Neo1228/ATLAS/issues/78), [FR-001](../02-requirements/requirements-index.md), [Q-003](assumptions-and-open-questions.md), [REF-080/081](reference-register.md) |
+| D-046 | ✓ Confirmed | HTTP error response는 Spring `ProblemDetail` (RFC 9457) + stable `code` extension. Root `AtlasApiExceptionHandler`가 module not-found/conflict, validation/framework errors와 unexpected 500을 일관되게 매핑; internal 500 detail은 client에 노출하지 않고 log. Validation은 HTTP boundary와 module invariant boundary에서 각각 적용. | [Issue #78](https://github.com/Neo1228/ATLAS/issues/78), [REF-084/085](reference-register.md) |
 
 D-033의 Ticketmaster 기반 날짜별 구매자 계산은 합성 test input을 가늠하기 위한 근사치. 초대와 전환이 균등하다는 가정이며, 실제 날짜별 고유 구매자 수는 공개되지 않음. 실측·대표 수요로 해석 금지.
 

@@ -49,4 +49,5 @@
 - [ ] 관련 Issue 연결, `Closes`/`Refs` plain-text 형식과 link 일치.
 - [ ] 복잡한 변경의 근거·영향 설명; 링크만으로 대체하지 않음.
 - [ ] PR이 독립 검토 가능한 경계.
+- [ ] HTTP/API 변경 시 error/status contract와 GET/read side effect 확인; 영향 없으면 구체적 사유 작성.
 - [ ] 모든 항목 완료; N/A 사유 명시.

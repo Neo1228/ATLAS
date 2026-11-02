@@ -19,6 +19,8 @@
 - 수치·범위·날짜는 단위와 기준을 함께 표시.
 - API, retry, queue, transaction 등 표준 backend 용어는 English 사용 가능. 일반 설명에 불필요한 전문 용어·영한 병기 금지.
 - 프로젝트 용어·약어는 첫 등장에 풀이하거나 [Glossary](docs/01-discovery/glossary.md) 연결.
+- Java comment는 자연스러운 한국어 우선. 표준 type/API/protocol 이름은 English 유지. 동작을 그대로 반복하지 말고 이유·invariant·외부 제약만 설명.
+- API error는 module-owned exception + root `AtlasApiExceptionHandler`의 ProblemDetail/code mapping 사용. GET/read path는 상태 변경 금지; write/scheduler operation의 동작과 검증을 별도로 명시.
 
 ## 3. 검증
 - Markdown: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`

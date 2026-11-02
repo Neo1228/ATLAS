@@ -27,19 +27,21 @@ links:
 
 | 용어 | 설명 | ATLAS 상태 |
 |---|---|---|
-| PSP | 외부 결제 제공자. PSP 상태와 주문 상태를 별도로 관리. | ○ Draft |
-| Fake PSP | 결제 응답 유실·지연 재현용 test provider. 실제 PayPal 장애의 증거는 아님. | ✓ 범위 확정 |
-| Webhook | 외부 시스템이 상태 변경을 알리는 HTTP request. | ○ Draft |
-| Authorization / Capture | Authorization은 구매자 자금을 hold; capture는 승인된 금액을 청구. 초기 흐름은 AUTHORIZE → CAPTURE; capture success 후 inventory claim. | [D-026](../00-governance/decision-log.md); provider endpoint/recovery contract ? OPEN |
-| UNKNOWN payment outcome | 결제 operation 결과 미확정. 실패와 다름. 같은 attempt를 확인하기 전 새 attempt 금지. | [D-025/D-026](../00-governance/decision-log.md); provider별 retry/key contract ? OPEN |
+| PSP | 외부 결제 제공자. 주문 상태와 provider operation 상태를 분리. | M1은 Fake PSP만 사용; PayPal product/API는 Q-009 OPEN |
+| Fake PSP | 결제 응답 유실·지연을 재현하는 local test provider. | M1에서 사용; 실제 PayPal 동작·재시작 영속성 증거 아님 |
+| Webhook | Provider가 payment event를 server endpoint로 전달하는 HTTP request. | M3 후보; signature, ordering, retry policy는 provider 조사 전 OPEN |
+| Authorization / Capture | Authorization은 자금을 hold; capture는 승인 금액 청구. M1은 AUTHORIZE → CAPTURE; capture success 뒤 inventory claim. | [D-026](../00-governance/decision-log.md); provider API/recovery contract OPEN |
+| UNKNOWN payment outcome | 결과가 확정되지 않은 provider operation. 실패와 다름. Same attempt 상태 확인 전 새 attempt 금지. | [D-025/D-026](../00-governance/decision-log.md); live provider retry/key policy OPEN |
 | Buyer session | sale-open admission/FIFO부터 hold, checkout think time, AUTHORIZE 제출, payment outcome 확정까지의 합성 구매 여정 ([D-031](../00-governance/decision-log.md)). | 초기 범위 선택; workload values OPEN |
 | Business transaction | 여러 API/DB transaction을 포함할 수 있는 사용자 흐름 단위. 초기 checkout TPS는 capture 성공 또는 확정된 non-payment까지 해결된 Buyer session 수. PENDING/UNKNOWN은 in-flight로 유지 ([D-031](../00-governance/decision-log.md)). | Metric scope 정의; target OPEN |
-| Database transaction | DB 변경의 commit/rollback 단위. Isolation/locking은 DB별 의미 확인. | DB 미선택 |
+| Database transaction | DB 변경의 commit/rollback 단위. Isolation/locking은 engine별 의미. | Local stack PostgreSQL 18.6 ([D-040](../00-governance/decision-log.md)); production engine/version/isolation OPEN ([Q-009](../00-governance/assumptions-and-open-questions.md)) |
 | Conditional update | 조건이 맞을 때만 row를 갱신하는 SQL pattern. 동시성 보장은 DB semantics 확인 필요. | Reference |
 | Pessimistic lock | 쓰기 전에 lock을 잡고 충돌 작업을 대기시킴. | Reference |
 | Optimistic locking | version/condition 확인 후 갱신. 충돌 시 retry/failure 처리. | Reference |
-| Reconciliation | ATLAS와 PSP 기록을 대조하고 차이를 추적. UNKNOWN은 같은 payment attempt로 확인 ([D-025](../00-governance/decision-log.md)). | ○ Draft; PSP-specific recovery ? OPEN |
-| Settlement Ledger | 내부 정산·정정·audit 기록. 실제 자금 이동과 별개. | ○ Draft |
+| Payment outcome reconciliation | Pending/unknown operation에 대해 같은 attempt의 provider 상태를 확인. 새로운 charge/attempt 생성 아님. | M1 Fake PSP, caller-triggered `POST /reconcile`; live retry/worker policy OPEN ([Q-005](../00-governance/assumptions-and-open-questions.md)) |
+| Settlement reconciliation | Provider transaction/capture/refund records와 내부 ledger를 대조해 missing/duplicate/amount differences를 추적. | FR-003 Proposed, workflow/ownership/policy OPEN ([Q-006](../00-governance/assumptions-and-open-questions.md)) |
+| Settlement Ledger | 수수료·정산·조정·audit trail을 기록하는 내부 ledger. 실제 자금 이동과 별개. | FR-003 Proposed |
+| Refund / adjustment | PSP에 청구 금액을 돌려주거나 내부 settlement record를 정정. | Long-term; partial refund, post-claim stock restoration, ledger treatment, ownership OPEN ([Q-002/Q-006](../00-governance/assumptions-and-open-questions.md)) |
 | Idempotency key | 같은 논리 요청을 식별해 중복 효과를 방지하는 key. Provider 지원 시 같은 payment attempt에서 재사용 ([D-025](../00-governance/decision-log.md)). | 범위·retention·provider support ? OPEN |
 | TTL (Time to Live) | Inventory hold 유효 기간. Confirmed hold부터 initial AUTHORIZE 제출까지 10분; 만료 연장 없음 ([D-028~D-030](../00-governance/decision-log.md)). | Test-only; production TTL/completion SLO OPEN ([Q-004/Q-008](../00-governance/assumptions-and-open-questions.md)); provider/API deadline과 별개 |
 | EXPIRED_PENDING_PAYMENT | Inventory TTL이 지났지만 PSP outcome이 UNKNOWN/PENDING. Same-attempt reconciliation 전까지 stock unavailable ([D-025/D-027](../00-governance/decision-log.md)). | 장기 미해결 escalation ? OPEN |
