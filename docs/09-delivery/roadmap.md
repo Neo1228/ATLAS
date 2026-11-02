@@ -20,7 +20,7 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | ✓ 현재 Buyer journey 기준 승인. 정산·보안 범위는 미정 |
 | Gate 3 | Module·state·data·contract·risk·capacity estimate | ✓ 설계 완료. Local runtime은 Issue #72에서 별도 승인; production sizing·deployment는 미정 ([D-037~D-042](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md)) |
 | Gate 4 | Synthetic load/failure 검증 | ○ Local runtime 뒤 진행. 승인된 workload로 report-only; production SLO 아님 ([Q-008](../00-governance/assumptions-and-open-questions.md)) |
-| M1 | Local single-SKU Buyer flow: Campaign, Admission, Inventory, Order/Checkout, PostgreSQL, Fake PSP, tests/CI | ✓ 구현·검증 완료; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) PR merge 대기 |
+| M1 | Local single-SKU Buyer flow: Campaign, Admission, Inventory, Order/Checkout, PostgreSQL, Fake PSP, tests/CI | ✓ 구현·검증 완료; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), [PR #73](https://github.com/Neo1228/ATLAS/pull/73) checks/merge pending |
 | M2 | Synthetic load/failure verification, report-only | ○ Gate 4 뒤 승인 환경에서 진행 |
 | M3 | PayPal Sandbox adapter, webhook·payment recovery; provider/API 결정 뒤 | ○ 계획 |
 | M4 | 장기 역량 확장: Tenant/security, catalog·판매 유형, settlement·reconciliation, refund/adjustment | ○ 계획 ([Project Charter](../00-governance/project-charter.md), [Q-002/Q-006/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md)) |

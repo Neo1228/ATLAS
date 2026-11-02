@@ -166,4 +166,4 @@ links:
 - Commit units: [271222f](https://github.com/Neo1228/ATLAS/commit/271222f) build/CI, [5a5dbe9](https://github.com/Neo1228/ATLAS/commit/5a5dbe9) runtime, [de38b5e](https://github.com/Neo1228/ATLAS/commit/de38b5e) tests.
 - PostgreSQL 18.6/Testcontainers 2.0.5 check: 13 tests passed, 0 failed, 0 skipped; includes inventory concurrency, Buyer recovery and module-boundary verification.
 - HTTP smoke with local Compose PostgreSQL: campaign creation/open, queue sequence 1, checkout reservation, Fake PSP capture, order `PAID`, inventory `CLAIMED`. After app restart with the same PostgreSQL container, the next ticket received sequence 2. Fake provider outcome across app restart and any load/performance behavior remain unverified.
-- PR/merge record: Issue #72 remains the single work unit; add the GitHub PR and merge SHA after the review/merge lifecycle completes.
+- PR #73: [Local Buyer runtime](https://github.com/Neo1228/ATLAS/pull/73), linked to Issue #72; checks pending. Merge SHA will be added after the merge result is available.
