@@ -1,1 +1,8 @@
 rootProject.name = 'atlas'
+
+include 'application-module'
+include 'campaign-module'
+include 'admission-module'
+include 'inventory-module'
+include 'order-module'
+include 'payment-module'
