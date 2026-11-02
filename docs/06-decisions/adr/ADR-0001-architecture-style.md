@@ -89,6 +89,8 @@ flowchart LR
 
 10k/60m과 2×/4×는 report-only synthetic profile. Burst duration, think time, phase, concurrency, request mix, test environment, resource configuration, production SLO는 OPEN ([Q-008](../../00-governance/assumptions-and-open-questions.md)). 따라서 현재는 resource sizing이나 production capacity를 주장하지 않음. Baseline 대비 stress 결과와 bottleneck을 비교하는 설계 기준만 제공 ([EXP-010/012](../../08-experiments/experiment-registry.md)).
 
+- **Repository/library policy:** current baseline is one repository and one deployable. Repository split requires approved independent release/team/data/security ownership or measured scaling constraints. Compare existing JDK/Spring/DB APIs, maintained libraries, and direct implementation without bias; prefer a mature library when it fits the required capability and its maintenance/security/license costs. Record alternatives and runtime/test/build scope. Issue #75 uses existing Spring `JdbcTemplate`/transaction/scheduling APIs and adds Checkstyle only as build-time FQCN enforcement; no application runtime dependency. Evidence/limits: [REF-050/053~055/069/073](../../00-governance/reference-register.md).
+
 ## 재검토 조건
 - 독립된 team/deployment 필요 발생.
 - Module 간 변경·장애 결합 증가.

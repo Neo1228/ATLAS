@@ -15,6 +15,7 @@
 - 결정·근거:
 - 대안·trade-off:
 - 영향 상태/불변조건:
+- 추가·제거 dependency/plugin 및 scope (runtime/test/build); 기존 library 대비 직접 구현 trade-off:
 - 검증 근거:
 
 ## 시각화

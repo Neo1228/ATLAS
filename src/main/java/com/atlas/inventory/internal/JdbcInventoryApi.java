@@ -9,8 +9,10 @@ import com.atlas.inventory.ReservationView;
 import com.atlas.inventory.ReserveInventoryCommand;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -57,7 +59,7 @@ public class JdbcInventoryApi implements InventoryApi {
     }
 
     @Override
-    public java.util.Optional<ReservationView> tryReserve(ReserveInventoryCommand command) {
+    public Optional<ReservationView> tryReserve(ReserveInventoryCommand command) {
         Objects.requireNonNull(command, "command");
         requirePoolKey(command.campaignId(), command.skuId());
         Objects.requireNonNull(command.orderId(), "orderId");
@@ -66,7 +68,7 @@ public class JdbcInventoryApi implements InventoryApi {
         }
         ReservationView reservation = transactions.execute(status -> {
             jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
-                    (org.springframework.jdbc.core.RowCallbackHandler) rs -> { }, command.orderId().toString());
+                    (RowCallbackHandler) rs -> { }, command.orderId().toString());
             ReservationView existing = findReservation(command.orderId());
             if (existing != null) {
                 if (!existing.campaignId().equals(command.campaignId())
@@ -87,7 +89,7 @@ public class JdbcInventoryApi implements InventoryApi {
                     """, command.orderId(), command.campaignId(), command.skuId());
             return findReservation(command.orderId());
         });
-        return java.util.Optional.ofNullable(reservation);
+        return Optional.ofNullable(reservation);
     }
 
     @Override

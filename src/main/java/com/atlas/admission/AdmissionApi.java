@@ -12,5 +12,4 @@ public interface AdmissionApi {
     QueueTicketView startCheckout(UUID campaignId, UUID ticketId);
     QueueTicketView releaseCheckoutSlot(UUID campaignId, UUID ticketId, CheckoutSlotReleaseReason reason);
 
-    int expireDueTickets();
 }

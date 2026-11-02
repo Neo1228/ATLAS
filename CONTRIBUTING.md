@@ -23,7 +23,8 @@
 ## 3. 검증
 - Markdown: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
 - 링크·용어·결정 상태도 확인. 실행하지 않은 검증은 성공으로 기록하지 않음.
-- CI: Markdown lint·PR checklist와 JDK 25 `./gradlew check`; PostgreSQL/Testcontainers 통합 테스트에는 Docker 필요. Colima 설정은 [README](README.md). CI의 Temurin은 build/test 전용; production JDK 배포판 선택 아님.
+- Java: FQCN 금지, import 사용. [Checkstyle 설정](config/checkstyle/checkstyle.xml)이 `./gradlew check`에서 위반 탐지 ([REF-068](docs/00-governance/reference-register.md)).
+- CI: Markdown lint·PR checklist와 JDK 25 `./gradlew check`; Checkstyle, compiler warnings, PostgreSQL/Testcontainers 통합 테스트 포함. Docker 필요. Colima 설정은 [README](README.md). CI Temurin은 build/test 전용; production JDK 배포판 선택 아님.
 
 ## 4. Branch
 - 기본 branch: `main`; 직접 push 금지 (최초 seed 제외).

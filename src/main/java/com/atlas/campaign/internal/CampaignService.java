@@ -8,7 +8,9 @@ import com.atlas.campaign.CreateCampaignCommand;
 
 import com.atlas.inventory.CreateInventoryPoolCommand;
 import com.atlas.inventory.InventoryApi;
+import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +53,7 @@ public class CampaignService implements CampaignApi {
                 INSERT INTO campaign (campaign_id, sku_id, status, queue_ticket_ttl_seconds, max_active_checkouts, created_at)
                 VALUES (?, ?, 'CLOSED', ?, ?, ?)
                 """, campaignId, command.skuId(), command.queueTicketTtl().toSeconds(),
-                command.maxActiveCheckouts(), java.sql.Timestamp.from(clock.instant()));
+                command.maxActiveCheckouts(), Timestamp.from(clock.instant()));
         inventory.createPool(new CreateInventoryPoolCommand(campaignId, command.skuId(), command.inventoryCapacity()));
         return find(campaignId);
     }
@@ -82,7 +84,7 @@ public class CampaignService implements CampaignApi {
                 FROM campaign WHERE campaign_id = ?
                 """, rs -> rs.next() ? new CampaignView(rs.getObject("campaign_id", UUID.class),
                 rs.getString("sku_id"), CampaignStatus.valueOf(rs.getString("status")),
-                java.time.Duration.ofSeconds(rs.getLong("queue_ticket_ttl_seconds")),
+                Duration.ofSeconds(rs.getLong("queue_ticket_ttl_seconds")),
                 rs.getInt("max_active_checkouts")) : null, campaignId);
     }
 }
