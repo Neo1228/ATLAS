@@ -139,3 +139,9 @@ links:
 - 결정·근거: [D-036](../00-governance/decision-log.md), [REF-045~049](../00-governance/reference-register.md), [Personas & Jobs](../01-discovery/personas-and-jobs.md).
 - Commit: [7dc9ca6](https://github.com/Neo1228/ATLAS/commit/7dc9ca6). Required checks와 merge metadata는 [PR #65](https://github.com/Neo1228/ATLAS/pull/65)에서 확인.
 - 제약: production demand/SLO, storage/API/queue tech, architecture 및 runtime 구현 미선택. Gate 3 이후 별도 승인.
+
+## 2026-11-02 — Gate 2 Buyer journey acceptance candidates
+- 제안: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). Full Buyer journey의 queue·inventory·payment recovery·report-only workload 기준을 기존 D-019~D-036에서 합성.
+- 범위: FR-001/FR-002/NFR-002 Proposed 유지. Security/settlement, provider-specific deadlines, production SLO, burst/environment, runtime/technology는 OPEN.
+- 추적: [BR-001/002/003](../03-domain/business-rules.md), [INV-001/002/003](../03-domain/invariants.md), [EXP-001/003/004/005/010/011](../08-experiments/experiment-registry.md). No experiment or runtime result.
+- Commit: [2884e94](https://github.com/Neo1228/ATLAS/commit/2884e94). Required checks와 merge metadata는 [PR #67](https://github.com/Neo1228/ATLAS/pull/67)에서 확인.

@@ -21,6 +21,7 @@ links:
   - Issues: [#35](https://github.com/Neo1228/ATLAS/issues/35), [#37](https://github.com/Neo1228/ATLAS/issues/37), [#42](https://github.com/Neo1228/ATLAS/issues/42), [#44](https://github.com/Neo1228/ATLAS/issues/44), [#46](https://github.com/Neo1228/ATLAS/issues/46), [#48](https://github.com/Neo1228/ATLAS/issues/48).
   - PRs: [#36](https://github.com/Neo1228/ATLAS/pull/36), [#41](https://github.com/Neo1228/ATLAS/pull/41), [#43](https://github.com/Neo1228/ATLAS/pull/43), [#45](https://github.com/Neo1228/ATLAS/pull/45), [#47](https://github.com/Neo1228/ATLAS/pull/47), [#49](https://github.com/Neo1228/ATLAS/pull/49).
 - Gate 2 profile [D-031~D-033](../00-governance/decision-log.md): full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress; report-only.
+- Gate 2 acceptance: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67); candidate criteria map queue, inventory, payment recovery and report-only workload. Experiment/runtime results none.
   - 추적 Issue: [#51](https://github.com/Neo1228/ATLAS/issues/51), [#54](https://github.com/Neo1228/ATLAS/issues/54), [#56](https://github.com/Neo1228/ATLAS/issues/56).
 - 병합 PR:
   - [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14)
@@ -61,6 +62,7 @@ links:
 | Queue ticket 수명주기 | [Issue #60](https://github.com/Neo1228/ATLAS/issues/60); [PR #61](https://github.com/Neo1228/ATLAS/pull/61); [D-034](../00-governance/decision-log.md): retry·payload mismatch·expiry 후 재입장 기준 |
 | Inventory reservation/conservation | [Issue #62](https://github.com/Neo1228/ATLAS/issues/62); [PR #63](https://github.com/Neo1228/ATLAS/pull/63); [D-035](../00-governance/decision-log.md); [BR-002](../03-domain/business-rules.md); [INV-001](../03-domain/invariants.md); [EXP-001](../08-experiments/experiment-registry.md) |
 | 판매 유형 비교·Gate 2 범위 | [Issue #64](https://github.com/Neo1228/ATLAS/issues/64); [PR #65](https://github.com/Neo1228/ATLAS/pull/65); [D-036](../00-governance/decision-log.md); [Q-010](../00-governance/assumptions-and-open-questions.md); [Personas & Jobs](../01-discovery/personas-and-jobs.md); [REF-045~049](../00-governance/reference-register.md). 선택: 현재 SKU 흐름으로 Gate 2 |
+| Gate 2 Buyer journey acceptance | [Issue #66](https://github.com/Neo1228/ATLAS/issues/66); [PR #67](https://github.com/Neo1228/ATLAS/pull/67); [FR-001/FR-002/NFR-002](../02-requirements/requirements-index.md); [INV-001/002/003](../03-domain/invariants.md); [EXP-001/003/004/005/010/011](../08-experiments/experiment-registry.md) |
 
 - 진행 현황: [Roadmap](roadmap.md).
 - 완료 이력: [Milestone Log](milestone-log.md).

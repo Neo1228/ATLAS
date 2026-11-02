@@ -12,6 +12,7 @@ links:
 
 모든 실험은 ○ Planned. 실행 결과 없음. 재고 100/1,000은 실험 후보 수량이며 목표값 아님. 합성 부하는 실제 트래픽과 다름.
 
+- Gate 2 acceptance candidate: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). Tests remain Planned; no runtime execution or results claimed.
 제안 순서 ([D-018](../00-governance/decision-log.md), △ Proposed):
 - Gate 2: workload profile 합의.
 - Gate 3: capacity estimate.
