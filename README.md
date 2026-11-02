@@ -17,6 +17,28 @@ updated: 2026-11-02
 - 진행: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture 기준 확정. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)·[PR #73](https://github.com/Neo1228/ATLAS/pull/73) local runtime 완료. Fake PSP only; live payment, cloud deployment, production load는 별도 상태.
 - 기술 비교와 shared API/error rules: [ADR-0002](docs/06-decisions/adr/ADR-0002-runtime-technology-review.md), [Decision Log](docs/00-governance/decision-log.md), [Issue #78](https://github.com/Neo1228/ATLAS/issues/78), [PR #79](https://github.com/Neo1228/ATLAS/pull/79).
 
+## 도메인 모듈
+
+한 번에 실행·배포하는 Spring Boot modular monolith. 루트 Gradle project는 다섯 도메인 모듈과 실행 조립 모듈을 포함합니다. 각 디렉터리의 README에 책임·공개 API·의존·데이터 소유를 기록했습니다.
+
+| 모듈 | 책임 | 의존 |
+|---|---|---|
+| [application-module](application-module/README.md) | 실행 진입점, HTTP adapters, 런타임 설정·migration | 다섯 도메인 모듈 |
+| [campaign-module](campaign-module/README.md) | campaign·SKU eligibility | inventory |
+| [admission-module](admission-module/README.md) | queue ticket·순번·checkout slot | campaign |
+| [inventory-module](inventory-module/README.md) | 재고 pool·reservation·conservation | 없음 |
+| [order-module](order-module/README.md) | checkout·order lifecycle | admission, inventory, payment |
+| [payment-module](payment-module/README.md) | payment attempts·provider 결과 | 없음 |
+
+각 도메인 `-module`은 `.service` contract, `.dto.request` 입력, `.dto.response` 출력, `.exception` 오류를 공개합니다. 상태 enum은 persistence-owned lifecycle vocabulary로 `.persistence.state`에 두고 모듈 간 contract에서 공유합니다; JPA entity/repository는 공유하지 않습니다. 구현과 scheduled expiry는 `.service.impl`, JPA mapping/CRUD는 `.persistence.entity`·`.persistence.repository`, Fake provider는 `.provider.fake`에 둡니다. ArchUnit이 허용한 package dependency만 검사하며 `package-info.java` marker는 없습니다. 기본 CRUD는 JPA, advisory lock·sequence·guarded update 등 PostgreSQL 특화 경로만 JDBC/native SQL을 사용합니다. Flyway가 schema를 소유하고 Hibernate는 `validate`만 수행합니다.
+HTTP controller·request DTO·공통 설정·오류 처리는 `application-module`의 `.application.controller.<domain>`·`.application.controller.dto`·`.application.config`·`.application.exception`에 둡니다. CQRS·`internal`·불필요한 공통 모듈은 사용하지 않습니다. 경계와 근거는 [ADR-0003](docs/06-decisions/adr/ADR-0003-gradle-module-boundaries.md), SQL 선택은 [ADR-0004](docs/06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md).
+
+실행: `./gradlew :application-module:bootRun`. 전체 compile·Checkstyle·test 검증: `./gradlew check`.
+
+### 의존 방향
+
+Gradle module 의존은 한 방향이며 각 module의 `build.gradle`에서 확인할 수 있습니다. 모듈 간 호출은 현재 단일 JVM·transaction 경계 안의 공개 API 호출입니다. 독립 배포 또는 remote extraction을 뜻하지 않습니다.
+
 ## Local runtime
 
 - 필요: JDK 25, Docker Compose. CI는 Temurin 25; production JDK 배포판은 미정.

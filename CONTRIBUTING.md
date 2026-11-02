@@ -20,7 +20,10 @@
 - API, retry, queue, transaction 등 표준 backend 용어는 English 사용 가능. 일반 설명에 불필요한 전문 용어·영한 병기 금지.
 - 프로젝트 용어·약어는 첫 등장에 풀이하거나 [Glossary](docs/01-discovery/glossary.md) 연결.
 - Java comment는 자연스러운 한국어 우선. 표준 type/API/protocol 이름은 English 유지. 동작을 그대로 반복하지 말고 이유·invariant·외부 제약만 설명.
-- API error는 module-owned exception + root `AtlasApiExceptionHandler`의 ProblemDetail/code mapping 사용. GET/read path는 상태 변경 금지; write/scheduler operation의 동작과 검증을 별도로 명시.
+- Domain failures are represented by one typed exception with a `Code` enum per module; the single `application.exception.GlobalExceptionHandler` maps them to ProblemDetail/code. Raw `IllegalArgumentException` is not an HTTP error contract; wrap expected invalid input in the owning module exception.
+- 도메인 package: `.service` contract, `.dto.request` 입력, `.dto.response` 출력, `.exception` module error. Lifecycle state enum은 `.persistence.state` 소유이며 필요한 cross-module contract에서 공유한다; entity/repository는 모듈 내부. Workflow/scheduled expiry는 cohesive `.service.impl`; JPA mapping/CRUD는 `.persistence.entity`·`.persistence.repository`. HTTP controller·request DTO는 `application-module`의 `.application.controller.<domain>`·`.application.controller.dto`. Flyway schema owner, Hibernate `validate`; `package-info.java` marker 없음.
+- 직접 Service contract 호출 우선. Module input은 `*Request` record; HTTP request record는 body/path/header 조합이나 transport 검증 등 실제 차이가 있을 때만 분리하고, mapping 없는 중복 DTO는 만들지 않음. CQRS·CommandBus·handler·mediator·`internal` 금지. PostgreSQL lock·sequence·guarded update 같은 SQL 이점이 명확한 경로만 repository에서 JDBC/native query 사용; forwarding-only scheduler, generic mapper/base layer를 만들지 않음. 경계는 [ADR-0003](docs/06-decisions/adr/ADR-0003-gradle-module-boundaries.md)·[ADR-0004](docs/06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md).
+- 테스트는 사용자 동작·계약·불변조건·상태전이·오류·동시성처럼 실제 결함 위험을 막는 범위로 제한. Wiring, forwarding, mock echo, incidental default, duplicate assertions 테스트는 만들지 말고 중복 테스트는 삭제. PostgreSQL 전용 SQL/locking은 PostgreSQL integration test, 그 외 동작은 가장 작은 유효 경계에서 검증. Mock은 무조건 배제하지 말고 production fidelity 손실이 큰 경우 실제 dependency 사용 ([REF-099](docs/00-governance/reference-register.md)).
 
 ## 3. 검증
 - Markdown: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`

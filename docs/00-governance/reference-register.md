@@ -6,27 +6,18 @@ owner: Project Owner
 updated: 2026-11-02
 links:
   requirements: []
-  adr: [ADR-0001]
+  adr: [ADR-0001, ADR-0003, ADR-0004]
   experiments: []
 ---
 # 외부 참고자료 레지스트리
 
-REF-001~008은 미확인 후보. 근거로 사용 전 확인 필요.
-REF-009~013은 확인한 GitHub 문서.
-REF-014~022는 2026-10-29, REF-023~029는 2026-10-30에 확인한 공개 실무 자료.
-REF-030~044는 2026-10-30에 확인한 payment·checkout·load model 자료.
-각 항목에 적용 범위와 한계를 기록. 외부 자료가 ATLAS 정책을 대신 결정하지 않음.
+REF-009~013은 GitHub 협업 문서, REF-014~029는 engineering/discovery 자료, REF-030~044는 payment·checkout·load model 자료.
+REF-045~086은 앞선 도메인·stack 결정이 사용하는 근거이므로 유지.
+REF-087/089/092/094/095/096/097/098은 module boundary·계층·JPA persistence review에 직접 사용한 핵심 자료.
+각 항목의 적용 범위·한계를 기록. 외부 자료가 ATLAS 정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
 |---|---|---|---|---|---|
-| REF-001 | Fowler, Architecture Decision Record / 실무 글 | https://martinfowler.com/bliki/ArchitectureDecisionRecord.html | 미확인 | ADR 기록 방식 | ? 후보; 확인 전 근거 아님 |
-| REF-002 | UK GDS, Documenting architecture decisions / 정부 가이드 | https://gds-way.digital.cabinet-office.gov.uk/standards/architecture-decisions.html | 미확인 | ADR 기록 방식 | ? 후보; 확인 전 근거 아님 |
-| REF-003 | C4 Model diagrams / 아키텍처 도식 안내 | https://c4model.com/diagrams | 미확인 | 시스템 구성도 | ? 후보; 확인 전 근거 아님 |
-| REF-004 | EventStorming resources / 도메인 탐색 자료 | https://www.eventstorming.com/resources/ | 미확인 | 도메인 탐색 | ? 후보; 확인 전 근거 아님 |
-| REF-005 | Diátaxis / 문서 방법론 | https://diataxis.fr/ | 미확인 | 문서 유형 구분 | ? 후보; 확인 전 근거 아님 |
-| REF-006 | Google SRE Workbook / 신뢰성 자료 | https://sre.google/workbook/table-of-contents/ | 미확인 | 신뢰성·실험 | ? 후보; 확인 전 근거 아님 |
-| REF-007 | OWASP ASVS / 보안 표준 | https://asvs.owasp.org/ | 미확인 | 보안 요구사항 | ? 버전/적용 항목 미확인 |
-| REF-008 | OpenAPI Specification / API 표준 | https://spec.openapis.org/oas/latest.html | 미확인 | API 계약 | ? 구현 시점 버전 확인 |
 | REF-009 | GitHub, PR template 안내 / 제품 문서 | https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository | 2026-10-29 | PR template | ✓ 확인; 본문을 채우지만 checkbox 완료를 강제하지 않음 |
 | REF-010 | GitHub, Issue form 형식 / 제품 문서 | https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms | 2026-10-29 | Issue 입력 양식 | ✓ 확인; 응답은 Issue 본문 Markdown, PR에는 적용 안 됨 |
 | REF-011 | GitHub, diagram 작성 안내 / 제품 문서 | https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams | 2026-10-29 | Issue/PR/Markdown 도식 | ✓ 확인; Mermaid 문법은 지원 버전에 따름 |
@@ -73,7 +64,7 @@ REF-030~044는 2026-10-30에 확인한 payment·checkout·load model 자료.
 | REF-052 | Arika, Modular Monoliths in Practice / practitioner guide | https://www.arika.dev/blog/architecture/modular-monolith-in-practice/ | 2026-11-02 | Module APIs, logical DB ownership, boundary checks, extraction paths | △ Practitioner design article; not benchmark or independent performance evidence |
 | REF-053 | Shopify Engineering, A Packwerk Retrospective / engineering retrospective | https://shopify.engineering/a-packwerk-retrospective | 2026-11-02 | Domain labels may not match runtime dependencies; strict isolation can add indirection; tools have blind spots | △ Shopify Rails monolith context; no ATLAS module map or performance evidence |
 | REF-054 | Thoughtworks, When (modular) monolith is the better way / practitioner design article | https://www.thoughtworks.com/insights/blog/microservices/modular-monolith-better-way-build-software | 2026-11-02 | E-commerce capability modules and conditions for later extraction | △ Design perspective; not an independently measured architecture comparison |
-| REF-055 | Spring Modulith, Verifying Application Module Structure / framework documentation | https://docs.spring.io/spring-modulith/reference/verification.html | 2026-11-02 | Checks cyclic dependencies, public API access and declared module dependencies | ✓ Spring Modulith 2.1.2 selected for test scope; dependency/version compatibility recorded in REF-064. It does not determine correct domain boundaries |
+| REF-055 | Spring Modulith, Verifying Application Module Structure / framework documentation | https://docs.spring.io/spring-modulith/reference/verification.html | 2026-11-02 | Named module API/cycle verification in prior package-marker design | △ Previously used; current no-marker package boundaries are checked with ArchUnit (REF-098). It does not determine correct domain boundaries |
 | REF-056 | PostgreSQL 18, Explicit Locking / database documentation | https://www.postgresql.org/docs/18/explicit-locking.html | 2026-11-02 | Row-lock behavior, transaction lifetime, deadlocks, consistent lock order | ✓ Version-specific semantics; no ATLAS capacity or design proof |
 | REF-057 | PostgreSQL 18, Transaction Isolation / database documentation | https://www.postgresql.org/docs/18/transaction-iso.html | 2026-11-02 | Isolation behavior and non-transactional sequence value changes | ✓ Version-specific semantics; deployment version OPEN |
 | REF-058 | EcomLinx, Inventory OS SELECT FOR UPDATE / vendor engineering blog | https://www.ecomlinx.com/blog/inventory-os-select-for-update | 2026-11-02 | Vendor example combining row locks and guarded inventory updates | △ Vendor marketing; quantitative claims not independently verified, not ATLAS recommendation |
@@ -105,12 +96,23 @@ REF-030~044는 2026-10-30에 확인한 payment·checkout·load model 자료.
 | REF-084 | Spring Framework 7.0, Error Responses / ProblemDetail | https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-rest-exceptions.html | 2026-11-02 | Built-in RFC 9457 `ProblemDetail`, `ErrorResponse`, and `@ControllerAdvice` processing | ✓ Standard framework support; common API envelope remains ATLAS policy |
 | REF-085 | IETF, RFC 9457 — Problem Details for HTTP APIs | https://www.rfc-editor.org/rfc/rfc9457.html | 2026-11-02 | Standard HTTP API error representation | ✓ Protocol standard; ATLAS `code` is an extension property |
 | REF-086 | Apache Maven 3.9.16, Release Notes | https://maven.apache.org/docs/3.9.16/release-notes.html | 2026-11-02 | Maven Wrapper alternative version considered alongside Gradle | ✓ Release facts, not comparative build-speed evidence |
+| REF-087 | Google Cloud Well-Architected Framework, Promote modular design / architecture guidance | https://docs.cloud.google.com/architecture/framework/performance-optimization/promote-modular-design | 2026-11-02 | Monolith와 microservices 모두에서 명확한 module interface, loose coupling, modularity/performance trade-off | ✓ 공식 Google Cloud guidance; 특정 ATLAS module map이나 benchmark는 아님 |
+| REF-089 | Alibaba Cloud Community, The Simplicity of COLA / architecture author blog | https://www.alibabacloud.com/blog/the-simplicity-of-cola-an-alibaba-open-source-application-architecture_597234 | 2026-11-02 | COLA 작성자가 불필요한 CommandBus/interceptor/assembler를 제거하고 직접 읽히는 흐름을 선택한 경험 | △ Alibaba Cloud Community에 게재된 작성자 견해; 보편적 성능·품질 증명 아님 |
+| REF-092 | Gradle User Manual 9.8.2, Multi-Project Builds / build documentation | https://docs.gradle.org/9.8.2/userguide/multi_project_builds.html | 2026-11-02 | Subprojects, project dependency declarations and lowercase kebab-case project names | ✓ Official build-tool documentation; supports Gradle mechanics/naming, not domain boundary selection |
+| REF-094 | 美团技术团队, 领域驱动设计在互联网业务开发中的实践 / engineering case | https://tech.meituan.com/2017/12/22/ddd-in-practice.html | 2026-11-02 | Business concepts and capability boundaries, cohesive contexts, explicit inter-context relationships | ✓ Meituan engineering blog case; lottery platform/DDD context, not an ATLAS module map or performance claim |
+| REF-095 | 少个分号, 架构守护测试：ArchUnit / 개인 개발자 기술 블로그 | https://shaogefenhao.com/posts/architecture/arch-unit.html | 2026-11-02 | Capability별 모듈과 모듈 내부 계층을 별도 결정하고, 복잡도에 맞는 구조를 선택하며 경계를 검사 | △ 개인 경험; 제안된 모든 층/ArchUnit 도입을 ATLAS에 일반화하지 않음 |
+| REF-096 | Tiktuzki's space, Payment State & Idempotency / 개인 결제 설계 블로그 | https://www.tiktuzki.com/docs/production-patterns/payment-state-and-idempotency | 2026-11-02 | Pending/unknown 결제 상태, same-attempt idempotency, provider status mapping | △ 개인 설계 글; 업계 표준이나 ATLAS payment status contract를 입증하지 않음 |
+| REF-097 | Spring Data JPA, Defining Repository Interfaces / framework documentation | https://docs.spring.io/spring-data/jpa/reference/repositories/definition.html | 2026-11-02 | Typed `JpaRepository`가 CRUD 기능을 제공하는 계약 | ✓ Official API documentation; JPA adoption does not prove performance improvement |
+| REF-098 | ArchUnit 1.5.1, User Guide / architecture test documentation | https://www.archunit.org/userguide/html/000_Index.html | 2026-11-02 | Explicitly tests package dependency rules without package metadata | ✓ Official tool guide; tests enforce only the package rules ATLAS writes, not correctness of the chosen boundaries |
+| REF-099 | Google Testing Blog, Increase Test Fidelity By Avoiding Mocks / practitioner testing guidance | https://testing.googleblog.com/2024/02/increase-test-fidelity-by-avoiding-mocks.html | 2026-11-03 | Test doubles can diverge from production behavior; choose a real dependency when fidelity matters | △ Practitioner guidance, not a blanket ban on mocks or a test-count formula |
+
+REF-030~086, REF-087/089/092/094/095/096/097/098/099은 기존 결정과 최근 module/persistence review에 사용한 vendor·practitioner·기술 자료. ATLAS production behavior, 성능 보장, 보편적 best practice를 입증하지 않음.
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인.
 - Authorization validity/honor period는 provider 정책이며 ATLAS inventory TTL과 별개.
 - Webhook 재전송도 Buyer checkout TTL/API deadline과 별도.
-REF-030~086 are provider/product/practitioner cases, technical references, or design explanations. They do not establish ATLAS production behavior, performance guarantees, universal best practices, API support, or legal obligations.
 
 ## 관련 문서
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): D-037 uses context-specific REF-023/050~052; D-038/D-039 use REF-050/053~058; D-040/D-041 use REF-059~067; D-043 uses REF-068; Issue #75 review uses REF-053~055/069~073. [ADR-0002](../06-decisions/adr/ADR-0002-runtime-technology-review.md): technology/common-processing comparison uses REF-059~086; sources are contextual, not universal recommendations.
+- [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md): D-047 uses REF-087/089/092/094/095/096/098 for modularity, naming, Gradle boundaries, practical layer guidance and ArchUnit package checks; its test-scope guidance uses REF-099. [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md): D-048 uses REF-056/057/072/073/095/097 for CRUD vs database-specific SQL; all practitioner claims retain their stated limits.
 - [Project Charter](project-charter.md): 확인되지 않은 정책/성능 주장을 제한.
