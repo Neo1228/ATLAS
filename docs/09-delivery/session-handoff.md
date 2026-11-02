@@ -22,6 +22,7 @@ links:
 - Local 범위는 Fake PSP와 synthetic Buyer만 포함. Live payment, cloud deployment, production performance claim은 없음 ([Issue #72](https://github.com/Neo1228/ATLAS/issues/72)).
 - 현재 코드 구조: [D-047/D-048](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md). `application-module` + 다섯 `*-module`; 공개 `.service`/`.dto.request`/`.dto.response`/`.exception`, lifecycle enum은 공유가 필요한 경우 `.persistence.state`, entity/repository는 모듈 내부. CRUD는 JPA, DB 특화 concurrency SQL만 JDBC/native query. 공통 HTTP 오류는 `GlobalExceptionHandler`; CQRS·`internal`·package-info marker 없음.
 - Latest verification (2026-11-03): `./gradlew check :application-module:bootJar` passed, including domain unit and PostgreSQL/Testcontainers suites. Compose PostgreSQL applied V1–V5; `bootRun` plus GET of a missing campaign returned 404 ProblemDetail `CAMPAIGN_NOT_FOUND`. Markdown lint: 33 files, 0 issues.
+- GitHub: [PR #83](https://github.com/Neo1228/ATLAS/pull/83) is open on `refactor/82-layered-module-boundaries`. [Issue #82](https://github.com/Neo1228/ATLAS/issues/82) was rewritten to match the current scope; earlier Sale/Queue naming and application-assembler proposals are superseded. PR #79/#80 remain historical and unchanged. PR #83 closes #82 on merge.
 
 ## 확정된 방향
 - 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).
