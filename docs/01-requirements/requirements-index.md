@@ -124,35 +124,36 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    state "재고 있음" as Available
-    state "Authorization 완료" as Authorized
-    state "결과 미확정" as Unknown
-    state "Capture 대기" as CapturePending
-    state "Capture 거절" as CaptureDeclined
-    state "Authorization 취소 대기" as VoidPending
-    state "재고 예약(hold)" as Held
-    state "재고 확정(capture 확인)" as Claimed
+    state "사용 가능" as Available
+    state "승인 완료" as Authorized
+    state "결과 불명" as Unknown
+    state "청구 대기" as CapturePending
+    state "청구 거절" as CaptureDeclined
+    state "승인 취소 대기" as VoidPending
+    state "재고 보유" as Held
+    state "재고 확정" as Claimed
     [*] --> Available
-    Available --> Held: 1개 hold 확인, 고정 시간 시작
-    Held --> Available: AUTHORIZE 제출 전 TTL 만료
-    Held --> Unknown: 만료 전에 제출했으나 결과 미확정
-    Authorized --> CapturePending: capture 요청
-    Authorized --> VoidPending: TTL/cancel, capture 미완료
-    CapturePending --> Claimed: capture 완료
-    CapturePending --> CaptureDeclined: 거절 확인
-    CapturePending --> Unknown: 결과 미확정
-    CapturePending --> CapturePending: 처리 대기, 재고 사용 불가
-    CaptureDeclined --> VoidPending: authorization 유효
-    CaptureDeclined --> Available: 비결제 확인, 활성 authorization 없음
-    Unknown --> Claimed: capture 성공 확인
-    Unknown --> CapturePending: capture 대기 확인
-    Unknown --> CaptureDeclined: capture 거절 확인
-    Unknown --> VoidPending: 미청구 확인, authorization 유효
-    Unknown --> Available: 비결제 확인, 활성 authorization 없음
-    Unknown --> Unknown: 같은 operation/attempt 대조
-    VoidPending --> Available: void/만료와 비결제 확인
-    VoidPending --> Claimed: capture 성공 확인
-    VoidPending --> Unknown: void 결과 미확정
+    Available --> Held: 예약
+    Held --> Available: 만료
+    Held --> Authorized: 승인
+    Held --> Unknown: 불명
+    Authorized --> CapturePending: 청구
+    Authorized --> VoidPending: 만료/취소
+    CapturePending --> Claimed: 성공
+    CapturePending --> CaptureDeclined: 거절
+    CapturePending --> Unknown: 불명
+    CapturePending --> CapturePending: 대기
+    CaptureDeclined --> VoidPending: 승인 유효
+    CaptureDeclined --> Available: 비결제
+    Unknown --> Claimed: 성공
+    Unknown --> CapturePending: 대기
+    Unknown --> CaptureDeclined: 거절
+    Unknown --> VoidPending: 미청구
+    Unknown --> Available: 비결제
+    Unknown --> Unknown: 재조회
+    VoidPending --> Available: 취소/만료
+    VoidPending --> Claimed: 성공
+    VoidPending --> Unknown: 불명
 
 ```
 
