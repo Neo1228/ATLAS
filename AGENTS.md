@@ -29,6 +29,7 @@
 - Wiring, forwarding, 단순 mapping, incidental defaults, 중복 assertion은 테스트하지 않음. 동일 위험을 여러 layer에서 반복 검증하지 않음.
 - PostgreSQL SQL/locking은 실제 PostgreSQL 경계에서 검증. 나머지는 가장 작은 유효 경계 사용. Mock은 fidelity 손실에 따라 판단 ([REF-099](docs/00-governance/reference-register.md)).
 - 외부 PSP 상태와 주문 상태, 내부 정산과 실제 지급 구분. 초기 범위에서 실결제·개인정보·판매사 지급 제외.
+- 완료 검증은 변경된 실제 경로를 smoke 실행하고 관련 contract/invariant를 확인. Performance/capacity 주장은 workload·환경을 명시한 반복 측정으로만 제시; 코드 모양이나 단발 측정으로 추정하지 않음.
 
 ## GitHub 작업 및 변경 관리
 - Issue는 repository-owned form으로 작성. 본문 설명·trace 기준은 [Change Control](docs/00-governance/change-control.md), 실제로 실행하지 않은 검증은 성공으로 기록하지 않음.
@@ -42,7 +43,7 @@
 - Required reviewers 0명; 승인 리뷰 정책은 별도 합의 필요. Merge는 squash only; branch logical commits는 보존, `main`에는 squash commit 하나 반영.
 - 공유 이력 amend/rebase, 무승인 force push, `main` 직접 push, 미추적 작업을 지우는 reset/clean 금지. 승인된 예외는 별도 Issue, 대상 SHA, 백업 ref, `--force-with-lease`, protection 복원 기록 필요. 충돌 해결 뒤 diff 및 관련 lint/test 재실행.
 - Git 작성자 정보는 local repository에만 설정하고 GitHub no-reply 주소 사용. API key/token, 개인정보, 실제 결제 정보는 코드·로그·Issue/PR에 기록 금지; placeholder만 사용. 유출 시 즉시 폐기/교체.
-- 실제 Issue/commit/PR 상태·SHA·검증만 [Milestone Log](docs/09-delivery/milestone-log.md)와 [Session Handoff](docs/09-delivery/session-handoff.md)에 기록. 병합 및 CI 확인 뒤 별도 branch에서 다음 작업 시작. Gate 종료·범위 변경은 사용자 승인 필요.
+- Per-change Issue/commit/PR records stay in GitHub. Roadmap owns current gates/approvals; Milestone Log keeps significant delivery milestones and reusable incident lessons. Do not add a separate handoff or closeout entry for routine PRs. Confirm merge/checks before the next branch; Gate changes need owner approval.
 
 ## 재발 방지 기준
 - 파일 확인은 정적 read 도구 사용. 사용자가 금지한 `view` command는 실행하지 않음.
@@ -58,6 +59,7 @@
 - Migration/benchmark SQL은 대상 PostgreSQL version에서 실행 검증. 전용 disposable database/schema만 사용하고 실행 시 DB 이름을 guard; 기존 `atlas` database를 테스트 대상으로 사용하지 않음. 실패한 SQL 실행은 결과로 기록하지 않으며 최종 성공 출력과 환경을 함께 보존.
 
 ## 진입점
-- 문서 인덱스: [docs/README.md](docs/README.md)
-- 프로젝트 범위: [Project Charter](docs/00-governance/project-charter.md)
-- 운영 기준: [문서 인덱스](docs/README.md), [Change Control](docs/00-governance/change-control.md), [GitHub 작업 및 변경 관리](AGENTS.md#github-작업-및-변경-관리).
+- 진입·실행·module map: [README](README.md).
+- 프로젝트 승인·현재 단계: [Project Charter](docs/00-governance/project-charter.md), [Roadmap](docs/09-delivery/roadmap.md).
+- Delivery history: [Milestone Log](docs/09-delivery/milestone-log.md).
+- Change/decision principles: [Change Control](docs/00-governance/change-control.md), [Decision Log](docs/00-governance/decision-log.md). Git operation rules are in this file.
