@@ -7,6 +7,7 @@ import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 
 @Entity
 @IdClass(SellerSkuId.class)
@@ -15,13 +16,16 @@ public class SellerSku {
 
     @Id
     @Column(name = "seller_id", nullable = false)
+    @Getter
     private UUID sellerId;
 
     @Id
     @Column(name = "sku_id", nullable = false, length = 128)
+    @Getter
     private String skuId;
 
     @Column(name = "max_active_checkouts", nullable = false)
+    @Getter
     private int maxActiveCheckouts;
 
     @Column(name = "created_at", nullable = false)
@@ -37,15 +41,4 @@ public class SellerSku {
         this.createdAt = createdAt;
     }
 
-    public UUID getSellerId() {
-        return sellerId;
-    }
-
-    public String getSkuId() {
-        return skuId;
-    }
-
-    public int getMaxActiveCheckouts() {
-        return maxActiveCheckouts;
-    }
 }

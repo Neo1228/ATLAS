@@ -11,20 +11,17 @@ import com.atlas.campaign.service.SellerSkuService;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class CampaignServiceImpl implements CampaignService {
 
     private final CampaignRepository campaigns;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
-    public CampaignServiceImpl(CampaignRepository campaigns, SellerSkuService sellerSkus, Clock clock) {
-        this.campaigns = campaigns;
-        this.sellerSkus = sellerSkus;
-        this.clock = clock;
-    }
 
     @Override
     @Transactional

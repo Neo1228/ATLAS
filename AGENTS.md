@@ -15,8 +15,9 @@
 - library·plugin 도입을 무조건 피하거나 자동 선택하지 않음. 기존 JDK/Spring/DB 기능, 유지관리 중인 library, 직접 구현을 비교. 요구 기능·호환성·운영 비용에 맞는 성숙한 library가 있으면 직접 재구현보다 우선. 기능 공백, 대안, 유지보수·보안·라이선스 비용, runtime/test/build 범위를 Issue/PR에 기록.
 - Git 저장소 분리는 기본 보류. 독립 release/team/data ownership 또는 측정된 scaling·security 경계와 승인된 ADR이 있을 때만 검토.
 - Java 구현 코드에는 FQCN 대신 import 사용. Gradle `check`의 Checkstyle 검사로 강제.
-- Java 주석은 자연스러운 한국어 우선. 표준 type/API/protocol 이름은 원문 유지. 코드 설명을 반복하지 말고 이유·불변조건·외부 제약을 기록.
-- 각 도메인은 업무 실패용 `*Exception` 하나와 `Code` enum을 제공. `application-module`의 `application.exception.GlobalExceptionHandler`가 RFC 9457 `ProblemDetail`과 안정된 `code`로 변환. `IllegalArgumentException`을 client validation 응답으로 노출하지 않음.
+- Lombok 1.18.48은 명시적으로 승인된 범위에서만 사용: 기계적인 public getter는 `@Getter`, 단순 `final` field 주입 생성자는 `@RequiredArgsConstructor`. `@Data`, 일괄 `@Setter`, builder, entity equality 생성 금지. JPA lifecycle·불변조건 생성자와 필요한 setter는 명시적으로 유지.
+- Lombok 의존성은 `compileOnly` + `annotationProcessor`로 한정. javac의 미처리 Spring/JPA annotation 진단만 `-Xlint:-processing`으로 제외하고 나머지 warning은 `-Werror` 유지. JDK 25의 `sun.misc.Unsafe` 경고는 숨기거나 JDK flag로 우회하지 않음; JDK 26 적용 전 호환성 재검토.
+- [README 로컬 실행 환경](README.md#로컬-실행-환경)과 [공식 Lombok IDE 설정 안내](https://projectlombok.org/setup)에 설정을 기록. `lombok.config`는 `@lombok.Generated` marker가 class file dependency로 기록되지 않도록 설정; ModuleBoundaryTest 경계를 유지.
 - HTTP GET/read query는 domain state를 변경하지 않음. 만료·retry·promotion은 상태 변경 요청 또는 scheduler가 처리. 조회는 마지막으로 저장된 상태 반환.
 - Cross-cutting utility를 위해 `common` package/module을 선제 생성하지 않음. Clock/error mapping처럼 실제 application-wide policy만 root composition에 두고, 반복된 domain ownership이 생기면 ADR 검토.
 - Public API: `.service`, `.dto.request`, `.dto.response`, `.exception`.

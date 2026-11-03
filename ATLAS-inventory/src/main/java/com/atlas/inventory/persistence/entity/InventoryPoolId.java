@@ -5,15 +5,18 @@ import java.util.Objects;
 import java.util.UUID;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
+import lombok.Getter;
 
 @Embeddable
 public class InventoryPoolId implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @Column(name = "seller_id", nullable = false)
+    @Getter
     private UUID sellerId;
 
     @Column(name = "sku_id", nullable = false, length = 128)
+    @Getter
     private String skuId;
 
     protected InventoryPoolId() {
@@ -23,9 +26,6 @@ public class InventoryPoolId implements Serializable {
         this.sellerId = sellerId;
         this.skuId = skuId;
     }
-
-    public UUID getSellerId() { return sellerId; }
-    public String getSkuId() { return skuId; }
 
     @Override
     public boolean equals(Object other) {

@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
+import lombok.Getter;
 
 @Entity
 @Table(name = "payment_attempt")
@@ -16,20 +17,25 @@ public class PaymentAttempt {
 
     @Id
     @Column(name = "order_id", nullable = false)
+    @Getter
     private UUID orderId;
 
     @Column(name = "attempt_id", nullable = false, unique = true)
+    @Getter
     private UUID attemptId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
+    @Getter
     private PaymentState state;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_phase", nullable = false, length = 20)
+    @Getter
     private PaymentPhase paymentPhase;
 
     @Column(name = "authorization_active", nullable = false)
+    @Getter
     private boolean authorizationActive;
 
     protected PaymentAttempt() {
@@ -43,12 +49,6 @@ public class PaymentAttempt {
         this.paymentPhase = paymentPhase;
         this.authorizationActive = authorizationActive;
     }
-
-    public UUID getOrderId() { return orderId; }
-    public UUID getAttemptId() { return attemptId; }
-    public PaymentState getState() { return state; }
-    public PaymentPhase getPaymentPhase() { return paymentPhase; }
-    public boolean isAuthorizationActive() { return authorizationActive; }
 
     public void setState(PaymentState state) { this.state = state; }
     public void setPaymentPhase(PaymentPhase paymentPhase) { this.paymentPhase = paymentPhase; }

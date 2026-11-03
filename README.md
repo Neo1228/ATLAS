@@ -52,6 +52,7 @@ ATLAS는 Spring Boot modular monolith입니다. 여섯 Gradle project는 저장�
 - 필요 도구: JDK 25, Docker Compose. CI는 Temurin 25를 사용하며 운영 JDK 배포판은 미정입니다.
 - Toolchain 설정: `export JAVA_HOME="<JDK 25 home>"`; `export PATH="$JAVA_HOME/bin:$PATH"`.
 - PostgreSQL 시작 및 준비 확인: `docker compose up -d --wait postgres`
+- Lombok 1.18.48은 `compileOnly` + `annotationProcessor`로만 사용하며 runtime classpath에는 포함하지 않습니다. Root `lombok.config`는 generated marker를 class file에 넣지 않습니다. IDE별 설정은 [공식 Lombok setup 안내](https://projectlombok.org/setup) 참조.
 - Colima에서 Testcontainers를 사용할 때:
 
   ```sh

@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 import org.hibernate.annotations.UuidGenerator;
 
 @Entity
@@ -20,19 +21,24 @@ public class Campaign {
     @Column(name = "campaign_id")
     @GeneratedValue
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Getter
     private UUID campaignId;
 
     @Column(name = "seller_id", nullable = false)
+    @Getter
     private UUID sellerId;
 
     @Column(name = "sku_id", nullable = false, length = 128)
+    @Getter
     private String skuId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
+    @Getter
     private CampaignStatus status;
 
     @Column(name = "queue_ticket_ttl_seconds", nullable = false)
+    @Getter
     private long queueTicketTtlSeconds;
 
     @Column(name = "created_at", nullable = false)
@@ -48,26 +54,6 @@ public class Campaign {
         this.status = status;
         this.queueTicketTtlSeconds = queueTicketTtlSeconds;
         this.createdAt = createdAt;
-    }
-
-    public UUID getCampaignId() {
-        return campaignId;
-    }
-
-    public UUID getSellerId() {
-        return sellerId;
-    }
-
-    public String getSkuId() {
-        return skuId;
-    }
-
-    public CampaignStatus getStatus() {
-        return status;
-    }
-
-    public long getQueueTicketTtlSeconds() {
-        return queueTicketTtlSeconds;
     }
 
     public void setStatus(CampaignStatus status) {

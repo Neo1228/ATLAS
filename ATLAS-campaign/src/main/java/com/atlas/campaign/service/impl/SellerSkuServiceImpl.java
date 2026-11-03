@@ -11,9 +11,11 @@ import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
 import java.time.Clock;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class SellerSkuServiceImpl implements SellerSkuService {
 
@@ -21,14 +23,6 @@ public class SellerSkuServiceImpl implements SellerSkuService {
     private final SellerSkuRepository sellerSkus;
     private final InventoryService inventory;
     private final Clock clock;
-
-    public SellerSkuServiceImpl(SellerRepository sellers, SellerSkuRepository sellerSkus,
-            InventoryService inventory, Clock clock) {
-        this.sellers = sellers;
-        this.sellerSkus = sellerSkus;
-        this.inventory = inventory;
-        this.clock = clock;
-    }
 
     @Override
     @Transactional

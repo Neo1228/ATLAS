@@ -17,12 +17,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class AdmissionServiceImpl implements AdmissionService {
     private final TicketRepository tickets;
@@ -30,16 +31,6 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final CampaignService campaigns;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
-
-    @Autowired
-    public AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository, CampaignService campaigns,
-            SellerSkuService sellerSkus, Clock clock) {
-        this.tickets = tickets;
-        this.queueRepository = queueRepository;
-        this.campaigns = campaigns;
-        this.sellerSkus = sellerSkus;
-        this.clock = clock;
-    }
 
     @Override
     @Transactional

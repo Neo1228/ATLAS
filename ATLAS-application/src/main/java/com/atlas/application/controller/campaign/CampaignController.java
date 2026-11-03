@@ -8,6 +8,7 @@ import com.atlas.campaign.service.CampaignService;
 import jakarta.validation.Valid;
 import java.time.Duration;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,15 +18,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/campaigns")
 public class CampaignController {
 
     private final CampaignService campaigns;
-
-    public CampaignController(CampaignService campaigns) {
-        this.campaigns = campaigns;
-    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
