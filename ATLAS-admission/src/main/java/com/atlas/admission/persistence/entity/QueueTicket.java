@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 import org.hibernate.annotations.UuidGenerator;
 
 @Entity
@@ -23,31 +24,40 @@ public class QueueTicket {
     @Column(name = "ticket_id", nullable = false)
     @GeneratedValue
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Getter
     private UUID ticketId;
 
     @Column(name = "campaign_id", nullable = false)
+    @Getter
     private UUID campaignId;
 
     @Column(name = "seller_id", nullable = false)
+    @Getter
     private UUID sellerId;
 
     @Column(name = "sku_id", nullable = false, length = 128)
+    @Getter
     private String skuId;
 
     @Column(name = "buyer_ref", nullable = false, length = 256)
+    @Getter
     private String buyerRef;
 
     @Column(name = "idempotency_key", nullable = false, length = 256)
+    @Getter
     private String idempotencyKey;
 
     @Column(name = "sequence", nullable = false)
+    @Getter
     private long sequence;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
+    @Getter
     private TicketStatus status;
 
     @Column(name = "expires_at")
+    @Getter
     private Instant expiresAt;
 
     @Column(name = "created_at", nullable = false)
@@ -57,6 +67,7 @@ public class QueueTicket {
     private Instant checkoutSlotAcquiredAt;
 
     @Column(name = "checkout_slot_held", nullable = false)
+    @Getter
     private boolean checkoutSlotHeld;
 
     protected QueueTicket() { }
@@ -77,16 +88,6 @@ public class QueueTicket {
         this.checkoutSlotHeld = checkoutSlotHeld;
     }
 
-    public UUID getTicketId() { return ticketId; }
-    public UUID getCampaignId() { return campaignId; }
-    public UUID getSellerId() { return sellerId; }
-    public String getSkuId() { return skuId; }
-    public String getBuyerRef() { return buyerRef; }
-    public String getIdempotencyKey() { return idempotencyKey; }
-    public long getSequence() { return sequence; }
-    public TicketStatus getStatus() { return status; }
-    public Instant getExpiresAt() { return expiresAt; }
-    public boolean isCheckoutSlotHeld() { return checkoutSlotHeld; }
     public void setStatus(TicketStatus status) { this.status = status; }
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
     public void setCheckoutSlotHeld(boolean checkoutSlotHeld) { this.checkoutSlotHeld = checkoutSlotHeld; }

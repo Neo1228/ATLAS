@@ -4,6 +4,7 @@ plugins {
 
 group = 'com.atlas'
 version = '0.1.0-SNAPSHOT'
+ext.lombokVersion = '1.18.48'
 
 allprojects {
     repositories {
@@ -35,7 +36,8 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
-        options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+        // Lombok은 Spring/JPA annotation을 처리하지 않으므로 processing 진단만 제외.
+        options.compilerArgs.addAll(['-Xlint:all,-processing', '-Werror'])
     }
 
     tasks.named('test') {

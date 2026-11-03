@@ -5,6 +5,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
+import lombok.Getter;
 import org.hibernate.annotations.UuidGenerator;
 
 @Entity
@@ -14,12 +15,10 @@ public class Seller {
     @Id
     @GeneratedValue
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Getter
     private UUID sellerId;
 
     public Seller() {
     }
 
-    public UUID getSellerId() {
-        return sellerId;
-    }
 }

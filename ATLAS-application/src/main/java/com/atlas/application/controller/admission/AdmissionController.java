@@ -7,6 +7,7 @@ import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.application.controller.dto.JoinQueueHttpRequest;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,15 +18,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/campaigns/{campaignId}/tickets")
 public class AdmissionController {
 
     private final AdmissionService admission;
-
-    public AdmissionController(AdmissionService admission) {
-        this.admission = admission;
-    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
