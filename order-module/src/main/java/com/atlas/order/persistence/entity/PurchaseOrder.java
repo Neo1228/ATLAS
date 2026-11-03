@@ -16,8 +16,10 @@ public class PurchaseOrder {
     @Id
     @Column(name = "order_id", nullable = false)
     private UUID orderId;
-    @Column(name = "campaign_id", nullable = false)
-    private UUID campaignId;
+ @Column(name = "seller_id", nullable = false)
+ private UUID sellerId;
+ @Column(name = "campaign_id", nullable = false)
+ private UUID campaignId;
     @Column(name = "ticket_id", nullable = false)
     private UUID ticketId;
     @Column(name = "buyer_ref", nullable = false, length = 256)
@@ -38,22 +40,24 @@ public class PurchaseOrder {
 
     protected PurchaseOrder() { }
 
-    public PurchaseOrder(UUID orderId, UUID campaignId, UUID ticketId, String buyerRef, String skuId,
-            OrderState state, Instant checkoutExpiresAt, UUID paymentAttemptId, Instant createdAt, Instant updatedAt) {
-        this.orderId = orderId;
-        this.campaignId = campaignId;
-        this.ticketId = ticketId;
-        this.buyerRef = buyerRef;
-        this.skuId = skuId;
-        this.state = state;
-        this.checkoutExpiresAt = checkoutExpiresAt;
-        this.paymentAttemptId = paymentAttemptId;
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
-    }
+ public PurchaseOrder(UUID orderId, UUID campaignId, UUID sellerId, UUID ticketId, String buyerRef, String skuId,
+ OrderState state, Instant checkoutExpiresAt, UUID paymentAttemptId, Instant createdAt, Instant updatedAt) {
+ this.orderId = orderId;
+ this.campaignId = campaignId;
+ this.sellerId = sellerId;
+ this.ticketId = ticketId;
+ this.buyerRef = buyerRef;
+ this.skuId = skuId;
+ this.state = state;
+ this.checkoutExpiresAt = checkoutExpiresAt;
+ this.paymentAttemptId = paymentAttemptId;
+ this.createdAt = createdAt;
+ this.updatedAt = updatedAt;
+ }
 
     public UUID orderId() { return orderId; }
     public UUID campaignId() { return campaignId; }
+ public UUID sellerId() { return sellerId; }
     public UUID ticketId() { return ticketId; }
     public String buyerRef() { return buyerRef; }
     public String skuId() { return skuId; }

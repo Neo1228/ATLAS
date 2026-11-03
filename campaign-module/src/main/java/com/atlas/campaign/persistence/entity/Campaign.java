@@ -15,41 +15,59 @@ import java.util.UUID;
 public class Campaign {
 
     @Id
-    @Column(name = "campaign_id", nullable = false)
+    @Column(name = "campaign_id")
     private UUID campaignId;
+
+    @Column(name = "seller_id", nullable = false)
+    private UUID sellerId;
 
     @Column(name = "sku_id", nullable = false, length = 128)
     private String skuId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 16)
+    @Column(nullable = false, length = 16)
     private CampaignStatus status;
 
     @Column(name = "queue_ticket_ttl_seconds", nullable = false)
     private long queueTicketTtlSeconds;
 
-    @Column(name = "max_active_checkouts", nullable = false)
-    private int maxActiveCheckouts;
-
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    protected Campaign() { }
+    protected Campaign() {
+    }
 
-    public Campaign(UUID campaignId, String skuId, CampaignStatus status, long queueTicketTtlSeconds,
-            int maxActiveCheckouts, Instant createdAt) {
+    public Campaign(UUID campaignId, UUID sellerId, String skuId, CampaignStatus status,
+            long queueTicketTtlSeconds, Instant createdAt) {
         this.campaignId = campaignId;
+        this.sellerId = sellerId;
         this.skuId = skuId;
         this.status = status;
         this.queueTicketTtlSeconds = queueTicketTtlSeconds;
-        this.maxActiveCheckouts = maxActiveCheckouts;
         this.createdAt = createdAt;
     }
 
-    public UUID getCampaignId() { return campaignId; }
-    public String getSkuId() { return skuId; }
-    public CampaignStatus getStatus() { return status; }
-    public void setStatus(CampaignStatus status) { this.status = status; }
-    public long getQueueTicketTtlSeconds() { return queueTicketTtlSeconds; }
-    public int getMaxActiveCheckouts() { return maxActiveCheckouts; }
+    public UUID getCampaignId() {
+        return campaignId;
+    }
+
+    public UUID getSellerId() {
+        return sellerId;
+    }
+
+    public String getSkuId() {
+        return skuId;
+    }
+
+    public CampaignStatus getStatus() {
+        return status;
+    }
+
+    public long getQueueTicketTtlSeconds() {
+        return queueTicketTtlSeconds;
+    }
+
+    public void setStatus(CampaignStatus status) {
+        this.status = status;
+    }
 }

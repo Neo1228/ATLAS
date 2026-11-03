@@ -8,6 +8,7 @@ import java.util.UUID;
 public record QueueTicketResponse(
         UUID ticketId,
         UUID campaignId,
+        UUID sellerId,
         String skuId,
         String buyerRef,
         long sequence,

@@ -20,6 +20,9 @@ public class Reservation {
     @Column(name = "campaign_id", nullable = false)
     private UUID campaignId;
 
+    @Column(name = "seller_id", nullable = false)
+    private UUID sellerId;
+
     @Column(name = "sku_id", nullable = false, length = 128)
     private String skuId;
 
@@ -33,10 +36,11 @@ public class Reservation {
     protected Reservation() {
     }
 
-    public Reservation(UUID orderId, UUID campaignId, String skuId, int quantity,
+    public Reservation(UUID orderId, UUID campaignId, UUID sellerId, String skuId, int quantity,
                                       ReservationStatus status) {
         this.orderId = orderId;
         this.campaignId = campaignId;
+        this.sellerId = sellerId;
         this.skuId = skuId;
         this.quantity = quantity;
         this.status = status;
@@ -44,6 +48,7 @@ public class Reservation {
 
     public UUID getOrderId() { return orderId; }
     public UUID getCampaignId() { return campaignId; }
+    public UUID getSellerId() { return sellerId; }
     public String getSkuId() { return skuId; }
     public int getQuantity() { return quantity; }
     public ReservationStatus getStatus() { return status; }

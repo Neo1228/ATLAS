@@ -16,6 +16,9 @@ import com.atlas.admission.service.impl.AdmissionServiceImpl;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
+import com.atlas.campaign.dto.request.RegisterSellerSkuRequest;
+import com.atlas.campaign.service.SellerService;
+import com.atlas.campaign.service.SellerSkuService;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.inventory.dto.response.InventoryResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
@@ -82,6 +85,8 @@ class BuyerFlowIntegrationTest {
 
     @Autowired private AdmissionServiceImpl admissionServiceImpl;
     @Autowired private CampaignService campaigns;
+    @Autowired private SellerService sellers;
+    @Autowired private SellerSkuService sellerSkus;
     @Autowired private AdmissionService admission;
     @Autowired private InventoryService inventory;
     @Autowired private OrderService orders;
@@ -99,7 +104,7 @@ class BuyerFlowIntegrationTest {
         mockMvc.perform(post("/api/campaigns")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"skuId":"","inventoryCapacity":0,"queueTicketTtlSeconds":0,"maxActiveCheckouts":0}
+                                {"sellerId":null,"skuId":"","queueTicketTtlSeconds":0}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(result -> {
@@ -150,7 +155,7 @@ class BuyerFlowIntegrationTest {
         assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
 
-        InventoryResponse stock = inventory.find(campaign.campaignId(), campaign.skuId());
+        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isEqualTo(1);
@@ -207,6 +212,56 @@ class BuyerFlowIntegrationTest {
     }
 
     @Test
+    void concurrentCampaignsShareGlobalSellerSkuFifoAndCapacity() throws Exception {
+        UUID sellerId = sellers.create().sellerId();
+        String skuId = "shared-" + UUID.randomUUID();
+        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(skuId, 3, 1));
+        CampaignResponse firstCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
+        CampaignResponse secondCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
+        CyclicBarrier start = new CyclicBarrier(3);
+
+        try (var executor = Executors.newFixedThreadPool(3)) {
+            Future<QueueTicketResponse> first = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(firstCampaign, "global-buyer-a", "global-key-a");
+            });
+            Future<QueueTicketResponse> second = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(secondCampaign, "global-buyer-b", "global-key-b");
+            });
+            Future<QueueTicketResponse> third = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(secondCampaign, "global-buyer-c", "global-key-c");
+            });
+
+            List<QueueTicketResponse> tickets = new ArrayList<>(
+                    List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS),
+                            third.get(10, TimeUnit.SECONDS)));
+            tickets.sort(Comparator.comparingLong(QueueTicketResponse::sequence));
+
+            assertThat(tickets).extracting(QueueTicketResponse::sequence).containsExactly(1L, 2L, 3L);
+            assertThat(tickets).extracting(QueueTicketResponse::status)
+                    .containsExactly(TicketStatus.CHECKOUT_ACTIVE, TicketStatus.WAITING, TicketStatus.WAITING);
+            assertThat(tickets.get(0).sellerId()).isEqualTo(sellerId);
+            for (int index = 0; index < 2; index++) {
+                QueueTicketResponse active = tickets.get(index);
+                admission.releaseCheckoutSlot(active.campaignId(), active.ticketId(),
+                        CheckoutSlotReleaseReason.BUYER_CANCELLED);
+                QueueTicketResponse next = tickets.get(index + 1);
+                assertThat(admission.find(next.campaignId(), next.ticketId()).status())
+                        .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+            }
+        }
+
+        UUID anotherSellerId = sellers.create().sellerId();
+        sellerSkus.register(anotherSellerId, new RegisterSellerSkuRequest(skuId, 1, 1));
+        CampaignResponse otherSellerCampaign = openCampaign(anotherSellerId, skuId, Duration.ofMinutes(5));
+        QueueTicketResponse otherSellerTicket = join(otherSellerCampaign, "other-seller", "other-seller-key");
+        assertThat(otherSellerTicket.sequence()).isEqualTo(1);
+        assertThat(otherSellerTicket.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+    }
+
+    @Test
     void soldOutCheckoutReturnsFailureWithoutPaymentAndReleasesQueueSlot() {
         CampaignResponse campaign = openCampaign(1, 2, Duration.ofMinutes(5));
         QueueTicketResponse firstTicket = join(campaign, "buyer-first", "first-stock-key");
@@ -223,7 +278,7 @@ class BuyerFlowIntegrationTest {
         assertThat(admission.find(campaign.campaignId(), thirdTicket.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
 
-        InventoryResponse held = inventory.find(campaign.campaignId(), campaign.skuId());
+        InventoryResponse held = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(held.available()).isZero();
         assertThat(held.reserved()).isEqualTo(1);
         assertConserved(held);
@@ -247,7 +302,7 @@ class BuyerFlowIntegrationTest {
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
-        InventoryResponse stock = inventory.find(campaign.campaignId(), campaign.skuId());
+        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(1);
         assertConserved(stock);
     }
@@ -265,7 +320,7 @@ class BuyerFlowIntegrationTest {
 
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
-        InventoryResponse stock = inventory.find(campaign.campaignId(), campaign.skuId());
+        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isZero();
@@ -296,7 +351,7 @@ class BuyerFlowIntegrationTest {
         assertThat(expired.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
         assertThat(expired.inventoryState()).isEqualTo(ReservationStatus.RELEASED);
         assertThat(expired.ticketState()).isEqualTo(TicketStatus.EXPIRED);
-        InventoryResponse stock = inventory.find(campaign.campaignId(), campaign.skuId());
+        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertConserved(stock);
@@ -374,9 +429,36 @@ class BuyerFlowIntegrationTest {
         assertThat(reentry.status()).isEqualTo(TicketStatus.WAITING);
     }
 
-    private CampaignResponse openCampaign(int capacity, int maxActiveCheckouts, Duration ticketTtl) {
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
-                "sku-" + UUID.randomUUID(), capacity, ticketTtl, maxActiveCheckouts));
+    @Test
+    void sellerRegistrationAndSellerSkuApiCreateInitialSharedInventory() throws Exception {
+        mockMvc.perform(post("/api/sellers"))
+                .andExpect(status().isCreated())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"sellerId\":\""));
+
+        UUID sellerId = sellers.create().sellerId();
+        mockMvc.perform(post("/api/sellers/{sellerId}/skus", sellerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":"seller-api-sku","initialStock":5,"maxActiveCheckouts":2}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains(sellerId.toString(), "seller-api-sku"));
+
+        InventoryResponse stock = inventory.find(sellerId, "seller-api-sku");
+        assertThat(stock.initialCapacity()).isEqualTo(5);
+    }
+
+    private CampaignResponse openCampaign(int initialStock, int maxActiveCheckouts, Duration ticketTtl) {
+        UUID sellerId = sellers.create().sellerId();
+        String skuId = "sku-" + UUID.randomUUID();
+        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(skuId, initialStock, maxActiveCheckouts));
+        return openCampaign(sellerId, skuId, ticketTtl);
+    }
+
+    private CampaignResponse openCampaign(UUID sellerId, String skuId, Duration ticketTtl) {
+        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, skuId, ticketTtl));
         return campaigns.open(campaign.campaignId());
     }
 

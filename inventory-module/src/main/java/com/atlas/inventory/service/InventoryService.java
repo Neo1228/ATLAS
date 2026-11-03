@@ -19,5 +19,5 @@ public interface InventoryService {
 
     ReservationResponse release(UUID orderId);
 
-    InventoryResponse find(UUID campaignId, String skuId);
+    InventoryResponse find(UUID sellerId, String skuId);
 }

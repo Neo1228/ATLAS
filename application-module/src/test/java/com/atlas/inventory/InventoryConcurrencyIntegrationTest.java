@@ -1,12 +1,14 @@
 package com.atlas.inventory;
 
-import com.atlas.inventory.exception.InventoryException;
-import com.atlas.inventory.service.InventoryService;
-import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
-import com.atlas.inventory.dto.response.InventoryResponse;
-import com.atlas.inventory.persistence.state.ReservationStatus;
-import com.atlas.inventory.dto.response.ReservationResponse;
+import com.atlas.campaign.dto.request.RegisterSellerSkuRequest;
+import com.atlas.campaign.service.SellerService;
+import com.atlas.campaign.service.SellerSkuService;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.response.ReservationResponse;
+import com.atlas.inventory.exception.InventoryException;
+import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.inventory.service.InventoryService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,21 +49,29 @@ class InventoryConcurrencyIntegrationTest {
 
     @Autowired
     private InventoryService inventory;
+    @Autowired
+    private SellerService sellers;
+
+    @Autowired
+    private SellerSkuService sellerSkus;
 
     @Test
     void concurrentReservationsNeverOversellAndPreserveConservation() throws Exception {
-        UUID campaignId = UUID.randomUUID();
+        UUID sellerId = sellers.create().sellerId();
+        UUID campaignIdA = UUID.randomUUID();
+        UUID campaignIdB = UUID.randomUUID();
         String sku = "sku-" + UUID.randomUUID();
         int capacity = 12;
-        inventory.createPool(new CreateInventoryPoolRequest(campaignId, sku, capacity));
+        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(sku, capacity, capacity));
 
         try (var executor = Executors.newFixedThreadPool(32)) {
             List<Callable<Boolean>> attempts = new ArrayList<>();
             for (int i = 0; i < 64; i++) {
+                UUID campaignId = i % 2 == 0 ? campaignIdA : campaignIdB;
                 UUID orderId = UUID.randomUUID();
                 attempts.add(() -> {
                     try {
-                        inventory.reserve(new ReserveInventoryRequest(orderId, campaignId, sku, 1));
+                        inventory.reserve(new ReserveInventoryRequest(orderId, campaignId, sellerId, sku, 1));
                         return true;
                     } catch (InventoryException soldOut) {
                         assertThat(soldOut.code()).isEqualTo(InventoryException.Code.UNAVAILABLE);
@@ -77,7 +87,7 @@ class InventoryConcurrencyIntegrationTest {
             assertThat(accepted).isEqualTo(capacity);
         }
 
-        InventoryResponse view = inventory.find(campaignId, sku);
+        InventoryResponse view = inventory.find(sellerId, sku);
         assertThat(view.available()).isZero();
         assertThat(view.reserved()).isEqualTo(capacity);
         assertThat(view.claimed()).isZero();
@@ -86,15 +96,17 @@ class InventoryConcurrencyIntegrationTest {
 
     @Test
     void concurrentClaimAndReleaseMaintainConservationAndAreIdempotent() throws Exception {
-        UUID campaignId = UUID.randomUUID();
+        UUID sellerId = sellers.create().sellerId();
+        UUID campaignIdA = UUID.randomUUID();
+        UUID campaignIdB = UUID.randomUUID();
         String sku = "sku-" + UUID.randomUUID();
-        inventory.createPool(new CreateInventoryPoolRequest(campaignId, sku, 2));
+        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(sku, 2, 2));
         UUID claimOrder = UUID.randomUUID();
         UUID releaseOrder = UUID.randomUUID();
-        assertThat(inventory.reserve(new ReserveInventoryRequest(claimOrder, campaignId, sku, 1)).status())
+        assertThat(inventory.reserve(new ReserveInventoryRequest(claimOrder, campaignIdA, sellerId, sku, 1)).status())
                 .isEqualTo(ReservationStatus.RESERVED);
-        inventory.reserve(new ReserveInventoryRequest(claimOrder, campaignId, sku, 1));
-        inventory.reserve(new ReserveInventoryRequest(releaseOrder, campaignId, sku, 1));
+        inventory.reserve(new ReserveInventoryRequest(claimOrder, campaignIdA, sellerId, sku, 1));
+        inventory.reserve(new ReserveInventoryRequest(releaseOrder, campaignIdB, sellerId, sku, 1));
 
         try (var executor = Executors.newFixedThreadPool(8)) {
             List<Callable<ReservationResponse>> transitions = List.of(
@@ -109,7 +121,7 @@ class InventoryConcurrencyIntegrationTest {
 
         assertThat(inventory.claim(claimOrder).status()).isEqualTo(ReservationStatus.CLAIMED);
         assertThat(inventory.release(releaseOrder).status()).isEqualTo(ReservationStatus.RELEASED);
-        InventoryResponse view = inventory.find(campaignId, sku);
+        InventoryResponse view = inventory.find(sellerId, sku);
         assertThat(view.available()).isEqualTo(1);
         assertThat(view.reserved()).isZero();
         assertThat(view.claimed()).isEqualTo(1);

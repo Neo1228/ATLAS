@@ -13,7 +13,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "admission_ticket", uniqueConstraints = {
-        @UniqueConstraint(name = "admission_ticket_campaign_sequence_unique", columnNames = {"campaign_id", "sequence"}),
+        @UniqueConstraint(name = "admission_ticket_seller_sku_sequence_unique", columnNames = {"seller_id", "sku_id", "sequence"}),
         @UniqueConstraint(name = "admission_ticket_idempotency_unique", columnNames = {"campaign_id", "idempotency_key"})
 })
 public class QueueTicket {
@@ -23,6 +23,9 @@ public class QueueTicket {
 
     @Column(name = "campaign_id", nullable = false)
     private UUID campaignId;
+
+    @Column(name = "seller_id", nullable = false)
+    private UUID sellerId;
 
     @Column(name = "sku_id", nullable = false, length = 128)
     private String skuId;
@@ -54,11 +57,12 @@ public class QueueTicket {
 
     protected QueueTicket() { }
 
-    public QueueTicket(UUID ticketId, UUID campaignId, String skuId, String buyerRef, String idempotencyKey,
+    public QueueTicket(UUID ticketId, UUID campaignId, UUID sellerId, String skuId, String buyerRef, String idempotencyKey,
             long sequence, TicketStatus status, Instant expiresAt, Instant createdAt,
             Instant checkoutSlotAcquiredAt, boolean checkoutSlotHeld) {
         this.ticketId = ticketId;
         this.campaignId = campaignId;
+        this.sellerId = sellerId;
         this.skuId = skuId;
         this.buyerRef = buyerRef;
         this.idempotencyKey = idempotencyKey;
@@ -72,6 +76,7 @@ public class QueueTicket {
 
     public UUID getTicketId() { return ticketId; }
     public UUID getCampaignId() { return campaignId; }
+    public UUID getSellerId() { return sellerId; }
     public String getSkuId() { return skuId; }
     public String getBuyerRef() { return buyerRef; }
     public String getIdempotencyKey() { return idempotencyKey; }

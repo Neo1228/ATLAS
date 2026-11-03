@@ -1,14 +1,13 @@
 package com.atlas.campaign.service.impl;
 
-import com.atlas.campaign.service.CampaignService;
-import com.atlas.campaign.exception.CampaignException;
-import com.atlas.campaign.persistence.state.CampaignStatus;
-import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
+import com.atlas.campaign.dto.response.CampaignResponse;
+import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.persistence.entity.Campaign;
 import com.atlas.campaign.persistence.repository.CampaignRepository;
-import com.atlas.inventory.service.InventoryService;
-import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
+import com.atlas.campaign.persistence.state.CampaignStatus;
+import com.atlas.campaign.service.CampaignService;
+import com.atlas.campaign.service.SellerSkuService;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
@@ -21,18 +20,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class CampaignServiceImpl implements CampaignService {
 
     private final CampaignRepository campaigns;
-    private final InventoryService inventory;
+    private final SellerSkuService sellerSkus;
     private final Clock clock;
     private final Supplier<UUID> ids;
 
     @Autowired
-    public CampaignServiceImpl(CampaignRepository campaigns, InventoryService inventory, Clock clock) {
-        this(campaigns, inventory, clock, UUID::randomUUID);
+    public CampaignServiceImpl(CampaignRepository campaigns, SellerSkuService sellerSkus, Clock clock) {
+        this(campaigns, sellerSkus, clock, UUID::randomUUID);
     }
 
-    CampaignServiceImpl(CampaignRepository campaigns, InventoryService inventory, Clock clock, Supplier<UUID> ids) {
+    CampaignServiceImpl(CampaignRepository campaigns, SellerSkuService sellerSkus, Clock clock,
+            Supplier<UUID> ids) {
         this.campaigns = campaigns;
-        this.inventory = inventory;
+        this.sellerSkus = sellerSkus;
         this.clock = clock;
         this.ids = ids;
     }
@@ -40,17 +40,21 @@ public class CampaignServiceImpl implements CampaignService {
     @Override
     @Transactional
     public CampaignResponse create(CreateCampaignRequest request) {
-        if (request == null || request.skuId() == null || request.skuId().isBlank()
-                || request.skuId().length() > 128 || request.inventoryCapacity() <= 0
+        if (request == null || request.sellerId() == null || request.skuId() == null
+                || request.skuId().isBlank() || request.skuId().length() > 128
                 || request.queueTicketTtl() == null || request.queueTicketTtl().isZero()
-                || request.queueTicketTtl().isNegative() || request.queueTicketTtl().toSeconds() <= 0
-                || request.maxActiveCheckouts() <= 0) {
-            throw new CampaignException(CampaignException.Code.INVALID_CONFIGURATION, "Invalid campaign configuration");
+                || request.queueTicketTtl().isNegative() || request.queueTicketTtl().toSeconds() <= 0) {
+            throw new CampaignException(CampaignException.Code.INVALID_CONFIGURATION,
+                    "Invalid campaign configuration");
         }
+        if (sellerSkus.find(request.sellerId(), request.skuId()) == null) {
+            throw new CampaignException(CampaignException.Code.NOT_FOUND,
+                    "Unknown seller SKU: " + request.sellerId() + "/" + request.skuId());
+        }
+
         UUID campaignId = ids.get();
-        Campaign entity = campaigns.save(new Campaign(campaignId, request.skuId(), CampaignStatus.CLOSED,
-                request.queueTicketTtl().toSeconds(), request.maxActiveCheckouts(), clock.instant()));
-        inventory.createPool(new CreateInventoryPoolRequest(campaignId, request.skuId(), request.inventoryCapacity()));
+        Campaign entity = campaigns.save(new Campaign(campaignId, request.sellerId(), request.skuId(),
+                CampaignStatus.CLOSED, request.queueTicketTtl().toSeconds(), clock.instant()));
         return toResponse(entity);
     }
 
@@ -67,11 +71,12 @@ public class CampaignServiceImpl implements CampaignService {
     @Transactional(readOnly = true)
     public CampaignResponse requireOpen(UUID campaignId, String skuId) {
         CampaignResponse campaign = find(campaignId);
-        if (campaign == null) throw new CampaignException(CampaignException.Code.NOT_FOUND,
-                "Unknown campaign: " + campaignId);
+        if (campaign == null) {
+            throw new CampaignException(CampaignException.Code.NOT_FOUND, "Unknown campaign: " + campaignId);
+        }
         if (campaign.status() != CampaignStatus.OPEN || !campaign.skuId().equals(skuId)) {
             throw new CampaignException(CampaignException.Code.NOT_ELIGIBLE,
-                    "Campaign is not open for SKU " + skuId + ": " + campaignId);
+                    "Campaign is not open SKU " + skuId + ": " + campaignId);
         }
         return campaign;
     }
@@ -83,7 +88,7 @@ public class CampaignServiceImpl implements CampaignService {
     }
 
     private static CampaignResponse toResponse(Campaign entity) {
-        return new CampaignResponse(entity.getCampaignId(), entity.getSkuId(), entity.getStatus(),
-                Duration.ofSeconds(entity.getQueueTicketTtlSeconds()), entity.getMaxActiveCheckouts());
+        return new CampaignResponse(entity.getCampaignId(), entity.getSellerId(), entity.getSkuId(),
+                entity.getStatus(), Duration.ofSeconds(entity.getQueueTicketTtlSeconds()));
     }
 }

@@ -6,3 +6,4 @@
 .gradle/
 build/
 *.class
+/local-data/legacy-campaign-seller-map.sql

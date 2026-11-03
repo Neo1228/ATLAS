@@ -94,12 +94,12 @@ public final class OrderServiceImpl implements OrderService {
             Instant now = clock.instant();
             Instant expiresAt = now.plus(checkoutWindow);
             boolean reserved = inventory.tryReserve(new ReserveInventoryRequest(
-                    orderId, campaignId, ticket.skuId(), 1)).isPresent();
+                    orderId, campaignId, ticket.sellerId(), ticket.skuId(), 1)).isPresent();
             OrderState state = reserved ? OrderState.RESERVED : OrderState.FAILED;
             if (!reserved) {
                 admission.releaseCheckoutSlot(campaignId, ticketId, CheckoutSlotReleaseReason.INVENTORY_UNAVAILABLE);
             }
-            repository.save(new PurchaseOrder(orderId, campaignId, ticketId, ticket.buyerRef(), ticket.skuId(),
+            repository.save(new PurchaseOrder(orderId, campaignId, ticket.sellerId(), ticketId, ticket.buyerRef(), ticket.skuId(),
                     state, expiresAt, null, now, now));
             return toResponse(repository.requireById(orderId));
         });

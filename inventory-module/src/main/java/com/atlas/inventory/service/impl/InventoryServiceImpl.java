@@ -41,10 +41,10 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     public void createPool(CreateInventoryPoolRequest request) {
         if (request == null) throw invalidRequest("Inventory pool request is required");
-        requirePoolKey(request.campaignId(), request.skuId());
-        if (request.capacity() < 0) throw invalidRequest("capacity must not be negative");
+        requirePoolKey(request.sellerId(), request.skuId());
+        if (request.initialStock() < 0) throw invalidRequest("initialStock must not be negative");
         transactions.executeWithoutResult(status -> poolRepository.save(new Pool(
-                new PoolId(request.campaignId(), request.skuId()), request.capacity())));
+                new PoolId(request.sellerId(), request.skuId()), request.initialStock())));
     }
 
     @Override
@@ -57,22 +57,23 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     public Optional<ReservationResponse> tryReserve(ReserveInventoryRequest request) {
         if (request == null) throw invalidRequest("Inventory reservation request is required");
-        requirePoolKey(request.campaignId(), request.skuId());
+        requirePoolKey(request.sellerId(), request.skuId());
         if (request.orderId() == null) throw invalidRequest("orderId is required");
         if (request.quantity() != 1) throw invalidRequest("inventory reservations must contain exactly one unit");
         ReservationResponse reservation = transactions.execute(status -> {
             stockRepository.lockOrder(request.orderId());
             Reservation existing = reservationRepository.findById(request.orderId()).orElse(null);
             if (existing != null) {
-                if (!existing.getCampaignId().equals(request.campaignId())
-                        || !existing.getSkuId().equals(request.skuId()) || existing.getQuantity() != request.quantity()) {
+                if (!Objects.equals(existing.getCampaignId(), request.campaignId())
+                        || !Objects.equals(existing.getSellerId(), request.sellerId())
+                        || !Objects.equals(existing.getSkuId(), request.skuId()) || existing.getQuantity() != request.quantity()) {
                     throw new InventoryException(InventoryException.Code.CONFLICT,
                             "order already has a reservation for different inventory");
                 }
                 return toResponse(existing);
             }
-            if (stockRepository.reserveOne(request.campaignId(), request.skuId()) != 1) return null;
-            return toResponse(reservationRepository.save(new Reservation(request.orderId(), request.campaignId(),
+            if (stockRepository.reserveOne(request.sellerId(), request.skuId()) != 1) return null;
+            return toResponse(reservationRepository.save(new Reservation(request.orderId(), request.campaignId(), request.sellerId(),
                     request.skuId(), 1, ReservationStatus.RESERVED)));
         });
         return Optional.ofNullable(reservation);
@@ -87,7 +88,7 @@ public class InventoryServiceImpl implements InventoryService {
             if (reservation.getStatus() != ReservationStatus.RESERVED) {
                 throw new InventoryException(InventoryException.Code.CONFLICT, "released inventory cannot be claimed");
             }
-            requireConsistentPool(stockRepository.claimOne(reservation.getCampaignId(), reservation.getSkuId()));
+            requireConsistentPool(stockRepository.claimOne(reservation.getSellerId(), reservation.getSkuId()));
             reservation.setStatus(ReservationStatus.CLAIMED);
             return toResponse(reservationRepository.save(reservation));
         }));
@@ -102,16 +103,16 @@ public class InventoryServiceImpl implements InventoryService {
             if (reservation.getStatus() != ReservationStatus.RESERVED) {
                 throw new InventoryException(InventoryException.Code.CONFLICT, "claimed inventory cannot be released");
             }
-            requireConsistentPool(stockRepository.releaseOne(reservation.getCampaignId(), reservation.getSkuId()));
+            requireConsistentPool(stockRepository.releaseOne(reservation.getSellerId(), reservation.getSkuId()));
             reservation.setStatus(ReservationStatus.RELEASED);
             return toResponse(reservationRepository.save(reservation));
         }));
     }
 
     @Override
-    public InventoryResponse find(UUID campaignId, String skuId) {
-        requirePoolKey(campaignId, skuId);
-        return poolRepository.findById(new PoolId(campaignId, skuId))
+    public InventoryResponse find(UUID sellerId, String skuId) {
+        requirePoolKey(sellerId, skuId);
+        return poolRepository.findById(new PoolId(sellerId, skuId))
                 .map(InventoryServiceImpl::toResponse).orElse(null);
     }
 
@@ -130,12 +131,13 @@ public class InventoryServiceImpl implements InventoryService {
     }
 
     private static ReservationResponse toResponse(Reservation reservation) {
-        return new ReservationResponse(reservation.getOrderId(), reservation.getCampaignId(), reservation.getSkuId(),
+        return new ReservationResponse(reservation.getOrderId(), reservation.getCampaignId(), reservation.getSellerId(),
+                reservation.getSkuId(),
                 reservation.getQuantity(), reservation.getStatus());
     }
 
     private static InventoryResponse toResponse(Pool pool) {
-        return new InventoryResponse(pool.getId().getCampaignId(), pool.getId().getSkuId(), pool.getInitialCapacity(),
+        return new InventoryResponse(pool.getId().getSellerId(), pool.getId().getSkuId(), pool.getInitialCapacity(),
                 pool.getAvailable(), pool.getReserved(), pool.getClaimed());
     }
 
@@ -143,8 +145,8 @@ public class InventoryServiceImpl implements InventoryService {
         if (changed != 1) throw new IllegalStateException("reservation and inventory pool are inconsistent");
     }
 
-    private static void requirePoolKey(UUID campaignId, String skuId) {
-        if (campaignId == null) throw invalidRequest("campaignId is required");
+    private static void requirePoolKey(UUID sellerId, String skuId) {
+        if (sellerId == null) throw invalidRequest("sellerId is required");
         if (skuId == null || skuId.isBlank()) throw invalidRequest("skuId must not be blank");
     }
 

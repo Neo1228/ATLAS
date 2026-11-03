@@ -1,10 +1,10 @@
 package com.atlas.application.controller.campaign;
 
 import com.atlas.application.controller.dto.CreateCampaignHttpRequest;
+import com.atlas.campaign.dto.request.CreateCampaignRequest;
+import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.service.CampaignService;
-import com.atlas.campaign.dto.response.CampaignResponse;
-import com.atlas.campaign.dto.request.CreateCampaignRequest;
 import jakarta.validation.Valid;
 import java.time.Duration;
 import java.util.UUID;
@@ -30,8 +30,8 @@ public class CampaignController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CampaignResponse create(@Valid @RequestBody CreateCampaignHttpRequest request) {
-        return campaigns.create(new CreateCampaignRequest(request.skuId(), request.inventoryCapacity(),
-                Duration.ofSeconds(request.queueTicketTtlSeconds()), request.maxActiveCheckouts()));
+        return campaigns.create(new CreateCampaignRequest(request.sellerId(), request.skuId(),
+                Duration.ofSeconds(request.queueTicketTtlSeconds())));
     }
 
     @PostMapping("/{campaignId}/open")
@@ -42,8 +42,9 @@ public class CampaignController {
     @GetMapping("/{campaignId}")
     public CampaignResponse find(@PathVariable UUID campaignId) {
         CampaignResponse campaign = campaigns.find(campaignId);
-        if (campaign == null) throw new CampaignException(CampaignException.Code.NOT_FOUND,
-                "Unknown campaign: " + campaignId);
+        if (campaign == null) {
+            throw new CampaignException(CampaignException.Code.NOT_FOUND, "Unknown campaign: " + campaignId);
+        }
         return campaign;
     }
 }

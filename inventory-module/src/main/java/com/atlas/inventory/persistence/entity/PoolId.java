@@ -10,8 +10,8 @@ import jakarta.persistence.Embeddable;
 public class PoolId implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @Column(name = "campaign_id", nullable = false)
-    private UUID campaignId;
+    @Column(name = "seller_id", nullable = false)
+    private UUID sellerId;
 
     @Column(name = "sku_id", nullable = false, length = 128)
     private String skuId;
@@ -19,21 +19,21 @@ public class PoolId implements Serializable {
     protected PoolId() {
     }
 
-    public PoolId(UUID campaignId, String skuId) {
-        this.campaignId = campaignId;
+    public PoolId(UUID sellerId, String skuId) {
+        this.sellerId = sellerId;
         this.skuId = skuId;
     }
 
-    public UUID getCampaignId() { return campaignId; }
+    public UUID getSellerId() { return sellerId; }
     public String getSkuId() { return skuId; }
 
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;
         if (!(other instanceof PoolId that)) return false;
-        return Objects.equals(campaignId, that.campaignId) && Objects.equals(skuId, that.skuId);
+        return Objects.equals(sellerId, that.sellerId) && Objects.equals(skuId, that.skuId);
     }
 
     @Override
-    public int hashCode() { return Objects.hash(campaignId, skuId); }
+    public int hashCode() { return Objects.hash(sellerId, skuId); }
 }

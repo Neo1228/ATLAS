@@ -19,26 +19,26 @@ public class JdbcStockRepository {
                 (RowCallbackHandler) rs -> { }, orderId.toString());
     }
 
-    public int reserveOne(UUID campaignId, String skuId) {
+    public int reserveOne(UUID sellerId, String skuId) {
         return jdbc.update("""
                 UPDATE inventory_pool
                 SET available = available - 1, reserved = reserved + 1
-                WHERE campaign_id = ? AND sku_id = ? AND available > 0
-                """, campaignId, skuId);
+                WHERE seller_id = ? AND sku_id = ? AND available > 0
+                """, sellerId, skuId);
     }
 
-    public int claimOne(UUID campaignId, String skuId) {
+    public int claimOne(UUID sellerId, String skuId) {
         return jdbc.update("""
                 UPDATE inventory_pool SET reserved = reserved - 1, claimed = claimed + 1
-                WHERE campaign_id = ? AND sku_id = ? AND reserved > 0
-                """, campaignId, skuId);
+                WHERE seller_id = ? AND sku_id = ? AND reserved > 0
+                """, sellerId, skuId);
     }
 
-    public int releaseOne(UUID campaignId, String skuId) {
+    public int releaseOne(UUID sellerId, String skuId) {
         return jdbc.update("""
                 UPDATE inventory_pool
                 SET available = available + 1, reserved = reserved - 1
-                WHERE campaign_id = ? AND sku_id = ? AND reserved > 0
-                """, campaignId, skuId);
+                WHERE seller_id = ? AND sku_id = ? AND reserved > 0
+                """, sellerId, skuId);
     }
 }

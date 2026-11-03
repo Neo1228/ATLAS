@@ -1,0 +1,18 @@
+-- Preflight mapping for application-module Flyway V6.
+--
+-- Required only when the target database already has Campaign rows.
+-- Copy this file to <repository-root>/local-data/legacy-campaign-seller-map.sql,
+-- add one verified Campaign -> Seller UUID row per existing Campaign, and apply
+-- it to the target PostgreSQL database before starting the upgraded app.
+-- The local-data file is gitignored because it represents local data ownership.
+-- V6 validates completeness, uses the mapping for all backfills, then drops the
+-- staging table. Never infer Seller ownership from SKU alone or reset the DB.
+
+CREATE TABLE IF NOT EXISTS campaign_seller_backfill (
+    campaign_id UUID PRIMARY KEY,
+    seller_id UUID NOT NULL
+);
+
+-- Example only; replace with the external, verified mapping:
+-- INSERT INTO campaign_seller_backfill (campaign_id, seller_id)
+-- VALUES ('<campaign-uuid>', '<seller-uuid>');
