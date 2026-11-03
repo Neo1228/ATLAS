@@ -12,7 +12,7 @@ links:
 # 도메인 불변조건
 문서 유형: 기준 자료
 
-불변조건(invariant)은 정상 처리와 실패·복구 뒤에도 유지할 성질. Gate 2 baseline은 승인됨. D-049의 Seller-SKU shared stock/global FIFO 구현은 [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)에서 진행 중. Production lock recovery·성능 검증은 별도 실험/환경 대상. 용어는 [용어집](../01-discovery/glossary.md) 참조.
+불변조건(invariant)은 정상 처리와 실패·복구 뒤에도 유지할 성질. Gate 2 baseline은 승인됨. Seller-SKU shared stock/global FIFO는 [PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 구현·병합됐고 [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)는 닫힘. Production lock recovery·성능 검증은 별도 실험/환경 대상. 용어는 [용어집](../01-discovery/glossary.md) 참조.
 
 | ID | 불변조건 | 상태 | 미정 경계 | 근거 |
 |---|---|---|---|---|

@@ -3,7 +3,7 @@ id: DOC-012
 title: Milestone Log
 status: Current
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
   requirements: []
   adr: [ADR-0001, ADR-0003, ADR-0004]
@@ -235,7 +235,7 @@ links:
 - **반복된 지침 누락 위험:** 사용자가 이미 요청한 자연스러운 한국어, 한 번에 묶은 결정 질문, 확정된 선택 재질문 금지, Issue/PR 과분할 금지를 다시 강조한 상태. 기존 AGENTS에는 작업 묶음 원칙은 있었지만 질문을 묶고 확정 결정을 재확인하지 않는 규칙이 없었음. 해당 기준과 금지된 `view` command 사용 금지를 [AGENTS.md](../../AGENTS.md#재발-방지-기준)에 명시.
 - **재발 방지 기준:** patch 재확인, rename 전체 호출처 검색, 원격 PR body 사전 검증, branch commit link 확인, staged/unstaged 분리를 [AGENTS.md의 재발 방지 기준](../../AGENTS.md#재발-방지-기준)에 고정.
 - **검증:** 최종 코드 변경에서 JDK 25/PostgreSQL 포함 `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 통과, 테스트 29개. Markdown lint와 상대 링크 검사 통과. PR checklist의 첫 실패는 문서 형식 문제이며 코드 테스트 실패가 아님.
-- **추적:** [Issue #89](https://github.com/Neo1228/ATLAS/issues/89), [PR #90](https://github.com/Neo1228/ATLAS/pull/90), [D-049~D-054](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md).
+- **병합 기록:** [PR #90](https://github.com/Neo1228/ATLAS/pull/90) squash-merged to `main` as [`a844cf73195ec790b5a2bcc1970f7c69f8a9a381`](https://github.com/Neo1228/ATLAS/commit/a844cf73195ec790b5a2bcc1970f7c69f8a9a381); [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) closed. Required checks: 5 passed, 0 failed, 1 skipped. Implementation decisions, tests and limitations are recorded above and in linked SSOT docs.
 
 ## 2026-11-03 — V6 clean-start 결정 · D-055
 
