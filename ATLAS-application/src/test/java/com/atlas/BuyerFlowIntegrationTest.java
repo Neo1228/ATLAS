@@ -20,7 +20,7 @@ import com.atlas.campaign.dto.request.RegisterSellerSkuRequest;
 import com.atlas.campaign.service.SellerService;
 import com.atlas.campaign.service.SellerSkuService;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.order.exception.OrderException;
@@ -155,7 +155,7 @@ class BuyerFlowIntegrationTest {
         assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
 
-        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isEqualTo(1);
@@ -278,7 +278,7 @@ class BuyerFlowIntegrationTest {
         assertThat(admission.find(campaign.campaignId(), thirdTicket.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
 
-        InventoryResponse held = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryPoolResponse held = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(held.available()).isZero();
         assertThat(held.reserved()).isEqualTo(1);
         assertConserved(held);
@@ -302,7 +302,7 @@ class BuyerFlowIntegrationTest {
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
-        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(1);
         assertConserved(stock);
     }
@@ -320,7 +320,7 @@ class BuyerFlowIntegrationTest {
 
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
-        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isZero();
@@ -351,7 +351,7 @@ class BuyerFlowIntegrationTest {
         assertThat(expired.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
         assertThat(expired.inventoryState()).isEqualTo(ReservationStatus.RELEASED);
         assertThat(expired.ticketState()).isEqualTo(TicketStatus.EXPIRED);
-        InventoryResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertConserved(stock);
@@ -446,7 +446,7 @@ class BuyerFlowIntegrationTest {
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains(sellerId.toString(), "seller-api-sku"));
 
-        InventoryResponse stock = inventory.find(sellerId, "seller-api-sku");
+        InventoryPoolResponse stock = inventory.find(sellerId, "seller-api-sku");
         assertThat(stock.initialCapacity()).isEqualTo(5);
     }
 
@@ -466,7 +466,7 @@ class BuyerFlowIntegrationTest {
         return admission.join(new JoinQueueRequest(campaign.campaignId(), campaign.skuId(), buyerRef, key));
     }
 
-    private static void assertConserved(InventoryResponse stock) {
+    private static void assertConserved(InventoryPoolResponse stock) {
         assertThat(stock.available() + stock.reserved() + stock.claimed()).isEqualTo(stock.initialCapacity());
     }
 

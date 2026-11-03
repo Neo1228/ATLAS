@@ -2,7 +2,7 @@
 - 상태: ✓ Accepted
 - 날짜: 2026-11-03
 - 담당자: Project Owner
-- 관련 결정: [D-037/D-038/D-047/D-050](../../00-governance/decision-log.md)
+- 관련 결정: [D-037/D-038/D-047/D-050/D-051/D-053](../../00-governance/decision-log.md)
 
 ## 배경
 
@@ -25,7 +25,7 @@ ADR-0001에서 현재 Buyer 흐름의 Campaign, Admission, Inventory, Order/Chec
 | `application-module` | Spring Boot, HTTP adapters, root error mapping, configuration, Flyway migrations | 다섯 도메인 모듈 |
 | `campaign-module` | Campaign과 SKU eligibility | `inventory-module` |
 | `admission-module` | Queue ticket·순번·idempotency·checkout slot·expiry | `campaign-module` |
-| `inventory-module` | Inventory pool/reservation 및 conservation | 없음 |
+| `inventory-module` | Seller-SKU inventory pool/reservation 및 재고 보존 규칙 | 없음 |
 | `order-module` | Checkout·order lifecycle orchestration | `admission-module`, `inventory-module`, `payment-module` |
 | `payment-module` | Payment attempts·상태·provider 결과 | 없음 |
 
@@ -48,6 +48,7 @@ Java package 구조는 D-047/ADR-0003 그대로 유지. 감사 결과 중복·�
 - 공유 상태: lifecycle enum은 `.persistence.state`에 두고 필요한 cross-module contract에서만 공유.
 - 저장소 계층: JPA entity는 `.persistence.entity`, repository는 모듈 내부 `.repository`. 다른 모듈의 entity/repository 직접 접근 금지; 연관 관계는 scalar ID 사용.
 - 구현 계층: workflow와 scheduled expiry는 `.service.impl`, provider adapter는 `.provider.*`. Entity 이름에 중복 `Entity` 접미사 금지.
+- 도메인 명칭은 책임이 드러나는 실무 용어를 사용한다. Inventory 모듈의 일반명 `Pool`은 `InventoryPool`로 구체화; Java 타입/ID/repository/DTO/service operation만 변경하고 DB schema와 API 응답 필드는 유지 ([D-053](../../00-governance/decision-log.md)).
 - 기본 CRUD는 JPA. Schema는 Flyway 소유, Hibernate는 `ddl-auto=validate`.
 - PostgreSQL 전용 lock·sequence·guarded update만 `.repository`에서 JDBC/native SQL로 처리.
 - HTTP controller·transport DTO·설정·오류 변환은 `application-module` 소유. HTTP/domain request 분리는 입력 모양이나 validation 규칙이 다를 때만 허용.

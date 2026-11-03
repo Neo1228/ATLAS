@@ -1,7 +1,7 @@
 package com.atlas.inventory.service;
 
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
-import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
 import java.util.Optional;
@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface InventoryService {
 
-    void createPool(CreateInventoryPoolRequest request);
+    void createInventoryPool(CreateInventoryPoolRequest request);
 
     ReservationResponse reserve(ReserveInventoryRequest request);
 
@@ -19,5 +19,5 @@ public interface InventoryService {
 
     ReservationResponse release(UUID orderId);
 
-    InventoryResponse find(UUID sellerId, String skuId);
+    InventoryPoolResponse find(UUID sellerId, String skuId);
 }

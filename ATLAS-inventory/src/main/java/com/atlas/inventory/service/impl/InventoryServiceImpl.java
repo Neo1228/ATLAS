@@ -3,14 +3,14 @@ package com.atlas.inventory.service.impl;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
-import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
-import com.atlas.inventory.persistence.entity.Pool;
-import com.atlas.inventory.persistence.entity.PoolId;
+import com.atlas.inventory.persistence.entity.InventoryPool;
+import com.atlas.inventory.persistence.entity.InventoryPoolId;
 import com.atlas.inventory.persistence.entity.Reservation;
-import com.atlas.inventory.repository.PoolRepository;
+import com.atlas.inventory.repository.InventoryPoolRepository;
 import com.atlas.inventory.repository.ReservationRepository;
 import com.atlas.inventory.repository.JdbcStockRepository;
 import java.util.Objects;
@@ -23,28 +23,28 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class InventoryServiceImpl implements InventoryService {
 
-    private final PoolRepository poolRepository;
+    private final InventoryPoolRepository inventoryPoolRepository;
     private final ReservationRepository reservationRepository;
     private final JdbcStockRepository stockRepository;
     private final TransactionTemplate transactions;
 
-    public InventoryServiceImpl(PoolRepository poolRepository,
+    public InventoryServiceImpl(InventoryPoolRepository inventoryPoolRepository,
                                 ReservationRepository reservationRepository,
                                 JdbcStockRepository stockRepository,
                                 PlatformTransactionManager transactionManager) {
-        this.poolRepository = Objects.requireNonNull(poolRepository);
+        this.inventoryPoolRepository = Objects.requireNonNull(inventoryPoolRepository);
         this.reservationRepository = Objects.requireNonNull(reservationRepository);
         this.stockRepository = Objects.requireNonNull(stockRepository);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
     }
 
     @Override
-    public void createPool(CreateInventoryPoolRequest request) {
+    public void createInventoryPool(CreateInventoryPoolRequest request) {
         if (request == null) throw invalidRequest("Inventory pool request is required");
-        requirePoolKey(request.sellerId(), request.skuId());
+        requireInventoryPoolKey(request.sellerId(), request.skuId());
         if (request.initialStock() < 0) throw invalidRequest("initialStock must not be negative");
-        transactions.executeWithoutResult(status -> poolRepository.save(new Pool(
-                new PoolId(request.sellerId(), request.skuId()), request.initialStock())));
+        transactions.executeWithoutResult(status -> inventoryPoolRepository.save(new InventoryPool(
+                new InventoryPoolId(request.sellerId(), request.skuId()), request.initialStock())));
     }
 
     @Override
@@ -57,7 +57,7 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     public Optional<ReservationResponse> tryReserve(ReserveInventoryRequest request) {
         if (request == null) throw invalidRequest("Inventory reservation request is required");
-        requirePoolKey(request.sellerId(), request.skuId());
+        requireInventoryPoolKey(request.sellerId(), request.skuId());
         if (request.orderId() == null) throw invalidRequest("orderId is required");
         if (request.quantity() != 1) throw invalidRequest("inventory reservations must contain exactly one unit");
         ReservationResponse reservation = transactions.execute(status -> {
@@ -88,7 +88,7 @@ public class InventoryServiceImpl implements InventoryService {
             if (reservation.getStatus() != ReservationStatus.RESERVED) {
                 throw new InventoryException(InventoryException.Code.CONFLICT, "released inventory cannot be claimed");
             }
-            requireConsistentPool(stockRepository.claimOne(reservation.getSellerId(), reservation.getSkuId()));
+            requireConsistentInventoryPool(stockRepository.claimOne(reservation.getSellerId(), reservation.getSkuId()));
             reservation.setStatus(ReservationStatus.CLAIMED);
             return toResponse(reservationRepository.save(reservation));
         }));
@@ -103,16 +103,16 @@ public class InventoryServiceImpl implements InventoryService {
             if (reservation.getStatus() != ReservationStatus.RESERVED) {
                 throw new InventoryException(InventoryException.Code.CONFLICT, "claimed inventory cannot be released");
             }
-            requireConsistentPool(stockRepository.releaseOne(reservation.getSellerId(), reservation.getSkuId()));
+            requireConsistentInventoryPool(stockRepository.releaseOne(reservation.getSellerId(), reservation.getSkuId()));
             reservation.setStatus(ReservationStatus.RELEASED);
             return toResponse(reservationRepository.save(reservation));
         }));
     }
 
     @Override
-    public InventoryResponse find(UUID sellerId, String skuId) {
-        requirePoolKey(sellerId, skuId);
-        return poolRepository.findById(new PoolId(sellerId, skuId))
+    public InventoryPoolResponse find(UUID sellerId, String skuId) {
+        requireInventoryPoolKey(sellerId, skuId);
+        return inventoryPoolRepository.findById(new InventoryPoolId(sellerId, skuId))
                 .map(InventoryServiceImpl::toResponse).orElse(null);
     }
 
@@ -136,16 +136,16 @@ public class InventoryServiceImpl implements InventoryService {
                 reservation.getQuantity(), reservation.getStatus());
     }
 
-    private static InventoryResponse toResponse(Pool pool) {
-        return new InventoryResponse(pool.getId().getSellerId(), pool.getId().getSkuId(), pool.getInitialCapacity(),
+    private static InventoryPoolResponse toResponse(InventoryPool pool) {
+        return new InventoryPoolResponse(pool.getId().getSellerId(), pool.getId().getSkuId(), pool.getInitialCapacity(),
                 pool.getAvailable(), pool.getReserved(), pool.getClaimed());
     }
 
-    private static void requireConsistentPool(int changed) {
+    private static void requireConsistentInventoryPool(int changed) {
         if (changed != 1) throw new IllegalStateException("reservation and inventory pool are inconsistent");
     }
 
-    private static void requirePoolKey(UUID sellerId, String skuId) {
+    private static void requireInventoryPoolKey(UUID sellerId, String skuId) {
         if (sellerId == null) throw invalidRequest("sellerId is required");
         if (skuId == null || skuId.isBlank()) throw invalidRequest("skuId must not be blank");
     }

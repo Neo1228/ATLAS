@@ -49,7 +49,7 @@ public class SellerSkuServiceImpl implements SellerSkuService {
 
         SellerSku sellerSku = sellerSkus.save(new SellerSku(sellerId, request.skuId(),
                 request.maxActiveCheckouts(), clock.instant()));
-        inventory.createPool(new CreateInventoryPoolRequest(sellerId, request.skuId(), request.initialStock()));
+        inventory.createInventoryPool(new CreateInventoryPoolRequest(sellerId, request.skuId(), request.initialStock()));
         return toResponse(sellerSku);
     }
 

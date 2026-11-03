@@ -2,7 +2,7 @@ package com.atlas.inventory.dto.response;
 
 import java.util.UUID;
 
-public record InventoryResponse(
+public record InventoryPoolResponse(
         UUID sellerId,
         String skuId,
         int initialCapacity,

@@ -7,7 +7,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 
 @Embeddable
-public class PoolId implements Serializable {
+public class InventoryPoolId implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @Column(name = "seller_id", nullable = false)
@@ -16,10 +16,10 @@ public class PoolId implements Serializable {
     @Column(name = "sku_id", nullable = false, length = 128)
     private String skuId;
 
-    protected PoolId() {
+    protected InventoryPoolId() {
     }
 
-    public PoolId(UUID sellerId, String skuId) {
+    public InventoryPoolId(UUID sellerId, String skuId) {
         this.sellerId = sellerId;
         this.skuId = skuId;
     }
@@ -30,7 +30,7 @@ public class PoolId implements Serializable {
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;
-        if (!(other instanceof PoolId that)) return false;
+        if (!(other instanceof InventoryPoolId that)) return false;
         return Objects.equals(sellerId, that.sellerId) && Objects.equals(skuId, that.skuId);
     }
 

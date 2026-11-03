@@ -7,10 +7,10 @@ import jakarta.persistence.Column;
 
 @Entity
 @Table(name = "inventory_pool")
-public class Pool {
+public class InventoryPool {
 
     @EmbeddedId
-    private PoolId id;
+    private InventoryPoolId id;
 
     @Column(name = "initial_capacity", nullable = false)
     private int initialCapacity;
@@ -24,16 +24,16 @@ public class Pool {
     @Column(nullable = false)
     private int claimed;
 
-    protected Pool() {
+    protected InventoryPool() {
     }
 
-    public Pool(PoolId id, int capacity) {
+    public InventoryPool(InventoryPoolId id, int capacity) {
         this.id = id;
         this.initialCapacity = capacity;
         this.available = capacity;
     }
 
-    public PoolId getId() { return id; }
+    public InventoryPoolId getId() { return id; }
     public int getInitialCapacity() { return initialCapacity; }
     public int getAvailable() { return available; }
     public int getReserved() { return reserved; }

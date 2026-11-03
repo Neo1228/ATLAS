@@ -39,6 +39,6 @@ class SellerSkuServiceImplTest {
 
         assertEquals(new SellerSkuResponse(sellerId, "sku-1", 4), response);
         verify(sellerSkus).save(any(SellerSku.class));
-        verify(inventory).createPool(new CreateInventoryPoolRequest(sellerId, "sku-1", 50));
+        verify(inventory).createInventoryPool(new CreateInventoryPoolRequest(sellerId, "sku-1", 50));
     }
 }

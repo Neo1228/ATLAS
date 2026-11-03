@@ -12,7 +12,7 @@
 - 진행 상태: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture/stack 기준 확정. Issue #72의 local current-flow runtime 승인; live provider, deployment, production capacity/SLO는 별도 승인·검증 대상.
 - 코드 변경 전 요구사항·정책·검증 계약 확인. 중요한 설계 선택은 ADR로 기록.
 - library·plugin 도입은 회피하거나 자동 선택하지 않음. 기존 JDK/Spring/DB 기능, 유지관리 중인 library, 직접 구현을 비교. 성숙한 library가 요구 기능·호환성·운영 비용에 맞으면 직접 재구현보다 우선 사용. capability gap, 대안, maintenance·security·license 비용, runtime/test/build scope를 Issue/PR에 기록.
-- Repository split은 기본 금지. 독립 release/team/data ownership 또는 측정된 scaling·security 경계와 승인된 ADR이 있을 때만 분리.
+- Git 저장소 분리는 기본 보류. 독립 release/team/data ownership 또는 측정된 scaling·security 경계와 승인된 ADR이 있을 때만 검토.
 - Java implementation code: FQCN 금지, import 사용. Gradle `check`의 Checkstyle 검사로 강제.
 - Java 주석은 자연스러운 한국어 우선. 표준 type/API/protocol 이름은 English 유지. 주석은 코드 반복 대신 이유·invariant·외부 제약 설명.
 - 각 도메인은 하나의 `*Exception`과 `Code` enum으로 업무 실패를 표현하고, `application-module`의 단일 `application.exception.GlobalExceptionHandler`가 이를 RFC 9457 `ProblemDetail` + stable `code`로 변환. Raw `IllegalArgumentException`을 client validation 응답으로 노출하지 않음.

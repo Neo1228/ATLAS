@@ -4,7 +4,7 @@ import com.atlas.campaign.dto.request.RegisterSellerSkuRequest;
 import com.atlas.campaign.service.SellerService;
 import com.atlas.campaign.service.SellerSkuService;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
-import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.persistence.state.ReservationStatus;
@@ -87,7 +87,7 @@ class InventoryConcurrencyIntegrationTest {
             assertThat(accepted).isEqualTo(capacity);
         }
 
-        InventoryResponse view = inventory.find(sellerId, sku);
+        InventoryPoolResponse view = inventory.find(sellerId, sku);
         assertThat(view.available()).isZero();
         assertThat(view.reserved()).isEqualTo(capacity);
         assertThat(view.claimed()).isZero();
@@ -121,7 +121,7 @@ class InventoryConcurrencyIntegrationTest {
 
         assertThat(inventory.claim(claimOrder).status()).isEqualTo(ReservationStatus.CLAIMED);
         assertThat(inventory.release(releaseOrder).status()).isEqualTo(ReservationStatus.RELEASED);
-        InventoryResponse view = inventory.find(sellerId, sku);
+        InventoryPoolResponse view = inventory.find(sellerId, sku);
         assertThat(view.available()).isEqualTo(1);
         assertThat(view.reserved()).isZero();
         assertThat(view.claimed()).isEqualTo(1);
@@ -134,7 +134,7 @@ class InventoryConcurrencyIntegrationTest {
                         assertThat(exception.code()).isEqualTo(InventoryException.Code.CONFLICT));
     }
 
-    private static void assertConserved(InventoryResponse view) {
+    private static void assertConserved(InventoryPoolResponse view) {
         assertThat(view.available() + view.reserved() + view.claimed()).isEqualTo(view.initialCapacity());
     }
 }
