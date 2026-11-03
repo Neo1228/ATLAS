@@ -7,7 +7,7 @@ updated: 2026-11-02
 links:
   requirements: [FR-001, FR-002, NFR-002]
   adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004]
-  experiments: [EXP-010, EXP-012]
+  experiments: [EXP-010, EXP-012, EXP-013]
 ---
 # 세션 인계
 
@@ -22,7 +22,7 @@ links:
 - Local 범위는 Fake PSP와 synthetic Buyer만 포함. Live payment, cloud deployment, production performance claim은 없음 ([Issue #72](https://github.com/Neo1228/ATLAS/issues/72)).
 - 현재 코드 구조: [D-047/D-048](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md). `application-module` + 다섯 `*-module`; 공개 `.service`/`.dto.request`/`.dto.response`/`.exception`, lifecycle enum은 공유가 필요한 경우 `.persistence.state`, entity/repository는 모듈 내부. CRUD는 JPA, DB 특화 concurrency SQL만 JDBC/native query. 공통 HTTP 오류는 `GlobalExceptionHandler`; CQRS·`internal`·package-info marker 없음.
 - Latest verification (2026-11-03): `./gradlew check :application-module:bootJar` passed, including domain unit and PostgreSQL/Testcontainers suites. Compose PostgreSQL applied V1–V5; `bootRun` plus GET of a missing campaign returned 404 ProblemDetail `CAMPAIGN_NOT_FOUND`. Markdown lint: 33 files, 0 issues.
-- Latest work: [Issue #81](https://github.com/Neo1228/ATLAS/issues/81) Gate 4 calibration completed under [EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md). Baseline and low-stock/K=1 profile preserved inventory; no WAITING/409 occurred, so queue contention was not exercised. Full 7-hour matrix/2×/4× runs remain out of scope. Any stronger queue-concurrency profile requires a separately approved rate; no production capacity claim.
+- Latest work: [EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), the short local Gate 4 calibration merged in [PR #85](https://github.com/Neo1228/ATLAS/pull/85), is complete ([Issue #81](https://github.com/Neo1228/ATLAS/issues/81)). Baseline and low-stock/K=1 profile preserved inventory; 0 WAITING/409 means queue contention was not observed. Full matrix/2×/4× runs remain out of scope. Any stronger queue-contention profile needs separate owner approval; no production capacity claim.
 
 ## 확정된 방향
 - 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).
@@ -36,7 +36,7 @@ links:
 - Issue #78 verification: JDK 25 + PostgreSQL/Testcontainers `./gradlew check` 18 passed, 0 failed/skipped; Markdown lint 25 files, 0 issues; relative link check 25 files, missing 0. PR #79 required Java/PostgreSQL, Markdown lint and PR checklist all passed; post-merge Backend CI run [41395666245](https://github.com/Neo1228/ATLAS/actions/runs/41395666245) passed.
 - Final HTTP smoke after Issue #75 code changes: campaign create/open → queue sequence 1 → checkout → Fake PSP `CAPTURED` → order `PAID`, inventory `CLAIMED`. No load/performance claim.
 - 현재 변경 검증: `./gradlew check -x :application-module:test`, targeted ArchUnit/global exception tests, `:application-module:bootJar`, 전체 `:application-module:test` 성공. PostgreSQL/Testcontainers 통합 17개 통과(HTTP Buyer flow 11, Inventory concurrency 2, Payment lifecycle 1, architecture boundary 1, exception 2); JPA schema `validate` 통과. 부하·production 성능 보장은 없음.
-- Next: Gate 4 synthetic load/failure scope. 10k/60m, 2×/4× profile은 report-only; environment, request mix, latency, production SLO/capacity는 OPEN ([Q-008](../00-governance/assumptions-and-open-questions.md)). Live PSP/deployment는 별도 승인 대상.
+- Next: Broader Gate 4 synthetic load/failure scope remains open after the completed short calibration; the K=1 profile observed 0 WAITING/409 and did not measure queue contention. Any stronger profile needs separate owner approval. 10k/60m and 2×/4× remain report-only workload inputs; environment, request mix, latency, production SLO/capacity remain OPEN ([EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), [PR #85](https://github.com/Neo1228/ATLAS/pull/85), [Issue #81](https://github.com/Neo1228/ATLAS/issues/81), [Q-008](../00-governance/assumptions-and-open-questions.md)). Live PSP/deployment is a separate approval.
 - 완료: [Issue #75](https://github.com/Neo1228/ATLAS/issues/75) closed; [PR #76](https://github.com/Neo1228/ATLAS/pull/76) squash-merged. Main merge SHA [`d2f9e53766b983902d3bc4ad1e2cfea40a2888ce`](https://github.com/Neo1228/ATLAS/commit/d2f9e53766b983902d3bc4ad1e2cfea40a2888ce). Merge details and commit grouping: [Milestone Log](milestone-log.md).
 
 ## 이력

@@ -7,7 +7,7 @@ updated: 2026-11-02
 links:
   requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
   adr: [ADR-0001, ADR-0003, ADR-0004]
-  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013]
 ---
 # 로드맵
 
@@ -19,9 +19,9 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | Gate 1 | 문제·사용자 목표·도메인 탐색 | ✓ 초기 single-SKU 시나리오 완료 (2026-10-30). 판매 유형·재고 정책·대기열 세부는 [Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md) 미정 |
 | Gate 2 | 요구사항·예외·완료 기준·불변조건·workload profile | ✓ 현재 Buyer journey 기준 승인. 정산·보안 범위는 미정 |
 | Gate 3 | Module·state·data·contract·risk·capacity estimate | ✓ Boundary/toolchain and report-only envelope recorded. Numeric capacity model not produced: request mix, environment, latency and production targets remain OPEN ([D-037~D-044](../00-governance/decision-log.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [ADR-0002](../06-decisions/adr/ADR-0002-runtime-technology-review.md)) |
-| Gate 4 | Synthetic load/failure verification | ○ M1 local runtime complete. Entry approval and environment/request mix/phase still required. Report-only, no production SLO ([Q-008](../00-governance/assumptions-and-open-questions.md)) |
+| Gate 4 | Synthetic load/failure verification | ◐ EXP-013 short local calibration complete; broader profile and failure verification remain OPEN and require separate owner approval. Report-only; no production SLO/capacity claim ([EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), [Issue #81](https://github.com/Neo1228/ATLAS/issues/81)) |
 | M1 | Local single-SKU Buyer flow: Campaign, Admission, Inventory, Order/Checkout, PostgreSQL, Fake PSP, tests/CI | ✓ [PR #73](https://github.com/Neo1228/ATLAS/pull/73) merged; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) closed |
-| M2 | Synthetic load/failure verification, report-only | ○ Gate 4 run after entry/environment approval; no measurement result yet |
+| M2 | Synthetic load/failure verification, report-only | ◐ EXP-013 short local calibration completed; 0 WAITING/409, so queue contention was not observed. Further profile scope requires separate owner approval; no production capacity claim ([EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), [PR #85](https://github.com/Neo1228/ATLAS/pull/85), [Issue #81](https://github.com/Neo1228/ATLAS/issues/81)) |
 | M3 | PayPal Sandbox adapter, webhook·payment recovery | ○ Provider/API and failure/recovery policy decision required; sequencing relative to M2, credentials and scope remain OPEN |
 | M4 | 장기 역량 확장: Tenant/security, catalog·판매 유형, settlement·reconciliation, refund/adjustment | ○ 계획 ([Project Charter](../00-governance/project-charter.md), [Q-002/Q-006/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md)) |
 | M5 | Observability, backup/recovery, SLO/RTO/RPO | ○ 운영 환경 선택 뒤 계획 |
