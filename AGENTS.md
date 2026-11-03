@@ -43,6 +43,17 @@
 - 공유 이력 amend/rebase, 무승인 force push, `main` 직접 push, 미추적 작업을 지우는 reset/clean 금지. 승인된 예외는 별도 Issue, 대상 SHA, 백업 ref, `--force-with-lease`, protection 복원 기록 필요. 충돌 해결 뒤 diff 및 관련 lint/test 재실행.
 - Git 작성자 정보는 local repository에만 설정하고 GitHub no-reply 주소 사용. API key/token, 개인정보, 실제 결제 정보는 코드·로그·Issue/PR에 기록 금지; placeholder만 사용. 유출 시 즉시 폐기/교체.
 - 실제 Issue/commit/PR 상태·SHA·검증만 [Milestone Log](docs/09-delivery/milestone-log.md)와 [Session Handoff](docs/09-delivery/session-handoff.md)에 기록. 병합 및 CI 확인 뒤 별도 branch에서 다음 작업 시작. Gate 종료·범위 변경은 사용자 승인 필요.
+
+## 재발 방지 기준
+- 파일 확인은 정적 read 도구 사용. 사용자가 금지한 `view` command는 실행하지 않음.
+- 이름 변경 전 실제 ecommerce 용어와 모듈 책임을 대조. 저장소 전체의 production/test/integration/resource/config/docs 참조를 검색; subagent 결과도 모든 호출자와 테스트까지 검증.
+- 코드 patch는 최신 파일 경로·hashline을 확인한 뒤 최소 범위로 적용. 매 patch 뒤 대상 구간과 `git diff` 재확인. 경로 불일치·파서 경고가 나면 후속 patch 중단; 원인 수정 후에만 진행.
+- Issue/PR 본문 수정 전 현재 본문, template, CI validator 확인. 필수 heading·checkbox 수, Issues 항목의 plain-text `Closes`/`Refs`와 Issue link 번호 일치, 요구사항·결정 ID 직접 링크를 검사. 중복 heading, 폐기된 이름/경로, 오래된 검증 수치 확인 후 원격 수정; 수정 뒤 본문과 `gh pr checks` 재확인.
+- 미병합 문서 링크는 `main`이 아닌 PR branch 또는 현재 branch SHA 사용. 문서 수정 완료 뒤 링크 대상과 SHA 확인. PR 본문을 다시 쓸 때 기존 추적·위험·검증 기록 보존.
+- 커밋 전 staged/unstaged/untracked를 각각 확인. subagent가 stage한 변경 포함 여부를 검토하고, 의도한 경로만 stage한 뒤 `git diff --cached` 검토. 전체 검증은 최종 working tree 기준으로 수행.
+- 이미 확정된 결정은 다시 묻지 않음. 같은 범위의 미결정 사항은 근거·절충·추천을 한 번에 묶어 질문; 아키텍처·데이터·보안·범위가 실질적으로 달라질 때만 추가 확인.
+- 한국어 독자를 우선. 설명은 짧고 자연스러운 한국어로 작성; 필요한 backend 용어만 English 사용. 문서·Issue·PR의 기존 중복과 구식 표현을 덧붙이지 말고 정리.
+
 ## 진입점
 - 문서 인덱스: [docs/README.md](docs/README.md)
 - 프로젝트 범위: [Project Charter](docs/00-governance/project-charter.md)

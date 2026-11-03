@@ -25,6 +25,7 @@ links:
 - Latest work: [EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), the short local Gate 4 calibration merged in [PR #85](https://github.com/Neo1228/ATLAS/pull/85), is complete ([Issue #81](https://github.com/Neo1228/ATLAS/issues/81)). Baseline and low-stock/K=1 profile preserved inventory; 0 WAITING/409 means queue contention was not observed. Full matrix/2×/4× runs remain out of scope. Any stronger queue-contention profile needs separate owner approval; no production capacity claim.
 - 현재 진행: 구현 완료. [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)·[PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 Seller-SKU 공유 재고와 global FIFO, 저장소 최상위 `ATLAS-*` 모듈 디렉터리를 함께 추적. 디렉터리·Gradle project path·Java package 대응과 현재 `campaign-module` 소유 범위는 [D-049~D-054](../00-governance/decision-log.md)·[ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md) 참조. 범위가 불분명했던 `Pool` 계열 Java 이름은 `InventoryPool`로 구체화했으며 DB schema와 API 응답 형식은 유지.
 - 검증: `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 성공. 테스트 29개 통과. Markdown lint 35개 파일에서 오류 0건; 상대 링크 34개 문서에서 모두 유효. PR CI·review·merge 상태는 [PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 확인. 기존 Campaign 데이터에 V6를 적용하려면 소유자가 제공하는 Campaign→Seller mapping 필요. 현재 로컬 DB에는 migration을 적용하지 않았으며, mapping 누락 시 migration이 중단되도록 구성.
+- 이번 작업의 patch·rename·PR 본문 검증 문제와 재발 방지: [Milestone Log 회고](milestone-log.md), [AGENTS.md 재발 방지 기준](../../AGENTS.md#재발-방지-기준).
 
 ## 확정된 방향
 - 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).

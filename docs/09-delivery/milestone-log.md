@@ -223,3 +223,16 @@ links:
 - Pinned `grafana/k6:2.3.0` container; no host install or application runtime dependency. Windows 10 Docker host: 4 CPUs/~3.83 GiB; temporary `atlas_gate4` database isolated from existing `atlas`.
 - Preflight: 1 VU/60s, 1,265 sessions, p95 97.56ms; derived fixed preallocated VUs=1. Baseline: 1,661 paid, 6 dropped iterations, 0 HTTP failures. Queue configuration: 1,667 sessions, 167 paid, 1,500 inventory-unavailable, 0 WAITING/409. DB snapshots preserved `available + reserved + claimed = initial_capacity`.
 - Finding: the K=1 profile did not produce actual queue contention because session p95 (57ms) remained well below the ~360ms arrival interval with one VU. This run is a local diagnostic only; higher-rate queue pressure requires a separate approved profile. Detailed results and commands: [EXP-013 report](../08-experiments/EXP-013-gate4-20-minute-calibration.md). No production/load claim.
+
+## 2026-11-03 — PR #90 patch·문서·CI 회고
+
+- **Patch 적용 실수:** 첫 경로 선택이 일치하지 않아 patch가 거부됨. 다음 수정에서는 범위가 넓은 line range를 사용해 `InventoryServiceImpl`에 중복 block이 생겼고 파서 경고 발생. 즉시 해당 구간을 다시 읽어 중복을 제거하고 전체 Gradle 검증 통과. 원인: 대상 경로·줄 범위를 patch 전에 재확인하지 않음.
+- **이름 변경 누락:** inventory 이름 변경 뒤 Application integration test에 `InventoryResponse`가 남았고 service 구현에 이전 repository field 이름이 남음. repository 전체 검색에서 발견해 수정; 전체 Gradle check로 확인. Agent 결과만으로 변경 완료를 간주하면 안 됨.
+- **PR template 위반:** PR 본문을 먼저 교체한 뒤 template/validator를 확인해 PR checklist가 실패. 필수 검토 checkbox 수, Issues 항목의 plain-text Closes와 Issue link, 요구사항·결정 ID의 직접 링크가 빠진 원인. template과 `docs-lint.yml` 검사 규칙을 확인해 본문을 수정; 이후 checklist는 통과.
+- **Issue/PR 기록 불일치:** Issue에 중복 `## 목적` heading, 제거된 `PoolId` 경로, 이전 `CONTRIBUTING.md` 안내와 오래된 검증 수치가 남아 있었음. PR에도 오래된 폴더 범위·영어 위주 문구가 섞여 있었음. 본문을 하나의 최신 설명으로 정리하고 제목·링크·검증 수치 갱신.
+- **작업 트리 확인:** Agent가 일부 파일을 stage한 상태에서 추가 수정이 이어져 index와 working tree가 혼재. staged/unstaged diff를 각각 확인하고 의도된 경로만 커밋; 작업 유실은 없었음.
+- **경계 결정:** `campaign-module`이 Seller·Seller-SKU·Campaign을 함께 소유하는 범위는 이름만 보고 임의 분리하지 않음. 현재 독립된 업무 흐름/API/data ownership 근거가 없어 사용자 선택대로 유지하고 [D-054](../00-governance/decision-log.md)로 기록.
+- **반복된 지침 누락 위험:** 사용자가 이미 요청한 자연스러운 한국어, 한 번에 묶은 결정 질문, 확정된 선택 재질문 금지, Issue/PR 과분할 금지를 다시 강조한 상태. 기존 AGENTS에는 작업 묶음 원칙은 있었지만 질문을 묶고 확정 결정을 재확인하지 않는 규칙이 없었음. 해당 기준과 금지된 `view` command 사용 금지를 [AGENTS.md](../../AGENTS.md#재발-방지-기준)에 명시.
+- **재발 방지 기준:** patch 재확인, rename 전체 호출처 검색, 원격 PR body 사전 검증, branch commit link 확인, staged/unstaged 분리를 [AGENTS.md의 재발 방지 기준](../../AGENTS.md#재발-방지-기준)에 고정.
+- **검증:** 최종 코드 변경에서 JDK 25/PostgreSQL 포함 `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 통과, 테스트 29개. Markdown lint와 상대 링크 검사 통과. PR checklist의 첫 실패는 문서 형식 문제이며 코드 테스트 실패가 아님.
+- **추적:** [Issue #89](https://github.com/Neo1228/ATLAS/issues/89), [PR #90](https://github.com/Neo1228/ATLAS/pull/90), [D-049~D-054](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md).
