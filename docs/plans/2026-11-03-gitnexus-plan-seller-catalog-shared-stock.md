@@ -1,7 +1,7 @@
 # GitNexus Engineering Plan
 
 > Task: One Issue/PR for Seller=Tenant, Seller-owned SKU, shared Seller-SKU stock and global FIFO.
-> Baseline/source investigation pinned to commit 72c572e2e799cf26a9e315903324cb9646f0af54; graph evidence applies only to that pre-change baseline. Final ATLAS-* layout and linked SSOT are in commits 13b9f33, 071a616, 4b070d8, and 9649a23 and 8012b9f; the earlier modules/ intermediate is superseded. PR #90 is open. Post-change review is source-based; no post-change graph claim.
+> Baseline/source investigation pinned to commit 72c572e2e799cf26a9e315903324cb9646f0af54; graph evidence applies only to that pre-change baseline. Final ATLAS-* layout and linked SSOT are in commits 13b9f33, 071a616, 4b070d8, 9649a23, and 8012b9f; the earlier modules/ intermediate is superseded. PR #90 merged as [a844cf7](https://github.com/Neo1228/ATLAS/commit/a844cf73195ec790b5a2bcc1970f7c69f8a9a381); Issue #89 is closed. Post-change review is source-based; no post-change graph claim.
 > Evidence provenance schema 2; global dirty digest 0a9c85780067d9afcd0764f307b60891e3cee927ee11eaeb5ec7826d10fd82cd; cited-path manifest 29 sorted entries; exact generated plan path excluded.
 
 현재 적용 금지: 이 계획의 legacy mapping/aggregate migration 제안은 [D-055](../00-governance/decision-log.md)·[ADR-0006](../06-decisions/adr/ADR-0006-v6-clean-start.md)로 supersede되었다. 기록은 D-049 당시 계획의 이력으로 남기며, V6는 empty-start만 허용하고 nonempty V1–V5 application table에서 DDL 전에 실패한다. 기존 local data는 앱 밖에서 명시적으로 보관·reset한다. Seller-SKU shared stock/global FIFO/K 결정은 유지.
