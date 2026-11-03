@@ -5,16 +5,20 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.UuidGenerator;
 
 @Entity
 @Table(name = "purchase_order")
 public class PurchaseOrder {
     @Id
     @Column(name = "order_id", nullable = false)
+    @GeneratedValue
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
     private UUID orderId;
  @Column(name = "seller_id", nullable = false)
  private UUID sellerId;
@@ -40,9 +44,8 @@ public class PurchaseOrder {
 
     protected PurchaseOrder() { }
 
- public PurchaseOrder(UUID orderId, UUID campaignId, UUID sellerId, UUID ticketId, String buyerRef, String skuId,
+ public PurchaseOrder(UUID campaignId, UUID sellerId, UUID ticketId, String buyerRef, String skuId,
  OrderState state, Instant checkoutExpiresAt, UUID paymentAttemptId, Instant createdAt, Instant updatedAt) {
- this.orderId = orderId;
  this.campaignId = campaignId;
  this.sellerId = sellerId;
  this.ticketId = ticketId;

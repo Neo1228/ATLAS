@@ -4,7 +4,6 @@ import com.atlas.campaign.dto.response.SellerResponse;
 import com.atlas.campaign.persistence.entity.Seller;
 import com.atlas.campaign.repository.SellerRepository;
 import com.atlas.campaign.service.SellerService;
-import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,7 +19,7 @@ public class SellerServiceImpl implements SellerService {
     @Override
     @Transactional
     public SellerResponse create() {
-        Seller seller = sellers.save(new Seller(UUID.randomUUID()));
+        Seller seller = sellers.save(new Seller());
         return new SellerResponse(seller.getSellerId());
     }
 }

@@ -5,11 +5,13 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.UuidGenerator;
 
 @Entity
 @Table(name = "admission_ticket", uniqueConstraints = {
@@ -19,6 +21,8 @@ import java.util.UUID;
 public class QueueTicket {
     @Id
     @Column(name = "ticket_id", nullable = false)
+    @GeneratedValue
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
     private UUID ticketId;
 
     @Column(name = "campaign_id", nullable = false)
@@ -57,10 +61,9 @@ public class QueueTicket {
 
     protected QueueTicket() { }
 
-    public QueueTicket(UUID ticketId, UUID campaignId, UUID sellerId, String skuId, String buyerRef, String idempotencyKey,
+    public QueueTicket(UUID campaignId, UUID sellerId, String skuId, String buyerRef, String idempotencyKey,
             long sequence, TicketStatus status, Instant expiresAt, Instant createdAt,
             Instant checkoutSlotAcquiredAt, boolean checkoutSlotHeld) {
-        this.ticketId = ticketId;
         this.campaignId = campaignId;
         this.sellerId = sellerId;
         this.skuId = skuId;

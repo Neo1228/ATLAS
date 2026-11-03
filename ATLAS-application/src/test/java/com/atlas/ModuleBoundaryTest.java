@@ -1,7 +1,7 @@
 package com.atlas;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
-
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -17,6 +17,7 @@ class ModuleBoundaryTest {
                 .importPackages("com.atlas");
 
         String[] javaAndFramework = {"java..", "jakarta..", "org.springframework..", "org.slf4j.."};
+        String[] javaAndPersistence = append(javaAndFramework, "org.hibernate.annotations..", "org.hibernate.id.uuid..");
         String[] applicationDependencies = {
                 "com.atlas.application..", "com.atlas",
                 "com.atlas.campaign.service", "com.atlas.campaign.dto.request",
@@ -35,17 +36,17 @@ class ModuleBoundaryTest {
         enforceAllowedDependencies(source, "com.atlas", applicationDependencies);
 
         enforceAllowedDependencies(source, "com.atlas.campaign..",
-                append(javaAndFramework, "com.atlas.campaign..",
+                append(javaAndPersistence, "com.atlas.campaign..",
                         "com.atlas.inventory.service", "com.atlas.inventory.dto.request",
                         "com.atlas.inventory.dto.response", "com.atlas.inventory.persistence.state", "com.atlas.inventory.exception"));
         enforceAllowedDependencies(source, "com.atlas.admission..",
-                append(javaAndFramework, "com.atlas.admission..",
+                append(javaAndPersistence, "com.atlas.admission..",
                         "com.atlas.campaign.service", "com.atlas.campaign.dto.response",
                         "com.atlas.campaign.persistence.state", "com.atlas.campaign.exception"));
         enforceAllowedDependencies(source, "com.atlas.inventory..",
-                append(javaAndFramework, "com.atlas.inventory.."));
+                append(javaAndPersistence, "com.atlas.inventory.."));
         enforceAllowedDependencies(source, "com.atlas.order..",
-                append(javaAndFramework, "com.atlas.order..",
+                append(javaAndPersistence, "com.atlas.order..",
                         "com.atlas.admission.service", "com.atlas.admission.dto.request",
                         "com.atlas.admission.dto.response", "com.atlas.admission.persistence.state", "com.atlas.admission.exception",
                         "com.atlas.inventory.service", "com.atlas.inventory.dto.request",
@@ -53,7 +54,13 @@ class ModuleBoundaryTest {
                         "com.atlas.payment.service", "com.atlas.payment.dto.request",
                         "com.atlas.payment.dto.response", "com.atlas.payment.persistence.state", "com.atlas.payment.exception"));
         enforceAllowedDependencies(source, "com.atlas.payment..",
-                append(javaAndFramework, "com.atlas.payment.."));
+                append(javaAndPersistence, "com.atlas.payment.."));
+        noClasses().that().resideInAPackage("com.atlas..")
+                .and().resideOutsideOfPackage("..persistence.entity..")
+                .should().dependOnClassesThat()
+                .resideInAnyPackage("org.hibernate.annotations..", "org.hibernate.id.uuid..")
+                .check(source);
+
     }
 
     private static void enforceAllowedDependencies(JavaClasses source, String packagePattern, String... allowedPackages) {

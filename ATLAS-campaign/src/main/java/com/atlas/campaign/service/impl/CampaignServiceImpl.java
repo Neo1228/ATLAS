@@ -11,8 +11,6 @@ import com.atlas.campaign.service.SellerSkuService;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
-import java.util.function.Supplier;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,19 +20,10 @@ public class CampaignServiceImpl implements CampaignService {
     private final CampaignRepository campaigns;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
-    private final Supplier<UUID> ids;
-
-    @Autowired
     public CampaignServiceImpl(CampaignRepository campaigns, SellerSkuService sellerSkus, Clock clock) {
-        this(campaigns, sellerSkus, clock, UUID::randomUUID);
-    }
-
-    CampaignServiceImpl(CampaignRepository campaigns, SellerSkuService sellerSkus, Clock clock,
-            Supplier<UUID> ids) {
         this.campaigns = campaigns;
         this.sellerSkus = sellerSkus;
         this.clock = clock;
-        this.ids = ids;
     }
 
     @Override
@@ -52,8 +41,7 @@ public class CampaignServiceImpl implements CampaignService {
                     "Unknown seller SKU: " + request.sellerId() + "/" + request.skuId());
         }
 
-        UUID campaignId = ids.get();
-        Campaign entity = campaigns.save(new Campaign(campaignId, request.sellerId(), request.skuId(),
+        Campaign entity = campaigns.save(new Campaign(request.sellerId(), request.skuId(),
                 CampaignStatus.CLOSED, request.queueTicketTtl().toSeconds(), clock.instant()));
         return toResponse(entity);
     }

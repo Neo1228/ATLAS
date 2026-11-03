@@ -17,7 +17,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -31,22 +30,15 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final CampaignService campaigns;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
-    private final Supplier<UUID> ids;
 
     @Autowired
-    public AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository,
-            CampaignService campaigns, SellerSkuService sellerSkus, Clock clock) {
-        this(tickets, queueRepository, campaigns, sellerSkus, clock, UUID::randomUUID);
-    }
-
-    AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository, CampaignService campaigns,
-            SellerSkuService sellerSkus, Clock clock, Supplier<UUID> ids) {
+    public AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository, CampaignService campaigns,
+            SellerSkuService sellerSkus, Clock clock) {
         this.tickets = tickets;
         this.queueRepository = queueRepository;
         this.campaigns = campaigns;
         this.sellerSkus = sellerSkus;
         this.clock = clock;
-        this.ids = ids;
     }
 
     @Override
@@ -81,12 +73,12 @@ public class AdmissionServiceImpl implements AdmissionService {
         long sequence = queueRepository.incrementSequence(campaign.sellerId(), campaign.skuId());
         long active = tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(campaign.sellerId(), campaign.skuId());
         boolean slot = active < sellerSku.maxActiveCheckouts();
-        UUID ticketId = ids.get();
         Instant expiresAt = now.plus(campaign.queueTicketTtl());
-        tickets.save(new QueueTicket(ticketId, request.campaignId(), campaign.sellerId(), request.skuId(), request.buyerRef(),
-                request.idempotencyKey(), sequence, slot ? TicketStatus.CHECKOUT_ACTIVE : TicketStatus.WAITING,
+        QueueTicket ticket = tickets.save(new QueueTicket(request.campaignId(), campaign.sellerId(), request.skuId(),
+                request.buyerRef(), request.idempotencyKey(), sequence,
+                slot ? TicketStatus.CHECKOUT_ACTIVE : TicketStatus.WAITING,
                 expiresAt, now, slot ? now : null, slot));
-        return requireTicket(request.campaignId(), ticketId);
+        return requireTicket(request.campaignId(), ticket.getTicketId());
     }
 
     private SellerSkuResponse requireSellerSku(CampaignResponse campaign) {

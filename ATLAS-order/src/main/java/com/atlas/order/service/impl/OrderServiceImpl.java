@@ -44,19 +44,11 @@ public final class OrderServiceImpl implements OrderService {
     private final PaymentService payments;
     private final Clock clock;
     private final Duration checkoutWindow;
-    private final Supplier<UUID> ids;
 
     @Autowired
     public OrderServiceImpl(PlatformTransactionManager transactionManager, OrderRepository repository,
             JdbcBuyerLockRepository buyerLockRepository, AdmissionService admission, InventoryService inventory,
             PaymentService payments, Clock clock, @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow) {
-        this(repository, buyerLockRepository, transactionManager, admission, inventory, payments, clock,
-                checkoutWindow, UUID::randomUUID);
-    }
-
-    OrderServiceImpl(OrderRepository repository, JdbcBuyerLockRepository buyerLockRepository,
-            PlatformTransactionManager transactionManager, AdmissionService admission, InventoryService inventory,
-            PaymentService payments, Clock clock, Duration checkoutWindow, Supplier<UUID> ids) {
         this.repository = Objects.requireNonNull(repository);
         this.buyerLockRepository = Objects.requireNonNull(buyerLockRepository);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
@@ -65,7 +57,6 @@ public final class OrderServiceImpl implements OrderService {
         this.payments = Objects.requireNonNull(payments);
         this.clock = Objects.requireNonNull(clock);
         this.checkoutWindow = Objects.requireNonNull(checkoutWindow);
-        this.ids = Objects.requireNonNull(ids);
         if (checkoutWindow.isZero() || checkoutWindow.isNegative()) {
             throw new IllegalArgumentException("checkoutWindow must be positive");
         }
@@ -90,17 +81,18 @@ public final class OrderServiceImpl implements OrderService {
             existing = repository.findByTicketOrNull(ticketId);
             if (existing != null) return toResponse(existing);
 
-            UUID orderId = ids.get();
             Instant now = clock.instant();
             Instant expiresAt = now.plus(checkoutWindow);
+            PurchaseOrder saved = repository.save(new PurchaseOrder(
+                    campaignId, ticket.sellerId(), ticketId, ticket.buyerRef(), ticket.skuId(),
+                    OrderState.RESERVED, expiresAt, null, now, now));
+            UUID orderId = saved.orderId();
             boolean reserved = inventory.tryReserve(new ReserveInventoryRequest(
                     orderId, campaignId, ticket.sellerId(), ticket.skuId(), 1)).isPresent();
-            OrderState state = reserved ? OrderState.RESERVED : OrderState.FAILED;
             if (!reserved) {
+                repository.updateState(orderId, OrderState.FAILED, null, clock.instant());
                 admission.releaseCheckoutSlot(campaignId, ticketId, CheckoutSlotReleaseReason.INVENTORY_UNAVAILABLE);
             }
-            repository.save(new PurchaseOrder(orderId, campaignId, ticket.sellerId(), ticketId, ticket.buyerRef(), ticket.skuId(),
-                    state, expiresAt, null, now, now));
             return toResponse(repository.requireById(orderId));
         });
     }

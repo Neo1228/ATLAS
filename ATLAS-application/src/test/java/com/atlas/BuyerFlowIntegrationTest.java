@@ -57,6 +57,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -93,6 +94,7 @@ class BuyerFlowIntegrationTest {
     @Autowired private FakePsp fakePsp;
     @Autowired private AdjustableClock clock;
     @Autowired private MockMvc mockMvc;
+@Autowired private JdbcTemplate jdbc;
 
     @BeforeEach
     void resetClock() {
@@ -147,9 +149,16 @@ class BuyerFlowIntegrationTest {
         OrderResponse order = orders.startCheckout(campaign.campaignId(), first.ticketId());
         OrderResponse checkoutReplay = orders.startCheckout(campaign.campaignId(), first.ticketId());
         assertThat(checkoutReplay.orderId()).isEqualTo(order.orderId());
+assertUuidV7(campaign.sellerId());
+assertUuidV7(campaign.campaignId());
+assertUuidV7(first.ticketId());
+assertUuidV7(order.orderId());
         assertThat(order.state()).isEqualTo(OrderState.RESERVED);
         assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         assertThat(orders.submitPayment(order.orderId()).state()).isEqualTo(OrderState.PAID);
+UUID paymentOrderId = jdbc.queryForObject("SELECT order_id FROM payment_attempt WHERE order_id = ?",
+UUID.class, order.orderId());
+assertUuidV7(paymentOrderId);
         assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_SUBMITTED);
         assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
@@ -466,7 +475,11 @@ class BuyerFlowIntegrationTest {
         return admission.join(new JoinQueueRequest(campaign.campaignId(), campaign.skuId(), buyerRef, key));
     }
 
-    private static void assertConserved(InventoryPoolResponse stock) {
+    private static void assertUuidV7(UUID id) {
+assertThat(id).isNotNull();
+assertThat(id.version()).isEqualTo(7);
+}
+private static void assertConserved(InventoryPoolResponse stock) {
         assertThat(stock.available() + stock.reserved() + stock.claimed()).isEqualTo(stock.initialCapacity());
     }
 

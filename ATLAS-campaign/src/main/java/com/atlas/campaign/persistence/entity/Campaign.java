@@ -5,10 +5,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.UuidGenerator;
 
 @Entity
 @Table(name = "campaign")
@@ -16,6 +18,8 @@ public class Campaign {
 
     @Id
     @Column(name = "campaign_id")
+    @GeneratedValue
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
     private UUID campaignId;
 
     @Column(name = "seller_id", nullable = false)
@@ -37,9 +41,8 @@ public class Campaign {
     protected Campaign() {
     }
 
-    public Campaign(UUID campaignId, UUID sellerId, String skuId, CampaignStatus status,
-            long queueTicketTtlSeconds, Instant createdAt) {
-        this.campaignId = campaignId;
+ public Campaign(UUID sellerId, String skuId, CampaignStatus status,
+ long queueTicketTtlSeconds, Instant createdAt) {
         this.sellerId = sellerId;
         this.skuId = skuId;
         this.status = status;

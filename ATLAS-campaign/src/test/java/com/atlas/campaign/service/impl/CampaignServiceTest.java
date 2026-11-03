@@ -44,10 +44,16 @@ class CampaignServiceTest {
         UUID campaignId = UUID.randomUUID();
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
         when(sellerSkus.find(sellerId, "sku-1")).thenReturn(new SellerSkuResponse(sellerId, "sku-1", 3));
-        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> {
+            Campaign saved = invocation.getArgument(0);
+            var id = Campaign.class.getDeclaredField("campaignId");
+            id.setAccessible(true);
+            id.set(saved, campaignId);
+            return saved;
+        });
 
         CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus,
-                Clock.fixed(now, ZoneOffset.UTC), () -> campaignId);
+                Clock.fixed(now, ZoneOffset.UTC));
         var response = campaigns.create(new CreateCampaignRequest(sellerId, "sku-1", Duration.ofMinutes(5)));
 
         assertEquals(campaignId, response.campaignId());
