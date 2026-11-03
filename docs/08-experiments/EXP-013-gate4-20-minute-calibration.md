@@ -30,17 +30,17 @@ MSYS_NO_PATHCONV=1 docker run --rm --name atlas-gate4-app --network atlas_defaul
   -e ATLAS_SERVER_ADDRESS=0.0.0.0 \
   -e ATLAS_DB_URL=jdbc:postgresql://postgres:5432/atlas_gate4 \
   -e ATLAS_DB_USER=atlas -e ATLAS_DB_PASSWORD=atlas-local-only \
-  -v "$repoRoot/modules/application-module/build/libs/application-module.jar:/app.jar:ro" \
+  -v "$repoRoot/ATLAS-application/build/libs/application-module.jar:/app.jar:ro" \
   eclipse-temurin:25-jre java -jar /app.jar
 ```
 
 In a second terminal, run the pilot and load profiles with pinned k6 image:
 
 ```sh
-mkdir -p modules/application-module/build/gate4-results
+mkdir -p ATLAS-application/build/gate4-results
 MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
   -v "$repoRoot/load-tests/gate4.js:/gate4.js:ro" \
-  -v "$repoRoot/modules/application-module/build/gate4-results:/results" \
+  -v "$repoRoot/ATLAS-application/build/gate4-results:/results" \
   -e ATLAS_BASE_URL=http://atlas-gate4-app:8080 \
   -e GATE4_PROFILE=baseline -e GATE4_MODE=pilot \
   -e GATE4_RUN_ID=gate4-pilot-20261103 \
@@ -48,7 +48,7 @@ MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
 
 MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
   -v "$repoRoot/load-tests/gate4.js:/gate4.js:ro" \
-  -v "$repoRoot/modules/application-module/build/gate4-results:/results" \
+  -v "$repoRoot/ATLAS-application/build/gate4-results:/results" \
   -e ATLAS_BASE_URL=http://atlas-gate4-app:8080 \
   -e GATE4_PROFILE=baseline -e GATE4_MODE=load \
   -e GATE4_RUN_ID=gate4-baseline-20261103 -e PREALLOCATED_VUS=1 \
@@ -56,7 +56,7 @@ MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
 
 MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
   -v "$repoRoot/load-tests/gate4.js:/gate4.js:ro" \
-  -v "$repoRoot/modules/application-module/build/gate4-results:/results" \
+  -v "$repoRoot/ATLAS-application/build/gate4-results:/results" \
   -e ATLAS_BASE_URL=http://atlas-gate4-app:8080 \
   -e GATE4_PROFILE=queue-backlog -e GATE4_MODE=load \
   -e GATE4_RUN_ID=gate4-queue-backlog-20261103 -e PREALLOCATED_VUS=1 \

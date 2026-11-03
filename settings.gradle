@@ -7,9 +7,9 @@ include 'inventory-module'
 include 'order-module'
 include 'payment-module'
 
-project(':application-module').projectDir = file('modules/application-module')
-project(':campaign-module').projectDir = file('modules/campaign-module')
-project(':admission-module').projectDir = file('modules/admission-module')
-project(':inventory-module').projectDir = file('modules/inventory-module')
-project(':order-module').projectDir = file('modules/order-module')
-project(':payment-module').projectDir = file('modules/payment-module')
+project(':application-module').projectDir = file('ATLAS-application')
+project(':campaign-module').projectDir = file('ATLAS-campaign')
+project(':admission-module').projectDir = file('ATLAS-admission')
+project(':inventory-module').projectDir = file('ATLAS-inventory')
+project(':order-module').projectDir = file('ATLAS-order')
+project(':payment-module').projectDir = file('ATLAS-payment')

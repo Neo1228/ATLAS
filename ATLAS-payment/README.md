@@ -1,4 +1,6 @@
-# payment-module
+# ATLAS-payment
+
+- Gradle project: `:payment-module`
 
 Payment attempt 상태와 Fake PSP 연동을 소유.
 

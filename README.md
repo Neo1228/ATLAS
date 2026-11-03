@@ -19,16 +19,16 @@ updated: 2026-11-03
 
 ## 도메인 모듈
 
-한 번에 실행·배포하는 Spring Boot modular monolith. 여섯 Gradle subproject는 root의 [modules/](modules/) 아래에 그룹화. Gradle project name·task path와 Java package는 유지하며, 각 모듈 README에 책임·공개 API·의존·데이터 소유를 기록.
+한 번에 실행·배포하는 Spring Boot modular monolith. 여섯 Gradle project는 root의 `ATLAS-<name>` 디렉터리에 배치. `settings.gradle`은 물리 디렉터리를 기존 Gradle project path(`:application-module` 등)에 매핑하며, Java package와 의존성 방향은 유지.
 
-| 모듈 | 책임 | 의존 |
-|---|---|---|
-| [application-module](modules/application-module/README.md) | 실행 진입점, HTTP adapters, 런타임 설정·migration | 다섯 도메인 모듈 |
-| [campaign-module](modules/campaign-module/README.md) | Seller·Seller-SKU·Campaign | inventory |
-| [admission-module](modules/admission-module/README.md) | Seller-SKU global FIFO/K·Campaign ticket | campaign |
-| [inventory-module](modules/inventory-module/README.md) | Seller-SKU shared stock pool·reservation·conservation | 없음 |
-| [order-module](modules/order-module/README.md) | checkout·order lifecycle·seller attribution | admission, inventory, payment |
-| [payment-module](modules/payment-module/README.md) | payment attempts·provider 결과 | 없음 |
+| 물리 디렉터리 | Gradle project | 책임 | 의존 |
+|---|---|---|---|
+| [ATLAS-application](ATLAS-application/README.md) | `:application-module` | 실행 진입점, HTTP adapters, 런타임 설정·migration | 다섯 도메인 모듈 |
+| [ATLAS-campaign](ATLAS-campaign/README.md) | `:campaign-module` | Seller·Seller-SKU·Campaign | inventory |
+| [ATLAS-admission](ATLAS-admission/README.md) | `:admission-module` | Seller-SKU global FIFO/K·Campaign ticket | campaign |
+| [ATLAS-inventory](ATLAS-inventory/README.md) | `:inventory-module` | Seller-SKU shared stock pool·reservation·conservation | 없음 |
+| [ATLAS-order](ATLAS-order/README.md) | `:order-module` | checkout·order lifecycle·seller attribution | admission, inventory, payment |
+| [ATLAS-payment](ATLAS-payment/README.md) | `:payment-module` | payment attempts·provider 결과 | 없음 |
 
 각 도메인 `-module`은 `.service` contract, `.dto.request` 입력, `.dto.response` 출력, `.exception` 오류를 공개합니다. 상태 enum은 persistence-owned lifecycle vocabulary로 `.persistence.state`에 두고 모듈 간 contract에서 공유합니다; JPA entity/repository는 공유하지 않습니다. 구현과 scheduled expiry는 `.service.impl`, JPA mapping/CRUD는 `.persistence.entity`·`.persistence.repository`, Fake provider는 `.provider.fake`에 둡니다. ArchUnit이 허용한 package dependency만 검사하며 `package-info.java` marker는 없습니다. 기본 CRUD는 JPA, advisory lock·sequence·guarded update 등 PostgreSQL 특화 경로만 JDBC/native SQL을 사용합니다. Flyway가 schema를 소유하고 Hibernate는 `validate`만 수행합니다.
 HTTP controller·request DTO·공통 설정·오류 처리는 `application-module`의 `.application.controller.<domain>`·`.application.controller.dto`·`.application.config`·`.application.exception`에 둡니다. CQRS·`internal`·불필요한 공통 모듈은 사용하지 않습니다. 경계와 근거는 [ADR-0003](docs/06-decisions/adr/ADR-0003-gradle-module-boundaries.md), SQL 선택은 [ADR-0004](docs/06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md).

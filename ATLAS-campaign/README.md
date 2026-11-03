@@ -1,4 +1,6 @@
-# campaign-module
+# ATLAS-campaign
+
+- Gradle project: `:campaign-module`
 
 Seller, Seller-owned SKU와 Campaign eligibility를 소유. Seller와 SKU는 별도 domain module이 아니라 이 모듈의 catalog/campaign 범위.
 

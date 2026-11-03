@@ -31,15 +31,16 @@ ADR-0001에서 현재 Buyer 흐름의 Campaign, Admission, Inventory, Order/Chec
 
 ### 물리 디렉터리 구성
 
-여섯 Gradle subproject를 `modules/<기존 프로젝트 이름>` 아래에 둔다. `settings.gradle`의 `include` 이름과 logical project path (`:application-module` 등)는 유지하고 `projectDir`만 새 경로로 연결한다. Java package, module dependency, 단일 실행·배포 구조에는 변경 없음.
+여섯 Gradle subproject의 물리 디렉터리를 저장소 root에 `ATLAS-<이름>` 형식으로 배치: `ATLAS-application`, `ATLAS-campaign`, `ATLAS-admission`, `ATLAS-inventory`, `ATLAS-order`, `ATLAS-payment`. `settings.gradle`의 `projectDir` mapping으로 기존 Gradle project path (`:application-module` 등)를 유지. Java package, module dependency, 단일 실행·배포 구조는 변경하지 않음.
 
 | 선택지 | 절충 |
 |---|---|
-| 현재처럼 root에 나란히 배치 | 설정이 가장 단순하지만 저장소 root에 module directory가 여럿 노출 |
-| `modules/<기존 이름>`으로 그룹화 — 선택 | root 탐색이 단순해짐. `projectDir` mapping 및 물리 경로 링크 갱신 필요; Gradle task path는 유지 |
-| Gradle logical path도 `modules:<이름>`으로 변경 | task·dependency path까지 바뀌어 불필요한 영향 확대; 미선택 |
+| 기존 `*-module` 디렉터리를 root에 유지 | 설정은 단순하지만 Gradle 모듈 이름이 실제 폴더에서 바로 드러나지 않음 |
+| `modules/<이름>` 하위에 그룹화 | 여섯 모듈을 한 번 더 클릭해야 하므로 root에서 바로 찾기 어려움 |
+| `ATLAS-<이름>` 디렉터리를 root에 배치 — 선택 | 저장소 root에서 여섯 모듈을 바로 구분. 기존 Gradle project/task path는 유지 |
+| Gradle project path도 `ATLAS-<이름>`으로 변경 | dependency와 task references까지 갱신해야 하므로 불필요한 영향 확대 |
 
-Java package root는 D-047의 module/layer 경계와 동일하게 유지. 확인된 중복·미사용 package가 없어 package/class 삭제는 하지 않음. 물리 재배치 근거는 [REF-092](../../00-governance/reference-register.md), 구현·검증은 [PR #90](https://github.com/Neo1228/ATLAS/pull/90).
+Java package 구조는 D-047/ADR-0003 그대로 유지. 감사 결과 중복·미사용 근거가 있는 package/class가 없어 삭제하지 않음. [REF-092](../../00-governance/reference-register.md)는 Gradle `projectDir` mapping 지원을 확인하는 근거; folder grouping 자체를 보편적 best practice라 주장하지 않음. 구현·검증은 [PR #90](https://github.com/Neo1228/ATLAS/pull/90).
 
 ### 계층과 데이터 접근
 

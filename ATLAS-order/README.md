@@ -1,4 +1,6 @@
-# order-module
+# ATLAS-order
+
+- Gradle project: `:order-module`
 
 Checkout과 Order 수명주기·payment coordination을 소유.
 

@@ -1,4 +1,6 @@
-# application-module
+# ATLAS-application
+
+- Gradle project: `:application-module`
 
 단일 Spring Boot deployment의 composition root. Domain modules는 JAR 단위지만 독립 서비스·배포 단위는 아님.
 

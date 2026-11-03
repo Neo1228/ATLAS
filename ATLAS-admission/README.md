@@ -1,4 +1,6 @@
-# admission-module
+# ATLAS-admission
+
+- Gradle project: `:admission-module`
 
 Queue ticket·순번·idempotency·checkout slot과 expiry를 소유.
 

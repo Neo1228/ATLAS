@@ -1,4 +1,6 @@
-# inventory-module
+# ATLAS-inventory
+
+- Gradle project: `:inventory-module`
 
 Inventory pool/reservation과 `available + reserved + claimed = initial capacity` 보존 규칙을 소유.
 
