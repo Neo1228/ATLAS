@@ -3,7 +3,7 @@
 - 상태: ✓ 검토 완료. [D-040](../../00-governance/decision-log.md)의 사용자 승인 stack 유지; migration 또는 production 승인 아님
 - 날짜: 2026-11-02
 - 담당: Project Owner
-- 관련 ID: [FR-001/002/003, NFR-001/002](../../02-requirements/requirements-index.md), [D-040](../../00-governance/decision-log.md), [Q-005/Q-007/Q-008/Q-009](../../00-governance/assumptions-and-open-questions.md)
+- 관련 ID: [FR-001/002/003, NFR-001/002](../../02-requirements/requirements-index.md), [D-040](../../00-governance/decision-log.md), [Q-005/Q-007/Q-008/Q-009](../../02-requirements/requirements-index.md#assumptions-and-open-questions)
 - 추적: [Issue #68 stack approval](https://github.com/Neo1228/ATLAS/issues/68#issuecomment-6566855773), [toolchain rationale](https://github.com/Neo1228/ATLAS/issues/68#issuecomment-6566950387), [Issue #78 re-review](https://github.com/Neo1228/ATLAS/issues/78)
 
 ## 배경

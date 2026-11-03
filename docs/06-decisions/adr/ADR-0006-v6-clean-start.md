@@ -26,5 +26,5 @@ V1–V5 Campaign 데이터를 Seller-SKU 구조로 변환하려면 소유권 map
 ## 추적
 
 - [D-055](../../00-governance/decision-log.md)
-- [FR-004](../../02-requirements/requirements-index.md), [Q-002/Q-003](../../00-governance/assumptions-and-open-questions.md)
+- [FR-004](../../02-requirements/requirements-index.md), [Q-002/Q-003](../../02-requirements/requirements-index.md#assumptions-and-open-questions)
 - [ADR-0005](ADR-0005-seller-sku-inventory-global-admission.md) — Seller-SKU 도메인 결정 유지, migration 방법은 본 ADR로 supersede

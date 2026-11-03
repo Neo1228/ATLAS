@@ -26,7 +26,7 @@
 - **Architecture:** Modular Monolith First. 한 deployment 안에서 module boundary와 data ownership 유지.
 - **Stack:** JDK 25 LTS, Spring Boot 4.1.2, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Testcontainers 2.0.5 verifies PostgreSQL behavior in test scope; ArchUnit 1.5.1 enforces package dependency rules without package-info markers. Boot 4 Flyway uses its starter ([D-040](../../00-governance/decision-log.md), [REF-065~067/098](../../00-governance/reference-register.md)). CI uses Temurin 25; production JDK distribution/license remains OPEN.
 - PostgreSQL is the durable system of record. Module ownership and short-transaction rules are [D-038](../../00-governance/decision-log.md); campaign counter-row allocation is [D-039](../../00-governance/decision-log.md). Local schema/migrations are implemented under [Issue #72](https://github.com/Neo1228/ATLAS/issues/72); production isolation and lock recovery remain OPEN.
-- 초기 설계에 별도 queue/cache/broker 없음. Load test에서 bottleneck과 비교 가능한 이점을 확인한 경우에만 추가 검토 ([EXP-012](../../08-experiments/experiment-registry.md)).
+- 초기 설계에 별도 queue/cache/broker 없음. Load test에서 bottleneck과 비교 가능한 이점을 확인한 경우에만 추가 검토 (D-037; Q-008).
 - Gate 2 current Buyer journey와 Gate 3 design 기준 승인. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)에서 local current-flow runtime만 추가 승인; live payment·deployment·production capacity claim은 별도 대상.
 
 ## 상위 아키텍처
@@ -74,7 +74,7 @@ flowchart LR
 - **Queue sequence:** Admission initializes/locks its campaign counter row and inserts the ticket in the same transaction ([D-039](../../00-governance/decision-log.md)). First eligible join creates the row lazily; committed order is stored in PostgreSQL. Same-campaign contention remains an approved workload measurement target, not an observed result. PostgreSQL sequence gaps/commit-order mismatch make it unsuitable here ([REF-057](../../00-governance/reference-register.md)).
 - **Boundary checks:** ArchUnit 1.5.1 test-scope rules enforce the allowed Gradle-module package dependencies without package-info annotations ([REF-098](../../00-governance/reference-register.md)). Rules validate only the dependencies written for ATLAS, not domain correctness or performance.
 - Capacity envelope는 승인된 Q-008 profile 사용. 단위·계산·미정 입력은 아래 표에 정리; production target은 없음.
-- Local inventory baseline: atomic conditional `UPDATE` and per-order transaction lock. Production lock strategy/performance comparison remains [EXP-002](../../08-experiments/experiment-registry.md); no capacity claim.
+- Local inventory baseline: atomic conditional `UPDATE` and per-order transaction lock. Production lock strategy/performance remains unmeasured; any comparison requires an approved workload and no capacity claim follows.
 - Local runtime code and failure-path tests are tracked by [Issue #72](https://github.com/Neo1228/ATLAS/issues/72). Live provider, deployment, and load verification remain separate.
 
 ## Capacity envelope — synthetic, report-only
@@ -87,7 +87,7 @@ flowchart LR
 | In-flight concurrency | 안정 구간에서 `L ≈ λ × W` ([REF-022](../../00-governance/reference-register.md)) | 같은 stage의 arrival rate λ와 latency W 필요. 현재 W 미측정이므로 숫자 산출 불가 |
 | DB QPS | 선언한 query 범위의 query/초만 기록 | API RPS와 다른 단위. 현재 DB QPS 실측 없음 |
 
-10k/60m과 2×/4×는 report-only synthetic profile. Burst duration, think time, phase, concurrency, request mix, test environment, resource configuration, production SLO는 OPEN ([Q-008](../../00-governance/assumptions-and-open-questions.md)). 따라서 현재는 resource sizing이나 production capacity를 주장하지 않음. Baseline 대비 stress 결과와 bottleneck을 비교하는 설계 기준만 제공 ([EXP-010/012](../../08-experiments/experiment-registry.md)).
+10k/60m과 2×/4×는 report-only synthetic profile. Burst duration, think time, phase, concurrency, request mix, test environment, resource configuration, production SLO는 OPEN ([Q-008](../../02-requirements/requirements-index.md#assumptions-and-open-questions)). 따라서 현재는 resource sizing이나 production capacity를 주장하지 않음. EXP-013은 20-minute local calibration이며 queue contention을 측정하지 못함 ([report](../../08-experiments/EXP-013-gate4-20-minute-calibration.md)).
 
 - **Repository/library policy:** current baseline is one repository and one deployable. Repository split requires approved independent release/team/data/security ownership or measured scaling constraints. Compare existing JDK/Spring/DB APIs, maintained libraries, and direct implementation without bias; prefer a mature library when it fits the required capability and its maintenance/security/license costs. Record alternatives and runtime/test/build scope. Issue #75 uses existing Spring `JdbcTemplate`/transaction/scheduling APIs and adds Checkstyle only as build-time FQCN enforcement; no application runtime dependency. Evidence/limits: [REF-050/053~055/069/073](../../00-governance/reference-register.md).
 
