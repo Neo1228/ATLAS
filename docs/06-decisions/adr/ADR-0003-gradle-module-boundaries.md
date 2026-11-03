@@ -2,7 +2,7 @@
 - 상태: ✓ Accepted
 - 날짜: 2026-11-03
 - 담당자: Project Owner
-- 관련 결정: [D-037/D-038/D-047/D-050/D-051/D-053](../../00-governance/decision-log.md)
+- 관련 결정: [D-037/D-038/D-047/D-050/D-051/D-053/D-054](../../00-governance/decision-log.md)
 
 ## 배경
 
@@ -23,11 +23,13 @@ ADR-0001에서 현재 Buyer 흐름의 Campaign, Admission, Inventory, Order/Chec
 | Module | 소유 책임 | Gradle 의존 |
 |---|---|---|
 | `application-module` | Spring Boot, HTTP adapters, root error mapping, configuration, Flyway migrations | 다섯 도메인 모듈 |
-| `campaign-module` | Campaign과 SKU eligibility | `inventory-module` |
+| `campaign-module` | Seller·Seller-SKU 등록과 Campaign 자격·생성 | `inventory-module` |
 | `admission-module` | Queue ticket·순번·idempotency·checkout slot·expiry | `campaign-module` |
 | `inventory-module` | Seller-SKU inventory pool/reservation 및 재고 보존 규칙 | 없음 |
 | `order-module` | Checkout·order lifecycle orchestration | `admission-module`, `inventory-module`, `payment-module` |
 | `payment-module` | Payment attempts·상태·provider 결과 | 없음 |
+
+- Seller, Seller-SKU, Campaign은 현재 구매 흐름에서 함께 사용. 별도 업무 흐름·API·데이터 소유 경계가 확인되지 않아 `campaign-module`에 유지; 독립된 경계가 생길 때 모듈 분리 검토 ([D-054](../../00-governance/decision-log.md)).
 
 ### 물리 디렉터리 구성
 
