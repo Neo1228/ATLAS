@@ -2,6 +2,7 @@
 
 Checkout과 Order 수명주기·payment coordination을 소유.
 
+- Order에는 queue에서 유래한 `campaignId`와 Seller-SKU의 `sellerId`·`skuId`를 보존.
 - `.service.OrderService`: 공개 contract; `.service.impl.OrderServiceImpl`: checkout, payment/cancellation 전이, expiry와 scheduled expiry
 - `.dto.response.OrderResponse`: output; `.persistence.state.OrderState`: shared lifecycle state; `.exception.OrderException`: typed failure codes
 - `.persistence.entity.PurchaseOrder`·`.persistence.repository.OrderRepository`: JPA mapping, CRUD, order query/lock

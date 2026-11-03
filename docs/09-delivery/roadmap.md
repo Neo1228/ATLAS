@@ -3,10 +3,10 @@ id: DOC-008
 title: Roadmap
 status: Draft
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
   requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
-  adr: [ADR-0001, ADR-0003, ADR-0004]
+  adr: [ADR-0001, ADR-0003, ADR-0004, ADR-0005]
   experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013]
 ---
 # 로드맵
@@ -23,7 +23,7 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | M1 | Local single-SKU Buyer flow: Campaign, Admission, Inventory, Order/Checkout, PostgreSQL, Fake PSP, tests/CI | ✓ [PR #73](https://github.com/Neo1228/ATLAS/pull/73) merged; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) closed |
 | M2 | Synthetic load/failure verification, report-only | ◐ EXP-013 short local calibration completed; 0 WAITING/409, so queue contention was not observed. Further profile scope requires separate owner approval; no production capacity claim ([EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), [PR #85](https://github.com/Neo1228/ATLAS/pull/85), [Issue #81](https://github.com/Neo1228/ATLAS/issues/81)) |
 | M3 | PayPal Sandbox adapter, webhook·payment recovery | ○ Provider/API and failure/recovery policy decision required; sequencing relative to M2, credentials and scope remain OPEN |
-| M4 | 장기 역량 확장: Tenant/security, catalog·판매 유형, settlement·reconciliation, refund/adjustment | ○ 계획 ([Project Charter](../00-governance/project-charter.md), [Q-002/Q-006/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md)) |
+| M4 | 장기 역량 확장: Seller-SKU catalog와 shared stock/global FIFO local baseline은 [D-049](../00-governance/decision-log.md)·[ADR-0005](../06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md) 기준, [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) 진행 중. 실제 tenant isolation/auth, 다른 판매 유형, settlement·reconciliation, refund/adjustment는 후속 범위 | ◐ 일부 local baseline 진행, 나머지 계획 ([Project Charter](../00-governance/project-charter.md), [Q-002/Q-003/Q-006/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md)) |
 | M5 | Observability, backup/recovery, SLO/RTO/RPO | ○ 운영 환경 선택 뒤 계획 |
 | M6 | 대안 비교, ADR 정리, portfolio 근거 | ○ 계획 |
 

@@ -3,10 +3,10 @@ id: DOC-009
 title: Session Handoff
 status: Current
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
-  requirements: [FR-001, FR-002, NFR-002]
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004]
+  requirements: [FR-001, FR-002, FR-004, NFR-002]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005]
   experiments: [EXP-010, EXP-012, EXP-013]
 ---
 # 세션 인계
@@ -16,13 +16,15 @@ links:
 - 진행: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture/stack 확정. [Issue #78](https://github.com/Neo1228/ATLAS/issues/78) closed; [PR #79](https://github.com/Neo1228/ATLAS/pull/79) squash-merged to `main` at [`d954d4f4981298c5740f9aef31abb28b05e77e9f`](https://github.com/Neo1228/ATLAS/commit/d954d4f4981298c5740f9aef31abb28b05e77e9f).
 - Gate 2 범위: [D-031~D-033](../00-governance/decision-log.md)의 full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress. Report-only; 실험 결과 없음.
 - Gate 2 승인 기록: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67), merge [`b85a0ec`](https://github.com/Neo1228/ATLAS/commit/b85a0ec). 기준만 승인; runtime 결과 없음.
-- Gate 3 방향: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), modular monolith, Java + Spring Boot + PostgreSQL. 초기 module map: Campaign, Admission, Inventory, Order/Checkout, Payment. 단일 schema와 module별 write ownership. Campaign counter row + ticket transaction 선택. 별도 queue/cache/broker는 측정된 bottleneck과 비교 이점 확인 전 미도입.
+- Gate 3의 초기 실행 설계는 Campaign counter row + ticket transaction ([D-039](../00-governance/decision-log.md)). 현재 선택인 Seller-SKU global FIFO/K는 [D-049](../00-governance/decision-log.md)·[ADR-0005](../06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md)에서 그 범위를 확장; 이력은 Gate 2 기준으로 보존.
 - 관련 성능 이슈: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56).
 - 이전 병합 PR: [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
 - Local 범위는 Fake PSP와 synthetic Buyer만 포함. Live payment, cloud deployment, production performance claim은 없음 ([Issue #72](https://github.com/Neo1228/ATLAS/issues/72)).
 - 현재 코드 구조: [D-047/D-048](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md). `application-module` + 다섯 `*-module`; 공개 `.service`/`.dto.request`/`.dto.response`/`.exception`, lifecycle enum은 공유가 필요한 경우 `.persistence.state`, entity/repository는 모듈 내부. CRUD는 JPA, DB 특화 concurrency SQL만 JDBC/native query. 공통 HTTP 오류는 `GlobalExceptionHandler`; CQRS·`internal`·package-info marker 없음.
 - Latest verification (2026-11-03): `./gradlew check :application-module:bootJar` passed, including domain unit and PostgreSQL/Testcontainers suites. Compose PostgreSQL applied V1–V5; `bootRun` plus GET of a missing campaign returned 404 ProblemDetail `CAMPAIGN_NOT_FOUND`. Markdown lint: 33 files, 0 issues.
 - Latest work: [EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), the short local Gate 4 calibration merged in [PR #85](https://github.com/Neo1228/ATLAS/pull/85), is complete ([Issue #81](https://github.com/Neo1228/ATLAS/issues/81)). Baseline and low-stock/K=1 profile preserved inventory; 0 WAITING/409 means queue contention was not observed. Full matrix/2×/4× runs remain out of scope. Any stronger queue-contention profile needs separate owner approval; no production capacity claim.
+- 현재 진행: [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) 한 작업 묶음에서 Seller=Tenant, Seller-owned SKU, Campaign 간 shared stock 및 Seller-SKU global FIFO/K 구현 중. 결정 근거·대안·한계는 [D-049](../00-governance/decision-log.md)·[ADR-0005](../06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md); 구현 경로와 커밋 전 검증은 [작업 계획](../plans/2026-11-03-gitnexus-plan-seller-catalog-shared-stock.md).
+- 로컬 코드 검증: `./gradlew --no-daemon check :application-module:bootJar` 성공, 29 tests passed. Markdown lint는 36 files, 0 issues. 변경은 [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) 목적에 맞춘 단일 PR로 묶음; populated DB에 V6 적용 전 owner-provided Campaign→Seller 매핑 필수. 현재 로컬 DB/매핑을 확인하지 못했으며 migration은 누락 mapping을 거부하도록 구성.
 
 ## 확정된 방향
 - 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).

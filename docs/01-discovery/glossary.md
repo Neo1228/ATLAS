@@ -15,12 +15,12 @@ links:
 
 | 용어 | 설명 | ATLAS 상태 |
 |---|---|---|
-| Tenant | 판매사·조직별 데이터와 권한 경계. | Account model ? OPEN |
-| Campaign | 판매 기간·조건을 묶는 한정 판매 단위. | 초기 시나리오는 campaign 소유 pool 1개 ([D-023](../00-governance/decision-log.md)); 전체 재고 연결 ? OPEN |
-| SKU | 재고 추적용 상품/variant 식별 코드. 같은 SKU 수량은 초기 시나리오에서 서로 대체 가능. | 초기 시나리오만 ([D-023](../00-governance/decision-log.md)); 전체 catalog model ? OPEN |
-| Inventory pool | campaign/product/location/channel 범위의 판매 재고 집합. | 초기: campaign별 독립 pool 1개 ([D-023](../00-governance/decision-log.md)); 다른 범위 ? OPEN |
-| Reservation | PSP 요청 전 campaign pool의 1 unit을 임시 점유. Capture success 후 claim; confirmed non-payment와, authorization이 있으면 void/expiry 확인 뒤 release. Reservation당 1개 ([D-027/D-035](../00-governance/decision-log.md)). | TTL/expiry/recovery 세부 정책 OPEN ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)) |
-| Inventory claim | Capture success 확인 후 hold를 판매 확정 재고로 전환. Authorization은 최종 결제 성공이 아님. | [D-026/D-035](../00-governance/decision-log.md); post-claim 취소·환불과 재고 복원 정책 ? OPEN |
+| Tenant | 판매사·조직을 구분하는 데이터 소유자 경계. | Seller는 local data identity로 사용. 인증·권한·격리는 제공하지 않음 ([D-049](../00-governance/decision-log.md)); 계정·보안 모델은 [Q-007](../00-governance/assumptions-and-open-questions.md) OPEN |
+| Campaign | 판매 기간·조건을 묶는 한정 판매 단위. | Campaign은 Seller-SKU를 참조하며 재고 pool을 소유하지 않음 ([D-049](../00-governance/decision-log.md)) |
+| SKU | Seller가 관리하는 재고 추적용 상품/variant 식별 코드. | Identity는 Seller와 SKU 조합 `(sellerId, skuId)` ([D-049](../00-governance/decision-log.md)); catalog detail은 OPEN ([Q-010](../00-governance/assumptions-and-open-questions.md)) |
+| Inventory pool | 하나의 판매 가능 재고와 hold/claim 수량을 관리하는 pool. | Local identity는 Seller-SKU. 해당 조합을 참조하는 Campaign 간 공유 ([D-049](../00-governance/decision-log.md)); location/channel은 OPEN ([Q-002](../00-governance/assumptions-and-open-questions.md)) |
+| Reservation | PSP 요청 전 Seller-SKU pool의 1 unit을 임시 점유. Capture success 후 claim; confirmed non-payment와, authorization이 있으면 void/expiry 확인 뒤 release. Reservation당 1개 ([D-027/D-035/D-049](../00-governance/decision-log.md)). | TTL/expiry/recovery 세부 정책 OPEN ([Q-004/Q-005](../00-governance/assumptions-and-open-questions.md)) |
+| Inventory claim | Capture success 확인 후 Seller-SKU pool의 hold를 판매 확정 재고로 전환. Authorization은 최종 결제 성공이 아님. | [D-026/D-035/D-049](../00-governance/decision-log.md); post-claim 취소·환불과 재고 복원 정책 ? OPEN |
 | Order Intent | 구매 요청을 나타내는 내부 기록. | △ Proposed |
 
 ## 결제·transaction·저장

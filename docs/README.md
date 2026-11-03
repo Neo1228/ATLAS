@@ -2,7 +2,7 @@
 
 - 상태: Draft
 - 담당: 프로젝트 책임자
-updated: 2026-11-02
+- updated: 2026-11-03
 
 ## 기준 문서 (SSOT)
 
@@ -15,7 +15,7 @@ updated: 2026-11-02
 | 사용자 목표·용어 | [가상 사용자 목표](01-discovery/personas-and-jobs.md), [용어집](01-discovery/glossary.md) |
 | 요구사항 | [요구사항 인덱스](02-requirements/requirements-index.md) |
 | 도메인 규칙·불변조건 | [비즈니스 규칙](03-domain/business-rules.md), [불변조건](03-domain/invariants.md) |
-| 설계·실험 | [ADR-0001 — architecture](06-decisions/adr/ADR-0001-architecture-style.md), [ADR-0002 — technology/shared processing](06-decisions/adr/ADR-0002-runtime-technology-review.md), [ADR-0003 — Gradle module boundaries](06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004 — JPA and SQL boundary](06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md), [실험 목록](08-experiments/experiment-registry.md), [실험 양식](08-experiments/TEMPLATE.md) |
+| 설계·실험 | [ADR-0001 — architecture](06-decisions/adr/ADR-0001-architecture-style.md), [ADR-0002 — technology/shared processing](06-decisions/adr/ADR-0002-runtime-technology-review.md), [ADR-0003 — Gradle module boundaries](06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004 — JPA and SQL boundary](06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md), [ADR-0005 — Seller-SKU shared stock/global FIFO](06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [실험 목록](08-experiments/experiment-registry.md), [실험 양식](08-experiments/TEMPLATE.md) |
 | 진행·이력 | [로드맵](09-delivery/roadmap.md), [마일스톤 로그](09-delivery/milestone-log.md), [세션 인계](09-delivery/session-handoff.md) |
 
 ## 빠른 안내
@@ -53,4 +53,5 @@ updated: 2026-11-02
 - 초기 판매 범위: [Issue #33](https://github.com/Neo1228/ATLAS/issues/33), [PR #34](https://github.com/Neo1228/ATLAS/pull/34), [D-023/D-024/D-036](00-governance/decision-log.md), [Issue #64](https://github.com/Neo1228/ATLAS/issues/64), [PR #65](https://github.com/Neo1228/ATLAS/pull/65). Gate 2는 quantity-SKU만 포함.
 - Gate 2 workload: [D-031~D-036](00-governance/decision-log.md), [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67). 10k sessions/60m, 2×/4× synthetic stress, report-only; production target은 미정.
 - Workload 기록: [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
-- Gate 3/runtime: [D-037~D-042](00-governance/decision-log.md), [ADR-0001](06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72). Current runtime is single-SKU and Fake PSP only; no production sizing or deployment claim.
+- Gate 3/runtime: [D-037~D-042](00-governance/decision-log.md), [ADR-0001](06-decisions/adr/ADR-0001-architecture-style.md), [Issue #68](https://github.com/Neo1228/ATLAS/issues/68), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72). Gate 2의 기존 실행 기준은 single-SKU와 Fake PSP. Seller-SKU shared stock/global FIFO 변경은 [D-049](00-governance/decision-log.md)·[Issue #89](https://github.com/Neo1228/ATLAS/issues/89) 진행 중; production sizing·deployment 주장은 없음.
+- Seller-SKU 도메인: [D-049](00-governance/decision-log.md), [ADR-0005](06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [FR-004](02-requirements/requirements-index.md), [BR-001/002](03-domain/business-rules.md), [INV-001/002](03-domain/invariants.md), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89). 같은 Seller-SKU를 쓰는 Campaign은 재고와 FIFO/K 공유. `sellerId`는 인증 수단이 아님.

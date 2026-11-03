@@ -2,7 +2,7 @@
 
 한정판매 시스템의 backend 학습 프로젝트. 주문·재고·결제·환불·정산의 정합성과 장애 복구를 다룹니다.
 
-updated: 2026-11-02
+updated: 2026-11-03
 장기 범위: 결제 신뢰성, 고동시성 판매, 정산·대사.
 
 - 프로젝트 방향: [`docs/00-governance/project-charter.md`](docs/00-governance/project-charter.md)
@@ -24,10 +24,10 @@ updated: 2026-11-02
 | 모듈 | 책임 | 의존 |
 |---|---|---|
 | [application-module](application-module/README.md) | 실행 진입점, HTTP adapters, 런타임 설정·migration | 다섯 도메인 모듈 |
-| [campaign-module](campaign-module/README.md) | campaign·SKU eligibility | inventory |
-| [admission-module](admission-module/README.md) | queue ticket·순번·checkout slot | campaign |
-| [inventory-module](inventory-module/README.md) | 재고 pool·reservation·conservation | 없음 |
-| [order-module](order-module/README.md) | checkout·order lifecycle | admission, inventory, payment |
+| [campaign-module](campaign-module/README.md) | Seller·Seller-SKU·Campaign | inventory |
+| [admission-module](admission-module/README.md) | Seller-SKU global FIFO/K·Campaign ticket | campaign |
+| [inventory-module](inventory-module/README.md) | Seller-SKU shared stock pool·reservation·conservation | 없음 |
+| [order-module](order-module/README.md) | checkout·order lifecycle·seller attribution | admission, inventory, payment |
 | [payment-module](payment-module/README.md) | payment attempts·provider 결과 | 없음 |
 
 각 도메인 `-module`은 `.service` contract, `.dto.request` 입력, `.dto.response` 출력, `.exception` 오류를 공개합니다. 상태 enum은 persistence-owned lifecycle vocabulary로 `.persistence.state`에 두고 모듈 간 contract에서 공유합니다; JPA entity/repository는 공유하지 않습니다. 구현과 scheduled expiry는 `.service.impl`, JPA mapping/CRUD는 `.persistence.entity`·`.persistence.repository`, Fake provider는 `.provider.fake`에 둡니다. ArchUnit이 허용한 package dependency만 검사하며 `package-info.java` marker는 없습니다. 기본 CRUD는 JPA, advisory lock·sequence·guarded update 등 PostgreSQL 특화 경로만 JDBC/native SQL을 사용합니다. Flyway가 schema를 소유하고 Hibernate는 `validate`만 수행합니다.
@@ -56,18 +56,28 @@ Gradle module 의존은 한 방향이며 각 module의 `build.gradle`에서 확�
 
 ### 기본 Buyer flow
 
-1. Campaign 생성: `POST /api/campaigns`
+1. Seller 등록: `POST /api/sellers`
+   - 응답의 UUID를 이후 요청에서 `sellerId`로 사용.
+2. Seller-SKU 등록: `POST /api/sellers/{sellerId}/skus`
 
    ```json
-   {"skuId":"demo-sku","inventoryCapacity":1,"queueTicketTtlSeconds":300,"maxActiveCheckouts":1}
+   {"skuId":"demo-sku","initialStock":1,"maxActiveCheckouts":1}
    ```
 
-2. Sale open: `POST /api/campaigns/{campaignId}/open`
-3. Queue 진입: `POST /api/campaigns/{campaignId}/tickets`
+3. Campaign 생성: `POST /api/campaigns`
+
+   ```json
+   {"sellerId":"<seller-uuid>","skuId":"demo-sku","queueTicketTtlSeconds":300}
+   ```
+
+4. Sale open: `POST /api/campaigns/{campaignId}/open`
+5. Queue 진입: `POST /api/campaigns/{campaignId}/tickets`
    - Header: `Idempotency-Key: demo-request-1`
    - Body: `{"skuId":"demo-sku","buyerRef":"local-buyer-1"}`
-4. Checkout 시작: `POST /api/campaigns/{campaignId}/tickets/{ticketId}/checkout`
-5. Fake payment 제출: `POST /api/orders/{orderId}/payment`
-6. 상태 확인·복구: `GET /api/orders/{orderId}`, `POST /api/orders/{orderId}/reconcile`
+6. Checkout 시작: `POST /api/campaigns/{campaignId}/tickets/{ticketId}/checkout`
+7. Fake payment 제출: `POST /api/orders/{orderId}/payment`
+8. 상태 확인·복구: `GET /api/orders/{orderId}`, `POST /api/orders/{orderId}/reconcile`
 
-실제 결제·Buyer 인증·Tenant 격리·배포·성능 보장은 구현 범위 밖. 상세 계약은 [Issue #72](https://github.com/Neo1228/ATLAS/issues/72), 미결정 사항은 [Q-003/Q-005/Q-007/Q-008/Q-009](docs/00-governance/assumptions-and-open-questions.md) 참조.
+같은 `(sellerId, skuId)`를 참조하는 Campaign은 재고 pool과 FIFO/K를 공유. Ticket TTL과 idempotency scope는 Campaign 기준. `sellerId`는 data identity일 뿐 인증·권한 검사가 아니며, tenant isolation을 제공하지 않음. 전체 결정은 [D-049](docs/00-governance/decision-log.md), [ADR-0005](docs/06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) 참조.
+
+실제 결제·Buyer 인증·Tenant 격리·배포·성능 보장은 미구현. 장기 도메인 범위는 [Project Charter](docs/00-governance/project-charter.md), [Requirements Index](docs/02-requirements/requirements-index.md), 미결정 사항은 [Q-002/Q-003/Q-007/Q-010](docs/00-governance/assumptions-and-open-questions.md) 참조.

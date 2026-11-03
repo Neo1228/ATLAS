@@ -14,7 +14,7 @@ links:
 ## 근거와 한계
 - ✓ 사용자가 선택한 Buyer/Seller 공통 목표.
 - 실제 인터뷰·거래·시장 검증 결과 아님.
-- 초기 합성 시나리오: campaign별 독립 pool에 수량형 SKU 1종 ([D-023](../00-governance/decision-log.md)). Gate 2도 이 흐름 유지 ([D-036](../00-governance/decision-log.md)); assigned-seat/time-slot 제외. 장기 판매 유형 범위는 ? OPEN ([Q-002/Q-010](../00-governance/assumptions-and-open-questions.md)).
+- 초기 합성 시나리오와 Gate 2 승인은 Campaign별 독립 pool 1개로 기록 ([D-023/D-036](../00-governance/decision-log.md)). Seller-SKU shared stock/global FIFO는 후속 확장으로 D-049에서 선택, [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)에서 구현 중. Assigned-seat/time-slot 제외는 유지; 다른 장기 판매 유형은 ? OPEN ([Q-002/Q-010](../00-governance/assumptions-and-open-questions.md)).
 
 ## 공통 역할
 
@@ -54,5 +54,5 @@ links:
 ## 추적
 - [D-024](../00-governance/decision-log.md): sale open 전 admission 없음. Open 후 자격 통과 요청은 [D-019](../00-governance/decision-log.md) 기준 FIFO.
 - Retry ticket 재사용과 restart 후 순서 유지: [D-021/D-022](../00-governance/decision-log.md).
-- Queue 순번: campaign counter row + ticket 단일 transaction은 [D-039](../00-governance/decision-log.md)에서 선택. Exact schema·lock recovery, key scope/retention, payload 비교, expiry/re-entry, bot 방어, 재고 조정·취소, 공유 재고, 판매 유형은 미정 ([Q-002/Q-003/Q-010](../00-governance/assumptions-and-open-questions.md); [Issue #33](https://github.com/Neo1228/ATLAS/issues/33)).
+- Queue sequence·active K: Gate 2 historical 기준은 campaign counter row ([D-039](../00-governance/decision-log.md)). 현재 선택은 Seller-SKU global FIFO/K ([D-049](../00-governance/decision-log.md)); Campaign idempotency와 ticket TTL은 별도 유지. Production K/TTL, lock recovery, bot/auth, 재고 조정·취소, 판매 유형은 미정 ([Q-002/Q-003/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md); [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)).
 - 연계: [Requirements](../02-requirements/requirements-index.md), [Business Rules](../03-domain/business-rules.md), [Invariants](../03-domain/invariants.md), [Experiments](../08-experiments/experiment-registry.md).

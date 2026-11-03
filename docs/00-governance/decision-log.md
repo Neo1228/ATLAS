@@ -3,10 +3,10 @@ id: DOC-003
 title: Decision Log
 status: Current
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
-  requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004]
+  requirements: [FR-001, FR-002, FR-003, FR-004, NFR-001, NFR-002]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005]
   experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012]
 ---
 # 결정 로그
@@ -63,6 +63,7 @@ links:
 | D-046 | ✓ Confirmed | `application-module`의 단일 `GlobalExceptionHandler`가 RFC 9457 `ProblemDetail` + stable `code`를 반환. 모듈별 하나의 typed exception과 enum code를 매핑하며 raw `IllegalArgumentException`을 HTTP validation contract로 사용하지 않음; unexpected 500 detail은 숨기고 log. | [Issue #78](https://github.com/Neo1228/ATLAS/issues/78), [REF-084/085](reference-register.md) |
 | D-047 | ✓ Confirmed | 다섯 `*-module`과 `application-module`; public contracts `.service`/`.dto.request`/`.dto.response`/`.exception`; shared lifecycle enums만 `.persistence.state`에 두고 모듈 간 공유. Entity/repository는 비공개이며 entity 이름에 중복 `Entity` 접미사를 붙이지 않음. 나머지 구현은 nested `.service.impl`·`.persistence.*`. Package-info marker 없음, ArchUnit package rules로 경계 검사; CQRS·`internal` 미사용. | [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [REF-087/089/092/094/095/096/098](reference-register.md) |
 | D-048 | ✓ Confirmed | 다섯 도메인의 기본 CRUD는 Spring Data JPA. Admission/Inventory/Order의 PostgreSQL 경합 SQL과 Payment 초기 idempotent insert만 JDBC/native query로 유지. Flyway schema owner, Hibernate `validate`; 성능 우위 미측정. | [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [REF-056/057/072/073/095/097](reference-register.md) |
+| D-049 | ✓ Confirmed | Local commerce identity: Seller=Tenant; Seller owns SKU. Same `(sellerId,skuId)` shares Inventory and one global FIFO/K across Campaigns. Seller-SKU registration sets `initialStock` and K; legacy Campaign stock counters/K sum by explicit owner mapping. Seller/SKU stay in `campaign-module`; `sellerId` is not auth; Campaign TTL/idempotency remain Campaign-scoped. Supersedes the earlier Campaign-owned pool/queue for this local implementation; Gate 2 history remains unchanged. No load/security-isolation claim. | [ADR-0005](../06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89), [Q-002/Q-003/Q-007/Q-010](assumptions-and-open-questions.md), [REF-023/101~103](reference-register.md) |
 
 D-033의 Ticketmaster 기반 날짜별 구매자 계산은 합성 test input을 가늠하기 위한 근사치. 초대와 전환이 균등하다는 가정이며, 실제 날짜별 고유 구매자 수는 공개되지 않음. 실측·대표 수요로 해석 금지.
 
