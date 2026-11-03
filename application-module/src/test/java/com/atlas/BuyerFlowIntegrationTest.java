@@ -32,7 +32,14 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -148,6 +155,55 @@ class BuyerFlowIntegrationTest {
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isEqualTo(1);
         assertConserved(stock);
+    }
+
+    @Test
+    void concurrentJoinsAllocateUniqueSequencesAndPromoteWaitingTicketsInFifoOrder() throws Exception {
+        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        CyclicBarrier start = new CyclicBarrier(3);
+
+        try (var executor = Executors.newFixedThreadPool(3)) {
+            Future<QueueTicketResponse> first = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(campaign, "buyer-race-a", "race-key-a");
+            });
+            Future<QueueTicketResponse> second = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(campaign, "buyer-race-b", "race-key-b");
+            });
+            Future<QueueTicketResponse> third = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(campaign, "buyer-race-c", "race-key-c");
+            });
+
+            List<QueueTicketResponse> tickets = new ArrayList<>(
+                    List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS),
+                            third.get(10, TimeUnit.SECONDS)));
+            tickets.sort(Comparator.comparingLong(QueueTicketResponse::sequence));
+
+            assertThat(tickets.get(0).sequence()).isEqualTo(1);
+            assertThat(tickets.get(1).sequence()).isEqualTo(2);
+            assertThat(tickets.get(2).sequence()).isEqualTo(3);
+            assertThat(tickets.get(0).status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+            assertThat(tickets.get(1).status()).isEqualTo(TicketStatus.WAITING);
+            assertThat(tickets.get(2).status()).isEqualTo(TicketStatus.WAITING);
+            assertThat(tickets).extracting(QueueTicketResponse::checkoutSlotHeld)
+                    .containsExactly(true, false, false);
+
+            admission.releaseCheckoutSlot(campaign.campaignId(), tickets.get(0).ticketId(),
+                    CheckoutSlotReleaseReason.BUYER_CANCELLED);
+            assertThat(admission.find(campaign.campaignId(), tickets.get(0).ticketId()).status())
+                    .isEqualTo(TicketStatus.CHECKOUT_FAILED);
+            assertThat(admission.find(campaign.campaignId(), tickets.get(1).ticketId()).status())
+                    .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+            assertThat(admission.find(campaign.campaignId(), tickets.get(2).ticketId()).status())
+                    .isEqualTo(TicketStatus.WAITING);
+
+            admission.releaseCheckoutSlot(campaign.campaignId(), tickets.get(1).ticketId(),
+                    CheckoutSlotReleaseReason.BUYER_CANCELLED);
+            assertThat(admission.find(campaign.campaignId(), tickets.get(2).ticketId()).status())
+                    .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        }
     }
 
     @Test
