@@ -7,11 +7,11 @@ updated: 2026-11-03
 links:
   requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
   adr: [ADR-0001, ADR-0002, ADR-0007]
-  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013, EXP-014]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013, EXP-014, EXP-015]
 ---
 # 실험 레지스트리
 
-Most registered experiments remain `○ Planned`. EXP-013 is a completed 20-minute local calibration report, not a capacity or production measurement. M1 integration/HTTP smoke coverage and this calibration do not establish production performance.
+Most registered experiments remain `○ Planned`. EXP-013 is a completed local calibration, and EXP-015 is a report-only synthetic expiry baseline recorded in [Issue #95](https://github.com/Neo1228/ATLAS/issues/95); neither is a capacity or production measurement. M1 integration/HTTP smoke coverage does not establish production performance.
 
 - Gate 2 report-only workload approved: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67).
 - Local M1 runtime implemented and merged in [PR #73](https://github.com/Neo1228/ATLAS/pull/73); the later Gate 4 calibration is recorded as EXP-013 and makes no capacity claim.
@@ -46,5 +46,6 @@ Proposed verification sequence ([D-018](../00-governance/decision-log.md), △ P
 | EXP-012 | [D-037](../00-governance/decision-log.md) 기준 PostgreSQL DB-first baseline을 만든 뒤, load test에서 bottleneck이 확인된 경우에만 별도 queue/cache 대안 비교. 같은 offered workload에서 sessions/s, stage RPS, resolved TPS, p95/p99, errors, DB connection/lock pressure, queue age, invariant 정합성, 운영 비용 측정. | Gate 4 후보. 별도 store는 미선택. Production SLO pass/fail 기준 없음. 실행 가능한 baseline과 승인된 환경이 준비되기 전 실행 금지. |
 | EXP-013 | Calibrate the existing Buyer flow at the selected 1× rate in a normal-stock baseline and a 10%-stock/K=1 queue configuration; measure dropped iterations, outcomes, latency and inventory invariants. | Windows 10/Docker (4 CPUs/~3.83 GiB), k6 `2.3.0`, 10m/profile. Baseline: 1,661 paid, 6 dropped. Queue: 167 paid, 1,500 stockouts, WAITING/409=0; inventory conservation held. No actual queue contention or capacity claim. [Report](EXP-013-gate4-20-minute-calibration.md), [Issue #81](https://github.com/Neo1228/ATLAS/issues/81). |
 | EXP-014 | Compare UUIDv4 PK/public ID, UUIDv7 PK/public ID, and BIGINT identity PK + UUIDv7 public ID on PostgreSQL 18 using 100k parents/200k children; five randomized insert and set-query runs. Owner selected UUIDv7 PK/public UUID IDs ([D-056](../00-governance/decision-log.md), [ADR-0007](../06-decisions/adr/ADR-0007-uuidv7-identifiers.md)): UUIDv7 parent PK index 3,178,496 bytes vs UUIDv4 4,407,296; parent insert p50 211.49 vs 212.64 ms; combined rows/s p50 183,503.1 vs 184,479.5. BIGINT hybrid showed no combined-throughput advantage. | Local result only; generation/commit excluded, raw timing variance and resource contention uncertain. Set-based lookup used parent sequential scans. Testcontainers/JPA verified Hibernate UUIDv7 PK generation in actual entity flows; Hibernate generator remains incubating. No production claim. [Report](EXP-014-id-strategy-comparison.md), [SQL](EXP-014-id-strategy-comparison.sql). |
+| EXP-015 | Disposable Testcontainers PostgreSQL 18.6 expiry sweep; three runs each at 10/100/300 due rows. Median Order time 247.1/1,540.2/5,225.4 ms; Admission 10.2/10.4/20.1 ms for one seller-SKU group. | No concurrent load, SQL/lock/connection/lag metrics, or production target. No code change; order per-row transaction cost is visible, but acceptable expiry lag is unapproved. [Issue #95](https://github.com/Neo1228/ATLAS/issues/95). |
 
 실험 기록에는 요구사항·불변조건, 완료 기준, 환경, 명령, 반복 횟수, 지표, 교란 요인, 한계를 포함. 형식: [실험 기록 양식](TEMPLATE.md).
