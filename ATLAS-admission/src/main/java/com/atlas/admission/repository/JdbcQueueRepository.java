@@ -1,4 +1,4 @@
-package com.atlas.admission.persistence.repository;
+package com.atlas.admission.repository;
 
 import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;

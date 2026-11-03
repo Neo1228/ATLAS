@@ -1,4 +1,4 @@
-package com.atlas.campaign.persistence.repository;
+package com.atlas.campaign.repository;
 
 import com.atlas.campaign.persistence.entity.Seller;
 import java.util.UUID;

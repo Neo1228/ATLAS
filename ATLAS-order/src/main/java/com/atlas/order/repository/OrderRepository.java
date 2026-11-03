@@ -1,4 +1,4 @@
-package com.atlas.order.persistence.repository;
+package com.atlas.order.repository;
 
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.OrderState;

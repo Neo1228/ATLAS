@@ -2,7 +2,7 @@ package com.atlas.campaign.service.impl;
 
 import com.atlas.campaign.dto.response.SellerResponse;
 import com.atlas.campaign.persistence.entity.Seller;
-import com.atlas.campaign.persistence.repository.SellerRepository;
+import com.atlas.campaign.repository.SellerRepository;
 import com.atlas.campaign.service.SellerService;
 import java.util.UUID;
 import org.springframework.stereotype.Service;

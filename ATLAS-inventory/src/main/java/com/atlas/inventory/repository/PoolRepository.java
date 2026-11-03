@@ -1,4 +1,4 @@
-package com.atlas.inventory.persistence.repository;
+package com.atlas.inventory.repository;
 
 import com.atlas.inventory.persistence.entity.Pool;
 import com.atlas.inventory.persistence.entity.PoolId;

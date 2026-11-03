@@ -69,4 +69,4 @@ links:
 
 - 진행 현황: [Roadmap](roadmap.md).
 - 완료 이력: [Milestone Log](milestone-log.md).
-- 작업 방식: Issue부터 기록. 같은 목적의 관련 commit은 PR 하나로 통합 ([기여 안내](../../CONTRIBUTING.md)).
+- Issue-first·PR 규칙: [AGENTS.md의 GitHub 작업 및 변경 관리](../../AGENTS.md#github-작업-및-변경-관리).

@@ -7,7 +7,7 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.fake.FakePsp;
-import com.atlas.payment.persistence.repository.PaymentAttemptRepository;
+import com.atlas.payment.repository.PaymentAttemptRepository;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;

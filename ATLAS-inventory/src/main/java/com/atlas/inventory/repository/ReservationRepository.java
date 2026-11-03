@@ -1,4 +1,4 @@
-package com.atlas.inventory.persistence.repository;
+package com.atlas.inventory.repository;
 
 import com.atlas.inventory.persistence.entity.Reservation;
 import jakarta.persistence.LockModeType;

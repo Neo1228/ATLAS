@@ -1,3 +1,4 @@
+운영·문서·GitHub 작업의 단일 기준은 [AGENTS.md](../AGENTS.md)다. 이 파일은 문서 탐색용 인덱스다.
 # ATLAS 문서 인덱스
 
 - 상태: Draft
@@ -43,7 +44,7 @@
 - 기술 용어: API, retry, queue, transaction처럼 정확한 backend 용어는 English 사용 가능. 일반 설명은 한국어 우선; 불필요한 전문 용어·병기 금지.
 
 ## 도구와 작업 규칙
-- 저장소 안내: [README](../README.md), [작업 규칙](../AGENTS.md), [기여 안내](../CONTRIBUTING.md)
+- [README](../README.md), [작업 규칙](../AGENTS.md#github-작업-및-변경-관리)
 - GitHub 양식: [PR template](../.github/PULL_REQUEST_TEMPLATE.md), [버그 양식](../.github/ISSUE_TEMPLATE/bug_report.yml), [변경 제안 양식](../.github/ISSUE_TEMPLATE/change_request.yml)
 - 필수 검사: [Markdown lint·PR checklist](../.github/workflows/docs-lint.yml), [Java/PostgreSQL CI](../.github/workflows/backend-ci.yml).
 

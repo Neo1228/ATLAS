@@ -1,4 +1,4 @@
-package com.atlas.payment.persistence.repository;
+package com.atlas.payment.repository;
 
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import java.util.UUID;

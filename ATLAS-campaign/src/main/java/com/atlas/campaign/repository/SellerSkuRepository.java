@@ -1,4 +1,4 @@
-package com.atlas.campaign.persistence.repository;
+package com.atlas.campaign.repository;
 
 import com.atlas.campaign.persistence.entity.SellerSku;
 import com.atlas.campaign.persistence.entity.SellerSkuId;

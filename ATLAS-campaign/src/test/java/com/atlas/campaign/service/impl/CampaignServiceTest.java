@@ -4,7 +4,7 @@ import com.atlas.campaign.dto.request.CreateCampaignRequest;
 import com.atlas.campaign.dto.response.SellerSkuResponse;
 import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.persistence.entity.Campaign;
-import com.atlas.campaign.persistence.repository.CampaignRepository;
+import com.atlas.campaign.repository.CampaignRepository;
 import com.atlas.campaign.persistence.state.CampaignStatus;
 import com.atlas.campaign.service.SellerSkuService;
 import java.time.Clock;

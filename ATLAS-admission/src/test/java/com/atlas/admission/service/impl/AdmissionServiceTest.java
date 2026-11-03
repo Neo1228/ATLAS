@@ -2,8 +2,8 @@ package com.atlas.admission.service.impl;
 
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.persistence.repository.JdbcQueueRepository;
-import com.atlas.admission.persistence.repository.TicketRepository;
+import com.atlas.admission.repository.JdbcQueueRepository;
+import com.atlas.admission.repository.TicketRepository;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.campaign.service.SellerSkuService;
 import static org.junit.jupiter.api.Assertions.assertThrows;

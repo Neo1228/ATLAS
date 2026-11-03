@@ -1,4 +1,4 @@
-package com.atlas.admission.persistence.repository;
+package com.atlas.admission.repository;
 
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.persistence.entity.QueueTicket;

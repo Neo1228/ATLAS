@@ -31,7 +31,7 @@ ADR-0001에서 현재 Buyer 흐름의 Campaign, Admission, Inventory, Order/Chec
 
 ### 물리 디렉터리 구성
 
-여섯 Gradle subproject의 물리 디렉터리를 저장소 root에 `ATLAS-<이름>` 형식으로 배치: `ATLAS-application`, `ATLAS-campaign`, `ATLAS-admission`, `ATLAS-inventory`, `ATLAS-order`, `ATLAS-payment`. `settings.gradle`의 `projectDir` mapping으로 기존 Gradle project path (`:application-module` 등)를 유지. Java package, module dependency, 단일 실행·배포 구조는 변경하지 않음.
+여섯 Gradle subproject의 물리 디렉터리는 저장소 root의 `ATLAS-<이름>` 형식을 사용한다: `ATLAS-application`, `ATLAS-campaign`, `ATLAS-admission`, `ATLAS-inventory`, `ATLAS-order`, `ATLAS-payment`. `settings.gradle`의 `projectDir` mapping으로 Gradle project path (`:application-module` 등)는 유지한다. Java package와 module dependency도 변경하지 않는다.
 
 | 선택지 | 절충 |
 |---|---|
@@ -44,15 +44,16 @@ Java package 구조는 D-047/ADR-0003 그대로 유지. 감사 결과 중복·�
 
 ### 계층과 데이터 접근
 
-- Public contracts: `.service`, `.dto.request`, `.dto.response`, `.exception`. Lifecycle enums live in `.persistence.state` and are the only persistence-nested types intentionally shared where module APIs need the same vocabulary; JPA entities and repositories remain module-private. Each module uses one `<Domain>Exception` with a `Code` enum rather than a class per failure. Scheduled expiry stays in cohesive `.service.impl`; ArchUnit verifies package dependencies without `package-info.java` markers.
-- Cross-module calls use service contracts, request/response records, and explicitly allowed lifecycle enums only. Never access another module's entity/repository or write its tables; entity associations use scalar IDs. Entity class names express the persisted concept (`Campaign`, `QueueTicket`, `PurchaseOrder`, `PaymentAttempt`) without a redundant `Entity` suffix.
-- Lifecycle enums use `EnumType.STRING` and matching database `CHECK` constraints; ordinal persistence is not used.
-- CRUD는 Spring Data JPA. Generic repository base, 별도 mapper layer, 복제 CRUD SQL은 만들지 않는다. Flyway가 schema를 소유하고 Hibernate `ddl-auto=validate`만 수행한다.
-- PostgreSQL 특화 경합 경로만 `.persistence.repository` 안에서 JDBC/native SQL로 유지한다: Admission counter lock·sequence·FIFO 처리, Inventory advisory lock·guarded quantity update, Order buyer lock, Payment initial `ON CONFLICT`. 세부 범위는 [ADR-0004](ADR-0004-jpa-and-sql-boundary.md).
-- HTTP controller·transport request DTO·공통 설정·HTTP error mapping은 `application-module`의 `.application.controller.<domain>`, `.application.controller.dto`, `.application.config`, `.application.exception`에 둔다. Request DTO는 immutable record와 Jakarta validation을 사용하며, path/header 조합·초 단위 입력 변환처럼 domain request와 transport shape가 다를 때만 분리한다. 공통 HTTP 정책은 `GlobalExceptionHandler`; 공통 Clock wiring은 `ClockConfiguration`.
-- Service transaction은 invariant 단위로 유지한다. Admission counter lock·sequence·ticket insert와 Inventory pool/reservation 전이는 한 transaction이다. Order transaction은 Admission·Inventory API 호출 경계를 포함한다. Payment는 PSP 호출 전 DB transaction을 종료하고 결과를 별도 저장한다.
-- CQRS·CommandBus·command/query handler·mediator 패턴은 금지한다. 입력은 `*Request`, 흐름은 직접 호출하는 Service로 표현한다. 새 분리·패턴은 구체 요구와 ADR 승인 없이 추가하지 않는다.
-- Tests exist to protect consumer-visible behavior, module boundaries, state transitions, error contracts, and database/concurrency invariants. Do not add implementation/wiring tests or duplicate the same risk at multiple layers; use the smallest faithful boundary, with real PostgreSQL for PostgreSQL-specific locking/SQL ([REF-099](../../00-governance/reference-register.md)).
+- 공개 API: `.service`, `.dto.request`, `.dto.response`, `.exception`. 업무 오류는 모듈별 typed exception 하나와 `Code` enum으로 표현.
+- 공유 상태: lifecycle enum은 `.persistence.state`에 두고 필요한 cross-module contract에서만 공유.
+- 저장소 계층: JPA entity는 `.persistence.entity`, repository는 모듈 내부 `.repository`. 다른 모듈의 entity/repository 직접 접근 금지; 연관 관계는 scalar ID 사용.
+- 구현 계층: workflow와 scheduled expiry는 `.service.impl`, provider adapter는 `.provider.*`. Entity 이름에 중복 `Entity` 접미사 금지.
+- 기본 CRUD는 JPA. Schema는 Flyway 소유, Hibernate는 `ddl-auto=validate`.
+- PostgreSQL 전용 lock·sequence·guarded update만 `.repository`에서 JDBC/native SQL로 처리.
+- HTTP controller·transport DTO·설정·오류 변환은 `application-module` 소유. HTTP/domain request 분리는 입력 모양이나 validation 규칙이 다를 때만 허용.
+- Transaction 경계는 불변조건 기준. Admission counter+ticket, Inventory pool+reservation은 한 transaction; PSP 호출은 DB transaction 밖.
+- CQRS, CommandBus, handler/mediator, `internal`, `package-info.java` marker 금지. 새 pattern은 구체 요구와 ADR 승인 필요.
+- Test는 consumer-visible behavior, module boundary, state transition, error contract, concurrency 검증에 한정. PostgreSQL 특화 동작은 PostgreSQL로 검증; wiring/중복 위험 테스트 금지 ([REF-099](../../00-governance/reference-register.md)).
 
 ## 결과와 재검토
 

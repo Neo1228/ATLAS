@@ -9,7 +9,7 @@ updated: 2026-11-03
 - 문서 인덱스: [`docs/README.md`](docs/README.md)
 - 현재 진행 및 미결정: [`docs/09-delivery/session-handoff.md`](docs/09-delivery/session-handoff.md)
 
-- 기여·작업 단위: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [저장소 작업 규칙](AGENTS.md#github-작업-및-변경-관리)
 - GitHub PR 템플릿: [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)
 - 문서 검사·PR 체크리스트: [workflow](.github/workflows/docs-lint.yml)이 pull request/push 때 실행
 - Backend build·PostgreSQL tests: [workflow](.github/workflows/backend-ci.yml).
@@ -30,8 +30,11 @@ updated: 2026-11-03
 | [ATLAS-order](ATLAS-order/README.md) | `:order-module` | checkout·order lifecycle·seller attribution | admission, inventory, payment |
 | [ATLAS-payment](ATLAS-payment/README.md) | `:payment-module` | payment attempts·provider 결과 | 없음 |
 
-각 도메인 `-module`은 `.service` contract, `.dto.request` 입력, `.dto.response` 출력, `.exception` 오류를 공개합니다. 상태 enum은 persistence-owned lifecycle vocabulary로 `.persistence.state`에 두고 모듈 간 contract에서 공유합니다; JPA entity/repository는 공유하지 않습니다. 구현과 scheduled expiry는 `.service.impl`, JPA mapping/CRUD는 `.persistence.entity`·`.persistence.repository`, Fake provider는 `.provider.fake`에 둡니다. ArchUnit이 허용한 package dependency만 검사하며 `package-info.java` marker는 없습니다. 기본 CRUD는 JPA, advisory lock·sequence·guarded update 등 PostgreSQL 특화 경로만 JDBC/native SQL을 사용합니다. Flyway가 schema를 소유하고 Hibernate는 `validate`만 수행합니다.
-HTTP controller·request DTO·공통 설정·오류 처리는 `application-module`의 `.application.controller.<domain>`·`.application.controller.dto`·`.application.config`·`.application.exception`에 둡니다. CQRS·`internal`·불필요한 공통 모듈은 사용하지 않습니다. 경계와 근거는 [ADR-0003](docs/06-decisions/adr/ADR-0003-gradle-module-boundaries.md), SQL 선택은 [ADR-0004](docs/06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md).
+- **공개 contract:** `.service`, `.dto.request`, `.dto.response`, `.exception`; HTTP transport DTO는 `application-module`의 `.application.controller.dto`.
+- **상태·저장소:** lifecycle enum은 `.persistence.state`; JPA entity는 `.persistence.entity`; repository는 module-private `.repository`. Entity/repository는 모듈 간 공유하지 않음.
+- **구현:** workflow/scheduled expiry는 `.service.impl`, Fake provider는 `.provider.fake`. `application-module`은 HTTP adapter, 공통 설정·오류 처리, Flyway migration 소유.
+- **DB 접근:** CRUD는 JPA. PostgreSQL 전용 lock/sequence/guarded update는 `.repository`의 JDBC/native SQL. Flyway owns schema; Hibernate `validate`.
+- **경계:** ArchUnit은 허용한 package dependency만 검사. `package-info.java` marker, CQRS, `internal`, 불필요한 common module 금지. 상세 근거는 [ADR-0003](docs/06-decisions/adr/ADR-0003-gradle-module-boundaries.md)·[ADR-0004](docs/06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md).
 
 실행: `./gradlew :application-module:bootRun`. 전체 compile·Checkstyle·test 검증: `./gradlew check`.
 

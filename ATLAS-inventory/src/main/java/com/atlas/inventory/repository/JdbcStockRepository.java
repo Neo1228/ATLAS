@@ -1,4 +1,4 @@
-package com.atlas.inventory.persistence.repository;
+package com.atlas.inventory.repository;
 
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;

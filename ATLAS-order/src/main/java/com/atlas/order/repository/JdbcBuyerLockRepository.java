@@ -1,4 +1,4 @@
-package com.atlas.order.persistence.repository;
+package com.atlas.order.repository;
 
 import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
