@@ -1,95 +1,33 @@
--- Legacy ownership mapping is optional only when the current database is empty.
--- For a populated database, pre-create and populate campaign_seller_backfill before
--- starting the application; V6 rejects any missing, duplicate or orphan mapping.
-CREATE TABLE IF NOT EXISTS campaign_seller_backfill (
-    campaign_id UUID PRIMARY KEY,
-    seller_id UUID NOT NULL
-);
-
+-- V6는 Seller-SKU 새 schema로 시작. 기존 Campaign 데이터 이전·보존은 지원하지 않음.
+-- V1–V5 application table에 행이 있으면 DDL 전에 중단.
 DO $$
 BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM campaign c
-        LEFT JOIN campaign_seller_backfill m ON m.campaign_id = c.campaign_id
-        WHERE m.campaign_id IS NULL
-    ) THEN
-        RAISE EXCEPTION 'Campaign-to-Seller mapping is incomplete; populate campaign_seller_backfill before V6';
-    END IF;
-
-    IF EXISTS (
-        SELECT 1
-        FROM campaign_seller_backfill m
-        LEFT JOIN campaign c ON c.campaign_id = m.campaign_id
-        WHERE c.campaign_id IS NULL
-    ) THEN
-        RAISE EXCEPTION 'campaign_seller_backfill contains an unknown campaign_id';
-    END IF;
-
-    IF EXISTS (
-        SELECT 1
-        FROM inventory_pool p
-        LEFT JOIN campaign_seller_backfill m ON m.campaign_id = p.campaign_id
-        WHERE m.campaign_id IS NULL
-    ) OR EXISTS (
-        SELECT 1
-        FROM inventory_reservation r
-        LEFT JOIN campaign_seller_backfill m ON m.campaign_id = r.campaign_id
-        WHERE m.campaign_id IS NULL
-    ) OR EXISTS (
-        SELECT 1
-        FROM admission_ticket t
-        LEFT JOIN campaign_seller_backfill m ON m.campaign_id = t.campaign_id
-        WHERE m.campaign_id IS NULL
-    ) OR EXISTS (
-        SELECT 1
-        FROM purchase_order o
-        LEFT JOIN campaign_seller_backfill m ON m.campaign_id = o.campaign_id
-        WHERE m.campaign_id IS NULL
-    ) THEN
-        RAISE EXCEPTION 'Legacy inventory, admission or order data has no Campaign-to-Seller mapping';
-    END IF;
-
-    IF EXISTS (
-        SELECT 1
-        FROM campaign c
-        LEFT JOIN inventory_pool p
-            ON p.campaign_id = c.campaign_id AND p.sku_id = c.sku_id
-        WHERE p.campaign_id IS NULL
-    ) THEN
-        RAISE EXCEPTION 'A legacy campaign has no matching inventory pool; refusing stock migration';
-    END IF;
-    IF EXISTS (
-        SELECT 1
-        FROM campaign c
-        JOIN campaign_seller_backfill m ON m.campaign_id = c.campaign_id
-        GROUP BY m.seller_id, c.sku_id
-        HAVING SUM(c.max_active_checkouts) > 2147483647
-    ) THEN
-        RAISE EXCEPTION 'Global Seller-SKU checkout limit exceeds INTEGER; reconcile Campaign limits before V6';
-    END IF;
-
-    IF EXISTS (
-        SELECT 1
-        FROM inventory_pool p
-        JOIN campaign_seller_backfill m ON m.campaign_id = p.campaign_id
-        GROUP BY m.seller_id, p.sku_id
-        HAVING SUM(p.initial_capacity) > 2147483647
-    ) THEN
-        RAISE EXCEPTION 'Global Seller-SKU stock exceeds INTEGER; reconcile Campaign pool quantities before V6';
+    IF EXISTS (SELECT 1 FROM campaign)
+       OR EXISTS (SELECT 1 FROM admission_counter)
+       OR EXISTS (SELECT 1 FROM admission_ticket)
+       OR EXISTS (SELECT 1 FROM inventory_pool)
+       OR EXISTS (SELECT 1 FROM inventory_reservation)
+       OR EXISTS (SELECT 1 FROM purchase_order)
+       OR EXISTS (SELECT 1 FROM payment_attempt) THEN
+        RAISE EXCEPTION 'V6 requires a clean-start database: legacy application tables contain data; existing data is not migrated or preserved. Provision an empty database and restart.';
     END IF;
 END
 $$;
+
+-- V1–V5 table이 모두 비어 있으면 child table부터 제거.
+-- `CASCADE`는 금지. 예상하지 못한 dependency가 있으면 migration 실패.
+DROP TABLE payment_attempt;
+DROP TABLE inventory_reservation;
+DROP TABLE admission_ticket;
+DROP TABLE purchase_order;
+DROP TABLE inventory_pool;
+DROP TABLE admission_counter;
+DROP TABLE campaign;
 
 CREATE TABLE seller (
     seller_id UUID NOT NULL,
     CONSTRAINT seller_pk PRIMARY KEY (seller_id)
 );
-
-INSERT INTO seller (seller_id)
-SELECT DISTINCT seller_id
-FROM campaign_seller_backfill
-ON CONFLICT (seller_id) DO NOTHING;
 
 CREATE TABLE seller_sku (
     seller_id UUID NOT NULL,
@@ -102,37 +40,66 @@ CREATE TABLE seller_sku (
     CONSTRAINT seller_sku_code_nonblank CHECK (length(trim(sku_id)) > 0)
 );
 
-INSERT INTO seller_sku (seller_id, sku_id, max_active_checkouts, created_at)
-SELECT m.seller_id, c.sku_id, SUM(c.max_active_checkouts)::INTEGER, MIN(c.created_at)
-FROM campaign c
-JOIN campaign_seller_backfill m ON m.campaign_id = c.campaign_id
-GROUP BY m.seller_id, c.sku_id;
+CREATE TABLE campaign (
+    campaign_id UUID NOT NULL,
+    seller_id UUID NOT NULL,
+    sku_id VARCHAR(128) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    queue_ticket_ttl_seconds BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT campaign_pk PRIMARY KEY (campaign_id),
+    CONSTRAINT campaign_seller_sku_fk FOREIGN KEY (seller_id, sku_id)
+        REFERENCES seller_sku (seller_id, sku_id),
+    CONSTRAINT campaign_status_valid CHECK (status IN ('CLOSED', 'OPEN')),
+    CONSTRAINT campaign_ttl_positive CHECK (queue_ticket_ttl_seconds > 0),
+    CONSTRAINT campaign_sku_nonblank CHECK (length(trim(sku_id)) > 0)
+);
 
-ALTER TABLE campaign ADD COLUMN seller_id UUID;
-UPDATE campaign c
-SET seller_id = m.seller_id
-FROM campaign_seller_backfill m
-WHERE m.campaign_id = c.campaign_id;
-ALTER TABLE campaign ALTER COLUMN seller_id SET NOT NULL;
-ALTER TABLE campaign DROP CONSTRAINT campaign_checkout_limit_positive;
-ALTER TABLE campaign DROP COLUMN max_active_checkouts;
-ALTER TABLE campaign ADD CONSTRAINT campaign_seller_sku_fk
-    FOREIGN KEY (seller_id, sku_id) REFERENCES seller_sku (seller_id, sku_id);
+CREATE TABLE admission_counter (
+    seller_id UUID NOT NULL,
+    sku_id VARCHAR(128) NOT NULL,
+    last_sequence BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT admission_counter_pk PRIMARY KEY (seller_id, sku_id),
+    CONSTRAINT admission_counter_seller_sku_fk FOREIGN KEY (seller_id, sku_id)
+        REFERENCES seller_sku (seller_id, sku_id),
+    CONSTRAINT admission_counter_sequence_nonnegative CHECK (last_sequence >= 0)
+);
 
-CREATE TEMPORARY TABLE inventory_pool_seller_sku ON COMMIT DROP AS
-SELECT m.seller_id,
-       p.sku_id,
-       SUM(p.initial_capacity)::INTEGER AS initial_capacity,
-       SUM(p.available)::INTEGER AS available,
-       SUM(p.reserved)::INTEGER AS reserved,
-       SUM(p.claimed)::INTEGER AS claimed
-FROM inventory_pool p
-JOIN campaign_seller_backfill m ON m.campaign_id = p.campaign_id
-GROUP BY m.seller_id, p.sku_id;
-
-ALTER TABLE inventory_reservation DROP CONSTRAINT inventory_reservation_pool_fk;
-DROP INDEX inventory_reservation_pool_idx;
-DROP TABLE inventory_pool;
+CREATE TABLE admission_ticket (
+    ticket_id UUID NOT NULL,
+    campaign_id UUID NOT NULL,
+    seller_id UUID NOT NULL,
+    sku_id VARCHAR(128) NOT NULL,
+    buyer_ref VARCHAR(256) NOT NULL,
+    idempotency_key VARCHAR(256) NOT NULL,
+    sequence BIGINT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    checkout_slot_acquired_at TIMESTAMPTZ,
+    checkout_slot_held BOOLEAN NOT NULL,
+    CONSTRAINT admission_ticket_pk PRIMARY KEY (ticket_id),
+    CONSTRAINT admission_ticket_seller_sku_sequence_unique UNIQUE (seller_id, sku_id, sequence),
+    CONSTRAINT admission_ticket_idempotency_unique UNIQUE (campaign_id, idempotency_key),
+    CONSTRAINT admission_ticket_campaign_fk FOREIGN KEY (campaign_id) REFERENCES campaign (campaign_id),
+    CONSTRAINT admission_ticket_seller_sku_fk FOREIGN KEY (seller_id, sku_id)
+        REFERENCES seller_sku (seller_id, sku_id),
+    CONSTRAINT admission_ticket_sequence_positive CHECK (sequence > 0),
+    CONSTRAINT admission_ticket_status_valid CHECK (status IN (
+        'WAITING', 'CHECKOUT_ACTIVE', 'CHECKOUT_STARTED', 'CHECKOUT_SUBMITTED', 'EXPIRED', 'CHECKOUT_FAILED'
+    )),
+    CONSTRAINT admission_ticket_slot_status_consistent CHECK (
+        (checkout_slot_held AND status IN ('CHECKOUT_ACTIVE', 'CHECKOUT_STARTED')) OR
+        (NOT checkout_slot_held AND status NOT IN ('CHECKOUT_ACTIVE', 'CHECKOUT_STARTED'))
+    ),
+    CONSTRAINT admission_ticket_sku_nonblank CHECK (length(trim(sku_id)) > 0),
+    CONSTRAINT admission_ticket_buyer_nonblank CHECK (length(trim(buyer_ref)) > 0),
+    CONSTRAINT admission_ticket_key_nonblank CHECK (length(trim(idempotency_key)) > 0)
+);
+CREATE INDEX admission_ticket_fifo_idx ON admission_ticket (seller_id, sku_id, sequence)
+    WHERE status = 'WAITING';
+CREATE INDEX admission_ticket_expiry_idx ON admission_ticket (expires_at)
+    WHERE status IN ('WAITING', 'CHECKOUT_ACTIVE');
 
 CREATE TABLE inventory_pool (
     seller_id UUID NOT NULL,
@@ -151,73 +118,59 @@ CREATE TABLE inventory_pool (
     CONSTRAINT inventory_pool_conservation CHECK (available + reserved + claimed = initial_capacity)
 );
 
-INSERT INTO inventory_pool (seller_id, sku_id, initial_capacity, available, reserved, claimed)
-SELECT seller_id, sku_id, initial_capacity, available, reserved, claimed
-FROM inventory_pool_seller_sku;
-
-ALTER TABLE inventory_reservation ADD COLUMN seller_id UUID;
-UPDATE inventory_reservation r
-SET seller_id = m.seller_id
-FROM campaign_seller_backfill m
-WHERE m.campaign_id = r.campaign_id;
-ALTER TABLE inventory_reservation ALTER COLUMN seller_id SET NOT NULL;
-ALTER TABLE inventory_reservation ADD CONSTRAINT inventory_reservation_pool_fk
-    FOREIGN KEY (seller_id, sku_id) REFERENCES inventory_pool (seller_id, sku_id);
-CREATE INDEX inventory_reservation_pool_idx ON inventory_reservation (seller_id, sku_id);
-
-ALTER TABLE purchase_order ADD COLUMN seller_id UUID;
-UPDATE purchase_order o
-SET seller_id = m.seller_id
-FROM campaign_seller_backfill m
-WHERE m.campaign_id = o.campaign_id;
-ALTER TABLE purchase_order ALTER COLUMN seller_id SET NOT NULL;
-ALTER TABLE purchase_order ADD CONSTRAINT purchase_order_seller_sku_fk
-    FOREIGN KEY (seller_id, sku_id) REFERENCES seller_sku (seller_id, sku_id);
-
-ALTER TABLE admission_ticket ADD COLUMN seller_id UUID;
-UPDATE admission_ticket t
-SET seller_id = m.seller_id
-FROM campaign_seller_backfill m
-WHERE m.campaign_id = t.campaign_id;
-ALTER TABLE admission_ticket ALTER COLUMN seller_id SET NOT NULL;
-ALTER TABLE admission_ticket DROP CONSTRAINT admission_ticket_campaign_sequence_unique;
-ALTER TABLE admission_ticket ADD CONSTRAINT admission_ticket_seller_sku_fk
-    FOREIGN KEY (seller_id, sku_id) REFERENCES seller_sku (seller_id, sku_id);
-
-CREATE TEMPORARY TABLE admission_ticket_global_sequence ON COMMIT DROP AS
-SELECT ticket_id,
-       ROW_NUMBER() OVER (
-           PARTITION BY seller_id, sku_id
-           ORDER BY created_at, campaign_id, sequence, ticket_id
-       ) AS global_sequence
-FROM admission_ticket;
-
-UPDATE admission_ticket t
-SET sequence = s.global_sequence
-FROM admission_ticket_global_sequence s
-WHERE s.ticket_id = t.ticket_id;
-
-ALTER TABLE admission_ticket ADD CONSTRAINT admission_ticket_seller_sku_sequence_unique
-    UNIQUE (seller_id, sku_id, sequence);
-DROP INDEX admission_ticket_fifo_idx;
-CREATE INDEX admission_ticket_fifo_idx ON admission_ticket (seller_id, sku_id, sequence)
-    WHERE status = 'WAITING';
-
-DROP TABLE admission_counter;
-CREATE TABLE admission_counter (
+CREATE TABLE inventory_reservation (
+    order_id UUID NOT NULL,
+    campaign_id UUID NOT NULL,
     seller_id UUID NOT NULL,
     sku_id VARCHAR(128) NOT NULL,
-    last_sequence BIGINT NOT NULL DEFAULT 0,
-    CONSTRAINT admission_counter_pk PRIMARY KEY (seller_id, sku_id),
-    CONSTRAINT admission_counter_seller_sku_fk FOREIGN KEY (seller_id, sku_id)
-        REFERENCES seller_sku (seller_id, sku_id),
-    CONSTRAINT admission_counter_sequence_nonnegative CHECK (last_sequence >= 0)
+    quantity INTEGER NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    CONSTRAINT inventory_reservation_pk PRIMARY KEY (order_id),
+    CONSTRAINT inventory_reservation_pool_fk FOREIGN KEY (seller_id, sku_id)
+        REFERENCES inventory_pool (seller_id, sku_id),
+       CONSTRAINT inventory_reservation_quantity_one CHECK (quantity = 1),
+    CONSTRAINT inventory_reservation_status CHECK (status IN ('RESERVED', 'CLAIMED', 'RELEASED'))
 );
+CREATE INDEX inventory_reservation_pool_idx ON inventory_reservation (seller_id, sku_id);
 
-INSERT INTO admission_counter (seller_id, sku_id, last_sequence)
-SELECT s.seller_id, s.sku_id, COALESCE(MAX(t.sequence), 0)
-FROM seller_sku s
-LEFT JOIN admission_ticket t ON t.seller_id = s.seller_id AND t.sku_id = s.sku_id
-GROUP BY s.seller_id, s.sku_id;
+CREATE TABLE purchase_order (
+    order_id UUID NOT NULL,
+    seller_id UUID NOT NULL,
+    campaign_id UUID NOT NULL,
+    ticket_id UUID NOT NULL,
+    buyer_ref VARCHAR(256) NOT NULL,
+    sku_id VARCHAR(128) NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    checkout_expires_at TIMESTAMPTZ NOT NULL,
+    payment_attempt_id UUID,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT purchase_order_pk PRIMARY KEY (order_id),
+    CONSTRAINT purchase_order_ticket_unique UNIQUE (ticket_id),
+    CONSTRAINT purchase_order_campaign_fk FOREIGN KEY (campaign_id) REFERENCES campaign (campaign_id),
+    CONSTRAINT purchase_order_seller_sku_fk FOREIGN KEY (seller_id, sku_id)
+        REFERENCES seller_sku (seller_id, sku_id),
+    CONSTRAINT purchase_order_state CHECK (state IN (
+        'RESERVED', 'PAYMENT_SUBMITTED', 'PAYMENT_PENDING', 'PAYMENT_UNKNOWN', 'PAYMENT_VOID_PENDING',
+        'PAID', 'FAILED', 'EXPIRED', 'CANCEL_PENDING', 'CANCELLED'
+    ))
+);
+CREATE INDEX purchase_order_expiry_idx ON purchase_order (checkout_expires_at)
+    WHERE state = 'RESERVED';
+CREATE INDEX purchase_order_buyer_unresolved_idx ON purchase_order (campaign_id, buyer_ref)
+    WHERE state IN ('PAYMENT_SUBMITTED', 'PAYMENT_PENDING', 'PAYMENT_UNKNOWN', 'PAYMENT_VOID_PENDING', 'CANCEL_PENDING');
 
-DROP TABLE campaign_seller_backfill;
+CREATE TABLE payment_attempt (
+    order_id UUID NOT NULL,
+    attempt_id UUID NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payment_phase VARCHAR(20) NOT NULL,
+    authorization_active BOOLEAN NOT NULL,
+    CONSTRAINT payment_attempt_pk PRIMARY KEY (order_id),
+    CONSTRAINT payment_attempt_attempt_id_unique UNIQUE (attempt_id),
+    CONSTRAINT payment_attempt_state CHECK (state IN (
+        'NOT_STARTED', 'AUTHORIZATION_PENDING', 'AUTHORIZED', 'CAPTURE_PENDING', 'CAPTURED', 'DECLINED',
+        'UNKNOWN', 'VOID_PENDING', 'VOIDED'
+    )),
+    CONSTRAINT payment_attempt_payment_phase CHECK (payment_phase IN ('AUTHORIZATION', 'CAPTURE', 'VOID'))
+);
