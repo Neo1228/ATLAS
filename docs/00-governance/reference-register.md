@@ -3,17 +3,18 @@ id: DOC-006
 title: Reference Register
 status: Draft
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
   requirements: []
-  adr: [ADR-0001, ADR-0003, ADR-0004]
-  experiments: []
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007]
+  experiments: [EXP-014]
 ---
 # 외부 참고자료 레지스트리
 
 REF-009~013은 GitHub 협업 문서, REF-014~029는 engineering/discovery 자료, REF-030~044는 payment·checkout·load model 자료.
 REF-045~086은 앞선 도메인·stack 결정이 사용하는 근거이므로 유지.
 REF-087/089/092/094/095/096/097/098은 module boundary·계층·JPA persistence review에 직접 사용한 핵심 자료.
+REF-104~107은 EXP-014/ADR-0007의 UUIDv7·BIGINT ID 비교에 필요한 핵심 자료만 포함. 공식 API 계약과 외부 practitioner 사례를 구분하며 외부 workload 수치·비공개 환경은 ATLAS 측정값을 대신하지 않음.
 각 항목의 적용 범위·한계를 기록. 외부 자료가 ATLAS 정책을 대신 결정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
@@ -109,8 +110,12 @@ REF-087/089/092/094/095/096/097/098은 module boundary·계층·JPA persistence 
 | REF-101 | Alibaba Cloud Community, High-Concurrency Practices of Redis: Snap-Up System / practitioner engineering article | https://www.alibabacloud.com/blog/597858 | 2026-11-03 | Order/payment 시점 재고 차감과 pre-deduct 후 timeout release trade-off | △ Redis-specific, older-version architecture; lifecycle trade-off만 참고. Redis, scale, implementation details는 ATLAS에 적용하지 않음 |
 | REF-102 | 美团技术团队, Distributed Queue Programming: Models and Practice / engineering article | https://tech.meituan.com/2016/07/29/distributed-queue-based-programming.html | 2026-11-03 | Queue model trade-offs, producer-consumer separation, serial processing for integrity constraints | △ 2016 Meituan examples across different domains; does not prescribe ATLAS's commerce fairness/K policy |
 | REF-103 | 美团技术团队, Distributed Queue Programming: Optimization / engineering article | https://tech.meituan.com/2016/08/05/distributed-queue-based-programming-optimization.html | 2026-11-03 | Ordering, consumer parallelism, queue partitioning and throughput/latency trade-offs | △ 2016 Meituan engineering guidance; operational context differs and no ATLAS capacity claim |
+| REF-104 | PostgreSQL 18, UUID Functions / official documentation | https://www.postgresql.org/docs/18/functions-uuid.html | 2026-11-03 | UUIDv7 is time-ordered; PostgreSQL 18 provides `uuidv7()` | ✓ Function contract; not an ATLAS performance result |
+| REF-105 | Hibernate ORM 7.4, `UuidVersion7Strategy` / API documentation | https://docs.hibernate.org/orm/7.4/javadocs/org/hibernate/id/uuid/UuidVersion7Strategy.html | 2026-11-03 | Hibernate provides a UUIDv7 generation strategy; the `VERSION_7` generator style is marked incubating | ✓ API availability; not proof of generator stability in every configuration or performance |
+| REF-106 | Andrew Atkinson, Avoid UUID Version 4 Primary Keys (for Postgres) / practitioner analysis | https://andyatkinson.com/avoid-uuid-version-4-primary-keys | 2025-07-02 | PostgreSQL UUIDv4/v7 index locality and page-density comparison | △ Practitioner measurements from a different workload; not transferable as ATLAS results |
+| REF-107 | Snowflake Developer Blog, What Should My Postgres Primary Key Be? / engineering blog | https://www.snowflake.com/en/developers/blog/postgres-primary-keys/ | 2026-09-17 | UUIDv7 timestamp visibility and BIGINT-versus-UUID width/identifier trade-offs | △ Design guidance, not an ATLAS benchmark |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103은 기존 결정과 recent module/persistence/load-test/Seller-SKU review에 사용한 vendor·practitioner·기술 자료. ATLAS production behavior, 성능 보장, 보편적 best practice를 입증하지 않음.
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107 are contextual vendor, practitioner and technical sources. They do not prove universal best practice, ATLAS production behavior, or capacity.
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인.
 - Authorization validity/honor period는 provider 정책이며 ATLAS inventory TTL과 별개.
@@ -118,6 +123,6 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 
 ## 관련 문서
 - [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md): D-037 uses context-specific REF-023/050~052; D-038/D-039 use REF-050/053~058; D-040/D-041 use REF-059~067; D-043 uses REF-068; Issue #75 review uses REF-053~055/069~073. [ADR-0002](../06-decisions/adr/ADR-0002-runtime-technology-review.md): technology/common-processing comparison uses REF-059~086; sources are contextual, not universal recommendations.
-- [Experiment Registry](../08-experiments/experiment-registry.md): EXP-013 uses REF-100 for arrival-rate scheduling; k6 vendor documentation is not independent workload or capacity evidence.
+- [EXP-014](../08-experiments/EXP-014-id-strategy-comparison.md)·[ADR-0007](../06-decisions/adr/ADR-0007-uuidv7-identifiers.md): REF-104/105는 UUIDv7 생성 API/계약, REF-106은 다른 workload의 practitioner 측정, REF-107은 key-width/public-ID 설계 trade-off 참고. REF-106/107의 환경·원자료는 독립 검증되거나 ATLAS에 재현된 결과가 아니며, 사적/개별 practitioner 관찰을 보편적 성능 근거로 일반화하지 않는다. EXP-014만 ATLAS 실측 근거다.
 - [Project Charter](project-charter.md): 확인되지 않은 정책/성능 주장을 제한.
 - [Seller-SKU decision](../06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md): D-049 uses REF-023 for reservation/claim consistency, REF-101 for flash-sale concerns, and REF-102/103 for queue/ordering trade-offs. These sources do not set the global FIFO/K policy; that is an owner decision.

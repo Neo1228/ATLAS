@@ -53,6 +53,9 @@
 - 커밋 전 staged/unstaged/untracked를 각각 확인. subagent가 stage한 변경 포함 여부를 검토하고, 의도한 경로만 stage한 뒤 `git diff --cached` 검토. 전체 검증은 최종 working tree 기준으로 수행.
 - 이미 확정된 결정은 다시 묻지 않음. 같은 범위의 미결정 사항은 근거·절충·추천을 한 번에 묶어 질문; 아키텍처·데이터·보안·범위가 실질적으로 달라질 때만 추가 확인.
 - 한국어 독자를 우선. 설명은 짧고 자연스러운 한국어로 작성; 필요한 backend 용어만 English 사용. 문서·Issue·PR의 기존 중복과 구식 표현을 덧붙이지 말고 정리.
+- ORM-generated ID 변경은 Spring Boot BOM의 실제 Hibernate version·generator 상태를 확인. `@Incubating` API와 범위 기록; Testcontainers/PostgreSQL에서 실제 persist 후 모든 대상 PK의 version·transaction 흐름 검증. Non-PK reference ID를 primary ID로 혼동하지 않음.
+- Agent 작업 전 실제 repository root, branch, HEAD 확인. Agent summary는 완료 증거가 아님; parent가 변경 범위·호출자·diff와 미실행 검증을 직접 확인.
+- Migration/benchmark SQL은 대상 PostgreSQL version에서 실행 검증. 전용 disposable database/schema만 사용하고 실행 시 DB 이름을 guard; 기존 `atlas` database를 테스트 대상으로 사용하지 않음. 실패한 SQL 실행은 결과로 기록하지 않으며 최종 성공 출력과 환경을 함께 보존.
 
 ## 진입점
 - 문서 인덱스: [docs/README.md](docs/README.md)

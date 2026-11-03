@@ -6,6 +6,7 @@
 - 관련 결정: [D-049](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-001/FR-004](../../02-requirements/requirements-index.md)
 - 추적: [Issue #89](https://github.com/Neo1228/ATLAS/issues/89), [PR #90](https://github.com/Neo1228/ATLAS/pull/90)
+> Legacy data migration 방식은 [D-055](../../00-governance/decision-log.md)·[ADR-0006](ADR-0006-v6-clean-start.md)로 supersede. 이 ADR은 Seller-SKU ownership, shared stock, global FIFO/K 및 Campaign compatibility 선택을 계속 유효하게 기록한다.
 
 ## 배경과 문제
 
@@ -17,7 +18,7 @@
 - Seller/SKU identity와 stock은 Campaign 생성 시 중복 생성 금지.
 - Inventory conservation, order idempotency, payment hold/recovery 유지.
 - 추가 Gradle module·framework·authentication 불필요.
-- Legacy data 귀속 추정·reset 금지.
+- Legacy Campaign data migration은 별도 [D-055](../../00-governance/decision-log.md) 결정에 따름. 이 ADR의 당시 migration 금지/보존 방향은 superseded.
 
 ## 검토한 대안
 
@@ -39,10 +40,10 @@ Oversell은 막을 수 있으나 Owner가 선택한 Campaign 간 global FIFO를 
 - **Seller API:** local Seller registration이 server-generated UUID 반환. 다른 요청은 `sellerId` 전달. Authentication/authorization 없음; 이 값은 data identity만 표현하며 tenant isolation/security boundary가 아님.
 - **Stock:** Seller-SKU 등록 시 `initialStock` 설정 및 pool 1회 생성. Campaign 생성은 stock을 만들거나 더하지 않음. Stock pool/reservation은 `inventory-module` 소유.
 - **Admission:** 모든 Campaign이 Seller-SKU global FIFO와 K 공유. 신규 Seller-SKU registration 때 `maxActiveCheckouts` 설정.
-- **Legacy K:** 같은 Seller-SKU로 mapping된 기존 Campaign의 `maxActiveCheckouts` 합계. 기존 aggregate active capacity 보존.
+- **K:** Seller-SKU registration 때 새 K를 설정한다. 과거 Campaign K 집계·보존은 하지 않는다 ([D-055](../../00-governance/decision-log.md)).
 - **Module:** Seller, SKU, Campaign은 기존 `campaign-module` 내에서 소유. 별도 Catalog/Seller module 추가 금지.
 - **Compatibility:** Ticket TTL과 `(campaignId, idempotencyKey)` replay scope는 Campaign 단위로 유지. `campaignId`는 ticket/order attribution으로 보존.
-- **Migration:** Inventory의 `initial_capacity/available/reserved/claimed` 합계와 active reservation 상태 보존. Queue sequence는 `created_at`, `campaign_id`, 기존 sequence, ticket ID 순으로 재부여. Legacy Campaign→Seller mapping 누락·추가 row가 있으면 migration fail-closed.
+- **Migration:** V6 clean-start only. V1–V5 application table에 행이 있으면 DDL 전에 실패하며 기존 data/schema를 바꾸지 않는다. 비어 있는 경우에만 구 schema를 제거하고 current Seller-SKU schema를 새로 만든다. Mapping·aggregate·backfill·legacy preservation 없음. 기존 local data는 앱 밖에서 명시적으로 보관·reset해야 하며 앱은 조용히 지우지 않는다 ([D-055](../../00-governance/decision-log.md), [ADR-0006](ADR-0006-v6-clean-start.md)). D-049의 shared stock·global FIFO/K 결정은 유지.
 
 ## 흐름 도식
 
@@ -68,13 +69,13 @@ flowchart LR
 - Campaign별 FIFO보다 global transaction lock 범위가 넓어져 동일 Seller-SKU joins 직렬화. Correctness test 대상이며 throughput/capacity claim은 아님.
 - `Campaign.inventoryCapacity`와 Campaign `maxActiveCheckouts` 제거. Seller-SKU registration API가 `initialStock`과 K 소유.
 - `sellerId`는 인증 주체가 아님. Bind address를 외부로 바꾸거나 auth 없이 외부 network에 노출하는 것은 승인 범위 밖.
-- Mapping template: [legacy Campaign→Seller input](../../09-delivery/legacy-campaign-seller-map.sql.template). 실제 row는 owner-provided local data; Git에 추정값을 넣지 않음.
+- **Legacy data:** 이전 mapping template은 사용하지 않는다. V6는 기존 데이터를 변환하거나 보존하지 않으며 clean-start 조건은 [ADR-0006](ADR-0006-v6-clean-start.md)에 따른다.
 
 ## 검증·완료 기준
 
 - PostgreSQL/Testcontainers에서 두 Campaign의 concurrent join이 global sequence/K/FIFO를 공유.
 - Cross-Campaign reserve/claim/release가 하나의 inventory conservation equation 유지.
-- Migration test가 explicit mapping, counter/K aggregate, ticket resequence, missing mapping rollback 검증.
+- V6 empty-start 조건 및 nonempty fail-safe 검증은 [D-055](../../00-governance/decision-log.md)·[ADR-0006](ADR-0006-v6-clean-start.md)에 따름; legacy mapping/aggregate 테스트를 요구하지 않는다.
 - `./gradlew --no-daemon check :application-module:bootJar` 통과. Load test 없음.
 
 ## 재검토 조건

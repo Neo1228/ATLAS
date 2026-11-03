@@ -17,6 +17,9 @@ updated: 2026-11-03
 - 진행: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture 기준 확정. [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)·[PR #73](https://github.com/Neo1228/ATLAS/pull/73) local runtime 완료. Fake PSP only; live payment, cloud deployment, production load는 별도 상태.
 - 기술 비교와 shared API/error rules: [ADR-0002](docs/06-decisions/adr/ADR-0002-runtime-technology-review.md), [Decision Log](docs/00-governance/decision-log.md), [Issue #78](https://github.com/Neo1228/ATLAS/issues/78), [PR #79](https://github.com/Neo1228/ATLAS/pull/79).
 
+V6 database 전환은 clean-start만 지원한다. V1–V5 application table에 기존 행이 있으면 schema/data 변경 전에 실패한다. 비어 있는 schema만 새 Seller-SKU 구조로 교체 가능하며, 보존할 local data는 앱 밖에서 명시적으로 보관·reset해야 한다. 자세한 결정: [D-055](docs/00-governance/decision-log.md)·[ADR-0006](docs/06-decisions/adr/ADR-0006-v6-clean-start.md).
+- Primary ID: Seller·Campaign·Ticket·Order는 UUIDv7; UUID type/API/FK 형식 유지. PaymentAttempt PK는 Order ID 공유. 근거·실험·한계: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/06-decisions/adr/ADR-0007-uuidv7-identifiers.md), [EXP-014](docs/08-experiments/EXP-014-id-strategy-comparison.md).
+
 ## 도메인 모듈
 
 한 번에 실행·배포하는 Spring Boot modular monolith. 여섯 Gradle project는 root의 `ATLAS-<name>` 디렉터리에 배치. `settings.gradle`은 물리 디렉터리를 기존 Gradle project path(`:application-module` 등)에 매핑하며, Java package와 의존성 방향은 유지.

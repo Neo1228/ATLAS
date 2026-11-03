@@ -6,8 +6,8 @@ owner: Project Owner
 updated: 2026-11-03
 links:
   requirements: [FR-001, FR-002, FR-004, NFR-002]
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005]
-  experiments: [EXP-010, EXP-012, EXP-013]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007]
+  experiments: [EXP-010, EXP-012, EXP-013, EXP-014]
 ---
 # 세션 인계
 
@@ -23,8 +23,9 @@ links:
 - 현재 코드 구조: [D-047/D-048](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md). `application-module` + 다섯 `*-module`; 공개 `.service`/`.dto.request`/`.dto.response`/`.exception`, lifecycle enum은 공유가 필요한 경우 `.persistence.state`, entity/repository는 모듈 내부. CRUD는 JPA, DB 특화 concurrency SQL만 JDBC/native query. 공통 HTTP 오류는 `GlobalExceptionHandler`; CQRS·`internal`·package-info marker 없음.
 - Latest verification (2026-11-03): `./gradlew check :application-module:bootJar` passed, including domain unit and PostgreSQL/Testcontainers suites. Compose PostgreSQL applied V1–V5; `bootRun` plus GET of a missing campaign returned 404 ProblemDetail `CAMPAIGN_NOT_FOUND`. Markdown lint: 33 files, 0 issues.
 - Latest work: [EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), the short local Gate 4 calibration merged in [PR #85](https://github.com/Neo1228/ATLAS/pull/85), is complete ([Issue #81](https://github.com/Neo1228/ATLAS/issues/81)). Baseline and low-stock/K=1 profile preserved inventory; 0 WAITING/409 means queue contention was not observed. Full matrix/2×/4× runs remain out of scope. Any stronger queue-contention profile needs separate owner approval; no production capacity claim.
-- 현재 진행: 구현 완료. [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)·[PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 Seller-SKU 공유 재고와 global FIFO, 저장소 최상위 `ATLAS-*` 모듈 디렉터리를 함께 추적. 디렉터리·Gradle project path·Java package 대응과 현재 `campaign-module` 소유 범위는 [D-049~D-054](../00-governance/decision-log.md)·[ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md) 참조. 범위가 불분명했던 `Pool` 계열 Java 이름은 `InventoryPool`로 구체화했으며 DB schema와 API 응답 형식은 유지.
-- 검증: `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 성공. 테스트 29개 통과. Markdown lint 35개 파일에서 오류 0건; 상대 링크 34개 문서에서 모두 유효. PR CI·review·merge 상태는 [PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 확인. 기존 Campaign 데이터에 V6를 적용하려면 소유자가 제공하는 Campaign→Seller mapping 필요. 현재 로컬 DB에는 migration을 적용하지 않았으며, mapping 누락 시 migration이 중단되도록 구성.
+- 현재 진행: 구현 완료. [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)·[PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 Seller-SKU 공유 재고/global FIFO와 저장소 최상위 `ATLAS-*` 구조를 추적. 물리 디렉터리·Gradle path·Java package·module ownership은 [D-049~D-056](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md) 참조. Inventory의 범위가 불분명했던 `Pool` Java 이름은 `InventoryPool`로 구체화; DB schema/API response fields는 유지.
+- 검증: `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 통과. Testcontainers/PostgreSQL 포함 JUnit 27개, 실패·오류·skip 0. Markdown lint 38개 파일 오류 0건; 상대 링크 37개 문서 확인. V6 clean-start는 데이터가 있는 V1–V5 application table에서 중단하고 기존 schema/data를 보존하며, 빈 schema에만 신규 schema 적용.
+- ID 결과: [D-056](../00-governance/decision-log.md)·[ADR-0007](../06-decisions/adr/ADR-0007-uuidv7-identifiers.md)에서 UUIDv7 PK 채택. Seller/Campaign/Ticket/Order primary IDs에서 실제 Hibernate UUIDv7 생성 integration 확인; PaymentAttempt PK는 Order ID 상속, 별도 non-PK `attempt_id`는 UUIDv4 유지. UUIDv7 generator는 Hibernate 7.4.13의 `@Incubating` API. EXP-014 결과는 로컬 DB 비교이며 production 성능 근거 아님.
 - 이번 작업의 patch·rename·PR 본문 검증 문제와 재발 방지: [Milestone Log 회고](milestone-log.md), [AGENTS.md 재발 방지 기준](../../AGENTS.md#재발-방지-기준).
 
 ## 확정된 방향
