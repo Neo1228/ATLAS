@@ -5,5 +5,7 @@
 !.env.example
 .gradle/
 build/
+.openidea/
+**/bin/
 *.class
 /local-data/legacy-campaign-seller-map.sql
