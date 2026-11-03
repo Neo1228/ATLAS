@@ -31,13 +31,13 @@
 - 외부 PSP 상태와 주문 상태, 내부 정산과 실제 지급 구분. 초기 범위에서 실결제·개인정보·판매사 지급 제외.
 
 ## GitHub 작업 및 변경 관리
-- Issue는 제공된 양식으로 작성하고 요구사항·근거·대안·trade-off·영향·검증을 기록. 복잡한 작업은 식별자별 근거를 연결하고, 실제로 실행하지 않은 검증은 성공으로 기록하지 않음.
+- Issue는 repository-owned form으로 작성. 본문 설명·trace 기준은 [Change Control](docs/00-governance/change-control.md), 실제로 실행하지 않은 검증은 성공으로 기록하지 않음.
 - 변경 전 `git status --short --branch`; stage 전후 `git diff`, `git diff --cached`, `git status` 확인. 관련 경로만 stage하고 확인 전 `git add .`/`git add -A` 금지.
 - 기본 branch는 `main`, 직접 push 금지(최초 seed 제외). Branch 이름 `<type>/<primary-issue>-<short-topic>`; type은 `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `ci`, `build`, `chore`, `revert`, topic은 ASCII 소문자 kebab-case. 한 branch는 한 목적.
 - Commit 제목은 `<type>(<scope>): <한국어 요약>`(scope 생략 가능), type/scope 영문 소문자, 짧은 명령형 요약·마침표 없음. 한 commit은 한 논리 변경; 이유가 불분명하거나 정책/호환성 영향이 있으면 본문에 이유·제약·추적 ID 기록. 과거 제목 수정은 기본 금지.
 - 한 목적·완료 기준·검토 경계의 Issue와 commit은 PR 하나로 묶고, 같은 목적의 후속 결정은 기존 Issue에 누적. 독립 목적·위험·책임자·완료 기준·배포/복구 경계만 분리.
 - PR template 필수. 모든 checklist 항목 완료; N/A에는 구체적인 사유 작성.
-- 복잡한 변경은 근거·대안·영향·검증 설명; Mermaid는 복잡한 flow/state에만 사용.
+- Issue/PR 설명과 복잡한 flow/state 표현 기준은 [Change Control](docs/00-governance/change-control.md)을 단일 기준으로 사용.
 - `main`은 PR과 strict required checks(`Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks`), linear history 필수; 관리자도 적용.
 - Required reviewers 0명; 승인 리뷰 정책은 별도 합의 필요. Merge는 squash only; branch logical commits는 보존, `main`에는 squash commit 하나 반영.
 - 공유 이력 amend/rebase, 무승인 force push, `main` 직접 push, 미추적 작업을 지우는 reset/clean 금지. 승인된 예외는 별도 Issue, 대상 SHA, 백업 ref, `--force-with-lease`, protection 복원 기록 필요. 충돌 해결 뒤 diff 및 관련 lint/test 재실행.
@@ -51,7 +51,7 @@
 - Issue/PR 본문 수정 전 현재 본문, template, CI validator 확인. 필수 heading·checkbox 수, Issues 항목의 plain-text `Closes`/`Refs`와 Issue link 번호 일치, 요구사항·결정 ID 직접 링크를 검사. 중복 heading, 폐기된 이름/경로, 오래된 검증 수치 확인 후 원격 수정; 수정 뒤 본문과 `gh pr checks` 재확인.
 - 미병합 문서 링크는 `main`이 아닌 PR branch 또는 현재 branch SHA 사용. 문서 수정 완료 뒤 링크 대상과 SHA 확인. PR 본문을 다시 쓸 때 기존 추적·위험·검증 기록 보존.
 - 커밋 전 staged/unstaged/untracked를 각각 확인. subagent가 stage한 변경 포함 여부를 검토하고, 의도한 경로만 stage한 뒤 `git diff --cached` 검토. 전체 검증은 최종 working tree 기준으로 수행.
-- 이미 확정된 결정은 다시 묻지 않음. 같은 범위의 미결정 사항은 근거·절충·추천을 한 번에 묶어 질문; 아키텍처·데이터·보안·범위가 실질적으로 달라질 때만 추가 확인.
+- 이미 확정된 결정은 다시 묻지 않음. 미결정 선택은 확인한 사실과 가정을 구분하고 출처·한계를 제시; 관련 선택지는 이점·비용·위험·후속 영향을 함께 비교. 권장안·이유와 정확히 필요한 결정을 한 번에 요청하며, 같은 범위의 질문은 묶음. 아키텍처·데이터·보안·범위가 실질적으로 달라질 때만 추가 확인.
 - 한국어 독자를 우선. 설명은 짧고 자연스러운 한국어로 작성; 필요한 backend 용어만 English 사용. 문서·Issue·PR의 기존 중복과 구식 표현을 덧붙이지 말고 정리.
 - ORM-generated ID 변경은 Spring Boot BOM의 실제 Hibernate version·generator 상태를 확인. `@Incubating` API와 범위 기록; Testcontainers/PostgreSQL에서 실제 persist 후 모든 대상 PK의 version·transaction 흐름 검증. Non-PK reference ID를 primary ID로 혼동하지 않음.
 - Agent 작업 전 실제 repository root, branch, HEAD 확인. Agent summary는 완료 증거가 아님; parent가 변경 범위·호출자·diff와 미실행 검증을 직접 확인.
