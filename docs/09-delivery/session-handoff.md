@@ -3,11 +3,11 @@ id: DOC-009
 title: Session Handoff
 status: Current
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
-  requirements: [FR-001, FR-002, NFR-002]
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004]
-  experiments: [EXP-010, EXP-012, EXP-013]
+  requirements: [FR-001, FR-002, FR-004, NFR-002]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007]
+  experiments: [EXP-010, EXP-012, EXP-013, EXP-014]
 ---
 # 세션 인계
 
@@ -16,13 +16,17 @@ links:
 - 진행: Gate 0/1 완료, Gate 2 Buyer 기준 승인, Gate 3 architecture/stack 확정. [Issue #78](https://github.com/Neo1228/ATLAS/issues/78) closed; [PR #79](https://github.com/Neo1228/ATLAS/pull/79) squash-merged to `main` at [`d954d4f4981298c5740f9aef31abb28b05e77e9f`](https://github.com/Neo1228/ATLAS/commit/d954d4f4981298c5740f9aef31abb28b05e77e9f).
 - Gate 2 범위: [D-031~D-033](../00-governance/decision-log.md)의 full Buyer journey, hybrid arrivals, 10k sessions/60m synthetic baseline, 2×/4× stress. Report-only; 실험 결과 없음.
 - Gate 2 승인 기록: [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [PR #67](https://github.com/Neo1228/ATLAS/pull/67), merge [`b85a0ec`](https://github.com/Neo1228/ATLAS/commit/b85a0ec). 기준만 승인; runtime 결과 없음.
-- Gate 3 방향: [ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), modular monolith, Java + Spring Boot + PostgreSQL. 초기 module map: Campaign, Admission, Inventory, Order/Checkout, Payment. 단일 schema와 module별 write ownership. Campaign counter row + ticket transaction 선택. 별도 queue/cache/broker는 측정된 bottleneck과 비교 이점 확인 전 미도입.
+- Gate 3의 초기 실행 설계는 Campaign counter row + ticket transaction ([D-039](../00-governance/decision-log.md)). 현재 선택인 Seller-SKU global FIFO/K는 [D-049](../00-governance/decision-log.md)·[ADR-0005](../06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md)에서 그 범위를 확장; 이력은 Gate 2 기준으로 보존.
 - 관련 성능 이슈: [Issue #51](https://github.com/Neo1228/ATLAS/issues/51), [Issue #54](https://github.com/Neo1228/ATLAS/issues/54), [Issue #56](https://github.com/Neo1228/ATLAS/issues/56).
 - 이전 병합 PR: [PR #53](https://github.com/Neo1228/ATLAS/pull/53) → [5266d14](https://github.com/Neo1228/ATLAS/commit/5266d14), [PR #55](https://github.com/Neo1228/ATLAS/pull/55) → [a82b454](https://github.com/Neo1228/ATLAS/commit/a82b454), [PR #57](https://github.com/Neo1228/ATLAS/pull/57) → [6cf28dd](https://github.com/Neo1228/ATLAS/commit/6cf28dd).
 - Local 범위는 Fake PSP와 synthetic Buyer만 포함. Live payment, cloud deployment, production performance claim은 없음 ([Issue #72](https://github.com/Neo1228/ATLAS/issues/72)).
 - 현재 코드 구조: [D-047/D-048](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md). `application-module` + 다섯 `*-module`; 공개 `.service`/`.dto.request`/`.dto.response`/`.exception`, lifecycle enum은 공유가 필요한 경우 `.persistence.state`, entity/repository는 모듈 내부. CRUD는 JPA, DB 특화 concurrency SQL만 JDBC/native query. 공통 HTTP 오류는 `GlobalExceptionHandler`; CQRS·`internal`·package-info marker 없음.
 - Latest verification (2026-11-03): `./gradlew check :application-module:bootJar` passed, including domain unit and PostgreSQL/Testcontainers suites. Compose PostgreSQL applied V1–V5; `bootRun` plus GET of a missing campaign returned 404 ProblemDetail `CAMPAIGN_NOT_FOUND`. Markdown lint: 33 files, 0 issues.
 - Latest work: [EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), the short local Gate 4 calibration merged in [PR #85](https://github.com/Neo1228/ATLAS/pull/85), is complete ([Issue #81](https://github.com/Neo1228/ATLAS/issues/81)). Baseline and low-stock/K=1 profile preserved inventory; 0 WAITING/409 means queue contention was not observed. Full matrix/2×/4× runs remain out of scope. Any stronger queue-contention profile needs separate owner approval; no production capacity claim.
+- 현재 진행: 구현 완료. [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)·[PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 Seller-SKU 공유 재고/global FIFO와 저장소 최상위 `ATLAS-*` 구조를 추적. 물리 디렉터리·Gradle path·Java package·module ownership은 [D-049~D-056](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md) 참조. Inventory의 범위가 불분명했던 `Pool` Java 이름은 `InventoryPool`로 구체화; DB schema/API response fields는 유지.
+- 검증: `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 통과. Testcontainers/PostgreSQL 포함 JUnit 27개, 실패·오류·skip 0. Markdown lint 38개 파일 오류 0건; 상대 링크 37개 문서 확인. V6 clean-start는 데이터가 있는 V1–V5 application table에서 중단하고 기존 schema/data를 보존하며, 빈 schema에만 신규 schema 적용.
+- ID 결과: [D-056](../00-governance/decision-log.md)·[ADR-0007](../06-decisions/adr/ADR-0007-uuidv7-identifiers.md)에서 UUIDv7 PK 채택. Seller/Campaign/Ticket/Order primary IDs에서 실제 Hibernate UUIDv7 생성 integration 확인; PaymentAttempt PK는 Order ID 상속, 별도 non-PK `attempt_id`는 UUIDv4 유지. UUIDv7 generator는 Hibernate 7.4.13의 `@Incubating` API. EXP-014 결과는 로컬 DB 비교이며 production 성능 근거 아님.
+- 이번 작업의 patch·rename·PR 본문 검증 문제와 재발 방지: [Milestone Log 회고](milestone-log.md), [AGENTS.md 재발 방지 기준](../../AGENTS.md#재발-방지-기준).
 
 ## 확정된 방향
 - 장기 범위: 결제 신뢰성, 고동시성 한정판매, 정산·대사 ([Project Charter](../00-governance/project-charter.md)).
@@ -67,4 +71,4 @@ links:
 
 - 진행 현황: [Roadmap](roadmap.md).
 - 완료 이력: [Milestone Log](milestone-log.md).
-- 작업 방식: Issue부터 기록. 같은 목적의 관련 commit은 PR 하나로 통합 ([기여 안내](../../CONTRIBUTING.md)).
+- Issue-first·PR 규칙: [AGENTS.md의 GitHub 작업 및 변경 관리](../../AGENTS.md#github-작업-및-변경-관리).

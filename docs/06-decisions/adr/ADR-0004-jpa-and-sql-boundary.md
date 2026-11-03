@@ -10,10 +10,10 @@
 
 ## 결정
 
-- 일반 CRUD는 각 모듈의 JPA entity와 Spring Data `JpaRepository`로 처리한다. Domain entity는 `.persistence.entity`, repository는 `.persistence.repository`; 별도 mapper/generic base/custom ORM은 만들지 않는다.
+일반 CRUD는 각 모듈의 JPA entity와 Spring Data `JpaRepository`로 처리한다. Entity는 `.persistence.entity`, repository는 module-private `.repository`에 둔다. 별도 mapper·generic base·custom ORM은 만들지 않는다.
 - DB schema는 `application-module`의 Flyway migrations가 단독 소유한다. Hibernate `ddl-auto=validate`; schema 자동 생성/변경 금지.
 - Entity 간 module relation 대신 ID를 저장하고, 다른 module과의 연동은 공개 `.service` contract와 `.dto`로 수행한다.
-- PostgreSQL lock·atomic update·sequence allocation이 필요한 경로만 `.persistence.repository` 안에서 `JdbcTemplate` 또는 JPA native query로 처리한다. CRUD SQL 반복 구현은 금지.
+- PostgreSQL lock·atomic update·sequence allocation이 필요한 경로만 module-private `.repository` 안에서 `JdbcTemplate` 또는 JPA native query로 처리한다. CRUD SQL 반복 구현은 금지.
 - Service implementation이 transaction과 scheduled workflow를 소유한다. Payment provider 호출은 transaction 밖에서 유지한다.
 
 ## 결과와 한계

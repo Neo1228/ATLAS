@@ -3,11 +3,11 @@ id: DOC-008
 title: Roadmap
 status: Draft
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
   requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
-  adr: [ADR-0001, ADR-0003, ADR-0004]
-  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013]
+  adr: [ADR-0001, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013, EXP-014]
 ---
 # 로드맵
 
@@ -23,7 +23,7 @@ Gate는 사용자 승인이 필요한 점검 단계. 명시적 승인 없이 상
 | M1 | Local single-SKU Buyer flow: Campaign, Admission, Inventory, Order/Checkout, PostgreSQL, Fake PSP, tests/CI | ✓ [PR #73](https://github.com/Neo1228/ATLAS/pull/73) merged; [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) closed |
 | M2 | Synthetic load/failure verification, report-only | ◐ EXP-013 short local calibration completed; 0 WAITING/409, so queue contention was not observed. Further profile scope requires separate owner approval; no production capacity claim ([EXP-013](../08-experiments/EXP-013-gate4-20-minute-calibration.md), [PR #85](https://github.com/Neo1228/ATLAS/pull/85), [Issue #81](https://github.com/Neo1228/ATLAS/issues/81)) |
 | M3 | PayPal Sandbox adapter, webhook·payment recovery | ○ Provider/API and failure/recovery policy decision required; sequencing relative to M2, credentials and scope remain OPEN |
-| M4 | 장기 역량 확장: Tenant/security, catalog·판매 유형, settlement·reconciliation, refund/adjustment | ○ 계획 ([Project Charter](../00-governance/project-charter.md), [Q-002/Q-006/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md)) |
+| M4 | Seller-SKU shared stock/global FIFO와 구조 정리. 도메인 [D-049/ADR-0005](../06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), clean-start [D-055/ADR-0006](../06-decisions/adr/ADR-0006-v6-clean-start.md), UUIDv7 PK [D-056/ADR-0007](../06-decisions/adr/ADR-0007-uuidv7-identifiers.md)·[EXP-014](../08-experiments/EXP-014-id-strategy-comparison.md). 기존 data migration은 지원하지 않으며, V1–V5 table에 행이 있으면 V6가 DDL 전에 중단. [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)·[PR #90](https://github.com/Neo1228/ATLAS/pull/90) 구현 완료·병합 대기. | ◐ 구현 완료·병합 대기 ([Project Charter](../00-governance/project-charter.md), [Q-002/Q-003/Q-006/Q-007/Q-010](../00-governance/assumptions-and-open-questions.md)) |
 | M5 | Observability, backup/recovery, SLO/RTO/RPO | ○ 운영 환경 선택 뒤 계획 |
 | M6 | 대안 비교, ADR 정리, portfolio 근거 | ○ 계획 |
 
@@ -59,3 +59,4 @@ WP는 초기 문서 작업 이력 ID. 이후 Issue/PR 개수나 분할 기준 �
 - Current package/persistence structure: [D-047/D-048](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md). Five `*-module` domains plus `application-module`; public `.service`/`.dto.request`/`.dto.response`/`.exception`, lifecycle enums shared from `.persistence.state`, entity/repository kept module-private; implementation in `.service.impl`/`.persistence.*`. CRUD uses JPA; concurrency-specific SQL remains JDBC/native. ArchUnit checks package dependencies. No package-info markers, CQRS or `.internal`.
 - Current verification (2026-11-03): `./gradlew check :application-module:bootJar` passed; Markdown lint 33 files, 0 issues. PR #83 merged and Issue #82 closed. Gate 4 EXP-013 ran baseline and K=1 queue-backlog configurations; all inventory conservation checks held, but no WAITING/409 was observed. Results are [report-only](../08-experiments/EXP-013-gate4-20-minute-calibration.md); no production/load claim.
 - [Q-008](../00-governance/assumptions-and-open-questions.md): burst factor/duration, production demand/SLO, capacity target and deployment remain OPEN.
+V6 migration 조건은 [D-055](../00-governance/decision-log.md)·[ADR-0006](../06-decisions/adr/ADR-0006-v6-clean-start.md)로 정함: empty-start만 허용, nonempty V1–V5 application tables에서 DDL 전에 실패, legacy mapping/backfill 없음. 기존 local data는 app 밖에서 명시적으로 보관·reset한다.

@@ -198,7 +198,7 @@ links:
 ## 2026-11-02 — 도메인별 Gradle 모듈 재구성
 - [D-047](../00-governance/decision-log.md)/[ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md): 기존 Campaign, Admission, Inventory, Order, Payment 소유 경계를 유지하고 `application-module` + 다섯 `*-module`로 소스·의존을 재배치. 단일 Spring Boot deployment·PostgreSQL schema·기존 public API 흐름은 유지.
 - `internal` package를 제거하고 책임별 `.service`/`.repository`/`.provider`로 이동. HTTP controller·설정·migration은 `application-module`. 기존 `*Command` 단순 입력 record는 `*Request`로 이름 정리; CQRS dispatcher/handler/event bus를 만들지 않음.
-- 각 Gradle module root README와 Repository README, 문서 인덱스·AGENTS·CONTRIBUTING·ADR·Decision Log·Roadmap·Session Handoff를 갱신.
+- 각 Gradle module root README와 Repository README, 문서 인덱스·AGENTS·ADR·Decision Log·Roadmap·Session Handoff를 갱신.
 - 검증: `./gradlew check -x :application-module:test` 통과. Campaign/Admission unit, Spring Modulith `ModuleBoundaryTest`, API exception contract test 통과. 전체 Testcontainers test는 Docker client unavailable로 Buyer flow, Inventory concurrency, Payment suite가 초기화 실패. `:application-module:bootJar` 성공; 다섯 domain JAR와 migration entries 확인. 재구성 뒤 Buyer HTTP/PostgreSQL smoke 미실행, production/load claim 없음.
 - 외부 근거: Google Cloud·Gradle·Spring·PostgreSQL 공식 문서, Alibaba COLA 작성자, Meituan 기술팀 사례. 적용 범위·한계는 [REF-087/089/092/094](../00-governance/reference-register.md), [REF-056/057/073](../00-governance/reference-register.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md)에 정리.
 
@@ -213,7 +213,7 @@ links:
 ## 2026-11-03 — Persistence vocabulary, test scope and final verification
 - Lifecycle enums now live in `.persistence.state`, separate from request/response DTOs. Only these explicitly allowed state packages cross module boundaries; JPA entity/repository types remain private. Persisted lifecycle values use `EnumType.STRING` with matching database `CHECK` constraints.
 - Entity names use the persisted concept without redundant `Entity` suffix: `Campaign`, `QueueTicket`, `Pool`, `Reservation`, `PurchaseOrder`, `PaymentAttempt`. Campaign status uses typed `CampaignStatus` mapping; existing `VARCHAR`/CHECK schema and V1–V5 migration history were unchanged.
-- Test audit found no redundant suite: existing tests cover different service preconditions, HTTP behavior, PostgreSQL concurrency, payment recovery, error mapping, and package boundaries. No tests were added or deleted. `ModuleBoundaryTest` remains because Gradle dependency edges do not enforce package-layer boundaries. Test criteria are recorded in [AGENTS.md](../../AGENTS.md), [CONTRIBUTING.md](../../CONTRIBUTING.md), and [REF-099](../00-governance/reference-register.md).
+- HTTP/PostgreSQL/ModuleBoundaryTest package boundary: [AGENTS.md](../../AGENTS.md#github-작업-및-변경-관리) and [REF-099](../00-governance/reference-register.md).
 - Verification: `./gradlew check :application-module:bootJar` passed, including domain unit and PostgreSQL/Testcontainers suites; Hibernate `ddl-auto=validate` passed. Markdown lint covered 33 files with 0 issues. Local `bootRun` against Compose PostgreSQL applied V1–V5; GET for an unknown campaign returned 404 ProblemDetail with `CAMPAIGN_NOT_FOUND`. No performance or production claim.
 - Design record: [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md), [ADR-0004](../06-decisions/adr/ADR-0004-jpa-and-sql-boundary.md), [D-047/D-048](../00-governance/decision-log.md).
 - GitHub: [PR #83](https://github.com/Neo1228/ATLAS/pull/83) squash-merged into `main` at [`b0ca9c7a80cf6aaa3a64bd7468e8fb70a423f9aa`](https://github.com/Neo1228/ATLAS/commit/b0ca9c7a80cf6aaa3a64bd7468e8fb70a423f9aa); [Issue #82](https://github.com/Neo1228/ATLAS/issues/82) closed. Earlier Sale/Queue proposal was superseded; merged PR #79/#80 remain unchanged.
@@ -223,3 +223,40 @@ links:
 - Pinned `grafana/k6:2.3.0` container; no host install or application runtime dependency. Windows 10 Docker host: 4 CPUs/~3.83 GiB; temporary `atlas_gate4` database isolated from existing `atlas`.
 - Preflight: 1 VU/60s, 1,265 sessions, p95 97.56ms; derived fixed preallocated VUs=1. Baseline: 1,661 paid, 6 dropped iterations, 0 HTTP failures. Queue configuration: 1,667 sessions, 167 paid, 1,500 inventory-unavailable, 0 WAITING/409. DB snapshots preserved `available + reserved + claimed = initial_capacity`.
 - Finding: the K=1 profile did not produce actual queue contention because session p95 (57ms) remained well below the ~360ms arrival interval with one VU. This run is a local diagnostic only; higher-rate queue pressure requires a separate approved profile. Detailed results and commands: [EXP-013 report](../08-experiments/EXP-013-gate4-20-minute-calibration.md). No production/load claim.
+
+## 2026-11-03 — PR #90 patch·문서·CI 회고
+
+- **Patch 적용 실수:** 첫 경로 선택이 일치하지 않아 patch가 거부됨. 다음 수정에서는 범위가 넓은 line range를 사용해 `InventoryServiceImpl`에 중복 block이 생겼고 파서 경고 발생. 즉시 해당 구간을 다시 읽어 중복을 제거하고 전체 Gradle 검증 통과. 원인: 대상 경로·줄 범위를 patch 전에 재확인하지 않음.
+- **이름 변경 누락:** inventory 이름 변경 뒤 Application integration test에 `InventoryResponse`가 남았고 service 구현에 이전 repository field 이름이 남음. repository 전체 검색에서 발견해 수정; 전체 Gradle check로 확인. Agent 결과만으로 변경 완료를 간주하면 안 됨.
+- **PR template 위반:** PR 본문을 먼저 교체한 뒤 template/validator를 확인해 PR checklist가 실패. 필수 검토 checkbox 수, Issues 항목의 plain-text Closes와 Issue link, 요구사항·결정 ID의 직접 링크가 빠진 원인. template과 `docs-lint.yml` 검사 규칙을 확인해 본문을 수정; 이후 checklist는 통과.
+- **Issue/PR 기록 불일치:** Issue에 중복 `## 목적` heading, 제거된 `PoolId` 경로, 이전 `CONTRIBUTING.md` 안내와 오래된 검증 수치가 남아 있었음. PR에도 오래된 폴더 범위·영어 위주 문구가 섞여 있었음. 본문을 하나의 최신 설명으로 정리하고 제목·링크·검증 수치 갱신.
+- **작업 트리 확인:** Agent가 일부 파일을 stage한 상태에서 추가 수정이 이어져 index와 working tree가 혼재. staged/unstaged diff를 각각 확인하고 의도된 경로만 커밋; 작업 유실은 없었음.
+- **경계 결정:** `campaign-module`이 Seller·Seller-SKU·Campaign을 함께 소유하는 범위는 이름만 보고 임의 분리하지 않음. 현재 독립된 업무 흐름/API/data ownership 근거가 없어 사용자 선택대로 유지하고 [D-054](../00-governance/decision-log.md)로 기록.
+- **반복된 지침 누락 위험:** 사용자가 이미 요청한 자연스러운 한국어, 한 번에 묶은 결정 질문, 확정된 선택 재질문 금지, Issue/PR 과분할 금지를 다시 강조한 상태. 기존 AGENTS에는 작업 묶음 원칙은 있었지만 질문을 묶고 확정 결정을 재확인하지 않는 규칙이 없었음. 해당 기준과 금지된 `view` command 사용 금지를 [AGENTS.md](../../AGENTS.md#재발-방지-기준)에 명시.
+- **재발 방지 기준:** patch 재확인, rename 전체 호출처 검색, 원격 PR body 사전 검증, branch commit link 확인, staged/unstaged 분리를 [AGENTS.md의 재발 방지 기준](../../AGENTS.md#재발-방지-기준)에 고정.
+- **검증:** 최종 코드 변경에서 JDK 25/PostgreSQL 포함 `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 통과, 테스트 29개. Markdown lint와 상대 링크 검사 통과. PR checklist의 첫 실패는 문서 형식 문제이며 코드 테스트 실패가 아님.
+- **추적:** [Issue #89](https://github.com/Neo1228/ATLAS/issues/89), [PR #90](https://github.com/Neo1228/ATLAS/pull/90), [D-049~D-054](../00-governance/decision-log.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md).
+
+## 2026-11-03 — V6 clean-start 결정 · D-055
+
+- 소유자 결정: legacy Campaign data mapping·aggregation·backfill·preservation 없이 fresh start만 지원한다. V1–V5 application table에 행이 있으면 V6는 DDL 전에 실패하고 기존 data/schema를 변경하지 않는다. 비어 있는 schema만 새 Seller-SKU schema로 바꾼다.
+- 기존 local data가 필요하면 애플리케이션 밖에서 명시적으로 보관·reset한다. 앱은 자동 삭제하지 않는다. 이유는 추정 mapping이 unrelated inventory/K/queue를 결합할 수 있고, silent reset은 기존 데이터를 잃게 하기 때문이다.
+- [D-049](../00-governance/decision-log.md)의 Seller-SKU ownership, shared stock, global FIFO/K, Campaign별 TTL/idempotency는 유지한다. legacy migration 방법만 [D-055](../00-governance/decision-log.md)·[ADR-0006](../06-decisions/adr/ADR-0006-v6-clean-start.md)로 supersede; D-049 당시 기록은 수정하지 않음.
+
+## 2026-11-03 — UUIDv7 ID 전략 · D-056
+
+- EXP-014의 isolated local PostgreSQL 18.6 측정 결과와 한계를 검토해 소유자가 UUIDv7 PK/public UUID ID를 선택. UUID column/API/FK 계약은 유지하며 BIGINT hybrid나 별도 generator는 추가하지 않는다.
+- UUIDv7 parent PK index는 3,178,496 bytes, UUIDv4는 4,407,296 bytes(27.9% 차이). Parent insert p50은 211.49/212.64 ms, combined rows/s p50은 183,503.1/184,479.5로 거의 같음. 100k parent/200k child의 단일-host 측정이며 ID 생성·commit 비용 제외; set-based 조회는 parent sequential scan을 사용. Production 결과가 아니다.
+- Hibernate 7.4.13 `VERSION_7`은 `@Incubating`; 전체 Testcontainers/JPA 검증에서 Seller/Campaign/Ticket/Order 및 PaymentAttempt `order_id` PK version 7 생성 확인. `PaymentAttempt.attempt_id`는 unique non-PK ID라 UUIDv4 유지. 통합 검증은 통과했지만 generator API의 incubating caveat는 남음.
+- 결정·근거: [D-056](../00-governance/decision-log.md), [ADR-0007](../06-decisions/adr/ADR-0007-uuidv7-identifiers.md), [EXP-014](../08-experiments/EXP-014-id-strategy-comparison.md), [REF-104~107](../00-governance/reference-register.md).
+
+## 2026-11-03 — Clean-start·UUIDv7 실행 회고 · PR #90
+
+- **Migration scope:** Review에서 완전한 Campaign→Seller mapping도 소유권이 틀리면 재고·K·queue를 무관하게 병합할 수 있음을 발견. 사용자가 legacy data 보존을 거부해 mapping/backfill을 삭제하고 clean-start 정책으로 전환 ([D-055](../00-governance/decision-log.md), [ADR-0006](../06-decisions/adr/ADR-0006-v6-clean-start.md)). Template 삭제. V6는 nonempty V1–V5 schema를 DDL 전에 거부; 빈 schema만 재생성.
+- **Migration test correction:** Testcontainers URL에 이미 `?loggerLevel=OFF`가 있는데 `?currentSchema=`를 추가해 schema 지정이 무시됨. `&currentSchema=`로 수정. 테스트용 synthetic Campaign ID를 허용하지 않던 새 Inventory→Campaign FK는 이전 schema/Inventory ownership과 맞지 않아 제거; Campaign attribution은 유지.
+- **UUIDv7 test correction:** Hibernate UUID annotation이 ArchUnit allowlist에 없어 실패; JPA entity generator package만 허용. Order lock helper에서도 `Supplier`를 사용했으나 ID supplier 제거 중 import가 누락되어 compile 실패; import 복원 후 full check 통과.
+- **Benchmark script corrections:** PostgreSQL 18은 `round(double precision, integer)` overload를 제공하지 않고 PL/pgSQL loop의 `strategy` alias 충돌도 발생. numeric cast와 명시 alias 적용 후 disposable PostgreSQL 18.6 benchmark 완료. 실패한 초기 실행은 측정값으로 사용하지 않음.
+- **문서 lint correction:** superseded plan blockquote와 heading 사이 형식으로 MD028 발생; blockquote 종료와 간격 수정.
+- **검증:** `./gradlew --no-daemon check :application-module:bootJar --rerun-tasks` 성공. JDK 25/PostgreSQL/Testcontainers 포함 27 tests, 실패·오류·skip 0. Markdown lint 38개 파일 오류 0, 상대 링크 37개 문서 전체 확인.
+- **DB 안전성:** 비교는 격리한 `atlas_id_bench`에서만 수행하고 container 제거. 기존 `atlas` DB에는 연결·변경하지 않음. 100k parent/200k child의 local 결과이며 production 추론 없음.
+- **재발 방지:** agent scope·branch 확인, SQL의 version-specific execution, raw results와 한계 기록을 [AGENTS.md](../../AGENTS.md#재발-방지-기준)에 고정. [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)·[PR #90](https://github.com/Neo1228/ATLAS/pull/90).

@@ -54,4 +54,4 @@ links:
 - [PR Template](../../.github/PULL_REQUEST_TEMPLATE.md) 필수.
 - 같은 목적의 변경은 PR 하나로 묶음. 질문·metric·commit마다 PR 생성 금지.
 - 목적·위험·배포/복구 경계가 독립될 때만 분리.
-- Markdown lint와 PR checklist 통과 후 병합. Checklist는 checkbox와 Issue link/close 형식을 검사. 보호 설정은 [CONTRIBUTING](../../CONTRIBUTING.md) 참조.
+- PR 연결·close 규칙은 [AGENTS.md의 GitHub 작업 및 변경 관리](../../AGENTS.md#github-작업-및-변경-관리).

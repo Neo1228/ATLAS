@@ -6,8 +6,8 @@ owner: Project Owner
 updated: 2026-11-03
 links:
   requirements: [FR-001, FR-002, FR-003, NFR-001, NFR-002]
-  adr: [ADR-0001, ADR-0002]
-  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013]
+  adr: [ADR-0001, ADR-0002, ADR-0007]
+  experiments: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005, EXP-006, EXP-007, EXP-008, EXP-009, EXP-010, EXP-011, EXP-012, EXP-013, EXP-014]
 ---
 # 실험 레지스트리
 
@@ -45,5 +45,6 @@ Proposed verification sequence ([D-018](../00-governance/decision-log.md), △ P
 | EXP-011 | [D-034/D-039](../00-governance/decision-log.md) 기준 active ticket의 same key·same payload retry가 기존 ticket/sequence를 재사용하고 payload 변경은 거절되는지 확인. Expiry 뒤 새 key로 재입장하면 새 unique sequence가 tail에 발급되는지, 동시 admission·restart 뒤에도 committed order와 ticket이 보존되는지 검증. | Campaign counter row + ticket 단일 transaction이 설계 baseline. Key scope/retention, payload 비교 필드, expiry trigger/duration, exact schema, lock timeout/deadlock recovery 미정 ([Q-003](../00-governance/assumptions-and-open-questions.md)). |
 | EXP-012 | [D-037](../00-governance/decision-log.md) 기준 PostgreSQL DB-first baseline을 만든 뒤, load test에서 bottleneck이 확인된 경우에만 별도 queue/cache 대안 비교. 같은 offered workload에서 sessions/s, stage RPS, resolved TPS, p95/p99, errors, DB connection/lock pressure, queue age, invariant 정합성, 운영 비용 측정. | Gate 4 후보. 별도 store는 미선택. Production SLO pass/fail 기준 없음. 실행 가능한 baseline과 승인된 환경이 준비되기 전 실행 금지. |
 | EXP-013 | Calibrate the existing Buyer flow at the selected 1× rate in a normal-stock baseline and a 10%-stock/K=1 queue configuration; measure dropped iterations, outcomes, latency and inventory invariants. | Windows 10/Docker (4 CPUs/~3.83 GiB), k6 `2.3.0`, 10m/profile. Baseline: 1,661 paid, 6 dropped. Queue: 167 paid, 1,500 stockouts, WAITING/409=0; inventory conservation held. No actual queue contention or capacity claim. [Report](EXP-013-gate4-20-minute-calibration.md), [Issue #81](https://github.com/Neo1228/ATLAS/issues/81). |
+| EXP-014 | Compare UUIDv4 PK/public ID, UUIDv7 PK/public ID, and BIGINT identity PK + UUIDv7 public ID on PostgreSQL 18 using 100k parents/200k children; five randomized insert and set-query runs. Owner selected UUIDv7 PK/public UUID IDs ([D-056](../00-governance/decision-log.md), [ADR-0007](../06-decisions/adr/ADR-0007-uuidv7-identifiers.md)): UUIDv7 parent PK index 3,178,496 bytes vs UUIDv4 4,407,296; parent insert p50 211.49 vs 212.64 ms; combined rows/s p50 183,503.1 vs 184,479.5. BIGINT hybrid showed no combined-throughput advantage. | Local result only; generation/commit excluded, raw timing variance and resource contention uncertain. Set-based lookup used parent sequential scans. Testcontainers/JPA verified Hibernate UUIDv7 PK generation in actual entity flows; Hibernate generator remains incubating. No production claim. [Report](EXP-014-id-strategy-comparison.md), [SQL](EXP-014-id-strategy-comparison.sql). |
 
 실험 기록에는 요구사항·불변조건, 완료 기준, 환경, 명령, 반복 횟수, 지표, 교란 요인, 한계를 포함. 형식: [실험 기록 양식](TEMPLATE.md).

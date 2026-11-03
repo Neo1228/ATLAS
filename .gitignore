@@ -5,4 +5,6 @@
 !.env.example
 .gradle/
 build/
+.openidea/
+**/bin/
 *.class

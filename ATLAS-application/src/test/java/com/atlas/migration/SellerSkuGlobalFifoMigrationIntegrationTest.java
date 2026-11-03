@@ -1,0 +1,159 @@
+package com.atlas.migration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.UUID;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.FlywayException;
+import org.flywaydb.core.api.MigrationVersion;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+@Testcontainers
+class SellerSkuGlobalFifoMigrationIntegrationTest {
+    @Container
+    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
+
+    private JdbcTemplate jdbc;
+    private String schema;
+
+    @BeforeEach
+    void prepareLegacySchema() {
+        schema = createSchema();
+        jdbc = jdbcForSchema(schema);
+        flyway(schema, MigrationVersion.fromVersion("5")).migrate();
+    }
+
+    @Test
+    void emptyLegacySchemaBecomesFreshSellerSkuSchema() {
+        flyway(schema, null).migrate();
+
+        assertThat(tableExists(jdbc, "seller")).isTrue();
+        assertThat(tableExists(jdbc, "seller_sku")).isTrue();
+        assertThat(tableExists(jdbc, "campaign")).isTrue();
+        assertThat(tableExists(jdbc, "admission_counter")).isTrue();
+        assertThat(tableExists(jdbc, "admission_ticket")).isTrue();
+        assertThat(tableExists(jdbc, "inventory_pool")).isTrue();
+        assertThat(tableExists(jdbc, "inventory_reservation")).isTrue();
+        assertThat(tableExists(jdbc, "purchase_order")).isTrue();
+        assertThat(tableExists(jdbc, "payment_attempt")).isTrue();
+        assertThat(columnExists(jdbc, "campaign", "seller_id")).isTrue();
+        assertThat(columnExists(jdbc, "campaign", "max_active_checkouts")).isFalse();
+        assertThat(columnExists(jdbc, "admission_ticket", "seller_id")).isTrue();
+        assertThat(columnExists(jdbc, "inventory_pool", "seller_id")).isTrue();
+        assertThat(columnExists(jdbc, "inventory_reservation", "seller_id")).isTrue();
+        assertThat(columnExists(jdbc, "purchase_order", "seller_id")).isTrue();
+        assertThat(columnExists(jdbc, "payment_attempt", "payment_phase")).isTrue();
+        assertThat(tableExists(jdbc, "campaign_seller_backfill")).isFalse();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
+                Integer.class, schema)).isEqualTo(10); // nine application tables plus Flyway history
+    }
+
+    @Test
+    void refusesRowsInEveryLegacyApplicationTableWithoutMutation() {
+        for (String populatedTable : new String[]{
+                "campaign", "admission_counter", "admission_ticket", "inventory_pool",
+                "inventory_reservation", "purchase_order", "payment_attempt"}) {
+            String isolatedSchema = createSchema();
+            JdbcTemplate isolatedJdbc = jdbcForSchema(isolatedSchema);
+            flyway(isolatedSchema, MigrationVersion.fromVersion("5")).migrate();
+            seedLegacyRow(isolatedJdbc, populatedTable);
+
+            assertThatThrownBy(() -> flyway(isolatedSchema, null).migrate())
+                    .isInstanceOf(FlywayException.class)
+                    .hasStackTraceContaining("clean-start database");
+
+            assertThat(isolatedJdbc.queryForObject("SELECT COUNT(*) FROM " + populatedTable, Integer.class))
+                    .isEqualTo(1);
+            assertThat(columnExists(isolatedJdbc, "campaign", "seller_id")).isFalse();
+            assertThat(columnExists(isolatedJdbc, "campaign", "max_active_checkouts")).isTrue();
+            assertThat(tableExists(isolatedJdbc, "seller")).isFalse();
+            assertThat(tableExists(isolatedJdbc, "campaign_seller_backfill")).isFalse();
+            assertThat(isolatedJdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
+                    Integer.class, isolatedSchema)).isEqualTo(8); // seven legacy tables plus Flyway history
+            assertThat(isolatedJdbc.queryForObject(
+                    "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '6' AND success",
+                    Integer.class)).isZero();
+        }
+    }
+
+    private void seedLegacyRow(JdbcTemplate target, String table) {
+        UUID campaignId = UUID.randomUUID();
+        if (table.equals("campaign") || table.equals("admission_counter") || table.equals("admission_ticket")
+                || table.equals("inventory_reservation")) {
+            target.update("INSERT INTO campaign (campaign_id, sku_id, status, queue_ticket_ttl_seconds, "
+                    + "max_active_checkouts, created_at) VALUES (?, 'sku', 'OPEN', 300, 1, CURRENT_TIMESTAMP)",
+                    campaignId);
+        }
+        switch (table) {
+            case "campaign" -> { }
+            case "admission_counter" -> target.update(
+                    "INSERT INTO admission_counter (campaign_id, last_sequence) VALUES (?, 0)", campaignId);
+            case "admission_ticket" -> target.update(
+                    "INSERT INTO admission_ticket (ticket_id, campaign_id, sku_id, buyer_ref, idempotency_key, "
+                            + "sequence, status, created_at, checkout_slot_held) "
+                            + "VALUES (?, ?, 'sku', 'buyer', ?, 1, 'WAITING', CURRENT_TIMESTAMP, FALSE)",
+                    UUID.randomUUID(), campaignId, UUID.randomUUID().toString());
+            case "inventory_pool" -> target.update(
+                    "INSERT INTO inventory_pool (campaign_id, sku_id, initial_capacity, available, reserved, claimed) "
+                            + "VALUES (?, 'sku', 1, 1, 0, 0)", UUID.randomUUID());
+            case "inventory_reservation" -> {
+                target.update("INSERT INTO inventory_pool (campaign_id, sku_id, initial_capacity, available, reserved, claimed) "
+                        + "VALUES (?, 'sku', 1, 1, 0, 0)", campaignId);
+                target.update("INSERT INTO inventory_reservation (order_id, campaign_id, sku_id, quantity, status) "
+                        + "VALUES (?, ?, 'sku', 1, 'RESERVED')", UUID.randomUUID(), campaignId);
+            }
+            case "purchase_order" -> target.update(
+                    "INSERT INTO purchase_order (order_id, campaign_id, ticket_id, buyer_ref, sku_id, state, "
+                            + "checkout_expires_at, created_at, updated_at) "
+                            + "VALUES (?, ?, ?, 'buyer', 'sku', 'RESERVED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+            case "payment_attempt" -> target.update(
+                    "INSERT INTO payment_attempt (order_id, attempt_id, state, payment_phase, authorization_active) "
+                            + "VALUES (?, ?, 'NOT_STARTED', 'AUTHORIZATION', FALSE)", UUID.randomUUID(), UUID.randomUUID());
+            default -> throw new IllegalArgumentException("Unexpected legacy table: " + table);
+        }
+    }
+
+    private String createSchema() {
+        String newSchema = "seller_sku_test_" + UUID.randomUUID().toString().replace("-", "");
+        JdbcTemplate admin = new JdbcTemplate(new DriverManagerDataSource(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+        admin.execute("CREATE SCHEMA " + newSchema);
+        return newSchema;
+    }
+
+    private JdbcTemplate jdbcForSchema(String targetSchema) {
+        return new JdbcTemplate(new DriverManagerDataSource(
+                POSTGRES.getJdbcUrl() + (POSTGRES.getJdbcUrl().contains("?") ? "&" : "?") + "currentSchema=" + targetSchema,
+                POSTGRES.getUsername(), POSTGRES.getPassword()));
+    }
+
+    private boolean tableExists(JdbcTemplate target, String table) {
+        return Boolean.TRUE.equals(target.queryForObject("SELECT to_regclass(?) IS NOT NULL", Boolean.class, table));
+    }
+
+    private boolean columnExists(JdbcTemplate target, String table, String column) {
+        return target.queryForObject("SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?",
+                Integer.class, table, column) > 0;
+    }
+
+    private Flyway flyway(String targetSchema, MigrationVersion target) {
+        var configuration = Flyway.configure()
+                .dataSource(jdbcForSchema(targetSchema).getDataSource())
+                .schemas(targetSchema)
+                .defaultSchema(targetSchema)
+                .locations("classpath:db/migration");
+        if (target != null) configuration.target(target);
+        return configuration.load();
+    }
+}
