@@ -78,6 +78,6 @@ Gradle module 의존은 한 방향이며 각 module의 `build.gradle`에서 확�
 7. Fake payment 제출: `POST /api/orders/{orderId}/payment`
 8. 상태 확인·복구: `GET /api/orders/{orderId}`, `POST /api/orders/{orderId}/reconcile`
 
-같은 `(sellerId, skuId)`를 참조하는 Campaign은 재고 pool과 FIFO/K를 공유. Ticket TTL과 idempotency scope는 Campaign 기준. `sellerId`는 data identity일 뿐 인증·권한 검사가 아니며, tenant isolation을 제공하지 않음. 전체 결정은 [D-049](docs/00-governance/decision-log.md), [ADR-0005](docs/06-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) 참조.
+같은 `(sellerId, skuId)`를 참조하는 Campaign은 재고 pool과 FIFO/K를 공유. Ticket TTL과 idempotency scope는 Campaign 기준. `sellerId`는 data identity일 뿐 인증·권한 검사가 아니며, tenant isolation을 제공하지 않음. 현재 변경은 [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)와 [PR #90](https://github.com/Neo1228/ATLAS/pull/90)에서 추적.
 
 실제 결제·Buyer 인증·Tenant 격리·배포·성능 보장은 미구현. 장기 도메인 범위는 [Project Charter](docs/00-governance/project-charter.md), [Requirements Index](docs/02-requirements/requirements-index.md), 미결정 사항은 [Q-002/Q-003/Q-007/Q-010](docs/00-governance/assumptions-and-open-questions.md) 참조.

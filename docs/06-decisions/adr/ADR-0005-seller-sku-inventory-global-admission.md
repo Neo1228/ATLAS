@@ -1,11 +1,11 @@
-# ADR-0005: Seller-SKU 재고와 global admission
+# ADR-0005: Seller-SKU 공유 재고와 전역 FIFO/K
 
 - 상태: ✓ Accepted
 - 날짜: 2026-11-03
 - 담당자: Project Owner
 - 관련 결정: [D-049](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-001/FR-004](../../02-requirements/requirements-index.md)
-- 추적: [Issue #89](https://github.com/Neo1228/ATLAS/issues/89)
+- 추적: [Issue #89](https://github.com/Neo1228/ATLAS/issues/89), [PR #90](https://github.com/Neo1228/ATLAS/pull/90)
 
 ## 배경과 문제
 
@@ -86,5 +86,5 @@ flowchart LR
 ## 참고 자료
 
 - [REF-023](../../00-governance/reference-register.md): Shopify reserve/claim consistency 사례; MySQL/location/high-scale 구조를 복사하지 않음.
-- [REF-101](../../00-governance/reference-register.md): Alibaba Cloud flash-sale 사례에서 upstream filtering, inventory deduction, asynchronous order persistence를 검토. Redis/RocketMQ/cloud-scale design과 throughput claim은 채택하지 않음.
-- [REF-102/103](../../00-governance/reference-register.md): Meituan queue modeling/optimization에서 ordering·parallelism trade-offs를 검토. Global cross-Campaign FIFO/K는 외부 자료 권고가 아니라 owner 결정.
+- [REF-101](../../00-governance/reference-register.md): Alibaba Cloud Community의 Redis Snap-Up 사례에서 재고 차감 시점과 timeout release trade-off를 검토. Redis 구조·scale 수치는 적용하지 않음.
+- [REF-102/103](../../00-governance/reference-register.md): Meituan의 queue 모델·최적화 글에서 ordering/parallelism trade-off를 검토. Campaign 간 global FIFO/K는 외부 자료의 권고가 아니라 owner 결정.
