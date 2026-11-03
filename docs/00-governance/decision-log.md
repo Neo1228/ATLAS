@@ -89,5 +89,3 @@ D-029는 timer 시작, AUTHORIZE 제출 경계, expiry UX를 정함. Production 
 D-027은 release 조건만 확정. Inventory TTL·PayPal deadline·retry/key retention·escalation/compensation 수치는 [Q-004/Q-005/Q-009](assumptions-and-open-questions.md)에서 OPEN.
 
 D-026은 초기 AUTHORIZE → CAPTURE 순서와 claim 기준만 결정. TTL/cancel recovery는 [D-027](decision-log.md)/[Q-004/Q-005](assumptions-and-open-questions.md) 참조. 수치·retry/retention·compensation OPEN. 구현 승인 아님.
-
-✓ Gate 0/1 complete. Gate 2 current Buyer journey accepted. Gate 3 design and report-only capacity envelope recorded. Current-flow local runtime approved; implementation is tracked in [Issue #72](https://github.com/Neo1228/ATLAS/issues/72). Deployment, live payment, production SLO and capacity claims remain unapproved.

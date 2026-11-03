@@ -11,7 +11,7 @@ links:
 ---
 
 # 마일스톤 로그
-이 문서는 변경 이력이다. 현재 상태와 다음 단계는 [Roadmap](roadmap.md) 및 [Session Handoff](session-handoff.md)을 참조한다.
+이 문서는 delivery history다. 현재 gate와 다음 approved stage는 [Roadmap](roadmap.md); 상세 측정은 각 EXP report를 참조한다.
 
 ## 2026-10-29 — Gate 0 문서 기반
 - ✓ Gate 0 문서/거버넌스 검토 승인. Gate 1 discovery 시작; 구현/기술 선택은 별도 승인 대상.
@@ -198,7 +198,7 @@ links:
 ## 2026-11-02 — 도메인별 Gradle 모듈 재구성
 - [D-047](../00-governance/decision-log.md)/[ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md): 기존 Campaign, Admission, Inventory, Order, Payment 소유 경계를 유지하고 `application-module` + 다섯 `*-module`로 소스·의존을 재배치. 단일 Spring Boot deployment·PostgreSQL schema·기존 public API 흐름은 유지.
 - `internal` package를 제거하고 책임별 `.service`/`.repository`/`.provider`로 이동. HTTP controller·설정·migration은 `application-module`. 기존 `*Command` 단순 입력 record는 `*Request`로 이름 정리; CQRS dispatcher/handler/event bus를 만들지 않음.
-- 각 Gradle module root README와 Repository README, 문서 인덱스·AGENTS·ADR·Decision Log·Roadmap·Session Handoff를 갱신.
+- 각 Gradle module root README와 Repository README, 당시 문서 인덱스·AGENTS·ADR·Decision Log·Roadmap·delivery notes를 함께 갱신.
 - 검증: `./gradlew check -x :application-module:test` 통과. Campaign/Admission unit, Spring Modulith `ModuleBoundaryTest`, API exception contract test 통과. 전체 Testcontainers test는 Docker client unavailable로 Buyer flow, Inventory concurrency, Payment suite가 초기화 실패. `:application-module:bootJar` 성공; 다섯 domain JAR와 migration entries 확인. 재구성 뒤 Buyer HTTP/PostgreSQL smoke 미실행, production/load claim 없음.
 - 외부 근거: Google Cloud·Gradle·Spring·PostgreSQL 공식 문서, Alibaba COLA 작성자, Meituan 기술팀 사례. 적용 범위·한계는 [REF-087/089/092/094](../00-governance/reference-register.md), [REF-056/057/073](../00-governance/reference-register.md), [ADR-0003](../06-decisions/adr/ADR-0003-gradle-module-boundaries.md)에 정리.
 

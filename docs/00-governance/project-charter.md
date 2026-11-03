@@ -35,8 +35,7 @@ links:
 ## 초기 제한 — ✓ Confirmed
 - 실제 결제·고객 개인정보·판매사 지급 제외. Sandbox와 합성/가명 데이터만 사용.
 - 주문 상태와 PSP 상태 분리. 내부 정산과 실제 자금 이동 분리.
-- Modular Monolith First와 현재 Buyer 흐름의 module/data 기준 승인 ([ADR-0001](../06-decisions/adr/ADR-0001-architecture-style.md), [D-037~D-042](decision-log.md)). Local runtime 구현은 [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) 범위에서 승인. Production schema/lock recovery, live provider, deployment는 별도 결정 대상.
-- Gate 2 Buyer 기준과 local current-flow runtime만 승인. Live payment·cloud deployment·production capacity/SLO는 승인 범위 밖.
+- Gate 2 Buyer criteria와 local current-flow runtime만 승인 ([D-037~D-042](decision-log.md), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72)). Live payment, cloud deployment, production schema/lock recovery, capacity·SLO는 별도 승인 대상.
 
 ## 성공 기준 — △ Proposed
 - 정책·invariant를 검증 가능한 시나리오에 연결.
