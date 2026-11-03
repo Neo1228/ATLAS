@@ -1,0 +1,159 @@
+# 요구사항 인덱스
+
+- 승인 기준: FR-001/FR-002/NFR-002의 Gate 2 Buyer 흐름. Seller-SKU 공유 재고·전역 FIFO는 [D-049](../00-governance/decision-log.md), V6 새로 시작 안전 조건은 [D-055](../00-governance/decision-log.md) 참조.
+- 변경 원칙: Gate 2 기준은 소급 변경하지 않음.
+- 미정: 운영 목표·우선순위. FR-003 정산과 NFR-001 보안은 제안 상태.
+
+| ID | 유형 | 상태 | 요구사항 | 우선순위 | 연결 |
+|---|---|---|---|---|---|
+| FR-001 | 기능 | ✓ Gate 2 기준 | Seller가 SKU를 소유합니다. Campaign은 Seller-SKU를 참조하고 재고·FIFO/K를 공유합니다. 초기 시나리오는 수량형 SKU, 예약당 1개, 판매 시작 후 적격 요청만 대기열에 진입하는 방식입니다. `sellerId`는 데이터 식별자이며 인증 수단이 아닙니다. | 미정 | [Q-002/Q-003/Q-007/Q-010](#assumptions-and-open-questions), [BR-001/002](#business-rules-and-domain-invariants), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) |
+| FR-002 | 기능 | ✓ Gate 2 기준 | PSP 요청 전에 재고를 hold합니다. AUTHORIZE → CAPTURE 순서이며, capture 성공이 확인된 뒤 재고를 claim합니다. 결과가 미확정이면 재고 hold와 같은 attempt를 유지합니다. 로컬 시험 시간은 10분이며 Fake PSP만 사용합니다. | 미정 | [Q-004/Q-005/Q-008](#assumptions-and-open-questions), [BR-003/INV-003](#business-rules-and-domain-invariants), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) |
+| FR-003 | 기능 | △ 제안 | PSP 거래 대조, 내부 정산 원장, 수수료, 정정, 감사 이력. 환불 실행이나 판매사 지급 승인을 뜻하지 않습니다. | 미정 | [Q-002/Q-006](#assumptions-and-open-questions) |
+| FR-004 | 기능 | ✓ PR #90 병합 완료 | Seller UUID를 사용합니다. Seller-SKU 등록 시 `initialStock`과 전역 `maxActiveCheckouts`를 설정합니다. V6는 새로 시작하는 방식만 지원합니다. V1–V5 application table에 행이 있으면 DDL 전에 실패하며 데이터·schema를 변경하지 않습니다. mapping/backfill은 하지 않습니다. 필요한 data는 앱 밖에서 보관·초기화합니다. `sellerId`는 인증이나 tenant 격리 수단이 아닙니다. | 미정 | [D-049/D-055](../00-governance/decision-log.md), [Q-002/Q-003/Q-007](#assumptions-and-open-questions), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) |
+| NFR-001 | 비기능 | △ 제안 | Tenant 간 데이터·권한 격리를 검증해야 합니다. 위협 경계는 미정입니다. | 미정 | [Q-007](#assumptions-and-open-questions) |
+| NFR-002 | 비기능 | ✓ Gate 2 보고 profile | 전체 Buyer 흐름을 대상으로 60분간 합성 session 10,000건을 기준 부하로 사용하고, 2배·4배 부하도 기록합니다. 보고용이며 운영 SLO나 합격 기준은 아닙니다. metric 계약은 Q-008입니다. | 미정 | [Q-008](#assumptions-and-open-questions), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66) |
+
+<!-- markdownlint-disable MD033 -->
+
+<a id="project-context-and-scope"></a>
+
+## 프로젝트 배경과 범위
+
+### 목적과 장기 범위 — ✓ 확정
+- 목적: 재고가 제한된 판매에서 주문·예약·결제·환불·정산의 정합성과 장애 복구를 설계·실험으로 살펴보는 학습 프로젝트.
+- 한계: 운영 성능이나 시장 수요를 입증하지 않음.
+
+| 장기 영역 | 범위 |
+|---|---|
+| A. 결제 신뢰성 | 승인·청구, webhook, retry, idempotency, 환불, 불확실한 결제 결과와 복구 |
+| B. 한정판매 | Tenant·판매자, Campaign, 대기열 진입, 재고 예약, 주문 |
+| C. 정산·대조 | 거래 대조, 수수료, 내부 원장, 정정, 감사 이력 |
+
+장기 범위와 현재 경계:
+- 각 영역은 단계적으로 다룰 장기 범위. 향후 PSP 후보는 PayPal Sandbox이며 Fake PSP는 장애 상황을 흉내 낼 뿐 PayPal 동작을 재현하지 않음.
+- Gate 2의 단일 SKU 구매 흐름은 첫 검증 시나리오이지 전체 제품 범위가 아님.
+- 실제 인터뷰·거래·시장 검증은 없음. 인물 유형은 합성 설정이며 Buyer/Seller 공통 목표도 사용자 선택이지 조사 결과가 아님.
+
+확정된 경계:
+- 합성 또는 가명 데이터만 사용. 실제 결제·고객 개인정보·판매사 지급 제외.
+- 주문 상태와 PSP 작업 상태를 분리. 내부 정산과 실제 자금 이동도 분리.
+- Gate 2 Buyer 기준과 로컬 현재 흐름은 승인. 실제 결제, cloud 배포, 운영 schema·lock 복구, 처리 용량·SLO는 별도 승인 필요.
+- 현재 시나리오는 수량형 SKU. 지정 좌석·시간대 판매는 제외; 다른 판매 유형과 확장 순서는 미정.
+- `sellerId`는 데이터 식별자일 뿐 인증·인가·Tenant 격리 경계가 아님.
+
+제안된 성공 기준:
+- 정책·불변조건을 검증 가능한 시나리오에 연결.
+- 장애·경합·복구 절차와 한계를 기록.
+- 성능·복구 주장은 환경을 밝힌 반복 측정으로 뒷받침.
+- SLO, RPS, p95/p99 목표는 미정.
+
+<a id="assumptions-and-open-questions"></a>
+
+## 가정과 미결정 사항
+상태: `✓ 해결`, `? 미정`, `△ 가정`(미검증). 기준을 해결해도 세부 경계까지 확정된 것은 아닙니다.
+
+| ID | 상태 | 질문·경계 |
+|---|---|---|
+| Q-001 | ✓ 해결 | 합성 학습 시나리오로 시작. 실제 시장·사용자 검증 없음. Buyer/Seller 목표는 D-015~D-017에 기록. |
+| Q-002 | ? 미정 | 다수량 구매, 위치·판매 채널별 재고, 판매 중 조정·재입고, claim 후 취소·환불 정책 미정. V6 데이터 전환 안전은 별도 결정 D-055 참조. |
+| Q-003 | ? 미정 | Seller-SKU 전역 FIFO/K, Campaign별 idempotency·ticket TTL, 판매 시작 후 자격 확인은 정함. 운영 K/TTL, tombstone 정리, payload 필드, bot/auth, lock timeout/deadlock 복구는 미정. |
+| Q-004 | ? 미정 | D-025~D-030: PSP 전 hold, AUTHORIZE → CAPTURE, capture 성공 후 재고 claim. 확인된 hold부터 첫 AUTHORIZE 제출까지 합성 10분, 연장 없음. 운영 TTL/SLO/분포는 미정. |
+| Q-005 | ? 미정 | UNKNOWN은 실패가 아닙니다. 새 attempt 전에 같은 attempt를 대조하며 PENDING/UNKNOWN이면 재고 hold를 유지합니다. 비결제와 필요한 authorization void/expiry가 확인된 뒤 release합니다. Fake PSP 대조는 `POST /reconcile`로 호출하며 자동 복구 worker는 없습니다. 앱 재시작 시 Fake PSP 상태는 초기화됩니다. `OrderService`/`PaymentService`의 striped monitor는 한 JVM 안에서만 같은 주문 호출을 조정합니다. ID 충돌로 무관한 호출이 직렬화될 수 있고, 여러 인스턴스 간 lock 공유는 없습니다. 실제 provider idempotency, 자동 retry/복구 책임, 다중 인스턴스 조정, 기한, key 보존, escalation, compensation은 미정. D-042의 합성 Buyer guard는 인증이나 구매 한도가 아닙니다. |
+| Q-006 | ? 미정 | PSP 거래 대조, 내부 정산 원장, 수수료·지급 주기, 보류금, 회계 정정. Provider 환불 실행과 정산 원장 정정은 별도 기능이며 관계·담당·claim 후 재고 영향·정책이 미정. FR-003은 정산 제안이며 환불 지원 승인이 아닙니다. |
+| Q-007 | ? 미정 | `sellerId`는 데이터 식별자이며 인증·인가·Tenant 격리를 제공하지 않습니다. 위협 경계, 개인정보·규제, 지역·통화·세금, 합성 데이터 정책, 외부 노출은 미정. |
+| Q-008 | ? 미정 | 아래 부하 계약 참조. 합성·보고용이며 운영 수요·처리 용량을 뜻하지 않습니다. |
+| Q-009 | ? 미정 | 사용자가 선택한 로컬 stack: Java 25 LTS, Spring Boot 4.1.2/MVC, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Testcontainers 2.0.5와 ArchUnit 1.5.1은 test-scope. Boot 4는 `spring-boot-starter-flyway` 사용. 대안은 결정 로그 참조. CI는 Temurin 25; 운영 JDK vendor/license, database/deployment, PayPal 제품/API는 미정. |
+
+### Q-008 부하 계약 — 보고 전용
+- 기준 부하: 60분 동안 합성 Buyer session 10,000건(약 2.8건/s), 2배·4배 부하(약 5.6/11.1건/s). 전체 Buyer 흐름과 혼합 도착 모델 사용.
+- 유입·처리 session/s와 부하 생성기가 놓친 session/반복 횟수를 기록. 단계별 request RPS도 구분. DB QPS는 query 범위를 측정한 경우에만 기록.
+- 완료된 Buyer session만 업무 TPS에 포함. PENDING/UNKNOWN은 진행 중 또는 backlog로 계산.
+- p95/p99의 측정 경계, 오류, 만료·중단, 대기열·hold 점유, 자원 포화, oversell 불변조건 기록. 합격 SLO나 운영 처리 용량 주장은 없음.
+- 미정: burst 배수·기간, 도착 곡선·think time, 단계별 기간, 동시성, 환경, 수요 근거, 운영 목표.
+
+<a id="business-rules-and-domain-invariants"></a>
+
+## 업무 규칙과 도메인 불변조건
+상태: `✓ 확정 기준`, `? 미정`. 합성 시나리오의 계약이며 실험 결과가 아닙니다.
+
+| ID | 규칙·불변조건 | 상태 | 미정 범위 |
+|---|---|---|---|
+| BR-001 / INV-002 | 판매 시작 후 자격이 있는 요청만 대기열에 진입. Seller-SKU 순번은 유일하고 작은 번호가 먼저 처리. 같은 `(sellerId, skuId)`를 쓰는 Campaign은 제한된 FIFO/K 공유. Queue key/K는 전역, idempotency와 ticket TTL은 Campaign별. 같은 key·payload는 기존 ticket 반환; payload가 다르면 거절. 만료 뒤 새 key로 재진입하면 전역 대기열 끝에 배치. `sellerId`는 인증 경계가 아님. | ✓ 로컬 기준 | 운영 K/TTL, tombstone 정리, payload 필드, bot/auth, lock timeout/deadlock 복구 (Q-003/Q-007) |
+| BR-002 / INV-001 | Seller-SKU 공유 재고 pool, reservation당 1개. 확인된 전이 뒤 `available + reserved + claimed = initial capacity`, 각 값은 0 이상. Hold는 available→reserved, capture 성공은 reserved→claimed. 비결제와 필요한 authorization void/expiry 확인 뒤에만 release. | ✓ 로컬 기준 | 다수량·위치·채널, 조정·재입고, claim 후 취소·환불 (Q-002). PostgreSQL guarded UPDATE/주문별 transaction lock/예약 row lock은 로컬 기준이며 운영 성능 결론이 아님. |
+| BR-003 / INV-003 | PSP 요청 전 hold, capture 성공 후에만 재고 claim. 확인된 hold부터 첫 AUTHORIZE 제출까지 시험 시간 10분, 연장 없음. Capture/void의 PENDING/UNKNOWN이면 재고 hold와 같은 attempt 대조를 유지하며 결과 전 새 attempt 금지. 비결제와 필요한 void/expiry 확인 뒤 release. Fake PSP만 사용. | ✓ Gate 2 복구 기준 | 운영 TTL/SLO, provider deadline, retry/key 보존, escalation/compensation (Q-004/Q-005/Q-008). D-042의 Campaign별 합성 Buyer guard는 신원·보안 기능이 아님. |
+
+로컬 복구·잠금의 한계가 적용되며 운영 환경에 대한 주장은 아닙니다.
+
+```mermaid
+sequenceDiagram
+    actor Buyer as 구매자
+    participant API as Campaign API
+    participant Queue as 대기열 상태
+    Buyer->>API: Campaign 접근
+    API->>API: 판매 시작 여부 확인
+    alt 판매 시작 전
+        API->>API: 진입·순번 발급 안 함
+    else 판매 시작 후
+        API->>API: 자격 확인
+        alt 부적격
+            API->>API: 대기열 진입 안 함
+        else 적격
+            API->>Queue: 진입 처리와 서버 순번 발급
+            Queue-->>API: ticket과 순번
+            API-->>Buyer: ticket과 순번
+            opt 활성 ticket에 같은 key로 재요청
+                Buyer->>API: key와 payload 재전송
+                alt payload 일치
+                    API->>Queue: ticket 조회
+                    Queue-->>API: 기존 ticket과 순번
+                    API-->>Buyer: 기존 ticket과 순번 반환
+                else payload 변경
+                    API-->>Buyer: 거절, 기존 ticket 유지
+                end
+            end
+            opt 만료 후 재진입
+                Buyer->>API: 새 key로 진입
+                API->>Queue: 전역 대기열 끝에 새 순번 부여
+                Queue-->>API: 새 ticket과 순번
+                API-->>Buyer: 새 ticket과 순번 반환
+            end
+        end
+    end
+    Note over Queue: (sellerId, skuId) 기준 Campaign 간 순번은 유일. Counter와 ticket은 한 transaction으로 commit하며 commit된 순서는 재시작 후에도 유지. 경합·lock 복구는 미정.
+```
+
+```mermaid
+stateDiagram-v2
+    state "재고 있음" as Available
+    state "Authorization 완료" as Authorized
+    state "결과 미확정" as Unknown
+    state "Capture 대기" as CapturePending
+    state "Capture 거절" as CaptureDeclined
+    state "Authorization 취소 대기" as VoidPending
+    state "재고 예약(hold)" as Held
+    state "재고 확정(capture 확인)" as Claimed
+    [*] --> Available
+    Available --> Held: 1개 hold 확인, 고정 시간 시작
+    Held --> Available: AUTHORIZE 제출 전 TTL 만료
+    Held --> Unknown: 만료 전에 제출했으나 결과 미확정
+    Authorized --> CapturePending: capture 요청
+    Authorized --> VoidPending: TTL/cancel, capture 미완료
+    CapturePending --> Claimed: capture 완료
+    CapturePending --> CaptureDeclined: 거절 확인
+    CapturePending --> Unknown: 결과 미확정
+    CapturePending --> CapturePending: 처리 대기, 재고 사용 불가
+    CaptureDeclined --> VoidPending: authorization 유효
+    CaptureDeclined --> Available: 비결제 확인, 활성 authorization 없음
+    Unknown --> Claimed: capture 성공 확인
+    Unknown --> CapturePending: capture 대기 확인
+    Unknown --> CaptureDeclined: capture 거절 확인
+    Unknown --> VoidPending: 미청구 확인, authorization 유효
+    Unknown --> Available: 비결제 확인, 활성 authorization 없음
+    Unknown --> Unknown: 같은 operation/attempt 대조
+    VoidPending --> Available: void/만료와 비결제 확인
+    VoidPending --> Claimed: capture 성공 확인
+    VoidPending --> Unknown: void 결과 미확정
+
+```
+
+- Buyer에게 표시하는 timer는 첫 AUTHORIZE 제출 시 끝납니다. 결제 대조나 PSP 작업 deadline은 정의하지 않습니다. 운영 TTL·복구 deadline은 미정.
