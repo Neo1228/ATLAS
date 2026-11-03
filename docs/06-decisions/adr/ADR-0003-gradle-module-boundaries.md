@@ -1,8 +1,8 @@
 # ADR-0003: 도메인 모듈과 계층 경계
 - 상태: ✓ Accepted
-- 날짜: 2026-11-02
+- 날짜: 2026-11-03
 - 담당자: Project Owner
-- 관련 결정: [D-037/D-038/D-047](../../00-governance/decision-log.md)
+- 관련 결정: [D-037/D-038/D-047/D-050](../../00-governance/decision-log.md)
 
 ## 배경
 
@@ -28,6 +28,18 @@ ADR-0001에서 현재 Buyer 흐름의 Campaign, Admission, Inventory, Order/Chec
 | `inventory-module` | Inventory pool/reservation 및 conservation | 없음 |
 | `order-module` | Checkout·order lifecycle orchestration | `admission-module`, `inventory-module`, `payment-module` |
 | `payment-module` | Payment attempts·상태·provider 결과 | 없음 |
+
+### 물리 디렉터리 구성
+
+여섯 Gradle subproject를 `modules/<기존 프로젝트 이름>` 아래에 둔다. `settings.gradle`의 `include` 이름과 logical project path (`:application-module` 등)는 유지하고 `projectDir`만 새 경로로 연결한다. Java package, module dependency, 단일 실행·배포 구조에는 변경 없음.
+
+| 선택지 | 절충 |
+|---|---|
+| 현재처럼 root에 나란히 배치 | 설정이 가장 단순하지만 저장소 root에 module directory가 여럿 노출 |
+| `modules/<기존 이름>`으로 그룹화 — 선택 | root 탐색이 단순해짐. `projectDir` mapping 및 물리 경로 링크 갱신 필요; Gradle task path는 유지 |
+| Gradle logical path도 `modules:<이름>`으로 변경 | task·dependency path까지 바뀌어 불필요한 영향 확대; 미선택 |
+
+Java package root는 D-047의 module/layer 경계와 동일하게 유지. 확인된 중복·미사용 package가 없어 package/class 삭제는 하지 않음. 물리 재배치 근거는 [REF-092](../../00-governance/reference-register.md), 구현·검증은 [PR #90](https://github.com/Neo1228/ATLAS/pull/90).
 
 ### 계층과 데이터 접근
 
