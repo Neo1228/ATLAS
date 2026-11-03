@@ -3,7 +3,7 @@ id: DOC-010
 title: Change Control
 status: Draft
 owner: Project Owner
-updated: 2026-11-02
+updated: 2026-11-03
 links:
   requirements: []
   adr: []
@@ -13,7 +13,7 @@ links:
 # 변경 통제
 - 상태: Draft
 - 담당: Project Owner
-- 갱신일: 2026-11-02
+- 갱신일: 2026-11-03
 
 ## 사용자 승인
 사전 승인 대상:
@@ -35,23 +35,6 @@ links:
 - 자연스러운 한국어 우선. API·transaction 등 정확한 기술 용어는 English 가능; 불필요한 전문 용어·병기 금지.
 - PR 크기는 줄 수가 아닌 독립 검토 가능성으로 결정 ([REF-014/015](reference-register.md)).
 
-## Issue·commit·PR 추적
-- 착수 전 Issue에 문제·trace ID·범위·완료/검증 기준 기록.
-- 같은 목적의 후속 질문·조사는 기존 Issue 댓글로 누적. 관련 PR 병합까지 Issue 유지.
-- 목적·위험·책임자·완료 기준·배포/복구 경계가 독립될 때만 분리. 질문·metric·파일·commit마다 Issue/PR 생성 금지.
-- 관련 Issue와 commit을 하나의 검토 가능한 PR로 묶고, Issue·PR·변경 문서 간 직접 링크 제공.
-- 완료 PR은 plain-text Closes #N, 부분 반영은 Refs #N. 같은 Issues 줄에 Issue URL 연결. Markdown link로 close keyword 감싸지 않음; workflow에서 검사.
-- 작은 논리 변경은 별도 commit. 독립 목적·위험·배포 경계는 별도 PR.
-- 실제 Issue/PR 상태·SHA·checks를 [Milestone Log](../09-delivery/milestone-log.md), [Session Handoff](../09-delivery/session-handoff.md)에 기록.
-
-## Git 안전
-- 공개 이력 재작성은 기본 금지.
-- 승인 예외: 별도 Issue, 대상 SHA·영향, backup ref, --force-with-lease, branch protection 복원 기록.
-- main direct push, 무승인 force push, 작업을 잃을 수 있는 reset/clean 금지.
-- Stage 전후 status/diff 확인. 관련 경로만 stage.
-
-## PR 통합
-- [PR Template](../../.github/PULL_REQUEST_TEMPLATE.md) 필수.
-- 같은 목적의 변경은 PR 하나로 묶음. 질문·metric·commit마다 PR 생성 금지.
-- 목적·위험·배포/복구 경계가 독립될 때만 분리.
-- PR 연결·close 규칙은 [AGENTS.md의 GitHub 작업 및 변경 관리](../../AGENTS.md#github-작업-및-변경-관리).
+## 변경 추적
+- 변경은 관련 요구사항·결정·실패 시나리오와 검증 기준의 SSOT에 연결. 구현·검증·상태 기록은 실제 결과와 일치.
+- 변경 절차와 Git 안전 수칙은 [AGENTS.md의 GitHub 작업 및 변경 관리](../../AGENTS.md#github-작업-및-변경-관리)를 단일 기준으로 사용. Issue/PR 양식은 [Issue forms](../../.github/ISSUE_TEMPLATE/)와 [PR template](../../.github/PULL_REQUEST_TEMPLATE.md), 검증은 [docs-lint workflow](../../.github/workflows/docs-lint.yml)를 따른다.
