@@ -1,19 +1,20 @@
 ---
-id: ADR-0009
+id: ADR-0011
 title: 총액 캡처 정산 원장
 status: Accepted
 owner: Project Owner
 date: 2026-11-04
 links:
-  decisions: [D-064]
+  decisions: [D-066]
   requirements: [Q-006]
 ---
-# ADR-0009: 총액 캡처 정산 원장
+# ADR-0011: 총액 캡처 정산 원장
 
 - 상태: ✓ 확정
 - 날짜: 2026-11-04
-- 결정 ID: D-064
+- 결정 ID: D-066
 - 관련 요구사항: Q-006
+- 관련 Issue: [Issue #115](https://github.com/Neo1228/ATLAS/issues/115)
 
 ## 배경
 
@@ -53,6 +54,6 @@ links:
 
 ## 근거
 
-- [D-064](../../00-governance/decision-log.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
+- [D-066](../../00-governance/decision-log.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions), [Issue #115](https://github.com/Neo1228/ATLAS/issues/115)
 - [ADR-0008: Catalog·Cart·Order 경계](ADR-0008-catalog-cart-order-boundaries.md)
 - [D-056: UUIDv7 식별자](../../00-governance/decision-log.md)

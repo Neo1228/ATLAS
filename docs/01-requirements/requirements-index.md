@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|
 | FR-001 | 기능 | ✓ Gate 2 기준 | Seller가 SKU를 소유합니다. Campaign은 Seller-SKU를 참조하고 재고·FIFO/K를 공유합니다. 초기 시나리오는 수량형 SKU, 예약당 1개, 판매 시작 후 적격 요청만 대기열에 진입하는 방식입니다. `sellerId`는 데이터 식별자이며 인증 수단이 아닙니다. | 미정 | [Q-002/Q-003/Q-007/Q-010](#assumptions-and-open-questions), [BR-001/002](#business-rules-and-domain-invariants), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) |
 | FR-002 | 기능 | ✓ Gate 2 기준 | PSP 요청 전에 재고를 hold합니다. AUTHORIZE → CAPTURE 순서이며, capture 성공이 확인된 뒤 재고를 claim합니다. 결과가 미확정이면 재고 hold와 같은 attempt를 유지합니다. 로컬 시험 시간은 10분이며 Fake PSP만 사용합니다. | 미정 | [Q-004/Q-005/Q-008](#assumptions-and-open-questions), [BR-003/INV-003](#business-rules-and-domain-invariants), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) |
-| FR-003 | 기능 | △ 제안 | PSP 거래 대조, 내부 정산 원장, 수수료, 정정, 감사 이력. 환불 실행이나 판매사 지급 승인을 뜻하지 않습니다. | 미정 | [Q-002/Q-006](#assumptions-and-open-questions) |
+| FR-003 | 기능 | ✓ Gross capture 원장 1차 범위; △ 전체 정산 제안 | 확인된 `CAPTURED` attempt의 OrderItem snapshot gross KRW를 `PSP_CLEARING` 차변·`SELLER_PAYABLE` 대변으로 기록. 내부 원장에 한정; 외부 PSP 대조·수수료·보류·판매자 지급·환불·정정은 제외. | 미정 | [Q-006](#assumptions-and-open-questions), [D-066](../00-governance/decision-log.md), [ADR-0011](../02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md), [Issue #115](https://github.com/Neo1228/ATLAS/issues/115) |
 | FR-004 | 기능 | ✓ PR #90 초기 기준; SKU 정책 소유는 D-061로 조정 | Seller UUID와 V6 clean-start 조건 유지. 당시 Seller-SKU 등록이 `initialStock`과 전역 K를 설정했으나, D-061에 따라 Catalog는 Product/SKU를, Admission은 queue K policy를 소유. V1–V5 application table에 행이 있으면 DDL 전 실패; data mapping/backfill은 하지 않음. `sellerId`는 인증·인가 수단이 아님. | 미정 | [D-049/D-055/D-061](../00-governance/decision-log.md), [Q-002/Q-003/Q-007](#assumptions-and-open-questions), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) |
 | FR-005 | 기능 | ✓ 1차 구현 범위 승인 | 판매자는 Product와 Seller-SKU variant를 등록·조회. 합성 Buyer는 같은 Seller의 여러 SKU/수량을 담은 Cart를 관리하고 한 Order로 checkout. Checkout 시 현재 KRW 가격을 확인해 Order line에 snapshot하고 재고 전체를 원자적으로 예약. 한정판매 Campaign은 별도 판매 경로. | 미정 | [Q-010/Q-011](#assumptions-and-open-questions), [D-060/D-061](../00-governance/decision-log.md), [BR-004/INV-004](#business-rules-and-domain-invariants), [Issue #109](https://github.com/Neo1228/ATLAS/issues/109) |
 | FR-006 | 기능 | ✓ 2차 구현 기준 | Buyer는 이전 terminal Cart Order에서 Reorder 가능. 원본 Order는 변경하지 않음. 현재 Product/SKU와 stock을 한꺼번에 확인하고 Idempotency-Key로 Cart merge를 기록. 기존 Cart가 비어 있지 않으면 명시적 확인 후 같은 SKU quantity 합산, 다른 line 유지. 누락·판매 불가 SKU가 있으면 Cart 변경 없이 전체 거절. Reorder 자체는 재고를 예약하지 않음. | 미정 | [Q-011/Q-012](#assumptions-and-open-questions), [BR-005/INV-005](#business-rules-and-domain-invariants), [D-063](../00-governance/decision-log.md), [Issue #113](https://github.com/Neo1228/ATLAS/issues/113) |
@@ -63,7 +63,7 @@
 | Q-003 | ? 미정 | Seller-SKU 전역 FIFO/K, Campaign별 idempotency·ticket TTL, 판매 시작 후 자격 확인은 정함. 전역 K는 Admission 소유 policy로 구성. 운영 K/TTL, tombstone 정리, payload 필드, bot/auth, lock timeout/deadlock 복구는 미정. |
 | Q-004 | ? 미정 | D-025~D-030: PSP 전 hold, AUTHORIZE → CAPTURE, capture 성공 후 재고 claim. 확인된 hold부터 첫 AUTHORIZE 제출까지 합성 10분, 연장 없음. 운영 TTL/SLO/분포는 미정. |
 | Q-005 | ? 미정 | UNKNOWN은 실패가 아닙니다. 새 attempt 전에 같은 attempt를 대조하며 PENDING/UNKNOWN이면 재고 hold를 유지합니다. 비결제와 필요한 authorization void/expiry가 확인된 뒤 release합니다. Fake PSP 대조는 `POST /reconcile`로 호출하며 자동 복구 worker는 없습니다. 앱 재시작 시 Fake PSP 상태는 초기화됩니다. `OrderService`/`PaymentService`의 striped monitor는 한 JVM 안에서만 같은 주문 호출을 조정합니다. ID 충돌로 무관한 호출이 직렬화될 수 있고, 여러 인스턴스 간 lock 공유는 없습니다. 실제 provider idempotency, 자동 retry/복구 책임, 다중 인스턴스 조정, 기한, key 보존, escalation, compensation은 미정. D-042의 합성 Buyer guard는 인증이나 구매 한도가 아닙니다. |
-| Q-006 | ? 미정 | 1차 내부 캡처 원장 범위는 D-064/ADR-0009로 확정: 확인된 capture gross KRW를 PSP_CLEARING 차변·SELLER_PAYABLE 대변으로 기록. PSP 거래 증빙 대조, 수수료, 보류금, 지급, 환불·회계 정정 및 재고 영향은 미정; FR-003은 외부 PSP 동작이나 실제 송금을 승인하지 않습니다. |
+| Q-006 | ? 미정 | D-066으로 확인된 gross capture의 내부 원장 기록만 승인. PSP 증빙 대조, 수수료·보류·지급·환불·회계 정정·재고 처리 및 실제 송금은 미정. FR-003은 외부 PSP settlement 확인이 아님. |
 | Q-007 | ? 미정 | `sellerId`는 데이터 식별자이며 인증·인가·Tenant 격리를 제공하지 않습니다. 위협 경계, 개인정보·규제, 지역·통화·세금, 합성 데이터 정책, 외부 노출은 미정. |
 | Q-008 | ? 미정 | 아래 부하 계약 참조. 합성·보고용이며 운영 수요·처리 용량을 뜻하지 않습니다. |
 | Q-009 | ? 미정 | 현재 로컬 stack: Java 25 LTS, Spring Boot 4.1.2/MVC, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Testcontainers 2.0.5와 ArchUnit 1.5.1은 test-scope. Boot 4는 `spring-boot-starter-flyway` 사용. 대안은 결정 로그 참조. CI는 Temurin 25; 운영 JDK vendor/license, database/deployment, PayPal 제품/API는 미정. |
@@ -73,15 +73,15 @@
 
 ### Q-006 1차 내부 캡처 원장 (승인 범위)
 
-2026-11-04 소유자 결정(D-064): 확인된 `CAPTURED` 시도마다 원장에 두 항목을 기록합니다. **PSP_CLEARING 차변과 SELLER_PAYABLE 대변에 동일한 gross KRW 금액**을 적습니다.
+2026-11-04 소유자 결정(D-066): 확인된 `CAPTURED` attempt마다 원장에 두 항목 기록. **PSP_CLEARING 차변과 SELLER_PAYABLE 대변에 동일 gross KRW 금액** 사용.
 
 - 금액은 OrderItem의 `unitPriceWon × quantity` snapshot 합계이며, 현재 계약의 단일 Seller 주문을 전제로 합니다.
 - 기록에는 `orderId`, `attemptId`, `sellerId`, KRW 총액과 기록 시각을 남깁니다. `attemptId`는 유일한 원천 키이며, 같은 값의 재시도는 무시하고 payload가 다르면 거절합니다.
 - 이 기록은 캡처 시점의 내부 PSP clearing receivable과 Seller payable을 나타낼 뿐, PSP가 자금을 실제 정산했거나 Seller에게 송금했다는 뜻이 아닙니다.
-- 원장 기록은 주문을 `PAID`로 전이하고 재고를 claim하는 같은 DB 트랜잭션에 포함합니다. 이 처리가 실패하면 주문·재고 변경과 원장 행은 함께 롤백되며 이미 확정된 PaymentAttempt는 남습니다. 재조정 재시도는 동일 시도를 멱등하게 다시 적용합니다.
+- Journal·두 entry·Order `PAID`·inventory claim·fulfillment 초기 row는 같은 post-capture PostgreSQL transaction. PaymentAttempt의 `CAPTURED`는 PSP 응답 후 이미 커밋된 사실; downstream 실패 시 attempt는 유지되고 동일 시도 reconciliation으로 재적용합니다.
 - **비범위:** PSP 거래 증빙 수집·대조, 수수료, 보류금, 지급 일정·실행, 환불, 회계 정정 및 재고 변경. 실제 송금이나 정산 완료 표시는 제공하지 않습니다.
 
-Q-006의 PSP 증빙 원천·매칭 키와 나머지 정산 정책은 계속 미정입니다. 근거와 모듈 경계는 [ADR-0009](../02-decisions/adr/ADR-0009-gross-capture-settlement-ledger.md)를 참조합니다.
+Q-006의 남은 정책은 미정. Ledger 근거와 모듈 경계는 [ADR-0011](../02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md), [Issue #115](https://github.com/Neo1228/ATLAS/issues/115)를 참조합니다.
 
 ### Q-008 부하 계약 — 보고 전용
 - 기준 부하: 소유자 승인 합성 시험 입력([D-033](../00-governance/decision-log.md)) 10,000 session/60분(약 2.8 session/s), 2배·4배(약 5.6/11.1 session/s). 실제 사용자 수요나 운영 부하 예측이 아님. 전체 Buyer 흐름과 혼합 도착 모델 사용.
@@ -105,6 +105,7 @@ Q-006의 PSP 증빙 원천·매칭 키와 나머지 정산 정책은 계속 미�
 | BR-005 | ✓ 2차 구현 기준 | Reorder 대상은 `CART` source와 terminal Order (`PAID`, `FAILED`, `EXPIRED`, `CANCELLED`). Campaign·결제 진행 중 Order 제외. 원본 Order 변경 없음. 취소·만료 뒤 자동 Cart 복원 없음; 명시적 Reorder만 지원. | reorder 후 장기 보존과 주문 내역 조회 UX (Q-010/Q-012) |
 | INV-005 | ✓ 2차 구현 기준 | Reorder 전 모든 OrderItem의 현재 Seller-SKU/Product mapping과 available quantity를 batch 조회. 하나라도 누락·불충분하면 Cart·idempotency record 전체 rollback. 성공 시 기존 Cart를 확인 후 merge; 같은 SKU quantity 합산, 기존 다른 SKU 유지. Key scope `(sellerId, buyerRef, idempotencyKey)`; 같은 source Order replay는 중복 적용 없음, 다른 source 재사용은 conflict. Reorder는 stock read point-in-time일 뿐 hold/예약 아님; 새 Checkout transaction이 최종 재고 보장. | stock 상태는 Reorder와 Checkout 사이에 변할 수 있음; checkout에서 재검증 |
 | BR-006 | ✓ 3차 구현 범위 승인 | 결제 성공·재고 claim과 같은 transaction에서 모든 `PAID` Order에 주문당 fulfillment 1건 생성. 초기 `UNFULFILLED`, Seller 진행은 `IN_PROGRESS → SHIPPED → DELIVERED`. 현재 상태 재요청은 상태·timestamp를 바꾸지 않으며 역행·건너뛰기는 거절. 배송 상태는 `OrderState`와 분리; `PAID` terminal 의미와 inventory claim 유지. `sellerId` 소유 일치 확인은 인증·인가가 아님. `DELIVERED`는 수동 local simulation, 실제 carrier 연동 없음. | 부분 배송, 복수 shipment, 운송사 상태, 고객 확인 및 이후 반품·환불 미정 (Q-002/Q-006/Q-007/Q-010) |
+| BR-007 | ✓ 초기 원장 범위 승인 | 한 `CAPTURED` attempt의 OrderItem snapshot gross KRW에 대해 journal 1건과 동일 금액의 `PSP_CLEARING` 차변·`SELLER_PAYABLE` 대변 각 1건 생성. `source_attempt_id` unique; 동일 capture facts replay는 no-op, 다른 facts 재사용은 conflict. PaymentAttempt `CAPTURED`는 PSP 응답 이후 별도 commit; journal·entry·Order `PAID`·inventory claim·fulfillment 초기화는 한 transaction. 실패 시 downstream 변경 rollback 후 동일 attempt로 재조정. | PSP 증빙·fees·reserve·payout·refund·correction, 다중 통화·Seller 정책은 미정 (Q-006) |
 
 로컬 복구·잠금의 한계가 적용되며 운영 환경에 대한 주장은 아닙니다.
 

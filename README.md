@@ -36,13 +36,13 @@
 | [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | 공유 재고, 수량 reservation |
 | [ATLAS-order](ATLAS-order) | `:order-module` | Cart/Campaign checkout, Order·OrderItem·fulfillment lifecycle, 결제 조정 |
 | [ATLAS-payment](ATLAS-payment) | `:payment-module` | Payment attempt와 Fake PSP 상태 |
-| [ATLAS-settlement](ATLAS-settlement) | `:settlement-module` | 확인된 gross capture의 정산 원장 |
+| [ATLAS-settlement](ATLAS-settlement) | `:settlement-module` | 확인된 capture gross 금액의 내부 이중기입 원장; 실제 PSP 정산·송금 아님 |
 
 - 모듈 간 호출은 공개 `.service`/DTO 계약 사용. Entity·repository 직접 참조 금지.
 - CRUD는 JPA, PostgreSQL 특화 동시성 SQL은 모듈 내부 `.repository`에서 처리.
+- Order capture 경로에서 Settlement는 PaymentAttempt의 `CAPTURED` 확인 뒤 OrderItem 가격·수량 snapshot으로 원장을 기록. `attemptId` 재시도는 멱등이며 같은 transaction에서 Order `PAID`·inventory claim·fulfillment 초기화 처리 ([D-066](docs/00-governance/decision-log.md), [ADR-0011](docs/02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md)).
 - 생성 primary ID는 UUIDv7. 근거·한계: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/02-decisions/adr/ADR-0007-uuidv7-identifiers.md).
 - Schema는 Flyway 소유, Hibernate는 `ddl-auto: validate`.
-
 ## 로컬 실행 환경
 
 필요: JDK 25, Docker Compose, PostgreSQL container.
@@ -78,4 +78,4 @@ Cart는 같은 Seller의 여러 SKU·수량을 지원. Checkout은 현재 Seller
 
 ## Database 시작 정책
 
-V6는 기존 schema에서 Seller-SKU 구조로 전환하며, 기존 데이터가 있으면 DDL 전에 중단. V7은 Product·Cart·OrderItem을 추가하며 V6 application table에 행이 있으면 중단. V8은 Reorder 멱등 기록, V9는 `order_fulfillment`를 추가하고 기존 `PAID` Order에 `UNFULFILLED`를 생성하되 Order·재고는 변경하지 않음. V6/V7은 legacy data를 자동 mapping·초기화하지 않음. 새 로컬 database에서 시작하거나 필요한 데이터를 앱 밖에서 명시적으로 보관한 뒤 비운 database에서 진행. 근거: [D-055](docs/00-governance/decision-log.md), [D-065](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0008](docs/02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md), [ADR-0010](docs/02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md).
+V6는 기존 schema에서 Seller-SKU 구조로 전환하며, 기존 데이터가 있으면 DDL 전에 중단. V7은 Product·Cart·OrderItem을 추가하며 V6 application table에 행이 있으면 중단. V8은 Reorder 멱등 기록, V9는 `order_fulfillment`와 기존 `PAID` Order의 `UNFULFILLED` 초기 row, V10은 gross capture 내부 원장 테이블을 추가. V10은 과거 PaymentAttempt를 원장으로 소급 backfill하지 않음. V6/V7은 legacy data를 자동 mapping·초기화하지 않음. 새 로컬 database에서 시작하거나 필요한 데이터를 앱 밖에서 명시적으로 보관한 뒤 비운 database에서 진행. 근거: [D-055](docs/00-governance/decision-log.md), [D-065](docs/00-governance/decision-log.md), [D-066](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0008](docs/02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md), [ADR-0010](docs/02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md), [ADR-0011](docs/02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md).

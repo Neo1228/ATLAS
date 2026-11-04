@@ -2,7 +2,7 @@
 - 상태: ✓ 확정
 - 날짜: 2026-11-03
 - 담당자: Project Owner
-- 관련 결정: [D-037/D-038/D-047/D-050/D-051/D-053/D-054](../../00-governance/decision-log.md)
+- 관련 결정: [D-037/D-038/D-047/D-050/D-051/D-053/D-054/D-061/D-066](../../00-governance/decision-log.md)
 
 ## 배경
 
@@ -18,18 +18,21 @@ ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/C
 
 ## 결정
 
-기존 다섯 business capability를 각각 Gradle subproject로 두고 `application-module`에서 조립한다. 모듈 추가나 독립 배포를 뜻하지 않는다.
+기존 business capability를 각각 Gradle subproject로 두고 `application-module`에서 조립한다. 후속 결정은 Catalog, Cart, Fulfillment, Settlement 경계를 확장했으며 모듈 추가나 독립 배포를 뜻하지 않는다.
 
 | 모듈 | 소유 책임 | Gradle 의존 |
 |---|---|---|
-| `application-module` | Spring Boot 실행, HTTP adapter, 공통 오류 처리·설정, Flyway migration | 다섯 도메인 모듈 |
-| `campaign-module` | Seller·Seller-SKU 등록, Campaign 자격·생성 | `inventory-module` |
-| `admission-module` | Queue ticket·순번·idempotency·checkout slot·만료 | `campaign-module` |
-| `inventory-module` | Seller-SKU 재고 pool·reservation·수량 보존 | 없음 |
-| `order-module` | Checkout·주문·OrderItem·fulfillment lifecycle 조정 | `admission-module`, `inventory-module`, `payment-module` |
-| `payment-module` | Payment attempt·상태·provider 결과 | 없음 |
+| `application-module` | Spring Boot 실행, HTTP adapter, 공통 오류 처리·설정, Flyway migration | 도메인 모듈 |
+| `catalog-module` | Seller·Product·Seller-SKU·현재 가격 | `inventory-module` |
+| `cart-module` | Seller별 Buyer Cart·CartItem | `catalog-module` |
+| `campaign-module` | Campaign과 판매 자격 | `catalog-module`, `inventory-module` |
+| `admission-module` | Queue ticket·순번·idempotency·checkout slot·만료 | `campaign-module`, `catalog-module` |
+| `inventory-module` | 공유 재고 pool·reservation·수량 보존 | 없음 |
+| `order-module` | Checkout·주문·OrderItem·fulfillment lifecycle·결제 조정 | `admission-module`, `cart-module`, `catalog-module`, `inventory-module`, `payment-module`, `settlement-module` |
+| `payment-module` | Payment attempt·상태·Fake PSP 결과 | 없음 |
+| `settlement-module` | 확인된 gross capture의 내부 이중기입 원장 | 없음 |
 
-- Seller, Seller-SKU, Campaign은 현재 구매 흐름에서 함께 사용합니다. 독립 업무 흐름·API·데이터 소유 경계가 확인되지 않아 `campaign-module`에 둡니다. 별도 경계가 생기면 모듈 분리를 검토합니다 ([D-054](../../00-governance/decision-log.md)).
+현재 모듈 수와 디렉터리 목록은 역사적 기록이 아닌 [README](../../../README.md#모듈-구조)를 기준으로 합니다. Gradle 의존 그래프는 해당 모듈의 `build.gradle`에서 확인합니다.
 
 ### 물리 디렉터리 구성
 
