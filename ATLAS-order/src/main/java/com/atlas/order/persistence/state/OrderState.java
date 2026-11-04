@@ -10,5 +10,9 @@ public enum OrderState {
     FAILED,
     EXPIRED,
     CANCEL_PENDING,
-    CANCELLED
+    CANCELLED;
+
+    public boolean isTerminal() {
+        return this == PAID || this == FAILED || this == EXPIRED || this == CANCELLED;
+    }
 }

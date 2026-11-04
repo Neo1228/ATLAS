@@ -8,7 +8,8 @@ public final class CartException extends RuntimeException {
     public enum Code {
         NOT_FOUND,
         SKU_NOT_FOUND,
-        INVALID_REQUEST
+        INVALID_REQUEST,
+        CONFLICT
     }
 
     private final Code code;

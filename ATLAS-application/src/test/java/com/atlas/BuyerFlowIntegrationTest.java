@@ -14,6 +14,7 @@ import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.service.impl.AdmissionServiceImpl;
+import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
@@ -711,6 +712,185 @@ assertUuidV7(paymentOrderId);
         assertThat(expired.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
         assertInventoryRestored(sellerId, firstSku, 4);
         assertInventoryRestored(sellerId, secondSku, 3);
+    }
+
+    @Test
+    void terminalCartOrderCanBeReorderedWithCurrentCatalogAndIdempotentCartMerge() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("reorder-product", null));
+        String firstSku = "reorder-a-" + UUID.randomUUID();
+        String secondSku = "reorder-b-" + UUID.randomUUID();
+        String existingSku = "existing-cart-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 8));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 6));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(existingSku, 300, 4));
+        String buyerRef = "reorder-buyer-" + UUID.randomUUID();
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, firstSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":2}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, secondSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", "source-order-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse sourceOrder = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        assertThat(orders.cancel(sourceOrder.orderId()).state()).isEqualTo(OrderState.CANCELLED);
+        products.updateSkuPrice(sellerId, product.productId(), firstSku, 150);
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, firstSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":3}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, existingSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+
+        String reorderKey = "reorder-" + UUID.randomUUID();
+        mockMvc.perform(post("/api/orders/{orderId}/reorder", sourceOrder.orderId())
+                        .header("Idempotency-Key", reorderKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"confirmExistingCartMerge":false}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"CONFLICT\""));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_reorder_request WHERE idempotency_key = ?",
+                Integer.class, reorderKey)).isZero();
+
+        String reorderJson = mockMvc.perform(post("/api/orders/{orderId}/reorder", sourceOrder.orderId())
+                        .header("Idempotency-Key", reorderKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"confirmExistingCartMerge":true}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        CartResponse reordered = objectMapper.readValue(reorderJson, CartResponse.class);
+        assertThat(reordered.items()).extracting(item -> item.skuId())
+                .containsExactlyInAnyOrder(firstSku, secondSku, existingSku);
+        var mergedLine = reordered.items().stream()
+                .filter(item -> item.skuId().equals(firstSku))
+                .findFirst()
+                .orElseThrow();
+        assertThat(mergedLine.quantity()).isEqualTo(5);
+        assertThat(mergedLine.priceWon()).isEqualTo(150);
+        assertThat(orders.find(sourceOrder.orderId()).items().get(0).unitPriceWon()).isEqualTo(100);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_reorder_request WHERE idempotency_key = ?",
+                Integer.class, reorderKey)).isEqualTo(1);
+
+        String replayJson = mockMvc.perform(post("/api/orders/{orderId}/reorder", sourceOrder.orderId())
+                        .header("Idempotency-Key", reorderKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"confirmExistingCartMerge":true}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        CartResponse replay = objectMapper.readValue(replayJson, CartResponse.class);
+        assertThat(replay.items().stream().filter(item -> item.skuId().equals(firstSku))
+                .findFirst().orElseThrow().quantity()).isEqualTo(5);
+        assertThat(inventory.find(sellerId, firstSku).reserved()).isZero();
+        assertThat(inventory.find(sellerId, secondSku).reserved()).isZero();
+        assertConserved(inventory.find(sellerId, firstSku));
+        assertConserved(inventory.find(sellerId, secondSku));
+    }
+
+    @Test
+    void reorderWithOneUnavailableSkuLeavesCartAndIdempotencyRecordUnchanged() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("reorder-rollback", null));
+        String availableSku = "reorder-available-" + UUID.randomUUID();
+        String scarceSku = "reorder-scarce-" + UUID.randomUUID();
+        String existingSku = "reorder-existing-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(availableSku, 100, 2));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(scarceSku, 200, 1));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(existingSku, 300, 2));
+        String buyerRef = "reorder-rollback-buyer-" + UUID.randomUUID();
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}", sellerId, buyerRef, availableSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}", sellerId, buyerRef, scarceSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String sourceJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", "reorder-source-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse sourceOrder = objectMapper.readValue(sourceJson, OrderResponse.class);
+        orders.cancel(sourceOrder.orderId());
+
+        String competitor = "reorder-competitor-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, competitor, scarceSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String competitorJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, competitor)
+                        .header("Idempotency-Key", "reorder-competitor-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse competitorOrder = objectMapper.readValue(competitorJson, OrderResponse.class);
+        assertThat(orders.submitPayment(competitorOrder.orderId()).state()).isEqualTo(OrderState.PAID);
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, existingSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":2}
+                                """))
+                .andExpect(status().isOk());
+        String reorderKey = "reorder-rollback-" + UUID.randomUUID();
+        mockMvc.perform(post("/api/orders/{orderId}/reorder", sourceOrder.orderId())
+                        .header("Idempotency-Key", reorderKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"confirmExistingCartMerge":true}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"INSUFFICIENT_STOCK\""));
+
+        CartResponse unchanged = objectMapper.readValue(mockMvc.perform(
+                        get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), CartResponse.class);
+        assertThat(unchanged.items()).extracting(item -> item.skuId()).containsExactly(existingSku);
+        assertThat(unchanged.items().getFirst().quantity()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_reorder_request WHERE idempotency_key = ?",
+                Integer.class, reorderKey)).isZero();
+        assertThat(inventory.find(sellerId, availableSku).available()).isEqualTo(2);
+        assertThat(inventory.find(sellerId, availableSku).reserved()).isZero();
     }
 
     @Test

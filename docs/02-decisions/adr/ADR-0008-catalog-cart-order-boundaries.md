@@ -3,7 +3,7 @@
 - 상태: ✓ 확정
 - 날짜: 2026-11-04
 - 담당자: Project Owner
-- 관련 결정: [D-058~D-061](../../00-governance/decision-log.md)
+- 관련 결정: [D-058~D-063](../../00-governance/decision-log.md)
 
 ## 배경
 
@@ -32,7 +32,7 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 | `campaign-module` | Campaign 생성·상태·판매 자격 | `catalog-module`의 Seller-SKU 계약 |
 | `admission-module` | FIFO ticket, 전역 sequence, SKU별 `maxActiveCheckouts` policy | Campaign·Catalog 계약 |
 | `inventory-module` | Seller-SKU stock pool, 주문별 여러 SKU reservation | 독립 계약 |
-| `order-module` | Campaign 또는 Cart checkout, Order·OrderItem lifecycle, payment coordination | Admission·Catalog·Cart·Inventory·Payment 계약 |
+| `order-module` | Campaign·Cart checkout, Order·OrderItem lifecycle, payment coordination, terminal Cart Order Reorder | Admission·Catalog·Cart·Inventory·Payment 계약 |
 | `payment-module` | Payment attempt, 기존 Fake PSP 상태 | 독립 계약 |
 
 - `SellerSku`는 하나 이상의 SKU variant를 가진 Seller Product에 소속. 현재 단순 필드만 지원하며 옵션 조합·promotion·가격 이력은 추가하지 않음.
@@ -43,6 +43,11 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 - Checkout idempotency key 재시도는 기존 Order 반환. Inventory conservation: `available + reserved + claimed = initial capacity`.
 - 확인된 hold에서 첫 AUTHORIZE 제출까지 10분은 로컬 synthetic test window. 운영 TTL·SLO·수요 가정 아님. Fake PSP만 사용; 외부 호출은 DB transaction 밖.
 - V7 migration은 V6 fresh-start schema에 신규 구조를 추가. 예상치 못한 기존 row를 자동 reset·mapping하지 않음.
+- Reorder는 terminal `CART` Order만 허용. Campaign·진행 중 Order는 제외. 원본 Order 변경 없음.
+- 취소·만료 후 Cart 자동 복원 없음. Buyer가 `POST /api/orders/{orderId}/reorder`를 명시적으로 호출.
+- Reorder에서 현재 Seller-SKU/Product와 available quantity를 batch 확인. 일부라도 판매 불가면 Cart 변경 전체 rollback. 이 확인은 point-in-time이며 재고 hold가 아님; 새 Checkout이 atomic reservation을 담당.
+- 기존 Cart가 비어 있지 않으면 merge confirmation 필수. 같은 SKU quantity 합산, 다른 SKU 유지. Current Catalog 가격·상품명 사용. `(sellerId, buyerRef, idempotencyKey)` 재시도는 같은 source Order에 한 번만 적용; 다른 source Order로 재사용하면 conflict.
+- V8은 Order 소유의 Reorder idempotency 기록만 추가. Cleanup/retention 정책은 [Q-012](../../01-requirements/requirements-index.md#assumptions-and-open-questions)에서 미정.
 
 ## 결과
 
@@ -51,15 +56,18 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 - `buyerRef`는 synthetic identifier. 인증·인가·tenant isolation은 제공하지 않음.
 - 단일 KRW model. 환전, 실제 결제, 여러 판매자 통합 주문, promotion, 배송·이행·환불·정산은 이 구현에서 제외; 장기 범위에 남음.
 - Redis, broker, distributed lock, microservice 추가 없음. PostgreSQL baseline에서 재현 가능한 병목이 확인된 뒤에만 고도화 검토.
+- terminal Cart Order를 명시적으로 재주문하는 사용자 흐름 추가. Existing Cart merge·current price·available stock 확인, idempotent retry, all-or-nothing 실패를 같은 PostgreSQL transaction에서 검증.
 
 ## 근거와 한계
 
 - PostgreSQL 18, [Explicit Locking](https://www.postgresql.org/docs/18/explicit-locking.html): row lock 수명과 deadlock 위험. SQL semantics 설명이며 Cart/Order 구현을 대신하지 않음 ([REF-056](../../00-governance/reference-register.md)).
 - Shopify Engineering, [Inventory reservations with MySQL](https://shopify.engineering/scaling-inventory-reservations): transaction 중심 reservation 사례. MySQL·Shopify 부하이며 ATLAS 용량이나 PostgreSQL 실행 계획의 근거가 아님 ([REF-070](../../00-governance/reference-register.md)).
 - Meituan, [Order database sharding](https://tech.meituan.com/2016/11/18/dianping-order-db-sharding.html): 측정된 DB 한계 이후의 분할 절충. Architecture type은 원문에 명시되지 않아 비-MSA 근거로 분류하지 않음. MySQL 사례와 운영 수치는 복제하지 않음 ([REF-108](../../00-governance/reference-register.md)).
+- Ordering.co의 Reorder 자료는 원본 주문 재현을 보장하지 않고 Cart 충돌에 사용자 선택을 요구. Optimizely는 saved-order restore를 별도 동작으로 제공. Shopify cancellation에서 inventory restock 옵션은 Cart 복원과 별도. 사례마다 다르며 Reorder 정책은 [D-063](../../00-governance/decision-log.md) 프로젝트 결정 ([REF-109~REF-111](../../00-governance/reference-register.md)).
 
 ## 재검토 기준
 
 - 실제 buyer/product variant 요구가 합성 범위를 넘어설 때 product attributes·multi-currency 검토.
 - k6/Toxiproxy scenario에서 DB lock·connection occupancy·reservation lag 병목이 반복 재현될 때만 인프라·추가 기술 대안 비교.
+- Reorder idempotency record 보존/정리 기준은 source Order 보존 기간과 저장량을 관찰한 뒤 검토 ([Q-012](../../01-requirements/requirements-index.md#assumptions-and-open-questions)).
 - 독립 release/team/data ownership 근거 전에는 모듈을 별도 서비스로 분리하지 않음.
