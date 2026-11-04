@@ -6,7 +6,7 @@ owner: 프로젝트 책임자
 updated: 2026-11-04
 links:
   requirements: []
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010]
   experiments: [EXP-014]
 ---
 # 외부 참고자료 레지스트리
@@ -17,6 +17,7 @@ links:
 - REF-045~086: 도메인과 기술 선택에 사용한 자료.
 - REF-087/089/092/094~098: 모듈 경계·계층·JPA 검토 자료.
 - REF-104~107: EXP-014/ADR-0007의 UUIDv7·BIGINT 비교 자료.
+- REF-112/113: 결제 후 주문 이행과 fulfillment 상태 운영 사례.
 - 각 자료의 ATLAS 적용 범위와 한계를 함께 기록. 외부 자료만으로 ATLAS 정책을 정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
@@ -120,8 +121,10 @@ links:
 | REF-109 | Ordering.co, Review a reorder option / product documentation | https://docs.ordering.co/docs/products/customer-app/orders-support/reorder | 2026-11-04 | Reorder is not guaranteed to reproduce the historical order exactly; existing Cart conflicts need an explicit customer choice | △ Vendor-specific workflow, not a universal Cart merge policy. |
 | REF-110 | Shopify Help Center, Canceling orders / operations documentation | https://help.shopify.com/en/manual/fulfillment/managing-orders/canceling-orders.md | 2026-11-04 | Inventory restock is an explicit cancellation option separate from Cart restoration | ✓ Shopify-specific admin behavior, not a cross-platform rule. |
 | REF-111 | Optimizely Configured Commerce, Revert a cart to a saved order / product documentation | https://support.optimizely.com/hc/en-us/articles/4413199851533-Revert-a-cart-to-a-saved-order | 2026-11-04 | Saved-order restore is an explicit Cart action | △ B2B product workflow, not a universal default. |
+| REF-112 | 美团技术团队, 美团外卖订单中心的演进 / engineering article | https://tech.meituan.com/2016/09/09/mt-waimai-order-evolution.html | 2026-11-04 | 결제 뒤 판매자 처리·배송·수령·사후 처리 흐름 참고 | △ 2016년 대규모 음식 배달 사례. 업무 순서만 참고하며 아키텍처·SLO·용량 수치는 ATLAS에 일반화하지 않음 |
+| REF-113 | Shopify Help Center, Fulfilling your own orders individually / product documentation | https://help.shopify.com/en/manual/fulfillment/fulfilling-orders/single-fulfillment | 2026-11-04 | Fulfillment별 상태 전이·수동 배송 완료·부분 배송 대안 비교 | △ Shopify 고유 운영 방식. 여러 fulfillment와 carrier 이벤트가 있는 제품 사례이며 ATLAS의 주문당 1건 정책을 정하지 않음 |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111은 맥락이 한정된 공급업체·실무자·기술 자료다. 보편적 모범 사례, ATLAS 운영 동작, 용량을 입증하지 않는다.
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113은 맥락이 한정된 공급업체·실무자·기술 자료. 보편 규칙이나 ATLAS 운영 성능을 입증하지 않음.
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
@@ -133,3 +136,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [요구사항과 미결정 범위](../01-requirements/requirements-index.md#project-context-and-scope): 합성 시나리오만 사용하며 실제 결제·보안·배포·운영 성능은 미승인.
 - [Seller-SKU 결정](../02-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md): D-049는 REF-023 재고 사례, REF-101 판매 집중 시 재고 처리, REF-102/103 대기열 순서·처리량 절충을 참고. 전역 FIFO/K는 외부 권고가 아니라 소유자 결정.
 - [ADR-0008](../02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md): D-063은 REF-109~111의 platform-specific Reorder/cancel 사례를 비교해, automatic Cart restore 대신 explicit Reorder와 Cart 충돌 확인을 선택. 사례 자료는 보편 규칙이 아님.
+- [ADR-0010](../02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md): REF-112는 결제 후 주문 여정, REF-113은 vendor-specific fulfillment 수명주기 사례. 단일 PAID Order당 fulfillment는 D-065 프로젝트 결정.
