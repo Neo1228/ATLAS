@@ -1,6 +1,6 @@
 # ATLAS
 
-한정판매 backend 학습 프로젝트. Seller-SKU 재고 공유, 구매 대기열, 주문·결제 흐름의 정합성과 복구를 검증합니다.
+전체 이커머스 플랫폼 backend를 단계적으로 검증하는 로컬 학습 프로젝트. 현재 첫 시나리오는 Seller-SKU 공유 재고와 대기열 기반 한정판매의 주문·결제 정합성 검증.
 
 - 현재 흐름: Seller-SKU 기준 shared inventory와 global FIFO/K
 - 미구현 범위: 실사용자 인증·tenant 격리, live payment, cloud 배포, production SLO/capacity
