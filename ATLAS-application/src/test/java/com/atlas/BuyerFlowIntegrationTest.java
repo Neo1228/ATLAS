@@ -337,6 +337,59 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
+    void reconciliationEndpointExposesRecoveredPaymentAndInventoryState() throws Exception {
+        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse ticket = join(campaign, "buyer-api-recovery", "api-recovery-key");
+        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.UNKNOWN, FakePsp.Result.AUTHORIZED);
+
+        OrderResponse unknown = orders.submitPayment(order.orderId());
+        mockMvc.perform(post("/api/orders/{orderId}/reconcile", order.orderId()))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"state\":\"PAID\"", "\"paymentState\":\"CAPTURED\"",
+                                "\"paymentAttemptId\":\"" + unknown.paymentAttemptId() + "\""));
+
+        OrderResponse recovered = orders.find(order.orderId());
+        assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        assertThat(stock.claimed()).isEqualTo(1);
+        assertConserved(stock);
+
+        mockMvc.perform(post("/api/orders/{orderId}/reconcile", UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"ORDER_NOT_FOUND\""));
+    }
+
+    @Test
+    void cancellationEndpointVoidsPendingAuthorizationAndReleasesInventory() throws Exception {
+        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse ticket = join(campaign, "buyer-api-cancel", "api-cancel-key");
+        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.AUTHORIZED);
+
+        orders.submitPayment(order.orderId());
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId()))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"state\":\"CANCELLED\"", "\"paymentState\":\"VOIDED\""));
+
+        OrderResponse cancelled = orders.find(order.orderId());
+        assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        assertThat(stock.available()).isEqualTo(1);
+        assertThat(stock.reserved()).isZero();
+        assertThat(stock.claimed()).isZero();
+        assertConserved(stock);
+
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"ORDER_NOT_FOUND\""));
+    }
+
+    @Test
     void scheduledAdmissionExpiryRemainsInternalAndExpiresDueTickets() {
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-queue-expiry", "queue-expiry-key");
