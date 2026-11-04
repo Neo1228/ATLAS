@@ -183,6 +183,14 @@ assertUuidV7(order.orderId());
                         .andReturn().getResponse().getContentAsString(),
                 OrderFulfillmentResponse.class);
         assertThat(fulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
+
+        OrderResponse reconciled = orders.reconcilePayment(order.orderId());
+        assertThat(reconciled.state()).isEqualTo(OrderState.PAID);
+        OrderFulfillmentResponse repeatedFulfillment = orderFulfillments.find(order.orderId());
+        assertThat(repeatedFulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
+        assertThat(repeatedFulfillment.createdAt()).isEqualTo(fulfillment.createdAt());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, order.orderId())).isEqualTo(1);
 UUID paymentOrderId = jdbc.queryForObject("SELECT order_id FROM payment_attempt WHERE order_id = ?",
 UUID.class, order.orderId());
 assertUuidV7(paymentOrderId);
@@ -1026,6 +1034,62 @@ assertUuidV7(paymentOrderId);
         assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
                 Integer.class, order.orderId())).isEqualTo(1);
+    }
+
+    @Test
+    void fulfillmentInsertFailureRollsBackCapturedOrderAndInventoryThenReconciles() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "fulfillment-retry-" + UUID.randomUUID();
+        registerProductSku(sellerId, skuId, 150, 2);
+        String buyerRef = "fulfillment-retry-buyer-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", "fulfillment-retry-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+
+        jdbc.execute("""
+                CREATE OR REPLACE FUNCTION fail_fulfillment_insert() RETURNS TRIGGER AS $$
+                BEGIN
+                    RAISE EXCEPTION 'simulated fulfillment insert failure';
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+                """);
+        jdbc.execute("""
+                CREATE TRIGGER fail_fulfillment_insert
+                BEFORE INSERT ON order_fulfillment
+                FOR EACH ROW EXECUTE FUNCTION fail_fulfillment_insert()
+                """);
+        try {
+            assertThatThrownBy(() -> orders.submitPayment(order.orderId())).isInstanceOf(RuntimeException.class);
+            OrderResponse unchanged = orders.find(order.orderId());
+            assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_SUBMITTED);
+            assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
+            assertThat(unchanged.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                    Integer.class, order.orderId())).isZero();
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS fail_fulfillment_insert ON order_fulfillment");
+            jdbc.execute("DROP FUNCTION IF EXISTS fail_fulfillment_insert()");
+        }
+
+        OrderResponse recovered = orders.reconcilePayment(order.orderId());
+        assertThat(recovered.state()).isEqualTo(OrderState.PAID);
+        assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(recovered.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
+        assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, order.orderId())).isEqualTo(1);
+        assertThat(orderFulfillments.find(order.orderId()).status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
     }
 
     @Test
