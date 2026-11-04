@@ -2,7 +2,7 @@ package com.atlas.admission.service.impl;
 
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.exception.AdmissionException;
-import com.atlas.admission.dto.request.CheckoutSlotReleaseReason;
+import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;

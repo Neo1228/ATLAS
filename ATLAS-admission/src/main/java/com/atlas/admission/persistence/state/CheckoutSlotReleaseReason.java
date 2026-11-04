@@ -1,4 +1,4 @@
-package com.atlas.admission.dto.request;
+package com.atlas.admission.persistence.state;
 
 public enum CheckoutSlotReleaseReason {
     INITIAL_AUTHORIZE_SUBMITTED,

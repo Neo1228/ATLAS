@@ -9,7 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.admission.dto.request.CheckoutSlotReleaseReason;
+import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.service.AdmissionService;
