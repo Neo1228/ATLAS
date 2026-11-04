@@ -6,7 +6,7 @@ owner: 프로젝트 책임자
 updated: 2026-11-04
 links:
   requirements: []
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011]
   experiments: [EXP-014]
 ---
 # 외부 참고자료 레지스트리
@@ -137,3 +137,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [Seller-SKU 결정](../02-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md): D-049는 REF-023 재고 사례, REF-101 판매 집중 시 재고 처리, REF-102/103 대기열 순서·처리량 절충을 참고. 전역 FIFO/K는 외부 권고가 아니라 소유자 결정.
 - [ADR-0008](../02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md): D-063은 REF-109~111의 platform-specific Reorder/cancel 사례를 비교해, automatic Cart restore 대신 explicit Reorder와 Cart 충돌 확인을 선택. 사례 자료는 보편 규칙이 아님.
 - [ADR-0010](../02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md): REF-112는 결제 후 주문 여정, REF-113은 vendor-specific fulfillment 수명주기 사례. 단일 PAID Order당 fulfillment는 D-065 프로젝트 결정.
+- [ADR-0011](../02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md): D-066은 gross capture 이중기입의 owner decision. REF-027은 PostgreSQL 재시도·멱등 패턴 참고이며 회계 모델 근거는 아님.

@@ -25,6 +25,8 @@ import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.settlement.dto.request.CapturePostingRequest;
+import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -51,13 +53,14 @@ public final class OrderServiceImpl implements OrderService {
     private final InventoryService inventory;
     private final PaymentService payments;
     private final SellerSkuService sellerSkus;
+    private final SettlementService settlement;
     private final Clock clock;
     private final Duration checkoutWindow;
 
     public OrderServiceImpl(PlatformTransactionManager transactionManager, OrderRepository repository,
             OrderItemRepository items, JdbcBuyerLockRepository buyerLockRepository,
             OrderFulfillmentService fulfillmentService, AdmissionService admission, InventoryService inventory,
-            PaymentService payments, SellerSkuService sellerSkus, Clock clock,
+            PaymentService payments, SellerSkuService sellerSkus, SettlementService settlement, Clock clock,
             @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow) {
         this.repository = Objects.requireNonNull(repository);
         this.items = Objects.requireNonNull(items);
@@ -67,6 +70,7 @@ public final class OrderServiceImpl implements OrderService {
         this.admission = Objects.requireNonNull(admission);
         this.inventory = Objects.requireNonNull(inventory);
         this.payments = Objects.requireNonNull(payments);
+        this.settlement = Objects.requireNonNull(settlement);
         this.sellerSkus = Objects.requireNonNull(sellerSkus);
         this.clock = Objects.requireNonNull(clock);
         this.checkoutWindow = Objects.requireNonNull(checkoutWindow);
@@ -249,6 +253,7 @@ public final class OrderServiceImpl implements OrderService {
             }
             OrderState next = switch (payment.state()) {
                 case CAPTURED -> {
+                    recordCapture(order, payment);
                     if (order.state() != OrderState.PAID) inventory.claimAll(orderId);
                     yield OrderState.PAID;
                 }
@@ -274,6 +279,26 @@ public final class OrderServiceImpl implements OrderService {
             if (next == OrderState.PAID) fulfillmentService.initialize(orderId);
             return toResponse(repository.requireById(orderId));
         });
+    }
+
+    private void recordCapture(PurchaseOrder order, PaymentResponse payment) {
+        if (payment.attemptId() == null) {
+            throw new OrderException(OrderException.Code.CONFLICT, "Captured payment has no attempt id");
+        }
+        List<OrderItem> orderItems = items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId());
+        if (orderItems.isEmpty()) {
+            throw new OrderException(OrderException.Code.CONFLICT, "Captured order has no item snapshot");
+        }
+        UUID sellerId = orderItems.get(0).sellerId();
+        long grossAmountWon = 0;
+        for (OrderItem item : orderItems) {
+            if (!sellerId.equals(item.sellerId())) {
+                throw new OrderException(OrderException.Code.CONFLICT, "Captured order contains multiple sellers");
+            }
+            grossAmountWon = Math.addExact(grossAmountWon, item.lineTotalWon());
+        }
+        settlement.recordCapture(new CapturePostingRequest(
+                order.orderId(), payment.attemptId(), sellerId, grossAmountWon));
     }
 
     private void expire(PurchaseOrder order) {
