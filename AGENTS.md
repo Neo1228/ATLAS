@@ -61,6 +61,7 @@
 - 파일 확인은 정적 read 도구 사용. 사용자가 금지한 `view` command는 실행하지 않음.
 - 이름 변경 전 실제 ecommerce 용어와 모듈 책임을 대조. 저장소 전체의 production/test/integration/resource/config/docs 참조를 검색; subagent 결과도 모든 호출자와 테스트까지 검증.
 - 코드 patch는 최신 파일 경로·hashline을 확인한 뒤 최소 범위로 적용. 매 patch 뒤 대상 구간과 `git diff` 재확인. 경로 불일치·파서 경고가 나면 후속 patch 중단; 원인 수정 후에만 진행.
+- `@Transactional` service가 class-based CGLIB proxy 대상이면 class/method `final` 금지. Proxy 생성 실패는 unit test로 잡히지 않으므로 `@SpringBootTest` context load와 실제 PostgreSQL transaction 테스트로 검증.
 - Issue/PR 본문 수정 전 현재 본문, template, CI validator 확인. 필수 heading·checkbox 수, Issues 항목의 plain-text `Closes`/`Refs`와 Issue link 번호 일치, 요구사항·결정 ID 직접 링크를 검사. 중복 heading, 폐기된 이름/경로, 오래된 검증 수치 확인 후 원격 수정; 수정 뒤 본문과 `gh pr checks` 재확인.
 - 미병합 문서 링크는 `main`이 아닌 PR branch 또는 현재 branch SHA 사용. 문서 수정 완료 뒤 링크 대상과 SHA 확인. PR 본문을 다시 쓸 때 기존 추적·위험·검증 기록 보존.
 - 커밋 전 staged/unstaged/untracked를 각각 확인. subagent가 stage한 변경 포함 여부를 검토하고, 의도한 경로만 stage한 뒤 `git diff --cached` 검토. 전체 검증은 최종 working tree 기준으로 수행.

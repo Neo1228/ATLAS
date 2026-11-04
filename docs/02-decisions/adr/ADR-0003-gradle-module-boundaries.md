@@ -26,7 +26,7 @@ ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/C
 | `campaign-module` | Seller·Seller-SKU 등록, Campaign 자격·생성 | `inventory-module` |
 | `admission-module` | Queue ticket·순번·idempotency·checkout slot·만료 | `campaign-module` |
 | `inventory-module` | Seller-SKU 재고 pool·reservation·수량 보존 | 없음 |
-| `order-module` | Checkout·주문 lifecycle 조정 | `admission-module`, `inventory-module`, `payment-module` |
+| `order-module` | Checkout·주문·OrderItem·fulfillment lifecycle 조정 | `admission-module`, `inventory-module`, `payment-module` |
 | `payment-module` | Payment attempt·상태·provider 결과 | 없음 |
 
 - Seller, Seller-SKU, Campaign은 현재 구매 흐름에서 함께 사용합니다. 독립 업무 흐름·API·데이터 소유 경계가 확인되지 않아 `campaign-module`에 둡니다. 별도 경계가 생기면 모듈 분리를 검토합니다 ([D-054](../../00-governance/decision-log.md)).

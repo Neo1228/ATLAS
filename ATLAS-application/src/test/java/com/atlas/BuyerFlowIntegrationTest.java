@@ -28,10 +28,13 @@ import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.exception.OrderException;
-import com.atlas.order.service.OrderService;
-import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.exception.OrderException;
+import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.service.OrderFulfillmentService;
+import com.atlas.order.service.OrderService;
 import com.atlas.order.service.impl.OrderServiceImpl;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -97,6 +100,7 @@ class BuyerFlowIntegrationTest {
     @Autowired private ProductService products;
     @Autowired private InventoryService inventory;
     @Autowired private OrderService orders;
+    @Autowired private OrderFulfillmentService orderFulfillments;
     @Autowired private FakePsp fakePsp;
     @Autowired private AdjustableClock clock;
     @Autowired private ObjectMapper objectMapper;
@@ -148,7 +152,7 @@ class BuyerFlowIntegrationTest {
     }
 
     @Test
-    void FIFOAdmissionAndIdempotencyReleaseWindowAtInitialPaymentSubmission() {
+    void FIFOAdmissionAndIdempotencyReleaseWindowAtInitialPaymentSubmission() throws Exception {
         CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
         QueueTicketResponse first = join(campaign, "buyer-a", "key-a");
         QueueTicketResponse second = join(campaign, "buyer-b", "key-b");
@@ -172,6 +176,21 @@ assertUuidV7(order.orderId());
         assertThat(order.state()).isEqualTo(OrderState.RESERVED);
         assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         assertThat(orders.submitPayment(order.orderId()).state()).isEqualTo(OrderState.PAID);
+
+        OrderFulfillmentResponse fulfillment = objectMapper.readValue(
+                mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                OrderFulfillmentResponse.class);
+        assertThat(fulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
+
+        OrderResponse reconciled = orders.reconcilePayment(order.orderId());
+        assertThat(reconciled.state()).isEqualTo(OrderState.PAID);
+        OrderFulfillmentResponse repeatedFulfillment = orderFulfillments.find(order.orderId());
+        assertThat(repeatedFulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
+        assertThat(repeatedFulfillment.createdAt()).isEqualTo(fulfillment.createdAt());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, order.orderId())).isEqualTo(1);
 UUID paymentOrderId = jdbc.queryForObject("SELECT order_id FROM payment_attempt WHERE order_id = ?",
 UUID.class, order.orderId());
 assertUuidV7(paymentOrderId);
@@ -891,6 +910,186 @@ assertUuidV7(paymentOrderId);
                 Integer.class, reorderKey)).isZero();
         assertThat(inventory.find(sellerId, availableSku).available()).isEqualTo(2);
         assertThat(inventory.find(sellerId, availableSku).reserved()).isZero();
+    }
+
+    @Test
+    void paidCartOrderCanBeFulfilledInOrderAndBuyerCanReadProgress() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "fulfillment-" + UUID.randomUUID();
+        registerProductSku(sellerId, skuId, 100, 2);
+        String buyerRef = "fulfillment-buyer-" + UUID.randomUUID();
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", "fulfillment-checkout-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"IN_PROGRESS"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"CONFLICT\""));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, order.orderId())).isZero();
+        assertThat(orders.submitPayment(order.orderId()).state()).isEqualTo(OrderState.PAID);
+
+        OrderFulfillmentResponse initial = objectMapper.readValue(
+                mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                OrderFulfillmentResponse.class);
+        assertThat(initial.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
+        assertThat(initial.createdAt()).isNotNull();
+
+        UUID otherSellerId = sellers.createSeller().sellerId();
+        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment",
+                        otherSellerId, order.orderId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"IN_PROGRESS"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"CONFLICT\""));
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"SHIPPED"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"CONFLICT\""));
+
+        CyclicBarrier transitionStart = new CyclicBarrier(3);
+        var fulfillmentWorkers = Executors.newFixedThreadPool(2);
+        Future<OrderFulfillmentResponse> firstTransition = fulfillmentWorkers.submit(() -> {
+            transitionStart.await(10, TimeUnit.SECONDS);
+            return orderFulfillments.updateStatus(sellerId, order.orderId(), FulfillmentStatus.IN_PROGRESS);
+        });
+        Future<OrderFulfillmentResponse> repeatedTransition = fulfillmentWorkers.submit(() -> {
+            transitionStart.await(10, TimeUnit.SECONDS);
+            return orderFulfillments.updateStatus(sellerId, order.orderId(), FulfillmentStatus.IN_PROGRESS);
+        });
+        transitionStart.await(10, TimeUnit.SECONDS);
+        OrderFulfillmentResponse inProgress;
+        OrderFulfillmentResponse concurrentRepeat;
+        try {
+            inProgress = firstTransition.get(10, TimeUnit.SECONDS);
+            concurrentRepeat = repeatedTransition.get(10, TimeUnit.SECONDS);
+        } finally {
+            fulfillmentWorkers.shutdownNow();
+        }
+        assertThat(inProgress.status()).isEqualTo(FulfillmentStatus.IN_PROGRESS);
+        assertThat(inProgress.inProgressAt()).isNotNull();
+        assertThat(concurrentRepeat.inProgressAt()).isEqualTo(inProgress.inProgressAt());
+
+        String repeatedJson = mockMvc.perform(
+                        put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {"status":"IN_PROGRESS"}
+                                        """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderFulfillmentResponse repeated = objectMapper.readValue(repeatedJson, OrderFulfillmentResponse.class);
+        assertThat(repeated.inProgressAt()).isEqualTo(inProgress.inProgressAt());
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"SHIPPED"}
+                                """))
+                .andExpect(status().isOk());
+        String deliveredJson = mockMvc.perform(
+                        put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {"status":"DELIVERED"}
+                                        """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderFulfillmentResponse delivered = objectMapper.readValue(deliveredJson, OrderFulfillmentResponse.class);
+        assertThat(delivered.status()).isEqualTo(FulfillmentStatus.DELIVERED);
+        assertThat(delivered.deliveredAt()).isNotNull();
+
+        OrderFulfillmentResponse buyerView = objectMapper.readValue(
+                mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                OrderFulfillmentResponse.class);
+        assertThat(buyerView.status()).isEqualTo(FulfillmentStatus.DELIVERED);
+        assertThat(orders.find(order.orderId()).state()).isEqualTo(OrderState.PAID);
+        assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, order.orderId())).isEqualTo(1);
+    }
+
+    @Test
+    void fulfillmentInsertFailureRollsBackCapturedOrderAndInventoryThenReconciles() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "fulfillment-retry-" + UUID.randomUUID();
+        registerProductSku(sellerId, skuId, 150, 2);
+        String buyerRef = "fulfillment-retry-buyer-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", "fulfillment-retry-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+
+        jdbc.execute("""
+                CREATE OR REPLACE FUNCTION fail_fulfillment_insert() RETURNS TRIGGER AS $$
+                BEGIN
+                    RAISE EXCEPTION 'simulated fulfillment insert failure';
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+                """);
+        jdbc.execute("""
+                CREATE TRIGGER fail_fulfillment_insert
+                BEFORE INSERT ON order_fulfillment
+                FOR EACH ROW EXECUTE FUNCTION fail_fulfillment_insert()
+                """);
+        try {
+            assertThatThrownBy(() -> orders.submitPayment(order.orderId())).isInstanceOf(RuntimeException.class);
+            OrderResponse unchanged = orders.find(order.orderId());
+            assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_SUBMITTED);
+            assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
+            assertThat(unchanged.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                    Integer.class, order.orderId())).isZero();
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS fail_fulfillment_insert ON order_fulfillment");
+            jdbc.execute("DROP FUNCTION IF EXISTS fail_fulfillment_insert()");
+        }
+
+        OrderResponse recovered = orders.reconcilePayment(order.orderId());
+        assertThat(recovered.state()).isEqualTo(OrderState.PAID);
+        assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(recovered.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
+        assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, order.orderId())).isEqualTo(1);
+        assertThat(orderFulfillments.find(order.orderId()).status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
     }
 
     @Test

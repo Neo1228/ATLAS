@@ -1,9 +1,10 @@
 # ATLAS
 
-전체 이커머스 플랫폼 backend를 단계적으로 검증하는 로컬 학습 프로젝트. 현재 첫 시나리오는 Seller-SKU 공유 재고와 대기열 기반 한정판매의 주문·결제 정합성 검증.
+전체 이커머스 플랫폼의 구매·판매 흐름과 거래 정합성·장애 복구를 검증하는 로컬 학습 프로젝트. 현재 일반 구매 흐름과 한정판매 경로를 함께 개발.
 
-- 현재 흐름: Seller-SKU 기준 shared inventory와 global FIFO/K
-- 미구현 범위: 실사용자 인증·tenant 격리, live payment, cloud 배포, production SLO/capacity
+- 일반 구매: Seller-SKU → Cart → Order → Fake PSP 결제 → explicit Reorder·수동 fulfillment.
+- 한정판매: Seller-SKU shared inventory, FIFO/K 대기열, 주문·결제 정합성.
+- 미구현: 실사용자 인증·tenant 격리, live payment, carrier 연동, cloud 배포, production SLO/capacity.
 - 요구사항: [Requirements Index](docs/01-requirements/requirements-index.md)
 - 결정: [Decision Log](docs/00-governance/decision-log.md)
 - 로컬 실행 및 검증: 아래 [환경 설정](#로컬-실행-환경)
@@ -33,7 +34,7 @@
 | [ATLAS-campaign](ATLAS-campaign) | `:campaign-module` | Campaign과 판매 자격 |
 | [ATLAS-admission](ATLAS-admission) | `:admission-module` | Seller-SKU FIFO/K, ticket, expiry |
 | [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | 공유 재고, 수량 reservation |
-| [ATLAS-order](ATLAS-order) | `:order-module` | Cart/Campaign checkout, Order·OrderItem, 결제 조정 |
+| [ATLAS-order](ATLAS-order) | `:order-module` | Cart/Campaign checkout, Order·OrderItem·fulfillment lifecycle, 결제 조정 |
 | [ATLAS-payment](ATLAS-payment) | `:payment-module` | Payment attempt와 Fake PSP 상태 |
 
 - 모듈 간 호출은 공개 `.service`/DTO 계약 사용. Entity·repository 직접 참조 금지.
@@ -68,6 +69,7 @@ docker compose up -d --wait postgres
 6. Cart checkout: 같은 경로의 `POST /checkout`, `Idempotency-Key` 헤더 포함.
 7. 결과 확인: `GET /api/orders/{orderId}`.
 8. Reorder: terminal `CART` Order에서 `POST /api/orders/{orderId}/reorder` 호출. `Idempotency-Key`와 `{"confirmExistingCartMerge":true}` 포함. 현재 Seller-SKU와 재고를 확인하고, 기존 Cart가 비어 있지 않으면 확인 후 병합. Reorder는 재고를 예약하지 않으며 Checkout에서 다시 확인 ([FR-006/BR-005/INV-005](docs/01-requirements/requirements-index.md#business-rules-and-domain-invariants)).
+9. Fulfillment 상태: 결제된 Order에 주문당 1건 생성. Seller는 `PUT /api/sellers/{sellerId}/orders/{orderId}/fulfillment`로 `IN_PROGRESS` → `SHIPPED` → `DELIVERED` 전이. Buyer는 `GET /api/orders/{orderId}/fulfillment`로 조회. `DELIVERED`는 carrier 확인이 아닌 local simulation ([FR-007/BR-006](docs/01-requirements/requirements-index.md), [ADR-0010](docs/02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md)).
 
 Cart는 같은 Seller의 여러 SKU·수량을 지원. Checkout은 현재 Seller-SKU와 가격을 재검증하고 상품명·SKU·KRW 단가·수량을 OrderItem에 snapshot. 재고 예약은 모든 SKU에 대해 원자적으로 처리하며 하나라도 부족하면 전체 rollback. 가격 변경은 `PUT /api/sellers/{sellerId}/products/{productId}/skus/{skuId}/price`. `RESERVED` 주문은 `POST /api/orders/{orderId}/cancel`로 취소 가능하고, 취소·기한 만료 시 모든 재고 예약 해제. Cart 자동 복원은 하지 않으며, 이전 주문의 재주문은 명시적인 `POST /api/orders/{orderId}/reorder`로 처리 ([Q-011](docs/01-requirements/requirements-index.md#assumptions-and-open-questions)).
 
@@ -75,4 +77,4 @@ Cart는 같은 Seller의 여러 SKU·수량을 지원. Checkout은 현재 Seller
 
 ## Database 시작 정책
 
-V6는 기존 schema에서 Seller-SKU 구조로 전환하며, 기존 데이터가 있으면 DDL 전에 중단. V7은 Product·Cart·OrderItem 흐름을 추가하며 V6 application table에 행이 있으면 중단. 두 migration 모두 데이터의 자동 매핑·초기화는 하지 않음. 새 로컬 database에서 시작하거나, 필요한 데이터를 앱 밖에서 명시적으로 보관한 뒤 비운 database에서 진행. 세부 근거: [D-055](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0008](docs/02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md).
+V6는 기존 schema에서 Seller-SKU 구조로 전환하며, 기존 데이터가 있으면 DDL 전에 중단. V7은 Product·Cart·OrderItem을 추가하며 V6 application table에 행이 있으면 중단. V8은 Reorder 멱등 기록, V9는 `order_fulfillment`를 추가하고 기존 `PAID` Order에 `UNFULFILLED`를 생성하되 Order·재고는 변경하지 않음. V6/V7은 legacy data를 자동 mapping·초기화하지 않음. 새 로컬 database에서 시작하거나 필요한 데이터를 앱 밖에서 명시적으로 보관한 뒤 비운 database에서 진행. 근거: [D-055](docs/00-governance/decision-log.md), [D-065](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0008](docs/02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md), [ADR-0010](docs/02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md).

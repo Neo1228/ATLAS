@@ -20,6 +20,7 @@ import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.JdbcBuyerLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -43,6 +44,7 @@ public final class OrderServiceImpl implements OrderService {
 
     private final OrderRepository repository;
     private final OrderItemRepository items;
+    private final OrderFulfillmentService fulfillmentService;
     private final JdbcBuyerLockRepository buyerLockRepository;
     private final TransactionTemplate transactions;
     private final AdmissionService admission;
@@ -53,13 +55,14 @@ public final class OrderServiceImpl implements OrderService {
     private final Duration checkoutWindow;
 
     public OrderServiceImpl(PlatformTransactionManager transactionManager, OrderRepository repository,
-                            OrderItemRepository items, JdbcBuyerLockRepository buyerLockRepository,
-                            AdmissionService admission, InventoryService inventory, PaymentService payments,
-                            SellerSkuService sellerSkus, Clock clock,
-                            @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow) {
+            OrderItemRepository items, JdbcBuyerLockRepository buyerLockRepository,
+            OrderFulfillmentService fulfillmentService, AdmissionService admission, InventoryService inventory,
+            PaymentService payments, SellerSkuService sellerSkus, Clock clock,
+            @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow) {
         this.repository = Objects.requireNonNull(repository);
         this.items = Objects.requireNonNull(items);
         this.buyerLockRepository = Objects.requireNonNull(buyerLockRepository);
+        this.fulfillmentService = Objects.requireNonNull(fulfillmentService);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.admission = Objects.requireNonNull(admission);
         this.inventory = Objects.requireNonNull(inventory);
@@ -245,7 +248,10 @@ public final class OrderServiceImpl implements OrderService {
                         CheckoutSlotReleaseReason.INITIAL_AUTHORIZE_SUBMITTED);
             }
             OrderState next = switch (payment.state()) {
-                case CAPTURED -> { inventory.claimAll(orderId); yield OrderState.PAID; }
+                case CAPTURED -> {
+                    if (order.state() != OrderState.PAID) inventory.claimAll(orderId);
+                    yield OrderState.PAID;
+                }
                 case DECLINED -> {
                     if (payment.authorizationActive()) yield OrderState.PAYMENT_VOID_PENDING;
                     inventory.releaseAll(orderId);
@@ -265,6 +271,7 @@ public final class OrderServiceImpl implements OrderService {
                         ? OrderState.CANCEL_PENDING : OrderState.PAYMENT_PENDING;
             };
             repository.updateState(orderId, next, payment.attemptId(), clock.instant());
+            if (next == OrderState.PAID) fulfillmentService.initialize(orderId);
             return toResponse(repository.requireById(orderId));
         });
     }
