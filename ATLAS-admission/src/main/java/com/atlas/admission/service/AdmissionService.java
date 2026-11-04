@@ -1,6 +1,6 @@
 package com.atlas.admission.service;
 
-import com.atlas.admission.dto.request.CheckoutSlotReleaseReason;
+import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 

@@ -9,7 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.exception.AdmissionException;
-import com.atlas.admission.dto.request.CheckoutSlotReleaseReason;
+import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
@@ -617,6 +617,103 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
+    void cartCancellationIsIdempotentAndReleasesEverySkuOnce() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("cancel-cart", null));
+        String firstSku = "cancel-a-" + UUID.randomUUID();
+        String secondSku = "cancel-b-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        String buyerRef = "cancel-buyer-" + UUID.randomUUID();
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, firstSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":2}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, secondSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", "cancel-checkout-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId()))
+                    .andExpect(status().isOk())
+                    .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                            .contains("\"state\":\"CANCELLED\"", "\"paymentState\":\"NOT_STARTED\""));
+        }
+
+        OrderResponse cancelled = orders.find(order.orderId());
+        assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
+        assertThat(cancelled.paymentAttemptId()).isNull();
+        assertThat(cancelled.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
+        assertThat(inventory.findReservations(order.orderId()))
+                .extracting(ReservationResponse::status)
+                .containsExactly(ReservationStatus.RELEASED, ReservationStatus.RELEASED);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempt WHERE order_id = ?",
+                Integer.class, order.orderId())).isZero();
+        assertInventoryRestored(sellerId, firstSku, 4);
+        assertInventoryRestored(sellerId, secondSku, 3);
+    }
+
+    @Test
+    void cartCheckoutExpiryReleasesEverySkuReservation() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("expiry-cart", null));
+        String firstSku = "expiry-a-" + UUID.randomUUID();
+        String secondSku = "expiry-b-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        String buyerRef = "expiry-buyer-" + UUID.randomUUID();
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, firstSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":2}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, secondSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", "expiry-checkout-" + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+
+        clock.advance(Duration.ofMinutes(11));
+        orderServiceImpl.expireDueCheckouts();
+
+        OrderResponse expired = orders.find(order.orderId());
+        assertThat(expired.state()).isEqualTo(OrderState.EXPIRED);
+        assertThat(expired.inventoryState()).isEqualTo(ReservationStatus.RELEASED);
+        assertThat(inventory.findReservations(order.orderId()))
+                .extracting(ReservationResponse::status)
+                .containsExactly(ReservationStatus.RELEASED, ReservationStatus.RELEASED);
+        assertThat(expired.paymentAttemptId()).isNull();
+        assertThat(expired.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
+        assertInventoryRestored(sellerId, firstSku, 4);
+        assertInventoryRestored(sellerId, secondSku, 3);
+    }
+
+    @Test
     void sellerCanRegisterProductAndSkuThroughCatalogApi() throws Exception {
         String sellerJson = mockMvc.perform(post("/api/sellers"))
                 .andExpect(status().isCreated())
@@ -694,11 +791,19 @@ assertUuidV7(paymentOrderId);
     }
 
     private static void assertUuidV7(UUID id) {
-assertThat(id).isNotNull();
-assertThat(id.version()).isEqualTo(7);
-}
-private static void assertConserved(InventoryPoolResponse stock) {
+        assertThat(id).isNotNull();
+        assertThat(id.version()).isEqualTo(7);
+    }
+
+    private static void assertConserved(InventoryPoolResponse stock) {
         assertThat(stock.available() + stock.reserved() + stock.claimed()).isEqualTo(stock.initialCapacity());
+    }
+    private void assertInventoryRestored(UUID sellerId, String skuId, int initialStock) {
+        InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+        assertThat(stock.available()).isEqualTo(initialStock);
+        assertThat(stock.reserved()).isZero();
+        assertThat(stock.claimed()).isZero();
+        assertConserved(stock);
     }
 
     @TestConfiguration

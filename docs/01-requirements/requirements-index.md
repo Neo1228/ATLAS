@@ -10,7 +10,7 @@
 | FR-002 | 기능 | ✓ Gate 2 기준 | PSP 요청 전에 재고를 hold합니다. AUTHORIZE → CAPTURE 순서이며, capture 성공이 확인된 뒤 재고를 claim합니다. 결과가 미확정이면 재고 hold와 같은 attempt를 유지합니다. 로컬 시험 시간은 10분이며 Fake PSP만 사용합니다. | 미정 | [Q-004/Q-005/Q-008](#assumptions-and-open-questions), [BR-003/INV-003](#business-rules-and-domain-invariants), [Issue #72](https://github.com/Neo1228/ATLAS/issues/72) |
 | FR-003 | 기능 | △ 제안 | PSP 거래 대조, 내부 정산 원장, 수수료, 정정, 감사 이력. 환불 실행이나 판매사 지급 승인을 뜻하지 않습니다. | 미정 | [Q-002/Q-006](#assumptions-and-open-questions) |
 | FR-004 | 기능 | ✓ PR #90 초기 기준; SKU 정책 소유는 D-061로 조정 | Seller UUID와 V6 clean-start 조건 유지. 당시 Seller-SKU 등록이 `initialStock`과 전역 K를 설정했으나, D-061에 따라 Catalog는 Product/SKU를, Admission은 queue K policy를 소유. V1–V5 application table에 행이 있으면 DDL 전 실패; data mapping/backfill은 하지 않음. `sellerId`는 인증·인가 수단이 아님. | 미정 | [D-049/D-055/D-061](../00-governance/decision-log.md), [Q-002/Q-003/Q-007](#assumptions-and-open-questions), [Issue #89](https://github.com/Neo1228/ATLAS/issues/89) |
-| FR-005 | 기능 | ✓ 1차 구현 범위 승인 | 판매자는 Product와 Seller-SKU variant를 등록·조회. 합성 Buyer는 같은 Seller의 여러 SKU/수량을 담은 Cart를 관리하고 한 Order로 checkout. Checkout 시 현재 KRW 가격을 확인해 Order line에 snapshot하고 재고 전체를 원자적으로 예약. 한정판매 Campaign은 별도 판매 경로. | 미정 | [Q-010](#assumptions-and-open-questions), [D-060/D-061](../00-governance/decision-log.md), [BR-004/INV-004](#business-rules-and-domain-invariants), [Issue #109](https://github.com/Neo1228/ATLAS/issues/109) |
+| FR-005 | 기능 | ✓ 1차 구현 범위 승인 | 판매자는 Product와 Seller-SKU variant를 등록·조회. 합성 Buyer는 같은 Seller의 여러 SKU/수량을 담은 Cart를 관리하고 한 Order로 checkout. Checkout 시 현재 KRW 가격을 확인해 Order line에 snapshot하고 재고 전체를 원자적으로 예약. 한정판매 Campaign은 별도 판매 경로. | 미정 | [Q-010/Q-011](#assumptions-and-open-questions), [D-060/D-061](../00-governance/decision-log.md), [BR-004/INV-004](#business-rules-and-domain-invariants), [Issue #109](https://github.com/Neo1228/ATLAS/issues/109) |
 | NFR-001 | 비기능 | △ 제안 | Tenant 간 데이터·권한 격리를 검증해야 합니다. 위협 경계는 미정입니다. | 미정 | [Q-007](#assumptions-and-open-questions) |
 | NFR-002 | 비기능 | ✓ Gate 2 보고 profile | 전체 Buyer 흐름을 대상으로 60분간 합성 session 10,000건을 기준 부하로 사용하고, 2배·4배 부하도 기록합니다. 보고용이며 운영 SLO나 합격 기준은 아닙니다. metric 계약은 Q-008입니다. | 미정 | [Q-008](#assumptions-and-open-questions), [Issue #66](https://github.com/Neo1228/ATLAS/issues/66) |
 
@@ -66,6 +66,7 @@
 | Q-008 | ? 미정 | 아래 부하 계약 참조. 합성·보고용이며 운영 수요·처리 용량을 뜻하지 않습니다. |
 | Q-009 | ? 미정 | 현재 로컬 stack: Java 25 LTS, Spring Boot 4.1.2/MVC, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Testcontainers 2.0.5와 ArchUnit 1.5.1은 test-scope. Boot 4는 `spring-boot-starter-flyway` 사용. 대안은 결정 로그 참조. CI는 Temurin 25; 운영 JDK vendor/license, database/deployment, PayPal 제품/API는 미정. |
 | Q-010 | ? 미정 | 전체 이커머스 플랫폼의 장기 세부 업무 흐름·경계·우선순위는 미정. 첫 개발 흐름은 Product→Cart→Order, 단일 Seller 주문, Product-SKU variants, KRW 가격 snapshot으로 승인(D-060/D-061). Buyer/Seller별 목표 차이와 주문 이후·다른 판매 유형의 순서는 계속 구체화. |
+| Q-011 | ? 미정 | Cart checkout 뒤 취소·기한 만료 시 OrderItem을 Cart로 자동 복원할지 미정. 현재 기준은 `RESERVED` 주문 종료와 전체 재고 reservation 해제까지; Cart 복원·가격 재확인 UX는 미구현. |
 
 ### Q-008 부하 계약 — 보고 전용
 - 기준 부하: 소유자 승인 합성 시험 입력([D-033](../00-governance/decision-log.md)) 10,000 session/60분(약 2.8 session/s), 2배·4배(약 5.6/11.1 session/s). 실제 사용자 수요나 운영 부하 예측이 아님. 전체 Buyer 흐름과 혼합 도착 모델 사용.
@@ -85,7 +86,7 @@
 | BR-002 / INV-001 | Seller-SKU 공유 재고 pool, reservation당 1개. 확인된 전이 뒤 `available + reserved + claimed = initial capacity`, 각 값은 0 이상. Hold는 available→reserved, capture 성공은 reserved→claimed. 비결제와 필요한 authorization void/expiry 확인 뒤에만 release. | ✓ 로컬 기준 | 다수량·위치·채널, 조정·재입고, claim 후 취소·환불 (Q-002). PostgreSQL guarded UPDATE/주문별 transaction lock/예약 row lock은 로컬 기준이며 운영 성능 결론이 아님. |
 | BR-003 / INV-003 | PSP 요청 전 hold, capture 성공 후에만 재고 claim. 확인된 hold부터 첫 AUTHORIZE 제출까지 시험 시간 10분, 연장 없음. Capture/void의 PENDING/UNKNOWN이면 재고 hold와 같은 attempt 대조를 유지하며 결과 전 새 attempt 금지. 비결제와 필요한 void/expiry 확인 뒤 release. Fake PSP만 사용. | ✓ Gate 2 복구 기준 | 운영 TTL/SLO, provider deadline, retry/key 보존, escalation/compensation (Q-004/Q-005/Q-008). D-042의 Campaign별 합성 Buyer guard는 신원·보안 기능이 아님. |
 | BR-004 | ✓ 1차 구현 기준 | Catalog의 현재 판매 가격은 Cart 표시용. Checkout에서 Seller·SKU·가격을 다시 검증하고 Order line에 상품명·SKU·KRW 단가·quantity snapshot. Cart는 `(buyerRef, sellerId)` 기준이며 같은 Seller의 여러 SKU 허용. 다른 Seller 상품은 별도 Cart·Order. | 가격 변경 확인 UX, 상품 수정·비활성화, 여러 Seller 주문 분할 (Q-010) |
-| INV-004 | ✓ 1차 구현 기준 | Checkout은 SKU별 재고를 정렬된 순서로 검사·예약. 모든 line 예약이 성공하거나 전체 transaction rollback. `available + reserved + claimed = initial capacity`; quantity는 양수. checkout hold는 10분 synthetic local window; 미결제·확인된 실패/취소에서만 release. PENDING/UNKNOWN이면 hold 유지. | 여러 통화·단위별 재고, 보상·복구 자동화, 운영 TTL·성능 목표 (Q-002/Q-005/Q-008/Q-010) |
+| INV-004 | ✓ 1차 구현 기준 | Checkout은 SKU별 재고를 정렬된 순서로 검사·예약. 모든 line 예약이 성공하거나 전체 transaction rollback. `available + reserved + claimed = initial capacity`; quantity는 양수. 10분은 synthetic local checkout window이며 운영 TTL 아님. `RESERVED` Cart 주문의 취소는 모든 reserved line을 해제하고 반복 취소는 terminal 상태로 멱등 처리. 기한 만료는 `EXPIRED` 전이와 함께 모든 reserved line을 해제. PENDING/UNKNOWN 결제는 결과 확인 전 hold 유지. Cart 자동 복원 여부는 Q-011. | 여러 통화·단위별 재고, 보상·복구 자동화, 운영 TTL·성능 목표 (Q-002/Q-005/Q-008/Q-010/Q-011) |
 
 로컬 복구·잠금의 한계가 적용되며 운영 환경에 대한 주장은 아닙니다.
 
