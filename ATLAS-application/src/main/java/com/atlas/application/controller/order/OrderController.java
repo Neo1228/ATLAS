@@ -1,8 +1,12 @@
 package com.atlas.application.controller.order;
 
 import com.atlas.application.controller.dto.ReorderHttpRequest;
+import com.atlas.application.controller.dto.UpdateFulfillmentHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
+import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderService;
 import jakarta.validation.Valid;
@@ -11,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +28,7 @@ public class OrderController {
 
     private final OrderService orders;
     private final OrderReorderService reorders;
+    private final OrderFulfillmentService fulfillments;
 
     @PostMapping("/campaigns/{campaignId}/tickets/{ticketId}/checkout")
     public OrderResponse startCheckout(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
@@ -42,6 +48,17 @@ public class OrderController {
     @PostMapping("/orders/{orderId}/cancel")
     public OrderResponse cancel(@PathVariable UUID orderId) {
         return orders.cancel(orderId);
+    }
+
+    @GetMapping("/orders/{orderId}/fulfillment")
+    public OrderFulfillmentResponse fulfillment(@PathVariable UUID orderId) {
+        return fulfillments.find(orderId);
+    }
+
+    @PutMapping("/sellers/{sellerId}/orders/{orderId}/fulfillment")
+    public OrderFulfillmentResponse updateFulfillment(@PathVariable UUID sellerId,
+            @PathVariable UUID orderId, @Valid @RequestBody UpdateFulfillmentHttpRequest request) {
+        return fulfillments.updateStatus(sellerId, orderId, request.status());
     }
 
     @PostMapping("/orders/{orderId}/reorder")

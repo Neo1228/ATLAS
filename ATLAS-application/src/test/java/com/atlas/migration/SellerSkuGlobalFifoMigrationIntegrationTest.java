@@ -66,7 +66,39 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "campaign_seller_backfill")).isFalse();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(16); // fifteen application tables plus Flyway history
+                Integer.class, schema)).isEqualTo(17); // sixteen application tables plus Flyway history
+    }
+
+    @Test
+    void v9BackfillsExistingPaidOrdersWithoutChangingOrderState() {
+        flyway(schema, MigrationVersion.fromVersion("8")).migrate();
+
+        UUID sellerId = UUID.randomUUID();
+        jdbc.update("INSERT INTO seller (seller_id) VALUES (?)", sellerId);
+        UUID paidOrderId = UUID.randomUUID();
+        UUID failedOrderId = UUID.randomUUID();
+        String insertOrder = """
+                INSERT INTO purchase_order
+                    (order_id, seller_id, campaign_id, ticket_id, buyer_ref, checkout_key, state,
+                     checkout_expires_at, payment_attempt_id, created_at, updated_at, order_source)
+                VALUES (?, ?, NULL, NULL, ?, NULL, ?, CURRENT_TIMESTAMP, NULL,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'CART')
+                """;
+        jdbc.update(insertOrder, paidOrderId, sellerId, "paid-buyer", "PAID");
+        jdbc.update(insertOrder, failedOrderId, sellerId, "failed-buyer", "FAILED");
+
+        flyway(schema, null).migrate();
+
+        assertThat(jdbc.queryForObject(
+                "SELECT status FROM order_fulfillment WHERE order_id = ?", String.class, paidOrderId))
+                .isEqualTo("UNFULFILLED");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM order_fulfillment WHERE order_id IN (?, ?)",
+                Integer.class, paidOrderId, failedOrderId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT state FROM purchase_order WHERE order_id = ?", String.class, paidOrderId)).isEqualTo("PAID");
+        assertThat(jdbc.queryForObject(
+                "SELECT state FROM purchase_order WHERE order_id = ?", String.class, failedOrderId)).isEqualTo("FAILED");
     }
 
     @Test
