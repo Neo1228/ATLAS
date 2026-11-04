@@ -174,7 +174,7 @@ public final class OrderServiceImpl implements OrderService {
     private OrderResponse cancelLocked(UUID orderId) {
         PurchaseOrder current = transactions.execute(status -> {
             PurchaseOrder order = repository.lockById(orderId);
-            if (terminal(order.state())) return order;
+            if (order.state().isTerminal()) return order;
             if (order.state() == OrderState.RESERVED && !clock.instant().isBefore(order.checkoutExpiresAt())) {
                 expire(order);
                 return repository.requireById(orderId);
@@ -188,7 +188,7 @@ public final class OrderServiceImpl implements OrderService {
             }
             return repository.requireById(orderId);
         });
-        if (terminal(current.state())) return find(orderId);
+        if (current.state().isTerminal()) return find(orderId);
         PaymentResponse payment = payments.find(orderId);
         if (payment == null) return cancelWithoutPayment(orderId);
         payment = payments.reconcileForCancellation(orderId);
@@ -202,7 +202,7 @@ public final class OrderServiceImpl implements OrderService {
     private OrderResponse cancelWithoutPayment(UUID orderId) {
         return transactions.execute(status -> {
             PurchaseOrder current = repository.lockById(orderId);
-            if (!terminal(current.state())) {
+            if (!current.state().isTerminal()) {
                 releaseWithoutPayment(current, OrderState.CANCELLED, CheckoutSlotReleaseReason.BUYER_CANCELLED);
             }
             return toResponse(repository.requireById(orderId));
@@ -313,11 +313,6 @@ public final class OrderServiceImpl implements OrderService {
 
     private static OrderException invalidRequest() {
         return new OrderException(OrderException.Code.INVALID_REQUEST, "orderId is required");
-    }
-
-    private static boolean terminal(OrderState state) {
-        return state == OrderState.PAID || state == OrderState.FAILED
-                || state == OrderState.EXPIRED || state == OrderState.CANCELLED;
     }
 
     private <T> T withOrderLock(UUID orderId, Supplier<T> work) {

@@ -64,7 +64,7 @@ class ModuleBoundaryTest {
                         "com.atlas.payment.service", "com.atlas.payment.dto.request",
                         "com.atlas.payment.dto.response", "com.atlas.payment.persistence.state", "com.atlas.payment.exception",
                         "com.atlas.catalog.service", "com.atlas.catalog.dto.request", "com.atlas.catalog.dto.response",
-                        "com.atlas.cart.service", "com.atlas.cart.dto.response"));
+                        "com.atlas.cart.service", "com.atlas.cart.dto.request", "com.atlas.cart.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.payment..",
                 append(javaAndPersistence, "com.atlas.payment.."));
         noClasses().that().resideInAPackage("com.atlas..")

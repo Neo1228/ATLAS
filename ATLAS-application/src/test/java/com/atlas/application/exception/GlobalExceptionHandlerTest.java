@@ -44,6 +44,11 @@ class GlobalExceptionHandlerTest {
         assertThat(missingCart.getStatusCode().value()).isEqualTo(HttpStatus.NOT_FOUND.value());
         assertThat(missingCart.getBody().getProperties()).containsEntry("code", "CART_NOT_FOUND");
 
+        var cartConflict = handler.moduleException(
+                new CartException(CartException.Code.CONFLICT, "cart merge confirmation required"));
+        assertThat(cartConflict.getStatusCode().value()).isEqualTo(HttpStatus.CONFLICT.value());
+
+        assertThat(cartConflict.getBody().getProperties()).containsEntry("code", "CONFLICT");
         var missingCatalogItem = handler.moduleException(
                 new CatalogException(CatalogException.Code.NOT_FOUND, "missing product"));
         assertThat(missingCatalogItem.getStatusCode().value()).isEqualTo(HttpStatus.NOT_FOUND.value());

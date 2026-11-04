@@ -167,6 +167,16 @@ public class InventoryServiceImpl implements InventoryService {
         return inventoryPoolRepository.findById(new InventoryPoolId(sellerId, skuId)).map(InventoryServiceImpl::toResponse).orElse(null);
     }
 
+    @Override
+    public List<InventoryPoolResponse> findAll(UUID sellerId, List<String> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) throw invalidRequest("at least one skuId is required");
+        skuIds.forEach(skuId -> requireInventoryPoolKey(sellerId, skuId));
+        List<String> uniqueSkuIds = skuIds.stream().distinct().sorted().toList();
+        return inventoryPoolRepository.findAllBySellerIdAndSkuIds(sellerId, uniqueSkuIds).stream()
+                .map(InventoryServiceImpl::toResponse)
+                .toList();
+    }
+
     @Override public ReservationResponse findReservation(UUID orderId) {
         return firstOrNull(findReservations(orderId));
     }

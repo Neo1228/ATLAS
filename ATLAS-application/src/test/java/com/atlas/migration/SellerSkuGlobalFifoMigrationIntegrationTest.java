@@ -48,6 +48,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "shopping_cart")).isTrue();
         assertThat(tableExists(jdbc, "shopping_cart_item")).isTrue();
         assertThat(tableExists(jdbc, "order_item")).isTrue();
+        assertThat(tableExists(jdbc, "order_reorder_request")).isTrue();
         assertThat(columnExists(jdbc, "seller_sku", "product_id")).isTrue();
         assertThat(columnExists(jdbc, "seller_sku", "price_won")).isTrue();
         assertThat(columnExists(jdbc, "seller_sku", "max_active_checkouts")).isFalse();
@@ -65,7 +66,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "campaign_seller_backfill")).isFalse();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(15); // fourteen application tables plus Flyway history
+                Integer.class, schema)).isEqualTo(16); // fifteen application tables plus Flyway history
     }
 
     @Test

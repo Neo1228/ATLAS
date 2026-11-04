@@ -1,0 +1,120 @@
+package com.atlas.order.service.impl;
+
+import com.atlas.cart.dto.request.ReorderCartRequest;
+import com.atlas.cart.dto.response.CartResponse;
+import com.atlas.cart.service.CartService;
+import com.atlas.inventory.dto.response.InventoryPoolResponse;
+import com.atlas.inventory.exception.InventoryException;
+import com.atlas.inventory.service.InventoryService;
+import com.atlas.order.exception.OrderException;
+import com.atlas.order.persistence.entity.OrderItem;
+import com.atlas.order.persistence.entity.PurchaseOrder;
+import com.atlas.order.persistence.state.OrderSource;
+import com.atlas.order.repository.JdbcOrderReorderRepository;
+import com.atlas.order.repository.OrderItemRepository;
+import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.service.OrderReorderService;
+import java.time.Clock;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class OrderReorderServiceImpl implements OrderReorderService {
+    private final OrderRepository orders;
+    private final OrderItemRepository items;
+    private final InventoryService inventory;
+    private final CartService carts;
+    private final JdbcOrderReorderRepository reorderRequests;
+    private final Clock clock;
+
+    public OrderReorderServiceImpl(OrderRepository orders, OrderItemRepository items,
+            InventoryService inventory, CartService carts, JdbcOrderReorderRepository reorderRequests,
+            Clock clock) {
+        this.orders = Objects.requireNonNull(orders);
+        this.items = Objects.requireNonNull(items);
+        this.inventory = Objects.requireNonNull(inventory);
+        this.carts = Objects.requireNonNull(carts);
+        this.reorderRequests = Objects.requireNonNull(reorderRequests);
+        this.clock = Objects.requireNonNull(clock);
+    }
+
+    @Override
+    @Transactional
+    public CartResponse reorder(UUID orderId, String idempotencyKey, boolean confirmMerge) {
+        validate(orderId, idempotencyKey);
+        PurchaseOrder sourceOrder = orders.lockById(orderId);
+        if (sourceOrder.source() != OrderSource.CART || !sourceOrder.state().isTerminal()) {
+            throw conflict("Only terminal Cart orders can be reordered");
+        }
+
+        JdbcOrderReorderRepository.ExistingRequest previous = reorderRequests
+                .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElse(null);
+        if (previous != null) {
+            if (!previous.sourceOrderId().equals(orderId) || previous.confirmMerge() != confirmMerge) {
+                throw conflict("Idempotency-Key was used for a different reorder request");
+            }
+            return carts.find(sourceOrder.sellerId(), sourceOrder.buyerRef());
+        }
+
+        List<OrderItem> sourceItems = items.findByOrderOrderIdOrderBySkuIdAsc(orderId);
+        if (sourceItems.isEmpty()) throw conflict("Order has no items to reorder");
+        if (sourceItems.stream().anyMatch(item -> !sourceOrder.sellerId().equals(item.sellerId()))) {
+            throw conflict("Cart orders must contain items from one Seller");
+        }
+        assertInventoryAvailable(sourceOrder, sourceItems);
+        boolean recorded = reorderRequests.insertIfAbsent(sourceOrder.sellerId(), sourceOrder.buyerRef(),
+                idempotencyKey, orderId, confirmMerge, clock.instant());
+        if (!recorded) return replayOrConflict(sourceOrder, orderId, idempotencyKey, confirmMerge);
+
+        List<ReorderCartRequest.Item> cartItems = sourceItems.stream()
+                .map(item -> new ReorderCartRequest.Item(item.productId(), item.skuId(), item.quantity()))
+                .toList();
+        return carts.mergeItems(new ReorderCartRequest(sourceOrder.sellerId(), sourceOrder.buyerRef(),
+                confirmMerge, cartItems));
+    }
+
+    private CartResponse replayOrConflict(PurchaseOrder sourceOrder, UUID orderId,
+                                         String idempotencyKey, boolean confirmMerge) {
+        JdbcOrderReorderRepository.ExistingRequest existing = reorderRequests
+                .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElseThrow(() ->
+                        new IllegalStateException("Reorder idempotency row disappeared"));
+        if (!existing.sourceOrderId().equals(orderId) || existing.confirmMerge() != confirmMerge) {
+            throw conflict("Idempotency-Key was used for a different reorder request");
+        }
+        return carts.find(sourceOrder.sellerId(), sourceOrder.buyerRef());
+    }
+
+    private void assertInventoryAvailable(PurchaseOrder sourceOrder, List<OrderItem> items) {
+        List<String> skuIds = items.stream().map(OrderItem::skuId).distinct().sorted().toList();
+        Map<String, InventoryPoolResponse> pools = new HashMap<>();
+        for (InventoryPoolResponse pool : inventory.findAll(sourceOrder.sellerId(), skuIds)) {
+            if (pools.putIfAbsent(pool.skuId(), pool) != null) {
+                throw conflict("Inventory returned duplicate seller SKUs");
+            }
+        }
+        for (OrderItem item : items) {
+            InventoryPoolResponse pool = pools.get(item.skuId());
+            if (pool == null || pool.available() < item.quantity()) {
+                throw new InventoryException(InventoryException.Code.INSUFFICIENT_STOCK,
+                        "insufficient stock for seller " + sourceOrder.sellerId() + " sku " + item.skuId());
+            }
+        }
+    }
+
+    private static void validate(UUID orderId, String idempotencyKey) {
+        if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()
+                || idempotencyKey.length() > 256) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST,
+                    "orderId and a valid Idempotency-Key are required");
+        }
+    }
+
+    private static OrderException conflict(String message) {
+        return new OrderException(OrderException.Code.CONFLICT, message);
+    }
+}

@@ -67,6 +67,7 @@
 | D-060 | ✓ 확정 | 첫 일반 구매 흐름은 Seller Product/Seller-SKU → seller-scoped multi-line Cart → Order. Product와 Seller-SKU를 분리하고 한 Cart/Order에는 한 Seller의 여러 SKU·수량만 허용. Checkout 시 현행 가격을 검증해 Order line에 KRW 가격 snapshot을 저장하고 전체 재고를 원자적으로 예약. 10분은 기존 합성 local test window로만 사용. | 소유자 결정, 2026-11-04; [Issue #109](https://github.com/Neo1228/ATLAS/issues/109), [Q-010/FR-005/BR-004/INV-004](../01-requirements/requirements-index.md), [REF-070/REF-108](reference-register.md) |
 | D-061 | ✓ 확정 | `catalog-module`은 Seller/Product/Seller-SKU, `cart-module`은 Cart/CartItem, `campaign-module`은 Campaign, `admission-module`은 SKU별 global queue K policy, `inventory-module`은 수량 reservation, `order-module`은 order/order lines/payment coordination을 소유. 단일 Spring modular monolith·PostgreSQL 유지; module은 독립 배포 단위가 아님. D-054의 Seller-SKU 소유 경계는 일반 Catalog 흐름 추가로 대체. | 소유자 결정, 2026-11-04; [Issue #109](https://github.com/Neo1228/ATLAS/issues/109), [ADR-0008](../02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md), [D-054](decision-log.md) |
 | D-062 | ✓ 확정 | 같은 업무 목적의 코드·테스트·migration·문서는 로컬에서 함께 완성·검증한 뒤 소수의 논리 commit으로 기록. 진행 중 Issue/PR 생성·수정 금지; 기존 추적 단위를 전체 결과 준비 후 한 번에 갱신. | 소유자 결정, 2026-11-04; [Issue #109](https://github.com/Neo1228/ATLAS/issues/109), [AGENTS.md](../../AGENTS.md) |
+| D-063 | ✓ 확정 | Terminal CART Order에서 명시적 Reorder만 허용. 취소·만료 후 자동 Cart 복원 금지. 확인 후 기존 Cart와 병합; 같은 SKU quantity 합산. 현재 SKU·가용 재고 확인, 일부라도 불가하면 전체 거절. Idempotency-Key uniqueness는 `(sellerId, buyerRef)` 기준; 같은 source 재시도는 no-op, 다른 source와의 재사용은 conflict. Reorder는 재고를 예약하지 않으며 새 Checkout이 최종 보장. Campaign·진행 중 Order는 제외. | 소유자 결정, 2026-11-04; [FR-006/BR-005/INV-005/Q-011/Q-012](../01-requirements/requirements-index.md), [ADR-0008](../02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md), [REF-109~REF-111](reference-register.md) |
 <!-- markdownlint-disable MD033 -->
 
 <a id="detailed-decision-records"></a>
@@ -84,4 +85,4 @@
 | [ADR-0005 — Seller-SKU 재고·FIFO](../02-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md) | 공유 재고와 전역 대기열; 데이터 전환 방식은 이후 대체 | D-049 |
 | [ADR-0006 — V6 새로 시작](../02-decisions/adr/ADR-0006-v6-clean-start.md) | V1–V5 데이터가 있으면 DDL 전 실패; 데이터·schema 보존 | D-055 |
 | [ADR-0007 — UUIDv7 식별자](../02-decisions/adr/ADR-0007-uuidv7-identifiers.md) | UUIDv7 결정, 실측 한계, Hibernate incubating API | D-056 |
-| [ADR-0008 — Catalog·Cart·Order 경계](../02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md) | 일반 구매 여정, 모듈 책임, multi-line checkout 기준 | D-058–D-062 |
+| [ADR-0008 — Catalog·Cart·Order 경계](../02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md) | 일반 구매·주문 재주문 흐름, 모듈 책임, multi-line checkout 및 idempotency | D-058–D-063 |

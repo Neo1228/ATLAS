@@ -52,6 +52,7 @@ public class GlobalExceptionHandler {
             return switch (cart.code()) {
                 case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "CART_NOT_FOUND", cart.getMessage());
                 case SKU_NOT_FOUND -> response(HttpStatus.NOT_FOUND, "SKU_NOT_FOUND", cart.getMessage());
+                case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", cart.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", cart.getMessage());
             };
         }

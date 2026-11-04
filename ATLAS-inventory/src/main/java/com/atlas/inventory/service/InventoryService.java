@@ -21,4 +21,5 @@ public interface InventoryService {
     ReservationResponse release(UUID orderId);
     List<ReservationResponse> releaseAll(UUID orderId);
     InventoryPoolResponse find(UUID sellerId, String skuId);
+    List<InventoryPoolResponse> findAll(UUID sellerId, List<String> skuIds);
 }

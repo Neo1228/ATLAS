@@ -67,8 +67,9 @@ docker compose up -d --wait postgres
 5. Cart 수량 설정: `PUT /api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}`.
 6. Cart checkout: 같은 경로의 `POST /checkout`, `Idempotency-Key` 헤더 포함.
 7. 결과 확인: `GET /api/orders/{orderId}`.
+8. Reorder: terminal `CART` Order에서 `POST /api/orders/{orderId}/reorder` 호출. `Idempotency-Key`와 `{"confirmExistingCartMerge":true}` 포함. 현재 Seller-SKU와 재고를 확인하고, 기존 Cart가 비어 있지 않으면 확인 후 병합. Reorder는 재고를 예약하지 않으며 Checkout에서 다시 확인 ([FR-006/BR-005/INV-005](docs/01-requirements/requirements-index.md#business-rules-and-domain-invariants)).
 
-Cart는 같은 Seller의 여러 SKU·수량을 지원. Checkout은 현재 Seller-SKU와 가격을 재검증하고 상품명·SKU·KRW 단가·수량을 OrderItem에 snapshot. 재고 예약은 모든 SKU에 대해 원자적으로 처리하며 하나라도 부족하면 전체 rollback. 가격 변경은 `PUT /api/sellers/{sellerId}/products/{productId}/skus/{skuId}/price`. `RESERVED` 주문은 `POST /api/orders/{orderId}/cancel`로 취소 가능하고, 취소·기한 만료 시 모든 재고 예약 해제. 취소 뒤 Cart 자동 복원은 [Q-011](docs/01-requirements/requirements-index.md#assumptions-and-open-questions)에서 미정.
+Cart는 같은 Seller의 여러 SKU·수량을 지원. Checkout은 현재 Seller-SKU와 가격을 재검증하고 상품명·SKU·KRW 단가·수량을 OrderItem에 snapshot. 재고 예약은 모든 SKU에 대해 원자적으로 처리하며 하나라도 부족하면 전체 rollback. 가격 변경은 `PUT /api/sellers/{sellerId}/products/{productId}/skus/{skuId}/price`. `RESERVED` 주문은 `POST /api/orders/{orderId}/cancel`로 취소 가능하고, 취소·기한 만료 시 모든 재고 예약 해제. Cart 자동 복원은 하지 않으며, 이전 주문의 재주문은 명시적인 `POST /api/orders/{orderId}/reorder`로 처리 ([Q-011](docs/01-requirements/requirements-index.md#assumptions-and-open-questions)).
 
 한정판매는 별도 Campaign 경로. 기존 Seller-SKU shared inventory와 FIFO/K 대기열을 유지하고 Catalog의 SKU 및 Admission의 K policy를 참조. `sellerId`와 `buyerRef`는 합성 식별자이며 인증·인가 수단이 아님.
 

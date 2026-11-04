@@ -117,8 +117,11 @@ links:
 | REF-106 | Andrew Atkinson, Avoid UUID Version 4 Primary Keys (for Postgres) / practitioner analysis | https://andyatkinson.com/avoid-uuid-version-4-primary-keys | 2025-07-02 | PostgreSQL UUIDv4/v7의 인덱스 지역성·페이지 밀도 비교 | △ 다른 부하에서 얻은 실무자 측정값이며 ATLAS 결과로 옮겨 적용할 수 없음 |
 | REF-107 | Snowflake Developer Blog, What Should My Postgres Primary Key Be? / engineering blog | https://www.snowflake.com/en/developers/blog/postgres-primary-keys/ | 2026-09-17 | UUIDv7의 타임스탬프 노출과 BIGINT·UUID의 크기·식별자 절충 | △ 설계 지침이며 ATLAS 벤치마크는 아님 |
 | REF-108 | 美团技术团队, 大众点评订单系统分库分表实践 / DB 설계 사례 | https://tech.meituan.com/2016/11/18/dianping-order-db-sharding.html | 2026-11-04 | 조회·인덱스 최적화 후 측정된 병목에 한해 분할 검토; 분할 키·조회 제한·이관 대사 비용 | △ 2016년 MySQL 주문 사례. 원문에 아키텍처 유형이 명시되지 않았고 PostgreSQL·modular monolith 기준도 아님. DB 선택의 비교 자료로만 사용하며 운영 규모·분할 수·구조를 복제하지 않음 |
+| REF-109 | Ordering.co, Review a reorder option / product documentation | https://docs.ordering.co/docs/products/customer-app/orders-support/reorder | 2026-11-04 | Reorder is not guaranteed to reproduce the historical order exactly; existing Cart conflicts need an explicit customer choice | △ Vendor-specific workflow, not a universal Cart merge policy. |
+| REF-110 | Shopify Help Center, Canceling orders / operations documentation | https://help.shopify.com/en/manual/fulfillment/managing-orders/canceling-orders.md | 2026-11-04 | Inventory restock is an explicit cancellation option separate from Cart restoration | ✓ Shopify-specific admin behavior, not a cross-platform rule. |
+| REF-111 | Optimizely Configured Commerce, Revert a cart to a saved order / product documentation | https://support.optimizely.com/hc/en-us/articles/4413199851533-Revert-a-cart-to-a-saved-order | 2026-11-04 | Saved-order restore is an explicit Cart action | △ B2B product workflow, not a universal default. |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108은 맥락이 한정된 공급업체·실무자·기술 자료다. 보편적 모범 사례, ATLAS 운영 동작, 용량을 입증하지 않는다.
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111은 맥락이 한정된 공급업체·실무자·기술 자료다. 보편적 모범 사례, ATLAS 운영 동작, 용량을 입증하지 않는다.
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
@@ -129,3 +132,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [EXP-014](../03-experiments/EXP-014-id-strategy-comparison.md)·[ADR-0007](../02-decisions/adr/ADR-0007-uuidv7-identifiers.md): REF-104/105는 UUIDv7 API 계약, REF-106은 다른 부하의 실측, REF-107은 key 크기와 public ID의 절충을 다룬다. 외부 측정은 ATLAS에서 재현되지 않았으며 ATLAS 실측 근거는 EXP-014뿐이다.
 - [요구사항과 미결정 범위](../01-requirements/requirements-index.md#project-context-and-scope): 합성 시나리오만 사용하며 실제 결제·보안·배포·운영 성능은 미승인.
 - [Seller-SKU 결정](../02-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md): D-049는 REF-023 재고 사례, REF-101 판매 집중 시 재고 처리, REF-102/103 대기열 순서·처리량 절충을 참고. 전역 FIFO/K는 외부 권고가 아니라 소유자 결정.
+- [ADR-0008](../02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md): D-063은 REF-109~111의 platform-specific Reorder/cancel 사례를 비교해, automatic Cart restore 대신 explicit Reorder와 Cart 충돌 확인을 선택. 사례 자료는 보편 규칙이 아님.
