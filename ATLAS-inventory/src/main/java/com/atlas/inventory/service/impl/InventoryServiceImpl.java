@@ -162,6 +162,23 @@ public class InventoryServiceImpl implements InventoryService {
         }));
     }
 
+    @Override
+    public void restoreClaimed(UUID orderId, UUID sellerId, String skuId, int quantity) {
+        requireOrderId(orderId);
+        requireInventoryPoolKey(sellerId, skuId);
+        if (quantity < 1) throw invalidRequest("quantity must be positive");
+        transactions.executeWithoutResult(status -> {
+            Reservation reservation = requireLockedReservations(orderId).stream()
+                    .filter(row -> row.getSellerId().equals(sellerId) && row.getSkuId().equals(skuId))
+                    .findFirst()
+                    .orElseThrow(() -> new InventoryException(InventoryException.Code.NOT_FOUND,
+                            "claimed reservation does not exist"));
+            reservation.restoreClaimedQuantity(quantity);
+            requireConsistent(stockRepository.restoreClaimed(sellerId, skuId, quantity));
+            reservationRepository.save(reservation);
+        });
+    }
+
     @Override public InventoryPoolResponse find(UUID sellerId, String skuId) {
         requireInventoryPoolKey(sellerId, skuId);
         return inventoryPoolRepository.findById(new InventoryPoolId(sellerId, skuId)).map(InventoryServiceImpl::toResponse).orElse(null);

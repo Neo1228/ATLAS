@@ -18,6 +18,7 @@ import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.OrderFulfillmentRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.repository.OrderRefundRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -66,10 +67,11 @@ class OrderFulfillmentServiceImplTest {
     void initializationIsIdempotentForAnExistingPaidOrder() {
         OrderFulfillmentRepository fulfillments = mock(OrderFulfillmentRepository.class);
         OrderRepository orders = mock(OrderRepository.class);
+        OrderRefundRepository refunds = mock(OrderRefundRepository.class);
         when(orders.lockById(ORDER_ID)).thenReturn(new PurchaseOrder(UUID.randomUUID(), "buyer",
                 "checkout-key", OrderState.PAID, NOW.plusSeconds(600), NOW, NOW));
         OrderFulfillmentServiceImpl service = new OrderFulfillmentServiceImpl(
-                orders, fulfillments, Clock.fixed(NOW, ZoneOffset.UTC));
+                orders, fulfillments, refunds, Clock.fixed(NOW, ZoneOffset.UTC));
         when(fulfillments.findById(ORDER_ID)).thenReturn(Optional.empty())
                 .thenReturn(Optional.of(new OrderFulfillment(ORDER_ID, NOW)));
         service.initialize(ORDER_ID);
@@ -77,5 +79,26 @@ class OrderFulfillmentServiceImplTest {
         verify(fulfillments).save(any(OrderFulfillment.class));
         verify(fulfillments, never()).save(argThat(
                 fulfillment -> fulfillment.status() != FulfillmentStatus.UNFULFILLED));
+    }
+
+    @Test
+    void fullyRefundedOrderCannotAdvanceFulfillment() {
+        UUID sellerId = UUID.randomUUID();
+        OrderFulfillmentRepository fulfillments = mock(OrderFulfillmentRepository.class);
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderRefundRepository refunds = mock(OrderRefundRepository.class);
+        OrderFulfillment fulfillment = new OrderFulfillment(ORDER_ID, NOW);
+        when(orders.lockById(ORDER_ID)).thenReturn(new PurchaseOrder(sellerId, "buyer", "checkout-key",
+                OrderState.PAID, NOW.plusSeconds(600), NOW, NOW));
+        when(fulfillments.findById(ORDER_ID)).thenReturn(Optional.of(fulfillment));
+        when(refunds.isFullyRefunded(ORDER_ID)).thenReturn(true);
+        OrderFulfillmentServiceImpl service = new OrderFulfillmentServiceImpl(
+                orders, fulfillments, refunds, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        OrderException exception = assertThrows(OrderException.class,
+                () -> service.updateStatus(sellerId, ORDER_ID, FulfillmentStatus.IN_PROGRESS));
+
+        assertEquals(OrderException.Code.CONFLICT, exception.code());
+        verify(fulfillments, never()).save(any(OrderFulfillment.class));
     }
 }

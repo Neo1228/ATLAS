@@ -1,14 +1,19 @@
 package com.atlas.application.controller.order;
 
 import com.atlas.application.controller.dto.ReorderHttpRequest;
+import com.atlas.application.controller.dto.OrderRefundHttpRequest;
 import com.atlas.application.controller.dto.UpdateFulfillmentHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.request.OrderRefundRequest;
+import com.atlas.order.dto.response.OrderRefundResponse;
+import com.atlas.order.dto.response.OrderRefundSummaryResponse;
 import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderService;
+import com.atlas.order.service.OrderRefundService;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +34,7 @@ public class OrderController {
     private final OrderService orders;
     private final OrderReorderService reorders;
     private final OrderFulfillmentService fulfillments;
+    private final OrderRefundService refunds;
 
     @PostMapping("/campaigns/{campaignId}/tickets/{ticketId}/checkout")
     public OrderResponse startCheckout(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
@@ -66,6 +72,21 @@ public class OrderController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody ReorderHttpRequest request) {
         return reorders.reorder(orderId, idempotencyKey, request.confirmExistingCartMerge());
+    }
+
+    @PostMapping("/sellers/{sellerId}/orders/{orderId}/refund-records")
+    public OrderRefundResponse refund(@PathVariable UUID sellerId, @PathVariable UUID orderId,
+                                      @RequestHeader("Idempotency-Key") String idempotencyKey,
+                                      @Valid @RequestBody OrderRefundHttpRequest request) {
+        OrderRefundRequest refundRequest = new OrderRefundRequest(request.items().stream()
+                .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                .toList());
+        return refunds.refund(sellerId, orderId, idempotencyKey, refundRequest);
+    }
+
+    @GetMapping("/sellers/{sellerId}/orders/{orderId}/refund-record")
+    public OrderRefundSummaryResponse refundSummary(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
+        return refunds.find(sellerId, orderId);
     }
 
     @GetMapping("/orders/{orderId}")

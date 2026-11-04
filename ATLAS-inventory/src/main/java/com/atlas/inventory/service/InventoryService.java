@@ -20,6 +20,7 @@ public interface InventoryService {
     List<ReservationResponse> findReservations(UUID orderId);
     ReservationResponse release(UUID orderId);
     List<ReservationResponse> releaseAll(UUID orderId);
+    void restoreClaimed(UUID orderId, UUID sellerId, String skuId, int quantity);
     InventoryPoolResponse find(UUID sellerId, String skuId);
     List<InventoryPoolResponse> findAll(UUID sellerId, List<String> skuIds);
 }

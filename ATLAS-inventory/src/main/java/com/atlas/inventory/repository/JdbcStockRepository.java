@@ -39,6 +39,14 @@ public class JdbcStockRepository {
                 """, quantity, quantity, sellerId, skuId, quantity);
     }
 
+    public int restoreClaimed(UUID sellerId, String skuId, int quantity) {
+        return jdbc.update("""
+                UPDATE inventory_pool
+                SET available = available + ?, claimed = claimed - ?
+                WHERE seller_id = ? AND sku_id = ? AND claimed >= ?
+                """, quantity, quantity, sellerId, skuId, quantity);
+    }
+
     public int reserveOne(UUID sellerId, String skuId) { return reserve(sellerId, skuId, 1); }
     public int claimOne(UUID sellerId, String skuId) { return claim(sellerId, skuId, 1); }
     public int releaseOne(UUID sellerId, String skuId) { return release(sellerId, skuId, 1); }
