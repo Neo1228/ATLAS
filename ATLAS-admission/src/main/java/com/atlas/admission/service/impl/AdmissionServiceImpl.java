@@ -9,10 +9,12 @@ import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.persistence.entity.QueueTicket;
 import com.atlas.admission.repository.TicketRepository;
 import com.atlas.admission.repository.JdbcQueueRepository;
+import com.atlas.admission.repository.AdmissionPolicyRepository;
+import com.atlas.admission.persistence.entity.AdmissionPolicy;
 import com.atlas.campaign.service.CampaignService;
-import com.atlas.campaign.service.SellerSkuService;
 import com.atlas.campaign.dto.response.CampaignResponse;
-import com.atlas.campaign.dto.response.SellerSkuResponse;
+import com.atlas.catalog.service.SellerSkuService;
+import com.atlas.catalog.dto.response.SellerSkuResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -29,10 +31,25 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final TicketRepository tickets;
     private final JdbcQueueRepository queueRepository;
     private final CampaignService campaigns;
+    private final AdmissionPolicyRepository policies;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
 
     @Override
+    @Transactional
+    public void configureSellerSkuPolicy(UUID sellerId, String skuId, int maxActiveCheckouts) {
+        if (sellerId == null || blank(skuId) || skuId.length() > 128 || maxActiveCheckouts < 1) {
+            throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid seller-SKU admission policy");
+        }
+        if (sellerSkus.find(sellerId, skuId) == null) {
+            throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Unknown Seller-SKU");
+        }
+        AdmissionPolicy policy = policies.findBySellerIdAndSkuId(sellerId, skuId)
+                .orElseGet(() -> new AdmissionPolicy(sellerId, skuId, maxActiveCheckouts));
+        policy.setMaxActiveCheckouts(maxActiveCheckouts);
+        policies.save(policy);
+    }
+
     @Transactional
     public QueueTicketResponse join(JoinQueueRequest request) {
         if (request == null || request.campaignId() == null || blank(request.skuId())
@@ -40,30 +57,23 @@ public class AdmissionServiceImpl implements AdmissionService {
                 || blank(request.idempotencyKey()) || request.idempotencyKey().length() > 256) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid queue join request");
         }
-        QueueTicketResponse prior = findByKey(request.campaignId(), request.idempotencyKey());
         CampaignResponse campaign = campaigns.requireOpen(request.campaignId(), request.skuId());
-        SellerSkuResponse sellerSku = requireSellerSku(campaign);
-        if (prior != null) {
-            if (!lockCounter(campaign.sellerId(), campaign.skuId())) throw new IllegalStateException("Admission counter is missing for an existing ticket");
-            prior = findByKey(request.campaignId(), request.idempotencyKey());
-            if (prior != null) {
-                requireSamePayload(prior, request);
-                expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), clock.instant());
-                return requireTicket(request.campaignId(), prior.ticketId());
-            }
-        }
+        requireSellerSku(campaign);
+        AdmissionPolicy policy = requirePolicy(campaign.sellerId(), campaign.skuId());
         queueRepository.createCounterIfAbsent(campaign.sellerId(), campaign.skuId());
-        if (!lockCounter(campaign.sellerId(), campaign.skuId())) throw new IllegalStateException("Admission counter initialization failed");
+        if (!lockCounter(campaign.sellerId(), campaign.skuId())) {
+            throw new IllegalStateException("Admission counter initialization failed");
+        }
         Instant now = clock.instant();
         expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), now);
-        prior = findByKey(request.campaignId(), request.idempotencyKey());
+        QueueTicketResponse prior = findByKey(request.campaignId(), request.idempotencyKey());
         if (prior != null) {
             requireSamePayload(prior, request);
             return requireTicket(request.campaignId(), prior.ticketId());
         }
         long sequence = queueRepository.incrementSequence(campaign.sellerId(), campaign.skuId());
         long active = tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(campaign.sellerId(), campaign.skuId());
-        boolean slot = active < sellerSku.maxActiveCheckouts();
+        boolean slot = active < policy.getMaxActiveCheckouts();
         Instant expiresAt = now.plus(campaign.queueTicketTtl());
         QueueTicket ticket = tickets.save(new QueueTicket(request.campaignId(), campaign.sellerId(), request.skuId(),
                 request.buyerRef(), request.idempotencyKey(), sequence,
@@ -77,6 +87,11 @@ public class AdmissionServiceImpl implements AdmissionService {
         if (sellerSku == null) throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Campaign Seller-SKU is not registered");
         return sellerSku;
     }
+    private AdmissionPolicy requirePolicy(UUID sellerId, String skuId) {
+        return policies.findBySellerIdAndSkuId(sellerId, skuId)
+                .orElseThrow(() -> new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Seller-SKU admission policy is not configured"));
+    }
+
 
     @Override
     @Transactional(readOnly = true)
@@ -185,16 +200,15 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     private void promote(UUID sellerId, String skuId) {
         long active = tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(sellerId, skuId);
-        int slots = requireSellerSkuForPromotion(sellerId, skuId) - Math.toIntExact(active);
+        int slots = requirePolicyForPromotion(sellerId, skuId) - Math.toIntExact(active);
         if (slots <= 0) return;
         Instant now = clock.instant();
         List<UUID> waiting = tickets.findWaitingForSellerSku(sellerId, skuId, TicketStatus.WAITING, now, PageRequest.of(0, slots));
         for (UUID ticketId : waiting) queueRepository.activateWaitingTicket(ticketId, now);
     }
 
-    private int requireSellerSkuForPromotion(UUID sellerId, String skuId) {
-        SellerSkuResponse sellerSku = sellerSkus.find(sellerId, skuId);
-        return sellerSku == null ? 0 : sellerSku.maxActiveCheckouts();
+    private int requirePolicyForPromotion(UUID sellerId, String skuId) {
+        return requirePolicy(sellerId, skuId).getMaxActiveCheckouts();
     }
 
     private static QueueTicketResponse toResponse(QueueTicket entity) {

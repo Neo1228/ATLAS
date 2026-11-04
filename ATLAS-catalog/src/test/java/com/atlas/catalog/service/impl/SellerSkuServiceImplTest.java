@@ -1,0 +1,59 @@
+package com.atlas.catalog.service.impl;
+
+import com.atlas.catalog.persistence.entity.Product;
+import com.atlas.catalog.persistence.entity.SellerSku;
+import com.atlas.catalog.repository.ProductRepository;
+import com.atlas.catalog.repository.SellerSkuRepository;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class SellerSkuServiceImplTest {
+    private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
+    private final ProductRepository products = mock(ProductRepository.class);
+    private final SellerSkuServiceImpl service = new SellerSkuServiceImpl(sellerSkus, products);
+    private final UUID sellerId = UUID.randomUUID();
+
+    @Test
+    void emptySkuListReturnsWithoutRepositoryQueries() {
+        assertEquals(List.of(), service.findAll(sellerId, List.of()));
+        verify(sellerSkus, never()).findAllBySellerIdAndSkuIdIn(sellerId, List.of());
+        verify(products, never()).findAllByProductIdIn(List.of());
+    }
+
+    @Test
+    void mapsMultipleSkusWithOneSkuAndOneProductQuery() {
+        UUID firstProductId = UUID.randomUUID();
+        UUID secondProductId = UUID.randomUUID();
+        List<String> skuIds = List.of("TEA-1", "TEA-2");
+        SellerSku firstSku = new SellerSku(sellerId, firstProductId, "TEA-1", 1200, Instant.EPOCH);
+        SellerSku secondSku = new SellerSku(sellerId, secondProductId, "TEA-2", 1500, Instant.EPOCH);
+        Product firstProduct = mock(Product.class);
+        Product secondProduct = mock(Product.class);
+        when(firstProduct.getProductId()).thenReturn(firstProductId);
+        when(firstProduct.getName()).thenReturn("Green tea");
+        when(secondProduct.getProductId()).thenReturn(secondProductId);
+        when(secondProduct.getName()).thenReturn("Black tea");
+        when(sellerSkus.findAllBySellerIdAndSkuIdIn(sellerId, skuIds)).thenReturn(List.of(firstSku, secondSku));
+        when(products.findAllByProductIdIn(List.of(firstProductId, secondProductId)))
+                .thenReturn(List.of(firstProduct, secondProduct));
+
+        var responses = service.findAll(sellerId, skuIds);
+
+        assertEquals(2, responses.size());
+        assertEquals("Green tea", responses.get(0).productName());
+        assertEquals("TEA-1", responses.get(0).skuId());
+        assertEquals(1200, responses.get(0).priceWon());
+        assertEquals("Black tea", responses.get(1).productName());
+        assertEquals("TEA-2", responses.get(1).skuId());
+        assertEquals(1500, responses.get(1).priceWon());
+        verify(sellerSkus).findAllBySellerIdAndSkuIdIn(sellerId, skuIds);
+        verify(products).findAllByProductIdIn(List.of(firstProductId, secondProductId));
+    }
+}

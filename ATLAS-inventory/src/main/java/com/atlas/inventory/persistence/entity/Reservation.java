@@ -5,21 +5,30 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.util.UUID;
 import lombok.Getter;
+import org.hibernate.annotations.UuidGenerator;
 
 @Entity
-@Table(name = "inventory_reservation")
+@Table(name = "inventory_reservation", uniqueConstraints =
+        @UniqueConstraint(name = "uk_inventory_reservation_order_sku", columnNames = {"order_id", "seller_id", "sku_id"}))
 public class Reservation {
-
     @Id
+    @GeneratedValue
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Column(name = "reservation_id", nullable = false)
+    @Getter
+    private UUID reservationId;
+
     @Column(name = "order_id", nullable = false)
     @Getter
     private UUID orderId;
 
-    @Column(name = "campaign_id", nullable = false)
+    @Column(name = "campaign_id")
     @Getter
     private UUID campaignId;
 
@@ -44,7 +53,7 @@ public class Reservation {
     }
 
     public Reservation(UUID orderId, UUID campaignId, UUID sellerId, String skuId, int quantity,
-                                      ReservationStatus status) {
+                       ReservationStatus status) {
         this.orderId = orderId;
         this.campaignId = campaignId;
         this.sellerId = sellerId;
@@ -53,5 +62,7 @@ public class Reservation {
         this.status = status;
     }
 
-    public void setStatus(ReservationStatus status) { this.status = status; }
+    public void setStatus(ReservationStatus status) {
+        this.status = status;
+    }
 }

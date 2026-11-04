@@ -1,8 +1,9 @@
 package com.atlas.inventory;
 
-import com.atlas.campaign.dto.request.RegisterSellerSkuRequest;
-import com.atlas.campaign.service.SellerService;
-import com.atlas.campaign.service.SellerSkuService;
+import com.atlas.catalog.dto.request.CreateProductRequest;
+import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.catalog.service.ProductService;
+import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
@@ -53,16 +54,16 @@ class InventoryConcurrencyIntegrationTest {
     private SellerService sellers;
 
     @Autowired
-    private SellerSkuService sellerSkus;
+    private ProductService products;
 
     @Test
     void concurrentReservationsNeverOversellAndPreserveConservation() throws Exception {
-        UUID sellerId = sellers.create().sellerId();
+        UUID sellerId = sellers.createSeller().sellerId();
         UUID campaignIdA = UUID.randomUUID();
         UUID campaignIdB = UUID.randomUUID();
         String sku = "sku-" + UUID.randomUUID();
         int capacity = 12;
-        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(sku, capacity, capacity));
+        registerSku(sellerId, sku, capacity);
 
         try (var executor = Executors.newFixedThreadPool(32)) {
             List<Callable<Boolean>> attempts = new ArrayList<>();
@@ -96,11 +97,11 @@ class InventoryConcurrencyIntegrationTest {
 
     @Test
     void concurrentClaimAndReleaseMaintainConservationAndAreIdempotent() throws Exception {
-        UUID sellerId = sellers.create().sellerId();
+        UUID sellerId = sellers.createSeller().sellerId();
         UUID campaignIdA = UUID.randomUUID();
         UUID campaignIdB = UUID.randomUUID();
         String sku = "sku-" + UUID.randomUUID();
-        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(sku, 2, 2));
+        registerSku(sellerId, sku, 2);
         UUID claimOrder = UUID.randomUUID();
         UUID releaseOrder = UUID.randomUUID();
         assertThat(inventory.reserve(new ReserveInventoryRequest(claimOrder, campaignIdA, sellerId, sku, 1)).status())
@@ -132,6 +133,12 @@ class InventoryConcurrencyIntegrationTest {
         assertThatThrownBy(() -> inventory.release(claimOrder))
                 .isInstanceOfSatisfying(InventoryException.class, exception ->
                         assertThat(exception.code()).isEqualTo(InventoryException.Code.CONFLICT));
+    }
+
+    private void registerSku(UUID sellerId, String skuId, int initialStock) {
+        var product = products.createProduct(sellerId, new CreateProductRequest("product-" + skuId, null));
+        products.registerSku(sellerId, product.productId(),
+                new RegisterSellerSkuRequest(skuId, 1, initialStock));
     }
 
     private static void assertConserved(InventoryPoolResponse view) {

@@ -3,6 +3,7 @@ package com.atlas;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,13 +17,16 @@ import com.atlas.admission.service.impl.AdmissionServiceImpl;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
-import com.atlas.campaign.dto.request.RegisterSellerSkuRequest;
-import com.atlas.campaign.service.SellerService;
-import com.atlas.campaign.service.SellerSkuService;
-import com.atlas.inventory.service.InventoryService;
+import com.atlas.catalog.dto.request.CreateProductRequest;
+import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.catalog.dto.response.ProductResponse;
+import com.atlas.catalog.dto.response.SellerResponse;
+import com.atlas.catalog.service.ProductService;
+import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.dto.response.ReservationResponse;
+import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.persistence.state.OrderState;
@@ -31,6 +35,7 @@ import com.atlas.order.service.impl.OrderServiceImpl;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.fake.FakePsp;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -85,14 +90,15 @@ class BuyerFlowIntegrationTest {
     @Autowired private OrderServiceImpl orderServiceImpl;
 
     @Autowired private AdmissionServiceImpl admissionServiceImpl;
+    @Autowired private AdmissionService admission;
     @Autowired private CampaignService campaigns;
     @Autowired private SellerService sellers;
-    @Autowired private SellerSkuService sellerSkus;
-    @Autowired private AdmissionService admission;
+    @Autowired private ProductService products;
     @Autowired private InventoryService inventory;
     @Autowired private OrderService orders;
     @Autowired private FakePsp fakePsp;
     @Autowired private AdjustableClock clock;
+    @Autowired private ObjectMapper objectMapper;
     @Autowired private MockMvc mockMvc;
 @Autowired private JdbcTemplate jdbc;
 
@@ -129,6 +135,15 @@ class BuyerFlowIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"code\":\"ORDER_NOT_FOUND\""));
+
+        mockMvc.perform(get("/api/products/{productId}", UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"CATALOG_RESOURCE_NOT_FOUND\""));
+        mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", UUID.randomUUID(), "missing-buyer"))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"CART_NOT_FOUND\""));
     }
 
     @Test
@@ -222,9 +237,10 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void concurrentCampaignsShareGlobalSellerSkuFifoAndCapacity() throws Exception {
-        UUID sellerId = sellers.create().sellerId();
+        UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "shared-" + UUID.randomUUID();
-        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(skuId, 3, 1));
+        registerProductSku(sellerId, skuId, 100, 3);
+        admission.configureSellerSkuPolicy(sellerId, skuId, 1);
         CampaignResponse firstCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
         CampaignResponse secondCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
         CyclicBarrier start = new CyclicBarrier(3);
@@ -262,8 +278,9 @@ assertUuidV7(paymentOrderId);
             }
         }
 
-        UUID anotherSellerId = sellers.create().sellerId();
-        sellerSkus.register(anotherSellerId, new RegisterSellerSkuRequest(skuId, 1, 1));
+        UUID anotherSellerId = sellers.createSeller().sellerId();
+        registerProductSku(anotherSellerId, skuId, 100, 1);
+        admission.configureSellerSkuPolicy(anotherSellerId, skuId, 1);
         CampaignResponse otherSellerCampaign = openCampaign(anotherSellerId, skuId, Duration.ofMinutes(5));
         QueueTicketResponse otherSellerTicket = join(otherSellerCampaign, "other-seller", "other-seller-key");
         assertThat(otherSellerTicket.sequence()).isEqualTo(1);
@@ -492,36 +509,184 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
-    void sellerRegistrationAndSellerSkuApiCreateInitialSharedInventory() throws Exception {
-        mockMvc.perform(post("/api/sellers"))
-                .andExpect(status().isCreated())
-                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains("\"sellerId\":\""));
+    void sellerCartCheckoutSnapshotsCurrentPriceAndReservesAllSkuLines() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("cart-product", null));
+        String firstSku = "cart-a-" + UUID.randomUUID();
+        String secondSku = "cart-b-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        String buyerRef = "cart-buyer-" + UUID.randomUUID();
 
-        UUID sellerId = sellers.create().sellerId();
-        mockMvc.perform(post("/api/sellers/{sellerId}/skus", sellerId)
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, firstSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"skuId":"seller-api-sku","initialStock":5,"maxActiveCheckouts":2}
+                                {"quantity":2}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, secondSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+
+        products.updateSkuPrice(sellerId, product.productId(), firstSku, 125);
+        String idempotencyKey = "cart-checkout-" + UUID.randomUUID();
+        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
+                        sellerId, buyerRef)
+                        .header("Idempotency-Key", idempotencyKey))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+
+        assertThat(order.source().name()).isEqualTo("CART");
+        assertThat(order.campaignId()).isNull();
+        assertThat(order.ticketId()).isNull();
+        assertThat(order.totalPriceWon()).isEqualTo(450);
+        assertThat(order.items()).extracting(item -> item.skuId()).containsExactly(firstSku, secondSku);
+        assertThat(order.items()).extracting(item -> item.unitPriceWon()).containsExactly(125L, 200L);
+        assertThat(order.items()).extracting(item -> item.quantity()).containsExactly(2, 1);
+        assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+
+        InventoryPoolResponse firstStock = inventory.find(sellerId, firstSku);
+        assertThat(firstStock.available()).isEqualTo(2);
+        assertThat(firstStock.reserved()).isEqualTo(2);
+        assertConserved(firstStock);
+        InventoryPoolResponse secondStock = inventory.find(sellerId, secondSku);
+        assertThat(secondStock.available()).isEqualTo(2);
+        assertThat(secondStock.reserved()).isEqualTo(1);
+        assertConserved(secondStock);
+
+        mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"items\":[]"));
+        mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout", sellerId, buyerRef)
+                        .header("Idempotency-Key", idempotencyKey))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains(order.orderId().toString()));
+        clock.advance(Duration.ofMinutes(11));
+        orderServiceImpl.expireDueCheckouts();
+    }
+
+    @Test
+    void cartCheckoutRollsBackEveryReservationWhenOneSkuIsUnavailable() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("limited-cart", null));
+        String availableSku = "available-" + UUID.randomUUID();
+        String scarceSku = "scarce-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(availableSku, 100, 1));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(scarceSku, 200, 1));
+        String buyerRef = "rollback-buyer-" + UUID.randomUUID();
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, availableSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":1}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, scarceSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":2}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout", sellerId, buyerRef)
+                        .header("Idempotency-Key", "failed-checkout-" + UUID.randomUUID()))
+                .andExpect(status().isConflict())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"INSUFFICIENT_STOCK\""));
+
+        assertThat(inventory.find(sellerId, availableSku).available()).isEqualTo(1);
+        assertThat(inventory.find(sellerId, availableSku).reserved()).isZero();
+        assertThat(inventory.find(sellerId, scarceSku).available()).isEqualTo(1);
+        assertThat(inventory.find(sellerId, scarceSku).reserved()).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE buyer_ref = ?",
+                Integer.class, buyerRef)).isZero();
+        mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains(availableSku, scarceSku));
+    }
+
+    @Test
+    void sellerCanRegisterProductAndSkuThroughCatalogApi() throws Exception {
+        String sellerJson = mockMvc.perform(post("/api/sellers"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        SellerResponse seller = objectMapper.readValue(sellerJson, SellerResponse.class);
+        UUID sellerId = seller.sellerId();
+
+        String productJson = mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Seller API Product","description":"A local catalog fixture"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        ProductResponse product = objectMapper.readValue(productJson, ProductResponse.class);
+
+        mockMvc.perform(post("/api/sellers/{sellerId}/products/{productId}/skus",
+                        sellerId, product.productId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":"seller-api-sku","priceWon":100,"initialStock":5}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains(sellerId.toString(), "seller-api-sku"));
+                        .contains(sellerId.toString(), product.productId().toString(), "seller-api-sku"));
+        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/skus/{skuId}/price",
+                        sellerId, product.productId(), "seller-api-sku")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"priceWon":125}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"priceWon\":125"));
+
+        mockMvc.perform(get("/api/products/{productId}", product.productId()))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains(product.productId().toString(), "seller-api-sku", "\"priceWon\":125"));
+        mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("Seller API Product", "seller-api-sku"));
+        mockMvc.perform(put("/api/sellers/{sellerId}/skus/{skuId}/admission-policy", sellerId, "seller-api-sku")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"maxActiveCheckouts":2}
+                                """))
+                .andExpect(status().isOk());
 
         InventoryPoolResponse stock = inventory.find(sellerId, "seller-api-sku");
         assertThat(stock.initialCapacity()).isEqualTo(5);
     }
 
     private CampaignResponse openCampaign(int initialStock, int maxActiveCheckouts, Duration ticketTtl) {
-        UUID sellerId = sellers.create().sellerId();
+        UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "sku-" + UUID.randomUUID();
-        sellerSkus.register(sellerId, new RegisterSellerSkuRequest(skuId, initialStock, maxActiveCheckouts));
+        registerProductSku(sellerId, skuId, 100, initialStock);
+        admission.configureSellerSkuPolicy(sellerId, skuId, maxActiveCheckouts);
         return openCampaign(sellerId, skuId, ticketTtl);
     }
 
     private CampaignResponse openCampaign(UUID sellerId, String skuId, Duration ticketTtl) {
         CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, skuId, ticketTtl));
         return campaigns.open(campaign.campaignId());
+    }
+    private ProductResponse registerProductSku(UUID sellerId, String skuId, long priceWon, int initialStock) {
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("Product " + skuId, null));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, priceWon, initialStock));
+        return product;
     }
 
     private QueueTicketResponse join(CampaignResponse campaign, String buyerRef, String key) {

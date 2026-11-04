@@ -116,8 +116,9 @@ links:
 | REF-105 | Hibernate ORM 7.4, `UuidVersion7Strategy` / API documentation | https://docs.hibernate.org/orm/7.4/javadocs/org/hibernate/id/uuid/UuidVersion7Strategy.html | 2026-11-03 | Hibernate의 UUIDv7 생성 전략 제공. `VERSION_7` generator 방식은 incubating으로 표시 | ✓ API 사용 가능 여부이며 모든 설정에서 생성기의 안정성이나 성능을 증명하지 않음 |
 | REF-106 | Andrew Atkinson, Avoid UUID Version 4 Primary Keys (for Postgres) / practitioner analysis | https://andyatkinson.com/avoid-uuid-version-4-primary-keys | 2025-07-02 | PostgreSQL UUIDv4/v7의 인덱스 지역성·페이지 밀도 비교 | △ 다른 부하에서 얻은 실무자 측정값이며 ATLAS 결과로 옮겨 적용할 수 없음 |
 | REF-107 | Snowflake Developer Blog, What Should My Postgres Primary Key Be? / engineering blog | https://www.snowflake.com/en/developers/blog/postgres-primary-keys/ | 2026-09-17 | UUIDv7의 타임스탬프 노출과 BIGINT·UUID의 크기·식별자 절충 | △ 설계 지침이며 ATLAS 벤치마크는 아님 |
+| REF-108 | 美团技术团队, 大众点评订单系统分库分表实践 / DB 설계 사례 | https://tech.meituan.com/2016/11/18/dianping-order-db-sharding.html | 2026-11-04 | 조회·인덱스 최적화 후 측정된 병목에 한해 분할 검토; 분할 키·조회 제한·이관 대사 비용 | △ 2016년 MySQL 주문 사례. 원문에 아키텍처 유형이 명시되지 않았고 PostgreSQL·modular monolith 기준도 아님. DB 선택의 비교 자료로만 사용하며 운영 규모·분할 수·구조를 복제하지 않음 |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107은 맥락이 한정된 공급업체·실무자·기술 자료다. 보편적 모범 사례, ATLAS 운영 동작, 용량을 입증하지 않는다.
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108은 맥락이 한정된 공급업체·실무자·기술 자료다. 보편적 모범 사례, ATLAS 운영 동작, 용량을 입증하지 않는다.
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.

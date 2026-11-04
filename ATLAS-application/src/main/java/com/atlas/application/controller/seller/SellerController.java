@@ -1,7 +1,7 @@
 package com.atlas.application.controller.seller;
 
-import com.atlas.campaign.dto.response.SellerResponse;
-import com.atlas.campaign.service.SellerService;
+import com.atlas.catalog.dto.response.SellerResponse;
+import com.atlas.catalog.service.SellerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +19,6 @@ public class SellerController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public SellerResponse create() {
-        return sellers.create();
+        return sellers.createSeller();
     }
 }

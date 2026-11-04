@@ -7,6 +7,7 @@
 - 관련 요구사항: [FR-001/FR-004](../../01-requirements/requirements-index.md)
 - 추적: [Issue #89](https://github.com/Neo1228/ATLAS/issues/89), [PR #90](https://github.com/Neo1228/ATLAS/pull/90)
 > 기존 데이터 전환 방식은 [D-055](../../00-governance/decision-log.md)·[ADR-0006](ADR-0006-v6-clean-start.md)에서 대체했습니다. Seller-SKU 소유권, 공유 재고, 전역 FIFO/K, Campaign 호환성 결정은 계속 유효합니다.
+> Catalog·Cart·Order 확장에 따라 모듈 책임, Seller-SKU 등록 경로, K policy 소유는 [D-061](../../00-governance/decision-log.md)·[ADR-0008](ADR-0008-catalog-cart-order-boundaries.md)에서 대체했습니다. 아래 내용은 D-049 당시 결정을 보존하며 현재 구현의 모듈 구조를 설명하지 않습니다.
 
 ## 배경과 문제
 

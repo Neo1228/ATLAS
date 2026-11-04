@@ -1,6 +1,6 @@
 # ATLAS
 
-한정판매 backend 학습 프로젝트. Seller-SKU 재고 공유, 구매 대기열, 주문·결제 흐름의 정합성과 복구를 검증합니다.
+전체 이커머스 플랫폼 backend를 단계적으로 검증하는 로컬 학습 프로젝트. 현재 첫 시나리오는 Seller-SKU 공유 재고와 대기열 기반 한정판매의 주문·결제 정합성 검증.
 
 - 현재 흐름: Seller-SKU 기준 shared inventory와 global FIFO/K
 - 미구현 범위: 실사용자 인증·tenant 격리, live payment, cloud 배포, production SLO/capacity
@@ -23,20 +23,22 @@
 
 ## 모듈 구조
 
-한 번에 실행되는 Spring Boot modular monolith. 물리 디렉터리는 저장소 root의 `ATLAS-*`; `settings.gradle`은 기존 Gradle project path를 유지합니다.
+한 번에 실행되는 Spring Boot modular monolith. 물리 디렉터리는 저장소 root의 `ATLAS-*`; `settings.gradle`은 Gradle project path를 유지.
 
 | 디렉터리 | Gradle project | 책임 |
 |---|---|---|
 | [ATLAS-application](ATLAS-application) | `:application-module` | HTTP, 설정, 공통 오류 처리, Flyway migration |
-| [ATLAS-campaign](ATLAS-campaign) | `:campaign-module` | Seller, Seller-SKU, Campaign |
+| [ATLAS-catalog](ATLAS-catalog) | `:catalog-module` | Seller, Product, Seller-SKU, 현재 가격 |
+| [ATLAS-cart](ATLAS-cart) | `:cart-module` | Seller별 Buyer Cart와 CartItem |
+| [ATLAS-campaign](ATLAS-campaign) | `:campaign-module` | Campaign과 판매 자격 |
 | [ATLAS-admission](ATLAS-admission) | `:admission-module` | Seller-SKU FIFO/K, ticket, expiry |
-| [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | Shared stock, reservation, 재고 불변조건 |
-| [ATLAS-order](ATLAS-order) | `:order-module` | Checkout 및 order lifecycle |
+| [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | 공유 재고, 수량 reservation |
+| [ATLAS-order](ATLAS-order) | `:order-module` | Cart/Campaign checkout, Order·OrderItem, 결제 조정 |
 | [ATLAS-payment](ATLAS-payment) | `:payment-module` | Payment attempt와 Fake PSP 상태 |
 
-- 모듈 간 호출은 공개 `.service`/DTO 계약을 사용; entity/repository 직접 공유 금지.
-- CRUD는 JPA, PostgreSQL 특화 SQL은 모듈 내부 `.repository`의 JDBC/native query.
-- 생성 primary ID는 UUIDv7. 측정 근거와 Hibernate `@Incubating` caveat: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/02-decisions/adr/ADR-0007-uuidv7-identifiers.md).
+- 모듈 간 호출은 공개 `.service`/DTO 계약 사용. Entity·repository 직접 참조 금지.
+- CRUD는 JPA, PostgreSQL 특화 동시성 SQL은 모듈 내부 `.repository`에서 처리.
+- 생성 primary ID는 UUIDv7. 근거·한계: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/02-decisions/adr/ADR-0007-uuidv7-identifiers.md).
 - Schema는 Flyway 소유, Hibernate는 `ddl-auto: validate`.
 
 ## 로컬 실행 환경
@@ -54,29 +56,22 @@ docker compose up -d --wait postgres
 - 전체 compile·Checkstyle·unit/integration tests: `./gradlew --no-daemon check :application-module:bootJar`.
 - Colima에서 Testcontainers 연결이 필요하면 현재 Docker context의 `DOCKER_HOST`와 `/var/run/docker.sock` override를 사용. 자세한 규칙은 [AGENTS.md](AGENTS.md#재발-방지-기준) 참조.
 
-## 기본 Buyer 흐름
+## 기본 구매 흐름
 
-1. Seller 생성: `POST /api/sellers` → `sellerId` 반환.
-2. Seller-SKU 등록: `POST /api/sellers/{sellerId}/skus`.
+현재 첫 일반 구매 여정은 한 Seller의 상품을 Cart에 담아 하나의 Order로 checkout하는 경로. 실제 사용자 인증·다중 Seller 통합 주문은 제외.
 
-   ```json
-   {"skuId":"demo-sku","initialStock":1,"maxActiveCheckouts":1}
-   ```
+1. Seller 생성: `POST /api/sellers`.
+2. Product 등록: `POST /api/sellers/{sellerId}/products`.
+3. Product에 SKU·가격 등록: `POST /api/sellers/{sellerId}/products/{productId}/skus`.
+4. 상품 조회: `GET /api/products` 또는 Seller별 `GET /api/sellers/{sellerId}/products`.
+5. Cart 수량 설정: `PUT /api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}`.
+6. Cart checkout: 같은 경로의 `POST /checkout`, `Idempotency-Key` 헤더 포함.
+7. 결과 확인: `GET /api/orders/{orderId}`.
 
-3. Campaign 생성: `POST /api/campaigns`.
+Cart는 같은 Seller의 여러 SKU·수량을 지원. Checkout은 현재 Seller-SKU와 가격을 재검증하고 상품명·SKU·KRW 단가·수량을 OrderItem에 snapshot. 재고 예약은 모든 SKU에 대해 원자적으로 처리하며 하나라도 부족하면 전체 rollback. 가격 변경은 `PUT /api/sellers/{sellerId}/products/{productId}/skus/{skuId}/price`.
 
-   ```json
-   {"sellerId":"<seller-uuid>","skuId":"demo-sku","queueTicketTtlSeconds":300}
-   ```
-
-4. Campaign open: `POST /api/campaigns/{campaignId}/open`.
-5. Queue join: `POST /api/campaigns/{campaignId}/tickets` with `Idempotency-Key` header and `{"skuId":"demo-sku","buyerRef":"local-buyer-1"}`.
-6. Checkout: `POST /api/campaigns/{campaignId}/tickets/{ticketId}/checkout`.
-7. Fake payment: `POST /api/orders/{orderId}/payment`.
-8. 상태 확인/수동 복구: `GET /api/orders/{orderId}`, `POST /api/orders/{orderId}/reconcile`.
-
-같은 `(sellerId, skuId)`를 참조하는 Campaign은 재고와 FIFO/K를 공유합니다. `sellerId`는 데이터 식별자이며 인증·인가 수단이 아닙니다.
+한정판매는 별도 Campaign 경로. 기존 Seller-SKU shared inventory와 FIFO/K 대기열을 유지하고 Catalog의 SKU 및 Admission의 K policy를 참조. `sellerId`와 `buyerRef`는 합성 식별자이며 인증·인가 수단이 아님.
 
 ## Database 시작 정책
 
-V6는 fresh start만 지원합니다. V1–V5 application table에 기존 row가 있으면 schema/data를 수정하지 않고 중단합니다. 빈 database만 새 Seller-SKU schema로 전환할 수 있습니다. 기존 데이터가 필요하면 애플리케이션 밖에서 먼저 명시적으로 보관·초기화해야 하며, 앱은 자동 reset하지 않습니다. 자세한 조건: [D-055](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md).
+V6는 기존 schema에서 Seller-SKU 구조로 전환하며, 기존 데이터가 있으면 DDL 전에 중단. V7은 Product·Cart·OrderItem 흐름을 추가하며 V6 application table에 행이 있으면 중단. 두 migration 모두 데이터의 자동 매핑·초기화는 하지 않음. 새 로컬 database에서 시작하거나, 필요한 데이터를 앱 밖에서 명시적으로 보관한 뒤 비운 database에서 진행. 세부 근거: [D-055](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0008](docs/02-decisions/adr/ADR-0008-catalog-cart-order-boundaries.md).
