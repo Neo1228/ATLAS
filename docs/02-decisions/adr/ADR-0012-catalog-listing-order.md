@@ -1,20 +1,20 @@
 ---
-id: ADR-0011
+id: ADR-0012
 title: Catalog 목록의 결정적 순서
 status: Accepted
 owner: Project Owner
 date: 2026-11-04
 links:
-  decisions: [D-066]
+  decisions: [D-067]
   issues: [120]
   requirements: [FR-005, Q-010]
   references: [REF-114]
 ---
-# ADR-0011: Catalog 목록의 결정적 순서
+# ADR-0012: Catalog 목록의 결정적 순서
 
 - 상태: ✓ 확정
 - 날짜: 2026-11-04
-- 결정 ID: D-066
+- 결정 ID: D-067
 - 관련 요구사항: FR-005, Q-010
 
 ## 배경
@@ -52,6 +52,6 @@ Q-010은 상품 탐색의 우선순위·세부 기능을 미정으로 둡니다.
 
 ## 근거와 한계
 
-- [D-066](../../00-governance/decision-log.md), [FR-005/Q-010](../../01-requirements/requirements-index.md)
+- [D-067](../../00-governance/decision-log.md), [FR-005/Q-010](../../01-requirements/requirements-index.md)
 - 美团技术团队, [美团搜索多业务商品排序探索与实践](https://tech.meituan.com/2021/11/19/Exploration-and-Practice-of-Multi-business-Commodities-Ranking-in-Meituan-Search.html): 다중 업무 상품 relevance ranking 사례. 다른 서비스의 모델·업무 목표이며 ATLAS의 ranking 또는 성능 근거가 아닙니다. [REF-114](../../00-governance/reference-register.md)
 - [ADR-0008: Catalog·Cart·Order 경계](ADR-0008-catalog-cart-order-boundaries.md)
