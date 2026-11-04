@@ -30,6 +30,7 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.settlement.service.SettlementService;
 import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Duration;
@@ -98,8 +99,8 @@ class CheckoutBehaviorTest {
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
-                inventory, mock(PaymentService.class), catalog, Clock.fixed(NOW, ZoneOffset.UTC),
-                Duration.ofMinutes(10));
+                inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofMinutes(10));
         service.startCheckout(CAMPAIGN, TICKET);
 
         verify(orders).updateState(any(UUID.class), eq(OrderState.FAILED), eq(null), any(Instant.class));

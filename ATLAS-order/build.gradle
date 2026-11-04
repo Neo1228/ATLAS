@@ -3,6 +3,7 @@ dependencies {
     implementation project(':inventory-module')
     implementation project(':payment-module')
     implementation project(':catalog-module')
+    implementation project(':settlement-module')
     implementation project(':cart-module')
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'

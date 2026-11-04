@@ -63,13 +63,25 @@
 | Q-003 | ? 미정 | Seller-SKU 전역 FIFO/K, Campaign별 idempotency·ticket TTL, 판매 시작 후 자격 확인은 정함. 전역 K는 Admission 소유 policy로 구성. 운영 K/TTL, tombstone 정리, payload 필드, bot/auth, lock timeout/deadlock 복구는 미정. |
 | Q-004 | ? 미정 | D-025~D-030: PSP 전 hold, AUTHORIZE → CAPTURE, capture 성공 후 재고 claim. 확인된 hold부터 첫 AUTHORIZE 제출까지 합성 10분, 연장 없음. 운영 TTL/SLO/분포는 미정. |
 | Q-005 | ? 미정 | UNKNOWN은 실패가 아닙니다. 새 attempt 전에 같은 attempt를 대조하며 PENDING/UNKNOWN이면 재고 hold를 유지합니다. 비결제와 필요한 authorization void/expiry가 확인된 뒤 release합니다. Fake PSP 대조는 `POST /reconcile`로 호출하며 자동 복구 worker는 없습니다. 앱 재시작 시 Fake PSP 상태는 초기화됩니다. `OrderService`/`PaymentService`의 striped monitor는 한 JVM 안에서만 같은 주문 호출을 조정합니다. ID 충돌로 무관한 호출이 직렬화될 수 있고, 여러 인스턴스 간 lock 공유는 없습니다. 실제 provider idempotency, 자동 retry/복구 책임, 다중 인스턴스 조정, 기한, key 보존, escalation, compensation은 미정. D-042의 합성 Buyer guard는 인증이나 구매 한도가 아닙니다. |
-| Q-006 | ? 미정 | PSP 거래 대조, 내부 정산 원장, 수수료·지급 주기, 보류금, 회계 정정. Provider 환불 실행과 정산 원장 정정은 별도 기능이며 관계·담당·claim 후 재고 영향·정책이 미정. FR-003은 정산 제안이며 환불 지원 승인이 아닙니다. |
+| Q-006 | ? 미정 | 1차 내부 캡처 원장 범위는 D-064/ADR-0009로 확정: 확인된 capture gross KRW를 PSP_CLEARING 차변·SELLER_PAYABLE 대변으로 기록. PSP 거래 증빙 대조, 수수료, 보류금, 지급, 환불·회계 정정 및 재고 영향은 미정; FR-003은 외부 PSP 동작이나 실제 송금을 승인하지 않습니다. |
 | Q-007 | ? 미정 | `sellerId`는 데이터 식별자이며 인증·인가·Tenant 격리를 제공하지 않습니다. 위협 경계, 개인정보·규제, 지역·통화·세금, 합성 데이터 정책, 외부 노출은 미정. |
 | Q-008 | ? 미정 | 아래 부하 계약 참조. 합성·보고용이며 운영 수요·처리 용량을 뜻하지 않습니다. |
 | Q-009 | ? 미정 | 현재 로컬 stack: Java 25 LTS, Spring Boot 4.1.2/MVC, PostgreSQL 18.6, Gradle Wrapper 9.8.2. Testcontainers 2.0.5와 ArchUnit 1.5.1은 test-scope. Boot 4는 `spring-boot-starter-flyway` 사용. 대안은 결정 로그 참조. CI는 Temurin 25; 운영 JDK vendor/license, database/deployment, PayPal 제품/API는 미정. |
 | Q-010 | ? 미정 | 전체 이커머스 플랫폼의 세부 업무 흐름·경계·우선순위는 계속 구체화. 첫 개발 흐름은 Product→Cart→Order, 단일 Seller, Product-SKU variants, KRW 가격 snapshot으로 승인(D-060/D-061). 모든 PAID Cart·Campaign 주문의 주문당 1건 fulfillment는 D-065로 승인; 상품 탐색·다중 Seller·반품·환불·정산의 세부 범위는 미정. |
 | Q-011 | ✓ 해결 | 취소·기한 만료된 Cart 주문은 Cart를 자동 복원하지 않음. Buyer는 terminal Cart Order에서 명시적 Reorder를 실행; source lines는 현재 Catalog 기준으로 검증. 기존 Cart merge에는 사용자 확인 필요. (D-063/FR-006) |
 | Q-012 | ? 미정 | Reorder idempotency record 보존·정리 정책 미정. 현재 record는 source Order를 참조하며 Order 삭제 기능/cleanup job은 없음. 보존 기간과 storage 영향은 실측 전 운영 규모로 해석하지 않음. |
+
+### Q-006 1차 내부 캡처 원장 (승인 범위)
+
+2026-11-04 소유자 결정(D-064): 확인된 `CAPTURED` 시도마다 원장에 두 항목을 기록합니다. **PSP_CLEARING 차변과 SELLER_PAYABLE 대변에 동일한 gross KRW 금액**을 적습니다.
+
+- 금액은 OrderItem의 `unitPriceWon × quantity` snapshot 합계이며, 현재 계약의 단일 Seller 주문을 전제로 합니다.
+- 기록에는 `orderId`, `attemptId`, `sellerId`, KRW 총액과 기록 시각을 남깁니다. `attemptId`는 유일한 원천 키이며, 같은 값의 재시도는 무시하고 payload가 다르면 거절합니다.
+- 이 기록은 캡처 시점의 내부 PSP clearing receivable과 Seller payable을 나타낼 뿐, PSP가 자금을 실제 정산했거나 Seller에게 송금했다는 뜻이 아닙니다.
+- 원장 기록은 주문을 `PAID`로 전이하고 재고를 claim하는 같은 DB 트랜잭션에 포함합니다. 이 처리가 실패하면 주문·재고 변경과 원장 행은 함께 롤백되며 이미 확정된 PaymentAttempt는 남습니다. 재조정 재시도는 동일 시도를 멱등하게 다시 적용합니다.
+- **비범위:** PSP 거래 증빙 수집·대조, 수수료, 보류금, 지급 일정·실행, 환불, 회계 정정 및 재고 변경. 실제 송금이나 정산 완료 표시는 제공하지 않습니다.
+
+Q-006의 PSP 증빙 원천·매칭 키와 나머지 정산 정책은 계속 미정입니다. 근거와 모듈 경계는 [ADR-0009](../02-decisions/adr/ADR-0009-gross-capture-settlement-ledger.md)를 참조합니다.
 
 ### Q-008 부하 계약 — 보고 전용
 - 기준 부하: 소유자 승인 합성 시험 입력([D-033](../00-governance/decision-log.md)) 10,000 session/60분(약 2.8 session/s), 2배·4배(약 5.6/11.1 session/s). 실제 사용자 수요나 운영 부하 예측이 아님. 전체 Buyer 흐름과 혼합 도착 모델 사용.

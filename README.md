@@ -36,6 +36,7 @@
 | [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | 공유 재고, 수량 reservation |
 | [ATLAS-order](ATLAS-order) | `:order-module` | Cart/Campaign checkout, Order·OrderItem·fulfillment lifecycle, 결제 조정 |
 | [ATLAS-payment](ATLAS-payment) | `:payment-module` | Payment attempt와 Fake PSP 상태 |
+| [ATLAS-settlement](ATLAS-settlement) | `:settlement-module` | 확인된 gross capture의 정산 원장 |
 
 - 모듈 간 호출은 공개 `.service`/DTO 계약 사용. Entity·repository 직접 참조 금지.
 - CRUD는 JPA, PostgreSQL 특화 동시성 SQL은 모듈 내부 `.repository`에서 처리.
