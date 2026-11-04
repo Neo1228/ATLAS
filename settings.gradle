@@ -1,6 +1,8 @@
 rootProject.name = 'atlas'
 
 include 'application-module'
+include 'catalog-module'
+include 'cart-module'
 include 'campaign-module'
 include 'admission-module'
 include 'inventory-module'
@@ -8,6 +10,8 @@ include 'order-module'
 include 'payment-module'
 
 project(':application-module').projectDir = file('ATLAS-application')
+project(':catalog-module').projectDir = file('ATLAS-catalog')
+project(':cart-module').projectDir = file('ATLAS-cart')
 project(':campaign-module').projectDir = file('ATLAS-campaign')
 project(':admission-module').projectDir = file('ATLAS-admission')
 project(':inventory-module').projectDir = file('ATLAS-inventory')

@@ -8,6 +8,8 @@ dependencies {
     implementation project(':inventory-module')
     implementation project(':order-module')
     implementation project(':payment-module')
+    implementation project(':catalog-module')
+    implementation project(':cart-module')
 
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'

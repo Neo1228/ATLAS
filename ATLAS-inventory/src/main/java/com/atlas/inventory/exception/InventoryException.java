@@ -7,6 +7,7 @@ public final class InventoryException extends RuntimeException {
 
     public enum Code {
         UNAVAILABLE,
+        INSUFFICIENT_STOCK,
         CONFLICT,
         NOT_FOUND,
         INVALID_REQUEST

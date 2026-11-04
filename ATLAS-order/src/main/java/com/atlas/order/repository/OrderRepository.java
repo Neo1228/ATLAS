@@ -1,8 +1,8 @@
 package com.atlas.order.repository;
 
 import com.atlas.order.exception.OrderException;
-import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.persistence.entity.PurchaseOrder;
+import com.atlas.order.persistence.state.OrderState;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
@@ -18,25 +18,25 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
             OrderState.PAYMENT_UNKNOWN, OrderState.PAYMENT_VOID_PENDING, OrderState.CANCEL_PENDING);
 
     Optional<PurchaseOrder> findByTicketId(UUID ticketId);
+    Optional<PurchaseOrder> findBySellerIdAndBuyerRefAndCheckoutKey(UUID sellerId, String buyerRef, String checkoutKey);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<PurchaseOrder> findWithLockByOrderId(UUID orderId);
 
-    @Query("select po.orderId from PurchaseOrder po where po.state = :state "
-            + "and po.checkoutExpiresAt <= :expiresAt order by po.checkoutExpiresAt, po.orderId")
-    List<UUID> findExpiredOrderIds(@Param("state") OrderState state, @Param("expiresAt") Instant expiresAt);
+    @Query("select po.orderId from PurchaseOrder po where po.state = :state and po.checkoutExpiresAt <= :now order by po.checkoutExpiresAt, po.orderId")
+    List<UUID> findExpiredOrderIds(@Param("state") OrderState state, @Param("now") Instant now);
 
     boolean existsByCampaignIdAndBuyerRefAndOrderIdNotAndStateIn(
             UUID campaignId, String buyerRef, UUID orderId, List<OrderState> states);
 
     default PurchaseOrder requireById(UUID orderId) {
         return findById(orderId).orElseThrow(() ->
-                new OrderException(OrderException.Code.NOT_FOUND, "Unknown order: " + orderId));
+                new OrderException(OrderException.Code.NOT_FOUND, "Order not found"));
     }
 
     default PurchaseOrder lockById(UUID orderId) {
         return findWithLockByOrderId(orderId).orElseThrow(() ->
-                new OrderException(OrderException.Code.NOT_FOUND, "Unknown order: " + orderId));
+                new OrderException(OrderException.Code.NOT_FOUND, "Order not found"));
     }
 
     default PurchaseOrder findByTicketOrNull(UUID ticketId) {
@@ -49,7 +49,7 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
     }
 
     default void updateState(UUID orderId, OrderState state, UUID paymentAttemptId, Instant updatedAt) {
-        PurchaseOrder order = lockById(orderId);
+        PurchaseOrder order = requireById(orderId);
         order.updateState(state, paymentAttemptId, updatedAt);
     }
 

@@ -55,6 +55,7 @@
 - 공유 이력 amend/rebase, 무승인 force push, `main` 직접 push, 미추적 작업을 지우는 reset/clean 금지. 승인된 예외는 별도 Issue, 대상 SHA, 백업 ref, `--force-with-lease`, protection 복원 기록 필요. 충돌 해결 뒤 diff 및 관련 lint/test 재실행.
 - Git 작성자 정보는 local repository에만 설정하고 GitHub no-reply 주소 사용. API key/token, 개인정보, 실제 결제 정보는 코드·로그·Issue/PR에 기록 금지; placeholder만 사용. 유출 시 즉시 폐기·교체.
 - README는 승인 범위·실행·모듈 구성을 소유. GitHub Issue/PR/commit은 진행 중 작업과 상세 변경 이력의 기준. Decision Log는 지속 보존할 결정 근거, EXP 보고서는 재현 가능한 측정 기록을 소유. 별도 roadmap/milestone/handoff/closeout 문서는 추가하지 않음.
+- Issue·PR은 코드, 관련 테스트, migration, 결정·요구사항 문서가 같은 목적의 완료 기준을 충족한 뒤에만 게시·수정. 진행 중에는 기존 추적 단위를 로컬에서 유지하고 원격 Issue/PR을 선제 생성·분할하지 않음. 로컬 검증 후 관련 변경을 목적에 맞는 소수의 논리 commit으로 기록하고, 기존 Issue/PR을 한 번에 갱신.
 
 ## 재발 방지 기준
 - 파일 확인은 정적 read 도구 사용. 사용자가 금지한 `view` command는 실행하지 않음.

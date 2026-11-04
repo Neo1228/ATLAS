@@ -31,7 +31,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
     }
 
     @Test
-    void emptyLegacySchemaBecomesFreshSellerSkuSchema() {
+    void emptyV6SchemaBecomesCatalogCartAndOrderSchema() {
         flyway(schema, null).migrate();
 
         assertThat(tableExists(jdbc, "seller")).isTrue();
@@ -43,6 +43,18 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "inventory_reservation")).isTrue();
         assertThat(tableExists(jdbc, "purchase_order")).isTrue();
         assertThat(tableExists(jdbc, "payment_attempt")).isTrue();
+        assertThat(tableExists(jdbc, "product")).isTrue();
+        assertThat(tableExists(jdbc, "seller_sku_admission_policy")).isTrue();
+        assertThat(tableExists(jdbc, "shopping_cart")).isTrue();
+        assertThat(tableExists(jdbc, "shopping_cart_item")).isTrue();
+        assertThat(tableExists(jdbc, "order_item")).isTrue();
+        assertThat(columnExists(jdbc, "seller_sku", "product_id")).isTrue();
+        assertThat(columnExists(jdbc, "seller_sku", "price_won")).isTrue();
+        assertThat(columnExists(jdbc, "seller_sku", "max_active_checkouts")).isFalse();
+        assertThat(columnExists(jdbc, "inventory_reservation", "reservation_id")).isTrue();
+        assertThat(columnExists(jdbc, "purchase_order", "order_source")).isTrue();
+        assertThat(columnExists(jdbc, "purchase_order", "checkout_key")).isTrue();
+        assertThat(columnExists(jdbc, "purchase_order", "sku_id")).isFalse();
         assertThat(columnExists(jdbc, "campaign", "seller_id")).isTrue();
         assertThat(columnExists(jdbc, "campaign", "max_active_checkouts")).isFalse();
         assertThat(columnExists(jdbc, "admission_ticket", "seller_id")).isTrue();
@@ -53,7 +65,26 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "campaign_seller_backfill")).isFalse();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(10); // nine application tables plus Flyway history
+                Integer.class, schema)).isEqualTo(15); // fourteen application tables plus Flyway history
+    }
+
+    @Test
+    void v7RefusesExistingV6RowsBeforeChangingTheSchema() {
+        String populatedSchema = createSchema();
+        JdbcTemplate populatedJdbc = jdbcForSchema(populatedSchema);
+        flyway(populatedSchema, MigrationVersion.fromVersion("6")).migrate();
+        UUID sellerId = UUID.randomUUID();
+        populatedJdbc.update("INSERT INTO seller (seller_id) VALUES (?)", sellerId);
+
+        assertThatThrownBy(() -> flyway(populatedSchema, null).migrate())
+                .isInstanceOf(FlywayException.class)
+                .hasStackTraceContaining("V7 requires an empty local application schema");
+
+        assertThat(populatedJdbc.queryForObject("SELECT COUNT(*) FROM seller", Integer.class)).isEqualTo(1);
+        assertThat(tableExists(populatedJdbc, "product")).isFalse();
+        assertThat(populatedJdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '7' AND success",
+                Integer.class)).isZero();
     }
 
     @Test

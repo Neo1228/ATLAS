@@ -2,6 +2,8 @@ package com.atlas.application.exception;
 
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.campaign.exception.CampaignException;
+import com.atlas.cart.exception.CartException;
+import com.atlas.catalog.exception.CatalogException;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.payment.exception.PaymentException;
@@ -23,6 +25,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             CampaignException.class,
             AdmissionException.class,
+            CartException.class,
+            CatalogException.class,
             InventoryException.class,
             OrderException.class,
             PaymentException.class
@@ -43,10 +47,27 @@ public class GlobalExceptionHandler {
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", admission.getMessage());
             };
         }
+
+        if (exception instanceof CartException cart) {
+            return switch (cart.code()) {
+                case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "CART_NOT_FOUND", cart.getMessage());
+                case SKU_NOT_FOUND -> response(HttpStatus.NOT_FOUND, "SKU_NOT_FOUND", cart.getMessage());
+                case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", cart.getMessage());
+            };
+        }
+        if (exception instanceof CatalogException catalog) {
+            return switch (catalog.code()) {
+                case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "CATALOG_RESOURCE_NOT_FOUND", catalog.getMessage());
+                case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", catalog.getMessage());
+                case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", catalog.getMessage());
+            };
+        }
         if (exception instanceof InventoryException inventory) {
             return switch (inventory.code()) {
                 case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "INVENTORY_RESERVATION_NOT_FOUND", inventory.getMessage());
                 case UNAVAILABLE, CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", inventory.getMessage());
+                case INSUFFICIENT_STOCK ->
+                        response(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", inventory.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", inventory.getMessage());
             };
         }

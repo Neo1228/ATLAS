@@ -30,6 +30,10 @@ class ModuleBoundaryTest {
                 "com.atlas.order.dto.response", "com.atlas.order.persistence.state", "com.atlas.order.exception",
                 "com.atlas.payment.service", "com.atlas.payment.dto.request",
                 "com.atlas.payment.dto.response", "com.atlas.payment.persistence.state", "com.atlas.payment.exception",
+                "com.atlas.catalog.service", "com.atlas.catalog.dto.request",
+                "com.atlas.catalog.dto.response", "com.atlas.catalog.exception",
+                "com.atlas.cart.service", "com.atlas.cart.dto.request",
+                "com.atlas.cart.dto.response", "com.atlas.cart.exception",
                 "java..", "jakarta..", "org.springframework..", "org.slf4j.."
         };
         enforceAllowedDependencies(source, "com.atlas.application..", applicationDependencies);
@@ -37,14 +41,20 @@ class ModuleBoundaryTest {
 
         enforceAllowedDependencies(source, "com.atlas.campaign..",
                 append(javaAndPersistence, "com.atlas.campaign..",
-                        "com.atlas.inventory.service", "com.atlas.inventory.dto.request",
-                        "com.atlas.inventory.dto.response", "com.atlas.inventory.persistence.state", "com.atlas.inventory.exception"));
+                        "com.atlas.catalog.service", "com.atlas.catalog.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.admission..",
                 append(javaAndPersistence, "com.atlas.admission..",
                         "com.atlas.campaign.service", "com.atlas.campaign.dto.response",
-                        "com.atlas.campaign.persistence.state", "com.atlas.campaign.exception"));
+                        "com.atlas.campaign.persistence.state", "com.atlas.campaign.exception",
+                        "com.atlas.catalog.service", "com.atlas.catalog.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.inventory..",
                 append(javaAndPersistence, "com.atlas.inventory.."));
+        enforceAllowedDependencies(source, "com.atlas.catalog..",
+                append(javaAndPersistence, "com.atlas.catalog..",
+                        "com.atlas.inventory.service", "com.atlas.inventory.dto.request"));
+        enforceAllowedDependencies(source, "com.atlas.cart..",
+                append(javaAndPersistence, "com.atlas.cart..",
+                        "com.atlas.catalog.service", "com.atlas.catalog.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.order..",
                 append(javaAndPersistence, "com.atlas.order..",
                         "com.atlas.admission.service", "com.atlas.admission.dto.request",
@@ -52,7 +62,9 @@ class ModuleBoundaryTest {
                         "com.atlas.inventory.service", "com.atlas.inventory.dto.request",
                         "com.atlas.inventory.dto.response", "com.atlas.inventory.persistence.state", "com.atlas.inventory.exception",
                         "com.atlas.payment.service", "com.atlas.payment.dto.request",
-                        "com.atlas.payment.dto.response", "com.atlas.payment.persistence.state", "com.atlas.payment.exception"));
+                        "com.atlas.payment.dto.response", "com.atlas.payment.persistence.state", "com.atlas.payment.exception",
+                        "com.atlas.catalog.service", "com.atlas.catalog.dto.request", "com.atlas.catalog.dto.response",
+                        "com.atlas.cart.service", "com.atlas.cart.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.payment..",
                 append(javaAndPersistence, "com.atlas.payment.."));
         noClasses().that().resideInAPackage("com.atlas..")

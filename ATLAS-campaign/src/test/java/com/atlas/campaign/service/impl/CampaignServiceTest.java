@@ -1,12 +1,12 @@
 package com.atlas.campaign.service.impl;
 
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
-import com.atlas.campaign.dto.response.SellerSkuResponse;
+import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.persistence.entity.Campaign;
 import com.atlas.campaign.repository.CampaignRepository;
 import com.atlas.campaign.persistence.state.CampaignStatus;
-import com.atlas.campaign.service.SellerSkuService;
+import com.atlas.catalog.service.SellerSkuService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -43,7 +43,8 @@ class CampaignServiceTest {
         UUID sellerId = UUID.randomUUID();
         UUID campaignId = UUID.randomUUID();
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
-        when(sellerSkus.find(sellerId, "sku-1")).thenReturn(new SellerSkuResponse(sellerId, "sku-1", 3));
+        when(sellerSkus.find(sellerId, "sku-1")).thenReturn(
+                new SellerSkuResponse(sellerId, UUID.randomUUID(), "sku-1", "Product", 1));
         when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> {
             Campaign saved = invocation.getArgument(0);
             var id = Campaign.class.getDeclaredField("campaignId");
