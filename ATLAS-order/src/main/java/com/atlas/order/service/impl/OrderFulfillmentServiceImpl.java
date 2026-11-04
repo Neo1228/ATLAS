@@ -8,6 +8,7 @@ import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.OrderFulfillmentRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.service.OrderFulfillmentService;
 import java.time.Clock;
 import java.util.Objects;
@@ -20,11 +21,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
     private final OrderRepository orders;
     private final OrderFulfillmentRepository fulfillments;
+    private final OrderRefundRepository refunds;
     private final Clock clock;
 
-    public OrderFulfillmentServiceImpl(OrderRepository orders, OrderFulfillmentRepository fulfillments, Clock clock) {
+    public OrderFulfillmentServiceImpl(OrderRepository orders, OrderFulfillmentRepository fulfillments,
+                                       OrderRefundRepository refunds, Clock clock) {
         this.orders = Objects.requireNonNull(orders);
         this.fulfillments = Objects.requireNonNull(fulfillments);
+        this.refunds = Objects.requireNonNull(refunds);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -47,6 +51,9 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
         }
         OrderFulfillment fulfillment = fulfillments.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Fulfillment not found"));
+        if (status != fulfillment.status() && refunds.isFullyRefunded(orderId)) {
+            throw new OrderException(OrderException.Code.CONFLICT, "Fully refunded orders cannot advance fulfillment");
+        }
         fulfillment.transitionTo(status, clock.instant());
         return response(fulfillments.save(fulfillment));
     }

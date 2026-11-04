@@ -49,6 +49,10 @@ public class Reservation {
     @Getter
     private ReservationStatus status;
 
+    @Column(name = "restored_quantity", nullable = false)
+    @Getter
+    private int restoredQuantity;
+
     protected Reservation() {
     }
 
@@ -64,5 +68,12 @@ public class Reservation {
 
     public void setStatus(ReservationStatus status) {
         this.status = status;
+    }
+
+    public void restoreClaimedQuantity(int quantity) {
+        if (status != ReservationStatus.CLAIMED || quantity < 1 || quantity > this.quantity - restoredQuantity) {
+            throw new IllegalStateException("refunded quantity exceeds claimed reservation");
+        }
+        restoredQuantity += quantity;
     }
 }

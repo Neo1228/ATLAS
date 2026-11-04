@@ -1,6 +1,7 @@
 package com.atlas.settlement.repository;
 
 import com.atlas.settlement.dto.request.CapturePostingRequest;
+import com.atlas.settlement.dto.request.RefundPostingRequest;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
@@ -41,6 +42,38 @@ public class SettlementJournalRepository {
                         resultSet.getObject("seller_id", UUID.class),
                         resultSet.getLong("gross_amount_won")))
                 : Optional.empty(), attemptId);
+    }
+
+    public Optional<UUID> insertRefundIfAbsent(RefundPostingRequest request, Instant recordedAt) {
+        return jdbc.query("""
+                INSERT INTO settlement_journal
+                    (source_order_id, source_attempt_id, source_refund_id, seller_id, currency, gross_amount_won, recorded_at)
+                VALUES (?, NULL, ?, ?, 'KRW', ?, ?)
+                ON CONFLICT (source_refund_id) DO NOTHING
+                RETURNING journal_id
+                """, resultSet -> resultSet.next()
+                ? Optional.of(resultSet.getObject("journal_id", UUID.class)) : Optional.empty(),
+                request.orderId(), request.refundId(), request.sellerId(), request.amountWon(),
+                Timestamp.from(recordedAt));
+    }
+
+    public Optional<RefundPostingRequest> findByRefundId(UUID refundId) {
+        return jdbc.query("""
+                SELECT source_order_id, source_refund_id, seller_id, gross_amount_won
+                FROM settlement_journal
+                WHERE source_refund_id = ?
+                """, resultSet -> resultSet.next()
+                ? Optional.of(new RefundPostingRequest(
+                        resultSet.getObject("source_order_id", UUID.class),
+                        resultSet.getObject("source_refund_id", UUID.class),
+                        resultSet.getObject("seller_id", UUID.class),
+                        resultSet.getLong("gross_amount_won")))
+                : Optional.empty(), refundId);
+    }
+
+    public void insertRefundEntries(UUID journalId, long amountWon, Instant recordedAt) {
+        insertEntry(journalId, "SELLER_PAYABLE", "DEBIT", amountWon, recordedAt);
+        insertEntry(journalId, "PSP_CLEARING", "CREDIT", amountWon, recordedAt);
     }
 
     public void insertEntries(UUID journalId, long grossAmountWon, Instant recordedAt) {
