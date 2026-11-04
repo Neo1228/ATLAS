@@ -4,6 +4,7 @@
 - 날짜: 2026-11-04
 - 담당자: Project Owner
 - 관련 결정: [D-065](../../00-governance/decision-log.md)
+- 관련 Issue: [Issue #117](https://github.com/Neo1228/ATLAS/issues/117)
 
 ## 배경
 
