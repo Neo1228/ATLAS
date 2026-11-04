@@ -6,7 +6,7 @@ owner: 프로젝트 책임자
 updated: 2026-11-04
 links:
   requirements: []
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011, ADR-0012]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011, ADR-0012, ADR-0013]
   experiments: [EXP-014]
 ---
 # 외부 참고자료 레지스트리
@@ -140,3 +140,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0010](../02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md): REF-112는 결제 후 주문 여정, REF-113은 vendor-specific fulfillment 수명주기 사례. 단일 PAID Order당 fulfillment는 D-065 프로젝트 결정.
 - [ADR-0011](../02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md): D-066은 gross capture 이중기입의 owner decision. REF-027은 PostgreSQL 재시도·멱등 패턴 참고이며 회계 모델 근거는 아님.
 - [ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md): REF-114는 다중 업무 유형별 상품 relevance ranking 사례이며, ATLAS 목록의 ID 정렬을 정당화하는 일반 규칙은 아님. D-067은 기존 query 응답의 재현성만 규정.
+- [ADR-0013](../02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md): D-068는 배송 전 local refund record, 원장 reversal, claimed inventory 복원을 정한 소유자 정책. 외부 PSP 동작·자금 이동은 범위 밖.
