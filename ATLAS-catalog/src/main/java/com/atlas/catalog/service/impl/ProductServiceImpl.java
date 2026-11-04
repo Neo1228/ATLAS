@@ -17,6 +17,7 @@ import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
 import java.time.Clock;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -85,8 +86,9 @@ public class ProductServiceImpl implements ProductService {
     public List<ProductListingResponse> listProducts() {
         Map<UUID, List<Product>> productsBySeller = products.findAll().stream()
                 .collect(Collectors.groupingBy(Product::getSellerId));
-        return productsBySeller.values().stream()
-                .flatMap(group -> toListings(group.get(0).getSellerId(), group).stream()).toList();
+        return productsBySeller.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .flatMap(entry -> toListings(entry.getKey(), entry.getValue()).stream()).toList();
     }
 
     @Override
@@ -112,13 +114,18 @@ public class ProductServiceImpl implements ProductService {
         List<SellerSkuResponse> variants = sellerSkuService.findAll(sellerId, skuIds);
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = variants.stream()
                 .collect(Collectors.groupingBy(SellerSkuResponse::productId));
-        return sellerProducts.stream().map(product -> new ProductListingResponse(toResponse(product),
-                variantsByProductId.getOrDefault(product.getProductId(), List.of()))).toList();
+        return sellerProducts.stream()
+                .map(product -> new ProductListingResponse(toResponse(product),
+                        variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
+                                .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList()))
+                .sorted(Comparator.comparing(listing -> listing.product().productId()))
+                .toList();
     }
 
     private ProductListingResponse toListing(Product product) {
         List<SellerSkuResponse> variants = sellerSkus.findAllByProductId(product.getProductId()).stream()
-                .map(sku -> toResponse(product, sku)).toList();
+                .map(sku -> toResponse(product, sku))
+                .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList();
         return new ProductListingResponse(toResponse(product), variants);
     }
 
