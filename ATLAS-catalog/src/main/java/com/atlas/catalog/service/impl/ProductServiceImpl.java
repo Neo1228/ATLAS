@@ -2,6 +2,7 @@ package com.atlas.catalog.service.impl;
 
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.dto.response.ProductListingResponse;
 import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
@@ -13,10 +14,11 @@ import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.catalog.service.ProductService.ProductListingPage;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -85,8 +87,11 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    public ProductListingPage listProductsPage(UUID sellerId, String query, Integer requestedLimit,
-            UUID cursorSeller, UUID cursorProduct) {
+    public ProductListingPageResponse listProductsPage(UUID sellerId, String query, Integer requestedLimit,
+            String cursor) {
+        ListingCursor position = decodeCursor(cursor);
+        UUID cursorSeller = position == null ? null : position.sellerId();
+        UUID cursorProduct = position == null ? null : position.productId();
         int limit = requestedLimit == null ? DEFAULT_PAGE_SIZE : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
             throw new CatalogException(Code.INVALID_REQUEST, "Product page limit is out of range");
@@ -98,14 +103,11 @@ public class ProductServiceImpl implements ProductService {
         if (sellerId != null && cursorSeller != null && !sellerId.equals(cursorSeller)) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
         }
-        if ((cursorSeller == null) != (cursorProduct == null)) {
-            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
-        }
         List<Product> fetched = products.findListingPage(sellerId, keyword, cursorSeller, cursorProduct, limit + 1);
         boolean hasMore = fetched.size() > limit;
         List<Product> page = fetched.stream().limit(limit).toList();
         List<UUID> productIds = page.stream().map(Product::getProductId).toList();
-        if (productIds.isEmpty()) return new ProductListingPage(List.of(), false);
+        if (productIds.isEmpty()) return new ProductListingPageResponse(List.of(), null);
         Map<UUID, Product> productsById = page.stream()
                 .collect(Collectors.toMap(Product::getProductId, product -> product));
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
@@ -114,7 +116,12 @@ public class ProductServiceImpl implements ProductService {
         List<ProductListingResponse> items = page.stream().map(product -> new ProductListingResponse(toResponse(product),
                 variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
                         .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList())).toList();
-        return new ProductListingPage(items, hasMore);
+        String nextCursor = null;
+        if (hasMore) {
+            Product last = page.getLast();
+            nextCursor = encodeCursor(last.getSellerId(), last.getProductId());
+        }
+        return new ProductListingPageResponse(items, nextCursor);
     }
 
     @Override
@@ -141,5 +148,25 @@ public class ProductServiceImpl implements ProductService {
     private static SellerSkuResponse toResponse(Product product, SellerSku sku) {
         return new SellerSkuResponse(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
                 product.getName(), sku.getPriceWon());
+    }
+
+    private static ListingCursor decodeCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) return null;
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] parts = decoded.split(":", -1);
+            if (parts.length != 2) throw new IllegalArgumentException("Malformed cursor");
+            return new ListingCursor(UUID.fromString(parts[0]), UUID.fromString(parts[1]));
+        } catch (IllegalArgumentException exception) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
+        }
+    }
+
+    private static String encodeCursor(UUID sellerId, UUID productId) {
+        String value = sellerId + ":" + productId;
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private record ListingCursor(UUID sellerId, UUID productId) {
     }
 }
