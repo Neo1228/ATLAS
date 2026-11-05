@@ -13,6 +13,7 @@ import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.OrderService;
+import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.fake.FakePsp;
@@ -95,7 +96,7 @@ class SettlementLedgerIntegrationTest {
         String buyerRef = "declined-settlement-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         OrderResponse checkout = checkouts.checkout(sellerId, buyerRef, "declined-settlement-" + UUID.randomUUID());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.DECLINED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.DECLINED);
 
         OrderResponse declined = orders.submitPayment(checkout.orderId());
 
@@ -111,7 +112,7 @@ class SettlementLedgerIntegrationTest {
         String buyerRef = "settlement-retry-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         OrderResponse checkout = checkouts.checkout(sellerId, buyerRef, "settlement-retry-" + UUID.randomUUID());
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePsp.Result.PENDING, FakePsp.Result.CAPTURED);
+        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING, FakePspResult.CAPTURED);
 
         OrderResponse pending = orders.submitPayment(checkout.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);

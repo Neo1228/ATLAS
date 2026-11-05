@@ -1,6 +1,7 @@
 package com.atlas;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -36,6 +37,7 @@ import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.service.impl.OrderServiceImpl;
+import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.fake.FakePsp;
@@ -336,7 +338,7 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-recovery", "recovery-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.UNKNOWN, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
         OrderResponse unknown = orders.submitPayment(order.orderId());
         assertThat(unknown.state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
@@ -354,11 +356,34 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
+    void acceptsMaximumLengthReconcileAndCancelKeys() {
+        String maximumKey = "x".repeat(221);
+
+        CampaignResponse reconcileCampaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse reconcileTicket = join(reconcileCampaign, "buyer-max-reconcile",
+                "max-reconcile-ticket");
+        OrderResponse reconcileOrder = orders.startCheckout(reconcileCampaign.campaignId(),
+                reconcileTicket.ticketId());
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
+        orders.submitPayment(reconcileOrder.orderId());
+        assertThatCode(() -> orders.reconcilePayment(reconcileOrder.orderId(), maximumKey))
+                .doesNotThrowAnyException();
+
+        CampaignResponse cancelCampaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse cancelTicket = join(cancelCampaign, "buyer-max-cancel", "max-cancel-ticket");
+        OrderResponse cancelOrder = orders.startCheckout(cancelCampaign.campaignId(), cancelTicket.ticketId());
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.UNKNOWN);
+        orders.submitPayment(cancelOrder.orderId());
+        assertThatCode(() -> orders.cancel(cancelOrder.orderId(), maximumKey))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void oversizedReconcileAndCancelKeysAreRejectedBeforeProviderPersistence() {
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-oversized-key", "oversized-key-ticket");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
         OrderResponse pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
 
@@ -382,8 +407,8 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-cancel", "cancel-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING,
-                FakePsp.Result.UNKNOWN, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING,
+                FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
         OrderResponse pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
@@ -407,7 +432,7 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-api-recovery", "api-recovery-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.UNKNOWN, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
         OrderResponse unknown = orders.submitPayment(order.orderId());
         mockMvc.perform(post("/api/orders/{orderId}/reconcile", order.orderId())
@@ -441,7 +466,7 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-api-cancel", "api-cancel-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
 
         orders.submitPayment(order.orderId());
         mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId())
@@ -502,7 +527,7 @@ assertUuidV7(paymentOrderId);
         QueueTicketResponse secondTicket = join(campaign, "same-buyer", "second-key");
         OrderResponse first = orders.startCheckout(campaign.campaignId(), firstTicket.ticketId());
         OrderResponse second = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.UNKNOWN, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
         OrderResponse unknown = orders.submitPayment(first.orderId());
         assertThat(unknown.state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
@@ -1097,7 +1122,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePsp.Result.PENDING, FakePsp.Result.CAPTURED);
+        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING, FakePspResult.CAPTURED);
         OrderResponse pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
         UUID attemptId = pending.paymentAttemptId();

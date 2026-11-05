@@ -1,7 +1,7 @@
 package com.atlas.payment.repository;
 
+import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
-import com.atlas.payment.provider.fake.FakePsp;
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -21,7 +21,7 @@ public class FakePspRepository {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void enqueue(PaymentPhase phase, List<FakePsp.Result> results) {
+    public void enqueue(PaymentPhase phase, List<FakePspResult> results) {
         jdbc.execute((Connection connection) -> {
             Array additions = connection.createArrayOf("text", results.stream().map(Enum::name).toArray());
             try (var statement = connection.prepareStatement("""
@@ -41,8 +41,8 @@ public class FakePspRepository {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public FakePsp.Result perform(PaymentPhase phase, String requestId, String idempotencyKey,
-                                  FakePsp.Result defaultResult) {
+    public FakePspResult perform(PaymentPhase phase, String requestId, String idempotencyKey,
+                                  FakePspResult defaultResult) {
         return jdbc.execute((Connection connection) -> {
             boolean created;
             try (var insert = connection.prepareStatement("""
@@ -78,11 +78,19 @@ public class FakePspRepository {
                 select.setString(2, requestId);
                 select.setString(3, idempotencyKey);
                 try (var rows = select.executeQuery()) {
-                    if (rows.next()) return FakePsp.Result.valueOf(rows.getString(1));
+                    if (rows.next()) return FakePspResult.valueOf(rows.getString(1));
                 }
             }
 
             if (created) {
+                try (var ensure = connection.prepareStatement("""
+                        INSERT INTO payment_fake_psp_script(payment_phase, queued_results)
+                        VALUES (?, '{}')
+                        ON CONFLICT (payment_phase) DO NOTHING
+                        """)) {
+                    ensure.setString(1, phase.name());
+                    ensure.executeUpdate();
+                }
                 List<String> script;
                 try (var select = connection.prepareStatement("""
                         SELECT queued_results FROM payment_fake_psp_script
@@ -118,7 +126,7 @@ public class FakePspRepository {
                 }
             }
             if (hasPriorOperation
-                    && (current.equals(FakePsp.Result.PENDING.name()) || current.equals(FakePsp.Result.UNKNOWN.name()))
+                    && (current.equals(FakePspResult.PENDING.name()) || current.equals(FakePspResult.UNKNOWN.name()))
                     && !queued.isEmpty()) {
                 current = queued.remove(0);
                 updateState(connection, phase, requestId, current, queued);
@@ -134,7 +142,7 @@ public class FakePspRepository {
                 insert.setString(4, current);
                 insert.executeUpdate();
             }
-            return FakePsp.Result.valueOf(current);
+            return FakePspResult.valueOf(current);
         });
     }
 
