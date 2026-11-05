@@ -67,29 +67,30 @@ class InventoryCapacityAdjustmentIntegrationTest {
         products.registerSku(sellerId, productId, new RegisterSellerSkuRequest(sku, 100, 4));
 
         inventory.reserve(new ReserveInventoryRequest(UUID.randomUUID(), null, sellerId, sku, 2));
-        AdjustInventoryCapacityRequest add = new AdjustInventoryCapacityRequest(5, "restock");
-        InventoryAdjustmentResponse applied = adjustments.adjust(sellerId, sku, "adjust-key", add);
+        AdjustInventoryCapacityRequest add = new AdjustInventoryCapacityRequest(
+                sellerId, sku, "adjust-key", 5, "restock");
+        InventoryAdjustmentResponse applied = adjustments.adjust(add);
         assertThat(applied.pool().initialCapacity()).isEqualTo(9);
         assertThat(applied.pool().available()).isEqualTo(7);
         assertThat(applied.pool().reserved()).isEqualTo(2);
-        assertThat(adjustments.adjust(sellerId, sku, "adjust-key", add)).isEqualTo(applied);
-        assertThatThrownBy(() -> adjustments.adjust(sellerId, sku, "adjust-key",
-                new AdjustInventoryCapacityRequest(6, "restock")))
+        assertThat(adjustments.adjust(add)).isEqualTo(applied);
+        assertThatThrownBy(() -> adjustments.adjust(new AdjustInventoryCapacityRequest(
+                sellerId, sku, "adjust-key", 6, "restock")))
                 .isInstanceOfSatisfying(InventoryException.class,
                         error -> assertThat(error.code()).isEqualTo(InventoryException.Code.CONFLICT));
 
-        InventoryAdjustmentResponse reduce = adjustments.adjust(sellerId, sku, "reduce-key",
-                new AdjustInventoryCapacityRequest(-3, "correction"));
+        InventoryAdjustmentResponse reduce = adjustments.adjust(new AdjustInventoryCapacityRequest(
+                sellerId, sku, "reduce-key", -3, "correction"));
         assertThat(reduce.pool().available()).isEqualTo(4);
         assertThat(reduce.pool().reserved()).isEqualTo(2);
         assertThat(reduce.pool().claimed()).isZero();
         assertThat(reduce.pool().available() + reduce.pool().reserved() + reduce.pool().claimed())
                 .isEqualTo(reduce.pool().initialCapacity());
-        assertThatThrownBy(() -> adjustments.adjust(sellerId, sku, "too-large",
-                new AdjustInventoryCapacityRequest(-5, "correction")))
+        assertThatThrownBy(() -> adjustments.adjust(new AdjustInventoryCapacityRequest(
+                sellerId, sku, "too-large", -5, "correction")))
                 .isInstanceOf(InventoryException.class);
-        assertThatThrownBy(() -> adjustments.adjust(sellerId, sku, "overflow",
-                new AdjustInventoryCapacityRequest(Integer.MAX_VALUE, "overflow")))
+        assertThatThrownBy(() -> adjustments.adjust(new AdjustInventoryCapacityRequest(
+                sellerId, sku, "overflow", Integer.MAX_VALUE, "overflow")))
                 .isInstanceOf(RuntimeException.class);
         InventoryPoolResponse afterFailure = inventory.find(sellerId, sku);
         assertThat(afterFailure.initialCapacity()).isEqualTo(6);
@@ -104,11 +105,12 @@ class InventoryCapacityAdjustmentIntegrationTest {
         UUID productId = products.createProduct(sellerId,
                 new CreateProductRequest("concurrent-" + UUID.randomUUID(), "description")).productId();
         products.registerSku(sellerId, productId, new RegisterSellerSkuRequest(sku, 100, 3));
-        AdjustInventoryCapacityRequest request = new AdjustInventoryCapacityRequest(2, "restock");
+        AdjustInventoryCapacityRequest request = new AdjustInventoryCapacityRequest(
+                sellerId, sku, "concurrent-key", 2, "restock");
         try (var executor = Executors.newFixedThreadPool(8)) {
         List<Callable<InventoryAdjustmentResponse>> calls = new ArrayList<>();
             for (int i = 0; i < 16; i++) {
-                calls.add(() -> adjustments.adjust(sellerId, sku, "concurrent-key", request));
+                calls.add(() -> adjustments.adjust(request));
             }
             for (var future : executor.invokeAll(calls)) assertThat(future.get().delta()).isEqualTo(2);
         }
@@ -173,7 +175,7 @@ class InventoryCapacityAdjustmentIntegrationTest {
 
     private boolean succeeds(UUID sellerId, String sku, String key) {
         try {
-            adjustments.adjust(sellerId, sku, key, new AdjustInventoryCapacityRequest(-2, "correction"));
+            adjustments.adjust(new AdjustInventoryCapacityRequest(sellerId, sku, key, -2, "correction"));
             return true;
         } catch (InventoryException insufficient) {
             if (insufficient.code() != InventoryException.Code.INSUFFICIENT_STOCK) throw insufficient;

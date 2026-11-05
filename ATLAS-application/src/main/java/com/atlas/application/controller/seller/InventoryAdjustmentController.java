@@ -1,5 +1,6 @@
 package com.atlas.application.controller.seller;
 
+import com.atlas.application.controller.dto.AdjustInventoryCapacityHttpRequest;
 import com.atlas.inventory.dto.request.AdjustInventoryCapacityRequest;
 import com.atlas.inventory.dto.response.InventoryAdjustmentResponse;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
@@ -21,7 +22,8 @@ public class InventoryAdjustmentController {
     @PostMapping
     public InventoryAdjustmentResponse adjust(@PathVariable UUID sellerId, @PathVariable String skuId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @RequestBody AdjustInventoryCapacityRequest request) {
-        return adjustments.adjust(sellerId, skuId, idempotencyKey, request);
+            @RequestBody AdjustInventoryCapacityHttpRequest request) {
+        return adjustments.adjust(new AdjustInventoryCapacityRequest(sellerId, skuId, idempotencyKey,
+                request.delta(), request.reason()));
     }
 }

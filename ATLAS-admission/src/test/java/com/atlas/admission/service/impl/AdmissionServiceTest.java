@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.admission.exception.AdmissionException;
+import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.persistence.entity.AdmissionPolicy;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.repository.AdmissionPolicyRepository;
@@ -50,7 +51,7 @@ class AdmissionServiceTest {
     void configureCreatesPolicyAfterVerifyingCatalogSku() {
         when(policies.findBySellerIdAndSkuId(sellerId, skuId)).thenReturn(Optional.empty());
 
-        admission.configureSellerSkuPolicy(sellerId, skuId, 4);
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 4));
 
         verify(sellerSkus).find(sellerId, skuId);
         verify(policies).save(argThat(policy ->
@@ -63,7 +64,7 @@ class AdmissionServiceTest {
         AdmissionPolicy existing = new AdmissionPolicy(sellerId, skuId, 2);
         when(policies.findBySellerIdAndSkuId(sellerId, skuId)).thenReturn(Optional.of(existing));
 
-        admission.configureSellerSkuPolicy(sellerId, skuId, 5);
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 5));
 
         assertEquals(5, existing.getMaxActiveCheckouts());
         verify(policies).save(existing);
@@ -73,7 +74,8 @@ class AdmissionServiceTest {
     void configureRejectsUnknownSku() {
         when(sellerSkus.find(sellerId, skuId)).thenReturn(null);
 
-        assertThrows(AdmissionException.class, () -> admission.configureSellerSkuPolicy(sellerId, skuId, 3));
+        assertThrows(AdmissionException.class, () -> admission.configureSellerSkuPolicy(
+                new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 3)));
     }
 
     @Test
@@ -104,4 +106,12 @@ class AdmissionServiceTest {
         verify(tickets).findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING), any(Instant.class), eq(PageRequest.of(0, 2)));
         verify(queueRepository).activateWaitingTicket(eq(firstWaitingTicket), any(Instant.class));
     }
+
+    @Test
+    void rejectsNullSellerSkuPolicyRequest() {
+        AdmissionException exception = assertThrows(AdmissionException.class,
+                () -> admission.configureSellerSkuPolicy(null));
+        assertEquals(AdmissionException.Code.INVALID_REQUEST, exception.code());
+    }
+
 }

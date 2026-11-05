@@ -4,6 +4,7 @@ import com.atlas.application.controller.dto.ReorderHttpRequest;
 import com.atlas.application.controller.dto.OrderRefundHttpRequest;
 import com.atlas.application.controller.dto.UpdateFulfillmentHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
+import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.request.OrderRefundRequest;
@@ -73,17 +74,19 @@ public class OrderController {
     public CartResponse reorder(@PathVariable UUID orderId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody ReorderHttpRequest request) {
-        return reorders.reorder(orderId, idempotencyKey, request.confirmExistingCartMerge());
+        return reorders.reorder(new OrderReorderRequest(orderId, idempotencyKey,
+                request.confirmExistingCartMerge()));
     }
 
     @PostMapping("/sellers/{sellerId}/orders/{orderId}/refund-records")
     public OrderRefundResponse refund(@PathVariable UUID sellerId, @PathVariable UUID orderId,
                                       @RequestHeader("Idempotency-Key") String idempotencyKey,
                                       @Valid @RequestBody OrderRefundHttpRequest request) {
-        OrderRefundRequest refundRequest = new OrderRefundRequest(request.items().stream()
-                .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
-                .toList());
-        return refunds.refund(sellerId, orderId, idempotencyKey, refundRequest);
+        OrderRefundRequest refundRequest = new OrderRefundRequest(sellerId, orderId, idempotencyKey,
+                request.items().stream()
+                        .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                        .toList());
+        return refunds.refund(refundRequest);
     }
 
     @GetMapping("/sellers/{sellerId}/orders/{orderId}/refund-record")

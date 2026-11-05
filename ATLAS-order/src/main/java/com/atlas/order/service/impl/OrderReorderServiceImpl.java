@@ -7,6 +7,7 @@ import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.exception.OrderException;
+import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.projection.ExistingReorderRequest;
@@ -46,7 +47,13 @@ public class OrderReorderServiceImpl implements OrderReorderService {
 
     @Override
     @Transactional
-    public CartResponse reorder(UUID orderId, String idempotencyKey, boolean confirmMerge) {
+    public CartResponse reorder(OrderReorderRequest request) {
+        if (request == null) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Reorder request is required");
+        }
+        UUID orderId = request.orderId();
+        String idempotencyKey = request.idempotencyKey();
+        boolean confirmMerge = request.confirmMerge();
         validate(orderId, idempotencyKey);
         PurchaseOrder sourceOrder = lockOrder(orderId);
         if (sourceOrder.source() != OrderSource.CART || !sourceOrder.state().isTerminal()) {
