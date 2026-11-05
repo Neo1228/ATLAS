@@ -29,6 +29,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @AutoConfigureMockMvc
 @SpringBootTest
+@Testcontainers
 class ProductListingPaginationIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");

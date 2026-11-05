@@ -68,7 +68,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "settlement_entry")).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(22); // twenty-one application tables plus Flyway history
+                Integer.class, schema)).isEqualTo(23); // twenty-two application tables plus Flyway history
     }
 
     @Test
