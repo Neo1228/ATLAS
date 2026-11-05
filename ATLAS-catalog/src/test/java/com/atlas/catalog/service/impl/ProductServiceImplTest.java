@@ -2,7 +2,6 @@ package com.atlas.catalog.service.impl;
 
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductListingResponse;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
@@ -11,7 +10,6 @@ import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
-import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
 import java.time.Clock;
@@ -36,8 +34,8 @@ class ProductServiceImplTest {
     private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
     private final InventoryService inventory = mock(InventoryService.class);
     private final Instant now = Instant.parse("2026-01-01T00:00:00Z");
-    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, sellerSkus,
-            new SellerSkuServiceImpl(sellerSkus, products), inventory, Clock.fixed(now, ZoneOffset.UTC));
+    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, sellerSkus, inventory,
+            Clock.fixed(now, ZoneOffset.UTC));
     private final UUID sellerId = UUID.randomUUID();
     private final UUID productId = UUID.randomUUID();
 
@@ -110,38 +108,10 @@ class ProductServiceImplTest {
     }
 
     @Test
-    void listsProductsInStableSellerAndProductOrder() {
-        UUID firstSellerId = new UUID(0, 1);
-        UUID secondSellerId = new UUID(0, 2);
-        UUID firstProductId = new UUID(0, 11);
-        UUID secondProductId = new UUID(0, 12);
-        UUID thirdProductId = new UUID(0, 13);
-        Product firstProduct = product(firstSellerId, firstProductId, "First");
-        Product secondProduct = product(firstSellerId, secondProductId, "Second");
-        Product thirdProduct = product(secondSellerId, thirdProductId, "Third");
-        when(products.findAll()).thenReturn(List.of(thirdProduct, secondProduct, firstProduct));
-        when(products.findAllBySellerId(firstSellerId)).thenReturn(List.of(secondProduct, firstProduct));
-        when(sellers.existsById(firstSellerId)).thenReturn(true);
-        when(sellerSkus.findAllBySellerId(any(UUID.class))).thenReturn(List.of());
-        ProductServiceImpl listingService = new ProductServiceImpl(sellers, products, sellerSkus,
-                mock(SellerSkuService.class), inventory, Clock.fixed(now, ZoneOffset.UTC));
-
-        List<ProductListingResponse> allProducts = listingService.listProducts();
-        List<ProductListingResponse> sellerProducts = listingService.listProducts(firstSellerId);
-
-        assertEquals(List.of(firstProductId, secondProductId, thirdProductId),
-                allProducts.stream().map(listing -> listing.product().productId()).toList());
-        assertEquals(List.of(firstSellerId, firstSellerId, secondSellerId),
-                allProducts.stream().map(listing -> listing.product().sellerId()).toList());
-        assertEquals(List.of(firstProductId, secondProductId),
-                sellerProducts.stream().map(listing -> listing.product().productId()).toList());
-    }
-
-    @Test
-    void sortsVariantsBySkuIdInProductListings() {
+    void sortsVariantsBySkuIdInSingleProductLookup() {
         UUID listingSellerId = UUID.randomUUID();
         UUID listingProductId = UUID.randomUUID();
-        Product product = product(listingSellerId, listingProductId, "Tea");
+        Product listingProduct = product(listingSellerId, listingProductId, "Tea");
         SellerSku laterSku = mock(SellerSku.class);
         when(laterSku.getSellerId()).thenReturn(listingSellerId);
         when(laterSku.getProductId()).thenReturn(listingProductId);
@@ -152,23 +122,12 @@ class ProductServiceImplTest {
         when(earlierSku.getProductId()).thenReturn(listingProductId);
         when(earlierSku.getSkuId()).thenReturn("SKU-A");
         when(earlierSku.getPriceWon()).thenReturn(1200L);
-        when(sellerSkus.findAllBySellerId(listingSellerId)).thenReturn(List.of(laterSku, earlierSku));
         when(sellerSkus.findAllByProductId(listingProductId)).thenReturn(List.of(laterSku, earlierSku));
-        when(products.findAll()).thenReturn(List.of(product));
-        when(products.findById(listingProductId)).thenReturn(Optional.of(product));
-        SellerSkuService listingSkuService = mock(SellerSkuService.class);
-        when(listingSkuService.findAll(listingSellerId, List.of("SKU-Z", "SKU-A"))).thenReturn(List.of(
-                new SellerSkuResponse(listingSellerId, listingProductId, "SKU-Z", "Tea", 1500),
-                new SellerSkuResponse(listingSellerId, listingProductId, "SKU-A", "Tea", 1200)));
-        ProductServiceImpl listingService = new ProductServiceImpl(sellers, products, sellerSkus,
-                listingSkuService, inventory, Clock.fixed(now, ZoneOffset.UTC));
+        when(products.findById(listingProductId)).thenReturn(Optional.of(listingProduct));
 
-        List<String> allProductSkus = listingService.listProducts().getFirst().variants().stream()
-                .map(SellerSkuResponse::skuId).toList();
-        List<String> productSkus = listingService.findProduct(listingProductId).variants().stream()
+        List<String> productSkus = service.findProduct(listingProductId).variants().stream()
                 .map(SellerSkuResponse::skuId).toList();
 
-        assertEquals(List.of("SKU-A", "SKU-Z"), allProductSkus);
         assertEquals(List.of("SKU-A", "SKU-Z"), productSkus);
     }
 
