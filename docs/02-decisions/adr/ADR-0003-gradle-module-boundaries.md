@@ -63,7 +63,7 @@ Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·
 
 ## 결과와 재검토
 
-- `application-module`만 실행·배포한다. Gradle dependency graph와 ArchUnit package 규칙이 모듈 방향·공개 계약을 검사한다. 소유권은 이 ADR과 [README](../../../README.md#도메인-모듈)에 설명한다.
+- `application-module`만 실행·배포한다. Gradle dependency graph와 ArchUnit package 규칙이 모듈 방향·공개 계약을 검사한다. 소유권은 이 ADR과 [README](../../../README.md#모듈-구조)에 설명한다.
 - 다섯 기능 모듈과 Buyer 흐름을 유지한다. `application-module`은 실행·HTTP·migration을 조립하고, 도메인 모듈은 JPA CRUD와 필요한 DB 특화 repository를 소유한다.
 - Payment phase는 `PaymentPhase`로 명명한다. 기존 V4 migration checksum을 바꾸지 않고 V5에서 `operation` column/constraint를 `payment_phase`로 rename한다.
 - 다섯 capability 경계는 ADR-0001의 승인 범위 그대로다. 독립 team/release/data ownership 또는 측정된 운영·성능 요구가 생길 때만 module 수를 재검토한다.

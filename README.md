@@ -14,13 +14,14 @@
 
 ## 현재 검증 결과
 
-| 실험 | 결과 | 범위와 한계 |
+| 실측 자료 | 결과 | 범위와 한계 |
 |---|---|---|
 | [EXP-013](docs/03-experiments/EXP-013-gate4-20-minute-calibration.md) | Local Buyer flow에서 inventory 보존 확인 | K=1 profile에서 WAITING/409 미관찰. Queue contention·capacity 입증 아님 |
 | [EXP-014](docs/03-experiments/EXP-014-id-strategy-comparison.md) | UUIDv7 parent PK index 3,178,496 bytes; UUIDv4 4,407,296 bytes. Insert p50 211.49/212.64ms로 유사 | PostgreSQL 18.6, 합성 100k parent/200k child. 단일 local 비교; production 성능 근거 아님 |
-| [EXP-015](https://github.com/Neo1228/ATLAS/issues/95#issuecomment-6605721385) | Order expiry sweep median: 10/100/300건에서 247.1/1,540.2/5,225.4ms. Admission: 10.2/10.4/20.1ms | 로컬 데이터 규모·현재 구현의 측정치. production traffic/SLO 아님 |
+| [EXP-015](docs/03-experiments/EXP-015-catalog-listing-performance.md) | 합성 상품 10k/100k baseline. 100k에서 Global p50 18.172ms, Seller 2.950ms, broad/needle 검색 17.751/16.162ms. | 1 VU, cache-warm local 비교. 운영 RPS·용량 예측 아님. |
+| [Issue #95 측정 메모](https://github.com/Neo1228/ATLAS/issues/95#issuecomment-6605721385) | 만료 대상 10/100/300건에서 Order 중앙값 247.1/1,540.2/5,225.4ms, Admission 10.2/10.4/20.1ms. | 로컬 데이터 규모·현재 구현의 측정치. 운영 traffic/SLO를 뜻하지 않음. |
 
-추가 부하·용량 검증은 별도 승인과 범위 결정 전까지 수행하지 않습니다. 실험 목록: [EXP registry](docs/03-experiments/).
+추가 부하·용량 검증은 별도 승인과 범위 결정 전까지 수행하지 않습니다. [실험 보고서](docs/03-experiments/)를 참조하세요.
 
 ## 모듈 구조
 
@@ -57,7 +58,7 @@ docker compose up -d --wait postgres
 
 - API bind address: `127.0.0.1:8080`.
 - 전체 compile·Checkstyle·unit/integration tests: `./gradlew --no-daemon check :application-module:bootJar`.
-- Colima에서 Testcontainers 연결이 필요하면 현재 Docker context의 `DOCKER_HOST`와 `/var/run/docker.sock` override를 사용. 자세한 규칙은 [AGENTS.md](AGENTS.md#재발-방지-기준) 참조.
+- Colima에서 Testcontainers 연결이 필요하면 현재 Docker context의 `DOCKER_HOST`와 `/var/run/docker.sock` override를 사용. 자세한 규칙은 [AGENTS.md](AGENTS.md#개발-명령) 참조.
 
 ## 기본 구매 흐름
 
