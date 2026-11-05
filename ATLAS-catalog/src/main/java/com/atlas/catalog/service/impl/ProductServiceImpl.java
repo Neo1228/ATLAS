@@ -13,11 +13,13 @@ import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.service.ProductService;
+import com.atlas.catalog.service.ProductService.ProductListingPage;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
 import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -28,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ProductServiceImpl implements ProductService {
+    private static final int DEFAULT_PAGE_SIZE = 10;
+    private static final int MAX_PAGE_SIZE = 100;
     private final SellerRepository sellers;
     private final ProductRepository products;
     private final SellerSkuRepository sellerSkus;
@@ -81,8 +85,13 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ProductListingResponse> listProductsPage(UUID sellerId, String keyword, UUID cursorSeller,
-            UUID cursorProduct, int limit) {
+    public ProductListingPage listProductsPage(UUID sellerId, String query, Integer requestedLimit,
+            UUID cursorSeller, UUID cursorProduct) {
+        int limit = requestedLimit == null ? DEFAULT_PAGE_SIZE : requestedLimit;
+        if (limit < 1 || limit > MAX_PAGE_SIZE) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Product page limit is out of range");
+        }
+        String keyword = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (sellerId != null && !sellers.existsById(sellerId)) {
             throw new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId);
         }
@@ -92,17 +101,20 @@ public class ProductServiceImpl implements ProductService {
         if ((cursorSeller == null) != (cursorProduct == null)) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
         }
-        List<Product> page = products.findListingPage(sellerId, keyword, cursorSeller, cursorProduct, limit + 1);
-        List<UUID> productIds = page.stream().limit(limit).map(Product::getProductId).toList();
-        if (productIds.isEmpty()) return List.of();
+        List<Product> fetched = products.findListingPage(sellerId, keyword, cursorSeller, cursorProduct, limit + 1);
+        boolean hasMore = fetched.size() > limit;
+        List<Product> page = fetched.stream().limit(limit).toList();
+        List<UUID> productIds = page.stream().map(Product::getProductId).toList();
+        if (productIds.isEmpty()) return new ProductListingPage(List.of(), false);
         Map<UUID, Product> productsById = page.stream()
                 .collect(Collectors.toMap(Product::getProductId, product -> product));
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
                 .map(sku -> toResponse(productsById.get(sku.getProductId()), sku))
                 .collect(Collectors.groupingBy(SellerSkuResponse::productId));
-        return page.stream().map(product -> new ProductListingResponse(toResponse(product),
+        List<ProductListingResponse> items = page.stream().map(product -> new ProductListingResponse(toResponse(product),
                 variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
                         .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList())).toList();
+        return new ProductListingPage(items, hasMore);
     }
 
     @Override

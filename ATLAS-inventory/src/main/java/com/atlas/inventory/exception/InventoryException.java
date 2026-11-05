@@ -2,7 +2,7 @@ package com.atlas.inventory.exception;
 
 import java.util.Objects;
 
-public final class InventoryException extends RuntimeException {
+public class InventoryException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     public enum Code {
@@ -10,6 +10,7 @@ public final class InventoryException extends RuntimeException {
         INSUFFICIENT_STOCK,
         CONFLICT,
         NOT_FOUND,
+        POOL_NOT_FOUND,
         INVALID_REQUEST
     }
 

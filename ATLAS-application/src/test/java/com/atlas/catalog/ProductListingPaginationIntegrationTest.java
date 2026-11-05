@@ -53,15 +53,14 @@ class ProductListingPaginationIntegrationTest {
         UUID firstSeller = sellerService.createSeller().sellerId();
         UUID secondSeller = sellerService.createSeller().sellerId();
         List<Product> seeded = new ArrayList<>();
-        seeded.add(create(firstSeller, "  Needle one  "));
+        seeded.add(create(firstSeller, " Needle one"));
         seeded.add(create(firstSeller, "Needle two"));
         seeded.add(create(firstSeller, "Needle three"));
         seeded.add(create(secondSeller, "Needle four"));
         create(secondSeller, "Other product");
-
         List<Product> expected = seeded.stream()
                 .sorted(Comparator.comparing(Product::getSellerId).thenComparing(Product::getProductId)).toList();
-        List<Product> firstPage = products.findListingPage(null, "needle", null, null, 2);
+        List<Product> firstPage = products.findListingPage(null, "NEEDLE", null, null, 2);
         assertThat(firstPage).hasSize(2);
         Product lastFirstPage = firstPage.getLast();
         List<Product> secondPage = products.findListingPage(null, "needle", lastFirstPage.getSellerId(),
@@ -70,23 +69,22 @@ class ProductListingPaginationIntegrationTest {
         Product lastSecondPage = secondPage.getLast();
         List<Product> thirdPage = products.findListingPage(null, "needle", lastSecondPage.getSellerId(),
                 lastSecondPage.getProductId(), 2);
-
         List<UUID> expectedIds = expected.stream().map(Product::getProductId).toList();
         assertThat(firstPage).extracting(Product::getProductId).containsExactlyElementsOf(expectedIds.subList(0, 2));
         assertThat(secondPage).extracting(Product::getProductId).containsExactlyElementsOf(expectedIds.subList(2, 4));
         assertThat(thirdPage).isEmpty();
         assertThat(products.findListingPage(firstSeller, "needle", null, null, 10))
-                .hasSize(3)
-                .allSatisfy(product -> assertThat(product.getSellerId()).isEqualTo(firstSeller));
+                .hasSize(3).allSatisfy(product -> assertThat(product.getSellerId()).isEqualTo(firstSeller));
         productService.registerSku(expected.get(0).getSellerId(), expected.get(0).getProductId(),
                 new RegisterSellerSkuRequest("CURRENT-PAGE-SKU", 100, 1));
         productService.registerSku(expected.get(2).getSellerId(), expected.get(2).getProductId(),
                 new RegisterSellerSkuRequest("LOOKAHEAD-SKU", 100, 1));
-        var servicePage = productService.listProductsPage(null, "needle", null, null, 2);
-        assertThat(servicePage).hasSize(3);
-        assertThat(servicePage.getFirst().variants()).extracting(variant -> variant.skuId())
+        var servicePage = productService.listProductsPage(null, " NEEDLE ", 2, null, null);
+        assertThat(servicePage.items()).hasSize(2);
+        assertThat(servicePage.hasMore()).isTrue();
+        assertThat(servicePage.items().getFirst().variants()).extracting(variant -> variant.skuId())
                 .containsExactly("CURRENT-PAGE-SKU");
-        assertThat(servicePage.get(2).variants()).isEmpty();
+        assertThat(servicePage.items().get(1).variants()).isEmpty();
         long countBeforeGet = products.count();
         mockMvc.perform(get("/api/products").param("query", " NEEDLE ").param("limit", "2"))
                 .andExpect(status().isOk());
@@ -102,7 +100,6 @@ class ProductListingPaginationIntegrationTest {
                 positiveLeastSignificantBits, sellerId, "literal % value", "description");
         jdbc.update("INSERT INTO product (product_id, seller_id, name, description) VALUES (?, ?, ?, ?)",
                 negativeLeastSignificantBits, sellerId, "literal wildcard", "description");
-
         List<Product> firstPage = products.findListingPage(sellerId, "", null, null, 1);
         assertThat(firstPage).extracting(Product::getProductId).containsExactly(negativeLeastSignificantBits);
         List<Product> secondPage = products.findListingPage(sellerId, "", sellerId,
