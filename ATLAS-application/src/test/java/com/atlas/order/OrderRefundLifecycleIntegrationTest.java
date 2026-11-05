@@ -132,6 +132,50 @@ class OrderRefundLifecycleIntegrationTest {
     }
 
     @Test
+    void refundSummaryAndFulfillmentGateAggregateAcrossOrderItems() {
+        MultiItemFixture fixture = paidOrderWithTwoItems();
+
+        OrderRefundResponse firstRefund = refunds.refund(new OrderRefundRequest(
+                fixture.sellerId(), fixture.orderId(), "multi-item-first-refund",
+                List.of(new OrderRefundRequest.Item(fixture.firstItemId(), 1))));
+
+        assertThat(firstRefund.status()).isEqualTo(OrderRefundStatus.PARTIALLY_RECORDED);
+        assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status())
+                .isEqualTo(OrderRefundStatus.PARTIALLY_RECORDED);
+        assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).totalRecordedAmountWon()).isEqualTo(100);
+        assertPool(fixture.sellerId(), fixture.firstSkuId(), 1, 0, 0, 1);
+        assertPool(fixture.sellerId(), fixture.secondSkuId(), 0, 0, 1, 1);
+        assertThat(orders.find(fixture.orderId()).state()).isEqualTo(OrderState.PAID);
+        assertThat(fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(), FulfillmentStatus.IN_PROGRESS)
+                .status()).isEqualTo(FulfillmentStatus.IN_PROGRESS);
+        assertThat(entriesForRefund(firstRefund.refundId())).containsExactly(
+                new Entry("PSP_CLEARING", "CREDIT", 100),
+                new Entry("SELLER_PAYABLE", "DEBIT", 100));
+
+        OrderRefundResponse secondRefund = refunds.refund(new OrderRefundRequest(
+                fixture.sellerId(), fixture.orderId(), "multi-item-second-refund",
+                List.of(new OrderRefundRequest.Item(fixture.secondItemId(), 1))));
+
+        assertThat(secondRefund.status()).isEqualTo(OrderRefundStatus.FULLY_RECORDED);
+        assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status())
+                .isEqualTo(OrderRefundStatus.FULLY_RECORDED);
+        assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).totalRecordedAmountWon()).isEqualTo(350);
+        assertPool(fixture.sellerId(), fixture.firstSkuId(), 1, 0, 0, 1);
+        assertPool(fixture.sellerId(), fixture.secondSkuId(), 1, 0, 0, 1);
+        assertThat(orders.find(fixture.orderId()).state()).isEqualTo(OrderState.PAID);
+        assertThat(entriesForRefund(secondRefund.refundId())).containsExactly(
+                new Entry("PSP_CLEARING", "CREDIT", 250),
+                new Entry("SELLER_PAYABLE", "DEBIT", 250));
+        assertThat(entriesForAttempt(fixture.paymentAttemptId())).containsExactly(
+                new Entry("PSP_CLEARING", "DEBIT", 350),
+                new Entry("SELLER_PAYABLE", "CREDIT", 350));
+        assertThatThrownBy(() -> fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(),
+                FulfillmentStatus.SHIPPED))
+                .isInstanceOf(OrderException.class)
+                .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
+    }
+
+    @Test
     void rejectsUnpaidOrdersOverRefundsAndRefundsAfterShipmentWithoutChangingStock() {
         Fixture unpaid = unpaidOrder(1, 5, 200);
         assertThatThrownBy(() -> refunds.refund(request(unpaid.sellerId(), unpaid.orderId(),
@@ -258,6 +302,38 @@ class OrderRefundLifecycleIntegrationTest {
                 new Entry("SELLER_PAYABLE", "DEBIT", 450));
     }
 
+    private MultiItemFixture paidOrderWithTwoItems() {
+        UUID sellerId = sellers.createSeller().sellerId();
+        var product = products.createProduct(sellerId, new CreateProductRequest("Multi-item refund test", null));
+        String firstSkuId = "multi-refund-a-" + UUID.randomUUID();
+        String secondSkuId = "multi-refund-b-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSkuId, 100, 1));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSkuId, 250, 1));
+        String buyerRef = "multi-refund-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, firstSkuId, 1);
+        carts.setItemQuantity(sellerId, buyerRef, secondSkuId, 1);
+        OrderResponse reserved = checkouts.checkout(sellerId, buyerRef, "multi-refund-checkout-" + UUID.randomUUID());
+        UUID firstItemId = jdbc.queryForObject(
+                "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
+                UUID.class, reserved.orderId(), firstSkuId);
+        UUID secondItemId = jdbc.queryForObject(
+                "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
+                UUID.class, reserved.orderId(), secondSkuId);
+        OrderResponse paid = orders.submitPayment(reserved.orderId());
+        assertThat(paid.state()).isEqualTo(OrderState.PAID);
+        return new MultiItemFixture(sellerId, paid.orderId(), firstItemId, firstSkuId, secondItemId, secondSkuId,
+                paid.paymentAttemptId());
+    }
+
+    private void assertPool(UUID sellerId, String skuId, int available, int reserved, int claimed,
+            int initialCapacity) {
+        InventoryPoolResponse pool = inventory.find(sellerId, skuId);
+        assertThat(pool.available()).isEqualTo(available);
+        assertThat(pool.reserved()).isEqualTo(reserved);
+        assertThat(pool.claimed()).isEqualTo(claimed);
+        assertThat(pool.available() + pool.reserved() + pool.claimed()).isEqualTo(initialCapacity);
+    }
+
     private Fixture paidOrder(int quantity, int initialStock, long unitPriceWon) {
         Fixture fixture = createOrder(quantity, initialStock, unitPriceWon);
         OrderResponse paid = orders.submitPayment(fixture.orderId());
@@ -339,6 +415,10 @@ class OrderRefundLifecycleIntegrationTest {
                 ORDER BY entry.account_code
                 """, (resultSet, rowNum) -> new Entry(resultSet.getString("account_code"),
                 resultSet.getString("entry_side"), resultSet.getLong("amount_won")), attemptId);
+    }
+
+    private record MultiItemFixture(UUID sellerId, UUID orderId, UUID firstItemId, String firstSkuId,
+            UUID secondItemId, String secondSkuId, UUID paymentAttemptId) {
     }
 
     private record Fixture(UUID sellerId, UUID orderId, UUID orderItemId, String skuId, UUID paymentAttemptId) {
