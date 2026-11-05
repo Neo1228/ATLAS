@@ -1,11 +1,13 @@
 package com.atlas.order.repository;
 
-import com.atlas.order.dto.request.OrderRefundRequest;
+import com.atlas.order.persistence.projection.RefundHeader;
+import com.atlas.order.persistence.projection.RefundItem;
+import com.atlas.order.persistence.projection.RefundRecord;
+import com.atlas.order.persistence.projection.RefundSummary;
 import com.atlas.order.persistence.state.OrderRefundStatus;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,16 +81,16 @@ public class OrderRefundRepository {
                 .orElse(false);
     }
 
- public UUID insertRequest(UUID orderId, UUID sellerId, String idempotencyKey,
-         long recordedAmountWon, OrderRefundStatus status, Instant createdAt) {
-     return jdbc.queryForObject("""
-             INSERT INTO order_refund_request
-                 (order_id, seller_id, idempotency_key, amount_won, refund_status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)
-             RETURNING refund_id
-             """, UUID.class, orderId, sellerId, idempotencyKey, recordedAmountWon, status.name(),
-             Timestamp.from(createdAt));
- }
+    public UUID insertRequest(UUID orderId, UUID sellerId, String idempotencyKey,
+                              long recordedAmountWon, OrderRefundStatus status, Instant createdAt) {
+        return jdbc.queryForObject("""
+                INSERT INTO order_refund_request
+                (order_id, seller_id, idempotency_key, amount_won, refund_status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                RETURNING refund_id
+                """, UUID.class, orderId, sellerId, idempotencyKey, recordedAmountWon, status.name(),
+                Timestamp.from(createdAt));
+    }
 
     public void insertRequestItem(UUID refundId, UUID orderItemId, int quantity) {
         jdbc.update("""
@@ -103,42 +105,25 @@ public class OrderRefundRepository {
                 INSERT INTO order_refund_summary (order_id, seller_id, recorded_amount_won, refund_status, updated_at)
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (order_id) DO UPDATE SET
-                    recorded_amount_won = EXCLUDED.recorded_amount_won,
-                    refund_status = EXCLUDED.refund_status,
-                    updated_at = EXCLUDED.updated_at
+                recorded_amount_won = EXCLUDED.recorded_amount_won,
+                refund_status = EXCLUDED.refund_status,
+                updated_at = EXCLUDED.updated_at
                 """, orderId, sellerId, recordedAmountWon, status.name(), Timestamp.from(updatedAt));
     }
 
-    private List<OrderRefundRequest.Item> findItems(UUID refundId) {
+    private List<RefundItem> findItems(UUID refundId) {
         return jdbc.query("""
                 SELECT order_item_id, quantity
                 FROM order_refund_request_item
                 WHERE refund_id = ?
                 ORDER BY order_item_id
                 """, resultSet -> {
-            List<OrderRefundRequest.Item> items = new ArrayList<>();
+            List<RefundItem> items = new ArrayList<>();
             while (resultSet.next()) {
-                items.add(new OrderRefundRequest.Item(resultSet.getObject("order_item_id", UUID.class),
+                items.add(new RefundItem(resultSet.getObject("order_item_id", UUID.class),
                         resultSet.getInt("quantity")));
             }
-            items.sort(Comparator.comparing(OrderRefundRequest.Item::orderItemId));
             return List.copyOf(items);
         }, refundId);
-    }
-
-    private record RefundHeader(UUID refundId, UUID orderId, UUID sellerId, String idempotencyKey,
-                               long recordedAmountWon, OrderRefundStatus status, Instant createdAt) {
-    }
-
-    public record RefundRecord(UUID refundId, UUID orderId, UUID sellerId, String idempotencyKey,
-                               long recordedAmountWon, OrderRefundStatus status, Instant createdAt,
-                               List<OrderRefundRequest.Item> items) {
-        public RefundRecord {
-            items = List.copyOf(items);
-        }
-    }
-
-    public record RefundSummary(UUID orderId, UUID sellerId, long recordedAmountWon,
-                                OrderRefundStatus status, Instant updatedAt) {
     }
 }

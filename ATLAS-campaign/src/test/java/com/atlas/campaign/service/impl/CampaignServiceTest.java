@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -78,4 +79,16 @@ class CampaignServiceTest {
 
         verify(campaignRepository, never()).save(any(Campaign.class));
     }
+    @Test
+    void findMissingCampaignThrowsTypedNotFound() {
+        CampaignRepository campaignRepository = mock(CampaignRepository.class);
+        UUID campaignId = UUID.randomUUID();
+        when(campaignRepository.findById(campaignId)).thenReturn(Optional.empty());
+        CampaignServiceImpl service = new CampaignServiceImpl(campaignRepository, mock(SellerSkuService.class), Clock.systemUTC());
+
+        CampaignException exception = assertThrows(CampaignException.class, () -> service.find(campaignId));
+
+        assertEquals(CampaignException.Code.NOT_FOUND, exception.code());
+    }
+
 }

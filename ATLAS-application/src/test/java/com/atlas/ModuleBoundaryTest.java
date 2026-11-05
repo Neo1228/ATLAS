@@ -12,9 +12,7 @@ class ModuleBoundaryTest {
 
     @Test
     void dependenciesRespectLayeredModulePackages() {
-        JavaClasses source = new ClassFileImporter()
-                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-                .importPackages("com.atlas");
+        JavaClasses source = productionClasses();
 
         String[] javaAndFramework = {"java..", "jakarta..", "org.springframework..", "org.slf4j.."};
         String[] javaAndPersistence = append(javaAndFramework, "org.hibernate.annotations..", "org.hibernate.id.uuid..");
@@ -79,6 +77,47 @@ class ModuleBoundaryTest {
                 .resideInAnyPackage("org.hibernate.annotations..", "org.hibernate.id.uuid..")
                 .check(source);
 
+    }
+
+    @Test
+    void applicationControllersDoNotDependOnPersistenceOrServiceImplementations() {
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideInAPackage("com.atlas.application.controller..")
+                .should().dependOnClassesThat()
+                .resideInAnyPackage("com.atlas..repository..", "com.atlas..persistence.entity..",
+                        "com.atlas..persistence.projection..", "com.atlas..service.impl..",
+                        "com.atlas..exception..")
+                .check(source);
+    }
+
+    @Test
+    void repositoriesDoNotDependOnPublicDtosOrBusinessExceptions() {
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideInAPackage("com.atlas..repository..")
+                .should().dependOnClassesThat()
+                .resideInAnyPackage("com.atlas..dto.request..", "com.atlas..dto.response..",
+                        "com.atlas..exception..", "com.atlas.application.controller..")
+                .check(source);
+    }
+
+    @Test
+    void publicServiceContractsDoNotDependOnPersistenceAdaptersOrEntities() {
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideInAPackage("..service")
+                .and().areInterfaces()
+                .should().dependOnClassesThat()
+                .resideInAnyPackage("com.atlas..repository..", "com.atlas..persistence.entity..",
+                        "com.atlas..persistence.projection..")
+                .check(source);
+    }
+
+    private static JavaClasses productionClasses() {
+        return new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.atlas");
     }
 
     private static void enforceAllowedDependencies(JavaClasses source, String packagePattern, String... allowedPackages) {

@@ -1,6 +1,5 @@
 package com.atlas.application.controller.admission;
 
-import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
@@ -28,16 +27,14 @@ public class AdmissionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public QueueTicketResponse join(@PathVariable UUID campaignId,
-                                @RequestHeader("Idempotency-Key") String idempotencyKey,
-                                @Valid @RequestBody JoinQueueHttpRequest request) {
-        return admission.join(new JoinQueueRequest(campaignId, request.skuId(), request.buyerRef(), idempotencyKey));
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody JoinQueueHttpRequest request) {
+        return admission.join(new JoinQueueRequest(campaignId, request.skuId(), request.buyerRef(),
+                idempotencyKey));
     }
 
     @GetMapping("/{ticketId}")
     public QueueTicketResponse find(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
-        QueueTicketResponse ticket = admission.find(campaignId, ticketId);
-        if (ticket == null) throw new AdmissionException(AdmissionException.Code.TICKET_NOT_FOUND,
-                "Unknown ticket: " + campaignId + "/" + ticketId);
-        return ticket;
+        return admission.find(campaignId, ticketId);
     }
 }

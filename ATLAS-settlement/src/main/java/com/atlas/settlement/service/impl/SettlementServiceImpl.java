@@ -2,6 +2,8 @@ package com.atlas.settlement.service.impl;
 
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.request.RefundPostingRequest;
+import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
+import com.atlas.settlement.persistence.projection.RefundJournalRecord;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
@@ -24,15 +26,17 @@ public class SettlementServiceImpl implements SettlementService {
     @Transactional
     public void recordCapture(CapturePostingRequest request) {
         validate(request);
+        CaptureJournalRecord facts = new CaptureJournalRecord(
+                request.orderId(), request.attemptId(), request.sellerId(), request.grossAmountWon());
         Instant recordedAt = clock.instant();
-        var journalId = journals.insertIfAbsent(request, recordedAt);
+        var journalId = journals.insertIfAbsent(facts, recordedAt);
         if (journalId.isPresent()) {
             journals.insertEntries(journalId.get(), request.grossAmountWon(), recordedAt);
             return;
         }
-        CapturePostingRequest existing = journals.findByAttemptId(request.attemptId())
+        CaptureJournalRecord existing = journals.findByAttemptId(request.attemptId())
                 .orElseThrow(() -> new IllegalStateException("Capture journal conflict disappeared"));
-        if (!existing.equals(request)) {
+        if (!existing.equals(facts)) {
             throw new IllegalStateException("Capture attempt was posted with different facts");
         }
     }
@@ -41,15 +45,17 @@ public class SettlementServiceImpl implements SettlementService {
     @Transactional
     public void recordRefund(RefundPostingRequest request) {
         validate(request);
+        RefundJournalRecord facts = new RefundJournalRecord(
+                request.orderId(), request.refundId(), request.sellerId(), request.amountWon());
         Instant recordedAt = clock.instant();
-        var journalId = journals.insertRefundIfAbsent(request, recordedAt);
+        var journalId = journals.insertRefundIfAbsent(facts, recordedAt);
         if (journalId.isPresent()) {
             journals.insertRefundEntries(journalId.get(), request.amountWon(), recordedAt);
             return;
         }
-        RefundPostingRequest existing = journals.findByRefundId(request.refundId())
+        RefundJournalRecord existing = journals.findByRefundId(request.refundId())
                 .orElseThrow(() -> new IllegalStateException("Refund journal conflict disappeared"));
-        if (!existing.equals(request)) {
+        if (!existing.equals(facts)) {
             throw new IllegalStateException("Refund was posted with different facts");
         }
     }

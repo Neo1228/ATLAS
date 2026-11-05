@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.repository.SettlementJournalRepository;
+import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -26,11 +27,13 @@ class SettlementServiceImplTest {
     private final UUID attemptId = UUID.randomUUID();
     private final UUID sellerId = UUID.randomUUID();
     private final CapturePostingRequest request = new CapturePostingRequest(orderId, attemptId, sellerId, 2_500);
+    private final CaptureJournalRecord captureFacts =
+            new CaptureJournalRecord(orderId, attemptId, sellerId, 2_500);
 
     @Test
     void postsTwoEntriesOnceForNewCapture() {
         UUID journalId = UUID.randomUUID();
-        when(journals.insertIfAbsent(request, now)).thenReturn(Optional.of(journalId));
+        when(journals.insertIfAbsent(captureFacts, now)).thenReturn(Optional.of(journalId));
 
         service.recordCapture(request);
 
@@ -40,8 +43,8 @@ class SettlementServiceImplTest {
 
     @Test
     void treatsIdenticalAttemptReplayAsIdempotent() {
-        when(journals.insertIfAbsent(request, now)).thenReturn(Optional.empty());
-        when(journals.findByAttemptId(attemptId)).thenReturn(Optional.of(request));
+        when(journals.insertIfAbsent(captureFacts, now)).thenReturn(Optional.empty());
+        when(journals.findByAttemptId(attemptId)).thenReturn(Optional.of(captureFacts));
 
         service.recordCapture(request);
 
@@ -50,9 +53,9 @@ class SettlementServiceImplTest {
 
     @Test
     void rejectsReplayWithDifferentCaptureFacts() {
-        when(journals.insertIfAbsent(request, now)).thenReturn(Optional.empty());
+        when(journals.insertIfAbsent(captureFacts, now)).thenReturn(Optional.empty());
         when(journals.findByAttemptId(attemptId)).thenReturn(Optional.of(
-                new CapturePostingRequest(orderId, attemptId, sellerId, 2_400)));
+                new CaptureJournalRecord(orderId, attemptId, sellerId, 2_400)));
 
         assertThrows(IllegalStateException.class, () -> service.recordCapture(request));
     }
@@ -62,6 +65,6 @@ class SettlementServiceImplTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.recordCapture(new CapturePostingRequest(orderId, null, sellerId, 2_500)));
 
-        verify(journals, never()).insertIfAbsent(any(CapturePostingRequest.class), any(Instant.class));
+        verify(journals, never()).insertIfAbsent(any(CaptureJournalRecord.class), any(Instant.class));
     }
 }

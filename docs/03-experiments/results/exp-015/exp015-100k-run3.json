@@ -1,0 +1,473 @@
+{
+  "state": {
+    "isStdOutTTY": false,
+    "isStdErrTTY": false,
+    "testRunDurationMs": 7002.934524
+  },
+  "metrics": {
+    "http_req_duration{expected_response:true}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 13.644940159999994,
+        "min": 2.381341,
+        "med": 16.720472,
+        "max": 47.957162,
+        "p(90)": 18.3818147,
+        "p(95)": 18.832302349999996,
+        "p(99)": 20.735981629999998
+      }
+    },
+    "iteration_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "min": 5.886205,
+        "med": 20.4512165,
+        "max": 54.323627,
+        "p(90)": 22.430398,
+        "p(95)": 23.15343275,
+        "p(99)": 24.7086263,
+        "avg": 17.499697612499997
+      }
+    },
+    "http_reqs": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 400,
+        "rate": 57.118911883174995
+      }
+    },
+    "http_req_failed": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 400
+      },
+      "thresholds": {
+        "rate==0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_sending": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 0.0085835,
+        "max": 0.080668,
+        "p(90)": 0.011792,
+        "p(95)": 0.013890549999999995,
+        "p(99)": 0.03017507,
+        "avg": 0.009564359999999992,
+        "min": 0.005542
+      }
+    },
+    "vus_max": {
+      "values": {
+        "value": 1,
+        "min": 1,
+        "max": 1
+      },
+      "type": "gauge",
+      "contains": "default"
+    },
+    "catalog_listing_seller_latency": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 2.808975,
+        "max": 4.053001,
+        "p(90)": 3.2659592,
+        "p(95)": 3.5709077499999995,
+        "p(99)": 3.95907277,
+        "avg": 2.8582539399999995,
+        "min": 2.381341
+      }
+    },
+    "catalog_listing_search_needle_latency": {
+      "contains": "time",
+      "values": {
+        "p(95)": 17.53811125,
+        "p(99)": 18.63304044999999,
+        "avg": 16.03568014,
+        "min": 14.887309,
+        "med": 15.6456375,
+        "max": 29.501404,
+        "p(90)": 17.2616702
+      },
+      "type": "trend"
+    },
+    "checks": {
+      "contains": "default",
+      "values": {
+        "rate": 1,
+        "passes": 2800,
+        "fails": 0
+      },
+      "thresholds": {
+        "rate==1": {
+          "ok": true
+        }
+      },
+      "type": "rate"
+    },
+    "http_req_connecting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "min": 0,
+        "med": 0,
+        "max": 0.145503,
+        "p(90)": 0,
+        "p(95)": 0,
+        "p(99)": 0.0009162699999996753,
+        "avg": 0.0012208574999999998
+      }
+    },
+    "data_sent": {
+      "values": {
+        "count": 55000,
+        "rate": 7853.850383936562
+      },
+      "type": "counter",
+      "contains": "data"
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0,
+        "min": 0,
+        "med": 0,
+        "max": 0,
+        "p(90)": 0,
+        "p(95)": 0,
+        "p(99)": 0
+      }
+    },
+    "http_req_receiving": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 0.1642781,
+        "p(95)": 0.21177544999999992,
+        "p(99)": 0.32250133999999997,
+        "avg": 0.12614263000000006,
+        "min": 0.080168,
+        "med": 0.11406549999999999,
+        "max": 0.656306
+      }
+    },
+    "catalog_listing_search_broad_latency": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "min": 16.460217,
+        "med": 17.20792,
+        "max": 47.957162,
+        "p(90)": 18.5140834,
+        "p(95)": 18.724478549999997,
+        "p(99)": 22.423665109999977,
+        "avg": 17.769294480000003
+      }
+    },
+    "vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 1,
+        "min": 1,
+        "max": 1
+      }
+    },
+    "catalog_listing_global_latency": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 19.3948491,
+        "p(95)": 19.7665844,
+        "p(99)": 20.735981629999998,
+        "avg": 17.916532080000007,
+        "min": 16.623428,
+        "med": 17.6498035,
+        "max": 20.99681
+      }
+    },
+    "http_req_blocked": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0.005356229999999993,
+        "min": 0.001541,
+        "med": 0.002667,
+        "max": 0.441468,
+        "p(90)": 0.003292,
+        "p(95)": 0.00375,
+        "p(99)": 0.09956558999999977
+      }
+    },
+    "http_req_waiting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 13.50923317,
+        "min": 2.276755,
+        "med": 16.587781999999997,
+        "max": 47.745574,
+        "p(90)": 18.2444079,
+        "p(95)": 18.723487849999998,
+        "p(99)": 20.63222863
+      }
+    },
+    "data_received": {
+      "values": {
+        "rate": 3605456.528755059,
+        "count": 25248776
+      },
+      "type": "counter",
+      "contains": "data"
+    },
+    "iterations": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 57.118911883174995,
+        "count": 400
+      }
+    },
+    "http_req_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 18.3818147,
+        "p(95)": 18.832302349999996,
+        "p(99)": 20.735981629999998,
+        "avg": 13.644940159999994,
+        "min": 2.381341,
+        "med": 16.720472,
+        "max": 47.957162
+      }
+    }
+  },
+  "root_group": {
+    "name": "",
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e",
+    "groups": [],
+    "checks": [
+        {
+          "name": "global: HTTP 200",
+          "path": "::global: HTTP 200",
+          "id": "c25ff5c988a0d0ff782b1437d2727243",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "id": "b68c7d3d50b248291c7dd07c3bb5443f",
+          "passes": 100,
+          "fails": 0,
+          "name": "global: {items,nextCursor} shape",
+          "path": "::global: {items,nextCursor} shape"
+        },
+        {
+          "name": "global: product/two-SKU shape",
+          "path": "::global: product/two-SKU shape",
+          "id": "686699e6ae028a890d8a6088578ba6b8",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "global: seller scope",
+          "path": "::global: seller scope",
+          "id": "1b5da875fe12e867f3f8b15dddbc7f63",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "passes": 100,
+          "fails": 0,
+          "name": "global: normalized seller/product order",
+          "path": "::global: normalized seller/product order",
+          "id": "13424e18956306a81ebab4ec141d24e1"
+        },
+        {
+          "fails": 0,
+          "name": "global: cursor encodes final item",
+          "path": "::global: cursor encodes final item",
+          "id": "b8fa8827bb5e3c52b68155ac123d4469",
+          "passes": 100
+        },
+        {
+          "path": "::global: page size <= 100",
+          "id": "efeb1cd2542a0f614aa938e3aa9fb5db",
+          "passes": 100,
+          "fails": 0,
+          "name": "global: page size <= 100"
+        },
+        {
+          "path": "::seller: HTTP 200",
+          "id": "8d75829be7cdd54f6a064f4a9e198f1a",
+          "passes": 100,
+          "fails": 0,
+          "name": "seller: HTTP 200"
+        },
+        {
+          "fails": 0,
+          "name": "seller: {items,nextCursor} shape",
+          "path": "::seller: {items,nextCursor} shape",
+          "id": "aae6dd338854c867538a15e3f3af8046",
+          "passes": 100
+        },
+        {
+          "fails": 0,
+          "name": "seller: product/two-SKU shape",
+          "path": "::seller: product/two-SKU shape",
+          "id": "583281c7a083e2a36c7e5357bf4f6be5",
+          "passes": 100
+        },
+        {
+          "name": "seller: seller scope",
+          "path": "::seller: seller scope",
+          "id": "d8153cb1fb8fdc3e7844d30e8d7696c4",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "passes": 100,
+          "fails": 0,
+          "name": "seller: normalized seller/product order",
+          "path": "::seller: normalized seller/product order",
+          "id": "713b66bdcfb9cab44e995f9aa63dfbba"
+        },
+        {
+          "path": "::seller: cursor encodes final item",
+          "id": "18a55ec580856c77dae6fc3c5d9c7c71",
+          "passes": 100,
+          "fails": 0,
+          "name": "seller: cursor encodes final item"
+        },
+        {
+          "name": "seller: page size <= 100",
+          "path": "::seller: page size <= 100",
+          "id": "1794e7ae90dd7250c52b374d3c8de2c6",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "search_broad: HTTP 200",
+          "path": "::search_broad: HTTP 200",
+          "id": "b9b4a86a66afefdcd51a702630397b8f",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "path": "::search_broad: {items,nextCursor} shape",
+          "id": "2eb8a23b6c5432a70aa1d2e3ed095600",
+          "passes": 100,
+          "fails": 0,
+          "name": "search_broad: {items,nextCursor} shape"
+        },
+        {
+          "name": "search_broad: product/two-SKU shape",
+          "path": "::search_broad: product/two-SKU shape",
+          "id": "24f867cb61f41ffdf3a3b4f283cb1647",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "path": "::search_broad: seller scope",
+          "id": "e543748e21e7fb98f72f03c0897c5fcf",
+          "passes": 100,
+          "fails": 0,
+          "name": "search_broad: seller scope"
+        },
+        {
+          "name": "search_broad: normalized seller/product order",
+          "path": "::search_broad: normalized seller/product order",
+          "id": "9fca08b620b8a52a12a471c11ddb50a3",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "passes": 100,
+          "fails": 0,
+          "name": "search_broad: cursor encodes final item",
+          "path": "::search_broad: cursor encodes final item",
+          "id": "eef3bec85c3988179707ff16d96f1c1a"
+        },
+        {
+          "name": "search_broad: page size <= 100",
+          "path": "::search_broad: page size <= 100",
+          "id": "a68d458e56dff7e20b6a9898e15c0527",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "passes": 100,
+          "fails": 0,
+          "name": "search_needle: HTTP 200",
+          "path": "::search_needle: HTTP 200",
+          "id": "c29e35b14453b1c2d8608def2573d241"
+        },
+        {
+          "id": "05a49d62da33ffe7a3d71e2d31071922",
+          "passes": 100,
+          "fails": 0,
+          "name": "search_needle: {items,nextCursor} shape",
+          "path": "::search_needle: {items,nextCursor} shape"
+        },
+        {
+          "name": "search_needle: product/two-SKU shape",
+          "path": "::search_needle: product/two-SKU shape",
+          "id": "312a119fb97db489a8c070c076280cff",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "fails": 0,
+          "name": "search_needle: seller scope",
+          "path": "::search_needle: seller scope",
+          "id": "f4ad838e61df9e19a3d7ef1abee3e49b",
+          "passes": 100
+        },
+        {
+          "id": "c296e892d281fe9986faf442b9ef2448",
+          "passes": 100,
+          "fails": 0,
+          "name": "search_needle: normalized seller/product order",
+          "path": "::search_needle: normalized seller/product order"
+        },
+        {
+          "name": "search_needle: cursor encodes final item",
+          "path": "::search_needle: cursor encodes final item",
+          "id": "e422ab991d8046251dc7fbec96e2d04d",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "search_needle: page size <= 100",
+          "path": "::search_needle: page size <= 100",
+          "id": "07de6c4d56ac6571b6652cb5ca876964",
+          "passes": 100,
+          "fails": 0
+        }
+      ]
+  },
+  "options": {
+    "summaryTrendStats": [
+      "avg",
+      "min",
+      "med",
+      "max",
+      "p(90)",
+      "p(95)",
+      "p(99)"
+    ],
+    "summaryTimeUnit": "",
+    "noColor": false
+  }
+}

@@ -17,6 +17,7 @@ import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
+import com.atlas.order.persistence.projection.ExistingReorderRequest;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.JdbcOrderReorderRepository;
 import com.atlas.order.repository.OrderItemRepository;
@@ -55,7 +56,7 @@ class OrderReorderServiceImplTest {
         PurchaseOrder order = terminalCartOrder(OrderState.CANCELLED);
         OrderItem item = new OrderItem(order, productId, sellerId, skuId, "Original name", 2, 100);
         CartResponse expected = new CartResponse(UUID.randomUUID(), sellerId, buyerRef, List.of());
-        when(orders.lockById(orderId)).thenReturn(order);
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
         when(reorderRequests.find(sellerId, buyerRef, "reorder-key")).thenReturn(Optional.empty());
         when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(item));
         when(clock.instant()).thenReturn(NOW);
@@ -74,9 +75,9 @@ class OrderReorderServiceImplTest {
     void duplicateKeyForSameOrderReturnsCurrentCartWithoutMergingAgain() {
         PurchaseOrder order = terminalCartOrder(OrderState.PAID);
         CartResponse expected = new CartResponse(UUID.randomUUID(), sellerId, buyerRef, List.of());
-        when(orders.lockById(orderId)).thenReturn(order);
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
         when(reorderRequests.find(sellerId, buyerRef, "reorder-key"))
-                .thenReturn(Optional.of(new JdbcOrderReorderRepository.ExistingRequest(orderId, true)));
+                .thenReturn(Optional.of(new ExistingReorderRequest(orderId, true)));
         when(carts.find(sellerId, buyerRef)).thenReturn(expected);
 
         assertEquals(expected, service.reorder(orderId, "reorder-key", true));
@@ -90,13 +91,13 @@ class OrderReorderServiceImplTest {
         Instant expiry = NOW.plusSeconds(600);
         PurchaseOrder campaignOrder = new PurchaseOrder(UUID.randomUUID(), sellerId, UUID.randomUUID(), buyerRef,
                 OrderState.PAID, expiry, null, NOW, NOW);
-        when(orders.lockById(orderId)).thenReturn(campaignOrder);
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(campaignOrder));
 
         OrderException campaign = assertThrows(OrderException.class,
                 () -> service.reorder(orderId, "reorder-key", true));
         assertEquals(OrderException.Code.CONFLICT, campaign.code());
 
-        when(orders.lockById(orderId)).thenReturn(terminalCartOrder(OrderState.RESERVED));
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(terminalCartOrder(OrderState.RESERVED)));
         OrderException active = assertThrows(OrderException.class,
                 () -> service.reorder(orderId, "reorder-key", true));
         assertEquals(OrderException.Code.CONFLICT, active.code());
@@ -108,7 +109,7 @@ class OrderReorderServiceImplTest {
     void unavailableInventoryRejectsWholeReorderBeforeCartMutation() {
         PurchaseOrder order = terminalCartOrder(OrderState.EXPIRED);
         OrderItem item = new OrderItem(order, productId, sellerId, skuId, "Original name", 2, 100);
-        when(orders.lockById(orderId)).thenReturn(order);
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
         when(reorderRequests.find(sellerId, buyerRef, "reorder-key")).thenReturn(Optional.empty());
         when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(item));
         when(inventory.findAll(sellerId, List.of(skuId)))

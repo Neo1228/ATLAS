@@ -85,8 +85,9 @@ public final class OrderServiceImpl implements OrderService {
     public OrderResponse startCheckout(UUID campaignId, UUID ticketId) {
         if (campaignId == null || ticketId == null) throw invalidRequest();
         return transactions.execute(status -> {
-            PurchaseOrder existing = repository.findByTicketOrNull(ticketId);
-            if (existing != null) {
+            var existingOrder = repository.findByTicketId(ticketId);
+            if (existingOrder.isPresent()) {
+                PurchaseOrder existing = existingOrder.get();
                 if (!Objects.equals(existing.campaignId(), campaignId)) {
                     throw new OrderException(OrderException.Code.CONFLICT, "Ticket already belongs to another campaign order");
                 }
@@ -103,11 +104,11 @@ public final class OrderServiceImpl implements OrderService {
             boolean reserved = inventory.tryReserve(new ReserveInventoryRequest(
                     saved.orderId(), campaignId, ticket.sellerId(), sku.skuId(), 1)).isPresent();
             if (!reserved) {
-                repository.updateState(saved.orderId(), OrderState.FAILED, null, clock.instant());
+                updateOrderState(saved.orderId(), OrderState.FAILED, null, clock.instant());
                 admission.releaseCheckoutSlot(campaignId, ticketId,
                         CheckoutSlotReleaseReason.INVENTORY_UNAVAILABLE);
             }
-            return toResponse(repository.requireById(saved.orderId()));
+            return toResponse(requireOrder(saved.orderId()));
         });
     }
 
@@ -119,13 +120,13 @@ public final class OrderServiceImpl implements OrderService {
 
     private OrderResponse submitPaymentLocked(UUID orderId) {
         PurchaseOrder prepared = transactions.execute(status -> {
-            PurchaseOrder order = repository.lockById(orderId);
+            PurchaseOrder order = lockOrder(orderId);
             if (order.state() == OrderState.RESERVED && !clock.instant().isBefore(order.checkoutExpiresAt())) {
                 expire(order);
-                return repository.requireById(orderId);
+                return requireOrder(orderId);
             }
             if (order.state() != OrderState.RESERVED && order.state() != OrderState.PAYMENT_SUBMITTED) {
-                return repository.requireById(orderId);
+                return requireOrder(orderId);
             }
             if (order.source() == OrderSource.CAMPAIGN) {
                 buyerLockRepository.lockBuyer(order.campaignId() + ":" + order.buyerRef());
@@ -135,9 +136,9 @@ public final class OrderServiceImpl implements OrderService {
                 }
             }
             if (order.state() == OrderState.RESERVED) {
-                repository.updateState(orderId, OrderState.PAYMENT_SUBMITTED, order.paymentAttemptId(), clock.instant());
+                updateOrderState(orderId, OrderState.PAYMENT_SUBMITTED, order.paymentAttemptId(), clock.instant());
             }
-            return repository.requireById(orderId);
+            return requireOrder(orderId);
         });
         if (prepared.state() != OrderState.PAYMENT_SUBMITTED) return find(orderId);
         // The external PSP call remains outside the database transaction.
@@ -186,20 +187,20 @@ public final class OrderServiceImpl implements OrderService {
 
     private OrderResponse cancelLocked(UUID orderId, String idempotencyKey) {
         PurchaseOrder current = transactions.execute(status -> {
-            PurchaseOrder order = repository.lockById(orderId);
+            PurchaseOrder order = lockOrder(orderId);
             if (order.state().isTerminal()) return order;
             if (order.state() == OrderState.RESERVED && !clock.instant().isBefore(order.checkoutExpiresAt())) {
                 expire(order);
-                return repository.requireById(orderId);
+                return requireOrder(orderId);
             }
             if (order.state() == OrderState.RESERVED) {
                 releaseWithoutPayment(order, OrderState.CANCELLED, CheckoutSlotReleaseReason.BUYER_CANCELLED);
-                return repository.requireById(orderId);
+                return requireOrder(orderId);
             }
             if (order.state() != OrderState.CANCEL_PENDING) {
-                repository.updateState(orderId, OrderState.CANCEL_PENDING, order.paymentAttemptId(), clock.instant());
+                updateOrderState(orderId, OrderState.CANCEL_PENDING, order.paymentAttemptId(), clock.instant());
             }
-            return repository.requireById(orderId);
+            return requireOrder(orderId);
         });
         if (current.state().isTerminal()) return find(orderId);
         PaymentResponse payment = payments.find(orderId);
@@ -214,22 +215,22 @@ public final class OrderServiceImpl implements OrderService {
 
     private OrderResponse cancelWithoutPayment(UUID orderId) {
         return transactions.execute(status -> {
-            PurchaseOrder current = repository.lockById(orderId);
+            PurchaseOrder current = lockOrder(orderId);
             if (!current.state().isTerminal()) {
                 releaseWithoutPayment(current, OrderState.CANCELLED, CheckoutSlotReleaseReason.BUYER_CANCELLED);
             }
-            return toResponse(repository.requireById(orderId));
+            return toResponse(requireOrder(orderId));
         });
     }
 
     @Override
     public OrderResponse find(UUID orderId) {
         if (orderId == null) throw invalidRequest();
-        return transactions.execute(status -> toResponse(repository.requireById(orderId)));
+        return transactions.execute(status -> toResponse(requireOrder(orderId)));
     }
 
     private PurchaseOrder findOrder(UUID orderId) {
-        return transactions.execute(status -> repository.requireById(orderId));
+        return transactions.execute(status -> requireOrder(orderId));
     }
 
     @Scheduled(fixedDelayString = "${atlas.orders.expiry-poll-interval:PT1S}")
@@ -239,7 +240,7 @@ public final class OrderServiceImpl implements OrderService {
         int expired = 0;
         for (UUID orderId : dueOrders) {
             Integer changed = transactions.execute(status -> {
-                PurchaseOrder order = repository.lockById(orderId);
+                PurchaseOrder order = lockOrder(orderId);
                 if (order.state() != OrderState.RESERVED || clock.instant().isBefore(order.checkoutExpiresAt())) return 0;
                 expire(order);
                 return 1;
@@ -251,7 +252,7 @@ public final class OrderServiceImpl implements OrderService {
 
     private OrderResponse applyPayment(UUID orderId, PaymentResponse payment) {
         return transactions.execute(status -> {
-            PurchaseOrder order = repository.lockById(orderId);
+            PurchaseOrder order = lockOrder(orderId);
             if (order.source() == OrderSource.CAMPAIGN) {
                 buyerLockRepository.lockBuyer(order.campaignId() + ":" + order.buyerRef());
                 admission.releaseCheckoutSlot(order.campaignId(), order.ticketId(),
@@ -281,9 +282,9 @@ public final class OrderServiceImpl implements OrderService {
                 case AUTHORIZATION_PENDING, AUTHORIZED, CAPTURE_PENDING -> order.state() == OrderState.CANCEL_PENDING
                         ? OrderState.CANCEL_PENDING : OrderState.PAYMENT_PENDING;
             };
-            repository.updateState(orderId, next, payment.attemptId(), clock.instant());
+            updateOrderState(orderId, next, payment.attemptId(), clock.instant());
             if (next == OrderState.PAID) fulfillmentService.initialize(orderId);
-            return toResponse(repository.requireById(orderId));
+            return toResponse(requireOrder(orderId));
         });
     }
 
@@ -313,13 +314,13 @@ public final class OrderServiceImpl implements OrderService {
                     CheckoutSlotReleaseReason.CHECKOUT_WINDOW_EXPIRED);
         }
         releaseReservations(order.orderId());
-        repository.updateState(order.orderId(), OrderState.EXPIRED, order.paymentAttemptId(), clock.instant());
+        updateOrderState(order.orderId(), OrderState.EXPIRED, order.paymentAttemptId(), clock.instant());
     }
 
     private void releaseWithoutPayment(PurchaseOrder order, OrderState state, CheckoutSlotReleaseReason reason) {
         if (order.source() == OrderSource.CAMPAIGN) admission.releaseCheckoutSlot(order.campaignId(), order.ticketId(), reason);
         releaseReservations(order.orderId());
-        repository.updateState(order.orderId(), state, order.paymentAttemptId(), clock.instant());
+        updateOrderState(order.orderId(), state, order.paymentAttemptId(), clock.instant());
     }
 
     private void releaseReservations(UUID orderId) {
@@ -327,6 +328,20 @@ public final class OrderServiceImpl implements OrderService {
         if (reservations.stream().anyMatch(reservation -> reservation.status() == ReservationStatus.RESERVED)) {
             inventory.releaseAll(orderId);
         }
+    }
+
+    private PurchaseOrder requireOrder(UUID orderId) {
+        return repository.findById(orderId).orElseThrow(() -> new OrderException(
+                OrderException.Code.NOT_FOUND, "Order not found"));
+    }
+
+    private PurchaseOrder lockOrder(UUID orderId) {
+        return repository.findWithLockByOrderId(orderId).orElseThrow(() -> new OrderException(
+                OrderException.Code.NOT_FOUND, "Order not found"));
+    }
+
+    private void updateOrderState(UUID orderId, OrderState state, UUID paymentAttemptId, Instant updatedAt) {
+        requireOrder(orderId).updateState(state, paymentAttemptId, updatedAt);
     }
 
     private OrderResponse toResponse(PurchaseOrder order) {

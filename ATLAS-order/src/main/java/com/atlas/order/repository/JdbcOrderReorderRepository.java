@@ -1,5 +1,7 @@
 package com.atlas.order.repository;
 
+import com.atlas.order.persistence.projection.ExistingReorderRequest;
+
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -23,12 +25,12 @@ public class JdbcOrderReorderRepository {
         this.jdbc = jdbc;
     }
 
-    public Optional<ExistingRequest> find(UUID sellerId, String buyerRef, String idempotencyKey) {
-        List<ExistingRequest> rows = jdbc.query("""
+    public Optional<ExistingReorderRequest> find(UUID sellerId, String buyerRef, String idempotencyKey) {
+        List<ExistingReorderRequest> rows = jdbc.query("""
                 SELECT source_order_id, confirm_merge
                 FROM order_reorder_request
                 WHERE seller_id = ? AND buyer_ref = ? AND idempotency_key = ?
-                """, (result, row) -> new ExistingRequest(
+                """, (result, row) -> new ExistingReorderRequest(
                 result.getObject("source_order_id", UUID.class), result.getBoolean("confirm_merge")),
                 sellerId, buyerRef, idempotencyKey);
         return rows.stream().findFirst();
@@ -40,5 +42,4 @@ public class JdbcOrderReorderRepository {
                 sourceOrderId, confirmMerge, Timestamp.from(createdAt)) == 1;
     }
 
-    public record ExistingRequest(UUID sourceOrderId, boolean confirmMerge) { }
 }

@@ -1,0 +1,473 @@
+{
+  "root_group": {
+    "name": "",
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e",
+    "groups": [],
+    "checks": [
+        {
+          "name": "global: HTTP 200",
+          "path": "::global: HTTP 200",
+          "id": "c25ff5c988a0d0ff782b1437d2727243",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "path": "::global: {items,nextCursor} shape",
+          "id": "b68c7d3d50b248291c7dd07c3bb5443f",
+          "passes": 100,
+          "fails": 0,
+          "name": "global: {items,nextCursor} shape"
+        },
+        {
+          "name": "global: product/two-SKU shape",
+          "path": "::global: product/two-SKU shape",
+          "id": "686699e6ae028a890d8a6088578ba6b8",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "fails": 0,
+          "name": "global: seller scope",
+          "path": "::global: seller scope",
+          "id": "1b5da875fe12e867f3f8b15dddbc7f63",
+          "passes": 100
+        },
+        {
+          "name": "global: normalized seller/product order",
+          "path": "::global: normalized seller/product order",
+          "id": "13424e18956306a81ebab4ec141d24e1",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "global: cursor encodes final item",
+          "path": "::global: cursor encodes final item",
+          "id": "b8fa8827bb5e3c52b68155ac123d4469",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "global: page size <= 100",
+          "path": "::global: page size <= 100",
+          "id": "efeb1cd2542a0f614aa938e3aa9fb5db",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "id": "8d75829be7cdd54f6a064f4a9e198f1a",
+          "passes": 100,
+          "fails": 0,
+          "name": "seller: HTTP 200",
+          "path": "::seller: HTTP 200"
+        },
+        {
+          "name": "seller: {items,nextCursor} shape",
+          "path": "::seller: {items,nextCursor} shape",
+          "id": "aae6dd338854c867538a15e3f3af8046",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "path": "::seller: product/two-SKU shape",
+          "id": "583281c7a083e2a36c7e5357bf4f6be5",
+          "passes": 100,
+          "fails": 0,
+          "name": "seller: product/two-SKU shape"
+        },
+        {
+          "fails": 0,
+          "name": "seller: seller scope",
+          "path": "::seller: seller scope",
+          "id": "d8153cb1fb8fdc3e7844d30e8d7696c4",
+          "passes": 100
+        },
+        {
+          "name": "seller: normalized seller/product order",
+          "path": "::seller: normalized seller/product order",
+          "id": "713b66bdcfb9cab44e995f9aa63dfbba",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "seller: cursor encodes final item",
+          "path": "::seller: cursor encodes final item",
+          "id": "18a55ec580856c77dae6fc3c5d9c7c71",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "id": "1794e7ae90dd7250c52b374d3c8de2c6",
+          "passes": 100,
+          "fails": 0,
+          "name": "seller: page size <= 100",
+          "path": "::seller: page size <= 100"
+        },
+        {
+          "name": "search_broad: HTTP 200",
+          "path": "::search_broad: HTTP 200",
+          "id": "b9b4a86a66afefdcd51a702630397b8f",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "search_broad: {items,nextCursor} shape",
+          "path": "::search_broad: {items,nextCursor} shape",
+          "id": "2eb8a23b6c5432a70aa1d2e3ed095600",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "passes": 100,
+          "fails": 0,
+          "name": "search_broad: product/two-SKU shape",
+          "path": "::search_broad: product/two-SKU shape",
+          "id": "24f867cb61f41ffdf3a3b4f283cb1647"
+        },
+        {
+          "id": "e543748e21e7fb98f72f03c0897c5fcf",
+          "passes": 100,
+          "fails": 0,
+          "name": "search_broad: seller scope",
+          "path": "::search_broad: seller scope"
+        },
+        {
+          "fails": 0,
+          "name": "search_broad: normalized seller/product order",
+          "path": "::search_broad: normalized seller/product order",
+          "id": "9fca08b620b8a52a12a471c11ddb50a3",
+          "passes": 100
+        },
+        {
+          "name": "search_broad: cursor encodes final item",
+          "path": "::search_broad: cursor encodes final item",
+          "id": "eef3bec85c3988179707ff16d96f1c1a",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "search_broad: page size <= 100",
+          "path": "::search_broad: page size <= 100",
+          "id": "a68d458e56dff7e20b6a9898e15c0527",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "search_needle: HTTP 200",
+          "path": "::search_needle: HTTP 200",
+          "id": "c29e35b14453b1c2d8608def2573d241",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "path": "::search_needle: {items,nextCursor} shape",
+          "id": "05a49d62da33ffe7a3d71e2d31071922",
+          "passes": 100,
+          "fails": 0,
+          "name": "search_needle: {items,nextCursor} shape"
+        },
+        {
+          "fails": 0,
+          "name": "search_needle: product/two-SKU shape",
+          "path": "::search_needle: product/two-SKU shape",
+          "id": "312a119fb97db489a8c070c076280cff",
+          "passes": 100
+        },
+        {
+          "fails": 0,
+          "name": "search_needle: seller scope",
+          "path": "::search_needle: seller scope",
+          "id": "f4ad838e61df9e19a3d7ef1abee3e49b",
+          "passes": 100
+        },
+        {
+          "id": "c296e892d281fe9986faf442b9ef2448",
+          "passes": 100,
+          "fails": 0,
+          "name": "search_needle: normalized seller/product order",
+          "path": "::search_needle: normalized seller/product order"
+        },
+        {
+          "name": "search_needle: cursor encodes final item",
+          "path": "::search_needle: cursor encodes final item",
+          "id": "e422ab991d8046251dc7fbec96e2d04d",
+          "passes": 100,
+          "fails": 0
+        },
+        {
+          "name": "search_needle: page size <= 100",
+          "path": "::search_needle: page size <= 100",
+          "id": "07de6c4d56ac6571b6652cb5ca876964",
+          "passes": 100,
+          "fails": 0
+        }
+      ]
+  },
+  "options": {
+    "summaryTrendStats": [
+      "avg",
+      "min",
+      "med",
+      "max",
+      "p(90)",
+      "p(95)",
+      "p(99)"
+    ],
+    "summaryTimeUnit": "",
+    "noColor": false
+  },
+  "state": {
+    "isStdErrTTY": false,
+    "testRunDurationMs": 3141.206325,
+    "isStdOutTTY": false
+  },
+  "metrics": {
+    "data_sent": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 56600,
+        "rate": 18018.555339563693
+      }
+    },
+    "catalog_listing_seller_latency": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 2.7866256000000003,
+        "p(95)": 2.8841316999999997,
+        "p(99)": 3.280944109999998,
+        "avg": 2.388281910000001,
+        "min": 1.762035,
+        "med": 2.313213,
+        "max": 5.90495
+      }
+    },
+    "catalog_listing_search_broad_latency": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 5.2110019,
+        "p(99)": 5.837009169999998,
+        "avg": 4.753663530000002,
+        "min": 4.039205,
+        "med": 4.761094,
+        "max": 7.56715,
+        "p(90)": 5.0922805
+      }
+    },
+    "http_req_duration{expected_response:true}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 7.740571,
+        "p(90)": 5.0983385,
+        "p(95)": 5.2110019,
+        "p(99)": 5.820387169999999,
+        "avg": 4.099816462500001,
+        "min": 1.762035,
+        "med": 4.468234499999999
+      }
+    },
+    "http_req_blocked": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 0.565095,
+        "p(90)": 0.0033791000000000003,
+        "p(95)": 0.003916,
+        "p(99)": 0.06855250999999966,
+        "avg": 0.005529389999999988,
+        "min": 0.00125,
+        "med": 0.002417
+      }
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "min": 0,
+        "med": 0,
+        "max": 0,
+        "p(90)": 0,
+        "p(95)": 0,
+        "p(99)": 0,
+        "avg": 0
+      }
+    },
+    "http_req_waiting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(99)": 5.7328940799999994,
+        "avg": 3.9228104724999993,
+        "min": 1.534614,
+        "med": 4.2873975,
+        "max": 7.56465,
+        "p(90)": 4.9026932,
+        "p(95)": 5.02855145
+      }
+    },
+    "checks": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 1,
+        "passes": 2800,
+        "fails": 0
+      },
+      "thresholds": {
+        "rate==1": {
+          "ok": true
+        }
+      }
+    },
+    "iterations": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 400,
+        "rate": 127.3396137071639
+      }
+    },
+    "http_reqs": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 400,
+        "rate": 127.3396137071639
+      }
+    },
+    "http_req_receiving": {
+      "values": {
+        "p(99)": 0.40651341999999996,
+        "avg": 0.16674384000000003,
+        "min": 0.059252,
+        "med": 0.1560655,
+        "max": 0.67318,
+        "p(90)": 0.19292070000000003,
+        "p(95)": 0.22051025
+      },
+      "type": "trend",
+      "contains": "time"
+    },
+    "http_req_failed": {
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 400
+      },
+      "thresholds": {
+        "rate==0": {
+          "ok": true
+        }
+      },
+      "type": "rate"
+    },
+    "data_received": {
+      "values": {
+        "count": 25189876,
+        "rate": 8019172.697928398
+      },
+      "type": "counter",
+      "contains": "data"
+    },
+    "vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 1,
+        "min": 1,
+        "max": 1
+      }
+    },
+    "http_req_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 5.2110019,
+        "p(99)": 5.820387169999999,
+        "avg": 4.099816462500001,
+        "min": 1.762035,
+        "med": 4.468234499999999,
+        "max": 7.740571,
+        "p(90)": 5.0983385
+      }
+    },
+    "http_req_sending": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(99)": 0.06857725999999993,
+        "avg": 0.010262149999999992,
+        "min": 0.004666,
+        "med": 0.008042,
+        "max": 0.155753,
+        "p(90)": 0.0122593,
+        "p(95)": 0.015505149999999997
+      }
+    },
+    "catalog_listing_global_latency": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 4.8318045000000005,
+        "max": 6.137122,
+        "p(90)": 5.3397099,
+        "p(95)": 5.5506464,
+        "p(99)": 5.729645919999999,
+        "avg": 4.85128962,
+        "min": 4.13629
+      }
+    },
+    "iteration_duration": {
+      "values": {
+        "med": 8.131515499999999,
+        "max": 11.67644,
+        "p(90)": 9.0330332,
+        "p(95)": 9.416287,
+        "p(99)": 10.95172167,
+        "avg": 7.8466360324999975,
+        "min": 5.178312
+      },
+      "type": "trend",
+      "contains": "time"
+    },
+    "catalog_listing_search_needle_latency": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(99)": 5.175924519999998,
+        "avg": 4.406030790000001,
+        "min": 3.672489,
+        "med": 4.363690500000001,
+        "max": 7.740571,
+        "p(90)": 4.7924201,
+        "p(95)": 4.9837216
+      }
+    },
+    "http_req_connecting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 0.136128,
+        "p(90)": 0,
+        "p(95)": 0,
+        "p(99)": 0.0012450299999995588,
+        "avg": 0.001288465,
+        "min": 0,
+        "med": 0
+      }
+    },
+    "vus_max": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 1,
+        "min": 1,
+        "max": 1
+      }
+    }
+  }
+}
