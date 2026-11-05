@@ -1,6 +1,7 @@
 package com.atlas.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,7 +30,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureMockMvc
 @SpringBootTest
 @Testcontainers
-class ProductListingPaginationIntegrationTest {
+class CatalogIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 
@@ -107,6 +108,52 @@ class ProductListingPaginationIntegrationTest {
         assertThat(secondPage).extracting(Product::getProductId).containsExactly(positiveLeastSignificantBits);
         assertThat(products.findListingPage(sellerId, "%", null, null, 10))
                 .extracting(Product::getProductId).containsExactly(positiveLeastSignificantBits);
+    }
+
+    @Test
+    void rollsBackSellerSkuWhenInventoryPoolCreationFails() {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        UUID productId = productService.createProduct(sellerId,
+                new CreateProductRequest("atomic registration", null)).productId();
+        String successfulSku = "atomic-success-" + UUID.randomUUID();
+
+        productService.registerSku(sellerId, productId, new RegisterSellerSkuRequest(successfulSku, 100, 2));
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM seller_sku WHERE seller_id = ? AND sku_id = ?",
+                Integer.class, sellerId, successfulSku)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM inventory_pool WHERE seller_id = ? AND sku_id = ?",
+                Integer.class, sellerId, successfulSku)).isEqualTo(1);
+
+        String failingSku = "atomicity-failure-" + UUID.randomUUID();
+        jdbc.execute("""
+                CREATE OR REPLACE FUNCTION fail_catalog_inventory_pool_insert() RETURNS trigger AS $$
+                BEGIN
+                    IF NEW.sku_id LIKE 'atomicity-failure-%' THEN
+                        RAISE EXCEPTION 'simulated inventory pool insert failure';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+                """);
+        jdbc.execute("""
+                CREATE TRIGGER fail_catalog_inventory_pool_insert_trigger
+                BEFORE INSERT ON inventory_pool
+                FOR EACH ROW EXECUTE FUNCTION fail_catalog_inventory_pool_insert()
+                """);
+        try {
+            assertThatThrownBy(() -> productService.registerSku(sellerId, productId,
+                    new RegisterSellerSkuRequest(failingSku, 100, 2)))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasStackTraceContaining("simulated inventory pool insert failure");
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS fail_catalog_inventory_pool_insert_trigger ON inventory_pool");
+            jdbc.execute("DROP FUNCTION IF EXISTS fail_catalog_inventory_pool_insert()");
+        }
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM seller_sku WHERE seller_id = ? AND sku_id = ?",
+                Integer.class, sellerId, failingSku)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM inventory_pool WHERE seller_id = ? AND sku_id = ?",
+                Integer.class, sellerId, failingSku)).isZero();
     }
 
     private Product create(UUID sellerId, String name) {
