@@ -47,13 +47,15 @@ public class OrderController {
     }
 
     @PostMapping("/orders/{orderId}/reconcile")
-    public OrderResponse reconcile(@PathVariable UUID orderId) {
-        return orders.reconcilePayment(orderId);
+    public OrderResponse reconcile(@PathVariable UUID orderId,
+                                   @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        return orders.reconcilePayment(orderId, idempotencyKey);
     }
 
     @PostMapping("/orders/{orderId}/cancel")
-    public OrderResponse cancel(@PathVariable UUID orderId) {
-        return orders.cancel(orderId);
+    public OrderResponse cancel(@PathVariable UUID orderId,
+                                @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        return orders.cancel(orderId, idempotencyKey);
     }
 
     @GetMapping("/orders/{orderId}/fulfillment")

@@ -184,7 +184,7 @@ assertUuidV7(order.orderId());
                 OrderFulfillmentResponse.class);
         assertThat(fulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
 
-        OrderResponse reconciled = orders.reconcilePayment(order.orderId());
+        OrderResponse reconciled = orders.reconcilePayment(order.orderId(), "initial-recovery-" + order.orderId());
         assertThat(reconciled.state()).isEqualTo(OrderState.PAID);
         OrderFulfillmentResponse repeatedFulfillment = orderFulfillments.find(order.orderId());
         assertThat(repeatedFulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
@@ -344,7 +344,7 @@ assertUuidV7(paymentOrderId);
         assertThat(unknown.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         assertThat(unknown.ticketState()).isEqualTo(TicketStatus.CHECKOUT_SUBMITTED);
 
-        OrderResponse recovered = orders.reconcilePayment(order.orderId());
+        OrderResponse recovered = orders.reconcilePayment(order.orderId(), "authorization-recovery-" + order.orderId());
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
@@ -354,15 +354,43 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
+    void oversizedReconcileAndCancelKeysAreRejectedBeforeProviderPersistence() {
+        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse ticket = join(campaign, "buyer-oversized-key", "oversized-key-ticket");
+        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.UNKNOWN);
+        OrderResponse pending = orders.submitPayment(order.orderId());
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+
+        long operationCount = jdbc.queryForObject("SELECT COUNT(*) FROM payment_fake_psp_operation", Long.class);
+        String oversizedKey = "x".repeat(222);
+        assertThatThrownBy(() -> orders.reconcilePayment(order.orderId(), oversizedKey))
+                .isInstanceOfSatisfying(OrderException.class, exception ->
+                        assertThat(exception.code()).isEqualTo(OrderException.Code.INVALID_REQUEST));
+        assertThatThrownBy(() -> orders.cancel(order.orderId(), oversizedKey))
+                .isInstanceOfSatisfying(OrderException.class, exception ->
+                        assertThat(exception.code()).isEqualTo(OrderException.Code.INVALID_REQUEST));
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_fake_psp_operation", Long.class))
+                .isEqualTo(operationCount);
+        assertThat(orders.find(order.orderId()).paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+    }
+
+    @Test
     void cancellationVoidsRecoveredAuthorizationInsteadOfCapturingIt() {
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-cancel", "cancel-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING,
+                FakePsp.Result.UNKNOWN, FakePsp.Result.AUTHORIZED);
 
         OrderResponse pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
-        OrderResponse cancelled = orders.cancel(order.orderId());
+        OrderResponse retry = orders.cancel(order.orderId(), "cancel-operation-1");
+        assertThat(retry.state()).isEqualTo(OrderState.CANCEL_PENDING);
+        assertThat(retry.paymentState()).isEqualTo(PaymentState.UNKNOWN);
+        assertThat(orders.cancel(order.orderId(), "cancel-operation-1")).isEqualTo(retry);
+        OrderResponse cancelled = orders.cancel(order.orderId(), "cancel-operation-2");
 
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
@@ -381,7 +409,8 @@ assertUuidV7(paymentOrderId);
         fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.UNKNOWN, FakePsp.Result.AUTHORIZED);
 
         OrderResponse unknown = orders.submitPayment(order.orderId());
-        mockMvc.perform(post("/api/orders/{orderId}/reconcile", order.orderId()))
+        mockMvc.perform(post("/api/orders/{orderId}/reconcile", order.orderId())
+                        .header("Idempotency-Key", "reconcile-" + order.orderId()))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"state\":\"PAID\"", "\"paymentState\":\"CAPTURED\"",
@@ -391,9 +420,16 @@ assertUuidV7(paymentOrderId);
         assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
         InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(1);
+        assertThat(orders.reconcilePayment(order.orderId(), "reconcile-" + order.orderId()))
+                .isEqualTo(recovered);
+        assertThat(inventory.find(campaign.sellerId(), campaign.skuId()).claimed()).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM settlement_journal WHERE source_attempt_id = ?",
+                Long.class, recovered.paymentAttemptId())).isEqualTo(1L);
         assertConserved(stock);
 
-        mockMvc.perform(post("/api/orders/{orderId}/reconcile", UUID.randomUUID()))
+        mockMvc.perform(post("/api/orders/{orderId}/reconcile", UUID.randomUUID())
+                        .header("Idempotency-Key", "missing-order-key"))
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"code\":\"ORDER_NOT_FOUND\""));
@@ -407,7 +443,8 @@ assertUuidV7(paymentOrderId);
         fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.AUTHORIZED);
 
         orders.submitPayment(order.orderId());
-        mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId()))
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId())
+                        .header("Idempotency-Key", "api-cancel-" + order.orderId()))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"state\":\"CANCELLED\"", "\"paymentState\":\"VOIDED\""));
@@ -420,7 +457,8 @@ assertUuidV7(paymentOrderId);
         assertThat(stock.claimed()).isZero();
         assertConserved(stock);
 
-        mockMvc.perform(post("/api/orders/{orderId}/cancel", UUID.randomUUID()))
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", UUID.randomUUID())
+                        .header("Idempotency-Key", "missing-cancel-key"))
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"code\":\"ORDER_NOT_FOUND\""));
@@ -471,7 +509,8 @@ assertUuidV7(paymentOrderId);
                 .isInstanceOfSatisfying(OrderException.class, exception ->
                         assertThat(exception.code()).isEqualTo(OrderException.Code.CONFLICT));
 
-        assertThat(orders.reconcilePayment(first.orderId()).state()).isEqualTo(OrderState.PAID);
+        assertThat(orders.reconcilePayment(first.orderId(), "buyer-retry-" + first.orderId()).state())
+                .isEqualTo(OrderState.PAID);
         assertThat(orders.submitPayment(second.orderId()).state()).isEqualTo(OrderState.PAID);
     }
 
@@ -765,7 +804,8 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         OrderResponse sourceOrder = objectMapper.readValue(checkoutJson, OrderResponse.class);
-        assertThat(orders.cancel(sourceOrder.orderId()).state()).isEqualTo(OrderState.CANCELLED);
+        assertThat(orders.cancel(sourceOrder.orderId(), "reorder-cancel-" + sourceOrder.orderId()).state())
+                .isEqualTo(OrderState.CANCELLED);
         products.updateSkuPrice(sellerId, product.productId(), firstSku, 150);
 
         mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
@@ -864,7 +904,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         OrderResponse sourceOrder = objectMapper.readValue(sourceJson, OrderResponse.class);
-        orders.cancel(sourceOrder.orderId());
+        orders.cancel(sourceOrder.orderId(), "rollback-reorder-cancel-" + sourceOrder.orderId());
 
         String competitor = "reorder-competitor-" + UUID.randomUUID();
         mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
@@ -1055,6 +1095,10 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePsp.Result.PENDING, FakePsp.Result.CAPTURED);
+        OrderResponse pending = orders.submitPayment(order.orderId());
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
+        UUID attemptId = pending.paymentAttemptId();
 
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_fulfillment_insert() RETURNS TRIGGER AS $$
@@ -1070,11 +1114,15 @@ assertUuidV7(paymentOrderId);
                 FOR EACH ROW EXECUTE FUNCTION fail_fulfillment_insert()
                 """);
         try {
-            assertThatThrownBy(() -> orders.submitPayment(order.orderId())).isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(() -> orders.reconcilePayment(order.orderId(), "downstream-retry-" + order.orderId()))
+                    .isInstanceOf(RuntimeException.class);
             OrderResponse unchanged = orders.find(order.orderId());
-            assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_SUBMITTED);
+            assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);
             assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
             assertThat(unchanged.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM settlement_journal WHERE source_attempt_id = ?",
+                    Integer.class, attemptId)).isZero();
             assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
                     Integer.class, order.orderId())).isZero();
         } finally {
@@ -1082,7 +1130,7 @@ assertUuidV7(paymentOrderId);
             jdbc.execute("DROP FUNCTION IF EXISTS fail_fulfillment_insert()");
         }
 
-        OrderResponse recovered = orders.reconcilePayment(order.orderId());
+        OrderResponse recovered = orders.reconcilePayment(order.orderId(), "downstream-retry-" + order.orderId());
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
@@ -1090,6 +1138,13 @@ assertUuidV7(paymentOrderId);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
                 Integer.class, order.orderId())).isEqualTo(1);
         assertThat(orderFulfillments.find(order.orderId()).status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
+        assertThat(orders.reconcilePayment(order.orderId(), "downstream-retry-" + order.orderId()))
+                .isEqualTo(recovered);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM settlement_journal WHERE source_attempt_id = ?",
+                Integer.class, attemptId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, order.orderId())).isEqualTo(1);
     }
 
     @Test

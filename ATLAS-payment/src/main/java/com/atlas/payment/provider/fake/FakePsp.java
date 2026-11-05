@@ -1,63 +1,35 @@
 package com.atlas.payment.provider.fake;
 
 import com.atlas.payment.persistence.state.PaymentPhase;
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.Map;
+import com.atlas.payment.repository.FakePspRepository;
+import java.util.Arrays;
 import java.util.Objects;
-import java.util.Queue;
 import org.springframework.stereotype.Component;
 
-/** 각 결제 단계 결과를 순서대로 반환하는 로컬 PSP 시뮬레이터. 실제 PSP 상태는 재현하지 않음. */
+/** 진행 결과를 PostgreSQL에 저장하는 local-only PSP simulator. 실제 PSP 호출 없음. */
 @Component
-public final class FakePsp {
-
+public class FakePsp {
     public enum Result { AUTHORIZED, CAPTURED, DECLINED, PENDING, UNKNOWN, VOIDED }
 
-    private record RequestKey(PaymentPhase phase, String requestId) { }
+    private final FakePspRepository repository;
 
-    private static final class ProviderResults {
-        private final Queue<Result> pending;
-        private Result current;
-
-        private ProviderResults(Queue<Result> pending) {
-            this.pending = pending;
-        }
+    public FakePsp(FakePspRepository repository) {
+        this.repository = Objects.requireNonNull(repository);
     }
 
-    private final Map<RequestKey, ProviderResults> resultsByRequest = new HashMap<>();
-    private final Map<PaymentPhase, Queue<Result>> plannedResults = new HashMap<>();
-
-    public FakePsp() {
-        for (PaymentPhase phase : PaymentPhase.values()) {
-            plannedResults.put(phase, new ArrayDeque<>());
-        }
-    }
-
-    /** 다음 결제 단계의 결과 순서를 등록. 호출마다 다음 결과를 하나씩 소비. */
-    public synchronized void enqueue(PaymentPhase phase, Result... progression) {
+    public void enqueue(PaymentPhase phase, Result... progression) {
         Objects.requireNonNull(phase, "phase");
-        if (progression == null || progression.length == 0) {
-            throw new IllegalArgumentException("A provider progression is required");
-        }
-        Queue<Result> values = new ArrayDeque<>();
-        for (Result result : progression) values.add(Objects.requireNonNull(result, "result"));
-        plannedResults.get(phase).addAll(values);
+        if (progression.length == 0) throw new IllegalArgumentException("A progression is required");
+        repository.enqueue(phase, Arrays.stream(progression).map(result -> Objects.requireNonNull(result, "result")).toList());
     }
 
-    public synchronized Result perform(PaymentPhase phase, String requestId) {
-        RequestKey key = new RequestKey(phase, Objects.requireNonNull(requestId, "requestId"));
-        ProviderResults results = resultsByRequest.get(key);
-        if (results == null) {
-            Queue<Result> progression = plannedResults.get(phase);
-            if (progression.isEmpty()) progression.add(defaultResult(phase));
-            Queue<Result> copy = new ArrayDeque<>(progression);
-            progression.clear();
-            results = new ProviderResults(copy);
-            resultsByRequest.put(key, results);
+    public Result perform(PaymentPhase phase, String requestId, String idempotencyKey) {
+        Objects.requireNonNull(phase, "phase");
+        if (requestId == null || requestId.isBlank()) throw new IllegalArgumentException("requestId is required");
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("idempotencyKey is required");
         }
-        if (!results.pending.isEmpty()) results.current = results.pending.remove();
-        return results.current;
+        return repository.perform(phase, requestId, idempotencyKey, defaultResult(phase));
     }
 
     private static Result defaultResult(PaymentPhase phase) {

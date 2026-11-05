@@ -49,33 +49,35 @@ public class PaymentServiceImpl implements PaymentService {
                 return require(orderId);
             });
             if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
-            return performPhase(attempt);
+            return performPhase(attempt, "initial:" + attempt.getAttemptId());
         });
     }
 
     @Override
-    public PaymentResponse reconcile(UUID orderId) {
-        if (orderId == null) throw invalidRequest();
+    public PaymentResponse reconcile(UUID orderId, String idempotencyKey) {
+        if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()) throw invalidRequest();
         return withOrderLock(orderId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> require(orderId));
             if (terminal(attempt.getState())) return toResponse(attempt);
-            return performPhase(attempt);
+            return performPhase(attempt, idempotencyKey);
         });
     }
 
     @Override
-    public PaymentResponse reconcileForCancellation(UUID orderId) {
-        if (orderId == null) throw invalidRequest();
+    public PaymentResponse reconcileForCancellation(UUID orderId, String idempotencyKey) {
+        if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()) throw invalidRequest();
         return withOrderLock(orderId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> require(orderId));
             if (terminal(attempt.getState())) return toResponse(attempt);
-            return performPhase(attempt, false);
+            String phaseKey = attempt.getPaymentPhase() == PaymentPhase.VOID
+                    ? idempotencyKey + ":void" : idempotencyKey + ":cancel-reconcile";
+            return performPhase(attempt, phaseKey, false);
         });
     }
 
     @Override
-    public PaymentResponse voidAuthorization(UUID orderId) {
-        if (orderId == null) throw invalidRequest();
+    public PaymentResponse voidAuthorization(UUID orderId, String idempotencyKey) {
+        if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()) throw invalidRequest();
         return withOrderLock(orderId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> require(orderId));
             if (!attempt.isAuthorizationActive() || attempt.getState() == PaymentState.VOIDED
@@ -87,7 +89,7 @@ public class PaymentServiceImpl implements PaymentService {
             attempt.setPaymentPhase(PaymentPhase.VOID);
             attempt.setAuthorizationActive(true);
             save(attempt);
-            return performPhase(attempt);
+            return performPhase(attempt, idempotencyKey);
         });
     }
 
@@ -98,18 +100,18 @@ public class PaymentServiceImpl implements PaymentService {
         return attempt == null ? null : toResponse(attempt);
     }
 
-    private PaymentResponse performPhase(PaymentAttempt attempt) {
-        return performPhase(attempt, true);
+    private PaymentResponse performPhase(PaymentAttempt attempt, String idempotencyKey) {
+        return performPhase(attempt, idempotencyKey, true);
     }
 
-    private PaymentResponse performPhase(PaymentAttempt attempt, boolean continueCapture) {
+    private PaymentResponse performPhase(PaymentAttempt attempt, String idempotencyKey, boolean continueCapture) {
         PaymentPhase phase = attempt.getPaymentPhase();
         if (!continueCapture && phase == PaymentPhase.CAPTURE
                 && attempt.getState() == PaymentState.AUTHORIZED) {
             return toResponse(attempt);
         }
         String phaseId = attempt.getAttemptId() + ":" + phase.name();
-        FakePsp.Result result = psp.perform(phase, phaseId);
+        FakePsp.Result result = psp.perform(phase, phaseId, idempotencyKey);
         switch (phase) {
             case AUTHORIZATION -> authorizationResult(attempt, result);
             case CAPTURE -> captureResult(attempt, result);
@@ -119,7 +121,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (continueCapture && attempt.getPaymentPhase() == PaymentPhase.CAPTURE
                 && attempt.getState() == PaymentState.AUTHORIZED) {
             attempt.setState(PaymentState.CAPTURE_PENDING);
-            return performPhase(attempt, true);
+            return performPhase(attempt, idempotencyKey, true);
         }
         return toResponse(attempt);
     }

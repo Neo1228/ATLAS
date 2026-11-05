@@ -42,6 +42,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public final class OrderServiceImpl implements OrderService {
+    private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 221;
+
     private static final Object[] ORDER_LOCKS = createOrderLocks();
 
     private final OrderRepository repository;
@@ -141,44 +143,48 @@ public final class OrderServiceImpl implements OrderService {
         // The external PSP call remains outside the database transaction.
         PaymentResponse payment = payments.submitInitial(orderId);
         if (payment.state() == PaymentState.DECLINED && payment.authorizationActive()) {
-            payment = payments.voidAuthorization(orderId);
+            payment = payments.voidAuthorization(orderId, "submit-void:" + orderId);
         }
         return applyPayment(orderId, payment);
     }
 
     @Override
-    public OrderResponse reconcilePayment(UUID orderId) {
-        if (orderId == null) throw invalidRequest();
-        return withOrderLock(orderId, () -> reconcilePaymentLocked(orderId));
+    public OrderResponse reconcilePayment(UUID orderId, String idempotencyKey) {
+        if (orderId == null || invalidIdempotencyKey(idempotencyKey)) throw invalidRequest();
+        return withOrderLock(orderId, () -> reconcilePaymentLocked(orderId, idempotencyKey));
     }
 
-    private OrderResponse reconcilePaymentLocked(UUID orderId) {
+    private OrderResponse reconcilePaymentLocked(UUID orderId, String idempotencyKey) {
         PurchaseOrder order = findOrder(orderId);
         PaymentResponse payment = payments.find(orderId);
         if (payment == null && order.state() != OrderState.PAYMENT_SUBMITTED
                 && order.state() != OrderState.CANCEL_PENDING && order.state() != OrderState.PAYMENT_VOID_PENDING) {
             return find(orderId);
         }
-        if (payment == null || payment.state() == PaymentState.UNKNOWN) {
+        if (payment == null || payment.state() == PaymentState.UNKNOWN
+                || payment.state() == PaymentState.AUTHORIZATION_PENDING
+                || payment.state() == PaymentState.CAPTURE_PENDING
+                || payment.state() == PaymentState.VOID_PENDING) {
             payment = order.state() == OrderState.CANCEL_PENDING || order.state() == OrderState.PAYMENT_VOID_PENDING
-                    ? payments.reconcileForCancellation(orderId) : payments.reconcile(orderId);
+                    ? payments.reconcileForCancellation(orderId, "reconcile-cancel:" + idempotencyKey)
+                    : payments.reconcile(orderId, idempotencyKey);
         }
         if (payment.state() == PaymentState.DECLINED && payment.authorizationActive()) {
-            payment = payments.voidAuthorization(orderId);
+            payment = payments.voidAuthorization(orderId, idempotencyKey + ":void");
         } else if (payment.state() == PaymentState.AUTHORIZED
                 && (order.state() == OrderState.CANCEL_PENDING || order.state() == OrderState.PAYMENT_VOID_PENDING)) {
-            payment = payments.voidAuthorization(orderId);
+            payment = payments.voidAuthorization(orderId, idempotencyKey + ":void");
         }
         return applyPayment(orderId, payment);
     }
 
     @Override
-    public OrderResponse cancel(UUID orderId) {
-        if (orderId == null) throw invalidRequest();
-        return withOrderLock(orderId, () -> cancelLocked(orderId));
+    public OrderResponse cancel(UUID orderId, String idempotencyKey) {
+        if (orderId == null || invalidIdempotencyKey(idempotencyKey)) throw invalidRequest();
+        return withOrderLock(orderId, () -> cancelLocked(orderId, idempotencyKey));
     }
 
-    private OrderResponse cancelLocked(UUID orderId) {
+    private OrderResponse cancelLocked(UUID orderId, String idempotencyKey) {
         PurchaseOrder current = transactions.execute(status -> {
             PurchaseOrder order = repository.lockById(orderId);
             if (order.state().isTerminal()) return order;
@@ -198,10 +204,10 @@ public final class OrderServiceImpl implements OrderService {
         if (current.state().isTerminal()) return find(orderId);
         PaymentResponse payment = payments.find(orderId);
         if (payment == null) return cancelWithoutPayment(orderId);
-        payment = payments.reconcileForCancellation(orderId);
+        payment = payments.reconcileForCancellation(orderId, idempotencyKey);
         if (payment.state() == PaymentState.AUTHORIZED
                 || (payment.state() == PaymentState.DECLINED && payment.authorizationActive())) {
-            payment = payments.voidAuthorization(orderId);
+            payment = payments.voidAuthorization(orderId, idempotencyKey + ":void");
         }
         return applyPayment(orderId, payment);
     }
@@ -341,6 +347,11 @@ public final class OrderServiceImpl implements OrderService {
         return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), paymentAttemptId,
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState,
                 ticket == null ? null : ticket.status(), order.source(), itemResponses, totalPriceWon);
+    }
+
+    private static boolean invalidIdempotencyKey(String idempotencyKey) {
+        return idempotencyKey == null || idempotencyKey.isBlank()
+                || idempotencyKey.length() > MAX_IDEMPOTENCY_KEY_LENGTH;
     }
 
     private static OrderException invalidRequest() {
