@@ -124,8 +124,9 @@ links:
 | REF-112 | 美团技术团队, 美团外卖订单中心的演进 / engineering article | https://tech.meituan.com/2016/09/09/mt-waimai-order-evolution.html | 2026-11-04 | 결제 뒤 판매자 처리·배송·수령·사후 처리 흐름 참고 | △ 2016년 대규모 음식 배달 사례. 업무 순서만 참고하며 아키텍처·SLO·용량 수치는 ATLAS에 일반화하지 않음 |
 | REF-113 | Shopify Help Center, Fulfilling your own orders individually / product documentation | https://help.shopify.com/en/manual/fulfillment/fulfilling-orders/single-fulfillment | 2026-11-04 | Fulfillment별 상태 전이·수동 배송 완료·부분 배송 대안 비교 | △ Shopify 고유 운영 방식. 여러 fulfillment와 carrier 이벤트가 있는 제품 사례이며 ATLAS의 주문당 1건 정책을 정하지 않음 |
 | REF-114 | 美团技术团队, 美团搜索多业务商品排序探索与实践 / engineering article | https://tech.meituan.com/2021/11/19/Exploration-and-Practice-of-Multi-business-Commodities-Ranking-in-Meituan-Search.html | 2026-11-04 | 다중 업무별 상품 relevance ranking이 별도 모델링 과제임을 보여 주는 사례. ATLAS는 ranking을 도입하지 않고 결정적 순서만 규정 | △ 다중 업무 검색 순위 사례이며, 보편적 목록 정렬이나 ATLAS 검색·merchandising 정책 근거가 아님 |
+| REF-115 | Stripe, List pagination / product documentation | https://docs.stripe.com/api/pagination | 2026-11-05 | Cursor pagination contract; list limit default 10 and maximum 100 | ✓ Stripe `v1` API precedent only; not ATLAS capacity or latency evidence |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114는 맥락이 한정된 공급업체·실무자·기술 자료. 보편 규칙이나 ATLAS 운영 성능을 입증하지 않음.
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115는 맥락이 한정된 공급업체·실무자·기술 자료. 보편 규칙이나 ATLAS 운영 성능을 입증하지 않음.
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
@@ -141,3 +142,5 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0011](../02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md): D-066은 gross capture 이중기입의 owner decision. REF-027은 PostgreSQL 재시도·멱등 패턴 참고이며 회계 모델 근거는 아님.
 - [ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md): REF-114는 다중 업무 유형별 상품 relevance ranking 사례이며, ATLAS 목록의 ID 정렬을 정당화하는 일반 규칙은 아님. D-067은 기존 query 응답의 재현성만 규정.
 - [ADR-0013](../02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md): D-068는 배송 전 local refund record, 원장 reversal, claimed inventory 복원을 정한 소유자 정책. 외부 PSP 동작·자금 이동은 범위 밖.
+- [ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md): REF-115는 `limit=10` 기본값과 `100` 상한의 API 계약 사례일 뿐, ATLAS의 성능·용량 수치 근거가 아님.
+- [ADR-0014](../02-decisions/adr/ADR-0014-seller-inventory-capacity-adjustment.md): D-069은 재고 capacity 조정, audit, idempotency를 정한 소유자 정책.

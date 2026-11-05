@@ -101,6 +101,32 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<ProductListingResponse> listProductsPage(UUID sellerId, String keyword, UUID cursorSeller,
+            UUID cursorProduct, int limit) {
+        if (sellerId != null && !sellers.existsById(sellerId)) {
+            throw new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId);
+        }
+        if (sellerId != null && cursorSeller != null && !sellerId.equals(cursorSeller)) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
+        }
+        if ((cursorSeller == null) != (cursorProduct == null)) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
+        }
+        List<Product> page = products.findListingPage(sellerId, keyword, cursorSeller, cursorProduct, limit + 1);
+        List<UUID> productIds = page.stream().limit(limit).map(Product::getProductId).toList();
+        if (productIds.isEmpty()) return List.of();
+        Map<UUID, Product> productsById = page.stream()
+                .collect(Collectors.toMap(Product::getProductId, product -> product));
+        Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
+                .map(sku -> toResponse(productsById.get(sku.getProductId()), sku))
+                .collect(Collectors.groupingBy(SellerSkuResponse::productId));
+        return page.stream().map(product -> new ProductListingResponse(toResponse(product),
+                variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
+                        .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList())).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public ProductListingResponse findProduct(UUID productId) {
         if (productId == null) throw new CatalogException(Code.INVALID_REQUEST, "Product ID is required");
         Product product = products.findById(productId)

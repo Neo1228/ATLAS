@@ -12,4 +12,5 @@ public interface SellerSkuRepository extends JpaRepository<SellerSku, SellerSkuI
     List<SellerSku> findAllBySellerId(UUID sellerId);
     List<SellerSku> findAllBySellerIdAndSkuIdIn(UUID sellerId, List<String> skuIds);
     List<SellerSku> findAllByProductId(UUID productId);
+    List<SellerSku> findAllByProductIdIn(List<UUID> productIds);
 }

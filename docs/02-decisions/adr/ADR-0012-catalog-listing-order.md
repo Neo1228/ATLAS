@@ -55,3 +55,12 @@ Q-010은 상품 탐색의 우선순위·세부 기능을 미정으로 둡니다.
 - [D-067](../../00-governance/decision-log.md), [FR-005/Q-010](../../01-requirements/requirements-index.md)
 - 美团技术团队, [美团搜索多业务商品排序探索与实践](https://tech.meituan.com/2021/11/19/Exploration-and-Practice-of-Multi-business-Commodities-Ranking-in-Meituan-Search.html): 다중 업무 상품 relevance ranking 사례. 다른 서비스의 모델·업무 목표이며 ATLAS의 ranking 또는 성능 근거가 아닙니다. [REF-114](../../00-governance/reference-register.md)
 - [ADR-0008: Catalog·Cart·Order 경계](ADR-0008-catalog-cart-order-boundaries.md)
+
+## 구현 갱신 (2026-11-05)
+
+- 목록 응답: `{ items, nextCursor }`. DB keyset query에서 `limit + 1`건만 조회하고 현재 페이지의 Seller-SKU만 batch-load.
+- PostgreSQL UUID byte order 대신 두 64-bit 절반의 sign bit를 변환한 정렬 키 사용. D-067의 Java `UUID` natural order와 cursor 순서 일치.
+- 검색은 상품명 literal substring. `%`와 `_`는 wildcard로 해석하지 않음.
+- 페이지 크기: 기본 `10`, 최대 `100`. [REF-115](../../00-governance/reference-register.md)의 Stripe `v1` API 계약 사례만 참고; ATLAS 처리 용량 근거 아님.
+- 계산된 정렬 키에는 전용 index 없음. 현실적인 데이터 크기의 `EXPLAIN`·latency 측정 전까지 성능·용량 주장은 보류.
+- cursor는 마지막 Seller/Product ID의 Base64 표현. 인증·서명 토큰이 아니며, 페이지 이동 중 변경 데이터에 대한 snapshot 일관성은 보장하지 않음.
