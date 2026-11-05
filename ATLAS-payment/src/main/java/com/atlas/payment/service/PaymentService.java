@@ -7,10 +7,9 @@ public interface PaymentService {
 
     PaymentResponse submitInitial(UUID orderId);
 
-    PaymentResponse reconcileForCancellation(UUID orderId);
-    PaymentResponse reconcile(UUID orderId);
+    PaymentResponse reconcileForCancellation(UUID orderId, String idempotencyKey);
+    PaymentResponse reconcile(UUID orderId, String idempotencyKey);
 
-    PaymentResponse voidAuthorization(UUID orderId);
-
+    PaymentResponse voidAuthorization(UUID orderId, String idempotencyKey);
     PaymentResponse find(UUID orderId);
 }

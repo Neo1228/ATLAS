@@ -144,3 +144,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0013](../02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md): D-068는 배송 전 local refund record, 원장 reversal, claimed inventory 복원을 정한 소유자 정책. 외부 PSP 동작·자금 이동은 범위 밖.
 - [ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md): REF-115는 `limit=10` 기본값과 `100` 상한의 API 계약 사례일 뿐, ATLAS의 성능·용량 수치 근거가 아님.
 - [ADR-0014](../02-decisions/adr/ADR-0014-seller-inventory-capacity-adjustment.md): D-069은 재고 capacity 조정, audit, idempotency를 정한 소유자 정책.
+- [ADR-0015](../02-decisions/adr/ADR-0015-durable-fake-psp-progression.md): D-070은 Fake PSP progression·결과 저장, same-key replay, manual recovery의 local-only 경계를 정한 소유자 결정.

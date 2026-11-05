@@ -53,9 +53,9 @@ class PaymentLifecycleIntegrationTest {
         PaymentResponse pending = payments.submitInitial(pendingOrder);
         assertThat(pending.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(pending.authorizationActive()).isTrue();
-        assertThat(payments.voidAuthorization(pendingOrder)).isEqualTo(pending);
+        assertThat(payments.voidAuthorization(pendingOrder, "pending-void-" + pendingOrder)).isEqualTo(pending);
         assertThat(payments.submitInitial(pendingOrder).attemptId()).isEqualTo(pending.attemptId());
-        PaymentResponse recovered = payments.reconcile(pendingOrder);
+        PaymentResponse recovered = payments.reconcile(pendingOrder, "pending-reconcile-" + pendingOrder);
         assertThat(recovered.state()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.attemptId()).isEqualTo(pending.attemptId());
 
@@ -72,13 +72,13 @@ class PaymentLifecycleIntegrationTest {
         assertThat(captureDeclined.state()).isEqualTo(PaymentState.DECLINED);
         assertThat(captureDeclined.authorizationActive()).isTrue();
 
-        PaymentResponse voidPending = payments.voidAuthorization(voidOrder);
+        PaymentResponse voidPending = payments.voidAuthorization(voidOrder, "void-start-" + voidOrder);
         assertThat(voidPending.state()).isEqualTo(PaymentState.VOID_PENDING);
         assertThat(voidPending.authorizationActive()).isTrue();
-        PaymentResponse voidUnknown = payments.reconcile(voidOrder);
+        PaymentResponse voidUnknown = payments.reconcile(voidOrder, "void-reconcile-unknown-" + voidOrder);
         assertThat(voidUnknown.state()).isEqualTo(PaymentState.UNKNOWN);
         assertThat(voidUnknown.authorizationActive()).isTrue();
-        PaymentResponse voided = payments.reconcile(voidOrder);
+        PaymentResponse voided = payments.reconcile(voidOrder, "void-reconcile-done-" + voidOrder);
         assertThat(voided.state()).isEqualTo(PaymentState.VOIDED);
         assertThat(voided.authorizationActive()).isFalse();
         UUID captureRecoveryOrder = UUID.randomUUID();
@@ -87,10 +87,11 @@ class PaymentLifecycleIntegrationTest {
         PaymentResponse capturePending = payments.submitInitial(captureRecoveryOrder);
         assertThat(capturePending.state()).isEqualTo(PaymentState.CAPTURE_PENDING);
         assertThat(capturePending.authorizationActive()).isTrue();
-        assertThat(payments.voidAuthorization(captureRecoveryOrder)).isEqualTo(capturePending);
-        PaymentResponse captureUnknown = payments.reconcile(captureRecoveryOrder);
+        assertThat(payments.voidAuthorization(captureRecoveryOrder, "capture-void-" + captureRecoveryOrder))
+                .isEqualTo(capturePending);
+        PaymentResponse captureUnknown = payments.reconcile(captureRecoveryOrder, "capture-reconcile-unknown-" + captureRecoveryOrder);
         assertThat(captureUnknown.state()).isEqualTo(PaymentState.UNKNOWN);
-        PaymentResponse captureRecovered = payments.reconcile(captureRecoveryOrder);
+        PaymentResponse captureRecovered = payments.reconcile(captureRecoveryOrder, "capture-reconcile-done-" + captureRecoveryOrder);
         assertThat(captureRecovered.state()).isEqualTo(PaymentState.CAPTURED);
         assertThat(captureRecovered.attemptId()).isEqualTo(capturePending.attemptId());
 
