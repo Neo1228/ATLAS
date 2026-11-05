@@ -1,12 +1,20 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import encoding from 'k6/encoding';
+import { Trend } from 'k6/metrics';
 
 const BASE_URL = (__ENV.BASE_URL || '').replace(/\/$/, '');
 const SELLER_ID = __ENV.SELLER_ID || '';
 const SUMMARY_FILE = __ENV.SUMMARY_FILE || 'catalog-listing-summary.json';
 const PAGE_LIMIT = 100;
 const QUERIES = ['broad', 'needle'];
+
+const SCENARIO_LATENCY = {
+  global: new Trend('catalog_listing_global_latency', true),
+  seller: new Trend('catalog_listing_seller_latency', true),
+  search_broad: new Trend('catalog_listing_search_broad_latency', true),
+  search_needle: new Trend('catalog_listing_search_needle_latency', true),
+};
 
 if (!BASE_URL) throw new Error('BASE_URL is required (local API URL only)');
 if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(SELLER_ID)) {
@@ -60,7 +68,7 @@ function listingCheck(response, label, expectedSeller = null) {
   let cursorValid = payload !== null;
   if (cursorValid && payload.nextCursor !== null) {
     try {
-      const decoded = encoding.b64decode(payload.nextCursor, 'rawurl');
+      const decoded = String.fromCharCode(...new Uint8Array(encoding.b64decode(payload.nextCursor, 'rawurl')));
       const [cursorSeller, cursorProduct, ...extra] = decoded.split(':');
       const last = items[items.length - 1];
       cursorValid = extra.length === 0 && last !== undefined
@@ -104,6 +112,7 @@ export default function () {
     tags: { name: `catalog_listing_${label}`, listing_scenario: label },
   });
   listingCheck(response, label, expectedSeller);
+  SCENARIO_LATENCY[label].add(response.timings.duration);
 }
 
 export function handleSummary(data) {

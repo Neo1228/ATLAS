@@ -1,0 +1,147 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Limit",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 5760.63,
+      "Total Cost": 5772.14,
+      "Plan Rows": 101,
+      "Plan Width": 177,
+      "Actual Startup Time": 13.900,
+      "Actual Total Time": 15.187,
+      "Actual Rows": 101.00,
+      "Actual Loops": 1,
+      "Disabled": false,
+      "Shared Hit Blocks": 2038,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Gather Merge",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 5760.63,
+          "Total Cost": 9559.73,
+          "Plan Rows": 33334,
+          "Plan Width": 177,
+          "Actual Startup Time": 13.899,
+          "Actual Total Time": 15.181,
+          "Actual Rows": 101.00,
+          "Actual Loops": 1,
+          "Disabled": false,
+          "Workers Planned": 1,
+          "Workers Launched": 1,
+          "Shared Hit Blocks": 2038,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 4760.62,
+              "Total Cost": 4809.64,
+              "Plan Rows": 19608,
+              "Plan Width": 177,
+              "Actual Startup Time": 12.963,
+              "Actual Total Time": 12.966,
+              "Actual Rows": 80.50,
+              "Actual Loops": 2,
+              "Disabled": false,
+              "Sort Key": ["((encode(set_byte(set_byte(uuid_send(p.seller_id), 0, (get_byte(uuid_send(p.seller_id), 0) # 128)), 8, (get_byte(uuid_send(p.seller_id), 8) # 128)), 'hex'::text))::text) COLLATE \"C\"", "((encode(set_byte(set_byte(uuid_send(p.product_id), 0, (get_byte(uuid_send(p.product_id), 0) # 128)), 8, (get_byte(uuid_send(p.product_id), 8) # 128)), 'hex'::text))::text) COLLATE \"C\""],
+              "Sort Method": "top-N heapsort",
+              "Sort Space Used": 69,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 2038,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Workers": [
+                {
+                  "Worker Number": 0,
+                  "Sort Method": "top-N heapsort",
+                  "Sort Space Used": 70,
+                  "Sort Space Type": "Memory"
+                }
+              ],
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": true,
+                  "Async Capable": false,
+                  "Relation Name": "product",
+                  "Alias": "p",
+                  "Startup Cost": 0.00,
+                  "Total Cost": 4009.81,
+                  "Plan Rows": 19608,
+                  "Plan Width": 177,
+                  "Actual Startup Time": 0.095,
+                  "Actual Total Time": 12.676,
+                  "Actual Rows": 500.00,
+                  "Actual Loops": 2,
+                  "Disabled": false,
+                  "Filter": "(POSITION(('needle'::text) IN (lower(name))) > 0)",
+                  "Rows Removed by Filter": 49500,
+                  "Shared Hit Blocks": 2000,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Workers": [
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Settings": {
+    },
+    "Planning": {
+      "Shared Hit Blocks": 129,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.240,
+    "Triggers": [
+    ],
+    "Execution Time": 15.244
+  }
+]

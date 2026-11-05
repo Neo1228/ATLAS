@@ -1,70 +1,120 @@
-# EXP-015: Catalog listing 성능 측정
+# EXP-015: Catalog listing 로컬 baseline
 
-**상태:** 미실행 · local-only
+**상태:** 10k·100k 실측 완료 · local-only · 운영 capacity 주장 없음
 
-## 목적
+## 목적과 범위
 
-D-067·ADR-0012의 Seller/Product 목록 조회 동작 비교. 처리량·SLO·사용자 수용량 산정 목적 아님. 변경된 운영 설정·production telemetry 없음.
+- D-067 / ADR-0012 pagination contract의 합성 데이터 조회 특성 비교
+- 사용자 수요, production RPS/TPS, SLO, 용량 산정 목적 아님
+- 동일 PostgreSQL 18.6·JDK 25·4-vCPU Colima profile에서 10k 후 100k dataset 측정
+- GitHub Issue [#132](https://github.com/Neo1228/ATLAS/issues/132)와 PR에 기록
 
-## 작업부하
+## 데이터·시나리오
 
-| Seed 상품 수 | Seller 수 | Seller-SKU 수 | 페이지 크기 |
-|---:|---:|---:|---:|
-| 10,000 | 100 | 20,000 | 100 |
-| 100,000 | 100 | 200,000 | 100 |
+| Products | Sellers | Seller-SKU | `broad` matches | `needle` matches | Page limit |
+|---:|---:|---:|---:|---:|---:|
+| 10,000 | 100 | 20,000 | 1,000 (10%) | 100 (1%) | 100 |
+| 100,000 | 100 | 200,000 | 10,000 (10%) | 1,000 (1%) | 100 |
 
-100개 Seller에 균등 분배. 검색 데이터 분포: `broad` 10%, `needle` 1% (`needle`은 `broad` subset). 고정 seed는 재실행 가능. 상품별 SKU 2개. `ON CONFLICT` upsert만 사용하며 기존 데이터 삭제·truncate 없음. 작은 데이터로 큰 seed를 축소하지 않음. 정확한 크기 비교는 별도 빈 `atlas_catalog_perf` database에서 시작.
+- Seller별 동일 분배, 상품별 SKU 2개
+- ID·검색 label deterministic. `needle`은 `broad`의 subset
+- API request: global listing, Seller listing, `broad`, `needle`
+- k6: 각 scenario당 100 serial requests × 4 scenarios = 400 requests/run
+- VU 1, concurrency 없음. Dataset별 correctness warm-up 1회, 측정 3회
+- 모든 run의 2,800 k6 checks 통과, HTTP failure rate 0
+- 요청당 `limit=100`; cursor token이 마지막 item을 인코딩하는지 및 Java UUID natural order 검사
+- Trend는 scenario별 HTTP request duration. 표의 값은 각 run p50/p95/p99의 **3회 median**; percentile을 합쳐 재계산한 pooled 값 아님
 
-k6 workload: global 목록, Seller 목록, `broad` 검색, `needle` 검색 각 100 iteration. 단일 executor·1 VU, 총 400회 serialized request. 요청별 1페이지, `limit=100`. `items`/`nextCursor`, 상품·두 SKU shape, Java UUID natural-order key, Seller scope, cursor-last-item 일치 검사. 모든 check와 HTTP failure에 실패 임계값 적용. Summary JSON 보존. 성능값은 이 합성 요청 비교에만 유효하며 예상 사용자/RPS capacity 아님.
+## 결과: HTTP request duration
 
-## 격리·사전 확인
+단위: ms. 같은 synthetic dataset·환경에서의 bounded comparison일 뿐, 용량/사용자 수 예측이 아님.
 
-로컬 PostgreSQL·애플리케이션만 사용. 기존 `atlas` DB 사용 금지. 애플리케이션 연결 URL과 `psql` 대상 모두 `atlas_catalog_perf`로 고정. 별도 local PostgreSQL instance 또는 해당 용도로만 쓰는 빈 `atlas_catalog_perf` database/schema 준비. 연결 정보·Docker/PostgreSQL 버전·JDK·OS/architecture: `[미확인]`.
+각 dataset/run은 400 requests, 2,800/2,800 checks 통과, HTTP failure 0.
+
+| Products | Scenario | p50 | p95 | p99 |
+|---:|---|---:|---:|---:|
+| 10,000 | Global | 5.169 | 5.862 | 7.558 |
+| 10,000 | Seller | 2.592 | 3.139 | 3.775 |
+| 10,000 | Search `broad` (10%) | 5.126 | 5.772 | 6.247 |
+| 10,000 | Search `needle` (1%) | 4.750 | 5.349 | 5.566 |
+| 100,000 | Global | 18.172 | 20.433 | 20.840 |
+| 100,000 | Seller | 2.950 | 3.691 | 4.166 |
+| 100,000 | Search `broad` (10%) | 17.751 | 19.699 | 22.424 |
+| 100,000 | Search `needle` (1%) | 16.162 | 17.937 | 18.503 |
+
+- Each raw k6 summary: [`results/exp-015/`](results/exp-015/); one JSON per dataset/run
+- Cursor verification failed before measurement because k6 `b64decode` returns an `ArrayBuffer`; the test harness now converts those bytes before comparing the decoded UUIDs. Re-run after the fix: all 28 checks per request passed.
+- Request rate from one VU is not interpreted as RPS capacity.
+
+## Query plan evidence
+
+`EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` executed from [`EXP-015-catalog-listing-performance-explain.sql`](EXP-015-catalog-listing-performance-explain.sql), matching `ProductRepository.findListingPage` predicate/order/limit. API limit 100 maps to DB fetch limit 101.
+
+| Products | Scenario | Access / sort | Actual rows returned | Execution ms | Shared hit / read blocks |
+|---:|---|---|---:|---:|---:|
+| 10,000 | Global | Seq Scan + top-N heapsort (68 KB) | 101 | 4.442 | 185 / 0 |
+| 10,000 | Seller | Bitmap index/heap scan + quicksort (50 KB) | 100 | 0.835 | 105 / 0 |
+| 10,000 | `broad` | Seq Scan + top-N heapsort (69 KB) | 101 | 3.519 | 185 / 0 |
+| 10,000 | `needle` | Seq Scan + quicksort (50 KB) | 100 | 2.610 | 185 / 0 |
+| 100,000 | Global | Parallel Seq Scan, 1 worker + top-N heapsort (68 KB) | 101 | 20.652 | 2,038 / 0 |
+| 100,000 | Seller | Bitmap index/heap scan + top-N heapsort (66 KB) | 101 | 1.744 | 1,014 / 0 |
+| 100,000 | `broad` | Parallel Seq Scan, 1 worker + top-N heapsort (69 KB) | 101 | 17.810 | 2,038 / 0 |
+| 100,000 | `needle` | Parallel Seq Scan, 1 worker + top-N heapsort (69 KB) | 101 | 15.244 | 2,038 / 0 |
+
+- 모든 query의 shared read blocks `0`: cache-warm runs; cold-start latency 아님
+- Sort는 메모리 사용, disk spill 없음
+- Seller filter는 `product_seller_idx` 사용. Global·substring search는 expression sort key와 `position()` 조건으로 Seq Scan + sort
+- 100k search의 planner estimate와 actual matches 차이: `broad` 10,000, `needle` 1,000 actual. `position(lower(name))` 선택도 추정의 후속 검토 근거; 단독으로 index 추가를 정당화하지 않음
+- Raw plan JSON: [`results/exp-015/`](results/exp-015/)
+
+## 실행 환경 및 재현성
+
+- Source commit: `9659a3d763256bf62663f5f761fd39218f240d42`
+- Application bootJar SHA-256: `e1ea12758aaae5978fbcbe21054e14b98a060685cde23cc6bbcaeb8fbc3d91b3`
+- Host: macOS 27.2, arm64, 11 logical CPUs, 18 GiB RAM
+- Colima `catxi-resilience`: 4 vCPU, 6 GiB RAM, 60 GiB disk; Docker Engine 29.5.2
+- PostgreSQL 18.6. Settings: `shared_buffers=163848kB`, `work_mem=4096kB`, `effective_cache_size=5242888kB`, `max_parallel_workers_per_gather=2`, `max_parallel_workers=8`, `random_page_cost=4`, `jit=on`
+- Java: Temurin/Homebrew 25.0.5.0.3
+- Images: `postgres:18.6` `sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81`; `grafana/k6:2.3.0` `sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8`; `eclipse-temurin:25-jre` `sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0`
+- Database: disposable container, database name `atlas_catalog_perf`, anonymous volume, private Docker network. Default `atlas` database/container/volume untouched.
+- Seed time: 10k initial seed 0.54s; 100k expansion from 10k to 100k 5.13s. Expansion time includes upsert of the existing 10k rows.
+- 100k run1 sample at ~1s: PostgreSQL 65.93% CPU / 212.8 MiB; app 0.28% CPU / 448.1 MiB. Single snapshot, not peak or continuous telemetry.
+- Seed row-count assertions and `ANALYZE` completed before measurements. Exact database counts: 100k products, 100 sellers, 200k Seller-SKUs, 10k/1k broad/needle matches.
+
+Re-run outline from repository root; use an isolated Docker context and unique names. Never point these commands at the existing `atlas` database.
 
 ```sh
-psql 'postgresql://localhost:5432/atlas_catalog_perf' -v ON_ERROR_STOP=1 -c 'SELECT current_database();'
+export CTX=colima-catxi-resilience
+export NET=atlas-catalog-perf-net
+export DB=atlas-catalog-perf-db
+export APP=atlas-catalog-perf-app
+
+docker --context "$CTX" network create "$NET"
+docker --context "$CTX" run -d --rm --name "$DB" --network "$NET" --network-alias "$DB" \
+  -e POSTGRES_DB=atlas_catalog_perf -e POSTGRES_USER=atlas -e POSTGRES_PASSWORD=atlas-local-only postgres:18.6
+export JAVA_HOME="<JDK 25 home>"; export PATH="$JAVA_HOME/bin:$PATH"
+./gradlew --no-daemon :application-module:bootJar
+docker --context "$CTX" run -d --rm --name "$APP" --network "$NET" --network-alias catalog-app \
+  -v "$PWD/ATLAS-application/build/libs/application-module.jar:/app/atlas.jar:ro" \
+  -e ATLAS_SERVER_ADDRESS=0.0.0.0 -e ATLAS_DB_URL="jdbc:postgresql://$DB:5432/atlas_catalog_perf" \
+  -e ATLAS_DB_USER=atlas -e ATLAS_DB_PASSWORD=atlas-local-only eclipse-temurin:25-jre java -jar /app/atlas.jar
+# Wait until Flyway has created the schema, then use a fresh DB for each exact size.
+docker --context "$CTX" exec -i "$DB" psql -U atlas -d atlas_catalog_perf \
+  -v ON_ERROR_STOP=1 -v product_count=10000 -f /dev/stdin \
+  < docs/03-experiments/EXP-015-catalog-listing-performance.sql
+# Set product_count=100000 only for the separate 100k run.
 ```
 
-출력 DB가 `atlas_catalog_perf`인지 확인. Seed SQL도 다른 현재 DB에서 예외로 중단. 아래 URL의 user/password/host/port: `[로컬 환경값]`.
+Run k6 on the private Docker network; capture each run JSON under `results/exp-015/`. Use `--summary-trend-stats='avg,min,med,max,p(90),p(95),p(99)'`. Stop only the named experiment app/database containers and remove the experiment network; no volume-prune command.
 
-## 실행 절차
+## Observability decision
 
-저장소 root에서 수행. PostgreSQL instance·credential은 기존 local 설정 사용. `product_count`는 `10000` 또는 `100000`만 지정. Seed SQL은 현재 database 이름도 확인.
+- No Prometheus/Grafana/Tempo/Alloy stack was added or used for this one-VU experiment.
+- k6 per-scenario trends, PostgreSQL `EXPLAIN`/buffers, and a Docker CPU/memory sample answered the bounded questions. The runtime had no app tracing/pool instrumentation; full stack would not provide HTTP–DB correlation without additional instrumentation.
+- Reconsider local-only Prometheus/Grafana/Tempo/Alloy when a future test needs to distinguish JVM saturation, pool wait, DB lock/IO wait, or trace-correlated application/SQL latency. If adopted, save dashboard export, query results/trace sample, scrape interval, resource allocations, retention, image digests, and test commit alongside that experiment's Markdown. No cloud export.
 
-```sh
-# 선택 A: 10,000 상품 / 20,000 SKU
-psql 'postgresql://localhost:5432/atlas_catalog_perf' -v ON_ERROR_STOP=1 -v product_count=10000 -f docs/03-experiments/EXP-015-catalog-listing-performance.sql
+## 결론과 한계
 
-# 또는 선택 B: 100,000 상품 / 200,000 SKU
-psql 'postgresql://localhost:5432/atlas_catalog_perf' -v ON_ERROR_STOP=1 -v product_count=100000 -f docs/03-experiments/EXP-015-catalog-listing-performance.sql
-
-ATLAS_DB_URL=jdbc:postgresql://localhost:5432/atlas_catalog_perf ./gradlew :application-module:bootRun
-mkdir -p artifacts
-# 선택 A: 10,000 상품 / 20,000 SKU
-BASE_URL=http://localhost:8080 SELLER_ID=00000000-0000-7000-8000-000000000015 SUMMARY_FILE=artifacts/exp015-10000.json k6 run load-tests/catalog-listing.js
-# 또는 선택 B: 100,000 상품 / 200,000 SKU
-BASE_URL=http://localhost:8080 SELLER_ID=00000000-0000-7000-8000-000000000015 SUMMARY_FILE=artifacts/exp015-100000.json k6 run load-tests/catalog-listing.js
-```
-
-100k seed 후 10k seed를 실행해도 초과 row는 삭제되지 않음. 정확한 비교에는 별도 빈 DB 사용. 실행 전 API/psql 대상 모두 `atlas_catalog_perf`인지 확인. k6/API 실행은 local-only. DB 상태·실측 성능 확인 전 결과 미기입.
-
-## 기록
-
-| Seed | Scenario | p50 | p95 | p99 | 오류 | Notes |
-|---|---|---:|---:|---:|---:|---|
-| `[미실행]` | global | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` |
-| `[미실행]` | seller | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` |
-| `[미실행]` | search_broad (10%) | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` |
-| `[미실행]` | search_needle (1%) | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` | `[미실행]` |
-
-추가 기록: commit SHA `[미기록]`; schema/seed row count `[미실행]`; PostgreSQL version/settings `[미확인]`; CPU·memory `[미확인]`; EXPLAIN (ANALYZE, BUFFERS, SETTINGS) `[미실행]`.
-
-## 확장 기준
-
-측정 DB 정합성, 응답 계약·정렬·cursor 확인, 재현 가능한 row count, 반복 결과 및 HTTP–DB 병목 근거 확보 후 별도 결정. Prometheus/Grafana/Tempo/Alloy 기본 추가 없음. OpenTelemetry·DB explain·pool/lock/host 관측 stack은 별도 proposal과 local-only opt-in gate 충족 시에만 검토. RPS/TPS·SLO·capacity 결론 없음.
-
-## 참고
-
-- [D-067·ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md)
-- [REF-115](../00-governance/reference-register.md): API page-size 기준
-- [EXP-014](EXP-014-id-strategy-comparison.md): DB 비교 실험
+- 10x product count raised global/search request p50 from roughly 5 ms to 16–18 ms in this one-VU local setup; seller-scoped reads remained around 3 ms. Search/global query plans scanned/sorted more rows; seller-scoped plans used the B-tree seller index.
+- This is a local synthetic comparison on a warm cache, not a performance target or production capacity estimate. No index/migration or infrastructure change follows from this experiment alone.
+- [D-067·ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md) · [REF-115](../00-governance/reference-register.md) · [EXP-014](EXP-014-id-strategy-comparison.md)
