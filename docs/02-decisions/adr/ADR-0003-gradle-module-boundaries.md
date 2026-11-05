@@ -34,9 +34,9 @@ ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/C
 
 현재 모듈 수와 디렉터리 목록은 역사적 기록이 아닌 [README](../../../README.md#모듈-구조)를 기준으로 합니다. Gradle 의존 그래프는 해당 모듈의 `build.gradle`에서 확인합니다.
 
-### 물리 디렉터리 구성
+### PR #90 당시 6개 subproject의 물리 디렉터리 구성
 
-여섯 Gradle subproject의 물리 디렉터리는 저장소 최상위의 `ATLAS-<이름>` 형식입니다: `ATLAS-application`, `ATLAS-campaign`, `ATLAS-admission`, `ATLAS-inventory`, `ATLAS-order`, `ATLAS-payment`. `settings.gradle`의 `projectDir` mapping으로 Gradle project path (`:application-module` 등)는 유지합니다. Java package와 모듈 의존성은 바뀌지 않습니다.
+PR #90 당시 여섯 Gradle subproject는 저장소 최상위 `ATLAS-<이름>` 디렉터리에 배치했습니다: `ATLAS-application`, `ATLAS-campaign`, `ATLAS-admission`, `ATLAS-inventory`, `ATLAS-order`, `ATLAS-payment`. `settings.gradle`의 `projectDir` mapping으로 기존 Gradle project path (`:application-module` 등)는 유지했습니다. Java package와 모듈 의존성은 변경하지 않았습니다. 이후 Catalog·Cart·Settlement 모듈이 추가됐으며 현재 구성은 [README](../../../README.md#모듈-구조)와 [ADR-0008](ADR-0008-catalog-cart-order-boundaries.md) 참조.
 
 | 선택지 | 절충 |
 |---|---|
@@ -45,7 +45,7 @@ ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/C
 | `ATLAS-<이름>` 디렉터리를 root에 배치 — 선택 | 저장소 root에서 여섯 모듈을 바로 구분. 기존 Gradle project/task path는 유지 |
 | Gradle project path도 `ATLAS-<이름>`으로 변경 | dependency와 task references까지 갱신해야 하므로 불필요한 영향 확대 |
 
-Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·미사용 근거가 있는 package/class가 없어 삭제하지 않았습니다. [REF-092](../../00-governance/reference-register.md)는 Gradle `projectDir` mapping 기능을 뒷받침할 뿐, 디렉터리 구성을 보편적 best practice로 입증하지 않습니다. 구현·검증은 [PR #90](https://github.com/Neo1228/ATLAS/pull/90).
+PR #90 당시 Java package 감사에서 중복·미사용 근거가 있는 package/class가 없어 삭제하지 않았습니다. [REF-092](../../00-governance/reference-register.md)는 Gradle `projectDir` mapping 기능의 근거이며 디렉터리 구성을 보편적 best practice로 입증하지 않습니다.
 
 ### 계층과 데이터 접근
 
@@ -61,13 +61,13 @@ Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·
 - **금지 pattern:** CQRS, CommandBus, handler/mediator, `internal`, `package-info.java` marker 금지. 새 pattern은 구체 요구와 ADR 승인 필요.
 - **Test:** consumer-visible behavior, module boundary, state transition, error contract, concurrency 검증에 한정. PostgreSQL 전용 동작은 PostgreSQL로 검증; wiring/중복 위험 테스트 금지 ([REF-099](../../00-governance/reference-register.md)).
 
-## 결과와 재검토
+## 결과와 재검토 — 초기 구성 기록
 
-- `application-module`만 실행·배포한다. Gradle dependency graph와 ArchUnit package 규칙이 모듈 방향·공개 계약을 검사한다. 소유권은 이 ADR과 [README](../../../README.md#모듈-구조)에 설명한다.
-- 다섯 기능 모듈과 Buyer 흐름을 유지한다. `application-module`은 실행·HTTP·migration을 조립하고, 도메인 모듈은 JPA CRUD와 필요한 DB 특화 repository를 소유한다.
-- Payment phase는 `PaymentPhase`로 명명한다. 기존 V4 migration checksum을 바꾸지 않고 V5에서 `operation` column/constraint를 `payment_phase`로 rename한다.
-- 다섯 capability 경계는 ADR-0001의 승인 범위 그대로다. 독립 team/release/data ownership 또는 측정된 운영·성능 요구가 생길 때만 module 수를 재검토한다.
-- JPA와 PostgreSQL SQL의 범위·절충은 ADR-0004에 기록한다. 독립 서비스 추출·추가 persistence framework는 근거와 사용자 승인 없이 진행하지 않는다.
+- 아래 결과는 ADR-0003 작성 당시와 PR #90의 초기 모듈 범위 기록. 이후 모듈 소유권 변경은 [ADR-0008](ADR-0008-catalog-cart-order-boundaries.md), 현재 모듈 구성은 [README](../../../README.md#모듈-구조) 참조.
+- PR #90 당시 `application-module`만 실행·배포했고, 초기 다섯 capability 경계와 Buyer 흐름을 유지했습니다. 이후 Catalog·Cart·Settlement 모듈이 추가됐으며 독립 배포 서비스는 아님.
+- 초기 구현에서 Payment phase는 `PaymentPhase`로 명명. 기존 V4 migration checksum을 바꾸지 않고 V5에서 `operation` column/constraint를 `payment_phase`로 rename.
+- JPA와 PostgreSQL 전용 SQL의 범위·절충은 [ADR-0004](ADR-0004-jpa-and-sql-boundary.md)에 기록. 독립 서비스 추출·추가 persistence framework는 근거와 사용자 승인 없이 진행하지 않음.
+- 모듈 수·경계는 독립 release/team/data ownership 또는 측정된 운영·성능 요구가 생길 때 재검토.
 
 ## 근거
 
