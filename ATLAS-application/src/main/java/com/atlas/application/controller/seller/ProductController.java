@@ -7,6 +7,7 @@ import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.dto.response.ProductListingResponse;
 import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.ProductService.ProductListingPage;
 import jakarta.validation.Valid;
@@ -25,7 +26,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 @RequiredArgsConstructor
 @RestController
@@ -64,7 +64,7 @@ public class ProductController {
                 cursorSeller = UUID.fromString(parts[0]);
                 cursorProduct = UUID.fromString(parts[1]);
             } catch (IllegalArgumentException exception) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid product cursor", exception);
+                throw new CatalogException(CatalogException.Code.INVALID_REQUEST, "Invalid product cursor");
             }
         }
         ProductListingPage fetched = products.listProductsPage(sellerId, query, limit, cursorSeller, cursorProduct);

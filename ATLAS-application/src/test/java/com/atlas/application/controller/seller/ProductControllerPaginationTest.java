@@ -1,11 +1,15 @@
 package com.atlas.application.controller.seller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.application.exception.GlobalExceptionHandler;
 import com.atlas.catalog.dto.response.ProductListingResponse;
 import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.service.ProductService;
@@ -15,8 +19,8 @@ import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class ProductControllerPaginationTest {
     @Test
@@ -44,14 +48,29 @@ class ProductControllerPaginationTest {
     }
 
     @Test
-    void malformedCursorUsesHttpBadRequestWithoutCallingCatalogService() {
+    void malformedCursorsReturnTypedProblemDetailWithoutCallingCatalogService() throws Exception {
         ProductService service = mock(ProductService.class);
-        ProductController controller = new ProductController(service);
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(service))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        UUID sellerId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        List<String> malformedCursors = List.of(
+                "!not-base64!",
+                encode("invalid:cursor:parts"),
+                encode("not-a-uuid:00000000-0000-0000-0000-000000000001"));
 
-        assertThatThrownBy(() -> controller.listProducts(null, null, null, "not-a-cursor"))
-                .isInstanceOf(ResponseStatusException.class)
-                .satisfies(exception -> assertThat(((ResponseStatusException) exception).getStatusCode())
-                        .isEqualTo(HttpStatus.BAD_REQUEST));
+        for (String cursor : malformedCursors) {
+            mockMvc.perform(get("/api/products").param("cursor", cursor))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                    .andExpect(jsonPath("$.detail").value("Invalid product cursor"));
+        }
+        mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
+                        .param("cursor", malformedCursors.get(0)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.detail").value("Invalid product cursor"));
+        verifyNoInteractions(service);
     }
 
     @Test
@@ -70,6 +89,10 @@ class ProductControllerPaginationTest {
 
     private static String decode(String cursor) {
         return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+    }
+
+    private static String encode(String value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static ProductListingResponse listing(UUID sellerId, UUID productId, String name) {
