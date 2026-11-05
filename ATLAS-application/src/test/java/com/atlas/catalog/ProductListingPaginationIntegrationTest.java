@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -72,8 +71,10 @@ class ProductListingPaginationIntegrationTest {
         List<Product> thirdPage = products.findListingPage(null, "needle", lastSecondPage.getSellerId(),
                 lastSecondPage.getProductId(), 2);
 
-        assertThat(Stream.of(firstPage, secondPage, thirdPage).flatMap(List::stream).toList())
-                .containsExactlyElementsOf(expected);
+        List<UUID> expectedIds = expected.stream().map(Product::getProductId).toList();
+        assertThat(firstPage).extracting(Product::getProductId).containsExactlyElementsOf(expectedIds.subList(0, 2));
+        assertThat(secondPage).extracting(Product::getProductId).containsExactlyElementsOf(expectedIds.subList(2, 4));
+        assertThat(thirdPage).isEmpty();
         assertThat(products.findListingPage(firstSeller, "needle", null, null, 10))
                 .hasSize(3)
                 .allSatisfy(product -> assertThat(product.getSellerId()).isEqualTo(firstSeller));
