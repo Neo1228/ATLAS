@@ -68,6 +68,7 @@ docker compose up -d --wait postgres
 2. Product 등록: `POST /api/sellers/{sellerId}/products`.
 3. Product에 SKU·가격 등록: `POST /api/sellers/{sellerId}/products/{productId}/skus`.
 4. 상품 조회: `GET /api/products` 또는 Seller별 `GET /api/sellers/{sellerId}/products`.
+   - Pagination: `limit` defaults to 10 and has a maximum of 100; pass `nextCursor` as `cursor` for the next page. Invalid cursors return HTTP 400 ProblemDetail `code: INVALID_REQUEST`, `detail: Invalid product cursor`.
 5. Cart 수량 설정: `PUT /api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}`.
    - Cart 항목 삭제: `DELETE /api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}`는 한 항목, 같은 경로에서 `/items`는 전체 항목을 제거합니다. Cart는 유지되며 재고는 변경되지 않습니다.
 6. Cart checkout: 같은 경로의 `POST /checkout`, `Idempotency-Key` 헤더 포함.

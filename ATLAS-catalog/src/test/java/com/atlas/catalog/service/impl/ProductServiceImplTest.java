@@ -1,6 +1,7 @@
 package com.atlas.catalog.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -11,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
@@ -19,12 +21,13 @@ import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
-import com.atlas.catalog.service.ProductService.ProductListingPage;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,19 +46,22 @@ class ProductServiceImplTest {
     private final UUID productId = UUID.randomUUID();
 
     @Test
-    void listingRequestsOneLookaheadButBatchesSkusOnlyForReturnedItems() {
+    void listingDecodesCursorAndEncodesNextPageWhileBatchingOnlyReturnedSkus() {
         Product first = product(sellerId, UUID.randomUUID(), "first");
         Product second = product(sellerId, UUID.randomUUID(), "second");
         Product lookahead = product(sellerId, UUID.randomUUID(), "lookahead");
+        UUID cursorProduct = UUID.randomUUID();
         when(sellers.existsById(sellerId)).thenReturn(true);
-        when(products.findListingPage(sellerId, "blue", null, null, 3)).thenReturn(List.of(first, second, lookahead));
+        when(products.findListingPage(sellerId, "blue", sellerId, cursorProduct, 3))
+                .thenReturn(List.of(first, second, lookahead));
         when(sellerSkus.findAllByProductIdIn(List.of(first.getProductId(), second.getProductId())))
                 .thenReturn(List.of());
 
-        ProductListingPage page = service.listProductsPage(sellerId, "  BLUE ", 2, null, null);
+        ProductListingPageResponse page = service.listProductsPage(
+                sellerId, "  BLUE ", 2, encodeCursor(sellerId, cursorProduct));
 
         assertEquals(2, page.items().size());
-        assertEquals(true, page.hasMore());
+        assertEquals(encodeCursor(sellerId, second.getProductId()), page.nextCursor());
         verify(sellerSkus).findAllByProductIdIn(List.of(first.getProductId(), second.getProductId()));
         verify(sellerSkus, never()).findAllByProductIdIn(List.of(lookahead.getProductId()));
     }
@@ -64,26 +70,33 @@ class ProductServiceImplTest {
     void listingDefaultsLimitAndNormalizesMissingQuery() {
         when(products.findListingPage(null, "", null, null, 11)).thenReturn(List.of());
 
-        ProductListingPage page = service.listProductsPage(null, null, null, null, null);
+        ProductListingPageResponse page = service.listProductsPage(null, null, null, null);
 
         assertEquals(List.of(), page.items());
-        assertEquals(false, page.hasMore());
+        assertNull(page.nextCursor());
         verify(products).findListingPage(null, "", null, null, 11);
     }
 
     @Test
-    void listingRejectsInvalidLimitsAndIncompleteOrMismatchedCursors() {
+    void listingRejectsInvalidLimitsMalformedCursorsAndMismatchedSellerCursors() {
         for (int invalid : List.of(-1, 0, 101)) {
             CatalogException exception = assertThrows(CatalogException.class,
-                    () -> service.listProductsPage(null, null, invalid, null, null));
+                    () -> service.listProductsPage(null, null, invalid, null));
             assertEquals(Code.INVALID_REQUEST, exception.code());
         }
-        CatalogException incomplete = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(null, null, 10, sellerId, null));
+        for (String cursor : List.of(
+                "!not-base64!",
+                encode("invalid:cursor:parts"),
+                encode("not-a-uuid:" + productId),
+                encode(sellerId + ":"))) {
+            CatalogException exception = assertThrows(CatalogException.class,
+                    () -> service.listProductsPage(null, null, null, cursor));
+            assertEquals(Code.INVALID_REQUEST, exception.code());
+            assertEquals("Invalid product cursor", exception.getMessage());
+        }
         when(sellers.existsById(sellerId)).thenReturn(true);
         CatalogException mismatched = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(sellerId, null, 10, UUID.randomUUID(), productId));
-        assertEquals(Code.INVALID_REQUEST, incomplete.code());
+                () -> service.listProductsPage(sellerId, null, 10, encodeCursor(UUID.randomUUID(), productId)));
         assertEquals(Code.INVALID_REQUEST, mismatched.code());
         verify(products, never()).findListingPage(any(), any(), any(), any(), anyInt());
     }
@@ -92,7 +105,7 @@ class ProductServiceImplTest {
     void listingRequiresExistingSeller() {
         when(sellers.existsById(sellerId)).thenReturn(false);
         CatalogException exception = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(sellerId, null, 10, null, null));
+                () -> service.listProductsPage(sellerId, null, 10, null));
         assertEquals(Code.NOT_FOUND, exception.code());
         verify(products, never()).findListingPage(any(), any(), any(), any(), anyInt());
     }
@@ -192,5 +205,13 @@ class ProductServiceImplTest {
         when(product.getProductId()).thenReturn(productId);
         when(product.getName()).thenReturn(name);
         return product;
+    }
+
+    private static String encodeCursor(UUID sellerId, UUID productId) {
+        return encode(sellerId + ":" + productId);
+    }
+
+    private static String encode(String value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 }

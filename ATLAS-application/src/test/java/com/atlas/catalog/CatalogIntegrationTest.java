@@ -7,10 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
+import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -48,6 +50,7 @@ class CatalogIntegrationTest {
     @Autowired ProductService productService;
     @Autowired SellerService sellerService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired ObjectMapper objectMapper;
 
     @Test
     void repositoryPagesAreBoundedAndContinueInD067OrderWithFilters() throws Exception {
@@ -80,15 +83,36 @@ class CatalogIntegrationTest {
                 new RegisterSellerSkuRequest("CURRENT-PAGE-SKU", 100, 1));
         productService.registerSku(expected.get(2).getSellerId(), expected.get(2).getProductId(),
                 new RegisterSellerSkuRequest("LOOKAHEAD-SKU", 100, 1));
-        var servicePage = productService.listProductsPage(null, " NEEDLE ", 2, null, null);
+        var servicePage = productService.listProductsPage(null, " NEEDLE ", 2, null);
         assertThat(servicePage.items()).hasSize(2);
-        assertThat(servicePage.hasMore()).isTrue();
+        assertThat(servicePage.nextCursor()).isNotBlank();
         assertThat(servicePage.items().getFirst().variants()).extracting(variant -> variant.skuId())
                 .containsExactly("CURRENT-PAGE-SKU");
         assertThat(servicePage.items().get(1).variants()).isEmpty();
+        var serviceNextPage = productService.listProductsPage(null, " NEEDLE ", 2, servicePage.nextCursor());
+        assertThat(serviceNextPage.items()).extracting(item -> item.product().productId())
+                .containsExactlyElementsOf(expectedIds.subList(2, 4));
+        assertThat(serviceNextPage.nextCursor()).isNull();
+
         long countBeforeGet = products.count();
-        mockMvc.perform(get("/api/products").param("query", " NEEDLE ").param("limit", "2"))
-                .andExpect(status().isOk());
+        String firstHttpBody = mockMvc.perform(get("/api/products").param("query", " NEEDLE ").param("limit", "2"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        ProductListingPageResponse firstHttpPage =
+                objectMapper.readValue(firstHttpBody, ProductListingPageResponse.class);
+        assertThat(firstHttpPage.items()).extracting(item -> item.product().productId())
+                .containsExactlyElementsOf(expectedIds.subList(0, 2));
+        assertThat(firstHttpPage.nextCursor()).isNotBlank();
+        String nextHttpBody = mockMvc.perform(get("/api/products")
+                        .param("query", " NEEDLE ")
+                        .param("limit", "2")
+                        .param("cursor", firstHttpPage.nextCursor()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        ProductListingPageResponse nextHttpPage = objectMapper.readValue(nextHttpBody, ProductListingPageResponse.class);
+        assertThat(nextHttpPage.items()).extracting(item -> item.product().productId())
+                .containsExactlyElementsOf(expectedIds.subList(2, 4));
+        assertThat(nextHttpPage.nextCursor()).isNull();
         assertThat(products.count()).isEqualTo(countBeforeGet);
     }
 
