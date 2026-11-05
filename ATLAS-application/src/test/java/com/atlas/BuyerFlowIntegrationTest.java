@@ -358,7 +358,7 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-oversized-key", "oversized-key-ticket");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.UNKNOWN);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.AUTHORIZED);
         OrderResponse pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
 
@@ -374,6 +374,7 @@ assertUuidV7(paymentOrderId);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_fake_psp_operation", Long.class))
                 .isEqualTo(operationCount);
         assertThat(orders.find(order.orderId()).paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        assertThat(orders.cancel(order.orderId(), "oversized-key-cleanup").state()).isEqualTo(OrderState.CANCELLED);
     }
 
     @Test
@@ -707,7 +708,8 @@ assertUuidV7(paymentOrderId);
         OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
 
         for (int attempt = 0; attempt < 2; attempt++) {
-            mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId()))
+            mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId())
+                            .header("Idempotency-Key", "cart-cancel-" + order.orderId()))
                     .andExpect(status().isOk())
                     .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                             .contains("\"state\":\"CANCELLED\"", "\"paymentState\":\"NOT_STARTED\""));
