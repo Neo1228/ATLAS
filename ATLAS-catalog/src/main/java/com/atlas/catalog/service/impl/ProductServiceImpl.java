@@ -13,7 +13,6 @@ import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
 import java.time.Clock;
@@ -32,7 +31,6 @@ public class ProductServiceImpl implements ProductService {
     private final SellerRepository sellers;
     private final ProductRepository products;
     private final SellerSkuRepository sellerSkus;
-    private final SellerSkuService sellerSkuService;
     private final InventoryService inventory;
     private final Clock clock;
 
@@ -83,24 +81,6 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ProductListingResponse> listProducts() {
-        Map<UUID, List<Product>> productsBySeller = products.findAll().stream()
-                .collect(Collectors.groupingBy(Product::getSellerId));
-        return productsBySeller.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .flatMap(entry -> toListings(entry.getKey(), entry.getValue()).stream()).toList();
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<ProductListingResponse> listProducts(UUID sellerId) {
-        if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID is required");
-        if (!sellers.existsById(sellerId)) throw new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId);
-        return toListings(sellerId, products.findAllBySellerId(sellerId));
-    }
-
-    @Override
-    @Transactional(readOnly = true)
     public List<ProductListingResponse> listProductsPage(UUID sellerId, String keyword, UUID cursorSeller,
             UUID cursorProduct, int limit) {
         if (sellerId != null && !sellers.existsById(sellerId)) {
@@ -132,20 +112,6 @@ public class ProductServiceImpl implements ProductService {
         Product product = products.findById(productId)
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown product: " + productId));
         return toListing(product);
-    }
-
-    private List<ProductListingResponse> toListings(UUID sellerId, List<Product> sellerProducts) {
-        List<String> skuIds = sellerSkus.findAllBySellerId(sellerId).stream()
-                .map(SellerSku::getSkuId).toList();
-        List<SellerSkuResponse> variants = sellerSkuService.findAll(sellerId, skuIds);
-        Map<UUID, List<SellerSkuResponse>> variantsByProductId = variants.stream()
-                .collect(Collectors.groupingBy(SellerSkuResponse::productId));
-        return sellerProducts.stream()
-                .map(product -> new ProductListingResponse(toResponse(product),
-                        variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
-                                .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList()))
-                .sorted(Comparator.comparing(listing -> listing.product().productId()))
-                .toList();
     }
 
     private ProductListingResponse toListing(Product product) {

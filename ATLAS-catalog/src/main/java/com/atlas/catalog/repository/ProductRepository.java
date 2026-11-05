@@ -9,7 +9,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
     boolean existsByProductIdAndSellerId(UUID productId, UUID sellerId);
-    List<Product> findAllBySellerId(UUID sellerId);
     List<Product> findAllByProductIdIn(List<UUID> productIds);
 
     @Query(value = """

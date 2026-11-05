@@ -12,8 +12,6 @@ public interface ProductService {
     ProductResponse createProduct(UUID sellerId, CreateProductRequest request);
     SellerSkuResponse registerSku(UUID sellerId, UUID productId, RegisterSellerSkuRequest request);
     SellerSkuResponse updateSkuPrice(UUID sellerId, UUID productId, String skuId, long priceWon);
-    List<ProductListingResponse> listProducts();
-    List<ProductListingResponse> listProducts(UUID sellerId);
     List<ProductListingResponse> listProductsPage(UUID sellerId, String keyword, UUID cursorSeller,
             UUID cursorProduct, int limit);
     ProductListingResponse findProduct(UUID productId);
