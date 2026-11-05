@@ -81,7 +81,7 @@ class SettlementLedgerIntegrationTest {
                 new Entry("PSP_CLEARING", "DEBIT", 250),
                 new Entry("SELLER_PAYABLE", "CREDIT", 250));
 
-        OrderResponse replayed = orders.reconcilePayment(paid.orderId());
+        OrderResponse replayed = orders.reconcilePayment(paid.orderId(), "paid-replay-" + paid.orderId());
 
         assertThat(replayed.state()).isEqualTo(OrderState.PAID);
         assertThat(journalCount(paid.paymentAttemptId())).isEqualTo(1);
@@ -115,7 +115,7 @@ class SettlementLedgerIntegrationTest {
 
         OrderResponse pending = orders.submitPayment(checkout.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
-        var captured = payments.reconcile(pending.orderId());
+        var captured = payments.reconcile(pending.orderId(), "settlement-capture-" + pending.orderId());
         assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
 
         jdbc.execute("""
@@ -134,7 +134,8 @@ class SettlementLedgerIntegrationTest {
                 FOR EACH ROW EXECUTE FUNCTION fail_seller_payable_entry()
                 """);
         try {
-            assertThatThrownBy(() -> orders.reconcilePayment(pending.orderId())).isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(() -> orders.reconcilePayment(pending.orderId(), "settlement-downstream-" + pending.orderId()))
+                    .isInstanceOf(RuntimeException.class);
             assertThat(journalCount(captured.attemptId())).isZero();
             OrderResponse unchanged = orders.find(pending.orderId());
             assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);
@@ -145,7 +146,8 @@ class SettlementLedgerIntegrationTest {
             jdbc.execute("DROP FUNCTION IF EXISTS fail_seller_payable_entry()");
         }
 
-        OrderResponse recovered = orders.reconcilePayment(pending.orderId());
+        OrderResponse recovered = orders.reconcilePayment(
+                pending.orderId(), "settlement-downstream-" + pending.orderId());
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(journalCount(captured.attemptId())).isEqualTo(1);
         assertThat(entries(captured.attemptId())).containsExactly(
