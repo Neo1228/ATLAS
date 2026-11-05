@@ -13,6 +13,8 @@ public interface CartService {
 
     CartResponse removeItem(UUID sellerId, String buyerRef, String skuId);
 
+    void clearItems(UUID sellerId, String buyerRef);
+
     CartResponse lockForCheckout(UUID sellerId, String buyerRef);
 
     void clearForCheckout(UUID sellerId, String buyerRef);

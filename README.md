@@ -69,6 +69,7 @@ docker compose up -d --wait postgres
 3. Product에 SKU·가격 등록: `POST /api/sellers/{sellerId}/products/{productId}/skus`.
 4. 상품 조회: `GET /api/products` 또는 Seller별 `GET /api/sellers/{sellerId}/products`.
 5. Cart 수량 설정: `PUT /api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}`.
+   - Cart 항목 삭제: `DELETE /api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}`는 한 항목, 같은 경로에서 `/items`는 전체 항목을 제거합니다. Cart는 유지되며 재고는 변경되지 않습니다.
 6. Cart checkout: 같은 경로의 `POST /checkout`, `Idempotency-Key` 헤더 포함.
 7. 결과 확인: `GET /api/orders/{orderId}`.
 8. Reorder: terminal `CART` Order에서 `POST /api/orders/{orderId}/reorder` 호출. `Idempotency-Key`와 `{"confirmExistingCartMerge":true}` 포함. 현재 Seller-SKU와 재고를 확인하고, 기존 Cart가 비어 있지 않으면 확인 후 병합. Reorder는 재고를 예약하지 않으며 Checkout에서 다시 확인 ([FR-006/BR-005/INV-005](docs/01-requirements/requirements-index.md#business-rules-and-domain-invariants)).

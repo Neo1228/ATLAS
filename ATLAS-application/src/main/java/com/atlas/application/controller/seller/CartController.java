@@ -46,6 +46,12 @@ public class CartController {
         carts.removeItem(sellerId, buyerRef, skuId);
     }
 
+    @DeleteMapping("/items")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void clearItems(@PathVariable UUID sellerId, @PathVariable String buyerRef) {
+        carts.clearItems(sellerId, buyerRef);
+    }
+
     @PostMapping("/checkout")
     public OrderResponse checkout(@PathVariable UUID sellerId, @PathVariable String buyerRef,
             @RequestHeader("Idempotency-Key") String idempotencyKey) {

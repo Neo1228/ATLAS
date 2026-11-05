@@ -3,6 +3,7 @@ package com.atlas;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -592,6 +593,97 @@ assertUuidV7(paymentOrderId);
         QueueTicketResponse reentry = join(campaign, "buyer-reentry", "new-key");
         assertThat(reentry.sequence()).isEqualTo(3);
         assertThat(reentry.status()).isEqualTo(TicketStatus.WAITING);
+    }
+
+    @Test
+    void sellerCanRemoveAndClearCartItemsWithoutChangingOtherCartsOrInventory() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        UUID otherSellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("clear-cart", null));
+        ProductResponse otherProduct = products.createProduct(otherSellerId,
+                new CreateProductRequest("other-clear-cart", null));
+        String firstSku = "clear-a-" + UUID.randomUUID();
+        String secondSku = "clear-b-" + UUID.randomUUID();
+        String otherSellerSku = "other-clear-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        products.registerSku(otherSellerId, otherProduct.productId(),
+                new RegisterSellerSkuRequest(otherSellerSku, 300, 5));
+        String buyerRef = "clear-buyer-" + UUID.randomUUID();
+        String otherBuyerRef = "clear-other-buyer-" + UUID.randomUUID();
+
+        for (String skuId : List.of(firstSku, secondSku)) {
+            mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                            sellerId, buyerRef, skuId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"quantity":1}
+                                    """))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, otherBuyerRef, secondSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":2}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        otherSellerId, buyerRef, otherSellerSku)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":3}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
+                        sellerId, buyerRef, firstSku))
+                .andExpect(status().isNoContent());
+        CartResponse afterSingleRemoval = objectMapper.readValue(
+                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                CartResponse.class);
+        assertThat(afterSingleRemoval.items()).extracting(item -> item.skuId()).containsExactly(secondSku);
+
+        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items", sellerId, buyerRef))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items", sellerId, buyerRef))
+                .andExpect(status().isNoContent());
+        CartResponse cleared = objectMapper.readValue(
+                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                CartResponse.class);
+        CartResponse sameSellerCart = objectMapper.readValue(
+                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, otherBuyerRef))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                CartResponse.class);
+        CartResponse otherSellerCart = objectMapper.readValue(
+                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", otherSellerId, buyerRef))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                CartResponse.class);
+
+        assertThat(cleared.items()).isEmpty();
+        assertThat(sameSellerCart.items()).extracting(item -> item.skuId()).containsExactly(secondSku);
+        assertThat(otherSellerCart.items()).extracting(item -> item.skuId()).containsExactly(otherSellerSku);
+        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items",
+                        sellerId, "missing-" + UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM purchase_order WHERE seller_id IN (?, ?)",
+                Integer.class, sellerId, otherSellerId)).isZero();
+        List<InventoryPoolResponse> stock = List.of(
+                inventory.find(sellerId, firstSku),
+                inventory.find(sellerId, secondSku),
+                inventory.find(otherSellerId, otherSellerSku));
+        assertThat(stock).extracting(InventoryPoolResponse::available).containsExactly(4, 3, 5);
+        assertThat(stock).extracting(InventoryPoolResponse::reserved).containsExactly(0, 0, 0);
+        assertThat(stock).extracting(InventoryPoolResponse::claimed).containsExactly(0, 0, 0);
+        stock.forEach(BuyerFlowIntegrationTest::assertConserved);
     }
 
     @Test

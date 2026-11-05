@@ -97,6 +97,13 @@ public class CartServiceImpl implements CartService {
     }
 
     @Override
+    @Transactional
+    public void clearItems(UUID sellerId, String buyerRef) {
+        validateIdentity(sellerId, buyerRef);
+        requireLockedCart(sellerId, buyerRef).clearItems();
+    }
+
+    @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public CartResponse lockForCheckout(UUID sellerId, String buyerRef) {
         validateIdentity(sellerId, buyerRef);
