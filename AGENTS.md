@@ -71,6 +71,9 @@ docker compose up -d --wait postgres
 - 책임을 모듈 안에 응집: 공개 `.service`, `.dto.request`, `.dto.response`, `.exception`; 내부 JPA `.persistence.entity`, lifecycle `.persistence.state`, 소유 모듈 `.repository`, workflow `.service.impl`.
 - 생성자 주입 우선. Lombok 1.18.48은 `@Getter`, 단순 생성자용 `@RequiredArgsConstructor`에 한정. `@Data`, 일괄 `@Setter`, builder, entity equality 생성 금지.
 - 일반 CRUD는 JPA. PostgreSQL 전용 동시성·원자성 SQL은 해당 모듈 `.repository`에서 처리하고, 소유 모듈 테이블에만 기록.
+- 계층 경계: Controller는 HTTP binding·status·transport token 변환 후 Service를 호출하는 얇은 adapter. 유스케이스 정책·도메인 검증·transaction·repository 접근 금지.
+- Service는 유스케이스·정책 검증·transaction 경계와 비즈니스 오류 변환 담당. Repository는 SQL/JPA와 persistence 결과만 담당하며 HTTP DTO·HTTP 예외에 의존 금지. 조회 projection record는 `.persistence.projection`에 배치.
+- 생성자 DI로 필요한 공개 Service만 연결. 모듈 간 entity/repository 직접 참조 및 계층 우회 금지.
 - Schema는 Flyway가 관리하고 Hibernate는 `ddl-auto: validate`만 수행. 병렬 작업의 migration version은 coordinator가 배정.
 - 모듈별 오류는 타입이 지정된 예외와 `Code`로 표현. `GlobalExceptionHandler`는 RFC 9457 `ProblemDetail`과 고정 `code` 반환. 예기치 않은 500 응답에 내부 상세를 노출하지 않음.
 - GET 등 조회 요청은 상태를 변경하지 않음. 만료·재시도·대기열 승격은 상태 변경 요청이나 scheduler가 처리.

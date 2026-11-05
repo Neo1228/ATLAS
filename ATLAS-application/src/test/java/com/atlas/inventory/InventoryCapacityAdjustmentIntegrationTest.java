@@ -21,16 +21,23 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Callable;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
 @SpringBootTest
+@AutoConfigureMockMvc
+
 class InventoryCapacityAdjustmentIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
@@ -49,6 +56,7 @@ class InventoryCapacityAdjustmentIntegrationTest {
     @Autowired SellerService sellers;
     @Autowired ProductService products;
     @Autowired JdbcTemplate jdbc;
+    @Autowired MockMvc mockMvc;
 
     @Test
     void adjustmentReplaysAndRejectsChangedFactsWhilePreservingConservation() {
@@ -107,5 +115,69 @@ class InventoryCapacityAdjustmentIntegrationTest {
         InventoryPoolResponse pool = inventory.find(sellerId, sku);
         assertThat(pool.initialCapacity()).isEqualTo(5);
         assertThat(pool.available() + pool.reserved() + pool.claimed()).isEqualTo(pool.initialCapacity());
+    }
+    @Test
+    void adjustmentFailuresHaveStableHttpProblemCodesAndDoNotWriteAudit() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String sku = UUID.randomUUID().toString();
+        UUID productId = products.createProduct(sellerId,
+                new CreateProductRequest("http-adjustment-" + UUID.randomUUID(), "description")).productId();
+        products.registerSku(sellerId, productId, new RegisterSellerSkuRequest(sku, 100, 2));
+
+        mockMvc.perform(post("/api/sellers/{sellerId}/inventory/{sku}/capacity-adjustments",
+                        UUID.randomUUID(), sku)
+                        .header("Idempotency-Key", "missing-pool")
+                        .contentType("application/json").content("{\"delta\":1,\"reason\":\"restock\"}"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("INVENTORY_POOL_NOT_FOUND"));
+        mockMvc.perform(post("/api/sellers/{sellerId}/inventory/{sku}/capacity-adjustments", sellerId, sku)
+                        .header("Idempotency-Key", "insufficient")
+                        .contentType("application/json").content("{\"delta\":-3,\"reason\":\"correction\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
+        mockMvc.perform(post("/api/sellers/{sellerId}/inventory/{sku}/capacity-adjustments", sellerId, sku)
+                        .header("Idempotency-Key", "minimum")
+                        .contentType("application/json").content("{\"delta\":-2147483648,\"reason\":\"correction\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(post("/api/sellers/{sellerId}/inventory/{sku}/capacity-adjustments", sellerId, sku)
+                        .header("Idempotency-Key", "maximum")
+                        .contentType("application/json").content("{\"delta\":2147483647,\"reason\":\"restock\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(post("/api/sellers/{sellerId}/inventory/{sku}/capacity-adjustments", sellerId, sku)
+                        .header("Idempotency-Key", "x".repeat(257))
+                        .contentType("application/json").content("{\"delta\":1,\"reason\":\"restock\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        assertThat(inventory.find(sellerId, sku).initialCapacity()).isEqualTo(2);
+        assertThat(inventory.find(sellerId, sku).available()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_capacity_adjustment WHERE seller_id = ? AND sku_id = ?",
+                Integer.class, sellerId, sku)).isZero();
+    }
+    @Test
+    void differentKeysCannotOverdrawAvailableCapacity() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String sku = UUID.randomUUID().toString();
+        UUID productId = products.createProduct(sellerId,
+                new CreateProductRequest("different-keys-" + UUID.randomUUID(), "description")).productId();
+        products.registerSku(sellerId, productId, new RegisterSellerSkuRequest(sku, 100, 3));
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var outcomes = executor.invokeAll(List.of(
+                    (Callable<Boolean>) () -> succeeds(sellerId, sku, "first-key"),
+                    () -> succeeds(sellerId, sku, "second-key")));
+            assertThat(outcomes.get(0).get() ^ outcomes.get(1).get()).isTrue();
+        }
+        InventoryPoolResponse pool = inventory.find(sellerId, sku);
+        assertThat(pool.available()).isEqualTo(1);
+        assertThat(pool.initialCapacity()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_capacity_adjustment WHERE seller_id = ? AND sku_id = ?",
+                Integer.class, sellerId, sku)).isEqualTo(1);
+    }
+
+    private boolean succeeds(UUID sellerId, String sku, String key) {
+        try {
+            adjustments.adjust(sellerId, sku, key, new AdjustInventoryCapacityRequest(-2, "correction"));
+            return true;
+        } catch (InventoryException insufficient) {
+            if (insufficient.code() != InventoryException.Code.INSUFFICIENT_STOCK) throw insufficient;
+            return false;
+        }
     }
 }

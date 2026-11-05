@@ -65,7 +65,8 @@ public class GlobalExceptionHandler {
         }
         if (exception instanceof InventoryException inventory) {
             return switch (inventory.code()) {
-                case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "INVENTORY_RESERVATION_NOT_FOUND", inventory.getMessage());
+ case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "INVENTORY_RESERVATION_NOT_FOUND", inventory.getMessage());
+ case POOL_NOT_FOUND -> response(HttpStatus.NOT_FOUND, "INVENTORY_POOL_NOT_FOUND", inventory.getMessage());
                 case UNAVAILABLE, CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", inventory.getMessage());
                 case INSUFFICIENT_STOCK ->
                         response(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", inventory.getMessage());
