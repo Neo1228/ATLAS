@@ -1,80 +1,123 @@
-# ATLAS 작업 진입 규칙
+# Repository Guidelines
 
-## 목적과 범위
-- 목적: 전체 이커머스 플랫폼의 기본 구매·판매 흐름, 거래 정합성, 장애 복구를 단계적으로 검증.
-- 현재 검증 범위: Seller-SKU 공유 재고, 대기열, 주문·Fake PSP 결제를 포함한 한정판매 흐름. 전체 제품 범위가 아닌 첫 시나리오.
-- 사실과 합성 실험 구분. 사용자·거래·운영 성과를 근거 없이 주장하지 않음.
+## Project Overview
 
-## 진행 원칙
-- 문서는 프로젝트를 처음 보는 독자 기준으로 작성. 짧고 훑기 쉬운 개조식 문장, 자연스러운 한국어 우선. 표준 기술명·API·코드 식별자만 원문 표기.
-- 상태 표기: `✓ 확정`, `△ 제안`, `? 미정`, `가정`, `실측`. 사용자 승인 전 제안을 확정하지 않음.
-- 장기 범위, PSP, 개인정보·금전 정책, 핵심 도메인·아키텍처, Gate 전환은 사전 승인 대상.
-- 정책·승인 기준은 [요구사항](docs/01-requirements/requirements-index.md)과 이 파일의 기술 규칙을 따름. 현재 Gate 상태는 root [README](README.md) 참조.
-- 중요한 아키텍처·데이터 선택과 대안 이력은 [결정 로그](docs/00-governance/decision-log.md)에 기록. ADR ID와 상세 근거는 해당 문서의 절에서 관리.
-- 코드 변경 전 요구사항·정책·검증 계약 확인.
-- library·plugin 도입을 무조건 피하거나 자동 선택하지 않음. 기존 JDK/Spring/DB 기능, 유지관리 중인 library, 직접 구현을 비교. 요구 기능·호환성·운영 비용에 맞는 성숙한 library가 있으면 직접 재구현보다 우선. 기능 공백, 대안, 유지보수·보안·라이선스 비용, runtime/test/build 범위를 Issue/PR에 기록.
-- Git 저장소 분리는 기본 보류. 독립 release/team/data ownership 또는 측정된 scaling·security 경계와 승인된 ADR이 있을 때만 검토.
-- Java 구현 코드에는 FQCN 대신 import 사용. Gradle `check`의 Checkstyle 검사로 강제.
-- Lombok 1.18.48은 명시적으로 승인된 범위에서만 사용: 기계적인 public getter는 `@Getter`, 단순 `final` field 주입 생성자는 `@RequiredArgsConstructor`. `@Data`, 일괄 `@Setter`, builder, entity equality 생성 금지. JPA lifecycle·불변조건 생성자와 필요한 setter는 명시적으로 유지.
-- Lombok 의존성은 `compileOnly` + `annotationProcessor`로 한정. javac의 미처리 Spring/JPA annotation 진단만 `-Xlint:-processing`으로 제외하고 나머지 warning은 `-Werror` 유지. JDK 25의 `sun.misc.Unsafe` 경고는 숨기거나 JDK flag로 우회하지 않음; JDK 26 적용 전 호환성 재검토.
-- [README 로컬 실행 환경](README.md#로컬-실행-환경)과 [공식 Lombok IDE 설정 안내](https://projectlombok.org/setup)에 설정을 기록. `lombok.config`는 `@lombok.Generated` marker가 class file dependency로 기록되지 않도록 설정; ModuleBoundaryTest 경계를 유지.
-- HTTP GET/read query는 domain state를 변경하지 않음. 만료·retry·promotion은 상태 변경 요청 또는 scheduler가 처리. 조회는 마지막으로 저장된 상태 반환.
-- Cross-cutting utility를 위해 `common` package/module을 선제 생성하지 않음. Clock/error mapping처럼 실제 application-wide policy만 root composition에 두고, 반복된 domain ownership이 생기면 ADR 검토.
-- Public API: `.service`, `.dto.request`, `.dto.response`, `.exception`.
-- 공유 lifecycle state는 `.persistence.state`; JPA entity는 `.persistence.entity`; repository는 모듈 내부 `.repository`. 다른 모듈의 entity/repository 직접 참조 금지.
-- workflow·scheduled expiry는 `.service.impl`, provider는 `.provider.*`에 배치. HTTP adapter·전송 DTO·설정·공통 오류는 `application-module` 소유.
-- PostgreSQL/native SQL 쓰기는 해당 모듈이 소유한 테이블에 한정. package 의존 검사만으로 SQL 소유권이나 모듈 간 transaction 경계를 보장할 수 없음. 쓰기 경로와 불변조건 transaction을 함께 검토.
-- CRUD는 JPA, PostgreSQL 전용 동시성 SQL은 `.repository`의 JDBC/native query. Flyway가 schema를 소유하고 Hibernate는 `validate`만 수행. 불필요한 generic base/mapper/forwarding scheduler 금지.
-- CQRS·CommandBus·command/query handler·mediator 및 `internal` 금지. 모듈 입력은 `*Request` record. HTTP request record는 전송 필드나 validation 규칙이 다를 때만 별도 작성; 단순 복제 DTO 금지.
-- 문서·Issue·PR은 프로젝트 맥락을 모르는 독자를 기준으로 작성. 내부 shorthand/ID만 나열하지 말고, 복잡한 변경은 배경·사실/가정·선택 이유·대안·영향·검증을 본문에 설명하고 기준 문서에 연결.
-- 흐름/상태가 복잡한 경우 Mermaid 등으로 시각화. 중복 그림 금지, 미정 경계 표시. 단순 변경에 도식 강제 금지.
-- 아직 막지 못한 소비자 동작·계약·상태·불변조건·동시성·오류의 구체적 회귀 위험을 검증.
-- 단순 연결, 전달, mapping, 우연한 기본값, 중복 assertion은 테스트하지 않음. 같은 위험을 여러 계층에서 반복 검증하지 않음.
-- Mock은 외부 state/failure semantics의 fidelity가 낮아지는 지점을 검토. PostgreSQL SQL/locking은 Testcontainers의 실제 PostgreSQL 경계에서 검증.
-- 외부 PSP 상태와 주문 상태, 내부 정산과 실제 지급 구분. 초기 범위에서 실결제·개인정보·판매사 지급 제외.
-- 완료 검증은 변경된 실제 경로를 smoke 실행하고 관련 contract/invariant를 확인. Performance/capacity 주장은 workload·환경을 명시한 반복 측정으로만 제시; 코드 모양이나 단발 측정으로 추정하지 않음.
+- ATLAS is a local learning project for a full e-commerce platform: catalog, cart, orders, limited-sale queues, inventory, payment-state recovery, fulfillment, and internal settlement.
+- Current flows use synthetic Seller/Buyer identifiers, PostgreSQL, and Fake PSP. They are not a production service or live-payment integration.
+- No real customers, personal data, cash movement, seller payout, carrier integration, or cloud deployment.
+- Distinguish verified code, owner decisions, synthetic inputs, and measured results. Never present a test input as market demand or production capacity.
+- Current scope and status: [README](README.md). Business requirements and unresolved policies: [Requirements Index](docs/01-requirements/requirements-index.md). Durable decisions: [Decision Log](docs/00-governance/decision-log.md).
 
-## 개발 단위와 근거 기반 고도화
-- 기본 기능은 관련 구매·판매 흐름으로 묶어 빠르게 제공. 같은 목적의 API·schema·서비스·테스트·문서는 한 Issue/PR로 처리; 파일·클래스·endpoint별로 쪼개지 않음.
-- 현재 PostgreSQL과 기본 설정으로 핵심 기능을 먼저 구현. 별도 인프라·라이브러리·기술 도입은 재현 가능한 병목·장애·요구사항이 확인된 뒤 대안·운영비용·측정 결과를 비교해 결정.
-- 실사용자는 없지만 대규모 상황은 합성 부하와 격리된 장애 시나리오로 검증. 성능 실험은 기본 흐름이 동작한 뒤 가설·환경·측정 경계를 정해 수행.
-- k6는 정의된 HTTP workload를 측정할 때, Toxiproxy는 네트워크 지연·단절 등 구체적인 실패 가설을 확인할 때 사용. 도구 자체를 목표로 선제 도입하지 않음.
-- 수치·용량·트래픽 가정에는 직접 측정값 또는 출처와 적용 한계를 기록. 소유자가 정한 시험값은 synthetic input으로 표시하며 실제 사용자 수요나 운영 용량으로 해석하지 않음.
-- 고난도 시나리오의 외부 사례는 중국 빅테크의 비-MSA 기술 글을 우선 조사. 원문 맥락·시스템 구조·버전·측정 조건을 확인하고 PostgreSQL·현재 modular monolith에 적용 가능한 원칙만 재검증; MSA 전용 구조·수치는 가져오지 않음.
-- 프로젝트의 장기 역량은 기술 이름의 수가 아니라 도메인 정합성, DB 동시성, 복구, 장애 전파, 재현 가능한 성능 검증을 해결하며 축적.
+## Architecture & Data Flow
 
-## GitHub 작업 및 변경 관리
-- Issue 양식과 PR template 사용. 복잡한 변경은 사실/가정, 이유·대안, 상태·불변조건 영향, 검증을 본문에 설명. 링크만으로 설명을 대신하지 않음.
-- 변경 전 `git status --short --branch`; stage 전후 `git diff`, `git diff --cached`, `git status` 확인. 관련 경로만 stage하고 확인 전 `git add .`/`git add -A` 금지.
-- 기본 branch는 `main`, 직접 push 금지(최초 seed 제외). Branch 이름 `<type>/<primary-issue>-<short-topic>`; type은 `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `ci`, `build`, `chore`, `revert`, topic은 ASCII 소문자 kebab-case. 한 branch는 한 목적.
-- Commit 제목은 `<type>(<scope>): <한국어 요약>`(scope 생략 가능). type/scope는 영문 소문자, 요약은 짧은 명령형, 마침표 없음. 한 commit은 하나의 논리 변경; 이유·제약·추적 ID가 필요하면 본문에 기록. 과거 제목은 기본적으로 수정하지 않음.
-- 한 목적·완료 기준·독립 검토 경계는 Issue와 PR 하나로 묶음. 줄 수만으로 분리하지 않음. 같은 목적의 후속 결정은 기존 Issue에 누적하고, 목적·위험·책임자·배포/복구 경계가 독립될 때만 분리.
-- PR template의 모든 checklist 항목 완료. 해당 없음은 구체적 사유 기재.
-- `main`은 PR과 strict required checks(`Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks`), linear history 필수; 관리자도 적용.
-- Required reviewers 0명; 승인 리뷰 정책은 별도 합의 필요. Merge는 squash only; branch logical commits는 보존, `main`에는 squash commit 하나 반영.
-- 공유 이력 amend/rebase, 무승인 force push, `main` 직접 push, 미추적 작업을 지우는 reset/clean 금지. 승인된 예외는 별도 Issue, 대상 SHA, 백업 ref, `--force-with-lease`, protection 복원 기록 필요. 충돌 해결 뒤 diff 및 관련 lint/test 재실행.
-- Git 작성자 정보는 local repository에만 설정하고 GitHub no-reply 주소 사용. API key/token, 개인정보, 실제 결제 정보는 코드·로그·Issue/PR에 기록 금지; placeholder만 사용. 유출 시 즉시 폐기·교체.
-- README는 승인 범위·실행·모듈 구성을 소유. GitHub Issue/PR/commit은 진행 중 작업과 상세 변경 이력의 기준. Decision Log는 지속 보존할 결정 근거, EXP 보고서는 재현 가능한 측정 기록을 소유. 별도 roadmap/milestone/handoff/closeout 문서는 추가하지 않음.
-- Issue·PR은 코드, 관련 테스트, migration, 결정·요구사항 문서가 같은 목적의 완료 기준을 충족한 뒤에만 게시·수정. 진행 중에는 기존 추적 단위를 로컬에서 유지하고 원격 Issue/PR을 선제 생성·분할하지 않음. 로컬 검증 후 관련 변경을 목적에 맞는 소수의 논리 commit으로 기록하고, 기존 Issue/PR을 한 번에 갱신.
+- One deployable Spring Boot modular monolith. Gradle projects map to root `ATLAS-*` directories; modules are not independent services.
+- `application-module` owns HTTP adapters, application configuration, error mapping, and Flyway migrations.
+- Domain ownership:
 
-## 재발 방지 기준
-- 파일 확인은 정적 read 도구 사용. 사용자가 금지한 `view` command는 실행하지 않음.
-- 이름 변경 전 실제 ecommerce 용어와 모듈 책임을 대조. 저장소 전체의 production/test/integration/resource/config/docs 참조를 검색; subagent 결과도 모든 호출자와 테스트까지 검증.
-- 코드 patch는 최신 파일 경로·hashline을 확인한 뒤 최소 범위로 적용. 매 patch 뒤 대상 구간과 `git diff` 재확인. 경로 불일치·파서 경고가 나면 후속 patch 중단; 원인 수정 후에만 진행.
-- `@Transactional` service가 class-based CGLIB proxy 대상이면 class/method `final` 금지. Proxy 생성 실패는 unit test로 잡히지 않으므로 `@SpringBootTest` context load와 실제 PostgreSQL transaction 테스트로 검증.
-- Issue/PR 본문 수정 전 현재 본문, template, CI validator 확인. 필수 heading·checkbox 수, Issues 항목의 plain-text `Closes`/`Refs`와 Issue link 번호 일치, 요구사항·결정 ID 직접 링크를 검사. 중복 heading, 폐기된 이름/경로, 오래된 검증 수치 확인 후 원격 수정; 수정 뒤 본문과 `gh pr checks` 재확인.
-- 미병합 문서 링크는 `main`이 아닌 PR branch 또는 현재 branch SHA 사용. 문서 수정 완료 뒤 링크 대상과 SHA 확인. PR 본문을 다시 쓸 때 기존 추적·위험·검증 기록 보존.
-- 커밋 전 staged/unstaged/untracked를 각각 확인. subagent가 stage한 변경 포함 여부를 검토하고, 의도한 경로만 stage한 뒤 `git diff --cached` 검토. 전체 검증은 최종 working tree 기준으로 수행.
-- 이미 확정된 결정은 다시 묻지 않음. 미결정 선택은 확인한 사실과 가정을 구분하고 출처·한계를 제시; 관련 선택지는 이점·비용·위험·후속 영향을 함께 비교. 권장안·이유와 정확히 필요한 결정을 한 번에 요청하며, 같은 범위의 질문은 묶음. 아키텍처·데이터·보안·범위가 실질적으로 달라질 때만 추가 확인.
-- 한국어 독자를 우선. 설명은 짧고 자연스러운 한국어로 작성; 필요한 backend 용어만 English 사용. 문서·Issue·PR의 기존 중복과 구식 표현을 덧붙이지 말고 정리.
-- 문서 수정 뒤 Markdown 렌더링·lint와 내부 링크를 확인. 폴더 번호 변경 시 Markdown, SQL 명령, README, ADR, workflow 등 저장소 전체의 경로 참조도 함께 갱신. 삭제한 문서·실험 ID·모듈 README 참조가 남지 않았는지 검색.
-- 모든 문서는 처음 보는 독자 기준의 자연스러운 한국어·개조식으로 작성. 제품명·표준 기술명·API·코드 식별자는 원문 유지하고, 그 외 외국어 문장이나 억지 혼용은 피함. 표·Mermaid도 실제 렌더링 결과와 링크를 확인.
-- ORM-generated ID 변경은 Spring Boot BOM의 실제 Hibernate version·generator 상태를 확인. `@Incubating` API와 범위 기록; Testcontainers/PostgreSQL에서 실제 persist 후 모든 대상 PK의 version·transaction 흐름 검증. Non-PK reference ID를 primary ID로 혼동하지 않음.
-- Agent 작업 전 실제 repository root, branch, HEAD 확인. Agent summary는 완료 증거가 아님; parent가 변경 범위·호출자·diff와 미실행 검증을 직접 확인.
-- Migration/benchmark SQL은 대상 PostgreSQL version에서 실행 검증. 전용 disposable database/schema만 사용하고 실행 시 DB 이름을 guard; 기존 `atlas` database를 테스트 대상으로 사용하지 않음. 실패한 SQL 실행은 결과로 기록하지 않으며 최종 성공 출력과 환경을 함께 보존.
+| Module | Owns |
+|---|---|
+| `catalog-module` | Seller, Product, Seller-SKU, current price |
+| `cart-module` | Seller-scoped Cart and CartItem |
+| `campaign-module` | Campaign and sale eligibility |
+| `admission-module` | FIFO queue, ticket, checkout slot and queue policy |
+| `inventory-module` | Shared stock pool, reservations and quantity conservation |
+| `order-module` | Cart/Campaign checkout, Order/OrderItem, fulfillment and workflow coordination |
+| `payment-module` | PaymentAttempt and Fake PSP state |
+| `settlement-module` | Internal gross-capture and local refund-reversal ledger |
 
-## 진입점
-- 실행·모듈 구성·현재 승인 범위: [README](README.md).
-- 기능 계약·domain invariants·미결정 사항: [요구사항](docs/01-requirements/requirements-index.md).
-- 결정·대안·대체 이력: [결정 로그](docs/00-governance/decision-log.md).
-- 실측 결과: [EXP-013](docs/03-experiments/EXP-013-gate4-20-minute-calibration.md), [EXP-014](docs/03-experiments/EXP-014-id-strategy-comparison.md).
+- Module calls use public `.service` and DTO contracts. Never depend on another module’s entity or repository.
+- Standard Cart flow: Cart → validate current Seller-SKU/price → snapshot OrderItems → atomically reserve all lines → clear Cart → separately submit payment.
+- Campaign flow: open Campaign → validate queue eligibility → assign a durable FIFO sequence/checkout slot → create Campaign Order → reserve inventory → use the same Order payment path.
+- Confirmed capture claims stock and records internal settlement. `PENDING`/`UNKNOWN` keeps the same attempt and stock hold until reconciliation. Fulfillment and refund-record states are separate from `OrderState`.
+- Invariant: `available + reserved + claimed = initial_capacity`; all counters nonnegative. Reserve before payment; claim only after confirmed capture; release only after confirmed non-payment/required void.
+- PSP calls and DB commits are separate effects. Do not hold a DB transaction around a real network call. Fake PSP is local simulation and its current provider state is in memory unless a later approved change says otherwise.
+- Seller IDs and `buyerRef` are synthetic identifiers, not authentication, authorization, or tenant isolation.
+
+## Key Directories
+
+| Path | Purpose |
+|---|---|
+| `ATLAS-application/` | Spring Boot entry point, HTTP, config and Flyway migrations |
+| `ATLAS-catalog/`, `ATLAS-cart/`, `ATLAS-campaign/`, `ATLAS-admission/` | Catalog, buyer cart, campaign and queue modules |
+| `ATLAS-inventory/`, `ATLAS-order/`, `ATLAS-payment/`, `ATLAS-settlement/` | Stock, commerce workflow, Fake PSP and internal ledger modules |
+| `docs/00-governance/` | Decision log and reference register |
+| `docs/01-requirements/` | Functional requirements, invariants and open questions |
+| `docs/02-decisions/adr/` | Accepted Architecture Decision Records |
+| `docs/03-experiments/` | Reproducible performance/ID experiments and limits |
+| `load-tests/` | k6 scripts; use only with an approved workload and matching flow |
+| `.github/workflows/`, `.github/ISSUE_TEMPLATE/` | CI, lint, Issue/PR automation and templates |
+| `config/checkstyle/`, `gradle/` | Checkstyle and Gradle Wrapper configuration |
+
+## Development Commands
+
+- Prerequisites: JDK 25 and Docker Compose. PostgreSQL image/version: 18.6.
+- Set the JDK and start the local database:
+
+```sh
+export JAVA_HOME="<JDK 25 home>"
+export PATH="$JAVA_HOME/bin:$PATH"
+docker compose up -d --wait postgres
+```
+
+- Run the application: `./gradlew :application-module:bootRun`
+- Full compile, Checkstyle, unit/integration checks and executable archive: `./gradlew --no-daemon check :application-module:bootJar`
+- Markdown lint: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
+- API binds to `127.0.0.1:8080` by default. Colima users may need `DOCKER_HOST` from the active Docker context; do not hard-code a machine-specific socket.
+- Do not use `view` commands. Use static file reads and focused searches.
+
+## Code Conventions & Common Patterns
+
+- Java implementation uses imports, never FQCN. Checkstyle runs in Gradle `check`.
+- Keep module packages cohesive: public `.service`, `.dto.request`, `.dto.response`, `.exception`; internal JPA `.persistence.entity`, lifecycle `.persistence.state`, module-owned `.repository`, workflow `.service.impl`.
+- Prefer constructor injection. Lombok 1.18.48 is limited to approved mechanical `@Getter` and simple `@RequiredArgsConstructor`; no `@Data`, broad `@Setter`, builder, or generated entity equality.
+- JPA for ordinary CRUD. PostgreSQL-specific atomic/locking SQL stays in the owning module’s repository and writes only tables owned by that module.
+- Flyway owns schema; Hibernate uses `ddl-auto: validate`. Assign migration versions centrally when parallel work is selected.
+- Use one typed exception/Code enum per module; `GlobalExceptionHandler` returns RFC 9457 `ProblemDetail` with a stable `code`. Unexpected 500 responses must not expose internal details.
+- Keep GET/query methods read-only. Expiry, retries and queue promotion belong to a state-changing operation or scheduler.
+- Preserve service transaction boundaries, idempotency and domain invariants. Test concurrency and PostgreSQL-specific behavior against PostgreSQL.
+- Avoid CQRS, CommandBus, handlers/mediators, generic base frameworks, cross-cutting `common` modules, and unnecessary one-class packages.
+- Compare JDK/Spring/PostgreSQL features, maintained libraries, and direct implementation. Prefer a suitable maintained library over custom code when it reduces complexity; record compatibility, runtime/test/build scope, security/licensing, alternatives and evidence.
+- Primary identifiers follow the approved UUIDv7 policy. Check D-056 and existing migrations before introducing or changing identifier generation.
+- `@Transactional` services proxied by CGLIB must not be `final`; add a Spring context/integration test for proxy-sensitive behavior.
+
+## Important Files
+
+- `settings.gradle` — Gradle project names and `ATLAS-*` directory mappings.
+- `build.gradle`, `gradle/wrapper/gradle-wrapper.properties` — Java toolchain, dependency management, Checkstyle and Gradle Wrapper.
+- `ATLAS-application/src/main/java/com/atlas/AtlasApplication.java` — Spring Boot entry point and scheduling.
+- `ATLAS-application/src/main/resources/application.yml`, `compose.yaml` — local runtime and PostgreSQL defaults; use local-only credentials.
+- `ATLAS-application/src/main/resources/db/migration/` — versioned schema changes. Never edit an applied migration; add a new version.
+- `ATLAS-application/src/main/java/com/atlas/application/controller/` — HTTP adapters; transport DTOs belong here only when fields/validation differ from the module request.
+- `.github/workflows/backend-ci.yml`, `.github/workflows/docs-lint.yml` — authoritative CI commands/check names.
+- `.github/PULL_REQUEST_TEMPLATE.md`, `.github/ISSUE_TEMPLATE/` — mandatory tracking templates and PR checklist.
+- `docs/03-experiments/EXP-013-*` is historical: it tested an older V1–V5/Campaign setup and does not validate current catalog/cart/order flow. `EXP-014` is a bounded local UUID comparison, not a general performance guarantee.
+
+## Runtime/Tooling Preferences
+
+- Required toolchain in repository: Java 25; Gradle Wrapper 9.8.2; Spring Boot 4.1.2; PostgreSQL 18.6.
+- Use the checked-in Gradle Wrapper rather than a global Gradle installation. Application runtime dependencies use `implementation`; PostgreSQL/Flyway database support is runtime-scoped; Lombok is `compileOnly` + `annotationProcessor`; test tools stay test-scoped.
+- Test stack: JUnit Platform, Spring Boot tests, Testcontainers PostgreSQL 18.6, ArchUnit 1.5.1. Backend CI runs Java 25 and verifies Docker before integration tests.
+- Node 22 is used in docs CI for markdownlint-cli2 0.24.0; no package.json or alternative JS package-manager workflow is configured.
+- Keep services local. PayPal Sandbox is only a future candidate; Fake PSP does not reproduce PayPal or remote provider guarantees.
+- Add no cache, broker, search engine, worker, external service or library by default. First prove the requirement/limitation with PostgreSQL and the current stack; then compare alternatives and costs.
+
+## Testing & QA
+
+- Unit tests live in each `ATLAS-*/src/test`. Spring/PostgreSQL integration and architecture tests live in `ATLAS-application/src/test`.
+- Key suites: `ModuleBoundaryTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, and `SellerSkuGlobalFifoMigrationIntegrationTest`.
+- PostgreSQL SQL, row locks, concurrent stock changes, migrations and transaction rollback require real PostgreSQL/Testcontainers. Docker must be available; CI checks `docker info`.
+- Test the exact failure boundary/invariant at risk. Avoid trivial forwarding/mapping tests, redundant assertions, and repeating the same risk at every layer. Mocks are not a substitute for PostgreSQL semantics.
+- Use disposable test databases/schemas for manual SQL or migration experiments. Never use the existing `atlas` database as a destructive test target. Respect clean-start migration guards.
+- Run full checks only after the final worktree is ready. If a command fails, record exact command, environment, failing scenario and remaining limitation; never describe unrun/failed tests as passed.
+- Performance/capacity claims require a named workload, data shape, environment, measurement method, repeats and source/assumption limits. Existing Q-008 and EXP numbers are synthetic/report-only unless their specific test setup matches. k6 is for an approved HTTP workload; Toxiproxy only for a concrete network-failure hypothesis.
+- Do not introduce a new numeric target from intuition. Use a source or local measurement; label synthetic test inputs and never present them as real demand/SLO.
+
+## Git & Parallel Work
+
+- Create one Issue/PR per coherent goal; do not split by endpoint/class or line count. Bundle related code, tests, migrations and authoritative docs. Do not create Issues/PRs while implementation is unfinished.
+- Branch: `<type>/<issue>-<short-topic>`. Commit title: `<type>(<scope>): <한국어 요약>`; concise imperative summary in Korean.
+- No direct push to `main`. PR requires all template checkboxes and required CI checks; squash merge only.
+- Before edits/staging inspect `git status --short --branch`; stage only intended paths; review `git diff` and `git diff --cached`. Never use destructive reset/clean or rewrite shared history without explicit authorization and backup/lease steps.
+- Parallel sessions use one plan/worktree per task with explicit source/test allowlists. No two sessions edit shared requirements/decision/README/reference/migration/build files concurrently; appoint one integration owner for those. Rebase only after reviewing the shared diff and rerun required checks.
+- If the owner says a plan is reference-only, keep it uncommitted in its assigned local worktree; do not publish it or create tracking items for the plan alone.
+- PR/Issue body must explain context, chosen behavior, alternatives, state/monetary/inventory effects, limitations and verification; link to exact requirements/decision records. Do not write unexplained IDs or claim unverified outcomes.
