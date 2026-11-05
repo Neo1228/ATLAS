@@ -62,15 +62,15 @@ class ProductListingPaginationIntegrationTest {
 
         List<Product> expected = seeded.stream()
                 .sorted(Comparator.comparing(Product::getSellerId).thenComparing(Product::getProductId)).toList();
-        List<Product> firstPage = products.findListingPage(null, "needle", null, null, 3);
+        List<Product> firstPage = products.findListingPage(null, "needle", null, null, 2);
         assertThat(firstPage).hasSize(2);
         Product lastFirstPage = firstPage.getLast();
         List<Product> secondPage = products.findListingPage(null, "needle", lastFirstPage.getSellerId(),
-                lastFirstPage.getProductId(), 3);
+                lastFirstPage.getProductId(), 2);
         assertThat(secondPage).hasSize(2);
         Product lastSecondPage = secondPage.getLast();
         List<Product> thirdPage = products.findListingPage(null, "needle", lastSecondPage.getSellerId(),
-                lastSecondPage.getProductId(), 3);
+                lastSecondPage.getProductId(), 2);
 
         assertThat(Stream.of(firstPage, secondPage, thirdPage).flatMap(List::stream).toList())
                 .containsExactlyElementsOf(expected);
