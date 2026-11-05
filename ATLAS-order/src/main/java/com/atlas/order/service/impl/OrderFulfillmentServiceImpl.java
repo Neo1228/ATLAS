@@ -35,7 +35,7 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
     @Override
     @Transactional(readOnly = true)
     public OrderFulfillmentResponse find(UUID orderId) {
-        PurchaseOrder order = orders.requireById(orderId);
+        PurchaseOrder order = requireOrder(orderId);
         requirePaid(order);
         return fulfillments.findById(orderId).map(OrderFulfillmentServiceImpl::response)
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Fulfillment not found"));
@@ -44,7 +44,7 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
     @Override
     @Transactional
     public OrderFulfillmentResponse updateStatus(UUID sellerId, UUID orderId, FulfillmentStatus status) {
-        PurchaseOrder order = orders.lockById(orderId);
+        PurchaseOrder order = lockOrder(orderId);
         requirePaid(order);
         if (!order.sellerId().equals(sellerId)) {
             throw new OrderException(OrderException.Code.CONFLICT, "Seller does not own order");
@@ -61,11 +61,21 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void initialize(UUID orderId) {
-        PurchaseOrder order = orders.lockById(orderId);
+        PurchaseOrder order = lockOrder(orderId);
         requirePaid(order);
         if (fulfillments.findById(orderId).isEmpty()) {
             fulfillments.save(new OrderFulfillment(orderId, clock.instant()));
         }
+    }
+
+    private PurchaseOrder requireOrder(UUID orderId) {
+        return orders.findById(orderId).orElseThrow(() -> new OrderException(
+                OrderException.Code.NOT_FOUND, "Order not found"));
+    }
+
+    private PurchaseOrder lockOrder(UUID orderId) {
+        return orders.findWithLockByOrderId(orderId).orElseThrow(() -> new OrderException(
+                OrderException.Code.NOT_FOUND, "Order not found"));
     }
 
     private static void requirePaid(PurchaseOrder order) {

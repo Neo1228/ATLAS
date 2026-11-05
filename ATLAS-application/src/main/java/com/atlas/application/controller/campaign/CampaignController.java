@@ -3,7 +3,6 @@ package com.atlas.application.controller.campaign;
 import com.atlas.application.controller.dto.CreateCampaignHttpRequest;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
 import com.atlas.campaign.dto.response.CampaignResponse;
-import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.service.CampaignService;
 import jakarta.validation.Valid;
 import java.time.Duration;
@@ -39,10 +38,6 @@ public class CampaignController {
 
     @GetMapping("/{campaignId}")
     public CampaignResponse find(@PathVariable UUID campaignId) {
-        CampaignResponse campaign = campaigns.find(campaignId);
-        if (campaign == null) {
-            throw new CampaignException(CampaignException.Code.NOT_FOUND, "Unknown campaign: " + campaignId);
-        }
-        return campaign;
+        return campaigns.find(campaignId);
     }
 }

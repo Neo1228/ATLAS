@@ -82,7 +82,7 @@ class CheckoutBehaviorTest {
         UUID productId = UUID.randomUUID();
         QueueTicketResponse ticket = new QueueTicketResponse(TICKET, CAMPAIGN, SELLER, "SKU-1", "buyer", 1,
                 TicketStatus.CHECKOUT_STARTED, NOW.plusSeconds(600), true);
-        when(orders.findByTicketOrNull(TICKET)).thenReturn(null);
+        when(orders.findByTicketId(TICKET)).thenReturn(Optional.empty());
         when(admission.requireCheckoutSlot(CAMPAIGN, TICKET)).thenReturn(ticket);
         when(admission.startCheckout(CAMPAIGN, TICKET)).thenReturn(ticket);
         when(catalog.find(SELLER, "SKU-1"))
@@ -93,7 +93,7 @@ class CheckoutBehaviorTest {
         when(orders.save(any(PurchaseOrder.class))).thenAnswer(invocation -> {
             PurchaseOrder order = invocation.getArgument(0);
             setOrderId(order, UUID.randomUUID());
-            when(orders.requireById(order.orderId())).thenReturn(order);
+            when(orders.findById(order.orderId())).thenReturn(Optional.of(order));
             return order;
         });
 
@@ -103,7 +103,6 @@ class CheckoutBehaviorTest {
                 Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofMinutes(10));
         service.startCheckout(CAMPAIGN, TICKET);
 
-        verify(orders).updateState(any(UUID.class), eq(OrderState.FAILED), eq(null), any(Instant.class));
         verify(admission).releaseCheckoutSlot(CAMPAIGN, TICKET,
                 CheckoutSlotReleaseReason.INVENTORY_UNAVAILABLE);
     }

@@ -96,8 +96,10 @@ public class AdmissionServiceImpl implements AdmissionService {
     @Override
     @Transactional(readOnly = true)
     public QueueTicketResponse find(UUID campaignId, UUID ticketId) {
-        requireTicketKey(campaignId, ticketId);
-        return tickets.findByCampaignIdAndTicketId(campaignId, ticketId).map(AdmissionServiceImpl::toResponse).orElse(null);
+        return tickets.findByCampaignIdAndTicketId(campaignId, ticketId)
+                .map(AdmissionServiceImpl::toResponse)
+                .orElseThrow(() -> new AdmissionException(AdmissionException.Code.TICKET_NOT_FOUND,
+                        "Ticket not found: " + ticketId + " in campaign: " + campaignId));
     }
 
     @Override

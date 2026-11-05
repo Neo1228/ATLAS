@@ -14,6 +14,8 @@ import com.atlas.order.repository.OrderFulfillmentRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.persistence.projection.RefundRecord;
+import com.atlas.order.persistence.projection.RefundSummary;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.settlement.dto.request.RefundPostingRequest;
 import com.atlas.settlement.service.SettlementService;
@@ -65,15 +67,19 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             refunds.lockIdempotencyKey(idempotencyKey);
             var existing = refunds.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
-                OrderRefundRepository.RefundRecord prior = existing.get();
+                RefundRecord prior = existing.get();
+                List<OrderRefundRequest.Item> priorItems = prior.items().stream()
+                        .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                        .sorted((left, right) -> left.orderItemId().compareTo(right.orderItemId()))
+                        .toList();
                 if (!prior.sellerId().equals(sellerId) || !prior.orderId().equals(orderId)
-                        || !prior.items().equals(requestItems)) {
+                        || !priorItems.equals(requestItems)) {
                     throw conflict("Idempotency key was used for different refund facts");
                 }
                 return response(prior);
             }
 
-            PurchaseOrder order = orders.lockById(orderId);
+            PurchaseOrder order = lockOrder(orderId);
             if (!order.sellerId().equals(sellerId)) {
                 throw conflict("Seller does not own order");
             }
@@ -121,7 +127,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             OrderRefundStatus resultStatus = fullyRefunded
                     ? OrderRefundStatus.FULLY_RECORDED : OrderRefundStatus.PARTIALLY_RECORDED;
             long previouslyRecordedAmountWon = refunds.findSummary(orderId)
-                    .map(OrderRefundRepository.RefundSummary::recordedAmountWon).orElse(0L);
+                    .map(RefundSummary::recordedAmountWon).orElse(0L);
             long totalRecordedAmountWon;
             try {
                 totalRecordedAmountWon = Math.addExact(previouslyRecordedAmountWon, recordedAmountWon);
@@ -148,7 +154,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     @Override
     public OrderRefundSummaryResponse find(UUID sellerId, UUID orderId) {
         if (sellerId == null || orderId == null) throw invalidRequest("sellerId and orderId are required");
-        PurchaseOrder order = orders.requireById(orderId);
+        PurchaseOrder order = requireOrder(orderId);
         if (!order.sellerId().equals(sellerId)) throw conflict("Seller does not own order");
         return refunds.findSummary(orderId)
                 .map(summary -> {
@@ -158,6 +164,16 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 })
                 .orElseGet(() -> new OrderRefundSummaryResponse(orderId, OrderRefundStatus.NONE, 0,
                         "LOCAL_LEDGER_ONLY", null));
+    }
+
+    private PurchaseOrder requireOrder(UUID orderId) {
+        return orders.findById(orderId).orElseThrow(() -> new OrderException(
+                OrderException.Code.NOT_FOUND, "Order not found"));
+    }
+
+    private PurchaseOrder lockOrder(UUID orderId) {
+        return orders.findWithLockByOrderId(orderId).orElseThrow(() -> new OrderException(
+                OrderException.Code.NOT_FOUND, "Order not found"));
     }
 
     private static List<OrderRefundRequest.Item> normalize(OrderRefundRequest request) {
@@ -184,7 +200,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         }
     }
 
-    private static OrderRefundResponse response(OrderRefundRepository.RefundRecord refund) {
+    private static OrderRefundResponse response(RefundRecord refund) {
         return new OrderRefundResponse(refund.refundId(), refund.orderId(), refund.recordedAmountWon(),
                 refund.status(), "LOCAL_LEDGER_ONLY", refund.createdAt());
     }

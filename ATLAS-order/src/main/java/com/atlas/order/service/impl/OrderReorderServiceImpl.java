@@ -9,6 +9,7 @@ import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
+import com.atlas.order.persistence.projection.ExistingReorderRequest;
 import com.atlas.order.persistence.state.OrderSource;
 import com.atlas.order.repository.JdbcOrderReorderRepository;
 import com.atlas.order.repository.OrderItemRepository;
@@ -47,12 +48,12 @@ public class OrderReorderServiceImpl implements OrderReorderService {
     @Transactional
     public CartResponse reorder(UUID orderId, String idempotencyKey, boolean confirmMerge) {
         validate(orderId, idempotencyKey);
-        PurchaseOrder sourceOrder = orders.lockById(orderId);
+        PurchaseOrder sourceOrder = lockOrder(orderId);
         if (sourceOrder.source() != OrderSource.CART || !sourceOrder.state().isTerminal()) {
             throw conflict("Only terminal Cart orders can be reordered");
         }
 
-        JdbcOrderReorderRepository.ExistingRequest previous = reorderRequests
+        ExistingReorderRequest previous = reorderRequests
                 .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElse(null);
         if (previous != null) {
             if (!previous.sourceOrderId().equals(orderId) || previous.confirmMerge() != confirmMerge) {
@@ -80,7 +81,7 @@ public class OrderReorderServiceImpl implements OrderReorderService {
 
     private CartResponse replayOrConflict(PurchaseOrder sourceOrder, UUID orderId,
                                          String idempotencyKey, boolean confirmMerge) {
-        JdbcOrderReorderRepository.ExistingRequest existing = reorderRequests
+        ExistingReorderRequest existing = reorderRequests
                 .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElseThrow(() ->
                         new IllegalStateException("Reorder idempotency row disappeared"));
         if (!existing.sourceOrderId().equals(orderId) || existing.confirmMerge() != confirmMerge) {
@@ -104,6 +105,11 @@ public class OrderReorderServiceImpl implements OrderReorderService {
                         "insufficient stock for seller " + sourceOrder.sellerId() + " sku " + item.skuId());
             }
         }
+    }
+
+    private PurchaseOrder lockOrder(UUID orderId) {
+        return orders.findWithLockByOrderId(orderId).orElseThrow(() -> new OrderException(
+                OrderException.Code.NOT_FOUND, "Order not found"));
     }
 
     private static void validate(UUID orderId, String idempotencyKey) {

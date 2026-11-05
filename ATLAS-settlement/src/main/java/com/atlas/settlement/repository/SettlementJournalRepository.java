@@ -1,7 +1,7 @@
 package com.atlas.settlement.repository;
 
-import com.atlas.settlement.dto.request.CapturePostingRequest;
-import com.atlas.settlement.dto.request.RefundPostingRequest;
+import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
+import com.atlas.settlement.persistence.projection.RefundJournalRecord;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
@@ -17,7 +17,7 @@ public class SettlementJournalRepository {
         this.jdbc = jdbc;
     }
 
-    public Optional<UUID> insertIfAbsent(CapturePostingRequest request, Instant recordedAt) {
+ public Optional<UUID> insertIfAbsent(CaptureJournalRecord request, Instant recordedAt) {
         return jdbc.query("""
                 INSERT INTO settlement_journal
                     (source_order_id, source_attempt_id, seller_id, currency, gross_amount_won, recorded_at)
@@ -30,13 +30,13 @@ public class SettlementJournalRepository {
                 Timestamp.from(recordedAt));
     }
 
-    public Optional<CapturePostingRequest> findByAttemptId(UUID attemptId) {
+ public Optional<CaptureJournalRecord> findByAttemptId(UUID attemptId) {
         return jdbc.query("""
                 SELECT source_order_id, source_attempt_id, seller_id, gross_amount_won
                 FROM settlement_journal
                 WHERE source_attempt_id = ?
                 """, resultSet -> resultSet.next()
-                ? Optional.of(new CapturePostingRequest(
+ ? Optional.of(new CaptureJournalRecord(
                         resultSet.getObject("source_order_id", UUID.class),
                         resultSet.getObject("source_attempt_id", UUID.class),
                         resultSet.getObject("seller_id", UUID.class),
@@ -44,7 +44,7 @@ public class SettlementJournalRepository {
                 : Optional.empty(), attemptId);
     }
 
-    public Optional<UUID> insertRefundIfAbsent(RefundPostingRequest request, Instant recordedAt) {
+ public Optional<UUID> insertRefundIfAbsent(RefundJournalRecord request, Instant recordedAt) {
         return jdbc.query("""
                 INSERT INTO settlement_journal
                     (source_order_id, source_attempt_id, source_refund_id, seller_id, currency, gross_amount_won, recorded_at)
@@ -57,13 +57,13 @@ public class SettlementJournalRepository {
                 Timestamp.from(recordedAt));
     }
 
-    public Optional<RefundPostingRequest> findByRefundId(UUID refundId) {
+ public Optional<RefundJournalRecord> findByRefundId(UUID refundId) {
         return jdbc.query("""
                 SELECT source_order_id, source_refund_id, seller_id, gross_amount_won
                 FROM settlement_journal
                 WHERE source_refund_id = ?
                 """, resultSet -> resultSet.next()
-                ? Optional.of(new RefundPostingRequest(
+ ? Optional.of(new RefundJournalRecord(
                         resultSet.getObject("source_order_id", UUID.class),
                         resultSet.getObject("source_refund_id", UUID.class),
                         resultSet.getObject("seller_id", UUID.class),

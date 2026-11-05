@@ -68,8 +68,8 @@ class OrderFulfillmentServiceImplTest {
         OrderFulfillmentRepository fulfillments = mock(OrderFulfillmentRepository.class);
         OrderRepository orders = mock(OrderRepository.class);
         OrderRefundRepository refunds = mock(OrderRefundRepository.class);
-        when(orders.lockById(ORDER_ID)).thenReturn(new PurchaseOrder(UUID.randomUUID(), "buyer",
-                "checkout-key", OrderState.PAID, NOW.plusSeconds(600), NOW, NOW));
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(new PurchaseOrder(UUID.randomUUID(), "buyer",
+                "checkout-key", OrderState.PAID, NOW.plusSeconds(600), NOW, NOW)));
         OrderFulfillmentServiceImpl service = new OrderFulfillmentServiceImpl(
                 orders, fulfillments, refunds, Clock.fixed(NOW, ZoneOffset.UTC));
         when(fulfillments.findById(ORDER_ID)).thenReturn(Optional.empty())
@@ -88,8 +88,8 @@ class OrderFulfillmentServiceImplTest {
         OrderRepository orders = mock(OrderRepository.class);
         OrderRefundRepository refunds = mock(OrderRefundRepository.class);
         OrderFulfillment fulfillment = new OrderFulfillment(ORDER_ID, NOW);
-        when(orders.lockById(ORDER_ID)).thenReturn(new PurchaseOrder(sellerId, "buyer", "checkout-key",
-                OrderState.PAID, NOW.plusSeconds(600), NOW, NOW));
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(new PurchaseOrder(sellerId, "buyer", "checkout-key",
+                OrderState.PAID, NOW.plusSeconds(600), NOW, NOW)));
         when(fulfillments.findById(ORDER_ID)).thenReturn(Optional.of(fulfillment));
         when(refunds.isFullyRefunded(ORDER_ID)).thenReturn(true);
         OrderFulfillmentServiceImpl service = new OrderFulfillmentServiceImpl(

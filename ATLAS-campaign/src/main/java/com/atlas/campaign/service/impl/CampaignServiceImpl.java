@@ -56,9 +56,6 @@ public class CampaignServiceImpl implements CampaignService {
     @Transactional(readOnly = true)
     public CampaignResponse requireOpen(UUID campaignId, String skuId) {
         CampaignResponse campaign = find(campaignId);
-        if (campaign == null) {
-            throw new CampaignException(CampaignException.Code.NOT_FOUND, "Unknown campaign: " + campaignId);
-        }
         if (campaign.status() != CampaignStatus.OPEN || !campaign.skuId().equals(skuId)) {
             throw new CampaignException(CampaignException.Code.NOT_ELIGIBLE,
                     "Campaign is not open SKU " + skuId + ": " + campaignId);
@@ -69,7 +66,9 @@ public class CampaignServiceImpl implements CampaignService {
     @Override
     @Transactional(readOnly = true)
     public CampaignResponse find(UUID campaignId) {
-        return campaigns.findById(campaignId).map(CampaignServiceImpl::toResponse).orElse(null);
+        return campaigns.findById(campaignId).map(CampaignServiceImpl::toResponse)
+ .orElseThrow(() -> new CampaignException(CampaignException.Code.NOT_FOUND,
+ "Unknown campaign: " + campaignId));
     }
 
     private static CampaignResponse toResponse(Campaign entity) {
