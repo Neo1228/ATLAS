@@ -2,6 +2,7 @@ package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -49,7 +50,7 @@ class PaymentLifecycleIntegrationTest {
         assertThat(repeated).isEqualTo(captured);
 
         UUID pendingOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.PENDING, FakePsp.Result.AUTHORIZED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
         PaymentResponse pending = payments.submitInitial(pendingOrder);
         assertThat(pending.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(pending.authorizationActive()).isTrue();
@@ -60,14 +61,14 @@ class PaymentLifecycleIntegrationTest {
         assertThat(recovered.attemptId()).isEqualTo(pending.attemptId());
 
         UUID declineOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePsp.Result.DECLINED);
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.DECLINED);
         PaymentResponse declined = payments.submitInitial(declineOrder);
         assertThat(declined.state()).isEqualTo(PaymentState.DECLINED);
         assertThat(declined.authorizationActive()).isFalse();
 
         UUID voidOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePsp.Result.DECLINED);
-        fakePsp.enqueue(PaymentPhase.VOID, FakePsp.Result.PENDING, FakePsp.Result.UNKNOWN, FakePsp.Result.VOIDED);
+        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.DECLINED);
+        fakePsp.enqueue(PaymentPhase.VOID, FakePspResult.PENDING, FakePspResult.UNKNOWN, FakePspResult.VOIDED);
         PaymentResponse captureDeclined = payments.submitInitial(voidOrder);
         assertThat(captureDeclined.state()).isEqualTo(PaymentState.DECLINED);
         assertThat(captureDeclined.authorizationActive()).isTrue();
@@ -82,8 +83,8 @@ class PaymentLifecycleIntegrationTest {
         assertThat(voided.state()).isEqualTo(PaymentState.VOIDED);
         assertThat(voided.authorizationActive()).isFalse();
         UUID captureRecoveryOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePsp.Result.PENDING,
-                FakePsp.Result.UNKNOWN, FakePsp.Result.CAPTURED);
+        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING,
+                FakePspResult.UNKNOWN, FakePspResult.CAPTURED);
         PaymentResponse capturePending = payments.submitInitial(captureRecoveryOrder);
         assertThat(capturePending.state()).isEqualTo(PaymentState.CAPTURE_PENDING);
         assertThat(capturePending.authorizationActive()).isTrue();

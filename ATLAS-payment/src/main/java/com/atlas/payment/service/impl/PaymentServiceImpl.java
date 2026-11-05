@@ -1,5 +1,6 @@
 package com.atlas.payment.service.impl;
 
+import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -111,7 +112,7 @@ public class PaymentServiceImpl implements PaymentService {
             return toResponse(attempt);
         }
         String phaseId = attempt.getAttemptId() + ":" + phase.name();
-        FakePsp.Result result = psp.perform(phase, phaseId, idempotencyKey);
+        FakePspResult result = psp.perform(phase, phaseId, idempotencyKey);
         switch (phase) {
             case AUTHORIZATION -> authorizationResult(attempt, result);
             case CAPTURE -> captureResult(attempt, result);
@@ -126,7 +127,7 @@ public class PaymentServiceImpl implements PaymentService {
         return toResponse(attempt);
     }
 
-    private void authorizationResult(PaymentAttempt attempt, FakePsp.Result result) {
+    private void authorizationResult(PaymentAttempt attempt, FakePspResult result) {
         switch (result) {
             case AUTHORIZED -> {
                 attempt.setState(PaymentState.AUTHORIZED);
@@ -152,7 +153,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    private void captureResult(PaymentAttempt attempt, FakePsp.Result result) {
+    private void captureResult(PaymentAttempt attempt, FakePspResult result) {
         switch (result) {
             case CAPTURED -> {
                 attempt.setState(PaymentState.CAPTURED);
@@ -178,7 +179,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    private void voidResult(PaymentAttempt attempt, FakePsp.Result result) {
+    private void voidResult(PaymentAttempt attempt, FakePspResult result) {
         switch (result) {
             case VOIDED -> {
                 attempt.setState(PaymentState.VOIDED);
@@ -233,7 +234,7 @@ public class PaymentServiceImpl implements PaymentService {
         return state == PaymentState.CAPTURED || state == PaymentState.DECLINED || state == PaymentState.VOIDED;
     }
 
-    private static IllegalStateException invalidResult(PaymentPhase phase, FakePsp.Result result) {
+    private static IllegalStateException invalidResult(PaymentPhase phase, FakePspResult result) {
         return new IllegalStateException("Fake PSP result " + result + " is invalid for " + phase);
     }
 }
