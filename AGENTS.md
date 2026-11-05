@@ -112,6 +112,7 @@ docker compose up -d --wait postgres
 - 수동 SQL/마이그레이션 시험은 전용 임시 DB/schema만 사용. 기존 `atlas` DB를 초기화·삭제하는 테스트 금지. Clean-start migration guard 준수.
 - 변경 작업 완료 후 실제 영향 경로와 전체 check 실행. 실패·미실행 검사는 성공으로 기록하지 말고 명령·환경·실패 시나리오·남은 한계 기록.
 - 성능·처리용량 주장에는 workload·data shape·환경·반복 측정·출처 한계 명시. Q-008/EXP 수치는 합성·보고 전용 범위에 한정. k6는 승인된 HTTP workload, Toxiproxy는 구체적인 network failure 가설에만 사용.
+- `EXP-` 식별자는 저장소 전체에서 고유하게 사용. Issue comment에만 남긴 실측은 정식 EXP report가 아니면 `[Issue #N 측정 메모]`로 표기. 새 EXP 작성 전 README·문서·Issue 참조를 검색해 중복 ID와 오래된 실험 링크를 확인.
 - 수치 목표는 직접 측정 또는 출처가 있을 때만 사용. 합성 입력을 사용자 수요/SLO/capacity로 해석하지 않음.
 
 ## Git 및 병렬 작업

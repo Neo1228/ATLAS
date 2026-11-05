@@ -14,9 +14,9 @@
 | D-008 | ✓ Confirmed | 작은 논리 commit, 관련 작업은 PR로 추적 | [AGENTS.md](../../AGENTS.md) |
 | D-009 | ✓ Confirmed | PR template/추적 규칙을 먼저 정하고, Gate 0 문서 전체를 한 번에 올리지 않음 | [PR Template](../../.github/PULL_REQUEST_TEMPLATE.md), [AGENTS.md](../../AGENTS.md) |
 | D-010 | ✓ Confirmed | 첫 가상 시나리오는 재고/예약 경합과 공정한 구매 기회. 초기 단위와 pool은 D-023; acceptance는 미정 | Q-002/Q-010 |
-| D-011 | ✓ Confirmed | 계획 작업은 Issue-first. 착수 전 범위·근거·완료/검증 기준을 기록. | [Issue #2](https://github.com/Neo1228/ATLAS/issues/2), [AGENTS.md](../../AGENTS.md#github-작업-및-변경-관리) |
+| D-011 | ✓ Confirmed | 계획 작업은 Issue-first. 착수 전 범위·근거·완료/검증 기준을 기록. | [Issue #2](https://github.com/Neo1228/ATLAS/issues/2), [AGENTS.md](../../AGENTS.md#git-및-병렬-작업) |
 | D-012 | ✓ Confirmed | 공개 이력 수정은 원칙적으로 금지. 예외는 명시 승인·별도 Issue·대상 SHA/백업 ref·`--force-with-lease`·branch protection 즉시 복원 | [Issue #2](https://github.com/Neo1228/ATLAS/issues/2) |
-| D-013 | ✓ Confirmed | 관련 Issue/commit은 한 PR로 묶고, 독립 목적/위험은 분리 | [Issue #15](https://github.com/Neo1228/ATLAS/issues/15), [AGENTS.md](../../AGENTS.md#github-작업-및-변경-관리) |
+| D-013 | ✓ Confirmed | 관련 Issue/commit은 한 PR로 묶고, 독립 목적/위험은 분리 | [Issue #15](https://github.com/Neo1228/ATLAS/issues/15), [AGENTS.md](../../AGENTS.md#git-및-병렬-작업) |
 | D-014 | ✓ Confirmed | Gate 0 승인, Gate 1 시작. Gate 2·설계·구현은 별도 승인 전 보류 | 2026-10-29; [Issue #19](https://github.com/Neo1228/ATLAS/issues/19) |
 | D-015 | ✓ Confirmed | 공통 Buyer/Seller 목표 + 유형별 차이를 탐색 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19) |
 | D-016 | ✓ Confirmed | 가상 Buyer goal: 공정한 구매 기회, 정확한 재고/예약 상태 | [Issue #19](https://github.com/Neo1228/ATLAS/issues/19), Q-010 |
