@@ -60,7 +60,7 @@ class ProductListingPaginationIntegrationTest {
         create(secondSeller, "Other product");
         List<Product> expected = seeded.stream()
                 .sorted(Comparator.comparing(Product::getSellerId).thenComparing(Product::getProductId)).toList();
-        List<Product> firstPage = products.findListingPage(null, "NEEDLE", null, null, 2);
+        List<Product> firstPage = products.findListingPage(null, "needle", null, null, 2);
         assertThat(firstPage).hasSize(2);
         Product lastFirstPage = firstPage.getLast();
         List<Product> secondPage = products.findListingPage(null, "needle", lastFirstPage.getSellerId(),
