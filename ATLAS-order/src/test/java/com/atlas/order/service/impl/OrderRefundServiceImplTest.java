@@ -1,6 +1,7 @@
 package com.atlas.order.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -8,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.OrderRefundResponse;
+import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.projection.RefundItem;
 import com.atlas.order.persistence.projection.RefundRecord;
 import com.atlas.order.persistence.state.OrderRefundStatus;
@@ -47,10 +49,21 @@ class OrderRefundServiceImplTest {
                 mock(InventoryService.class), mock(SettlementService.class),
                 Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC));
 
-        OrderRefundResponse response = service.refund(sellerId, orderId, idempotencyKey,
-                new OrderRefundRequest(List.of(new OrderRefundRequest.Item(javaSecond, 1),
-                        new OrderRefundRequest.Item(javaFirst, 1))));
+        OrderRefundResponse response = service.refund(new OrderRefundRequest(sellerId, orderId, idempotencyKey,
+                List.of(new OrderRefundRequest.Item(javaSecond, 1), new OrderRefundRequest.Item(javaFirst, 1))));
 
         assertEquals(refundId, response.refundId());
+    }
+
+    @Test
+    void rejectsNullRequestAsInvalidRequest() {
+        OrderRefundServiceImpl service = new OrderRefundServiceImpl(
+                mock(PlatformTransactionManager.class), mock(OrderRepository.class), mock(OrderItemRepository.class),
+                mock(OrderFulfillmentRepository.class), mock(OrderRefundRepository.class),
+                mock(InventoryService.class), mock(SettlementService.class), Clock.systemUTC());
+
+        OrderException exception = assertThrows(OrderException.class, () -> service.refund(null));
+
+        assertEquals(OrderException.Code.INVALID_REQUEST, exception.code());
     }
 }

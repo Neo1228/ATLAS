@@ -59,8 +59,11 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     }
 
     @Override
-    public OrderRefundResponse refund(UUID sellerId, UUID orderId, String idempotencyKey,
-                                      OrderRefundRequest request) {
+    public OrderRefundResponse refund(OrderRefundRequest request) {
+        if (request == null) throw invalidRequest("Refund request is required");
+        UUID sellerId = request.sellerId();
+        UUID orderId = request.orderId();
+        String idempotencyKey = request.idempotencyKey();
         validateRequest(sellerId, orderId, idempotencyKey);
         List<OrderRefundRequest.Item> requestItems = normalize(request);
         return Objects.requireNonNull(transactions.execute(transaction -> {

@@ -4,6 +4,7 @@ import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.dto.request.JoinQueueRequest;
+import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.persistence.entity.QueueTicket;
@@ -37,7 +38,12 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     @Override
     @Transactional
-    public void configureSellerSkuPolicy(UUID sellerId, String skuId, int maxActiveCheckouts) {
+    public void configureSellerSkuPolicy(ConfigureSellerSkuPolicyRequest request) {
+        if (request == null) throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST,
+                "Seller-SKU admission policy request is required");
+        UUID sellerId = request.sellerId();
+        String skuId = request.skuId();
+        int maxActiveCheckouts = request.maxActiveCheckouts();
         if (sellerId == null || blank(skuId) || skuId.length() > 128 || maxActiveCheckouts < 1) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid seller-SKU admission policy");
         }

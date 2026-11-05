@@ -26,11 +26,11 @@ public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacity
     }
 
     @Override
-    public InventoryAdjustmentResponse adjust(UUID sellerId, String skuId, String idempotencyKey,
-            AdjustInventoryCapacityRequest request) {
-        if (sellerId == null || skuId == null || skuId.isBlank() || idempotencyKey == null
-                || idempotencyKey.isBlank() || idempotencyKey.length() > 256
-                || request == null || request.reason() == null || request.reason().isBlank() || request.delta() == 0) {
+    public InventoryAdjustmentResponse adjust(AdjustInventoryCapacityRequest request) {
+        if (request == null || request.sellerId() == null || request.skuId() == null || request.skuId().isBlank()
+                || request.idempotencyKey() == null || request.idempotencyKey().isBlank()
+                || request.idempotencyKey().length() > 256 || request.reason() == null
+                || request.reason().isBlank() || request.delta() == 0) {
             throw new InventoryException(InventoryException.Code.INVALID_REQUEST,
                     "seller, SKU, idempotency key (maximum 256 characters), nonzero delta, and reason required");
         }
@@ -40,8 +40,9 @@ public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacity
         }
 
         return transactions.execute(status -> {
-            adjustments.lock(sellerId, skuId, idempotencyKey);
-            CapacityAdjustmentRecord prior = adjustments.find(sellerId, skuId, idempotencyKey).orElse(null);
+            adjustments.lock(request.sellerId(), request.skuId(), request.idempotencyKey());
+            CapacityAdjustmentRecord prior = adjustments.find(request.sellerId(), request.skuId(),
+                    request.idempotencyKey()).orElse(null);
             if (prior != null) {
                 if (prior.delta() != request.delta() || !prior.reason().equals(request.reason())) {
                     throw new InventoryException(InventoryException.Code.CONFLICT,
@@ -50,13 +51,13 @@ public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacity
                 return response(prior);
             }
 
-            CapacityAdjustmentRecord recorded = adjustments.record(sellerId, skuId, idempotencyKey,
-                    request.delta(), request.reason()).orElse(null);
+            CapacityAdjustmentRecord recorded = adjustments.record(request.sellerId(), request.skuId(),
+                    request.idempotencyKey(), request.delta(), request.reason()).orElse(null);
             if (recorded != null) {
                 return response(recorded);
             }
 
-            InventoryPoolState current = adjustments.findPool(sellerId, skuId).orElseThrow(() ->
+            InventoryPoolState current = adjustments.findPool(request.sellerId(), request.skuId()).orElseThrow(() ->
                     new InventoryException(InventoryException.Code.POOL_NOT_FOUND, "inventory pool not found"));
             validateCapacity(current, request.delta());
             throw new InventoryException(InventoryException.Code.INSUFFICIENT_STOCK,

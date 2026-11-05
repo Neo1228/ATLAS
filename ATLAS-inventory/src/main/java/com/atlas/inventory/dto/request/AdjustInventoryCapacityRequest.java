@@ -1,3 +1,6 @@
 package com.atlas.inventory.dto.request;
 
-public record AdjustInventoryCapacityRequest(int delta, String reason) {}
+import java.util.UUID;
+
+public record AdjustInventoryCapacityRequest(UUID sellerId, String skuId, String idempotencyKey, int delta,
+        String reason) {}

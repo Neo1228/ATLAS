@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
+import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
@@ -262,7 +263,7 @@ assertUuidV7(paymentOrderId);
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "shared-" + UUID.randomUUID();
         registerProductSku(sellerId, skuId, 100, 3);
-        admission.configureSellerSkuPolicy(sellerId, skuId, 1);
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 1));
         CampaignResponse firstCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
         CampaignResponse secondCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
         CyclicBarrier start = new CyclicBarrier(3);
@@ -302,7 +303,7 @@ assertUuidV7(paymentOrderId);
 
         UUID anotherSellerId = sellers.createSeller().sellerId();
         registerProductSku(anotherSellerId, skuId, 100, 1);
-        admission.configureSellerSkuPolicy(anotherSellerId, skuId, 1);
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(anotherSellerId, skuId, 1));
         CampaignResponse otherSellerCampaign = openCampaign(anotherSellerId, skuId, Duration.ofMinutes(5));
         QueueTicketResponse otherSellerTicket = join(otherSellerCampaign, "other-seller", "other-seller-key");
         assertThat(otherSellerTicket.sequence()).isEqualTo(1);
@@ -1233,7 +1234,7 @@ assertUuidV7(paymentOrderId);
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "sku-" + UUID.randomUUID();
         registerProductSku(sellerId, skuId, 100, initialStock);
-        admission.configureSellerSkuPolicy(sellerId, skuId, maxActiveCheckouts);
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, maxActiveCheckouts));
         return openCampaign(sellerId, skuId, ticketTtl);
     }
 

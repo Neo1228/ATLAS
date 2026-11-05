@@ -79,9 +79,10 @@ class OrderRefundLifecycleIntegrationTest {
     void partialAndFullRefundsReplayAndRestoreOnlyRequestedUnitsWithoutChangingPaidState() {
         Fixture fixture = paidOrder(2, 5, 125);
         UUID itemId = fixture.orderItemId();
-        OrderRefundRequest oneUnit = request(itemId, 1);
+        OrderRefundRequest oneUnit = request(fixture.sellerId(), fixture.orderId(), "refund-partial-key",
+                itemId, 1);
 
-        OrderRefundResponse partial = refunds.refund(fixture.sellerId(), fixture.orderId(), "refund-partial-key", oneUnit);
+        OrderRefundResponse partial = refunds.refund(oneUnit);
 
         assertThat(partial.refundId().version()).isEqualTo(7);
         assertThat(partial.recordedAmountWon()).isEqualTo(125);
@@ -98,20 +99,21 @@ class OrderRefundLifecycleIntegrationTest {
                 new Entry("PSP_CLEARING", "DEBIT", 250),
                 new Entry("SELLER_PAYABLE", "CREDIT", 250));
 
-        assertThat(refunds.refund(fixture.sellerId(), fixture.orderId(), "refund-partial-key", oneUnit))
-                .isEqualTo(partial);
-        assertThatThrownBy(() -> refunds.refund(fixture.sellerId(), fixture.orderId(), "refund-partial-key",
-                request(itemId, 2))).isInstanceOf(OrderException.class)
+        assertThat(refunds.refund(oneUnit)).isEqualTo(partial);
+        assertThatThrownBy(() -> refunds.refund(request(fixture.sellerId(), fixture.orderId(),
+                "refund-partial-key", itemId, 2)))
+                .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
-        assertThatThrownBy(() -> refunds.refund(fixture.sellerId(), fixture.orderId(), "refund-over-limit-key",
-                request(itemId, 2))).isInstanceOf(OrderException.class)
+        assertThatThrownBy(() -> refunds.refund(request(fixture.sellerId(), fixture.orderId(),
+                "refund-over-limit-key", itemId, 2)))
+                .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
         assertStock(fixture, 4, 1);
         assertThat(journalCountForRefund(partial.refundId())).isEqualTo(1);
 
         fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(), FulfillmentStatus.IN_PROGRESS);
-        OrderRefundResponse full = refunds.refund(fixture.sellerId(), fixture.orderId(), "refund-final-key",
-                request(itemId, 1));
+        OrderRefundResponse full = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
+                "refund-final-key", itemId, 1));
 
         assertThat(full.recordedAmountWon()).isEqualTo(125);
         assertThat(full.status()).isEqualTo(OrderRefundStatus.FULLY_RECORDED);
@@ -122,7 +124,8 @@ class OrderRefundLifecycleIntegrationTest {
         assertThat(entriesForAttempt(fixture.paymentAttemptId())).containsExactly(
                 new Entry("PSP_CLEARING", "DEBIT", 250),
                 new Entry("SELLER_PAYABLE", "CREDIT", 250));
-        assertThatThrownBy(() -> fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(), FulfillmentStatus.SHIPPED))
+        assertThatThrownBy(() -> fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(),
+                FulfillmentStatus.SHIPPED))
                 .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
         assertThat(journalCountForRefund(full.refundId())).isEqualTo(1);
@@ -131,22 +134,25 @@ class OrderRefundLifecycleIntegrationTest {
     @Test
     void rejectsUnpaidOrdersOverRefundsAndRefundsAfterShipmentWithoutChangingStock() {
         Fixture unpaid = unpaidOrder(1, 5, 200);
-        assertThatThrownBy(() -> refunds.refund(unpaid.sellerId(), unpaid.orderId(), "unpaid-refund-key",
-                request(unpaid.orderItemId(), 1))).isInstanceOf(OrderException.class);
+        assertThatThrownBy(() -> refunds.refund(request(unpaid.sellerId(), unpaid.orderId(),
+                "unpaid-refund-key", unpaid.orderItemId(), 1)))
+                .isInstanceOf(OrderException.class);
         assertThat(refunds.find(unpaid.sellerId(), unpaid.orderId()).status()).isEqualTo(OrderRefundStatus.NONE);
         assertStock(unpaid, 4, 1, 0);
 
         Fixture paid = paidOrder(1, 5, 200);
-        assertThatThrownBy(() -> refunds.refund(paid.sellerId(), paid.orderId(), "over-refund-key",
-                request(paid.orderItemId(), 2))).isInstanceOf(OrderException.class)
+        assertThatThrownBy(() -> refunds.refund(request(paid.sellerId(), paid.orderId(),
+                "over-refund-key", paid.orderItemId(), 2)))
+                .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
         assertStock(paid, 4, 1);
         assertThat(journalCountForOrder(paid.orderId())).isZero();
 
         fulfillments.updateStatus(paid.sellerId(), paid.orderId(), FulfillmentStatus.IN_PROGRESS);
         fulfillments.updateStatus(paid.sellerId(), paid.orderId(), FulfillmentStatus.SHIPPED);
-        assertThatThrownBy(() -> refunds.refund(paid.sellerId(), paid.orderId(), "shipped-refund-key",
-                request(paid.orderItemId(), 1))).isInstanceOf(OrderException.class)
+        assertThatThrownBy(() -> refunds.refund(request(paid.sellerId(), paid.orderId(),
+                "shipped-refund-key", paid.orderItemId(), 1)))
+                .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
         assertThat(refunds.find(paid.sellerId(), paid.orderId()).status()).isEqualTo(OrderRefundStatus.NONE);
         assertStock(paid, 4, 1);
@@ -156,7 +162,8 @@ class OrderRefundLifecycleIntegrationTest {
     @Test
     void concurrentRetryCreatesOneRefundAndRestoresStockOnce() throws Exception {
         Fixture fixture = paidOrder(1, 5, 300);
-        OrderRefundRequest request = request(fixture.orderItemId(), 1);
+        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(),
+                "concurrent-refund-key", fixture.orderItemId(), 1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -164,12 +171,12 @@ class OrderRefundLifecycleIntegrationTest {
             Future<OrderRefundResponse> first = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
-                return refunds.refund(fixture.sellerId(), fixture.orderId(), "concurrent-refund-key", request);
+                return refunds.refund(request);
             });
             Future<OrderRefundResponse> second = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
-                return refunds.refund(fixture.sellerId(), fixture.orderId(), "concurrent-refund-key", request);
+                return refunds.refund(request);
             });
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();
@@ -212,7 +219,8 @@ class OrderRefundLifecycleIntegrationTest {
     @Test
     void settlementFailureRollsBackRefundStateInventoryAndReversalBeforeRetry() {
         Fixture fixture = paidOrder(1, 5, 450);
-        OrderRefundRequest request = request(fixture.orderItemId(), 1);
+        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(),
+                "rollback-refund-key", fixture.orderItemId(), 1);
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_refund_settlement_entry() RETURNS TRIGGER AS $$
                 BEGIN
@@ -229,7 +237,7 @@ class OrderRefundLifecycleIntegrationTest {
                 FOR EACH ROW EXECUTE FUNCTION fail_refund_settlement_entry()
                 """);
         try {
-            assertThatThrownBy(() -> refunds.refund(fixture.sellerId(), fixture.orderId(), "rollback-refund-key", request))
+            assertThatThrownBy(() -> refunds.refund(request))
                     .isInstanceOf(RuntimeException.class);
         } finally {
             jdbc.execute("DROP TRIGGER IF EXISTS fail_refund_settlement_entry_trigger ON settlement_entry");
@@ -241,7 +249,7 @@ class OrderRefundLifecycleIntegrationTest {
         assertThat(refundRequestCount(fixture.orderId())).isZero();
         assertThat(journalCountForOrder(fixture.orderId())).isZero();
 
-        OrderRefundResponse recovered = refunds.refund(fixture.sellerId(), fixture.orderId(), "rollback-refund-key", request);
+        OrderRefundResponse recovered = refunds.refund(request);
         assertThat(recovered.status()).isEqualTo(OrderRefundStatus.FULLY_RECORDED);
         assertStock(fixture, 5, 0);
         assertThat(journalCountForRefund(recovered.refundId())).isEqualTo(1);
@@ -276,8 +284,10 @@ class OrderRefundLifecycleIntegrationTest {
         return new Fixture(sellerId, order.orderId(), orderItemId, skuId, null);
     }
 
-    private static OrderRefundRequest request(UUID orderItemId, int quantity) {
-        return new OrderRefundRequest(List.of(new OrderRefundRequest.Item(orderItemId, quantity)));
+    private static OrderRefundRequest request(UUID sellerId, UUID orderId, String idempotencyKey,
+            UUID orderItemId, int quantity) {
+        return new OrderRefundRequest(sellerId, orderId, idempotencyKey,
+                List.of(new OrderRefundRequest.Item(orderItemId, quantity)));
     }
 
     private void assertStock(Fixture fixture, int available, int claimed) {
