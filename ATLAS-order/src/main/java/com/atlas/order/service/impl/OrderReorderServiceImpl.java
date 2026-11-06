@@ -35,8 +35,8 @@ public class OrderReorderServiceImpl implements OrderReorderService {
     private final Clock clock;
 
     public OrderReorderServiceImpl(OrderRepository orders, OrderItemRepository items,
-            InventoryService inventory, CartService carts, JdbcOrderReorderRepository reorderRequests,
-            Clock clock) {
+                                   InventoryService inventory, CartService carts,
+                                   JdbcOrderReorderRepository reorderRequests, Clock clock) {
         this.orders = Objects.requireNonNull(orders);
         this.items = Objects.requireNonNull(items);
         this.inventory = Objects.requireNonNull(inventory);
@@ -48,69 +48,63 @@ public class OrderReorderServiceImpl implements OrderReorderService {
     @Override
     @Transactional
     public CartResponse reorder(OrderReorderRequest request) {
-        if (request == null) {
-            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Reorder request is required");
-        }
+        if (request == null) throw new OrderException(OrderException.Code.INVALID_REQUEST, "Reorder request required");
         UUID orderId = request.orderId();
         String idempotencyKey = request.idempotencyKey();
         boolean confirmMerge = request.confirmMerge();
         validate(orderId, idempotencyKey);
+
         PurchaseOrder sourceOrder = lockOrder(orderId);
-        if (sourceOrder.source() != OrderSource.CART || !sourceOrder.state().isTerminal()) {
+        if (sourceOrder.source() != OrderSource.CART || !sourceOrder.state().isTerminal())
             throw conflict("Only terminal Cart orders can be reordered");
-        }
 
         ExistingReorderRequest previous = reorderRequests
                 .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElse(null);
         if (previous != null) {
-            if (!previous.sourceOrderId().equals(orderId) || previous.confirmMerge() != confirmMerge) {
-                throw conflict("Idempotency-Key was used for a different reorder request");
-            }
-            return carts.find(sourceOrder.sellerId(), sourceOrder.buyerRef());
+            if (!previous.sourceOrderId().equals(orderId) || previous.confirmMerge() != confirmMerge)
+                throw conflict("Idempotency-Key was used for different reorder request");
+            return carts.find(sourceOrder.buyerRef());
         }
 
         List<OrderItem> sourceItems = items.findByOrderOrderIdOrderBySkuIdAsc(orderId);
         if (sourceItems.isEmpty()) throw conflict("Order has no items to reorder");
-        if (sourceItems.stream().anyMatch(item -> !sourceOrder.sellerId().equals(item.sellerId()))) {
+        if (sourceItems.stream().anyMatch(item -> !sourceOrder.sellerId().equals(item.sellerId())))
             throw conflict("Cart orders must contain items from one Seller");
-        }
+
         assertInventoryAvailable(sourceOrder, sourceItems);
         boolean recorded = reorderRequests.insertIfAbsent(sourceOrder.sellerId(), sourceOrder.buyerRef(),
                 idempotencyKey, orderId, confirmMerge, clock.instant());
         if (!recorded) return replayOrConflict(sourceOrder, orderId, idempotencyKey, confirmMerge);
 
         List<ReorderCartRequest.Item> cartItems = sourceItems.stream()
-                .map(item -> new ReorderCartRequest.Item(item.productId(), item.skuId(), item.quantity()))
+                .map(item -> new ReorderCartRequest.Item(sourceOrder.sellerId(),
+                        item.productId(), item.skuId(), item.quantity()))
                 .toList();
-        return carts.mergeItems(new ReorderCartRequest(sourceOrder.sellerId(), sourceOrder.buyerRef(),
-                confirmMerge, cartItems));
+        return carts.mergeItems(new ReorderCartRequest(sourceOrder.buyerRef(), confirmMerge, cartItems));
     }
 
     private CartResponse replayOrConflict(PurchaseOrder sourceOrder, UUID orderId,
-                                         String idempotencyKey, boolean confirmMerge) {
+                                           String idempotencyKey, boolean confirmMerge) {
         ExistingReorderRequest existing = reorderRequests
                 .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElseThrow(() ->
                         new IllegalStateException("Reorder idempotency row disappeared"));
-        if (!existing.sourceOrderId().equals(orderId) || existing.confirmMerge() != confirmMerge) {
-            throw conflict("Idempotency-Key was used for a different reorder request");
-        }
-        return carts.find(sourceOrder.sellerId(), sourceOrder.buyerRef());
+        if (!existing.sourceOrderId().equals(orderId) || existing.confirmMerge() != confirmMerge)
+            throw conflict("Idempotency-Key used different reorder request");
+        return carts.find(sourceOrder.buyerRef());
     }
 
     private void assertInventoryAvailable(PurchaseOrder sourceOrder, List<OrderItem> items) {
         List<String> skuIds = items.stream().map(OrderItem::skuId).distinct().sorted().toList();
         Map<String, InventoryPoolResponse> pools = new HashMap<>();
         for (InventoryPoolResponse pool : inventory.findAll(sourceOrder.sellerId(), skuIds)) {
-            if (pools.putIfAbsent(pool.skuId(), pool) != null) {
+            if (pools.putIfAbsent(pool.skuId(), pool) != null)
                 throw conflict("Inventory returned duplicate seller SKUs");
-            }
         }
         for (OrderItem item : items) {
             InventoryPoolResponse pool = pools.get(item.skuId());
-            if (pool == null || pool.available() < item.quantity()) {
+            if (pool == null || pool.available() < item.quantity())
                 throw new InventoryException(InventoryException.Code.INSUFFICIENT_STOCK,
-                        "insufficient stock for seller " + sourceOrder.sellerId() + " sku " + item.skuId());
-            }
+                        "insufficient stock seller " + sourceOrder.sellerId() + " sku " + item.skuId());
         }
     }
 
@@ -121,10 +115,9 @@ public class OrderReorderServiceImpl implements OrderReorderService {
 
     private static void validate(UUID orderId, String idempotencyKey) {
         if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()
-                || idempotencyKey.length() > 256) {
+                || idempotencyKey.length() > 256)
             throw new OrderException(OrderException.Code.INVALID_REQUEST,
-                    "orderId and a valid Idempotency-Key are required");
-        }
+                    "orderId and valid Idempotency-Key are required");
     }
 
     private static OrderException conflict(String message) {

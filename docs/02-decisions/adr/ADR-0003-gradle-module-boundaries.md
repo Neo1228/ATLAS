@@ -22,7 +22,7 @@ ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/C
 
 | 모듈 | 소유 책임 | Gradle 의존 |
 |---|---|---|
-| `application-module` | Spring Boot 실행, HTTP adapter, 공통 오류 처리·설정, Flyway migration | 도메인 모듈 |
+| `application-module` | Spring Boot 실행, HTTP controllers, 공통 오류 처리·설정, Flyway migration | 도메인 모듈 |
 | `catalog-module` | Seller·Product·Seller-SKU·현재 가격 | `inventory-module` |
 | `cart-module` | Seller별 Buyer Cart·CartItem | `catalog-module` |
 | `campaign-module` | Campaign과 판매 자격 | `catalog-module`, `inventory-module` |
@@ -52,7 +52,7 @@ Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·
 - **공개 API:** `.service`, `.dto.request`, `.dto.response`, `.exception`. 업무 오류는 모듈별 typed exception 하나와 `Code` enum으로 표현.
 - **공유 상태:** lifecycle enum은 `.persistence.state`에 두고 필요한 cross-module contract에서만 공유.
 - **저장소 계층:** JPA entity는 `.persistence.entity`, repository는 모듈 내부 `.repository`. 다른 모듈의 entity/repository 직접 접근 금지; 연관 관계에는 scalar ID 사용.
-- **구현 계층:** workflow와 scheduled expiry는 `.service.impl`, provider adapter는 `.provider.*`. Entity 이름에 중복 `Entity` 접미사 금지.
+- **구현 계층:** workflow와 scheduled expiry는 `.service.impl`, provider 구현은 `.provider.*`. Entity 이름에 중복 `Entity` 접미사 금지.
 - **도메인 명칭:** 책임이 드러나는 용어 사용. Inventory의 일반명 `Pool`은 `InventoryPool`로 구체화. Java 타입/ID/repository/DTO/service operation만 변경; DB schema와 API 응답 필드는 유지 ([D-053](../../00-governance/decision-log.md)).
 - **CRUD·schema:** 일반 CRUD는 JPA. Schema는 Flyway 소유, Hibernate는 `ddl-auto=validate`.
 - **특화 SQL:** PostgreSQL 전용 lock·sequence·guarded update만 `.repository`에서 JDBC/native SQL로 처리.

@@ -18,6 +18,7 @@ import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.service.impl.AdmissionServiceImpl;
 import com.atlas.cart.dto.response.CartResponse;
+import com.atlas.cart.service.CartService;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
@@ -33,12 +34,15 @@ import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.persistence.state.BuyerCheckoutState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.service.impl.OrderServiceImpl;
+import com.atlas.order.service.impl.CheckoutPaymentServiceImpl;
 import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -51,6 +55,8 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
@@ -96,11 +102,13 @@ class BuyerFlowIntegrationTest {
     }
 
     @Autowired private OrderServiceImpl orderServiceImpl;
+    @Autowired private CheckoutPaymentServiceImpl checkoutLifecycle;
 
     @Autowired private AdmissionServiceImpl admissionServiceImpl;
     @Autowired private AdmissionService admission;
     @Autowired private CampaignService campaigns;
     @Autowired private SellerService sellers;
+    @Autowired private CartService carts;
     @Autowired private ProductService products;
     @Autowired private InventoryService inventory;
     @Autowired private OrderService orders;
@@ -149,7 +157,7 @@ class BuyerFlowIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"code\":\"CATALOG_RESOURCE_NOT_FOUND\""));
-        mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", UUID.randomUUID(), "missing-buyer"))
+        mockMvc.perform(get("/api/buyers/{buyerRef}/cart", "missing-buyer"))
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"code\":\"CART_NOT_FOUND\""));
@@ -613,63 +621,58 @@ assertUuidV7(paymentOrderId);
         String otherBuyerRef = "clear-other-buyer-" + UUID.randomUUID();
 
         for (String skuId : List.of(firstSku, secondSku)) {
-            mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                            sellerId, buyerRef, skuId)
+            mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                            buyerRef, sellerId, skuId)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"quantity":1}
                                     """))
                     .andExpect(status().isOk());
         }
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, otherBuyerRef, secondSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        otherBuyerRef, sellerId, secondSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":2}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        otherSellerId, buyerRef, otherSellerSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, otherSellerId, otherSellerSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":3}
                                 """))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, firstSku))
+        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, firstSku))
                 .andExpect(status().isNoContent());
         CartResponse afterSingleRemoval = objectMapper.readValue(
-                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                mockMvc.perform(get("/api/buyers/{buyerRef}/cart", buyerRef))
                         .andExpect(status().isOk())
                         .andReturn().getResponse().getContentAsString(),
                 CartResponse.class);
-        assertThat(afterSingleRemoval.items()).extracting(item -> item.skuId()).containsExactly(secondSku);
+        assertThat(afterSingleRemoval.items()).extracting(item -> item.skuId())
+                .containsExactlyInAnyOrder(secondSku, otherSellerSku);
 
-        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items", sellerId, buyerRef))
+        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items", buyerRef))
                 .andExpect(status().isNoContent());
-        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items", sellerId, buyerRef))
+        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items", buyerRef))
                 .andExpect(status().isNoContent());
         CartResponse cleared = objectMapper.readValue(
-                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                mockMvc.perform(get("/api/buyers/{buyerRef}/cart", buyerRef))
                         .andExpect(status().isOk())
                         .andReturn().getResponse().getContentAsString(),
                 CartResponse.class);
-        CartResponse sameSellerCart = objectMapper.readValue(
-                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, otherBuyerRef))
-                        .andExpect(status().isOk())
-                        .andReturn().getResponse().getContentAsString(),
-                CartResponse.class);
-        CartResponse otherSellerCart = objectMapper.readValue(
-                mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", otherSellerId, buyerRef))
+        CartResponse otherBuyerCart = objectMapper.readValue(
+                mockMvc.perform(get("/api/buyers/{buyerRef}/cart", otherBuyerRef))
                         .andExpect(status().isOk())
                         .andReturn().getResponse().getContentAsString(),
                 CartResponse.class);
 
         assertThat(cleared.items()).isEmpty();
-        assertThat(sameSellerCart.items()).extracting(item -> item.skuId()).containsExactly(secondSku);
-        assertThat(otherSellerCart.items()).extracting(item -> item.skuId()).containsExactly(otherSellerSku);
-        mockMvc.perform(delete("/api/sellers/{sellerId}/carts/{buyerRef}/items",
+        assertThat(otherBuyerCart.items()).extracting(item -> item.skuId()).containsExactly(secondSku);
+        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items",
                         sellerId, "missing-" + UUID.randomUUID()))
                 .andExpect(status().isNotFound());
 
@@ -686,6 +689,53 @@ assertUuidV7(paymentOrderId);
         stock.forEach(BuyerFlowIntegrationTest::assertConserved);
     }
 
+
+    @Test
+    void concurrentFirstCartUpdatesAcrossSellersCreateOneBuyerCart() throws Exception {
+        UUID firstSeller = sellers.createSeller().sellerId();
+        UUID secondSeller = sellers.createSeller().sellerId();
+        ProductResponse firstProduct = products.createProduct(firstSeller,
+                new CreateProductRequest("first-cart-race-a", null));
+        ProductResponse secondProduct = products.createProduct(secondSeller,
+                new CreateProductRequest("first-cart-race-b", null));
+        String skuId = "first-cart-race-" + UUID.randomUUID();
+        products.registerSku(firstSeller, firstProduct.productId(),
+                new RegisterSellerSkuRequest(skuId, 100, 2));
+        products.registerSku(secondSeller, secondProduct.productId(),
+                new RegisterSellerSkuRequest(skuId, 200, 2));
+        String buyerRef = "first-cart-race-buyer-" + UUID.randomUUID();
+        CyclicBarrier start = new CyclicBarrier(3);
+        var workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<CartResponse> firstUpdate = workers.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return carts.setItemQuantity(firstSeller, buyerRef, skuId, 1);
+            });
+            Future<CartResponse> secondUpdate = workers.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return carts.setItemQuantity(secondSeller, buyerRef, skuId, 1);
+            });
+            start.await(10, TimeUnit.SECONDS);
+            firstUpdate.get(10, TimeUnit.SECONDS);
+            secondUpdate.get(10, TimeUnit.SECONDS);
+        } finally {
+            workers.shutdownNow();
+        }
+
+        CartResponse cart = carts.find(buyerRef);
+        assertThat(cart.items()).hasSize(2);
+        assertThat(cart.items()).extracting(item -> item.sellerId())
+                .containsExactlyInAnyOrder(firstSeller, secondSeller);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM shopping_cart WHERE buyer_ref = ?", Integer.class, buyerRef)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM shopping_cart_item item
+                JOIN shopping_cart cart ON cart.cart_id = item.cart_id
+                WHERE cart.buyer_ref = ?
+                """, Integer.class, buyerRef)).isEqualTo(2);
+    }
+
     @Test
     void sellerCartCheckoutSnapshotsCurrentPriceAndReservesAllSkuLines() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
@@ -696,15 +746,15 @@ assertUuidV7(paymentOrderId);
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
         String buyerRef = "cart-buyer-" + UUID.randomUUID();
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, firstSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, firstSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":2}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, secondSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, secondSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
@@ -713,12 +763,13 @@ assertUuidV7(paymentOrderId);
 
         products.updateSkuPrice(sellerId, product.productId(), firstSku, 125);
         String idempotencyKey = "cart-checkout-" + UUID.randomUUID();
-        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, buyerRef)
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        buyerRef)
                         .header("Idempotency-Key", idempotencyKey))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
+        OrderResponse order = checkout.orders().getFirst();
 
         assertThat(order.source().name()).isEqualTo("CART");
         assertThat(order.campaignId()).isNull();
@@ -738,15 +789,15 @@ assertUuidV7(paymentOrderId);
         assertThat(secondStock.reserved()).isEqualTo(1);
         assertConserved(secondStock);
 
-        mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+        mockMvc.perform(get("/api/buyers/{buyerRef}/cart", buyerRef))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"items\":[]"));
-        mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout", sellerId, buyerRef)
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
                         .header("Idempotency-Key", idempotencyKey))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains(order.orderId().toString()));
+                        .contains(checkout.checkoutId().toString()));
         clock.advance(Duration.ofMinutes(11));
         orderServiceImpl.expireDueCheckouts();
     }
@@ -761,22 +812,22 @@ assertUuidV7(paymentOrderId);
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(scarceSku, 200, 1));
         String buyerRef = "rollback-buyer-" + UUID.randomUUID();
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, availableSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, availableSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, scarceSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, scarceSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":2}
                                 """))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout", sellerId, buyerRef)
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
                         .header("Idempotency-Key", "failed-checkout-" + UUID.randomUUID()))
                 .andExpect(status().isConflict())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
@@ -788,10 +839,233 @@ assertUuidV7(paymentOrderId);
         assertThat(inventory.find(sellerId, scarceSku).reserved()).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE buyer_ref = ?",
                 Integer.class, buyerRef)).isZero();
-        mockMvc.perform(get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+        mockMvc.perform(get("/api/buyers/{buyerRef}/cart", buyerRef))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains(availableSku, scarceSku));
+    }
+
+    @Test
+    void buyerWideCheckoutAllocatesSameSkuAcrossSellersAndClearsBuyerCart() throws Exception {
+        UUID firstSeller = sellers.createSeller().sellerId();
+        UUID secondSeller = sellers.createSeller().sellerId();
+        ProductResponse firstProduct = products.createProduct(firstSeller, new CreateProductRequest("same-sku-a", null));
+        ProductResponse secondProduct = products.createProduct(secondSeller, new CreateProductRequest("same-sku-b", null));
+        String sku = "shared-" + UUID.randomUUID();
+        products.registerSku(firstSeller, firstProduct.productId(), new RegisterSellerSkuRequest(sku, 100, 2));
+        products.registerSku(secondSeller, secondProduct.productId(), new RegisterSellerSkuRequest(sku, 250, 3));
+        String buyerRef = "multi-seller-" + UUID.randomUUID();
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, sku)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                    .andExpect(status().isOk());
+        }
+        String json = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "multi-" + UUID.randomUUID()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        CheckoutResponse checkout = objectMapper.readValue(json, CheckoutResponse.class);
+        assertThat(checkout.orders()).hasSize(2);
+        assertThat(checkout.orders()).extracting(OrderResponse::items).hasSize(2);
+        assertThat(jdbc.queryForList("SELECT seller_id FROM purchase_order WHERE checkout_id = ?", UUID.class,
+                checkout.checkoutId())).containsExactlyInAnyOrder(firstSeller, secondSeller);
+        assertThat(inventory.find(firstSeller, sku).reserved()).isEqualTo(1);
+        assertThat(inventory.find(secondSeller, sku).reserved()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE checkout_id = ?",
+                Integer.class, checkout.checkoutId())).isEqualTo(2);
+        assertThat(objectMapper.readTree(mockMvc.perform(get("/api/buyers/{buyerRef}/cart", buyerRef))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .path("items").size()).isZero();
+
+        CheckoutResponse paid = objectMapper.readValue(mockMvc.perform(
+                post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(paid.orders()).allSatisfy(order -> {
+            assertThat(order.state()).isEqualTo(OrderState.PAID);
+            assertThat(order.paymentState()).isEqualTo(PaymentState.CAPTURED);
+            assertThat(order.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
+        });
+        assertThat(inventory.find(firstSeller, sku).available()).isEqualTo(1);
+        assertThat(inventory.find(secondSeller, sku).available()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM settlement_journal WHERE checkout_id = ?",
+                Integer.class, checkout.checkoutId())).isEqualTo(1);
+        UUID journalId = jdbc.queryForObject("SELECT journal_id FROM settlement_journal WHERE checkout_id = ?",
+                UUID.class, checkout.checkoutId());
+        assertThat(jdbc.queryForList("SELECT account_code || ':' || entry_side || ':' || amount_won " +
+                        "FROM settlement_entry WHERE journal_id = ? ORDER BY account_code", String.class, journalId))
+                .containsExactly("PSP_CLEARING:DEBIT:350", "SELLER_PAYABLE:CREDIT:350");
+        List<Map<String, Object>> allocations = jdbc.queryForList(
+                "SELECT seller_id, amount_won FROM settlement_seller_allocation " +
+                        "WHERE journal_id = ? ORDER BY allocation_ordinal", journalId);
+        assertThat(allocations).hasSize(2);
+        List<UUID> sellerOrder = Stream.of(firstSeller, secondSeller).sorted().toList();
+        assertThat(allocations).extracting(row -> row.get("seller_id")).containsExactlyElementsOf(sellerOrder);
+        assertThat(allocations.stream().mapToLong(row -> ((Number) row.get("amount_won")).longValue()).sum())
+                .isEqualTo(checkout.totalWon());
+        assertThat(allocations.stream().map(row -> ((Number) row.get("amount_won")).longValue()).toList())
+                .containsExactly(sellerOrder.getFirst().equals(firstSeller) ? 100L : 250L,
+                        sellerOrder.getLast().equals(firstSeller) ? 100L : 250L);
+    }
+
+    @Test
+    void unknownMultiSellerCheckoutHoldsEveryReservationAndReconcilesSameAttempt() throws Exception {
+        UUID firstSeller = sellers.createSeller().sellerId();
+        UUID secondSeller = sellers.createSeller().sellerId();
+        ProductResponse firstProduct = products.createProduct(firstSeller,
+                new CreateProductRequest("unknown-multi-a", null));
+        ProductResponse secondProduct = products.createProduct(secondSeller,
+                new CreateProductRequest("unknown-multi-b", null));
+        String sku = "unknown-multi-" + UUID.randomUUID();
+        products.registerSku(firstSeller, firstProduct.productId(),
+                new RegisterSellerSkuRequest(sku, 100, 2));
+        products.registerSku(secondSeller, secondProduct.productId(),
+                new RegisterSellerSkuRequest(sku, 250, 3));
+        String buyerRef = "unknown-multi-buyer-" + UUID.randomUUID();
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                    buyerRef, sellerId, sku)
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                    .andExpect(status().isOk());
+        }
+        CheckoutResponse checkout = objectMapper.readValue(mockMvc.perform(
+                post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "unknown-multi-" + UUID.randomUUID()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                CheckoutResponse.class);
+        assertThat(checkout.orders()).hasSize(2);
+
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
+        CheckoutResponse unknown = objectMapper.readValue(mockMvc.perform(
+                post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                CheckoutResponse.class);
+        assertThat(unknown.state().name()).isEqualTo("PAYMENT_UNKNOWN");
+        assertThat(unknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
+        assertThat(unknown.paymentAttemptId()).isNotNull();
+        List<OrderResponse> unknownOrders = unknown.orders();
+        assertThat(unknownOrders).hasSize(2);
+        assertThat(unknownOrders).allSatisfy(order -> {
+            assertThat(order.state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
+            assertThat(order.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
+            assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+        });
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            InventoryPoolResponse held = inventory.find(sellerId, sku);
+            assertThat(held.reserved()).isEqualTo(1);
+            assertThat(held.claimed()).isZero();
+            assertConserved(held);
+        }
+        clock.advance(Duration.ofMinutes(11));
+        checkoutLifecycle.expireDueCheckouts();
+        CheckoutResponse heldCheckout = checkoutLifecycle.find(checkout.checkoutId());
+        assertThat(heldCheckout.state()).isEqualTo(BuyerCheckoutState.PAYMENT_UNKNOWN);
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            assertThat(inventory.find(sellerId, sku).reserved()).isEqualTo(1);
+        }
+
+
+        CheckoutResponse recovered = objectMapper.readValue(mockMvc.perform(
+                post("/api/checkouts/{checkoutId}/reconcile", checkout.checkoutId())
+                        .header("Idempotency-Key", "unknown-reconcile-" + checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                CheckoutResponse.class);
+        assertThat(recovered.state().name()).isEqualTo("PAID");
+        assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
+        assertThat(recovered.orders()).hasSize(2);
+        assertThat(recovered.orders()).allSatisfy(order -> {
+            assertThat(order.state()).isEqualTo(OrderState.PAID);
+            assertThat(order.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
+            assertThat(order.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
+        });
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            InventoryPoolResponse claimed = inventory.find(sellerId, sku);
+            assertThat(claimed.available()).isEqualTo(sellerId.equals(firstSeller) ? 1 : 2);
+            assertThat(claimed.reserved()).isZero();
+            assertThat(claimed.claimed()).isEqualTo(1);
+            assertConserved(claimed);
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM settlement_journal WHERE checkout_id = ?",
+                Integer.class, checkout.checkoutId())).isEqualTo(1);
+        for (OrderResponse order : recovered.orders()) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM settlement_seller_allocation WHERE order_id = ?",
+                    Integer.class, order.orderId())).isEqualTo(1);
+        }
+    }
+    @Test
+    void buyerCheckoutReplayRequiresUnchangedCartFacts() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("checkout-idempotency", null));
+        String skuId = "idempotent-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 150, 4));
+        String buyerRef = "checkout-idempotency-" + UUID.randomUUID();
+        String idempotencyKey = "buyer-checkout-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+
+        CheckoutResponse first = objectMapper.readValue(mockMvc.perform(
+                post("/api/buyers/{buyerRef}/cart/checkout", buyerRef).header("Idempotency-Key", idempotencyKey))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+        CheckoutResponse replay = objectMapper.readValue(mockMvc.perform(
+                post("/api/buyers/{buyerRef}/cart/checkout", buyerRef).header("Idempotency-Key", idempotencyKey))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        assertThat(replay.checkoutId()).isEqualTo(first.checkoutId());
+        assertThat(replay.orders()).extracting(OrderResponse::orderId)
+                .containsExactlyElementsOf(first.orders().stream().map(OrderResponse::orderId).toList());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE checkout_id = ?",
+                Integer.class, first.checkoutId())).isEqualTo(1);
+
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":2}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", idempotencyKey))
+                .andExpect(status().isConflict());
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?",
+                Integer.class, buyerRef)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE buyer_ref = ?",
+                Integer.class, buyerRef)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempt WHERE order_id = ?",
+                Integer.class, first.orders().getFirst().orderId())).isZero();
+        assertThat(inventory.find(sellerId, skuId).reserved()).isEqualTo(1);
+        assertThat(inventory.find(sellerId, skuId).available()).isEqualTo(3);
+    }
+
+    @Test
+    void buyerWideCheckoutRollsBackAllSellersWhenLaterSellerIsOutOfStock() throws Exception {
+        UUID stockedSeller = sellers.createSeller().sellerId();
+        UUID emptySeller = sellers.createSeller().sellerId();
+        ProductResponse stockedProduct = products.createProduct(stockedSeller, new CreateProductRequest("stocked", null));
+        ProductResponse emptyProduct = products.createProduct(emptySeller, new CreateProductRequest("empty", null));
+        String firstSku = "rollback-shared-" + UUID.randomUUID();
+        String secondSku = "rollback-scarce-" + UUID.randomUUID();
+        products.registerSku(stockedSeller, stockedProduct.productId(), new RegisterSellerSkuRequest(firstSku, 100, 1));
+        products.registerSku(emptySeller, emptyProduct.productId(), new RegisterSellerSkuRequest(secondSku, 200, 0));
+        String buyerRef = "multi-rollback-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, stockedSeller, firstSku)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, emptySeller, secondSku)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "multi-rollback-" + UUID.randomUUID()))
+                .andExpect(status().isConflict());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?", Integer.class, buyerRef)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE buyer_ref = ?", Integer.class, buyerRef)).isZero();
+        assertThat(inventory.find(stockedSeller, firstSku).reserved()).isZero();
+        assertThat(inventory.find(stockedSeller, firstSku).available()).isEqualTo(1);
+        assertThat(inventory.find(emptySeller, secondSku).reserved()).isZero();
+        assertThat(objectMapper.readTree(mockMvc.perform(get("/api/buyers/{buyerRef}/cart", buyerRef))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .path("items").size()).isEqualTo(2);
     }
 
     @Test
@@ -804,44 +1078,54 @@ assertUuidV7(paymentOrderId);
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
         String buyerRef = "cancel-buyer-" + UUID.randomUUID();
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, firstSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, firstSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":2}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, secondSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, secondSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, buyerRef)
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        buyerRef)
                         .header("Idempotency-Key", "cancel-checkout-" + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
+        OrderResponse order = checkout.orders().getFirst();
+        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
+        CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
+                post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        assertThat(pending.paymentAttemptId()).isNotNull();
 
         for (int attempt = 0; attempt < 2; attempt++) {
-            mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId())
-                            .header("Idempotency-Key", "cart-cancel-" + order.orderId()))
+            mockMvc.perform(post("/api/checkouts/{checkoutId}/cancel", checkout.checkoutId())
+                            .header("Idempotency-Key", "cart-cancel-" + checkout.checkoutId()))
                     .andExpect(status().isOk())
                     .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                            .contains("\"state\":\"CANCELLED\"", "\"paymentState\":\"NOT_STARTED\""));
+                            .contains("\"state\":\"CANCELLED\"", "\"paymentState\":\"VOIDED\""));
         }
 
-        OrderResponse cancelled = orders.find(order.orderId());
-        assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
-        assertThat(cancelled.paymentAttemptId()).isNull();
-        assertThat(cancelled.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
+        CheckoutResponse cancelled = objectMapper.readValue(mockMvc.perform(
+                get("/api/checkouts/{checkoutId}", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        assertThat(cancelled.state().name()).isEqualTo("CANCELLED");
+        assertThat(cancelled.paymentAttemptId()).isEqualTo(pending.paymentAttemptId());
+        assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
         assertThat(inventory.findReservations(order.orderId()))
                 .extracting(ReservationResponse::status)
                 .containsExactly(ReservationStatus.RELEASED, ReservationStatus.RELEASED);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempt WHERE order_id = ?",
-                Integer.class, order.orderId())).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempt WHERE checkout_id = ?",
+                Integer.class, checkout.checkoutId())).isEqualTo(1);
+        assertThat(orders.find(order.orderId()).state()).isEqualTo(OrderState.CANCELLED);
         assertInventoryRestored(sellerId, firstSku, 4);
         assertInventoryRestored(sellerId, secondSku, 3);
     }
@@ -856,38 +1140,41 @@ assertUuidV7(paymentOrderId);
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
         String buyerRef = "expiry-buyer-" + UUID.randomUUID();
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, firstSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, firstSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":2}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, secondSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, secondSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, buyerRef)
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        buyerRef)
                         .header("Idempotency-Key", "expiry-checkout-" + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
+        OrderResponse order = checkout.orders().getFirst();
 
         clock.advance(Duration.ofMinutes(11));
-        orderServiceImpl.expireDueCheckouts();
+        assertThat(checkoutLifecycle.expireDueCheckouts()).isGreaterThanOrEqualTo(1);
 
+        CheckoutResponse expiredCheckout = checkoutLifecycle.find(checkout.checkoutId());
+        assertThat(expiredCheckout.state().name()).isEqualTo("EXPIRED");
+        assertThat(expiredCheckout.paymentAttemptId()).isNull();
+        assertThat(expiredCheckout.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
         OrderResponse expired = orders.find(order.orderId());
         assertThat(expired.state()).isEqualTo(OrderState.EXPIRED);
         assertThat(expired.inventoryState()).isEqualTo(ReservationStatus.RELEASED);
         assertThat(inventory.findReservations(order.orderId()))
                 .extracting(ReservationResponse::status)
                 .containsExactly(ReservationStatus.RELEASED, ReservationStatus.RELEASED);
-        assertThat(expired.paymentAttemptId()).isNull();
-        assertThat(expired.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
         assertInventoryRestored(sellerId, firstSku, 4);
         assertInventoryRestored(sellerId, secondSku, 3);
     }
@@ -904,39 +1191,40 @@ assertUuidV7(paymentOrderId);
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(existingSku, 300, 4));
         String buyerRef = "reorder-buyer-" + UUID.randomUUID();
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, firstSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, firstSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":2}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, secondSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, secondSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, buyerRef)
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        buyerRef)
                         .header("Idempotency-Key", "source-order-" + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse sourceOrder = objectMapper.readValue(checkoutJson, OrderResponse.class);
-        assertThat(orders.cancel(sourceOrder.orderId(), "reorder-cancel-" + sourceOrder.orderId()).state())
-                .isEqualTo(OrderState.CANCELLED);
+        CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
+        OrderResponse sourceOrder = checkout.orders().getFirst();
+        assertThat(checkoutLifecycle.cancel(checkout.checkoutId(), "reorder-cancel-" + checkout.checkoutId())
+                .state().name()).isEqualTo("CANCELLED");
         products.updateSkuPrice(sellerId, product.productId(), firstSku, 150);
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, firstSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, firstSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":3}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, existingSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, existingSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
@@ -1006,44 +1294,50 @@ assertUuidV7(paymentOrderId);
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(existingSku, 300, 2));
         String buyerRef = "reorder-rollback-buyer-" + UUID.randomUUID();
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}", sellerId, buyerRef, availableSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, availableSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}", sellerId, buyerRef, scarceSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, scarceSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        String sourceJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, buyerRef)
+        String sourceJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        buyerRef)
                         .header("Idempotency-Key", "reorder-source-" + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse sourceOrder = objectMapper.readValue(sourceJson, OrderResponse.class);
-        orders.cancel(sourceOrder.orderId(), "rollback-reorder-cancel-" + sourceOrder.orderId());
+        CheckoutResponse sourceCheckout = objectMapper.readValue(sourceJson, CheckoutResponse.class);
+        OrderResponse sourceOrder = sourceCheckout.orders().getFirst();
+        checkoutLifecycle.cancel(sourceCheckout.checkoutId(),
+                "rollback-reorder-cancel-" + sourceCheckout.checkoutId());
 
         String competitor = "reorder-competitor-" + UUID.randomUUID();
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, competitor, scarceSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        competitor, sellerId, scarceSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        String competitorJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, competitor)
+        String competitorJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        competitor)
                         .header("Idempotency-Key", "reorder-competitor-" + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse competitorOrder = objectMapper.readValue(competitorJson, OrderResponse.class);
-        assertThat(orders.submitPayment(competitorOrder.orderId()).state()).isEqualTo(OrderState.PAID);
+        CheckoutResponse competitorCheckout = objectMapper.readValue(competitorJson, CheckoutResponse.class);
+        OrderResponse competitorOrder = competitorCheckout.orders().getFirst();
+        assertThat(objectMapper.readValue(mockMvc.perform(
+                post("/api/checkouts/{checkoutId}/payment", competitorCheckout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class)
+                .state().name()).isEqualTo("PAID");
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, existingSku)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, existingSku)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":2}
@@ -1061,7 +1355,7 @@ assertUuidV7(paymentOrderId);
                         .contains("\"code\":\"INSUFFICIENT_STOCK\""));
 
         CartResponse unchanged = objectMapper.readValue(mockMvc.perform(
-                        get("/api/sellers/{sellerId}/carts/{buyerRef}", sellerId, buyerRef))
+                        get("/api/buyers/{buyerRef}/cart", buyerRef))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(), CartResponse.class);
         assertThat(unchanged.items()).extracting(item -> item.skuId()).containsExactly(existingSku);
@@ -1079,19 +1373,20 @@ assertUuidV7(paymentOrderId);
         registerProductSku(sellerId, skuId, 100, 2);
         String buyerRef = "fulfillment-buyer-" + UUID.randomUUID();
 
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, skuId)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, skuId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, buyerRef)
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        buyerRef)
                         .header("Idempotency-Key", "fulfillment-checkout-" + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
+        OrderResponse order = checkout.orders().getFirst();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -1102,7 +1397,10 @@ assertUuidV7(paymentOrderId);
                         .contains("\"code\":\"CONFLICT\""));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
                 Integer.class, order.orderId())).isZero();
-        assertThat(orders.submitPayment(order.orderId()).state()).isEqualTo(OrderState.PAID);
+        mockMvc.perform(post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"state\":\"PAID\""));
 
         OrderFulfillmentResponse initial = objectMapper.readValue(
                 mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
@@ -1202,24 +1500,27 @@ assertUuidV7(paymentOrderId);
         String skuId = "fulfillment-retry-" + UUID.randomUUID();
         registerProductSku(sellerId, skuId, 150, 2);
         String buyerRef = "fulfillment-retry-buyer-" + UUID.randomUUID();
-        mockMvc.perform(put("/api/sellers/{sellerId}/carts/{buyerRef}/items/{skuId}",
-                        sellerId, buyerRef, skuId)
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, skuId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"quantity":1}
                                 """))
                 .andExpect(status().isOk());
-        String checkoutJson = mockMvc.perform(post("/api/sellers/{sellerId}/carts/{buyerRef}/checkout",
-                        sellerId, buyerRef)
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
+                        buyerRef)
                         .header("Idempotency-Key", "fulfillment-retry-" + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderResponse order = objectMapper.readValue(checkoutJson, OrderResponse.class);
+        CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
+        OrderResponse order = checkout.orders().getFirst();
         fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING, FakePspResult.CAPTURED);
-        OrderResponse pending = orders.submitPayment(order.orderId());
+        CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
+                        post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
         assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
         UUID attemptId = pending.paymentAttemptId();
-
+        assertThat(attemptId).isNotNull();
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_fulfillment_insert() RETURNS TRIGGER AS $$
                 BEGIN
@@ -1234,12 +1535,17 @@ assertUuidV7(paymentOrderId);
                 FOR EACH ROW EXECUTE FUNCTION fail_fulfillment_insert()
                 """);
         try {
-            assertThatThrownBy(() -> orders.reconcilePayment(order.orderId(), "downstream-retry-" + order.orderId()))
+            assertThatThrownBy(() -> checkoutLifecycle.reconcile(checkout.checkoutId(),
+                    "downstream-retry-" + order.orderId()))
                     .isInstanceOf(RuntimeException.class);
             OrderResponse unchanged = orders.find(order.orderId());
             assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);
             assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
             assertThat(unchanged.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+            InventoryPoolResponse unchangedStock = inventory.find(sellerId, skuId);
+            assertThat(unchangedStock.available()).isEqualTo(1);
+            assertThat(unchangedStock.reserved()).isEqualTo(1);
+            assertThat(unchangedStock.claimed()).isZero();
             assertThat(jdbc.queryForObject(
                     "SELECT count(*) FROM settlement_journal WHERE source_attempt_id = ?",
                     Integer.class, attemptId)).isZero();
@@ -1250,7 +1556,9 @@ assertUuidV7(paymentOrderId);
             jdbc.execute("DROP FUNCTION IF EXISTS fail_fulfillment_insert()");
         }
 
-        OrderResponse recovered = orders.reconcilePayment(order.orderId(), "downstream-retry-" + order.orderId());
+        CheckoutResponse recoveredCheckout = checkoutLifecycle.reconcile(checkout.checkoutId(),
+                "downstream-retry-" + order.orderId());
+        OrderResponse recovered = recoveredCheckout.orders().getFirst();
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
@@ -1258,8 +1566,8 @@ assertUuidV7(paymentOrderId);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
                 Integer.class, order.orderId())).isEqualTo(1);
         assertThat(orderFulfillments.find(order.orderId()).status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
-        assertThat(orders.reconcilePayment(order.orderId(), "downstream-retry-" + order.orderId()))
-                .isEqualTo(recovered);
+        assertThat(checkoutLifecycle.reconcile(checkout.checkoutId(),
+                "downstream-retry-" + order.orderId())).isEqualTo(recoveredCheckout);
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM settlement_journal WHERE source_attempt_id = ?",
                 Integer.class, attemptId)).isEqualTo(1);

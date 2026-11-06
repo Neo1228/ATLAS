@@ -1,6 +1,7 @@
 package com.atlas.payment.repository;
 
 import com.atlas.payment.persistence.entity.PaymentAttempt;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -14,4 +15,13 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
             + "VALUES (:orderId, :attemptId, 'NOT_STARTED', 'AUTHORIZATION', FALSE) "
             + "ON CONFLICT (order_id) DO NOTHING", nativeQuery = true)
     int insertInitial(@Param("orderId") UUID orderId, @Param("attemptId") UUID attemptId);
+
+    @Modifying
+    @Query(value = "INSERT INTO payment_attempt (checkout_id, attempt_id, state, payment_phase, authorization_active) "
+            + "VALUES (:checkoutId, :attemptId, 'NOT_STARTED', 'AUTHORIZATION', FALSE) "
+            + "ON CONFLICT (checkout_id) DO NOTHING", nativeQuery = true)
+    int insertCheckoutInitial(@Param("checkoutId") UUID checkoutId, @Param("attemptId") UUID attemptId);
+
+    Optional<PaymentAttempt> findByOrderId(UUID orderId);
+    Optional<PaymentAttempt> findByCheckoutId(UUID checkoutId);
 }

@@ -24,9 +24,13 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<PurchaseOrder> findWithLockByOrderId(UUID orderId);
 
-    @Query("select po.orderId from PurchaseOrder po where po.state = :state and po.checkoutExpiresAt <= :now "
-            + "order by po.checkoutExpiresAt, po.orderId")
+    @Query("select po.orderId from PurchaseOrder po where po.checkoutId is null and po.state = :state "
+            + "and po.checkoutExpiresAt <= :now order by po.checkoutExpiresAt, po.orderId")
     List<UUID> findExpiredOrderIds(@Param("state") OrderState state, @Param("now") Instant now);
+
+    @Query("select distinct po.checkoutId from PurchaseOrder po where po.checkoutId is not null "
+            + "and po.state = :state and po.checkoutExpiresAt <= :now order by po.checkoutId")
+    List<UUID> findExpiredCheckoutIds(@Param("state") OrderState state, @Param("now") Instant now);
 
 
     default boolean hasOtherUnresolvedPayment(PurchaseOrder order) {
@@ -40,4 +44,5 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
     default List<UUID> findReservedOrdersExpiredBy(Instant now) {
         return findExpiredOrderIds(OrderState.RESERVED, now);
     }
+    List<PurchaseOrder> findAllByCheckoutIdOrderBySellerIdAsc(UUID checkoutId);
 }

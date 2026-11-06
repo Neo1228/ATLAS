@@ -9,9 +9,11 @@ import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.CartCheckoutService;
+import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
@@ -60,6 +62,7 @@ class SettlementLedgerIntegrationTest {
     @Autowired private CartService carts;
     @Autowired private CartCheckoutService checkouts;
     @Autowired private OrderService orders;
+    @Autowired private CheckoutPaymentService checkoutPayments;
     @Autowired private FakePsp fakePsp;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PaymentService payments;
@@ -71,9 +74,8 @@ class SettlementLedgerIntegrationTest {
         String skuId = registerSku(sellerId, 125, 5);
         String buyerRef = "settlement-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 2);
-        OrderResponse checkout = checkouts.checkout(sellerId, buyerRef, "settlement-" + UUID.randomUUID());
-
-        OrderResponse paid = orders.submitPayment(checkout.orderId());
+        CheckoutResponse checkout = checkouts.checkout(buyerRef, "settlement-" + UUID.randomUUID());
+        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().get(0);
 
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
@@ -82,7 +84,7 @@ class SettlementLedgerIntegrationTest {
                 new Entry("PSP_CLEARING", "DEBIT", 250),
                 new Entry("SELLER_PAYABLE", "CREDIT", 250));
 
-        OrderResponse replayed = orders.reconcilePayment(paid.orderId(), "paid-replay-" + paid.orderId());
+        OrderResponse replayed = checkoutPayments.reconcile(checkout.checkoutId(), "paid-replay-" + checkout.checkoutId()).orders().get(0);
 
         assertThat(replayed.state()).isEqualTo(OrderState.PAID);
         assertThat(journalCount(paid.paymentAttemptId())).isEqualTo(1);
@@ -95,10 +97,10 @@ class SettlementLedgerIntegrationTest {
         String skuId = registerSku(sellerId, 300, 2);
         String buyerRef = "declined-settlement-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
-        OrderResponse checkout = checkouts.checkout(sellerId, buyerRef, "declined-settlement-" + UUID.randomUUID());
+        CheckoutResponse checkout = checkouts.checkout(buyerRef, "declined-settlement-" + UUID.randomUUID());
         fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.DECLINED);
 
-        OrderResponse declined = orders.submitPayment(checkout.orderId());
+        OrderResponse declined = checkoutPayments.submit(checkout.checkoutId()).orders().get(0);
 
         assertThat(declined.paymentState()).isEqualTo(PaymentState.DECLINED);
         assertThat(declined.paymentAttemptId()).isNotNull();
@@ -111,14 +113,12 @@ class SettlementLedgerIntegrationTest {
         String skuId = registerSku(sellerId, 350, 2);
         String buyerRef = "settlement-retry-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
-        OrderResponse checkout = checkouts.checkout(sellerId, buyerRef, "settlement-retry-" + UUID.randomUUID());
+        CheckoutResponse checkout = checkouts.checkout(buyerRef, "settlement-retry-" + UUID.randomUUID());
         fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING, FakePspResult.CAPTURED);
 
-        OrderResponse pending = orders.submitPayment(checkout.orderId());
+        OrderResponse pending = checkoutPayments.submit(checkout.checkoutId()).orders().get(0);
         assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
-        var captured = payments.reconcile(pending.orderId(), "settlement-capture-" + pending.orderId());
-        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
-
+        assertThat(pending.paymentAttemptId()).isNotNull();
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_seller_payable_entry() RETURNS TRIGGER AS $$
                 BEGIN
@@ -135,9 +135,10 @@ class SettlementLedgerIntegrationTest {
                 FOR EACH ROW EXECUTE FUNCTION fail_seller_payable_entry()
                 """);
         try {
-            assertThatThrownBy(() -> orders.reconcilePayment(pending.orderId(), "settlement-downstream-" + pending.orderId()))
+            assertThatThrownBy(() -> checkoutPayments.reconcile(
+                    checkout.checkoutId(), "settlement-downstream-" + checkout.checkoutId()))
                     .isInstanceOf(RuntimeException.class);
-            assertThat(journalCount(captured.attemptId())).isZero();
+            assertThat(journalCount(pending.paymentAttemptId())).isZero();
             OrderResponse unchanged = orders.find(pending.orderId());
             assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);
             assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
@@ -147,11 +148,11 @@ class SettlementLedgerIntegrationTest {
             jdbc.execute("DROP FUNCTION IF EXISTS fail_seller_payable_entry()");
         }
 
-        OrderResponse recovered = orders.reconcilePayment(
-                pending.orderId(), "settlement-downstream-" + pending.orderId());
+        OrderResponse recovered = checkoutPayments.reconcile(
+                checkout.checkoutId(), "settlement-downstream-" + checkout.checkoutId()).orders().get(0);
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
-        assertThat(journalCount(captured.attemptId())).isEqualTo(1);
-        assertThat(entries(captured.attemptId())).containsExactly(
+        assertThat(journalCount(recovered.paymentAttemptId())).isEqualTo(1);
+        assertThat(entries(recovered.paymentAttemptId())).containsExactly(
                 new Entry("PSP_CLEARING", "DEBIT", 350),
                 new Entry("SELLER_PAYABLE", "CREDIT", 350));
     }

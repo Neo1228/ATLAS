@@ -3,6 +3,8 @@ package com.atlas.application.controller.order;
 import com.atlas.application.controller.dto.ReorderHttpRequest;
 import com.atlas.application.controller.dto.OrderRefundHttpRequest;
 import com.atlas.application.controller.dto.UpdateFulfillmentHttpRequest;
+import com.atlas.application.controller.dto.OrderReturnHttpRequest;
+import com.atlas.application.controller.dto.OrderReturnInspectionHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
@@ -10,11 +12,15 @@ import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.OrderRefundResponse;
 import com.atlas.order.dto.response.OrderRefundSummaryResponse;
+import com.atlas.order.dto.request.OrderReturnInspectionRequest;
+import com.atlas.order.dto.request.OrderReturnRequest;
+import com.atlas.order.dto.response.OrderReturnResponse;
 import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.service.OrderRefundService;
+import com.atlas.order.service.OrderReturnService;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +42,7 @@ public class OrderController {
     private final OrderReorderService reorders;
     private final OrderFulfillmentService fulfillments;
     private final OrderRefundService refunds;
+    private final OrderReturnService returns;
 
     @PostMapping("/campaigns/{campaignId}/tickets/{ticketId}/checkout")
     public OrderResponse startCheckout(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
@@ -97,5 +104,29 @@ public class OrderController {
     @GetMapping("/orders/{orderId}")
     public OrderResponse find(@PathVariable UUID orderId) {
         return orders.find(orderId);
+    }
+    @PostMapping("/buyers/{buyerRef}/orders/{orderId}/returns")
+    public OrderReturnResponse requestReturn(@PathVariable String buyerRef, @PathVariable UUID orderId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey, @Valid @RequestBody OrderReturnHttpRequest request) {
+        OrderReturnRequest command = new OrderReturnRequest(buyerRef, orderId, idempotencyKey,
+                request.items().stream().map(item -> new OrderReturnRequest.Item(item.orderItemId(), item.quantity())).toList());
+        return returns.request(command);
+    }
+
+    @GetMapping("/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}")
+    public OrderReturnResponse findReturn(@PathVariable String buyerRef, @PathVariable UUID orderId, @PathVariable UUID returnId) {
+        return returns.find(buyerRef, orderId, returnId);
+    }
+
+    @PutMapping("/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt")
+    public OrderReturnResponse receiveReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId, @PathVariable UUID returnId) {
+        return returns.receive(sellerId, orderId, returnId);
+    }
+
+    @PutMapping("/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/inspection")
+    public OrderReturnResponse inspectReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId, @PathVariable UUID returnId,
+            @Valid @RequestBody OrderReturnInspectionHttpRequest request) {
+        return returns.inspect(sellerId, orderId, returnId, new OrderReturnInspectionRequest(
+                request.items().stream().map(item -> new OrderReturnInspectionRequest.Item(item.orderItemId(), item.result())).toList()));
     }
 }

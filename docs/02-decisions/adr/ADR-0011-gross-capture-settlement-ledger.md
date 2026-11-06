@@ -5,14 +5,14 @@ status: Accepted
 owner: Project Owner
 date: 2026-11-04
 links:
-  decisions: [D-066]
+  decisions: [D-066, D-071]
   requirements: [Q-006]
 ---
 # ADR-0011: 총액 캡처 정산 원장
 
 - 상태: ✓ 확정
 - 날짜: 2026-11-04
-- 결정 ID: D-066
+- 결정 ID: [D-066, D-071](../../00-governance/decision-log.md)
 - 관련 요구사항: Q-006
 - 관련 Issue: [Issue #115](https://github.com/Neo1228/ATLAS/issues/115)
 
@@ -23,10 +23,10 @@ links:
 ## 결정
 
 - `CAPTURED`가 확인된 각 PaymentAttempt에 대해 append-only 이중기입 원장을 기록합니다.
-- 총액은 해당 Order의 `OrderItem` 가격·수량 snapshot 합계이며 현재 계약에 따라 KRW, 단일 Seller입니다.
+- Campaign capture gross는 해당 OrderItem snapshot 합계. Cart checkout은 BuyerCheckout 전체 gross를 한 번 기록하고 Seller별 PurchaseOrder allocation 합계가 checkout total과 일치해야 함. 통화는 KRW.
 - 차변은 `PSP_CLEARING`, 대변은 `SELLER_PAYABLE`이며 두 항목의 금액은 동일한 gross 금액입니다.
-- 원장 원천 키는 `attemptId`입니다. 같은 attempt와 같은 capture facts의 재요청은 중복 기록하지 않고, 같은 attempt에 다른 order·seller·금액이 오면 거절합니다.
-- 기록은 order를 `PAID`로 바꾸고 inventory를 claim하는 동일한 PostgreSQL transaction에 포함합니다. PaymentAttempt의 `CAPTURED` 상태는 PSP 호출 뒤 먼저 커밋됩니다. 원장 적용이 실패하면 order·inventory·원장 변경은 롤백되고 PaymentAttempt는 보존되므로, 이후 order payment reconciliation이 같은 attempt로 적용을 다시 시도합니다.
+- 원장 원천 키는 `attemptId`. 같은 attempt·checkout·gross·Seller allocation facts replay는 no-op; 다른 payload 재사용은 conflict.
+- Campaign Order 또는 Cart의 모든 Seller Order를 `PAID`로 전환하고 inventory를 claim하는 transaction에 journal·entries·allocations를 포함. PaymentAttempt의 `CAPTURED`는 PSP 호출 뒤 먼저 commit. 후속 실패 시 order·inventory·ledger rollback 후 같은 attempt로 reconciliation 재시도.
 - `settlement-module`이 원장 계약·테이블을 소유하고 `order-module`이 확인된 capture facts를 전달합니다. 역방향 모듈 의존은 만들지 않습니다. Flyway migration은 `application-module`이 소유합니다.
 
 ## 비범위

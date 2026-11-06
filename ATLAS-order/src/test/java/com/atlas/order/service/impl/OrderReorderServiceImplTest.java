@@ -14,8 +14,8 @@ import com.atlas.cart.service.CartService;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.exception.OrderException;
 import com.atlas.order.dto.request.OrderReorderRequest;
+import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.projection.ExistingReorderRequest;
@@ -37,100 +37,101 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class OrderReorderServiceImplTest {
     private static final Instant NOW = Instant.parse("2026-11-04T00:00:00Z");
-    private final UUID orderId = UUID.randomUUID();
-    private final UUID sellerId = UUID.randomUUID();
-    private final UUID productId = UUID.randomUUID();
-    private final String buyerRef = "local-buyer";
-    private final String skuId = "sku-1";
+    private static final UUID ORDER_ID = UUID.randomUUID();
+    private static final UUID CAMPAIGN_ID = UUID.randomUUID();
+    private static final UUID SELLER_ID = UUID.randomUUID();
+    private static final UUID PRODUCT_ID = UUID.randomUUID();
+    private static final String BUYER_REF = "local-buyer";
+    private static final String SKU_ID = "sku-1";
 
-    @Mock private OrderRepository orders;
-    @Mock private OrderItemRepository items;
-    @Mock private InventoryService inventory;
-    @Mock private CartService carts;
-    @Mock private JdbcOrderReorderRepository reorderRequests;
-    @Mock private Clock clock;
-
-    @InjectMocks private OrderReorderServiceImpl service;
+    @Mock OrderRepository orders;
+    @Mock OrderItemRepository items;
+    @Mock InventoryService inventory;
+    @Mock CartService carts;
+    @Mock JdbcOrderReorderRepository reorderRequests;
+    @Mock Clock clock;
+    @InjectMocks OrderReorderServiceImpl service;
 
     @Test
-    void terminalCartOrderMergesCurrentCartAndRecordsIdempotencyKey() {
+    void reorderMergesSourceItemsIntoBuyerWideCartWithSourceSeller() {
         PurchaseOrder order = terminalCartOrder(OrderState.CANCELLED);
-        OrderItem item = new OrderItem(order, productId, sellerId, skuId, "Original name", 2, 100);
-        CartResponse expected = new CartResponse(UUID.randomUUID(), sellerId, buyerRef, List.of());
-        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
-        when(reorderRequests.find(sellerId, buyerRef, "reorder-key")).thenReturn(Optional.empty());
-        when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(item));
+        OrderItem item = new OrderItem(order, PRODUCT_ID, SELLER_ID, SKU_ID, "Product", 2, 100);
+        CartResponse expected = new CartResponse(UUID.randomUUID(), "cart", List.of());
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(order));
+        when(reorderRequests.find(SELLER_ID, BUYER_REF, "reorder-key")).thenReturn(Optional.empty());
+        when(items.findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID)).thenReturn(List.of(item));
         when(clock.instant()).thenReturn(NOW);
-        when(reorderRequests.insertIfAbsent(sellerId, buyerRef, "reorder-key", orderId, true, NOW))
+        when(reorderRequests.insertIfAbsent(SELLER_ID, BUYER_REF, "reorder-key", ORDER_ID, true, NOW))
                 .thenReturn(true);
-        when(inventory.findAll(sellerId, List.of(skuId)))
-                .thenReturn(List.of(new InventoryPoolResponse(sellerId, skuId, 5, 3, 2, 0)));
+        when(inventory.findAll(SELLER_ID, List.of(SKU_ID)))
+                .thenReturn(List.of(new InventoryPoolResponse(SELLER_ID, SKU_ID, 5, 3, 2, 0)));
         when(carts.mergeItems(any(ReorderCartRequest.class))).thenReturn(expected);
 
-        assertEquals(expected, service.reorder(new OrderReorderRequest(orderId, "reorder-key", true)));
-        verify(carts).mergeItems(any(ReorderCartRequest.class));
-        assertEquals(OrderState.CANCELLED, order.state());
+        assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
+
+        verify(carts).mergeItems(new ReorderCartRequest(BUYER_REF, true,
+                List.of(new ReorderCartRequest.Item(SELLER_ID, PRODUCT_ID, SKU_ID, 2))));
+        verify(carts, never()).find(BUYER_REF);
     }
 
     @Test
-    void duplicateKeyForSameOrderReturnsCurrentCartWithoutMergingAgain() {
+    void replayFindsCartByBuyerAndDoesNotMergeAgain() {
         PurchaseOrder order = terminalCartOrder(OrderState.PAID);
-        CartResponse expected = new CartResponse(UUID.randomUUID(), sellerId, buyerRef, List.of());
-        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
-        when(reorderRequests.find(sellerId, buyerRef, "reorder-key"))
-                .thenReturn(Optional.of(new ExistingReorderRequest(orderId, true)));
-        when(carts.find(sellerId, buyerRef)).thenReturn(expected);
+        CartResponse expected = new CartResponse(UUID.randomUUID(), "cart", List.of());
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(order));
+        when(reorderRequests.find(SELLER_ID, BUYER_REF, "reorder-key"))
+                .thenReturn(Optional.of(new ExistingReorderRequest(ORDER_ID, true)));
+        when(carts.find(BUYER_REF)).thenReturn(expected);
 
-        assertEquals(expected, service.reorder(new OrderReorderRequest(orderId, "reorder-key", true)));
-        verify(carts).find(sellerId, buyerRef);
+        assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
+        verify(carts).find(BUYER_REF);
         verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
         verify(inventory, never()).findAll(any(), any());
     }
 
     @Test
-    void rejectsCampaignAndNonterminalOrdersBeforeReadingItemsOrCart() {
-        Instant expiry = NOW.plusSeconds(600);
-        PurchaseOrder campaignOrder = new PurchaseOrder(UUID.randomUUID(), sellerId, UUID.randomUUID(), buyerRef,
-                OrderState.PAID, expiry, null, NOW, NOW);
-        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(campaignOrder));
-
+    void rejectsCampaignAndActiveOrders() {
+        PurchaseOrder campaignOrder = new PurchaseOrder(CAMPAIGN_ID, SELLER_ID, UUID.randomUUID(),
+                BUYER_REF, OrderState.PAID, NOW.plusSeconds(600), null, NOW, NOW);
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(campaignOrder));
         OrderException campaign = assertThrows(OrderException.class,
-                () -> service.reorder(new OrderReorderRequest(orderId, "reorder-key", true)));
+                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
         assertEquals(OrderException.Code.CONFLICT, campaign.code());
 
-        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(terminalCartOrder(OrderState.RESERVED)));
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(terminalCartOrder(OrderState.RESERVED)));
         OrderException active = assertThrows(OrderException.class,
-                () -> service.reorder(new OrderReorderRequest(orderId, "reorder-key", true)));
+                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
         assertEquals(OrderException.Code.CONFLICT, active.code());
-        verify(items, never()).findByOrderOrderIdOrderBySkuIdAsc(orderId);
+        verify(items, never()).findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID);
         verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
     }
 
     @Test
-    void unavailableInventoryRejectsWholeReorderBeforeCartMutation() {
+    void rejectsInsufficientInventoryBeforeRecordingOrMerging() {
         PurchaseOrder order = terminalCartOrder(OrderState.EXPIRED);
-        OrderItem item = new OrderItem(order, productId, sellerId, skuId, "Original name", 2, 100);
-        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
-        when(reorderRequests.find(sellerId, buyerRef, "reorder-key")).thenReturn(Optional.empty());
-        when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(item));
-        when(inventory.findAll(sellerId, List.of(skuId)))
-                .thenReturn(List.of(new InventoryPoolResponse(sellerId, skuId, 1, 1, 0, 0)));
+        OrderItem item = new OrderItem(order, PRODUCT_ID, SELLER_ID, SKU_ID, "Product", 2, 100);
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(order));
+        when(reorderRequests.find(SELLER_ID, BUYER_REF, "reorder-key")).thenReturn(Optional.empty());
+        when(items.findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID)).thenReturn(List.of(item));
+        when(inventory.findAll(SELLER_ID, List.of(SKU_ID)))
+                .thenReturn(List.of(new InventoryPoolResponse(SELLER_ID, "SKU-1", 1, 1, 0, 0)));
 
         InventoryException unavailable = assertThrows(InventoryException.class,
-                () -> service.reorder(new OrderReorderRequest(orderId, "reorder-key", true)));
+                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
         assertEquals(InventoryException.Code.INSUFFICIENT_STOCK, unavailable.code());
-        verify(reorderRequests, never()).insertIfAbsent(eq(sellerId), eq(buyerRef), eq("reorder-key"),
-                eq(orderId), eq(true), any(Instant.class));
+        verify(reorderRequests, never()).insertIfAbsent(eq(SELLER_ID), eq(BUYER_REF), eq("reorder-key"),
+                eq(ORDER_ID), eq(false), any(Instant.class));
         verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
     }
 
     @Test
-    void rejectsNullUseCaseRequestAsInvalidRequest() {
+    void rejectsNullRequest() {
         OrderException exception = assertThrows(OrderException.class, () -> service.reorder(null));
         assertEquals(OrderException.Code.INVALID_REQUEST, exception.code());
     }
 
-    private PurchaseOrder terminalCartOrder(OrderState state) {
-        return new PurchaseOrder(sellerId, buyerRef, "checkout-key", state, NOW.plusSeconds(600), NOW, NOW);
+    private static PurchaseOrder terminalCartOrder(OrderState state) {
+        return new PurchaseOrder(SELLER_ID, BUYER_REF, "checkout-key", state,
+                NOW.plusSeconds(600), NOW, NOW);
     }
 }

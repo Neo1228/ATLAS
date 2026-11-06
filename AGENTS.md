@@ -17,16 +17,17 @@
 | 모듈 | 책임 |
 |---|---|
 | `catalog-module` | Seller, Product, Seller-SKU, 현재 가격 |
-| `cart-module` | Seller별 Cart와 CartItem |
+| `cart-module` | Buyer당 Cart 1개, `(sellerId, skuId)`별 CartItem |
 | `campaign-module` | Campaign과 판매 자격 |
 | `admission-module` | FIFO 대기열, ticket, checkout slot, queue policy |
 | `inventory-module` | 공유 재고 pool, reservation, 수량 보존 |
-| `order-module` | Cart/Campaign checkout, Order/OrderItem, fulfillment 및 흐름 조정 |
+| `order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem, fulfillment·return·refund 흐름 |
 | `payment-module` | PaymentAttempt와 Fake PSP 상태 |
 | `settlement-module` | 내부 gross-capture 원장과 로컬 환불 reversal |
 
+- Current Cart·checkout cardinality and return policy: [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md).
 - 모듈 간 호출은 공개 `.service`/DTO 계약으로 제한. 다른 모듈의 entity/repository 직접 참조 금지.
-- 일반 장바구니 구매: 현재 Seller-SKU·가격 확인 → OrderItem snapshot → 모든 재고 line 원자적 예약 → Cart 비우기 → 별도 결제 요청.
+- 일반 Cart 구매: Buyer-wide Cart `(sellerId, skuId)` → BuyerCheckout와 Seller별 PurchaseOrder → OrderItem snapshot → 전체 재고 atomic reservation → checkout당 Fake PSP attempt/capture 1회 → Seller별 allocation·fulfillment. Delivered return은 Seller 수령 후 OrderItem 검수; PASSED만 local refund/restock, FAILED는 claimed 유지.
 - 한정판매: Campaign 개방 → queue 자격 확인 → FIFO 순번·checkout slot 발급 → Campaign Order 생성 → 재고 예약 → 같은 Order 결제 흐름.
 - 결제 상태가 `PENDING`/`UNKNOWN`이면 같은 attempt와 재고 hold 유지. 결과 대조 전에 새 결제 attempt 생성 금지. 주문 이행·환불 기록은 `OrderState`와 별도 관리.
 - 재고 불변조건: `available + reserved + claimed = initial_capacity`; 각 값은 음수가 아님. 확인된 비결제와 필요한 void 뒤에만 hold 해제.
@@ -69,9 +70,11 @@ docker compose up -d --wait postgres
 
 - Java 코드에 FQCN 대신 import 사용. Checkstyle은 Gradle `check`에서 실행.
 - 책임을 모듈 안에 응집: 공개 `.service`, `.dto.request`, `.dto.response`, `.exception`; 내부 JPA `.persistence.entity`, lifecycle `.persistence.state`, 소유 모듈 `.repository`, workflow `.service.impl`.
+- 공개 DTO는 `.dto.request`의 `*Request`, `.dto.response`의 `*Response`로 명명. HTTP 전용 DTO는 application controller 안에 둠.
+- Service는 응집된 use case 조정 책임. 실제로 분리된 업무 책임이 없으면 wrapper class/helper 계층을 추가하지 않음.
 - 생성자 주입 우선. Lombok 1.18.48은 `@Getter`, 단순 생성자용 `@RequiredArgsConstructor`에 한정. `@Data`, 일괄 `@Setter`, builder, entity equality 생성 금지.
 - 일반 CRUD는 JPA. PostgreSQL 전용 동시성·원자성 SQL은 해당 모듈 `.repository`에서 처리하고, 소유 모듈 테이블에만 기록.
-- 계층 경계: Controller는 HTTP binding·status·transport token 변환 후 Service를 호출하는 얇은 adapter. 유스케이스 정책·도메인 검증·transaction·repository 접근 금지.
+- 계층 경계: Controller는 HTTP binding·status·transport token 변환과 Service 호출만 담당. Use-case policy·transaction·repository 접근 금지.
 - Service는 유스케이스·정책 검증·transaction 경계와 비즈니스 오류 변환 담당. Repository는 SQL/JPA와 persistence 결과만 담당하며 HTTP DTO·HTTP 예외에 의존 금지. 조회 projection record는 `.persistence.projection`에 배치.
 - 생성자 DI로 필요한 공개 Service만 연결. 모듈 간 entity/repository 직접 참조 및 계층 우회 금지.
 - Schema는 Flyway가 관리하고 Hibernate는 `ddl-auto: validate`만 수행. 병렬 작업의 migration version은 coordinator가 배정.

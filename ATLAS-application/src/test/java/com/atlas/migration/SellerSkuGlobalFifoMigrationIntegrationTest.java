@@ -17,11 +17,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
 class SellerSkuGlobalFifoMigrationIntegrationTest {
-    @Container
-    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 
-    private JdbcTemplate jdbc;
+    @Container
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
+
     private String schema;
+    private JdbcTemplate jdbc;
 
     @BeforeEach
     void prepareLegacySchema() {
@@ -55,6 +56,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(columnExists(jdbc, "inventory_reservation", "reservation_id")).isTrue();
         assertThat(columnExists(jdbc, "purchase_order", "order_source")).isTrue();
         assertThat(columnExists(jdbc, "purchase_order", "checkout_key")).isTrue();
+        assertThat(columnExists(jdbc, "purchase_order", "checkout_id")).isTrue();
         assertThat(columnExists(jdbc, "purchase_order", "sku_id")).isFalse();
         assertThat(columnExists(jdbc, "campaign", "seller_id")).isTrue();
         assertThat(columnExists(jdbc, "campaign", "max_active_checkouts")).isFalse();
@@ -63,12 +65,26 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(columnExists(jdbc, "inventory_reservation", "seller_id")).isTrue();
         assertThat(columnExists(jdbc, "purchase_order", "seller_id")).isTrue();
         assertThat(columnExists(jdbc, "payment_attempt", "payment_phase")).isTrue();
+        assertThat(columnExists(jdbc, "payment_attempt", "checkout_id")).isTrue();
+        assertThat(jdbc.queryForObject("""
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                 AND tc.constraint_schema = kcu.constraint_schema
+                WHERE tc.table_schema = ? AND tc.table_name = 'payment_attempt'
+                  AND tc.constraint_type = 'PRIMARY KEY'
+                """, String.class, schema)).isEqualTo("attempt_id");
+        assertThat(columnExists(jdbc, "shopping_cart", "seller_id")).isFalse();
+        assertThat(columnExists(jdbc, "settlement_journal", "checkout_id")).isTrue();
         assertThat(tableExists(jdbc, "campaign_seller_backfill")).isFalse();
         assertThat(tableExists(jdbc, "settlement_journal")).isTrue();
         assertThat(tableExists(jdbc, "settlement_entry")).isTrue();
+        assertThat(tableExists(jdbc, "buyer_checkout")).isTrue();
+        assertThat(tableExists(jdbc, "settlement_seller_allocation")).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(26); // twenty-five application tables plus Flyway history
+                Integer.class, schema)).isEqualTo(30); // twenty-nine application tables plus Flyway history
     }
 
     @Test
@@ -81,7 +97,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
 
         assertThatThrownBy(() -> flyway(populatedSchema, null).migrate())
                 .isInstanceOf(FlywayException.class)
-                .hasStackTraceContaining("V7 requires an empty local application schema");
+                .hasStackTraceContaining("V7 requires an empty local application schema: existing Seller-SKU rows have no Product/price mapping");
 
         assertThat(populatedJdbc.queryForObject("SELECT COUNT(*) FROM seller", Integer.class)).isEqualTo(1);
         assertThat(tableExists(populatedJdbc, "product")).isFalse();
@@ -116,6 +132,105 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
             assertThat(isolatedJdbc.queryForObject(
                     "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '6' AND success",
                     Integer.class)).isZero();
+        }
+    }
+
+    @Test
+    void v14RefusesRowsInEveryRelevantLegacyCommerceTableBeforeSchemaMutation() {
+        for (String populatedTable : new String[]{
+                "shopping_cart", "shopping_cart_item", "purchase_order", "payment_attempt",
+                "settlement_journal", "settlement_entry"}) {
+            String isolatedSchema = createSchema();
+            JdbcTemplate isolatedJdbc = jdbcForSchema(isolatedSchema);
+            flyway(isolatedSchema, MigrationVersion.fromVersion("13")).migrate();
+            seedV14GuardRow(isolatedJdbc, populatedTable);
+
+            assertThatThrownBy(() -> flyway(isolatedSchema, null).migrate())
+                    .isInstanceOf(FlywayException.class)
+                    .hasStackTraceContaining("V14 requires a clean-start database");
+
+            assertThat(isolatedJdbc.queryForObject("SELECT COUNT(*) FROM " + populatedTable, Integer.class))
+                    .isEqualTo(1);
+            assertThat(tableExists(isolatedJdbc, "buyer_checkout")).isFalse();
+            assertThat(columnExists(isolatedJdbc, "purchase_order", "checkout_id")).isFalse();
+            assertThat(columnExists(isolatedJdbc, "payment_attempt", "checkout_id")).isFalse();
+            assertThat(columnExists(isolatedJdbc, "settlement_journal", "checkout_id")).isFalse();
+            assertThat(columnExists(isolatedJdbc, "shopping_cart", "seller_id")).isTrue();
+            assertThat(tableExists(isolatedJdbc, "settlement_seller_allocation")).isFalse();
+            assertThat(isolatedJdbc.queryForObject(
+                    "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '14' AND success",
+                    Integer.class)).isZero();
+        }
+    }
+
+    private void seedV14GuardRow(JdbcTemplate target, String table) {
+        switch (table) {
+            case "shopping_cart" -> {
+                UUID sellerId = UUID.randomUUID();
+                target.update("INSERT INTO seller (seller_id) VALUES (?)", sellerId);
+                target.update(
+                        "INSERT INTO shopping_cart (cart_id, seller_id, buyer_ref) "
+                                + "VALUES (?, ?, 'buyer')", UUID.randomUUID(), sellerId);
+            }
+            case "shopping_cart_item" -> {
+                UUID sellerId = UUID.randomUUID();
+                UUID productId = UUID.randomUUID();
+                String sku = "sku-" + UUID.randomUUID();
+                target.update("INSERT INTO seller (seller_id) VALUES (?)", sellerId);
+                target.update("INSERT INTO product (product_id, seller_id, name) VALUES (?, ?, 'product')",
+                        productId, sellerId);
+                target.update("INSERT INTO seller_sku (seller_id, sku_id, product_id, price_won, created_at) "
+                                + "VALUES (?, ?, ?, 100, CURRENT_TIMESTAMP)",
+                        sellerId, sku, productId);
+                UUID cartId = UUID.randomUUID();
+                target.update("INSERT INTO shopping_cart (cart_id, seller_id, buyer_ref) VALUES (?, ?, 'buyer')",
+                        cartId, sellerId);
+                target.update("INSERT INTO shopping_cart_item (cart_item_id, cart_id, seller_id, sku_id, quantity) "
+                        + "VALUES (?, ?, ?, ?, 1)", UUID.randomUUID(), cartId, sellerId, sku);
+            }
+            case "purchase_order" -> target.update(
+                    "INSERT INTO purchase_order (order_id, buyer_ref, seller_id, state, checkout_expires_at, "
+                            + "created_at, updated_at, order_source) "
+                            + "VALUES (?, 'buyer', ?, 'RESERVED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'CART')",
+                    UUID.randomUUID(), UUID.randomUUID());
+            case "payment_attempt" -> {
+                UUID orderId = UUID.randomUUID();
+                target.update("INSERT INTO purchase_order (order_id, buyer_ref, seller_id, state, checkout_expires_at, "
+                                + "created_at, updated_at, order_source) "
+                                + "VALUES (?, 'buyer', ?, 'RESERVED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'CART')",
+                        orderId, UUID.randomUUID());
+                target.update("INSERT INTO payment_attempt (order_id, attempt_id, state, payment_phase, authorization_active) "
+                        + "VALUES (?, ?, 'NOT_STARTED', 'AUTHORIZATION', FALSE)", orderId, UUID.randomUUID());
+            }
+            case "settlement_journal" -> {
+                UUID orderId = UUID.randomUUID();
+                UUID sellerId = UUID.randomUUID();
+                target.update("INSERT INTO seller (seller_id) VALUES (?)", sellerId);
+                target.update("INSERT INTO purchase_order (order_id, buyer_ref, seller_id, state, checkout_expires_at, "
+                                + "created_at, updated_at, order_source) "
+                                + "VALUES (?, 'buyer', ?, 'PAID', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'CART')",
+                        orderId, sellerId);
+                target.update("INSERT INTO settlement_journal (journal_id, source_order_id, source_attempt_id, seller_id, "
+                                + "currency, gross_amount_won, recorded_at) VALUES (?, ?, ?, ?, 'KRW', 100, CURRENT_TIMESTAMP)",
+                        UUID.randomUUID(), orderId, UUID.randomUUID(), sellerId);
+            }
+            case "settlement_entry" -> {
+                UUID orderId = UUID.randomUUID();
+                UUID sellerId = UUID.randomUUID();
+                UUID paymentId = UUID.randomUUID();
+                UUID journalId = UUID.randomUUID();
+                target.update("INSERT INTO seller (seller_id) VALUES (?)", sellerId);
+                target.update("INSERT INTO purchase_order (order_id, buyer_ref, seller_id, state, checkout_expires_at, "
+                                + "created_at, updated_at, order_source) "
+                                + "VALUES (?, 'buyer', ?, 'PAID', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'CART')",
+                        orderId, sellerId);
+                target.update("INSERT INTO settlement_journal (journal_id, source_order_id, source_attempt_id, seller_id, "
+                                + "currency, gross_amount_won, recorded_at) VALUES (?, ?, ?, ?, 'KRW', 100, CURRENT_TIMESTAMP)",
+                        journalId, orderId, paymentId, sellerId);
+                target.update("INSERT INTO settlement_entry (journal_id, account_code, entry_side, amount_won, recorded_at) "
+                                + "VALUES (?, 'PSP_CLEARING', 'DEBIT', 100, CURRENT_TIMESTAMP)", journalId);
+            }
+            default -> throw new IllegalArgumentException("Unexpected V14 guard table: " + table);
         }
     }
 
@@ -177,7 +292,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
 
     private boolean columnExists(JdbcTemplate target, String table, String column) {
         return target.queryForObject("SELECT COUNT(*) FROM information_schema.columns "
-                + "WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?",
+                        + "WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?",
                 Integer.class, table, column) > 0;
     }
 

@@ -3,10 +3,10 @@ id: DOC-006
 title: 외부 참고자료 레지스트리
 status: Current
 owner: 프로젝트 책임자
-updated: 2026-11-04
+updated: 2026-11-06
 links:
   requirements: []
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011, ADR-0012, ADR-0013]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0016]
   experiments: [EXP-014]
 ---
 # 외부 참고자료 레지스트리
@@ -125,8 +125,10 @@ links:
 | REF-113 | Shopify Help Center, Fulfilling your own orders individually / product documentation | https://help.shopify.com/en/manual/fulfillment/fulfilling-orders/single-fulfillment | 2026-11-04 | Fulfillment별 상태 전이·수동 배송 완료·부분 배송 대안 비교 | △ Shopify 고유 운영 방식. 여러 fulfillment와 carrier 이벤트가 있는 제품 사례이며 ATLAS의 주문당 1건 정책을 정하지 않음 |
 | REF-114 | 美团技术团队, 美团搜索多业务商品排序探索与实践 / engineering article | https://tech.meituan.com/2021/11/19/Exploration-and-Practice-of-Multi-business-Commodities-Ranking-in-Meituan-Search.html | 2026-11-04 | 다중 업무별 상품 relevance ranking이 별도 모델링 과제임을 보여 주는 사례. ATLAS는 ranking을 도입하지 않고 결정적 순서만 규정 | △ 다중 업무 검색 순위 사례이며, 보편적 목록 정렬이나 ATLAS 검색·merchandising 정책 근거가 아님 |
 | REF-115 | Stripe, List pagination / product documentation | https://docs.stripe.com/api/pagination | 2026-11-05 | Cursor pagination contract; list limit default 10 and maximum 100 | ✓ Stripe `v1` API precedent only; not ATLAS capacity or latency evidence |
+| REF-116 | Meituan Engineering, Trade System Design Practice | https://tech.meituan.com/2024/05/09/DDD-Practice-Trading-System.html | 2026-11-06 | Marketplace trade lifecycle and business-boundary comparison; no DDD package pattern or scale figure copied | △ Case-specific; not ATLAS capacity evidence |
+| REF-117 | Shopify Engineering, Deconstructing the Monolith | https://shopify.engineering/shopify-monolith | 2026-11-06 | Modular-monolith boundary comparison | △ Shopify team/scale is not an ATLAS traffic or capacity target |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115는 맥락이 한정된 공급업체·실무자·기술 자료. 보편 규칙이나 ATLAS 운영 성능을 입증하지 않음.
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117는 ATLAS
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
@@ -145,3 +147,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md): REF-115는 `limit=10` 기본값과 `100` 상한의 API 계약 사례일 뿐, ATLAS의 성능·용량 수치 근거가 아님.
 - [ADR-0014](../02-decisions/adr/ADR-0014-seller-inventory-capacity-adjustment.md): D-069은 재고 capacity 조정, audit, idempotency를 정한 소유자 정책.
 - [ADR-0015](../02-decisions/adr/ADR-0015-durable-fake-psp-progression.md): D-070은 Fake PSP progression·결과 저장, same-key replay, manual recovery의 local-only 경계를 정한 소유자 결정.
+- [ADR-0016](../02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md): REF-116은 business boundary 비교, REF-117은 modular monolith 비교. 기술·규모는 복사하지 않음.

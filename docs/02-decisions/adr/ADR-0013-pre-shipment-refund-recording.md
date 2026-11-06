@@ -5,14 +5,14 @@ status: Accepted
 owner: Project Owner
 date: 2026-11-04
 links:
-  decisions: [D-068]
+  decisions: [D-068, D-071]
   requirements: [FR-008, Q-002, Q-006]
 ---
 # ADR-0013: 배송 전 로컬 환불 기록
 
 - 상태: ✓ 확정
 - 결정일: 2026-11-04
-- 결정 ID: D-068
+- 결정 ID: [D-068, D-071](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-008/BR-008](../../01-requirements/requirements-index.md), [Q-002/Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
 - 관련 Issue: [Issue #122](https://github.com/Neo1228/ATLAS/issues/122)
 
@@ -30,6 +30,7 @@ links:
 - `OrderState.PAID`는 terminal 상태로 유지. 별도 refund-record status를 사용하며 수량 전체가 기록된 Order는 추가 fulfillment 전이 거절.
 - API 응답은 `executionMode: LOCAL_LEDGER_ONLY`로 한정. 이는 내부 원장 기록이며 고객에게 돈이 반환됐다는 뜻이 아님.
 
+- 이 ADR은 shipment 전 local refund-record 경로에 한정. `DELIVERED` 후 반품은 Seller 수령·검수를 거치는 별도 흐름 ([D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)); 기존 pre-shipment eligibility를 확장하지 않음.
 ## 비범위
 
 - 실제 PSP refund 호출·거래 증빙 대조·현금 이동
