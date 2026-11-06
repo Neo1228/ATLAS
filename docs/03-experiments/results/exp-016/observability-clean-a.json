@@ -1,0 +1,93 @@
+{
+  "profile": "one-seller",
+  "runId": "exp016-clean-a",
+  "queryWindow": "10m after pilot; includes only this fresh database profile",
+  "capturedAt": "2026-11-06T11:46:24.440Z",
+  "requests": [
+    {
+      "uri": "/api/buyers/{buyerRef}/cart/checkout",
+      "status": "200",
+      "count": 329.4548193548387
+    },
+    {
+      "uri": "/api/checkouts/{checkoutId}/payment",
+      "status": "200",
+      "count": 329.4548193548387
+    },
+    {
+      "uri": "/api/sellers",
+      "status": "201",
+      "count": 0
+    },
+    {
+      "uri": "/api/sellers/{sellerId}/products",
+      "status": "201",
+      "count": 0
+    },
+    {
+      "uri": "/api/sellers/{sellerId}/products/{productId}/skus",
+      "status": "201",
+      "count": 0
+    },
+    {
+      "uri": "/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+      "status": "200",
+      "count": 658.9096387096774
+    }
+  ],
+  "applicationHttpP95ms": [
+    {
+      "uri": "/api/buyers/{buyerRef}/cart/checkout",
+      "p95ms": 11.01
+    },
+    {
+      "uri": "/api/checkouts/{checkoutId}/payment",
+      "p95ms": 11.55
+    },
+    {
+      "uri": "/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+      "p95ms": 11.76
+    }
+  ],
+  "processCpuMax": [
+    0.09918616480162767
+  ],
+  "heapPoolMaxBytes": [
+    {
+      "pool": "G1 Eden Space",
+      "bytes": 81788928
+    },
+    {
+      "pool": "G1 Old Gen",
+      "bytes": 48172072
+    },
+    {
+      "pool": "G1 Survivor Space",
+      "bytes": 9486248
+    }
+  ],
+  "hikariActiveMax": [
+    1
+  ],
+  "postgresActiveSeriesMax": [
+    {
+      "state": "active",
+      "backends": "client backend",
+      "count": 2
+    },
+    {
+      "state": "active",
+      "backends": "client backend",
+      "count": 1
+    }
+  ],
+  "postgresDeadlocks": [
+    0
+  ],
+  "measuredHost": {
+    "hostCpuCount": 11,
+    "hostMemoryBytes": 19327352832,
+    "dockerCpuCount": 4,
+    "dockerMemoryBytes": 10405494784
+  }
+}

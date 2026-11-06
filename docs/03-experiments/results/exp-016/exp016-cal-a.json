@@ -1,0 +1,22 @@
+{
+  "profile": "one-seller",
+  "runId": "exp016-cal-a",
+  "duration": "60s",
+  "plannedSessionArrivalRate": "278/100s sessions/s",
+  "fixedVUs": 1,
+  "initialStockPerSku": 167,
+  "httpRequestRps": 11.074378533872228,
+  "completedCheckoutSessionTps": 2.768594633468057,
+  "checkoutSessionLatencyMs": {
+    "p(95)": 61.19999999999995,
+    "avg": 37.74850299401198,
+    "min": 17,
+    "med": 34,
+    "max": 280,
+    "p(90)": 49.800000000000004
+  },
+  "checkoutSessionErrors": 0,
+  "droppedIterations": 0,
+  "attemptedSessionSamples": 167,
+  "completedSessionSamples": 167
+}

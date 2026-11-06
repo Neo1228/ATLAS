@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: atlas
       POSTGRES_USER: atlas
-      POSTGRES_PASSWORD: atlas-local-only
+      POSTGRES_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -12,3 +12,75 @@ services:
       interval: 2s
       timeout: 3s
       retries: 20
+  application:
+    image: atlas-application:local
+    build:
+      context: ./ATLAS-application
+      dockerfile: Dockerfile
+    profiles: ["observability"]
+    environment:
+      SPRING_PROFILES_ACTIVE: observability
+      ATLAS_SERVER_ADDRESS: 0.0.0.0
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas
+      ATLAS_DB_USER: atlas
+      ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8080"
+      - "8081"
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    profiles: ["observability"]
+    environment:
+      DATA_SOURCE_URI: postgres:5432/atlas?sslmode=disable
+      DATA_SOURCE_USER: atlas
+      DATA_SOURCE_PASS: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9187:9187"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - application
+      - postgres-exporter
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-local-only-change-me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+  k6:
+    image: grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
+    profiles: ["loadtest"]
+    volumes:
+      - ./load-tests:/scripts:ro
+      - ./docs/03-experiments/results/exp-016:/results
+    depends_on:
+      - application
