@@ -127,6 +127,17 @@ Seeded rows는 DB에 지속되고 API 삭제 endpoint가 없다. 각 controlled 
 two-seller p95 중앙값은 3ms(약 6.4%) 높았으나 run ranges overlap. p99 중앙값은 사실상 동일; p99는 334 samples/run 수준의 descriptive value. 이 결과는 Seller split의 안정적인 latency 증가를 입증하지 않음. Arrival rate는 test input으로 고정했으므로 처리 용량을 의미하지 않음.
 
 - k6 controlled run JSON: [A1](results/exp-016/exp016-clean-a.json), [A2](results/exp-016/exp016-clean-a-r2.json), [A3](results/exp-016/exp016-clean-a-r3.json); [B1](results/exp-016/exp016-clean-b.json), [B2](results/exp-016/exp016-clean-b-r2.json), [B3](results/exp-016/exp016-clean-b-r3.json).
+
+### 상태 무결성 smoke
+
+성능 비교와 분리한 5초 검증. Profile마다 fresh DB에서 14 sessions를 실행했으며 error/dropped `0`. 이 smoke의 latency는 A/B 비교에 사용하지 않음.
+
+- **one-seller:** 14 checkout / 14 PurchaseOrder / 28 OrderItem. Inventory pool `2/2` 보존, capacity `28 = 28`, 모두 claimed. Payment capture `14/14`; journal balance·gross allocation `14/14`.
+- **two-seller:** 14 checkout / 28 PurchaseOrder / 28 OrderItem. Inventory pool `2/2` 보존, capacity `28 = 28`, 모두 claimed. Payment capture `14/14`; journal balance·gross allocation `14/14`.
+- **중복·cardinality:** 두 profile 모두 expected order-count mismatch, duplicate checkout/payment attempt/journal `0`. Checkout당 journal `1건`.
+- Read-only query: [check-integrity.sql](results/exp-016/check-integrity.sql). 실행: `docker compose cp docs/03-experiments/results/exp-016/check-integrity.sql postgres:/tmp/check-integrity.sql` 후 `docker compose exec -T postgres psql -U atlas -d atlas -v run_id=<RUN_ID> -v profile=<PROFILE> -f /tmp/check-integrity.sql`.
+- 증거: [A k6](results/exp-016/exp016-integrity-a.json), [A DB 상태](results/exp-016/exp016-integrity-a-state.json), [B k6](results/exp-016/exp016-integrity-b.json), [B DB 상태](results/exp-016/exp016-integrity-b-state.json).
+
 ### Prometheus snapshot
 
 | Metric | one-seller | two-seller | 해석 |
