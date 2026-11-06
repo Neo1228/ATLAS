@@ -36,6 +36,7 @@ import com.atlas.order.service.OrderReturnService;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -431,6 +432,150 @@ class OrderRefundLifecycleIntegrationTest {
             start.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void concurrentDeliveredReturnRequestsCannotClaimSameUnitsTwice() throws Exception {
+        Fixture fixture = paidOrder(2, 2, 125);
+        deliver(fixture);
+        String buyerRef = buyerRef(fixture.orderId());
+        OrderReturnRequest firstRequest = returnRequest(buyerRef, fixture.orderId(), "concurrent-return-one",
+                new OrderReturnRequest.Item(fixture.orderItemId(), 2));
+        OrderReturnRequest secondRequest = returnRequest(buyerRef, fixture.orderId(), "concurrent-return-two",
+                new OrderReturnRequest.Item(fixture.orderItemId(), 2));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<OrderReturnResponse> first = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
+                return returns.request(firstRequest);
+            });
+            Future<OrderReturnResponse> second = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
+                return returns.request(secondRequest);
+            });
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            OrderReturnResponse accepted = null;
+            int conflicts = 0;
+            try {
+                accepted = first.get(10, TimeUnit.SECONDS);
+            } catch (ExecutionException failure) {
+                assertThat(failure.getCause()).isInstanceOf(OrderException.class)
+                        .satisfies(error -> assertThat(((OrderException) error).code())
+                                .isEqualTo(OrderException.Code.CONFLICT));
+                conflicts++;
+            }
+            try {
+                accepted = second.get(10, TimeUnit.SECONDS);
+            } catch (ExecutionException failure) {
+                assertThat(failure.getCause()).isInstanceOf(OrderException.class)
+                        .satisfies(error -> assertThat(((OrderException) error).code())
+                                .isEqualTo(OrderException.Code.CONFLICT));
+                conflicts++;
+            }
+            assertThat(accepted).isNotNull();
+            assertThat(conflicts).isEqualTo(1);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_return WHERE order_id = ?",
+                Integer.class, fixture.orderId())).isEqualTo(1);
+        long acceptedQuantity = jdbc.queryForObject("""
+                SELECT COALESCE(SUM(item.quantity), 0)
+                FROM order_return_item item
+                JOIN order_return return_record ON return_record.return_id = item.return_id
+                WHERE return_record.order_id = ?
+                """, Long.class, fixture.orderId());
+        assertThat(acceptedQuantity).isLessThanOrEqualTo(2L).isEqualTo(2L);
+        OrderReturnResponse persisted = returns.find(buyerRef, fixture.orderId(),
+                jdbc.queryForObject("SELECT return_id FROM order_return WHERE order_id = ?",
+                        UUID.class, fixture.orderId()));
+        assertThat(persisted.status()).isEqualTo(OrderReturnStatus.REQUESTED);
+        assertThat(persisted.items()).singleElement().satisfies(item -> {
+            assertThat(item.orderItemId()).isEqualTo(fixture.orderItemId());
+            assertThat(item.quantity()).isEqualTo(2);
+        });
+        assertThat(orders.find(fixture.orderId()).state()).isEqualTo(OrderState.PAID);
+        assertThat(refundRequestCount(fixture.orderId())).isZero();
+        assertThat(journalCountForOrder(fixture.orderId())).isZero();
+        assertPool(fixture.sellerId(), fixture.skuId(), 0, 0, 2, 2);
+    }
+
+    @Test
+    void concurrentIdenticalInspectionRecordsOneRefundAndRestoresStockOnce() throws Exception {
+        Fixture fixture = paidOrder(2, 2, 125);
+        deliver(fixture);
+        String buyerRef = buyerRef(fixture.orderId());
+        OrderReturnResponse requested = returns.request(returnRequest(buyerRef, fixture.orderId(),
+                "concurrent-inspection-return", new OrderReturnRequest.Item(fixture.orderItemId(), 2)));
+        returns.receive(fixture.sellerId(), fixture.orderId(), requested.returnId());
+        OrderReturnInspectionRequest passed = new OrderReturnInspectionRequest(List.of(
+                new OrderReturnInspectionRequest.Item(fixture.orderItemId(),
+                        OrderReturnInspectionRequest.Result.PASSED)));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        OrderReturnResponse firstResult;
+        OrderReturnResponse secondResult;
+        try {
+            Future<OrderReturnResponse> first = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
+                return returns.inspect(fixture.sellerId(), fixture.orderId(), requested.returnId(), passed);
+            });
+            Future<OrderReturnResponse> second = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
+                return returns.inspect(fixture.sellerId(), fixture.orderId(), requested.returnId(), passed);
+            });
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            firstResult = first.get(10, TimeUnit.SECONDS);
+            secondResult = second.get(10, TimeUnit.SECONDS);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(firstResult).isEqualTo(secondResult);
+        OrderReturnResponse persisted = returns.find(buyerRef, fixture.orderId(), requested.returnId());
+        assertThat(persisted.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
+        assertThat(persisted.items()).singleElement().satisfies(item -> {
+            assertThat(item.orderItemId()).isEqualTo(fixture.orderItemId());
+            assertThat(item.quantity()).isEqualTo(2);
+            assertThat(item.refundId()).isNotNull();
+            assertThat(item.refundAmountWon()).isEqualTo(250L);
+        });
+        UUID refundId = persisted.items().get(0).refundId();
+        assertThat(orders.find(fixture.orderId()).state()).isEqualTo(OrderState.PAID);
+        assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status())
+                .isEqualTo(OrderRefundStatus.FULLY_RECORDED);
+        assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).totalRecordedAmountWon()).isEqualTo(250L);
+        assertThat(refundRequestCount(fixture.orderId())).isEqualTo(1);
+        long refundedQuantity = jdbc.queryForObject("""
+                SELECT COALESCE(SUM(item.quantity), 0)
+                FROM order_refund_request_item item
+                JOIN order_refund_request request ON request.refund_id = item.refund_id
+                WHERE request.order_id = ?
+                """, Long.class, fixture.orderId());
+        assertThat(refundedQuantity).isEqualTo(2L);
+        assertThat(journalCountForOrder(fixture.orderId())).isEqualTo(1);
+        assertThat(journalCountForRefund(refundId)).isEqualTo(1);
+        List<Entry> refundEntries = entriesForRefund(refundId);
+        assertThat(refundEntries).containsExactly(
+                new Entry("PSP_CLEARING", "CREDIT", 250),
+                new Entry("SELLER_PAYABLE", "DEBIT", 250));
+        assertThat(refundEntries.stream().filter(entry -> entry.side().equals("DEBIT"))
+                .mapToLong(Entry::recordedAmountWon).sum()).isEqualTo(250L);
+        assertThat(refundEntries.stream().filter(entry -> entry.side().equals("CREDIT"))
+                .mapToLong(Entry::recordedAmountWon).sum()).isEqualTo(250L);
+        assertPool(fixture.sellerId(), fixture.skuId(), 2, 0, 0, 2);
     }
 
     @Test
