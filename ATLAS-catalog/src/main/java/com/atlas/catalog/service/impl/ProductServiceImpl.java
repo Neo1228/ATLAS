@@ -23,6 +23,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -90,13 +91,17 @@ public class ProductServiceImpl implements ProductService {
     public ProductListingPageResponse listProductsPage(UUID sellerId, String query, Integer requestedLimit,
             String cursor) {
         ListingCursor position = decodeCursor(cursor);
-        UUID cursorSeller = position == null ? null : position.sellerId();
+        UUID cursorSeller = position == null ? null : position.positionSellerId();
         UUID cursorProduct = position == null ? null : position.productId();
         int limit = requestedLimit == null ? DEFAULT_PAGE_SIZE : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
             throw new CatalogException(Code.INVALID_REQUEST, "Product page limit is out of range");
         }
         String keyword = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        if (position != null && (!Objects.equals(position.filterSellerId(), sellerId)
+                || !position.keyword().equals(keyword))) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
+        }
         if (sellerId != null && !sellers.existsById(sellerId)) {
             throw new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId);
         }
@@ -119,7 +124,7 @@ public class ProductServiceImpl implements ProductService {
         String nextCursor = null;
         if (hasMore) {
             Product last = page.getLast();
-            nextCursor = encodeCursor(last.getSellerId(), last.getProductId());
+            nextCursor = encodeCursor(sellerId, keyword, last.getSellerId(), last.getProductId());
         }
         return new ProductListingPageResponse(items, nextCursor);
     }
@@ -155,18 +160,25 @@ public class ProductServiceImpl implements ProductService {
         try {
             String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
             String[] parts = decoded.split(":", -1);
-            if (parts.length != 2) throw new IllegalArgumentException("Malformed cursor");
-            return new ListingCursor(UUID.fromString(parts[0]), UUID.fromString(parts[1]));
+            if (parts.length != 5 || !"v1".equals(parts[0])) {
+                throw new IllegalArgumentException("Malformed cursor");
+            }
+            UUID filterSellerId = "-".equals(parts[1]) ? null : UUID.fromString(parts[1]);
+            String keyword = new String(Base64.getUrlDecoder().decode(parts[2]), StandardCharsets.UTF_8);
+            return new ListingCursor(filterSellerId, keyword, UUID.fromString(parts[3]), UUID.fromString(parts[4]));
         } catch (IllegalArgumentException exception) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
         }
     }
 
-    private static String encodeCursor(UUID sellerId, UUID productId) {
-        String value = sellerId + ":" + productId;
+    private static String encodeCursor(UUID filterSellerId, String keyword, UUID positionSellerId, UUID productId) {
+        String sellerScope = filterSellerId == null ? "-" : filterSellerId.toString();
+        String encodedKeyword = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
+        String value = "v1:" + sellerScope + ":" + encodedKeyword + ":" + positionSellerId + ":" + productId;
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
-    private record ListingCursor(UUID sellerId, UUID productId) {
+    private record ListingCursor(UUID filterSellerId, String keyword, UUID positionSellerId, UUID productId) {
     }
 }
