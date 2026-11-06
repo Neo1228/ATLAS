@@ -1,0 +1,19 @@
+{
+  "profile": "one-seller",
+  "runId": "exp016-a-r3",
+  "duration": "120s",
+  "plannedSessionArrivalRate": "278/100s sessions/s",
+  "fixedVUs": 1,
+  "initialStockPerSku": 334,
+  "httpRequestRps": 11.129554906017978,
+  "completedCheckoutSessionTps": 2.7823887265044944,
+  "checkoutSessionLatencyMs": {
+    "p50": 19,
+    "p95": 30,
+    "p99": 38.669999999999995
+  },
+  "checkoutSessionErrors": 0,
+  "droppedIterations": 0,
+  "attemptedSessionSamples": 334,
+  "completedSessionSamples": 334
+}

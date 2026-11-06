@@ -1,0 +1,19 @@
+{
+  "profile": "two-seller",
+  "runId": "exp016-integrity-b",
+  "duration": "5s",
+  "plannedSessionArrivalRate": "278/100s sessions/s",
+  "fixedVUs": 1,
+  "initialStockPerSku": 14,
+  "httpRequestRps": 10.752272382413226,
+  "completedCheckoutSessionTps": 2.6880680956033065,
+  "checkoutSessionLatencyMs": {
+    "p50": 60.5,
+    "p95": 132.5499999999999,
+    "p99": 212.10999999999999
+  },
+  "checkoutSessionErrors": 0,
+  "droppedIterations": 0,
+  "attemptedSessionSamples": 14,
+  "completedSessionSamples": 14
+}
