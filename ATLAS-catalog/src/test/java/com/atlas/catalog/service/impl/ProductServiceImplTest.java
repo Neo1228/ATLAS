@@ -58,10 +58,10 @@ class ProductServiceImplTest {
                 .thenReturn(List.of());
 
         ProductListingPageResponse page = service.listProductsPage(
-                sellerId, "  BLUE ", 2, encodeCursor(sellerId, cursorProduct));
+                sellerId, "  BLUE ", 2, encodeCursor(sellerId, "blue", sellerId, cursorProduct));
 
         assertEquals(2, page.items().size());
-        assertEquals(encodeCursor(sellerId, second.getProductId()), page.nextCursor());
+        assertEquals(encodeCursor(sellerId, "blue", sellerId, second.getProductId()), page.nextCursor());
         verify(sellerSkus).findAllByProductIdIn(List.of(first.getProductId(), second.getProductId()));
         verify(sellerSkus, never()).findAllByProductIdIn(List.of(lookahead.getProductId()));
     }
@@ -96,8 +96,17 @@ class ProductServiceImplTest {
         }
         when(sellers.existsById(sellerId)).thenReturn(true);
         CatalogException mismatched = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(sellerId, null, 10, encodeCursor(UUID.randomUUID(), productId)));
+                () -> service.listProductsPage(sellerId, null, 10,
+                        encodeCursor(sellerId, "", UUID.randomUUID(), productId)));
         assertEquals(Code.INVALID_REQUEST, mismatched.code());
+        CatalogException mismatchedQuery = assertThrows(CatalogException.class,
+                () -> service.listProductsPage(null, "blue", 10,
+                        encodeCursor(null, "red", sellerId, productId)));
+        assertEquals(Code.INVALID_REQUEST, mismatchedQuery.code());
+        CatalogException mismatchedSellerFilter = assertThrows(CatalogException.class,
+                () -> service.listProductsPage(sellerId, null, 10,
+                        encodeCursor(UUID.randomUUID(), "", sellerId, productId)));
+        assertEquals(Code.INVALID_REQUEST, mismatchedSellerFilter.code());
         verify(products, never()).findListingPage(any(), any(), any(), any(), anyInt());
     }
 
@@ -207,8 +216,11 @@ class ProductServiceImplTest {
         return product;
     }
 
-    private static String encodeCursor(UUID sellerId, UUID productId) {
-        return encode(sellerId + ":" + productId);
+    private static String encodeCursor(UUID filterSellerId, String keyword, UUID positionSellerId, UUID productId) {
+        String sellerScope = filterSellerId == null ? "-" : filterSellerId.toString();
+        String encodedKeyword = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
+        return encode("v1:" + sellerScope + ":" + encodedKeyword + ":" + positionSellerId + ":" + productId);
     }
 
     private static String encode(String value) {

@@ -3,6 +3,7 @@ package com.atlas.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.catalog.dto.request.CreateProductRequest;
@@ -113,6 +114,13 @@ class CatalogIntegrationTest {
         assertThat(nextHttpPage.items()).extracting(item -> item.product().productId())
                 .containsExactlyElementsOf(expectedIds.subList(2, 4));
         assertThat(nextHttpPage.nextCursor()).isNull();
+        mockMvc.perform(get("/api/products")
+                        .param("query", "OTHER")
+                        .param("limit", "2")
+                        .param("cursor", firstHttpPage.nextCursor()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.detail").value("Invalid product cursor"));
         assertThat(products.count()).isEqualTo(countBeforeGet);
     }
 
