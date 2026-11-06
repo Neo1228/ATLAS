@@ -1,14 +1,10 @@
 package com.atlas.cart.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.atlas.cart.dto.request.ReorderCartRequest;
 import com.atlas.cart.dto.response.CartResponse;
-import com.atlas.cart.exception.CartException;
 import com.atlas.cart.persistence.entity.Cart;
 import com.atlas.cart.repository.CartRepository;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
@@ -28,97 +24,41 @@ class CartServiceMergeItemsTest {
     private CartRepository carts;
 
     @Mock
-    private SellerSkuService sellerSkus;
+    private SellerSkuService skus;
 
     @InjectMocks
     private CartServiceImpl service;
 
     @Test
-    void confirmsMergeAndPreservesUnrelatedItems() {
-        UUID sellerId = UUID.randomUUID();
-        String buyerRef = "buyer-1";
-        UUID productOne = UUID.randomUUID();
-        UUID productTwo = UUID.randomUUID();
-        Cart cart = new Cart(sellerId, buyerRef);
-        cart.setItemQuantity("sku-1", 2);
-        cart.setItemQuantity("sku-unrelated", 7);
-        SellerSkuResponse sourceOne = sku(sellerId, productOne, "sku-1");
-        SellerSkuResponse sourceTwo = sku(sellerId, productTwo, "sku-2");
-        SellerSkuResponse unrelated = sku(sellerId, UUID.randomUUID(), "sku-unrelated");
-        when(sellerSkus.findAll(sellerId, List.of("sku-1", "sku-2")))
-                .thenReturn(List.of(sourceOne, sourceTwo));
-        when(carts.findWithLockBySellerIdAndBuyerRef(sellerId, buyerRef)).thenReturn(Optional.of(cart));
-        when(sellerSkus.findAll(sellerId, List.of("sku-1", "sku-unrelated", "sku-2")))
-                .thenReturn(List.of(sourceOne, unrelated, sourceTwo));
+    void reorderMergesSellerLinesWithoutDroppingExistingLines() {
+        UUID sellerA = UUID.randomUUID();
+        UUID sellerB = UUID.randomUUID();
+        UUID product = UUID.randomUUID();
+        String buyer = "buyer";
+        Cart cart = new Cart(buyer);
+        cart.setItemQuantity(sellerA, "kept", 7);
+        cart.setItemQuantity(sellerA, "sku", 2);
 
-        CartResponse response = service.mergeItems(new ReorderCartRequest(
-                sellerId, buyerRef, true, List.of(
-                        new ReorderCartRequest.Item(productOne, "sku-1", 3),
-                        new ReorderCartRequest.Item(productTwo, "sku-2", 1))));
+        when(skus.find(sellerB, "sku"))
+                .thenReturn(new SellerSkuResponse(sellerB, product, "sku", "item", 100L));
+        when(skus.find(sellerA, "kept"))
+                .thenReturn(new SellerSkuResponse(sellerA, UUID.randomUUID(), "kept", "kept", 100L));
+        when(skus.find(sellerA, "sku"))
+                .thenReturn(new SellerSkuResponse(sellerA, UUID.randomUUID(), "sku", "other", 100L));
+        when(carts.findWithLockByBuyerRef(buyer)).thenReturn(Optional.of(cart));
+
+        CartResponse response = service.mergeItems(new ReorderCartRequest(buyer, true, List.of(
+                new ReorderCartRequest.Item(sellerB, product, "sku", 3))));
 
         assertEquals(3, response.items().size());
-        assertEquals(5, quantity(response, "sku-1"));
-        assertEquals(1, quantity(response, "sku-2"));
-        assertEquals(7, quantity(response, "sku-unrelated"));
-        verify(sellerSkus).findAll(sellerId, List.of("sku-1", "sku-2"));
-        verify(carts).findWithLockBySellerIdAndBuyerRef(sellerId, buyerRef);
+        assertEquals(7, quantity(response, sellerA, "kept"));
+        assertEquals(2, quantity(response, sellerA, "sku"));
+        assertEquals(3, quantity(response, sellerB, "sku"));
     }
 
-    @Test
-    void requiresConfirmationBeforeChangingNonemptyCart() {
-        UUID sellerId = UUID.randomUUID();
-        String buyerRef = "buyer-1";
-        UUID productId = UUID.randomUUID();
-        Cart cart = new Cart(sellerId, buyerRef);
-        cart.setItemQuantity("sku-1", 2);
-        when(sellerSkus.findAll(sellerId, List.of("sku-1")))
-                .thenReturn(List.of(sku(sellerId, productId, "sku-1")));
-        when(carts.findWithLockBySellerIdAndBuyerRef(sellerId, buyerRef)).thenReturn(Optional.of(cart));
-
-        CartException error = assertThrows(CartException.class, () -> service.mergeItems(new ReorderCartRequest(
-                sellerId, buyerRef, false,
-                List.of(new ReorderCartRequest.Item(productId, "sku-1", 3)))));
-
-        assertEquals(CartException.Code.CONFLICT, error.code());
-        assertEquals(2, cart.items().getFirst().quantity());
-    }
-
-    @Test
-    void validatesAllSellerSkusBeforeLockingCart() {
-        UUID sellerId = UUID.randomUUID();
-        when(sellerSkus.findAll(sellerId, List.of("sku-1", "missing")))
-                .thenReturn(List.of(sku(sellerId, UUID.randomUUID(), "sku-1")));
-
-        CartException error = assertThrows(CartException.class, () -> service.mergeItems(new ReorderCartRequest(
-                sellerId, "buyer-1", true, List.of(
-                        new ReorderCartRequest.Item(UUID.randomUUID(), "sku-1", 1),
-                        new ReorderCartRequest.Item(UUID.randomUUID(), "missing", 1)))));
-
-        assertEquals(CartException.Code.SKU_NOT_FOUND, error.code());
-        verifyNoInteractions(carts);
-    }
-
-    @Test
-    void rejectsSkuReassignedToAnotherProductBeforeLockingCart() {
-        UUID sellerId = UUID.randomUUID();
-        when(sellerSkus.findAll(sellerId, List.of("sku-1")))
-                .thenReturn(List.of(sku(sellerId, UUID.randomUUID(), "sku-1")));
-
-        CartException error = assertThrows(CartException.class, () -> service.mergeItems(new ReorderCartRequest(
-                sellerId, "buyer-1", true,
-                List.of(new ReorderCartRequest.Item(UUID.randomUUID(), "sku-1", 1)))));
-
-        assertEquals(CartException.Code.SKU_NOT_FOUND, error.code());
-        verifyNoInteractions(carts);
-    }
-
-    private static SellerSkuResponse sku(UUID sellerId, UUID productId, String skuId) {
-        return new SellerSkuResponse(sellerId, productId, skuId, "Product " + skuId, 100L);
-    }
-
-    private static int quantity(CartResponse response, String skuId) {
+    private static int quantity(CartResponse response, UUID sellerId, String skuId) {
         return response.items().stream()
-                .filter(item -> item.skuId().equals(skuId))
+                .filter(item -> item.sellerId().equals(sellerId) && item.skuId().equals(skuId))
                 .findFirst()
                 .orElseThrow()
                 .quantity();

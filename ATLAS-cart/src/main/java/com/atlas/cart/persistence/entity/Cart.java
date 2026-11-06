@@ -15,10 +15,8 @@ import java.util.UUID;
 import org.hibernate.annotations.UuidGenerator;
 
 @Entity
-@Table(name = "shopping_cart", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_shopping_cart_buyer_seller", columnNames = {"buyer_ref", "seller_id"}),
-        @UniqueConstraint(name = "uk_shopping_cart_id_seller", columnNames = {"cart_id", "seller_id"})
-})
+@Table(name = "shopping_cart", uniqueConstraints = @UniqueConstraint(
+        name = "uk_shopping_cart_buyer", columnNames = "buyer_ref"))
 public class Cart {
     @Id
     @Column(name = "cart_id", nullable = false)
@@ -26,41 +24,45 @@ public class Cart {
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
     private UUID cartId;
 
-    @Column(name = "seller_id", nullable = false)
-    private UUID sellerId;
-
     @Column(name = "buyer_ref", nullable = false, length = 256)
     private String buyerRef;
 
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<CartItem> items = new ArrayList<>();
 
-    protected Cart() { }
+    protected Cart() {
+    }
 
-    public Cart(UUID sellerId, String buyerRef) {
-        this.sellerId = sellerId;
+    public Cart(String buyerRef) {
         this.buyerRef = buyerRef;
     }
 
-    public UUID cartId() { return cartId; }
-    public UUID sellerId() { return sellerId; }
-    public String buyerRef() { return buyerRef; }
-    public List<CartItem> items() { return items; }
+    public UUID cartId() {
+        return cartId;
+    }
 
-    public void setItemQuantity(String skuId, int quantity) {
-        CartItem matchingItem = items.stream()
-                .filter(item -> item.skuId().equals(skuId))
+    public String buyerRef() {
+        return buyerRef;
+    }
+
+    public List<CartItem> items() {
+        return items;
+    }
+
+    public void setItemQuantity(UUID sellerId, String skuId, int quantity) {
+        CartItem matching = items.stream()
+                .filter(item -> item.sellerId().equals(sellerId) && item.skuId().equals(skuId))
                 .findFirst()
                 .orElse(null);
-        if (matchingItem == null) {
-            items.add(new CartItem(this, skuId, quantity));
+        if (matching == null) {
+            items.add(new CartItem(this, sellerId, skuId, quantity));
         } else {
-            matchingItem.setQuantity(quantity);
+            matching.setQuantity(quantity);
         }
     }
 
-    public void removeItem(String skuId) {
-        items.removeIf(item -> item.skuId().equals(skuId));
+    public void removeItem(UUID sellerId, String skuId) {
+        items.removeIf(item -> item.sellerId().equals(sellerId) && item.skuId().equals(skuId));
     }
 
     public void clearItems() {

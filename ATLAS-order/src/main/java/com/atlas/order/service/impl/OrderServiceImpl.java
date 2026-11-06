@@ -115,6 +115,10 @@ public final class OrderServiceImpl implements OrderService {
     @Override
     public OrderResponse submitPayment(UUID orderId) {
         if (orderId == null) throw invalidRequest();
+        if (findOrder(orderId).checkoutId() != null) {
+            throw new OrderException(OrderException.Code.CONFLICT,
+                    "Checkout-owned Seller orders must use parent checkout payment operations");
+        }
         return withOrderLock(orderId, () -> submitPaymentLocked(orderId));
     }
 
@@ -152,6 +156,10 @@ public final class OrderServiceImpl implements OrderService {
     @Override
     public OrderResponse reconcilePayment(UUID orderId, String idempotencyKey) {
         if (orderId == null || invalidIdempotencyKey(idempotencyKey)) throw invalidRequest();
+        if (findOrder(orderId).checkoutId() != null) {
+            throw new OrderException(OrderException.Code.CONFLICT,
+                    "Checkout-owned Seller orders must use parent checkout payment operations");
+        }
         return withOrderLock(orderId, () -> reconcilePaymentLocked(orderId, idempotencyKey));
     }
 
@@ -182,6 +190,10 @@ public final class OrderServiceImpl implements OrderService {
     @Override
     public OrderResponse cancel(UUID orderId, String idempotencyKey) {
         if (orderId == null || invalidIdempotencyKey(idempotencyKey)) throw invalidRequest();
+        if (findOrder(orderId).checkoutId() != null) {
+            throw new OrderException(OrderException.Code.CONFLICT,
+                    "Marketplace Seller orders must be cancelled through their parent checkout");
+        }
         return withOrderLock(orderId, () -> cancelLocked(orderId, idempotencyKey));
     }
 
@@ -346,7 +358,8 @@ public final class OrderServiceImpl implements OrderService {
 
     private OrderResponse toResponse(PurchaseOrder order) {
         List<ReservationResponse> reservations = inventory.findReservations(order.orderId());
-        PaymentResponse payment = payments.find(order.orderId());
+        PaymentResponse payment = order.checkoutId() == null
+                ? payments.find(order.orderId()) : payments.findCheckout(order.checkoutId());
         PaymentState paymentState = payment == null ? PaymentState.NOT_STARTED : payment.state();
         UUID paymentAttemptId = order.paymentAttemptId() != null
                 ? order.paymentAttemptId() : payment == null ? null : payment.attemptId();

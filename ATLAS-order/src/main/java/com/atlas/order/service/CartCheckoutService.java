@@ -1,8 +1,7 @@
 package com.atlas.order.service;
 
-import com.atlas.order.dto.response.OrderResponse;
-import java.util.UUID;
+import com.atlas.order.dto.response.CheckoutResponse;
 
 public interface CartCheckoutService {
-    OrderResponse checkout(UUID sellerId, String buyerRef, String idempotencyKey);
+    CheckoutResponse checkout(String buyerRef, String idempotencyKey);
 }

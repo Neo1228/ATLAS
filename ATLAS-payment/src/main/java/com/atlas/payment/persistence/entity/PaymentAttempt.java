@@ -15,12 +15,16 @@ import lombok.Getter;
 @Table(name = "payment_attempt")
 public class PaymentAttempt {
 
-    @Id
-    @Column(name = "order_id", nullable = false)
+    @Column(name = "order_id", unique = true)
     @Getter
     private UUID orderId;
 
-    @Column(name = "attempt_id", nullable = false, unique = true)
+    @Column(name = "checkout_id", unique = true)
+    @Getter
+    private UUID checkoutId;
+
+    @Id
+    @Column(name = "attempt_id", nullable = false)
     @Getter
     private UUID attemptId;
 
@@ -41,16 +45,33 @@ public class PaymentAttempt {
     protected PaymentAttempt() {
     }
 
-    public PaymentAttempt(UUID orderId, UUID attemptId, PaymentState state, PaymentPhase paymentPhase,
-                                boolean authorizationActive) {
+    public PaymentAttempt(UUID orderId, UUID checkoutId, UUID attemptId, PaymentState state,
+                          PaymentPhase paymentPhase, boolean authorizationActive) {
+        if ((orderId == null) == (checkoutId == null)) {
+            throw new IllegalArgumentException("Exactly one payment owner is required");
+        }
         this.orderId = orderId;
+        this.checkoutId = checkoutId;
         this.attemptId = attemptId;
         this.state = state;
         this.paymentPhase = paymentPhase;
         this.authorizationActive = authorizationActive;
     }
 
-    public void setState(PaymentState state) { this.state = state; }
-    public void setPaymentPhase(PaymentPhase paymentPhase) { this.paymentPhase = paymentPhase; }
-    public void setAuthorizationActive(boolean authorizationActive) { this.authorizationActive = authorizationActive; }
+    public PaymentAttempt(UUID orderId, UUID attemptId, PaymentState state, PaymentPhase paymentPhase,
+                          boolean authorizationActive) {
+        this(orderId, null, attemptId, state, paymentPhase, authorizationActive);
+    }
+
+    public void setState(PaymentState state) {
+        this.state = state;
+    }
+
+    public void setPaymentPhase(PaymentPhase paymentPhase) {
+        this.paymentPhase = paymentPhase;
+    }
+
+    public void setAuthorizationActive(boolean authorizationActive) {
+        this.authorizationActive = authorizationActive;
+    }
 }

@@ -20,7 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
-    private static final Object[] ORDER_LOCKS = createOrderLocks();
+    private static final Object[] OWNER_LOCKS = createOwnerLocks();
 
     private final PaymentAttemptRepository repository;
     private final TransactionTemplate transactions;
@@ -43,11 +43,24 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public PaymentResponse submitInitial(UUID orderId) {
-        if (orderId == null) throw invalidRequest();
-        return withOrderLock(orderId, () -> {
+        if (orderId == null) throw invalidRequest("orderId required");
+        return withOwnerLock(orderId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> {
                 repository.insertInitial(orderId, ids.get());
-                return require(orderId);
+                return requireOrder(orderId);
+            });
+            if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
+            return performPhase(attempt, "initial:" + attempt.getAttemptId());
+        });
+    }
+
+    @Override
+    public PaymentResponse submitCheckout(UUID checkoutId) {
+        if (checkoutId == null) throw invalidRequest("checkoutId required");
+        return withOwnerLock(checkoutId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> {
+                repository.insertCheckoutInitial(checkoutId, ids.get());
+                return requireCheckout(checkoutId);
             });
             if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
             return performPhase(attempt, "initial:" + attempt.getAttemptId());
@@ -56,9 +69,19 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public PaymentResponse reconcile(UUID orderId, String idempotencyKey) {
-        if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()) throw invalidRequest();
-        return withOrderLock(orderId, () -> {
-            PaymentAttempt attempt = transactions.execute(status -> require(orderId));
+        validateOwnerAndKey(orderId, idempotencyKey, "orderId");
+        return withOwnerLock(orderId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> requireOrder(orderId));
+            if (terminal(attempt.getState())) return toResponse(attempt);
+            return performPhase(attempt, idempotencyKey);
+        });
+    }
+
+    @Override
+    public PaymentResponse reconcileCheckout(UUID checkoutId, String idempotencyKey) {
+        validateOwnerAndKey(checkoutId, idempotencyKey, "checkoutId");
+        return withOwnerLock(checkoutId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> requireCheckout(checkoutId));
             if (terminal(attempt.getState())) return toResponse(attempt);
             return performPhase(attempt, idempotencyKey);
         });
@@ -66,9 +89,21 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public PaymentResponse reconcileForCancellation(UUID orderId, String idempotencyKey) {
-        if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()) throw invalidRequest();
-        return withOrderLock(orderId, () -> {
-            PaymentAttempt attempt = transactions.execute(status -> require(orderId));
+        validateOwnerAndKey(orderId, idempotencyKey, "orderId");
+        return withOwnerLock(orderId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> requireOrder(orderId));
+            if (terminal(attempt.getState())) return toResponse(attempt);
+            String phaseKey = attempt.getPaymentPhase() == PaymentPhase.VOID
+                    ? idempotencyKey + ":void" : idempotencyKey + ":cancel-reconcile";
+            return performPhase(attempt, phaseKey, false);
+        });
+    }
+
+    @Override
+    public PaymentResponse reconcileCheckoutForCancellation(UUID checkoutId, String idempotencyKey) {
+        validateOwnerAndKey(checkoutId, idempotencyKey, "checkoutId");
+        return withOwnerLock(checkoutId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> requireCheckout(checkoutId));
             if (terminal(attempt.getState())) return toResponse(attempt);
             String phaseKey = attempt.getPaymentPhase() == PaymentPhase.VOID
                     ? idempotencyKey + ":void" : idempotencyKey + ":cancel-reconcile";
@@ -78,9 +113,9 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public PaymentResponse voidAuthorization(UUID orderId, String idempotencyKey) {
-        if (orderId == null || idempotencyKey == null || idempotencyKey.isBlank()) throw invalidRequest();
-        return withOrderLock(orderId, () -> {
-            PaymentAttempt attempt = transactions.execute(status -> require(orderId));
+        validateOwnerAndKey(orderId, idempotencyKey, "orderId");
+        return withOwnerLock(orderId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> requireOrder(orderId));
             if (!attempt.isAuthorizationActive() || attempt.getState() == PaymentState.VOIDED
                     || (attempt.getState() != PaymentState.DECLINED
                     && attempt.getState() != PaymentState.AUTHORIZED)) {
@@ -95,9 +130,36 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+
+    public PaymentResponse voidCheckoutAuthorization(UUID checkoutId, String idempotencyKey) {
+        validateOwnerAndKey(checkoutId, idempotencyKey, "checkoutId");
+        return withOwnerLock(checkoutId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> requireCheckout(checkoutId));
+            if (!attempt.isAuthorizationActive() || attempt.getState() == PaymentState.VOIDED
+                    || (attempt.getState() != PaymentState.DECLINED
+                    && attempt.getState() != PaymentState.AUTHORIZED)) {
+                return toResponse(attempt);
+            }
+            attempt.setState(PaymentState.VOID_PENDING);
+            attempt.setPaymentPhase(PaymentPhase.VOID);
+            attempt.setAuthorizationActive(true);
+            save(attempt);
+            return performPhase(attempt, idempotencyKey);
+        });
+    }
+    @Override
+
     public PaymentResponse find(UUID orderId) {
-        if (orderId == null) throw invalidRequest();
-        PaymentAttempt attempt = repository.findById(orderId).orElse(null);
+        if (orderId == null) throw invalidRequest("orderId required");
+        PaymentAttempt attempt = repository.findByOrderId(orderId).orElse(null);
+        return attempt == null ? null : toResponse(attempt);
+    }
+
+    @Override
+
+    public PaymentResponse findCheckout(UUID checkoutId) {
+        if (checkoutId == null) throw invalidRequest("checkoutId required");
+        PaymentAttempt attempt = repository.findByCheckoutId(checkoutId).orElse(null);
         return attempt == null ? null : toResponse(attempt);
     }
 
@@ -204,30 +266,45 @@ public class PaymentServiceImpl implements PaymentService {
         transactions.executeWithoutResult(status -> repository.save(attempt));
     }
 
-    private <T> T withOrderLock(UUID orderId, Supplier<T> phase) {
-        synchronized (ORDER_LOCKS[Math.floorMod(orderId.hashCode(), ORDER_LOCKS.length)]) {
-            return phase.get();
+    private <T> T withOwnerLock(UUID ownerId, Supplier<T> action) {
+        synchronized (OWNER_LOCKS[Math.floorMod(ownerId.hashCode(), OWNER_LOCKS.length)]) {
+            return action.get();
         }
     }
 
-    private static Object[] createOrderLocks() {
+    private static Object[] createOwnerLocks() {
         Object[] locks = new Object[256];
         for (int i = 0; i < locks.length; i++) locks[i] = new Object();
         return locks;
     }
 
-    private PaymentAttempt require(UUID orderId) {
-        return repository.findById(orderId)
-                .orElseThrow(() -> new PaymentException(PaymentException.Code.ATTEMPT_NOT_FOUND,
-                        "No payment attempt for order: " + orderId));
+    private PaymentAttempt requireOrder(UUID orderId) {
+        return repository.findByOrderId(orderId)
+                .orElseThrow(() -> notFound("No payment attempt for order: " + orderId));
     }
-    private static PaymentException invalidRequest() {
-        return new PaymentException(PaymentException.Code.INVALID_REQUEST, "orderId is required");
+
+    private PaymentAttempt requireCheckout(UUID checkoutId) {
+        return repository.findByCheckoutId(checkoutId)
+                .orElseThrow(() -> notFound("No payment attempt for checkout: " + checkoutId));
+    }
+
+    private static PaymentException notFound(String message) {
+        return new PaymentException(PaymentException.Code.ATTEMPT_NOT_FOUND, message);
+    }
+
+    private static void validateOwnerAndKey(UUID ownerId, String idempotencyKey, String ownerName) {
+        if (ownerId == null || idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw invalidRequest(ownerName + " and idempotencyKey required");
+        }
+    }
+
+    private static PaymentException invalidRequest(String message) {
+        return new PaymentException(PaymentException.Code.INVALID_REQUEST, message);
     }
 
     private static PaymentResponse toResponse(PaymentAttempt attempt) {
-        return new PaymentResponse(attempt.getOrderId(), attempt.getAttemptId(), attempt.getState(),
-                attempt.isAuthorizationActive());
+        return new PaymentResponse(attempt.getOrderId(), attempt.getCheckoutId(), attempt.getAttemptId(),
+                attempt.getState(), attempt.isAuthorizationActive());
     }
 
     private static boolean terminal(PaymentState state) {

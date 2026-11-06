@@ -3,7 +3,7 @@
 - 상태: ✓ 확정
 - 날짜: 2026-11-04
 - 담당자: Project Owner
-- 관련 결정: [D-065](../../00-governance/decision-log.md)
+- 관련 결정: [D-065/D-071](../../00-governance/decision-log.md)
 - 관련 Issue: [Issue #117](https://github.com/Neo1228/ATLAS/issues/117)
 
 ## 배경
@@ -80,4 +80,4 @@ sequenceDiagram
 
 - 한 Order에 여러 위치·분할 수량이 필요한 구매 시나리오가 승인될 때 partial fulfillment 검토.
 - 실제 carrier 연동이나 인증은 별도 요구·위협 모델·업무 정책 승인 이후 검토.
-- delivery 이후 cancellation·return·refund·restock은 Q-002/Q-006 정책을 정한 뒤 별도 업무 흐름으로 검토.
+- Return and inspection after `DELIVERED` are defined by [D-071/ADR-0016](../../00-governance/decision-log.md) and [ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md). Partial outbound shipments and carrier integration remain deferred.

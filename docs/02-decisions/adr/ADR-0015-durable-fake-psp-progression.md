@@ -21,7 +21,7 @@
 ## 선택 이유와 대안
 
 - application 메모리만 사용하는 방식은 재시작 후 진행 상태 복구를 검증할 수 없어 제외.
-- 실제 PSP adapter·message broker·자동 retry worker는 현재 local recovery 시나리오에 필요하지 않아 제외.
+- 실제 PSP 연동·message broker·자동 retry worker는 현재 local recovery 시나리오에 필요하지 않아 제외.
 - 기존 PostgreSQL과 transaction 경계를 재사용해 결과 영속성과 업무 transaction rollback을 각각 검증.
 
 ## 결과와 한계

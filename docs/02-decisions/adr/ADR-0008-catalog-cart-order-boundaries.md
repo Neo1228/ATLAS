@@ -3,7 +3,7 @@
 - 상태: ✓ 확정
 - 날짜: 2026-11-04
 - 담당자: Project Owner
-- 관련 결정: [D-058~D-063](../../00-governance/decision-log.md)
+- 관련 결정: [D-058~D-063, D-071](../../00-governance/decision-log.md)
 
 ## 배경
 
@@ -28,19 +28,19 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 | 모듈 | 소유 책임 | 의존 방향 |
 |---|---|---|
 | `catalog-module` | Seller, Product, seller-owned Seller-SKU, 현재 가격 | `inventory-module`의 재고 pool 생성 계약 |
-| `cart-module` | synthetic Buyer-Seller별 Cart와 CartItem | `catalog-module`의 SKU 유효성·표시 계약 |
+| `cart-module` | Buyer당 하나의 Cart와 `(sellerId, skuId)` line을 가진 CartItem | `catalog-module`의 SKU 유효성·표시 계약 |
 | `campaign-module` | Campaign 생성·상태·판매 자격 | `catalog-module`의 Seller-SKU 계약 |
 | `admission-module` | FIFO ticket, 전역 sequence, SKU별 `maxActiveCheckouts` policy | Campaign·Catalog 계약 |
 | `inventory-module` | Seller-SKU stock pool, 주문별 여러 SKU reservation | 독립 계약 |
-| `order-module` | Campaign·Cart checkout, Order·OrderItem lifecycle, payment coordination, terminal Cart Order Reorder, one-to-one Order fulfillment status | Admission·Catalog·Cart·Inventory·Payment contracts |
+| `order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem, checkout·결제 조정, fulfillment | Admission·Catalog·Cart·Inventory·Payment contracts |
 | `payment-module` | Payment attempt, 기존 Fake PSP 상태 | 독립 계약 |
 
 - `SellerSku`는 하나 이상의 SKU variant를 가진 Seller Product에 소속. 현재 단순 필드만 지원하며 옵션 조합·promotion·가격 이력은 추가하지 않음.
 - `maxActiveCheckouts`는 상품 속성이 아닌 Admission policy. Catalog schema에서 제거하고 Admission 소유의 `(sellerId, skuId)` 정책으로 관리. 모든 Campaign은 같은 SKU policy를 공유.
-- Cart는 `(buyerRef, sellerId)` 기준. 같은 Seller의 여러 SKU와 양수 quantity 허용; 다른 Seller의 SKU를 하나의 Cart/Order로 합치지 않음.
+- 당시 Cart는 `(buyerRef, sellerId)` 기준이며 Seller 간 합치지 않았음. 현재 Buyer-wide Cart와 주문 cardinality는 [D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)에서 대체.
 - Cart의 가격은 안내용. Checkout에서 Catalog의 현재 가격을 다시 확인하고 OrderItem에 상품명·SKU·unit price(KRW)·quantity snapshot 저장.
 - Checkout은 Cart row를 lock하고 모든 SKU의 재고를 일관된 순서로 확인·예약. 하나라도 부족하면 Order·reservation·Cart 변경 전체 rollback.
-- Checkout idempotency key 재시도는 기존 Order 반환. Inventory conservation: `available + reserved + claimed = initial capacity`.
+- 당시 idempotency replay는 단일 Seller Order 반환. 현재 replay 대상은 BuyerCheckout과 그 SellerOrder 집합 ([D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)).
 - 확인된 hold에서 첫 AUTHORIZE 제출까지 10분은 로컬 synthetic test window. 운영 TTL·SLO·수요 가정 아님. Fake PSP만 사용; 외부 호출은 DB transaction 밖.
 - V7 migration은 V6 fresh-start schema에 신규 구조를 추가. 예상치 못한 기존 row를 자동 reset·mapping하지 않음.
 - Reorder는 terminal `CART` Order만 허용. Campaign·진행 중 Order는 제외. 원본 Order 변경 없음.
@@ -54,7 +54,7 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 - Product·Cart·Order·Inventory multi-line 계약과 migration은 하나의 Buyer journey로 구현·검증.
 - 기존 Campaign/FIFO/K/Fake PSP 경로 유지. Seller-SKU 등록은 Catalog가 소유하며 queue policy는 Admission API에서 별도 설정.
 - `buyerRef`는 synthetic identifier. 인증·인가·tenant isolation은 제공하지 않음.
-- 초기 구현 범위는 배송·이행·환불·정산을 제외. 결제 후 주문당 1건의 수동 fulfillment 상태는 [D-065/ADR-0010](ADR-0010-order-fulfillment-lifecycle.md)에서 추가; 반품·환불·정산은 장기 범위에 유지.
+- 이 ADR의 초기 구현에서는 fulfillment·정산·환불을 제외. Fulfillment는 [D-065/ADR-0010](ADR-0010-order-fulfillment-lifecycle.md), capture/refund recording은 D-066/D-068 및 [ADR-0011](ADR-0011-gross-capture-settlement-ledger.md)/[ADR-0013](ADR-0013-pre-shipment-refund-recording.md), Buyer-wide checkout과 delivered return 규칙은 [D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)에서 후속 확정.
 - Redis, broker, distributed lock, microservice 추가 없음. PostgreSQL baseline에서 재현 가능한 병목이 확인된 뒤에만 고도화 검토.
 - terminal Cart Order를 명시적으로 재주문하는 사용자 흐름 추가. Existing Cart merge·current price·available stock 확인, idempotent retry, all-or-nothing 실패를 같은 PostgreSQL transaction에서 검증.
 

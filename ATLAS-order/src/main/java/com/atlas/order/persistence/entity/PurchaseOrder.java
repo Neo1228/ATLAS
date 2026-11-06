@@ -16,6 +16,8 @@ import org.hibernate.annotations.UuidGenerator;
 @Entity
 @Table(name = "purchase_order")
 public class PurchaseOrder {
+    @Column(name = "checkout_id")
+    private UUID checkoutId;
     @Id
     @Column(name = "order_id", nullable = false)
     @GeneratedValue
@@ -116,5 +118,12 @@ public class PurchaseOrder {
         this.state = state;
         if (paymentAttemptId != null) this.paymentAttemptId = paymentAttemptId;
         this.updatedAt = updatedAt;
+    }
+    public UUID checkoutId() {
+        return checkoutId;
+    }
+
+    public void setCheckoutId(UUID checkoutId) {
+        this.checkoutId = checkoutId;
     }
 }
