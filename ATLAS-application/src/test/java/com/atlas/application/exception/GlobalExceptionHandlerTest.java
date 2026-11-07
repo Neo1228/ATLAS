@@ -7,7 +7,7 @@ import com.atlas.cart.exception.CartException;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.order.exception.OrderException;
-
+import com.atlas.settlement.exception.SettlementException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -58,5 +58,14 @@ class GlobalExceptionHandlerTest {
                 new InventoryException(InventoryException.Code.INSUFFICIENT_STOCK, "insufficient stock"));
         assertThat(insufficientStock.getStatusCode().value()).isEqualTo(HttpStatus.CONFLICT.value());
         assertThat(insufficientStock.getBody().getProperties()).containsEntry("code", "INSUFFICIENT_STOCK");
+    }
+
+    @Test
+    void settlementInvalidRequestMapsToBadRequest() {
+        var response = handler.moduleException(new SettlementException(
+                SettlementException.Code.INVALID_REQUEST, "Invalid statement request"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getBody().getProperties()).containsEntry("code", "INVALID_REQUEST");
     }
 }

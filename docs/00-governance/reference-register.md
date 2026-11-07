@@ -3,10 +3,10 @@ id: DOC-006
 title: 외부 참고자료 레지스트리
 status: Current
 owner: 프로젝트 책임자
-updated: 2026-11-06
+updated: 2026-11-07
 links:
   requirements: []
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0016]
+  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014, ADR-0015, ADR-0016, ADR-0017, ADR-0018, ADR-0019, ADR-0020]
   experiments: [EXP-014]
 ---
 # 외부 참고자료 레지스트리
@@ -18,6 +18,7 @@ links:
 - REF-087/089/092/094~098: 모듈 경계·계층·JPA 검토 자료.
 - REF-104~107: EXP-014/ADR-0007의 UUIDv7·BIGINT 비교 자료.
 - REF-112/113: 결제 후 주문 이행과 fulfillment 상태 운영 사례.
+- REF-121: Seller 내부 정산 명세와 period-based ledger 대사 흐름 비교.
 - 각 자료의 ATLAS 적용 범위와 한계를 함께 기록. 외부 자료만으로 ATLAS 정책을 정하지 않음.
 
 | ID | 제목 / 유형 | URL | 확인일 | ATLAS 적용 대상 | 제한점 / 상태 |
@@ -130,8 +131,9 @@ links:
 | REF-118 | Alibaba Open Platform, 物流发货 API / product documentation | https://open.taobao.com/doc.htm?docId=101128&docType=1 | 2026-11-07 | Order-level and split-shipment API contract comparison | △ Alibaba-specific API. ATLAS adopts no provider contract, delivery workflow, or scale assumption. |
 | REF-119 | 美团技术团队, 外卖商品的标准化建设与应用 / engineering article | https://tech.meituan.com/2021/05/27/Food-Name-Standardization.html | 2026-11-07 | Merchant product-name variance and category-granularity challenges in discovery | △ Food-specific NLP/CV standardization case; pipeline and scale are not ATLAS requirements |
 | REF-120 | Shopify Engineering, Evolution of Product Classification / engineering article | https://shopify.engineering/evolution-product-classification | 2026-11-07 | Central Product Taxonomy and category-specific classification evolution; comparison for deferring global taxonomy/ML | △ Large-scale VLM system is case-specific; no scale or technology is adopted |
+| REF-121 | Meituan Engineering, 高性能平台设计—美团旅行结算平台实践 / engineering article | https://tech.meituan.com/2018/01/15/high-performance-platform-design.html | 2026-11-07 | Seller settlement statement와 posting/reconciliation 업무 흐름 비교 | △ 2018년 Meituan 여행 플랫폼 사례. 업무 흐름만 참고; broker·분산 구조·규모·성능 수치는 적용하지 않음 |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117/118/119/120는 ATLAS
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117/118/119/120/121는 ATLAS
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
@@ -153,3 +155,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0016](../02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md): REF-116은 business boundary 비교, REF-117은 modular monolith 비교. 기술·규모는 복사하지 않음.
 - [ADR-0018](../02-decisions/adr/ADR-0018-seller-order-shipments.md): REF-112의 Meituan 주문 여정과 REF-118의 전체·분할 출고 contract만 비교. Shipment·refund 경계는 소유자 결정이며 외부 사례의 업무·규모·성능을 일반화하지 않음.
 - [ADR-0019](../02-decisions/adr/ADR-0019-seller-product-categories.md): REF-119/120는 상품명 편차·분류 taxonomy evolution 사례를 제공. Seller-owned category·flat scope·PostgreSQL filtering은 D-074 소유자 결정이며 외부 pipeline/scale을 복사하지 않음.
+- [ADR-0020](../02-decisions/adr/ADR-0020-seller-settlement-statement.md): REF-121은 Seller 명세·대사 업무 흐름만 비교. 내부 ledger view·signed allocation·기간 cursor는 D-075 프로젝트 결정이며 외부 플랫폼 규모·아키텍처를 도입하지 않음.

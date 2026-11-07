@@ -3,15 +3,23 @@ package com.atlas.settlement.service.impl;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
 import com.atlas.settlement.dto.request.RefundPostingRequest;
+import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
+import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
+import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
 import com.atlas.settlement.persistence.projection.RefundJournalRecord;
+import com.atlas.settlement.persistence.projection.SellerStatementRow;
+import org.springframework.transaction.annotation.Isolation;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.DateTimeException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -132,4 +140,54 @@ public class SettlementServiceImpl implements SettlementService {
             throw new IllegalArgumentException("Refund posting facts are invalid");
         }
     }
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public SellerSettlementStatementResponse getSellerStatement(SellerSettlementStatementRequest request) {
+        if (request == null || request.sellerId() == null || request.from() == null || request.to() == null
+                || !request.from().isBefore(request.to()) || request.limit() < 1 || request.limit() > 100) {
+            throw invalidStatementRequest();
+        }
+        int pageSize = request.limit();
+        Instant afterAt = null;
+        UUID afterId = null;
+        if (request.cursor() != null) {
+            try {
+                String decoded = new String(Base64.getUrlDecoder().decode(request.cursor()), StandardCharsets.UTF_8);
+                String[] parts = decoded.split("\\|", -1);
+                if (parts.length != 6 || !parts[0].equals("v1")
+                        || !parts[1].equals(request.sellerId().toString())
+                        || !parts[2].equals(request.from().toString()) || !parts[3].equals(request.to().toString())) {
+                    throw invalidStatementRequest();
+                }
+                afterAt = Instant.parse(parts[4]);
+                afterId = UUID.fromString(parts[5]);
+            } catch (IllegalArgumentException | DateTimeException exception) {
+                throw invalidStatementRequest();
+            }
+        }
+        var totals = journals.sellerStatementTotals(request.sellerId(), request.from(), request.to());
+        List<SellerStatementRow> rows = journals.sellerStatementRows(request.sellerId(),
+                request.from(), request.to(), afterAt, afterId, pageSize + 1);
+        boolean hasMore = rows.size() > pageSize;
+        if (hasMore) rows = rows.subList(0, pageSize);
+        List<SellerSettlementStatementResponse.Entry> items = rows.stream().map(row ->
+                new SellerSettlementStatementResponse.Entry(row.journalId(), row.orderId(), row.sourceId(),
+                        SellerSettlementStatementResponse.EntryType.valueOf(row.type()), row.recordedAt(),
+                        row.signedAmountWon())).toList();
+        String next = null;
+        if (hasMore) {
+            var last = rows.get(rows.size() - 1);
+            String token = "v1|" + request.sellerId() + "|" + request.from() + "|" + request.to() + "|"
+                    + last.recordedAt() + "|" + last.journalId();
+            next = Base64.getUrlEncoder().withoutPadding().encodeToString(token.getBytes(StandardCharsets.UTF_8));
+        }
+        return new SellerSettlementStatementResponse(request.sellerId(), request.from(), request.to(),
+                new SellerSettlementStatementResponse.Summary(totals.capturedAmountWon(),
+                        totals.refundReversalAmountWon(), totals.netLedgerChangeWon()), items, next);
+    }
+
+    private static SettlementException invalidStatementRequest() {
+        return new SettlementException(SettlementException.Code.INVALID_REQUEST, "Seller statement request is invalid");
+    }
+
 }
