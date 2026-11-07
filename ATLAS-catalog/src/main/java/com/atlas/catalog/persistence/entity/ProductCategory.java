@@ -30,12 +30,22 @@ public class ProductCategory {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String name;
 
+    @Column(name = "parent_category_id")
+    private UUID parentCategoryId;
+
     protected ProductCategory() { }
 
     public ProductCategory(UUID sellerId, String code, String name) {
         this.sellerId = sellerId;
         this.code = code;
         this.name = name;
+    }
+
+    public void updateParent(UUID parentCategoryId) {
+        if (UNCATEGORIZED_CODE.equals(code) && parentCategoryId != null) {
+            throw new IllegalArgumentException("UNCATEGORIZED must remain a root");
+        }
+        this.parentCategoryId = parentCategoryId;
     }
 
     public void updateName(String name) {

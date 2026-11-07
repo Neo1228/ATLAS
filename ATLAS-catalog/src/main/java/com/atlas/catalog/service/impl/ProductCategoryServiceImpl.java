@@ -2,6 +2,7 @@ package com.atlas.catalog.service.impl;
 
 import com.atlas.catalog.dto.request.CreateProductCategoryRequest;
 import com.atlas.catalog.dto.request.UpdateProductCategoryRequest;
+import com.atlas.catalog.dto.request.UpdateProductCategoryParentRequest;
 import com.atlas.catalog.dto.response.ProductCategoryResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
@@ -53,6 +54,35 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
 
     @Override
     @Transactional
+    public ProductCategoryResponse updateCategoryParent(UUID sellerId, UUID categoryId,
+            UpdateProductCategoryParentRequest request) {
+        if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID required");
+        if (request != null && request.parentCategoryId() == null) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Parent category ID required");
+        }
+        sellers.findByIdForUpdate(sellerId)
+                .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId));
+        ProductCategory category = categories.findByCategoryIdAndSellerId(categoryId, sellerId)
+                .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller category: " + categoryId));
+        UUID parentId = request == null ? null : request.parentCategoryId();
+        if (ProductCategory.UNCATEGORIZED_CODE.equals(category.getCode()) && parentId != null) {
+            throw new CatalogException(Code.CONFLICT, "UNCATEGORIZED must remain a root");
+        }
+        if (parentId != null) {
+            if (parentId.equals(categoryId)) throw new CatalogException(Code.CONFLICT, "Category cannot parent itself");
+            if (categories.findByCategoryIdAndSellerId(parentId, sellerId).isEmpty()) {
+                throw new CatalogException(Code.NOT_FOUND, "Unknown seller parent category: " + parentId);
+            }
+            if (categories.isDescendant(sellerId, categoryId, parentId)) {
+                throw new CatalogException(Code.CONFLICT, "Category move would create a cycle");
+            }
+        }
+        category.updateParent(parentId);
+        return toResponse(categories.save(category));
+    }
+
+    @Override
+    @Transactional
     public ProductCategoryResponse updateCategoryName(UUID sellerId, UUID categoryId,
             UpdateProductCategoryRequest request) {
         if (request == null || request.name() == null || request.name().isBlank()) {
@@ -75,6 +105,6 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
 
     private static ProductCategoryResponse toResponse(ProductCategory category) {
         return new ProductCategoryResponse(category.getCategoryId(), category.getSellerId(), category.getCode(),
-                category.getName());
+                category.getName(), category.getParentCategoryId());
     }
 }

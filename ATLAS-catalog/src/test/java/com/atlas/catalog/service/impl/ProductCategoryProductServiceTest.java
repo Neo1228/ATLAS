@@ -121,7 +121,7 @@ class ProductCategoryProductServiceTest {
     }
 
     @Test
-    void categoryFilterEmitsV3Cursor() {
+    void categoryFilterEmitsV4Cursor() {
         when(sellers.existsById(sellerId)).thenReturn(true);
         when(categories.findByCategoryIdAndSellerId(categoryId, sellerId))
                 .thenReturn(Optional.of(mock(ProductCategory.class)));
@@ -135,7 +135,7 @@ class ProductCategoryProductServiceTest {
         ProductListingPageResponse page = service.listProductsPage(sellerId, categoryId, null, 1, null);
 
         String decoded = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
-        assertTrue(decoded.startsWith("v3:false:"));
+        assertTrue(decoded.startsWith("v4:false:"));
     }
 
     private Product product(UUID productId) {

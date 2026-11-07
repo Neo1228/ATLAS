@@ -47,7 +47,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     List<UUID> findOrderableProductIds(@Param("productIds") List<UUID> productIds,
             @Param("channel") String channel);
     @Query(value = """
-            WITH product_listing AS (
+            WITH RECURSIVE product_listing AS (
                 SELECT p.*,
                     encode(set_byte(set_byte(uuid_send(p.seller_id), 0,
                         get_byte(uuid_send(p.seller_id), 0) # 128), 8,
@@ -56,6 +56,13 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                         get_byte(uuid_send(p.product_id), 0) # 128), 8,
                         get_byte(uuid_send(p.product_id), 8) # 128), 'hex') COLLATE "C" AS product_sort_key
                 FROM product p
+            ),
+            category_tree(category_id) AS (
+                SELECT CAST(:categoryId AS uuid) WHERE CAST(:categoryId AS uuid) IS NOT NULL
+                UNION
+                SELECT child.category_id FROM product_category child
+                JOIN category_tree parent ON child.parent_category_id = parent.category_id
+                WHERE child.seller_id = CAST(:sellerId AS uuid)
             ),
             cursor_key AS (
                 SELECT
@@ -75,7 +82,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                     AND EXISTS (SELECT 1 FROM product_channel_availability c
                         WHERE c.product_id = p.product_id AND c.sales_channel = 'ONLINE_STORE'
                             AND c.available = TRUE)))
-                AND (CAST(:categoryId AS uuid) IS NULL OR p.category_id = CAST(:categoryId AS uuid))
+                AND (CAST(:categoryId AS uuid) IS NULL OR p.category_id IN (SELECT category_id FROM category_tree))
                 AND (CAST(:keyword AS text) = '' OR position(CAST(:keyword AS text) in lower(p.name)) > 0)
                 AND (CAST(:cursorSeller AS uuid) IS NULL OR p.seller_sort_key > c.seller_sort_key
                     OR (p.seller_sort_key = c.seller_sort_key AND p.product_sort_key > c.product_sort_key))

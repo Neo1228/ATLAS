@@ -159,8 +159,11 @@ public class ProductServiceImpl implements ProductService {
         if (categoryId != null && sellerId == null) {
             throw new CatalogException(Code.INVALID_REQUEST, "Category filter requires seller scope");
         }
+        if (position != null && position.version() < 4 && position.categoryFiltered()) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Legacy category cursor is not supported");
+        }
         if (position != null && (!Objects.equals(position.filterSellerId(), sellerId)
-                || position.version() == 3 && position.managementScope() != managementScope
+                || position.version() >= 3 && position.managementScope() != managementScope
                 || !position.keyword().equals(keyword) || !Objects.equals(position.categoryId(), categoryId)
                 || position.categoryFiltered() != (categoryId != null))) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
@@ -257,12 +260,12 @@ public class ProductServiceImpl implements ProductService {
             }
             if (parts.length == 6 && "v2".equals(parts[0])) {
                 UUID filterSellerId = UUID.fromString(parts[1]);
-                UUID categoryId = UUID.fromString(parts[2]);
+                UUID categoryId = "-".equals(parts[2]) ? null : UUID.fromString(parts[2]);
                 String keyword = new String(Base64.getUrlDecoder().decode(parts[3]), StandardCharsets.UTF_8);
                 return new ListingCursor(2, false, filterSellerId, categoryId, keyword,
                         UUID.fromString(parts[4]), UUID.fromString(parts[5]));
             }
-            if (parts.length == 7 && "v3".equals(parts[0])) {
+            if (parts.length == 7 && ("v3".equals(parts[0]) || "v4".equals(parts[0]))) {
                 boolean managementScope = switch (parts[1]) {
                     case "true" -> true;
                     case "false" -> false;
@@ -271,7 +274,7 @@ public class ProductServiceImpl implements ProductService {
                 UUID filterSellerId = "-".equals(parts[2]) ? null : UUID.fromString(parts[2]);
                 UUID categoryId = "-".equals(parts[3]) ? null : UUID.fromString(parts[3]);
                 String keyword = new String(Base64.getUrlDecoder().decode(parts[4]), StandardCharsets.UTF_8);
-                return new ListingCursor(3, managementScope, filterSellerId, categoryId, keyword,
+                return new ListingCursor("v4".equals(parts[0]) ? 4 : 3, managementScope, filterSellerId, categoryId, keyword,
                         UUID.fromString(parts[5]), UUID.fromString(parts[6]));
             }
             throw new IllegalArgumentException("Malformed cursor");
@@ -284,7 +287,7 @@ public class ProductServiceImpl implements ProductService {
             UUID positionSellerId, UUID productId, boolean managementScope) {
         String encodedKeyword = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
-        String value = "v3:" + managementScope + ":" + (filterSellerId == null ? "-" : filterSellerId) + ":"
+        String value = "v4:" + managementScope + ":" + (filterSellerId == null ? "-" : filterSellerId) + ":"
                 + (categoryId == null ? "-" : categoryId) + ":" + encodedKeyword + ":"
                 + positionSellerId + ":" + productId;
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));

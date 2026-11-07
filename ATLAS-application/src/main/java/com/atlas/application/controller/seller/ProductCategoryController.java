@@ -2,6 +2,7 @@ package com.atlas.application.controller.seller;
 
 import com.atlas.catalog.dto.request.CreateProductCategoryRequest;
 import com.atlas.catalog.dto.request.UpdateProductCategoryRequest;
+import com.atlas.catalog.dto.request.UpdateProductCategoryParentRequest;
 import com.atlas.catalog.dto.response.ProductCategoryResponse;
 import com.atlas.catalog.service.ProductCategoryService;
 import jakarta.validation.Valid;
@@ -9,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,6 +37,17 @@ public class ProductCategoryController {
     @GetMapping
     public List<ProductCategoryResponse> list(@PathVariable UUID sellerId) {
         return categories.listCategories(sellerId);
+    }
+
+    @PutMapping("/{categoryId}/parent")
+    public ProductCategoryResponse updateParent(@PathVariable UUID sellerId, @PathVariable UUID categoryId,
+            @RequestBody UpdateProductCategoryParentRequest request) {
+        return categories.updateCategoryParent(sellerId, categoryId, request);
+    }
+
+    @DeleteMapping("/{categoryId}/parent")
+    public ProductCategoryResponse resetParent(@PathVariable UUID sellerId, @PathVariable UUID categoryId) {
+        return categories.updateCategoryParent(sellerId, categoryId, null);
     }
 
     @PutMapping("/{categoryId}")
