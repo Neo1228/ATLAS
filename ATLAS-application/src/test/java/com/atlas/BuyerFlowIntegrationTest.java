@@ -2,6 +2,7 @@ package com.atlas;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.service.ProductStatus;
+import com.atlas.inventory.exception.InventoryException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,6 +46,7 @@ import com.atlas.order.persistence.state.BuyerCheckoutState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
+import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.impl.OrderServiceImpl;
 import com.atlas.order.service.impl.CheckoutPaymentServiceImpl;
 import com.atlas.payment.persistence.state.FakePspResult;
@@ -117,6 +119,7 @@ class BuyerFlowIntegrationTest {
     @Autowired private InventoryService inventory;
     @Autowired private OrderService orders;
     @Autowired private OrderFulfillmentService orderFulfillments;
+    @Autowired private CartCheckoutService cartCheckouts;
     @Autowired private FakePsp fakePsp;
     @Autowired private AdjustableClock clock;
     @Autowired private ObjectMapper objectMapper;
@@ -196,6 +199,79 @@ class BuyerFlowIntegrationTest {
         assertThat(rejoined.ticketId()).isNotEqualTo(failedTicket.ticketId());
         assertThat(admission.find(campaign.campaignId(), failedTicket.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_FAILED);
+    }
+
+    @Test
+    void cartAndCampaignCheckoutRaceForTheSameSingleUnitPool() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "mixed-channel-" + UUID.randomUUID();
+        registerProductSku(sellerId, skuId, 100, 1);
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 1));
+        CampaignResponse campaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
+        QueueTicketResponse ticket = join(campaign, "mixed-channel-" + UUID.randomUUID(),
+                "mixed-channel-" + UUID.randomUUID());
+        String buyerRef = "mixed-channel-cart-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+
+        CyclicBarrier start = new CyclicBarrier(2);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<CheckoutResponse> cartAttempt = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                try {
+                    return cartCheckouts.checkout(buyerRef, "mixed-channel-" + UUID.randomUUID());
+                } catch (InventoryException exception) {
+                    assertThat(exception.code()).isEqualTo(InventoryException.Code.INSUFFICIENT_STOCK);
+                    return null;
+                }
+            });
+            Future<OrderResponse> campaignAttempt = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+            });
+
+            CheckoutResponse cartResult = cartAttempt.get(20, TimeUnit.SECONDS);
+            OrderResponse campaignResult = campaignAttempt.get(20, TimeUnit.SECONDS);
+            long successfulReservations = (cartResult == null ? 0 : cartResult.orders().stream()
+                    .filter(order -> order.inventoryState() == ReservationStatus.RESERVED).count())
+                    + (campaignResult.inventoryState() == ReservationStatus.RESERVED ? 1 : 0);
+            assertThat(successfulReservations).isEqualTo(1);
+            if (campaignResult.state() == OrderState.RESERVED) {
+                assertThat(campaignResult.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+            } else {
+                assertThat(campaignResult.inventoryState()).isNull();
+                assertThat(campaignResult.ticketState()).isEqualTo(TicketStatus.CHECKOUT_FAILED);
+                assertThat(admission.find(campaign.campaignId(), ticket.ticketId()).checkoutSlotHeld()).isFalse();
+            }
+
+            InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+            assertConserved(stock);
+            assertThat(stock.available() + stock.reserved() + stock.claimed()).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_reservation WHERE seller_id = ? AND sku_id = ? AND status = 'RESERVED'",
+                    Integer.class, sellerId, skuId)).isEqualTo((int) successfulReservations);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_reservation WHERE seller_id = ? AND sku_id = ? AND status = 'CLAIMED'",
+                    Integer.class, sellerId, skuId)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_reservation WHERE seller_id = ? AND sku_id = ?",
+                    Integer.class, sellerId, skuId)).isLessThanOrEqualTo(2);
+
+            if (cartResult == null) {
+                assertThat(campaignResult.state()).isEqualTo(OrderState.RESERVED);
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?",
+                        Integer.class, buyerRef)).isZero();
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE buyer_ref = ?",
+                        Integer.class, buyerRef)).isZero();
+                assertThat(carts.find(buyerRef).items()).hasSize(1);
+            } else {
+                assertThat(cartResult.orders()).singleElement().satisfies(order -> {
+                    assertThat(order.state()).isEqualTo(OrderState.RESERVED);
+                    assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+                });
+                assertThat(campaignResult.state()).isEqualTo(OrderState.FAILED);
+            }
+            if (campaignResult.state() == OrderState.FAILED) {
+                assertThat(campaignResult.ticketState()).isEqualTo(TicketStatus.CHECKOUT_FAILED);
+                assertThat(admission.find(campaign.campaignId(), ticket.ticketId()).checkoutSlotHeld()).isFalse();
+            }
+        }
     }
 
     @Test
