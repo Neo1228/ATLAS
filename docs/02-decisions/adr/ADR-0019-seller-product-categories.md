@@ -1,6 +1,6 @@
 # ADR-0019 — Seller 상품 분류와 Catalog filter
 
-- 상태: 승인
+- 상태: 대체됨 · 현재 category hierarchy는 [ADR-0022](ADR-0022-seller-category-hierarchy.md)
 - 결정: D-074
 - 추적: [Issue #161](https://github.com/Neo1228/ATLAS/issues/161), [PR #162](https://github.com/Neo1228/ATLAS/pull/162)
 - 요구사항: [FR-012 / BR-012 / INV-009 / Q-010](../../01-requirements/requirements-index.md)
