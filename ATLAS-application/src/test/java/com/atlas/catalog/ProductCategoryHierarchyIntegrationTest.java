@@ -74,6 +74,7 @@ class ProductCategoryHierarchyIntegrationTest {
         categories.updateCategoryParent(seller, grandchild.categoryId(), new UpdateProductCategoryParentRequest(child.categoryId()));
 
         String categoryUrl = "/api/sellers/" + seller + "/product-categories/" + child.categoryId() + "/parent";
+        String parentUrl = "/api/sellers/" + seller + "/product-categories/" + parent.categoryId() + "/parent";
         mockMvc.perform(put(categoryUrl).contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest());
         assertThat(categories.listCategories(seller).stream().filter(c -> c.categoryId().equals(child.categoryId()))
@@ -81,7 +82,9 @@ class ProductCategoryHierarchyIntegrationTest {
         mockMvc.perform(delete(categoryUrl)).andExpect(status().isOk());
         assertThat(categories.listCategories(seller).stream().filter(c -> c.categoryId().equals(child.categoryId()))
                 .findFirst().orElseThrow().parentCategoryId()).isNull();
-        categories.updateCategoryParent(seller, child.categoryId(), new UpdateProductCategoryParentRequest(parent.categoryId()));
+        mockMvc.perform(put(categoryUrl).contentType("application/json")
+                        .content(parentRequest(parent.categoryId())))
+                .andExpect(status().isOk());
 
         assertCatalogFailure(() -> categories.updateCategoryParent(seller, parent.categoryId(),
                 new UpdateProductCategoryParentRequest(foreign.categoryId())), Code.NOT_FOUND);
@@ -92,6 +95,12 @@ class ProductCategoryHierarchyIntegrationTest {
         UUID uncategorized = jdbc.queryForObject(
                 "SELECT category_id FROM product_category WHERE seller_id = ? AND code = 'UNCATEGORIZED'",
                 UUID.class, seller);
+        mockMvc.perform(put(parentUrl).contentType("application/json")
+                        .content(parentRequest(foreign.categoryId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(put(parentUrl).contentType("application/json")
+                        .content(parentRequest(grandchild.categoryId())))
+                .andExpect(status().isConflict());
         assertCatalogFailure(() -> categories.updateCategoryParent(seller, uncategorized,
                 new UpdateProductCategoryParentRequest(parent.categoryId())), Code.CONFLICT);
 
@@ -171,6 +180,10 @@ class ProductCategoryHierarchyIntegrationTest {
         assertThatThrownBy(action::run)
                 .isInstanceOfSatisfying(CatalogException.class,
                         failure -> assertThat(failure.code()).isEqualTo(expectedCode));
+    }
+
+    private static String parentRequest(UUID parentCategoryId) {
+        return "{\"parentCategoryId\":\"" + parentCategoryId + "\"}";
     }
 
     private UUID createProduct(UUID seller, UUID category) {
