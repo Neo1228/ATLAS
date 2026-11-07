@@ -138,6 +138,12 @@ class CatalogIntegrationTest {
                 positiveLeastSignificantBits, sellerId, categoryId, "literal % value", "description");
         jdbc.update("INSERT INTO product (product_id, seller_id, category_id, name, description) VALUES (?, ?, ?, ?, ?)",
                 negativeLeastSignificantBits, sellerId, categoryId, "literal wildcard", "description");
+        jdbc.update("""
+                INSERT INTO product_channel_availability (product_id, sales_channel, available) VALUES
+                    (?, 'ONLINE_STORE', TRUE), (?, 'CAMPAIGN', TRUE),
+                    (?, 'ONLINE_STORE', TRUE), (?, 'CAMPAIGN', TRUE)
+                """, negativeLeastSignificantBits, negativeLeastSignificantBits,
+                positiveLeastSignificantBits, positiveLeastSignificantBits);
         List<Product> firstPage = products.findListingPage(sellerId, null, "", null, null, 1);
         assertThat(firstPage).extracting(Product::getProductId).containsExactly(negativeLeastSignificantBits);
         List<Product> secondPage = products.findListingPage(sellerId, null, "", sellerId,
@@ -191,6 +197,101 @@ class CatalogIntegrationTest {
                 Integer.class, sellerId, failingSku)).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM inventory_pool WHERE seller_id = ? AND sku_id = ?",
                 Integer.class, sellerId, failingSku)).isZero();
+    }
+
+    @Test
+    void sellerControlsProductOrderabilityAndPublicVisibility() throws Exception {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        UUID productId = productService.createProduct(
+                sellerId, new CreateProductRequest("orderability-" + UUID.randomUUID(), "description")).productId();
+        String base = "/api/sellers/" + sellerId + "/products/" + productId;
+
+        mockMvc.perform(put(base + "/channel-availability")
+                        .contentType("application/json")
+                        .content("{\"channel\":\"ONLINE_STORE\"}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put(base + "/channel-availability")
+                        .contentType("application/json")
+                        .content("{\"channel\":\"ONLINE_STORE\",\"available\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableChannels").isArray())
+                .andExpect(jsonPath("$.availableChannels.length()").value(1))
+                .andExpect(jsonPath("$.availableChannels[0]").value("CAMPAIGN"));
+        mockMvc.perform(get("/api/products").param("sellerId", sellerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty());
+        mockMvc.perform(get("/api/products/" + productId)).andExpect(status().isNotFound());
+
+        mockMvc.perform(put(base + "/channel-availability")
+                        .contentType("application/json")
+                        .content("{\"channel\":\"ONLINE_STORE\",\"available\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableChannels[0]").value("ONLINE_STORE"))
+                .andExpect(jsonPath("$.availableChannels[1]").value("CAMPAIGN"));
+        mockMvc.perform(get("/api/products").param("sellerId", sellerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].product.availableChannels[0]").value("ONLINE_STORE"))
+                .andExpect(jsonPath("$.items[0].product.availableChannels[1]").value("CAMPAIGN"));
+
+        mockMvc.perform(put(base + "/status")
+                        .contentType("application/json")
+                        .content("{\"status\":\"INACTIVE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("INACTIVE"));
+        mockMvc.perform(get("/api/products").param("sellerId", sellerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty());
+        mockMvc.perform(get("/api/products/" + productId)).andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/sellers/" + sellerId + "/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1));
+        mockMvc.perform(put(base + "/status")
+                        .contentType("application/json")
+                        .content("{\"status\":\"ACTIVE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+        mockMvc.perform(get("/api/products").param("sellerId", sellerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1));
+        mockMvc.perform(get("/api/products/" + productId)).andExpect(status().isOk());
+    }
+
+    @Test
+    void publicAndSellerCursorsCannotCrossListingScopes() throws Exception {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        productService.createProduct(sellerId,
+                new CreateProductRequest("scope-active-1-" + UUID.randomUUID(), "description"));
+        productService.createProduct(sellerId,
+                new CreateProductRequest("scope-active-2-" + UUID.randomUUID(), "description"));
+        UUID inactiveProduct = productService.createProduct(sellerId,
+                new CreateProductRequest("scope-inactive-" + UUID.randomUUID(), "description")).productId();
+        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/status", sellerId, inactiveProduct)
+                        .contentType("application/json")
+                        .content("{\"status\":\"INACTIVE\"}"))
+                .andExpect(status().isOk());
+
+        ProductListingPageResponse publicPage = objectMapper.readValue(
+                mockMvc.perform(get("/api/products").param("sellerId", sellerId.toString()).param("limit", "1"))
+                        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                ProductListingPageResponse.class);
+        ProductListingPageResponse sellerPage = objectMapper.readValue(
+                mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId).param("limit", "1"))
+                        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                ProductListingPageResponse.class);
+        assertThat(publicPage.nextCursor()).isNotBlank();
+        assertThat(sellerPage.nextCursor()).isNotBlank();
+
+        mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
+                        .param("limit", "1").param("cursor", publicPage.nextCursor()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(get("/api/products").param("sellerId", sellerId.toString())
+                        .param("limit", "1").param("cursor", sellerPage.nextCursor()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
     private Product create(UUID sellerId, String name) {

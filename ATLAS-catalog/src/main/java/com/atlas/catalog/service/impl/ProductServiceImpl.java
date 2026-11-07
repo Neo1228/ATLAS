@@ -11,6 +11,7 @@ import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.persistence.entity.SellerSku;
+import com.atlas.catalog.persistence.projection.ProductChannelAvailability;
 import com.atlas.catalog.repository.ProductCategoryRepository;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
@@ -18,6 +19,8 @@ import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
+import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.service.ProductStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.Base64;
@@ -78,6 +81,28 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
+    public ProductResponse updateStatus(UUID sellerId, UUID productId, ProductStatus status) {
+        if (sellerId == null || productId == null || status == null)
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product status update");
+        Product product = requireOwnedProduct(sellerId, productId);
+        product.updateStatus(status);
+        return toResponse(products.save(product));
+    }
+
+    @Override
+    @Transactional
+    public ProductResponse updateChannelAvailability(UUID sellerId, UUID productId, ProductSalesChannel channel,
+            boolean available) {
+        if (sellerId == null || productId == null || channel == null)
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product channel availability update");
+        Product product = requireOwnedProduct(sellerId, productId);
+        product.updateChannelAvailability(channel, available);
+        return toResponse(products.save(product));
+    }
+
+
+    @Override
+    @Transactional
     public SellerSkuResponse registerSku(UUID sellerId, UUID productId, RegisterSellerSkuRequest request) {
         if (sellerId == null || productId == null || request == null || request.skuId() == null
                 || request.skuId().isBlank() || request.skuId().length() > 128
@@ -113,6 +138,18 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
+        return listProductsPageInternal(sellerId, categoryId, query, requestedLimit, cursor, false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ProductListingPageResponse listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
+            Integer requestedLimit, String cursor) {
+        if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID required");
+        return listProductsPageInternal(sellerId, categoryId, query, requestedLimit, cursor, true);
+    }
+    private ProductListingPageResponse listProductsPageInternal(UUID sellerId, UUID categoryId, String query,
+            Integer requestedLimit, String cursor, boolean managementScope) {
         ListingCursor position = decodeCursor(cursor);
         int limit = requestedLimit == null ? DEFAULT_PAGE_SIZE : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
@@ -123,6 +160,7 @@ public class ProductServiceImpl implements ProductService {
             throw new CatalogException(Code.INVALID_REQUEST, "Category filter requires seller scope");
         }
         if (position != null && (!Objects.equals(position.filterSellerId(), sellerId)
+                || position.version() == 3 && position.managementScope() != managementScope
                 || !position.keyword().equals(keyword) || !Objects.equals(position.categoryId(), categoryId)
                 || position.categoryFiltered() != (categoryId != null))) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
@@ -136,23 +174,32 @@ public class ProductServiceImpl implements ProductService {
         if (sellerId != null && cursorSeller != null && !sellerId.equals(cursorSeller)) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
         }
-        List<Product> fetched = products.findListingPage(sellerId, categoryId, keyword,
-                cursorSeller, cursorProduct, limit + 1);
+        List<Product> fetched = managementScope
+                ? products.findListingPageByScope(sellerId, categoryId, keyword,
+                        cursorSeller, cursorProduct, limit + 1, true)
+                : products.findListingPage(sellerId, categoryId, keyword, cursorSeller, cursorProduct, limit + 1);
         boolean hasMore = fetched.size() > limit;
         List<Product> page = fetched.stream().limit(limit).toList();
         List<UUID> productIds = page.stream().map(Product::getProductId).toList();
         if (productIds.isEmpty()) return new ProductListingPageResponse(List.of(), null);
         Map<UUID, Product> productsById = page.stream().collect(Collectors.toMap(Product::getProductId, product -> product));
+        Map<UUID, List<ProductSalesChannel>> availableChannelsByProductId =
+                products.findAvailableChannelsByProductIdIn(productIds).stream().collect(Collectors.groupingBy(
+                        ProductChannelAvailability::getProductId,
+                        Collectors.mapping(row -> ProductSalesChannel.valueOf(row.getSalesChannel()),
+                                Collectors.toList())));
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
                 .map(sku -> toResponse(productsById.get(sku.getProductId()), sku))
                 .collect(Collectors.groupingBy(SellerSkuResponse::productId));
-        List<ProductListingResponse> items = page.stream().map(product -> new ProductListingResponse(toResponse(product),
+        List<ProductListingResponse> items = page.stream().map(product -> new ProductListingResponse(
+                toResponse(product, availableChannelsByProductId.getOrDefault(product.getProductId(), List.of())),
                 variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
                         .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList())).toList();
         String nextCursor = null;
         if (hasMore) {
             Product last = page.getLast();
-            nextCursor = encodeCursor(sellerId, categoryId, keyword, last.getSellerId(), last.getProductId());
+            nextCursor = encodeCursor(sellerId, categoryId, keyword, last.getSellerId(), last.getProductId(),
+                    managementScope);
         }
         return new ProductListingPageResponse(items, nextCursor);
     }
@@ -161,11 +208,16 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public ProductListingResponse findProduct(UUID productId) {
         if (productId == null) throw new CatalogException(Code.INVALID_REQUEST, "Product ID required");
-        Product product = products.findById(productId)
+        Product product = products.findPublicOrderableByProductId(productId)
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown product: " + productId));
         return toListing(product);
     }
 
+
+    private Product requireOwnedProduct(UUID sellerId, UUID productId) {
+        return products.findById(productId).filter(candidate -> candidate.getSellerId().equals(sellerId))
+                .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller product: " + productId));
+    }
     private ProductCategory requireOwnedCategory(UUID sellerId, UUID categoryId) {
         return categories.findByCategoryIdAndSellerId(categoryId, sellerId)
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller category: " + categoryId));
@@ -178,8 +230,13 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private static ProductResponse toResponse(Product product) {
+        return toResponse(product, product.getChannelAvailability().entrySet().stream()
+                .filter(Map.Entry::getValue).map(Map.Entry::getKey).sorted().toList());
+    }
+
+    private static ProductResponse toResponse(Product product, List<ProductSalesChannel> availableChannels) {
         return new ProductResponse(product.getProductId(), product.getSellerId(), product.getName(),
-                product.getDescription(), product.getCategoryId());
+                product.getDescription(), product.getCategoryId(), product.getStatus(), availableChannels);
     }
 
     private static SellerSkuResponse toResponse(Product product, SellerSku sku) {
@@ -195,15 +252,27 @@ public class ProductServiceImpl implements ProductService {
             if (parts.length == 5 && "v1".equals(parts[0])) {
                 UUID filterSellerId = "-".equals(parts[1]) ? null : UUID.fromString(parts[1]);
                 String keyword = new String(Base64.getUrlDecoder().decode(parts[2]), StandardCharsets.UTF_8);
-                return new ListingCursor(1, filterSellerId, null, keyword, UUID.fromString(parts[3]),
-                        UUID.fromString(parts[4]));
+                return new ListingCursor(1, false, filterSellerId, null, keyword,
+                        UUID.fromString(parts[3]), UUID.fromString(parts[4]));
             }
             if (parts.length == 6 && "v2".equals(parts[0])) {
                 UUID filterSellerId = UUID.fromString(parts[1]);
                 UUID categoryId = UUID.fromString(parts[2]);
                 String keyword = new String(Base64.getUrlDecoder().decode(parts[3]), StandardCharsets.UTF_8);
-                return new ListingCursor(2, filterSellerId, categoryId, keyword, UUID.fromString(parts[4]),
-                        UUID.fromString(parts[5]));
+                return new ListingCursor(2, false, filterSellerId, categoryId, keyword,
+                        UUID.fromString(parts[4]), UUID.fromString(parts[5]));
+            }
+            if (parts.length == 7 && "v3".equals(parts[0])) {
+                boolean managementScope = switch (parts[1]) {
+                    case "true" -> true;
+                    case "false" -> false;
+                    default -> throw new IllegalArgumentException("Malformed cursor scope");
+                };
+                UUID filterSellerId = "-".equals(parts[2]) ? null : UUID.fromString(parts[2]);
+                UUID categoryId = "-".equals(parts[3]) ? null : UUID.fromString(parts[3]);
+                String keyword = new String(Base64.getUrlDecoder().decode(parts[4]), StandardCharsets.UTF_8);
+                return new ListingCursor(3, managementScope, filterSellerId, categoryId, keyword,
+                        UUID.fromString(parts[5]), UUID.fromString(parts[6]));
             }
             throw new IllegalArgumentException("Malformed cursor");
         } catch (IllegalArgumentException exception) {
@@ -212,16 +281,17 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private static String encodeCursor(UUID filterSellerId, UUID categoryId, String keyword,
-            UUID positionSellerId, UUID productId) {
-        String encodedKeyword = Base64.getUrlEncoder().withoutPadding().encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
-        String value = categoryId == null
-                ? "v1:" + (filterSellerId == null ? "-" : filterSellerId) + ":" + encodedKeyword + ":" + positionSellerId + ":" + productId
-                : "v2:" + filterSellerId + ":" + categoryId + ":" + encodedKeyword + ":" + positionSellerId + ":" + productId;
+            UUID positionSellerId, UUID productId, boolean managementScope) {
+        String encodedKeyword = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
+        String value = "v3:" + managementScope + ":" + (filterSellerId == null ? "-" : filterSellerId) + ":"
+                + (categoryId == null ? "-" : categoryId) + ":" + encodedKeyword + ":"
+                + positionSellerId + ":" + productId;
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
-    private record ListingCursor(int version, UUID filterSellerId, UUID categoryId, String keyword,
-            UUID positionSellerId, UUID productId) {
-        boolean categoryFiltered() { return version == 2; }
+    private record ListingCursor(int version, boolean managementScope, UUID filterSellerId, UUID categoryId,
+            String keyword, UUID positionSellerId, UUID productId) {
+        boolean categoryFiltered() { return categoryId != null; }
     }
 }

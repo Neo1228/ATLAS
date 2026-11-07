@@ -7,6 +7,7 @@ import com.atlas.campaign.persistence.entity.Campaign;
 import com.atlas.campaign.repository.CampaignRepository;
 import com.atlas.campaign.persistence.state.CampaignStatus;
 import com.atlas.campaign.service.CampaignService;
+import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import java.time.Clock;
 import java.time.Duration;
@@ -33,7 +34,8 @@ public class CampaignServiceImpl implements CampaignService {
             throw new CampaignException(CampaignException.Code.INVALID_CONFIGURATION,
                     "Invalid campaign configuration");
         }
-        if (sellerSkus.find(request.sellerId(), request.skuId()) == null) {
+        if (sellerSkus.findOrderableSellerSku(request.sellerId(), request.skuId(),
+                ProductSalesChannel.CAMPAIGN) == null) {
             throw new CampaignException(CampaignException.Code.NOT_FOUND,
                     "Unknown seller SKU: " + request.sellerId() + "/" + request.skuId());
         }
@@ -48,6 +50,11 @@ public class CampaignServiceImpl implements CampaignService {
     public CampaignResponse open(UUID campaignId) {
         Campaign entity = campaigns.findById(campaignId).orElseThrow(() ->
                 new CampaignException(CampaignException.Code.NOT_FOUND, "Unknown campaign: " + campaignId));
+        if (sellerSkus.findOrderableSellerSku(entity.getSellerId(), entity.getSkuId(),
+                ProductSalesChannel.CAMPAIGN) == null) {
+            throw new CampaignException(CampaignException.Code.NOT_FOUND,
+                    "Unknown seller SKU: " + entity.getSellerId() + "/" + entity.getSkuId());
+        }
         entity.setStatus(CampaignStatus.OPEN);
         return toResponse(campaigns.save(entity));
     }

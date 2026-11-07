@@ -59,6 +59,14 @@ class GlobalExceptionHandlerTest {
         assertThat(insufficientStock.getStatusCode().value()).isEqualTo(HttpStatus.CONFLICT.value());
         assertThat(insufficientStock.getBody().getProperties()).containsEntry("code", "INSUFFICIENT_STOCK");
     }
+    @Test
+    void unavailableProductMapsToConflictWithStableCode() {
+        var response = handler.moduleException(new CatalogException(
+                CatalogException.Code.PRODUCT_NOT_ORDERABLE, "Product is unavailable"));
+        assertThat(response.getStatusCode().value()).isEqualTo(HttpStatus.CONFLICT.value());
+        assertThat(response.getBody().getProperties()).containsEntry("code", "PRODUCT_NOT_ORDERABLE");
+    }
+
 
     @Test
     void settlementInvalidRequestMapsToBadRequest() {

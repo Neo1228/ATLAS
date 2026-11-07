@@ -4,6 +4,8 @@ import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.exception.CatalogException;
+import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
@@ -84,18 +86,31 @@ public final class OrderServiceImpl implements OrderService {
     @Override
     public OrderResponse startCheckout(UUID campaignId, UUID ticketId) {
         if (campaignId == null || ticketId == null) throw invalidRequest();
-        return transactions.execute(status -> {
+        CheckoutStartOutcome outcome = transactions.execute(status -> {
             var existingOrder = repository.findByTicketId(ticketId);
             if (existingOrder.isPresent()) {
                 PurchaseOrder existing = existingOrder.get();
                 if (!Objects.equals(existing.campaignId(), campaignId)) {
-                    throw new OrderException(OrderException.Code.CONFLICT, "Ticket already belongs to another campaign order");
+                    throw new OrderException(OrderException.Code.CONFLICT,
+                            "Ticket already belongs to another campaign order");
                 }
-                return toResponse(existing);
+                return new CheckoutStartOutcome(toResponse(existing), null);
             }
             QueueTicketResponse ticket = admission.requireCheckoutSlot(campaignId, ticketId);
+            SellerSkuResponse sku;
+            try {
+                sku = sellerSkus.findOrderableSellerSku(ticket.sellerId(), ticket.skuId(),
+                        ProductSalesChannel.CAMPAIGN);
+            } catch (CatalogException exception) {
+                if (exception.code() != CatalogException.Code.PRODUCT_NOT_ORDERABLE) throw exception;
+                admission.releaseCheckoutSlot(campaignId, ticketId,
+                        CheckoutSlotReleaseReason.PRODUCT_NOT_ORDERABLE);
+                return new CheckoutStartOutcome(null, exception);
+            }
+            if (sku == null) {
+                throw new CatalogException(CatalogException.Code.NOT_FOUND, "Campaign SKU not found");
+            }
             admission.startCheckout(campaignId, ticketId);
-            SellerSkuResponse sku = sellerSkus.find(ticket.sellerId(), ticket.skuId());
             Instant now = clock.instant();
             PurchaseOrder saved = repository.save(new PurchaseOrder(campaignId, ticket.sellerId(), ticketId,
                     ticket.buyerRef(), OrderState.RESERVED, now.plus(checkoutWindow), null, now, now));
@@ -116,8 +131,10 @@ public final class OrderServiceImpl implements OrderService {
                 admission.releaseCheckoutSlot(campaignId, ticketId,
                         CheckoutSlotReleaseReason.INVENTORY_UNAVAILABLE);
             }
-            return toResponse(requireOrder(saved.orderId()));
+            return new CheckoutStartOutcome(toResponse(requireOrder(saved.orderId())), null);
         });
+        if (outcome.failure() != null) throw outcome.failure();
+        return outcome.response();
     }
 
     @Override
@@ -404,4 +421,5 @@ public final class OrderServiceImpl implements OrderService {
         for (int index = 0; index < locks.length; index++) locks[index] = new Object();
         return locks;
     }
+    private record CheckoutStartOutcome(OrderResponse response, CatalogException failure) { }
 }

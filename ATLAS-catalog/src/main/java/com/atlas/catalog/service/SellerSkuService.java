@@ -7,4 +7,6 @@ import java.util.UUID;
 public interface SellerSkuService {
     SellerSkuResponse find(UUID sellerId, String skuId);
     List<SellerSkuResponse> findAll(UUID sellerId, List<String> skuIds);
+    SellerSkuResponse findOrderableSellerSku(UUID sellerId, String skuId, ProductSalesChannel channel);
+    List<SellerSkuResponse> findOrderableSellerSkus(UUID sellerId, List<String> skuIds, ProductSalesChannel channel);
 }

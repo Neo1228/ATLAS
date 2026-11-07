@@ -1,5 +1,6 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.cart.dto.response.CartItemResponse;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.cart.service.CartService;
@@ -111,7 +112,8 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             List<CartItemResponse> items = seller.getValue().stream()
                     .sorted(Comparator.comparing(CartItemResponse::skuId)).toList();
             List<String> skuIds = items.stream().map(CartItemResponse::skuId).toList();
-            List<SellerSkuResponse> found = sellerSkus.findAll(seller.getKey(), skuIds);
+            List<SellerSkuResponse> found = sellerSkus.findOrderableSellerSkus(
+                    seller.getKey(), skuIds, ProductSalesChannel.ONLINE_STORE);
             Map<String, SellerSkuResponse> bySku = new HashMap<>();
             if (found != null) {
                 for (SellerSkuResponse sku : found) {

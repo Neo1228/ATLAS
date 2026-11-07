@@ -7,6 +7,8 @@ import com.atlas.campaign.persistence.entity.Campaign;
 import com.atlas.campaign.repository.CampaignRepository;
 import com.atlas.campaign.persistence.state.CampaignStatus;
 import com.atlas.catalog.service.SellerSkuService;
+import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.exception.CatalogException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,7 +46,7 @@ class CampaignServiceTest {
         UUID sellerId = UUID.randomUUID();
         UUID campaignId = UUID.randomUUID();
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
-        when(sellerSkus.find(sellerId, "sku-1")).thenReturn(
+        when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN)).thenReturn(
                 new SellerSkuResponse(sellerId, UUID.randomUUID(), "sku-1", "Product", 1));
         when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> {
             Campaign saved = invocation.getArgument(0);
@@ -71,7 +73,7 @@ class CampaignServiceTest {
         CampaignRepository campaignRepository = mock(CampaignRepository.class);
         SellerSkuService sellerSkus = mock(SellerSkuService.class);
         UUID sellerId = UUID.randomUUID();
-        when(sellerSkus.find(sellerId, "unknown")).thenReturn(null);
+        when(sellerSkus.findOrderableSellerSku(sellerId, "unknown", ProductSalesChannel.CAMPAIGN)).thenReturn(null);
         CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus, Clock.systemUTC());
 
         assertThrows(CampaignException.class, () -> campaigns.create(
@@ -79,6 +81,39 @@ class CampaignServiceTest {
 
         verify(campaignRepository, never()).save(any(Campaign.class));
     }
+
+    @Test
+    void unavailableKnownSkuPreventsCampaignCreation() {
+        CampaignRepository repository = mock(CampaignRepository.class);
+        SellerSkuService sellerSkus = mock(SellerSkuService.class);
+        UUID sellerId = UUID.randomUUID();
+        when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN))
+                .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "Unavailable"));
+        CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC());
+
+        assertThrows(CatalogException.class, () -> service.create(
+                new CreateCampaignRequest(sellerId, "sku-1", Duration.ofMinutes(5))));
+
+        verify(repository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    void unavailableKnownSkuPreventsCampaignOpening() {
+        CampaignRepository repository = mock(CampaignRepository.class);
+        SellerSkuService sellerSkus = mock(SellerSkuService.class);
+        UUID sellerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        Campaign entity = new Campaign(sellerId, "sku-1", CampaignStatus.CLOSED, 300, Instant.now());
+        when(repository.findById(campaignId)).thenReturn(Optional.of(entity));
+        when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN))
+                .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "Unavailable"));
+        CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC());
+
+        assertThrows(CatalogException.class, () -> service.open(campaignId));
+
+        verify(repository, never()).save(any(Campaign.class));
+    }
+
     @Test
     void findMissingCampaignThrowsTypedNotFound() {
         CampaignRepository campaignRepository = mock(CampaignRepository.class);

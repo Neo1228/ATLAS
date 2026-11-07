@@ -10,6 +10,10 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.cart.dto.request.ReorderCartRequest;
 import com.atlas.cart.dto.response.CartResponse;
+import com.atlas.catalog.exception.CatalogException;
+import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.cart.service.CartService;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
@@ -46,6 +50,7 @@ class OrderReorderServiceImplTest {
     @Mock OrderRepository orders;
     @Mock OrderItemRepository items;
     @Mock InventoryService inventory;
+    @Mock SellerSkuService sellerSkus;
     @Mock CartService carts;
     @Mock JdbcOrderReorderRepository reorderRequests;
     @Mock Clock clock;
@@ -64,6 +69,9 @@ class OrderReorderServiceImplTest {
                 .thenReturn(true);
         when(inventory.findFulfillmentLocation(eq(SELLER_ID), any()))
                 .thenReturn(Optional.of(UUID.randomUUID()));
+        when(sellerSkus.findOrderableSellerSkus(SELLER_ID, List.of(SKU_ID),
+                ProductSalesChannel.ONLINE_STORE))
+                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product", 100)));
         when(carts.mergeItems(any(ReorderCartRequest.class))).thenReturn(expected);
 
         assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
@@ -106,12 +114,36 @@ class OrderReorderServiceImplTest {
     }
 
     @Test
+    void rejectsUnavailableCatalogProductBeforeInventoryOrReorderSideEffects() {
+        PurchaseOrder order = terminalCartOrder(OrderState.CANCELLED);
+        OrderItem item = new OrderItem(order, PRODUCT_ID, SELLER_ID, SKU_ID, "Product", 2, 100);
+        when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(order));
+        when(reorderRequests.find(SELLER_ID, BUYER_REF, "reorder-key")).thenReturn(Optional.empty());
+        when(items.findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID)).thenReturn(List.of(item));
+        when(sellerSkus.findOrderableSellerSkus(SELLER_ID, List.of(SKU_ID),
+                ProductSalesChannel.ONLINE_STORE))
+                .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "unavailable"));
+
+        CatalogException unavailable = assertThrows(CatalogException.class,
+                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
+
+        assertEquals(CatalogException.Code.PRODUCT_NOT_ORDERABLE, unavailable.code());
+        verify(inventory, never()).findFulfillmentLocation(any(), any());
+        verify(reorderRequests, never()).insertIfAbsent(eq(SELLER_ID), eq(BUYER_REF), eq("reorder-key"),
+                eq(ORDER_ID), eq(false), any(Instant.class));
+        verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
+    }
+
+    @Test
     void rejectsInsufficientInventoryBeforeRecordingOrMerging() {
         PurchaseOrder order = terminalCartOrder(OrderState.EXPIRED);
         OrderItem item = new OrderItem(order, PRODUCT_ID, SELLER_ID, SKU_ID, "Product", 2, 100);
         when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(order));
         when(reorderRequests.find(SELLER_ID, BUYER_REF, "reorder-key")).thenReturn(Optional.empty());
         when(items.findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID)).thenReturn(List.of(item));
+        when(sellerSkus.findOrderableSellerSkus(SELLER_ID, List.of(SKU_ID),
+                ProductSalesChannel.ONLINE_STORE))
+                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product", 100)));
         when(inventory.findFulfillmentLocation(eq(SELLER_ID), any()))
                 .thenReturn(Optional.empty());
 
