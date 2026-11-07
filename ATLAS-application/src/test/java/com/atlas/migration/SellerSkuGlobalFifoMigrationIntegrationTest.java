@@ -42,6 +42,8 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "admission_ticket")).isTrue();
         assertThat(tableExists(jdbc, "inventory_pool")).isTrue();
         assertThat(tableExists(jdbc, "inventory_reservation")).isTrue();
+        assertThat(tableExists(jdbc, "inventory_location")).isTrue();
+        assertThat(tableExists(jdbc, "inventory_transfer")).isTrue();
         assertThat(tableExists(jdbc, "purchase_order")).isTrue();
         assertThat(tableExists(jdbc, "payment_attempt")).isTrue();
         assertThat(tableExists(jdbc, "product")).isTrue();
@@ -84,7 +86,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "settlement_seller_allocation")).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(30); // twenty-nine application tables plus Flyway history
+                Integer.class, schema)).isEqualTo(32); // thirty-one application tables plus Flyway history
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.atlas.application.controller.dto.AdjustInventoryCapacityHttpRequest;
 import com.atlas.inventory.dto.request.AdjustInventoryCapacityRequest;
 import com.atlas.inventory.dto.response.InventoryAdjustmentResponse;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
+import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,7 +23,7 @@ public class InventoryAdjustmentController {
     @PostMapping
     public InventoryAdjustmentResponse adjust(@PathVariable UUID sellerId, @PathVariable String skuId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @RequestBody AdjustInventoryCapacityHttpRequest request) {
+            @Valid @RequestBody AdjustInventoryCapacityHttpRequest request) {
         return adjustments.adjust(new AdjustInventoryCapacityRequest(sellerId, skuId, idempotencyKey,
                 request.delta(), request.reason()));
     }

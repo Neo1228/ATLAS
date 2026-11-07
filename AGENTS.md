@@ -28,6 +28,7 @@
 - Current Cart·checkout cardinality and return policy: [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md).
 - 모듈 간 호출은 공개 `.service`/DTO 계약으로 제한. 다른 모듈의 entity/repository 직접 참조 금지.
 - 일반 Cart 구매: Buyer-wide Cart `(sellerId, skuId)` → BuyerCheckout와 Seller별 PurchaseOrder → OrderItem snapshot → 전체 재고 atomic reservation → checkout당 Fake PSP attempt/capture 1회 → Seller별 allocation·fulfillment. Delivered return은 Seller 수령 후 OrderItem 검수; PASSED만 local refund/restock, FAILED는 claimed 유지.
+- Location-aware 재고: Inventory가 SellerOrder의 모든 line을 충족하는 active location 하나를 priority ASC·UUID ASC로 선택. 주문 분할 금지. Reservation/PurchaseOrder에 선택 위치를 저장하고 claim·release·return-restock에 재사용. 기존 pool은 V16에서 `DEFAULT`로 보존 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
 - 한정판매: Campaign 개방 → queue 자격 확인 → FIFO 순번·checkout slot 발급 → Campaign Order 생성 → 재고 예약 → 같은 Order 결제 흐름.
 - 결제 상태가 `PENDING`/`UNKNOWN`이면 같은 attempt와 재고 hold 유지. 결과 대조 전에 새 결제 attempt 생성 금지. 주문 이행·환불 기록은 `OrderState`와 별도 관리.
 - 재고 불변조건: `available + reserved + claimed = initial_capacity`; 각 값은 음수가 아님. 확인된 비결제와 필요한 void 뒤에만 hold 해제.

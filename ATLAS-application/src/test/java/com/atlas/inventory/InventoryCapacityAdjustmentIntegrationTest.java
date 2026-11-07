@@ -105,18 +105,29 @@ class InventoryCapacityAdjustmentIntegrationTest {
         UUID productId = products.createProduct(sellerId,
                 new CreateProductRequest("concurrent-" + UUID.randomUUID(), "description")).productId();
         products.registerSku(sellerId, productId, new RegisterSellerSkuRequest(sku, 100, 3));
+        UUID defaultLocationId = jdbc.queryForObject(
+                "SELECT location_id FROM inventory_location WHERE seller_id = ? AND location_code = 'DEFAULT'",
+                UUID.class, sellerId);
         AdjustInventoryCapacityRequest request = new AdjustInventoryCapacityRequest(
                 sellerId, sku, "concurrent-key", 2, "restock");
         try (var executor = Executors.newFixedThreadPool(8)) {
         List<Callable<InventoryAdjustmentResponse>> calls = new ArrayList<>();
             for (int i = 0; i < 16; i++) {
-                calls.add(() -> adjustments.adjust(request));
+                if (i % 2 == 0) {
+                    calls.add(() -> adjustments.adjust(request));
+                } else {
+                    calls.add(() -> adjustments.adjust(
+                            sellerId, sku, defaultLocationId, "concurrent-key", 2, "restock"));
+                }
             }
             for (var future : executor.invokeAll(calls)) assertThat(future.get().delta()).isEqualTo(2);
         }
         InventoryPoolResponse pool = inventory.find(sellerId, sku);
         assertThat(pool.initialCapacity()).isEqualTo(5);
         assertThat(pool.available() + pool.reserved() + pool.claimed()).isEqualTo(pool.initialCapacity());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inventory_capacity_adjustment WHERE seller_id = ? AND sku_id = ? AND idempotency_key = ?",
+                Integer.class, sellerId, sku, "concurrent-key")).isEqualTo(1);
     }
     @Test
     void adjustmentFailuresHaveStableHttpProblemCodesAndDoNotWriteAudit() throws Exception {

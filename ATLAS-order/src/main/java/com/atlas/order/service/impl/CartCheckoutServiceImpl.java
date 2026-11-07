@@ -6,6 +6,7 @@ import com.atlas.cart.service.CartService;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
+import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderItemResponse;
@@ -150,7 +151,18 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                     .map(line -> new ReserveInventoryBatchRequest.Item(seller.sellerId(),
                             line.sku().skuId(), line.cartItem().quantity()))
                     .toList();
-            inventory.reserveAll(new ReserveInventoryBatchRequest(savedChild.orderId(), null, reservations));
+            List<ReservationResponse> savedReservations = inventory.reserveAll(
+                    new ReserveInventoryBatchRequest(savedChild.orderId(), null, reservations));
+            UUID locationId = savedReservations.stream().map(ReservationResponse::locationId)
+                    .filter(Objects::nonNull).findFirst()
+                    .orElseThrow(() -> new OrderException(OrderException.Code.CONFLICT,
+                            "Inventory reservations did not include a fulfillment location"));
+            if (savedReservations.size() != reservations.size() || savedReservations.stream()
+                    .anyMatch(reservation -> !locationId.equals(reservation.locationId()))) {
+                throw new OrderException(OrderException.Code.CONFLICT,
+                        "Inventory reservations disagree on fulfillment location");
+            }
+            savedChild.setFulfillmentLocationId(locationId);
         }
         carts.clearForCheckout(buyerRef);
         return checkoutId;

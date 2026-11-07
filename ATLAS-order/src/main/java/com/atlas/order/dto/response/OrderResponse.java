@@ -12,7 +12,7 @@ import java.util.UUID;
 public record OrderResponse(UUID orderId, UUID campaignId, UUID ticketId, UUID paymentAttemptId, OrderState state,
                             Instant checkoutExpiresAt, ReservationStatus inventoryState,
                             PaymentState paymentState, TicketStatus ticketState, OrderSource source,
-                            List<OrderItemResponse> items, long totalPriceWon) {
+                            UUID fulfillmentLocationId, List<OrderItemResponse> items, long totalPriceWon) {
     public OrderResponse {
         items = List.copyOf(items);
     }

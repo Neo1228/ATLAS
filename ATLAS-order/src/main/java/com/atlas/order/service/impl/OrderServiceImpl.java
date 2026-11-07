@@ -101,8 +101,16 @@ public final class OrderServiceImpl implements OrderService {
                     ticket.buyerRef(), OrderState.RESERVED, now.plus(checkoutWindow), null, now, now));
             items.save(new OrderItem(saved, sku.productId(), ticket.sellerId(), sku.skuId(),
                     sku.productName(), 1, sku.priceWon()));
-            boolean reserved = inventory.tryReserve(new ReserveInventoryRequest(
-                    saved.orderId(), campaignId, ticket.sellerId(), sku.skuId(), 1)).isPresent();
+            ReservationResponse reservation = inventory.tryReserve(new ReserveInventoryRequest(
+                    saved.orderId(), campaignId, ticket.sellerId(), sku.skuId(), 1)).orElse(null);
+            boolean reserved = reservation != null;
+            if (reserved) {
+                if (reservation.locationId() == null) {
+                    throw new OrderException(OrderException.Code.CONFLICT,
+                            "Inventory reservation did not include a fulfillment location");
+                }
+                saved.setFulfillmentLocationId(reservation.locationId());
+            }
             if (!reserved) {
                 updateOrderState(saved.orderId(), OrderState.FAILED, null, clock.instant());
                 admission.releaseCheckoutSlot(campaignId, ticketId,
@@ -374,7 +382,8 @@ public final class OrderServiceImpl implements OrderService {
         ReservationStatus inventoryState = reservations.isEmpty() ? null : reservations.get(0).status();
         return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), paymentAttemptId,
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState,
-                ticket == null ? null : ticket.status(), order.source(), itemResponses, totalPriceWon);
+                ticket == null ? null : ticket.status(), order.source(), order.fulfillmentLocationId(),
+                itemResponses, totalPriceWon);
     }
 
     private static boolean invalidIdempotencyKey(String idempotencyKey) {

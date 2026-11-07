@@ -3,7 +3,7 @@ package com.atlas.order.service.impl;
 import com.atlas.cart.dto.request.ReorderCartRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.cart.service.CartService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
+import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.exception.OrderException;
@@ -17,9 +17,7 @@ import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.OrderReorderService;
 import java.time.Clock;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -94,17 +92,14 @@ public class OrderReorderServiceImpl implements OrderReorderService {
     }
 
     private void assertInventoryAvailable(PurchaseOrder sourceOrder, List<OrderItem> items) {
-        List<String> skuIds = items.stream().map(OrderItem::skuId).distinct().sorted().toList();
-        Map<String, InventoryPoolResponse> pools = new HashMap<>();
-        for (InventoryPoolResponse pool : inventory.findAll(sourceOrder.sellerId(), skuIds)) {
-            if (pools.putIfAbsent(pool.skuId(), pool) != null)
-                throw conflict("Inventory returned duplicate seller SKUs");
-        }
-        for (OrderItem item : items) {
-            InventoryPoolResponse pool = pools.get(item.skuId());
-            if (pool == null || pool.available() < item.quantity())
-                throw new InventoryException(InventoryException.Code.INSUFFICIENT_STOCK,
-                        "insufficient stock seller " + sourceOrder.sellerId() + " sku " + item.skuId());
+        List<ReserveInventoryBatchRequest.Item> lines = items.stream()
+                .map(item -> new ReserveInventoryBatchRequest.Item(
+                        sourceOrder.sellerId(), item.skuId(), item.quantity()))
+                .toList();
+        if (inventory.findFulfillmentLocation(sourceOrder.sellerId(), lines).isEmpty()) {
+            throw new InventoryException(InventoryException.Code.INSUFFICIENT_STOCK,
+                    "no single active fulfillment location has sufficient stock for seller "
+                            + sourceOrder.sellerId());
         }
     }
 
