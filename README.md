@@ -2,7 +2,7 @@
 
 전체 이커머스 플랫폼의 구매·판매 흐름과 거래 정합성·장애 복구를 검증하는 로컬 학습 프로젝트. 현재 일반 구매 흐름과 한정판매 경로를 함께 개발.
 
-- 일반 구매: Seller-SKU → Buyer-wide Cart·Seller별 PurchaseOrder → Fake PSP 결제 → 분할 출고·배송·Reorder·환불/반품.
+- 일반 구매: Seller-SKU → Seller별 상품 분류·탐색 → Buyer-wide Cart·Seller별 PurchaseOrder → Fake PSP 결제 → 분할 출고·배송·Reorder·환불/반품.
 - 한정판매: Seller-SKU 재고, FIFO/K 대기열, location-aware reservation·주문 routing.
 - Seller는 fulfillment location을 관리하며 각 Seller 주문은 모든 line을 처리할 단일 location을 사용합니다. 위치 선택은 priority·UUID 순이며 DEFAULT는 기존 재고의 보존 매핑입니다. Shipment는 수동으로 기록하며 실제 carrier 연동은 없음. 인증·tenant 격리, live payment/refund, cloud 배포, production SLO/capacity는 미구현.
 - 요구사항: [Requirements Index](docs/01-requirements/requirements-index.md)
@@ -31,7 +31,7 @@
 | 디렉터리 | Gradle project | 책임 |
 |---|---|---|
 | [ATLAS-application](ATLAS-application) | `:application-module` | HTTP, 설정, 공통 오류 처리, Flyway migration |
-| [ATLAS-catalog](ATLAS-catalog) | `:catalog-module` | Seller, Product, Seller-SKU, 현재 가격 |
+| [ATLAS-catalog](ATLAS-catalog) | `:catalog-module` | Seller, Product/ProductCategory, Seller-SKU, 현재 가격 |
 | [ATLAS-cart](ATLAS-cart) | `:cart-module` | Buyer 단위 Cart, Seller-SKU별 CartItem |
 | [ATLAS-campaign](ATLAS-campaign) | `:campaign-module` | Campaign과 판매 자격 |
 | [ATLAS-admission](ATLAS-admission) | `:admission-module` | Seller-SKU FIFO/K, ticket, expiry |
@@ -72,9 +72,12 @@ docker compose up -d --wait postgres
 1. Seller 생성: `POST /api/sellers`.
 2. Product 등록: `POST /api/sellers/{sellerId}/products`.
 3. Product에 SKU·가격 등록: `POST /api/sellers/{sellerId}/products/{productId}/skus`.
-4. 상품 조회: `GET /api/products` 또는 Seller별 `GET /api/sellers/{sellerId}/products`.
+4. 상품·분류 조회: `GET /api/products`, Seller별 `GET /api/sellers/{sellerId}/products`; 결과의 Product에는 `categoryId` 포함.
+   - Category 생성·목록: `POST`·`GET /api/sellers/{sellerId}/product-categories`; 표시명 수정: `PUT /api/sellers/{sellerId}/product-categories/{categoryId}`. Seller 생성 시 `UNCATEGORIZED` 생성.
+   - Product 생성 요청의 `categoryId`는 선택값. 기존 Product 재분류: `PUT /api/sellers/{sellerId}/products/{productId}/category`.
+   - `categoryId` filter는 Seller 범위에서만 사용. `/api/products`는 `sellerId`와 함께 전달; sellerId 없이 category filter를 보내면 HTTP 400 `INVALID_REQUEST`.
    - Pagination: `limit` defaults to 10, maximum 100. Pass `nextCursor` as `cursor` for the next page.
-   - Cursor 적용 범위: `sellerId` filter와 정규화된 `query`. 둘 중 하나가 다르면 HTTP 400 ProblemDetail (`code: INVALID_REQUEST`, `detail: Invalid product cursor`). `limit` 변경은 허용.
+   - Cursor는 `sellerId`·정규화된 `query`·`categoryId`에 바인딩. 변경 시 HTTP 400 `INVALID_REQUEST`; category 없는 기존 v1 cursor 유지, category cursor는 v2. `limit` 변경은 허용.
 5. Cart line 설정: `PUT /api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}`. Line identity는 `(sellerId, skuId)`.
    - Line 삭제: `DELETE /api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}`. 전체 Cart 비우기: `DELETE /api/buyers/{buyerRef}/cart/items`. Cart는 유지되며 재고는 바뀌지 않음.
 6. Buyer checkout: `POST /api/buyers/{buyerRef}/cart/checkout`과 `Idempotency-Key`. 재고 예약은 전체 Seller에 대해 all-or-nothing.
@@ -91,4 +94,4 @@ Cart는 Buyer 소유이며 여러 Seller의 SKU·수량을 포함할 수 있음.
 
 ## Database 시작 정책
 
-V6/V7은 clean-start 전용. V8 Reorder, V9 fulfillment, V10 capture ledger, V11 pre-shipment refund, V12 inventory audit, V13 durable Fake PSP, V14 BuyerCheckout·Buyer-wide Cart, V15 delivered return/inspection, V16 fulfillment location·transfer, V17 SellerOrder shipment·partial dispatch를 추가. 기존 migration은 수정하지 않으며, V14는 기존 commerce row가 있으면 mapping/backfill 없이 중단. 근거: [D-055/D-071/D-072/D-073](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md).
+V6/V7은 clean-start 전용. V8 Reorder, V9 fulfillment, V10 capture ledger, V11 pre-shipment refund, V12 inventory audit, V13 durable Fake PSP, V14 BuyerCheckout·Buyer-wide Cart, V15 delivered return/inspection, V16 fulfillment location·transfer, V17 SellerOrder shipment·partial dispatch, V18 Seller ProductCategory·Product backfill을 추가. 기존 migration은 수정하지 않으며, V14는 기존 commerce row가 있으면 mapping/backfill 없이 중단. 근거: [D-055/D-071/D-072/D-073/D-074](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md), [ADR-0019](docs/02-decisions/adr/ADR-0019-seller-product-categories.md).

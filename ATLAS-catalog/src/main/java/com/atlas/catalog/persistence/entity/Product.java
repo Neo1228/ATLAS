@@ -21,6 +21,9 @@ public class Product {
     @Column(nullable = false)
     private UUID sellerId;
 
+    @Column(nullable = false)
+    private UUID categoryId;
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String name;
 
@@ -29,9 +32,14 @@ public class Product {
 
     protected Product() { }
 
-    public Product(UUID sellerId, String name, String description) {
+    public Product(UUID sellerId, UUID categoryId, String name, String description) {
         this.sellerId = sellerId;
+        this.categoryId = categoryId;
         this.name = name;
         this.description = description;
+    }
+
+    public void assignCategory(UUID categoryId) {
+        this.categoryId = categoryId;
     }
 }

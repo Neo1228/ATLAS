@@ -33,16 +33,17 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                         get_byte(uuid_send(CAST(:cursorProduct AS uuid)), 8) # 128), 'hex') COLLATE "C"
                         AS product_sort_key
             )
-            SELECT p.product_id, p.seller_id, p.name, p.description
+            SELECT p.product_id, p.seller_id, p.category_id, p.name, p.description
             FROM product_listing p CROSS JOIN cursor_key c
             WHERE (CAST(:sellerId AS uuid) IS NULL OR p.seller_id = CAST(:sellerId AS uuid))
+                AND (CAST(:categoryId AS uuid) IS NULL OR p.category_id = CAST(:categoryId AS uuid))
                 AND (CAST(:keyword AS text) = '' OR position(CAST(:keyword AS text) in lower(p.name)) > 0)
                 AND (CAST(:cursorSeller AS uuid) IS NULL OR p.seller_sort_key > c.seller_sort_key
                     OR (p.seller_sort_key = c.seller_sort_key AND p.product_sort_key > c.product_sort_key))
             ORDER BY p.seller_sort_key, p.product_sort_key
             LIMIT :limit
             """, nativeQuery = true)
-    List<Product> findListingPage(@Param("sellerId") UUID sellerId, @Param("keyword") String keyword,
-            @Param("cursorSeller") UUID cursorSeller, @Param("cursorProduct") UUID cursorProduct,
-            @Param("limit") int limit);
+    List<Product> findListingPage(@Param("sellerId") UUID sellerId, @Param("categoryId") UUID categoryId,
+            @Param("keyword") String keyword, @Param("cursorSeller") UUID cursorSeller,
+            @Param("cursorProduct") UUID cursorProduct, @Param("limit") int limit);
 }

@@ -17,8 +17,10 @@ import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
+import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
+import com.atlas.catalog.repository.ProductCategoryRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
@@ -37,10 +39,11 @@ import org.mockito.ArgumentCaptor;
 class ProductServiceImplTest {
     private final SellerRepository sellers = mock(SellerRepository.class);
     private final ProductRepository products = mock(ProductRepository.class);
+    private final ProductCategoryRepository categories = mock(ProductCategoryRepository.class);
     private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
     private final InventoryService inventory = mock(InventoryService.class);
     private final Instant now = Instant.parse("2026-01-01T00:00:00Z");
-    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, sellerSkus, inventory,
+    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, categories, sellerSkus, inventory,
             Clock.fixed(now, ZoneOffset.UTC));
     private final UUID sellerId = UUID.randomUUID();
     private final UUID productId = UUID.randomUUID();
@@ -52,13 +55,13 @@ class ProductServiceImplTest {
         Product lookahead = product(sellerId, UUID.randomUUID(), "lookahead");
         UUID cursorProduct = UUID.randomUUID();
         when(sellers.existsById(sellerId)).thenReturn(true);
-        when(products.findListingPage(sellerId, "blue", sellerId, cursorProduct, 3))
+        when(products.findListingPage(sellerId, null, "blue", sellerId, cursorProduct, 3))
                 .thenReturn(List.of(first, second, lookahead));
         when(sellerSkus.findAllByProductIdIn(List.of(first.getProductId(), second.getProductId())))
                 .thenReturn(List.of());
 
-        ProductListingPageResponse page = service.listProductsPage(
-                sellerId, "  BLUE ", 2, encodeCursor(sellerId, "blue", sellerId, cursorProduct));
+        ProductListingPageResponse page = service.listProductsPage(sellerId, null, "  BLUE ", 2,
+                encodeCursor(sellerId, "blue", sellerId, cursorProduct));
 
         assertEquals(2, page.items().size());
         assertEquals(encodeCursor(sellerId, "blue", sellerId, second.getProductId()), page.nextCursor());
@@ -68,20 +71,20 @@ class ProductServiceImplTest {
 
     @Test
     void listingDefaultsLimitAndNormalizesMissingQuery() {
-        when(products.findListingPage(null, "", null, null, 11)).thenReturn(List.of());
+        when(products.findListingPage(null, null, "", null, null, 11)).thenReturn(List.of());
 
-        ProductListingPageResponse page = service.listProductsPage(null, null, null, null);
+        ProductListingPageResponse page = service.listProductsPage(null, null, null, null, null);
 
         assertEquals(List.of(), page.items());
         assertNull(page.nextCursor());
-        verify(products).findListingPage(null, "", null, null, 11);
+        verify(products).findListingPage(null, null, "", null, null, 11);
     }
 
     @Test
     void listingRejectsInvalidLimitsMalformedCursorsAndMismatchedSellerCursors() {
         for (int invalid : List.of(-1, 0, 101)) {
             CatalogException exception = assertThrows(CatalogException.class,
-                    () -> service.listProductsPage(null, null, invalid, null));
+                    () -> service.listProductsPage(null, null, null, invalid, null));
             assertEquals(Code.INVALID_REQUEST, exception.code());
         }
         for (String cursor : List.of(
@@ -90,38 +93,43 @@ class ProductServiceImplTest {
                 encode("not-a-uuid:" + productId),
                 encode(sellerId + ":"))) {
             CatalogException exception = assertThrows(CatalogException.class,
-                    () -> service.listProductsPage(null, null, null, cursor));
+                    () -> service.listProductsPage(null, null, null, null, cursor));
             assertEquals(Code.INVALID_REQUEST, exception.code());
             assertEquals("Invalid product cursor", exception.getMessage());
         }
         when(sellers.existsById(sellerId)).thenReturn(true);
         CatalogException mismatched = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(sellerId, null, 10,
+                () -> service.listProductsPage(sellerId, null, null, 10,
                         encodeCursor(sellerId, "", UUID.randomUUID(), productId)));
         assertEquals(Code.INVALID_REQUEST, mismatched.code());
         CatalogException mismatchedQuery = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(null, "blue", 10,
+                () -> service.listProductsPage(null, null, "blue", 10,
                         encodeCursor(null, "red", sellerId, productId)));
         assertEquals(Code.INVALID_REQUEST, mismatchedQuery.code());
         CatalogException mismatchedSellerFilter = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(sellerId, null, 10,
+                () -> service.listProductsPage(sellerId, null, null, 10,
                         encodeCursor(UUID.randomUUID(), "", sellerId, productId)));
         assertEquals(Code.INVALID_REQUEST, mismatchedSellerFilter.code());
-        verify(products, never()).findListingPage(any(), any(), any(), any(), anyInt());
+        verify(products, never()).findListingPage(any(), any(), any(), any(), any(), anyInt());
     }
 
     @Test
     void listingRequiresExistingSeller() {
         when(sellers.existsById(sellerId)).thenReturn(false);
         CatalogException exception = assertThrows(CatalogException.class,
-                () -> service.listProductsPage(sellerId, null, 10, null));
+                () -> service.listProductsPage(sellerId, null, null, 10, null));
         assertEquals(Code.NOT_FOUND, exception.code());
-        verify(products, never()).findListingPage(any(), any(), any(), any(), anyInt());
+        verify(products, never()).findListingPage(any(), any(), any(), any(), any(), anyInt());
     }
 
     @Test
     void createsProductForExistingSeller() {
         when(sellers.existsById(sellerId)).thenReturn(true);
+        ProductCategory defaultCategory = mock(ProductCategory.class);
+        UUID defaultCategoryId = UUID.randomUUID();
+        when(defaultCategory.getCategoryId()).thenReturn(defaultCategoryId);
+        when(categories.findBySellerIdAndCode(sellerId, ProductCategory.UNCATEGORIZED_CODE))
+                .thenReturn(Optional.of(defaultCategory));
         when(products.save(any(Product.class))).thenAnswer(call -> call.getArgument(0));
 
         var response = service.createProduct(sellerId, new CreateProductRequest("Tea", "description"));
