@@ -62,6 +62,25 @@ public class OrderRefundRepository {
             return quantities;
         }, orderId);
     }
+    public Map<UUID, Integer> preShipmentRefundedQuantitiesByOrder(UUID orderId) {
+        return jdbc.query("""
+                SELECT item.order_item_id, SUM(item.quantity) AS refunded_quantity
+                FROM order_refund_request request
+                JOIN order_refund_request_item item ON item.refund_id = request.refund_id
+                WHERE request.order_id = ?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM order_return_item returned
+                    WHERE returned.refund_id = item.refund_id
+                      AND returned.order_item_id = item.order_item_id
+                  )
+                GROUP BY item.order_item_id
+                """, resultSet -> {
+            Map<UUID, Integer> quantities = new HashMap<>();
+            while (resultSet.next()) quantities.put(resultSet.getObject("order_item_id", UUID.class),
+                    Math.toIntExact(resultSet.getLong("refunded_quantity")));
+            return quantities;
+        }, orderId);
+    }
 
     public Optional<RefundSummary> findSummary(UUID orderId) {
         return jdbc.query("""

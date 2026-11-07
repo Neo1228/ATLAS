@@ -3,7 +3,7 @@
 ## 프로젝트 개요
 
 - ATLAS는 전체 이커머스 플랫폼의 구매·판매 흐름, 거래 정합성, 장애 복구를 단계적으로 검증하는 로컬 학습 프로젝트.
-- 현재 기능: 상품·Seller-SKU, 장바구니, 한정판매 대기열, 재고 예약, 주문·Fake PSP, 주문 이행, 내부 정산·환불 기록.
+- 현재 기능: 상품·Seller-SKU, 장바구니, 한정판매 대기열, 재고 예약·location routing, 주문·Fake PSP, 부분 출고·배송 기록, 내부 정산·환불·반품.
 - 실제 사용자, 개인정보, 실결제·송금, 운송사 연동, 클라우드 운영은 범위 밖.
 - 검증된 사실, 소유자 결정, 합성 입력, 실측 결과를 구분. 시험 입력을 실제 수요나 운영 용량으로 표현하지 않음.
 - 현재 기능과 실행 방법: [README](README.md). 기능 요구사항·미결정 정책: [요구사항 인덱스](docs/01-requirements/requirements-index.md). 지속 보존할 결정: [결정 로그](docs/00-governance/decision-log.md).
@@ -21,13 +21,14 @@
 | `campaign-module` | Campaign과 판매 자격 |
 | `admission-module` | FIFO 대기열, ticket, checkout slot, queue policy |
 | `inventory-module` | 공유 재고 pool, reservation, 수량 보존 |
-| `order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem, fulfillment·return·refund 흐름 |
+| `order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem·location snapshot, Shipment·fulfillment·refund·return |
 | `payment-module` | PaymentAttempt와 Fake PSP 상태 |
 | `settlement-module` | 내부 gross-capture 원장과 로컬 환불 reversal |
 
 - Current Cart·checkout cardinality and return policy: [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md).
 - 모듈 간 호출은 공개 `.service`/DTO 계약으로 제한. 다른 모듈의 entity/repository 직접 참조 금지.
 - 일반 Cart 구매: Buyer-wide Cart `(sellerId, skuId)` → BuyerCheckout와 Seller별 PurchaseOrder → OrderItem snapshot → 전체 재고 atomic reservation → checkout당 Fake PSP attempt/capture 1회 → Seller별 allocation·fulfillment. Delivered return은 Seller 수령 후 OrderItem 검수; PASSED만 local refund/restock, FAILED는 claimed 유지.
+- Shipment는 실제 dispatch 시점에 기록. SellerOrder마다 여러 package와 OrderItem 수량 분할 가능; `shipped + direct pre-shipment refunded <= ordered`. 모든 net shippable quantity delivery 전 Return 거부. Carrier 연동 없이 local simulation ([D-073](docs/00-governance/decision-log.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
 - Location-aware 재고: Inventory가 SellerOrder의 모든 line을 충족하는 active location 하나를 priority ASC·UUID ASC로 선택. 주문 분할 금지. Reservation/PurchaseOrder에 선택 위치를 저장하고 claim·release·return-restock에 재사용. 기존 pool은 V16에서 `DEFAULT`로 보존 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
 - 한정판매: Campaign 개방 → queue 자격 확인 → FIFO 순번·checkout slot 발급 → Campaign Order 생성 → 재고 예약 → 같은 Order 결제 흐름.
 - 결제 상태가 `PENDING`/`UNKNOWN`이면 같은 attempt와 재고 hold 유지. 결과 대조 전에 새 결제 attempt 생성 금지. 주문 이행·환불 기록은 `OrderState`와 별도 관리.
@@ -110,7 +111,7 @@ docker compose up -d --wait postgres
 ## 테스트와 품질 점검
 
 - 단위 테스트는 각 `ATLAS-*/src/test`, Spring/PostgreSQL 통합·아키텍처 테스트는 `ATLAS-application/src/test`.
-- 주요 테스트: `ModuleBoundaryTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `SellerSkuGlobalFifoMigrationIntegrationTest`.
+- 주요 테스트: `ModuleBoundaryTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `OrderShipmentIntegrationTest`, `OrderShipmentMigrationIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `SellerSkuGlobalFifoMigrationIntegrationTest`.
 - PostgreSQL 전용 SQL, 잠금, migration, 동시성, transaction rollback은 Testcontainers의 실제 PostgreSQL에서 검증. Docker 접근 필요; CI는 `docker info` 확인.
 - 구체적인 계약·실패 경계 검증. 단순 전달·mapping·default 값과 중복 assertion은 테스트하지 않음. Mock은 PostgreSQL 의미 검증의 대체 수단이 아님.
 - 수동 SQL/마이그레이션 시험은 전용 임시 DB/schema만 사용. 기존 `atlas` DB를 초기화·삭제하는 테스트 금지. Clean-start migration guard 준수.

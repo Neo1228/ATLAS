@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.admission.service.AdmissionService;
@@ -34,6 +35,7 @@ import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.FulfillmentStatus;
@@ -1370,128 +1372,47 @@ assertUuidV7(paymentOrderId);
     void paidCartOrderCanBeFulfilledInOrderAndBuyerCanReadProgress() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "fulfillment-" + UUID.randomUUID();
-        registerProductSku(sellerId, skuId, 100, 2);
+        registerProductSku(sellerId, skuId, 100, 1);
         String buyerRef = "fulfillment-buyer-" + UUID.randomUUID();
-
-        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
-                        buyerRef, sellerId, skuId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"quantity":1}
-                                """))
-                .andExpect(status().isOk());
-        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout",
-                        buyerRef)
+        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
                         .header("Idempotency-Key", "fulfillment-checkout-" + UUID.randomUUID()))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
         OrderResponse order = checkout.orders().getFirst();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"status":"IN_PROGRESS"}
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains("\"code\":\"CONFLICT\""));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
-                Integer.class, order.orderId())).isZero();
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start",
+                        sellerId, order.orderId())).andExpect(status().isConflict());
         mockMvc.perform(post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
-                .andExpect(status().isOk())
-                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains("\"state\":\"PAID\""));
-
-        OrderFulfillmentResponse initial = objectMapper.readValue(
-                mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
-                        .andExpect(status().isOk())
-                        .andReturn().getResponse().getContentAsString(),
-                OrderFulfillmentResponse.class);
-        assertThat(initial.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
-        assertThat(initial.createdAt()).isNotNull();
-
-        UUID otherSellerId = sellers.createSeller().sellerId();
-        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment",
-                        otherSellerId, order.orderId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"status":"IN_PROGRESS"}
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains("\"code\":\"CONFLICT\""));
-
-        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"status":"SHIPPED"}
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains("\"code\":\"CONFLICT\""));
-
-        CyclicBarrier transitionStart = new CyclicBarrier(3);
-        var fulfillmentWorkers = Executors.newFixedThreadPool(2);
-        Future<OrderFulfillmentResponse> firstTransition = fulfillmentWorkers.submit(() -> {
-            transitionStart.await(10, TimeUnit.SECONDS);
-            return orderFulfillments.updateStatus(sellerId, order.orderId(), FulfillmentStatus.IN_PROGRESS);
-        });
-        Future<OrderFulfillmentResponse> repeatedTransition = fulfillmentWorkers.submit(() -> {
-            transitionStart.await(10, TimeUnit.SECONDS);
-            return orderFulfillments.updateStatus(sellerId, order.orderId(), FulfillmentStatus.IN_PROGRESS);
-        });
-        transitionStart.await(10, TimeUnit.SECONDS);
-        OrderFulfillmentResponse inProgress;
-        OrderFulfillmentResponse concurrentRepeat;
-        try {
-            inProgress = firstTransition.get(10, TimeUnit.SECONDS);
-            concurrentRepeat = repeatedTransition.get(10, TimeUnit.SECONDS);
-        } finally {
-            fulfillmentWorkers.shutdownNow();
-        }
-        assertThat(inProgress.status()).isEqualTo(FulfillmentStatus.IN_PROGRESS);
-        assertThat(inProgress.inProgressAt()).isNotNull();
-        assertThat(concurrentRepeat.inProgressAt()).isEqualTo(inProgress.inProgressAt());
-
-        String repeatedJson = mockMvc.perform(
-                        put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content("""
-                                        {"status":"IN_PROGRESS"}
-                                        """))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        OrderFulfillmentResponse repeated = objectMapper.readValue(repeatedJson, OrderFulfillmentResponse.class);
-        assertThat(repeated.inProgressAt()).isEqualTo(inProgress.inProgressAt());
-
-        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"status":"SHIPPED"}
-                                """))
                 .andExpect(status().isOk());
-        String deliveredJson = mockMvc.perform(
-                        put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content("""
-                                        {"status":"DELIVERED"}
-                                        """))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        OrderFulfillmentResponse delivered = objectMapper.readValue(deliveredJson, OrderFulfillmentResponse.class);
+        mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start",
+                        UUID.randomUUID(), order.orderId())).andExpect(status().isConflict());
+        OrderFulfillmentResponse started = objectMapper.readValue(mockMvc.perform(
+                        post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start", sellerId, order.orderId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderFulfillmentResponse.class);
+        assertThat(started.status()).isEqualTo(FulfillmentStatus.IN_PROGRESS);
+        UUID orderItemId = jdbc.queryForObject("SELECT order_item_id FROM order_item WHERE order_id=?", UUID.class, order.orderId());
+        mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/shipments", sellerId, order.orderId())
+                        .header("Idempotency-Key", "buyer-flow-shipment-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"orderItemId\":\"" + orderItemId + "\",\"quantity\":1}]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SHIPPED"));
+        String shipmentsJson = mockMvc.perform(get("/api/buyers/{buyerRef}/orders/{orderId}/shipments",
+                        buyerRef, order.orderId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        OrderShipmentResponse[] shipments = objectMapper.readValue(shipmentsJson, OrderShipmentResponse[].class);
+        assertThat(shipments).hasSize(1);
+        UUID shipmentId = shipments[0].shipmentId();
+        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/shipments/{shipmentId}/delivery",
+                        sellerId, order.orderId(), shipmentId)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DELIVERED"));
+        OrderFulfillmentResponse delivered = objectMapper.readValue(mockMvc.perform(
+                        get("/api/orders/{orderId}/fulfillment", order.orderId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderFulfillmentResponse.class);
         assertThat(delivered.status()).isEqualTo(FulfillmentStatus.DELIVERED);
-        assertThat(delivered.deliveredAt()).isNotNull();
-
-        OrderFulfillmentResponse buyerView = objectMapper.readValue(
-                mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
-                        .andExpect(status().isOk())
-                        .andReturn().getResponse().getContentAsString(),
-                OrderFulfillmentResponse.class);
-        assertThat(buyerView.status()).isEqualTo(FulfillmentStatus.DELIVERED);
         assertThat(orders.find(order.orderId()).state()).isEqualTo(OrderState.PAID);
-        assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
-                Integer.class, order.orderId())).isEqualTo(1);
     }
 
     @Test

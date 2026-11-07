@@ -7,6 +7,7 @@ public final class OrderException extends RuntimeException {
 
     public enum Code {
         NOT_FOUND,
+        SHIPMENT_NOT_FOUND,
         CONFLICT,
         INVALID_REQUEST
     }

@@ -21,6 +21,8 @@ import com.atlas.order.dto.response.OrderRefundResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.dto.request.OrderShipmentRequest;
+import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.persistence.state.OrderRefundStatus;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.persistence.state.OrderReturnStatus;
@@ -28,11 +30,12 @@ import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderRefundService;
-import com.atlas.order.service.OrderService;
+import com.atlas.order.service.OrderShipmentService;
 import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
 import com.atlas.order.service.OrderReturnService;
+import com.atlas.order.service.OrderService;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -80,10 +83,13 @@ class OrderRefundLifecycleIntegrationTest {
     @Autowired private CartCheckoutService checkouts;
     @Autowired private CheckoutPaymentService checkoutPayments;
     @Autowired private OrderService orders;
-    @Autowired private OrderFulfillmentService fulfillments;
     @Autowired private OrderRefundService refunds;
     @Autowired private OrderReturnService returns;
     @Autowired private InventoryService inventory;
+    @Autowired
+    private OrderFulfillmentService fulfillments;
+    @Autowired
+    private OrderShipmentService shipments;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
@@ -309,7 +315,7 @@ class OrderRefundLifecycleIntegrationTest {
         assertStock(fixture, 4, 1);
         assertThat(journalCountForRefund(partial.refundId())).isEqualTo(1);
 
-        fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(), FulfillmentStatus.IN_PROGRESS);
+        fulfillments.start(fixture.sellerId(), fixture.orderId());
         OrderRefundResponse full = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
                 "refund-final-key", itemId, 1));
 
@@ -322,10 +328,11 @@ class OrderRefundLifecycleIntegrationTest {
         assertThat(entriesForAttempt(fixture.paymentAttemptId())).containsExactly(
                 new Entry("PSP_CLEARING", "DEBIT", 250),
                 new Entry("SELLER_PAYABLE", "CREDIT", 250));
-        assertThatThrownBy(() -> fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(),
-                FulfillmentStatus.SHIPPED))
+        assertThatThrownBy(() -> createShipment(fixture.sellerId(), fixture.orderId(),
+                List.of(new OrderShipmentRequest.Item(fixture.orderItemId(), 1))))
                 .isInstanceOf(OrderException.class)
-                .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
+                .satisfies(error -> assertThat(((OrderException) error).code())
+                        .isEqualTo(OrderException.Code.CONFLICT));
         assertThat(journalCountForRefund(full.refundId())).isEqualTo(1);
     }
 
@@ -344,8 +351,8 @@ class OrderRefundLifecycleIntegrationTest {
         assertPool(fixture.sellerId(), fixture.firstSkuId(), 1, 0, 0, 1);
         assertPool(fixture.sellerId(), fixture.secondSkuId(), 0, 0, 1, 1);
         assertThat(orders.find(fixture.orderId()).state()).isEqualTo(OrderState.PAID);
-        assertThat(fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(), FulfillmentStatus.IN_PROGRESS)
-                .status()).isEqualTo(FulfillmentStatus.IN_PROGRESS);
+        assertThat(fulfillments.start(fixture.sellerId(), fixture.orderId()).status())
+                .isEqualTo(FulfillmentStatus.IN_PROGRESS);
         assertThat(entriesForRefund(firstRefund.refundId())).containsExactly(
                 new Entry("PSP_CLEARING", "CREDIT", 100),
                 new Entry("SELLER_PAYABLE", "DEBIT", 100));
@@ -367,8 +374,9 @@ class OrderRefundLifecycleIntegrationTest {
         assertThat(entriesForAttempt(fixture.paymentAttemptId())).containsExactly(
                 new Entry("PSP_CLEARING", "DEBIT", 350),
                 new Entry("SELLER_PAYABLE", "CREDIT", 350));
-        assertThatThrownBy(() -> fulfillments.updateStatus(fixture.sellerId(), fixture.orderId(),
-                FulfillmentStatus.SHIPPED))
+        assertThatThrownBy(() -> createShipment(fixture.sellerId(), fixture.orderId(), List.of(
+                new OrderShipmentRequest.Item(fixture.firstItemId(), 1),
+                new OrderShipmentRequest.Item(fixture.secondItemId(), 1))))
                 .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
     }
@@ -390,8 +398,9 @@ class OrderRefundLifecycleIntegrationTest {
         assertStock(paid, 4, 1);
         assertThat(journalCountForOrder(paid.orderId())).isZero();
 
-        fulfillments.updateStatus(paid.sellerId(), paid.orderId(), FulfillmentStatus.IN_PROGRESS);
-        fulfillments.updateStatus(paid.sellerId(), paid.orderId(), FulfillmentStatus.SHIPPED);
+        fulfillments.start(paid.sellerId(), paid.orderId());
+        createShipment(paid.sellerId(), paid.orderId(), List.of(
+                new OrderShipmentRequest.Item(paid.orderItemId(), 1)));
         assertThatThrownBy(() -> refunds.refund(request(paid.sellerId(), paid.orderId(),
                 "shipped-refund-key", paid.orderItemId(), 1)))
                 .isInstanceOf(OrderException.class)
@@ -657,9 +666,43 @@ class OrderRefundLifecycleIntegrationTest {
     }
 
     private void deliver(UUID sellerId, UUID orderId) {
-        fulfillments.updateStatus(sellerId, orderId, FulfillmentStatus.IN_PROGRESS);
-        fulfillments.updateStatus(sellerId, orderId, FulfillmentStatus.SHIPPED);
-        fulfillments.updateStatus(sellerId, orderId, FulfillmentStatus.DELIVERED);
+        fulfillments.start(sellerId, orderId);
+        List<ShipmentItem> items = jdbc.query("""
+                SELECT oi.order_item_id,
+                       oi.quantity - COALESCE((
+                           SELECT SUM(refund_item.quantity)
+                           FROM order_refund_request_item refund_item
+                           JOIN order_refund_request refund ON refund.refund_id = refund_item.refund_id
+                           WHERE refund.order_id = oi.order_id
+                             AND refund_item.order_item_id = oi.order_item_id
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM order_return_item return_item
+                                 WHERE return_item.refund_id = refund.refund_id
+                                   AND return_item.order_item_id = oi.order_item_id
+                             )
+                       ), 0) AS quantity
+                FROM order_item oi
+                WHERE oi.order_id = ?
+                  AND oi.quantity > 0
+                """, (result, rowNum) -> new ShipmentItem(
+                UUID.fromString(result.getString("order_item_id")), result.getInt("quantity")), orderId);
+        for (ShipmentItem item : items) {
+            if (item.quantity() <= 0) {
+                continue;
+            }
+            OrderShipmentResponse shipment = createShipment(sellerId, orderId,
+                    List.of(new OrderShipmentRequest.Item(item.orderItemId(), item.quantity())));
+            shipments.deliver(sellerId, orderId, shipment.shipmentId());
+        }
+    }
+
+    private OrderShipmentResponse createShipment(
+            UUID sellerId, UUID orderId, List<OrderShipmentRequest.Item> items) {
+        return shipments.create(new OrderShipmentRequest(sellerId, orderId,
+                "test-shipment-" + UUID.randomUUID(), null, null, items));
+    }
+
+    private record ShipmentItem(UUID orderItemId, int quantity) {
     }
 
     private MultiItemFixture paidOrderWithTwoItems() {
