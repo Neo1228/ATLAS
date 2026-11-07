@@ -113,6 +113,8 @@ docker compose up -d --wait postgres
 
 - 단위 테스트는 각 `ATLAS-*/src/test`, Spring/PostgreSQL 통합·아키텍처 테스트는 `ATLAS-application/src/test`.
 - 주요 테스트: `ModuleBoundaryTest`, `CatalogIntegrationTest`, `ProductCategoryMigrationIntegrationTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `OrderShipmentIntegrationTest`, `OrderShipmentMigrationIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `SellerSkuGlobalFifoMigrationIntegrationTest`.
+- Controller slice test는 Service-owned validation의 typed exception을 stub하고 HTTP mapping을 확인. Mock을 통과시키려고 domain policy를 Controller로 옮기지 않음.
+- Direct SQL fixture는 대상 schema와 일치시킴: 현재 schema의 `NOT NULL`·FK 필수 값을 채우고, migration upgrade fixture는 predecessor Flyway version을 고정.
 - PostgreSQL 전용 SQL, 잠금, migration, 동시성, transaction rollback은 Testcontainers의 실제 PostgreSQL에서 검증. Docker 접근 필요; CI는 `docker info` 확인.
 - 구체적인 계약·실패 경계 검증. 단순 전달·mapping·default 값과 중복 assertion은 테스트하지 않음. Mock은 PostgreSQL 의미 검증의 대체 수단이 아님.
 - 수동 SQL/마이그레이션 시험은 전용 임시 DB/schema만 사용. 기존 `atlas` DB를 초기화·삭제하는 테스트 금지. Clean-start migration guard 준수.
