@@ -12,6 +12,7 @@ public interface ProductService {
     ProductResponse createProduct(UUID sellerId, CreateProductRequest request);
     SellerSkuResponse registerSku(UUID sellerId, UUID productId, RegisterSellerSkuRequest request);
     SellerSkuResponse updateSkuPrice(UUID sellerId, UUID productId, String skuId, long priceWon);
-    ProductListingPageResponse listProductsPage(UUID sellerId, String query, Integer limit, String cursor);
+    ProductResponse updateProductCategory(UUID sellerId, UUID productId, UUID categoryId);
+    ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query, Integer limit, String cursor);
     ProductListingResponse findProduct(UUID productId);
 }

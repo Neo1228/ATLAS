@@ -3,6 +3,8 @@ package com.atlas.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -65,32 +67,33 @@ class CatalogIntegrationTest {
         create(secondSeller, "Other product");
         List<Product> expected = seeded.stream()
                 .sorted(Comparator.comparing(Product::getSellerId).thenComparing(Product::getProductId)).toList();
-        List<Product> firstPage = products.findListingPage(null, "needle", null, null, 2);
+        List<Product> firstPage = products.findListingPage(null, null, "needle", null, null, 2);
         assertThat(firstPage).hasSize(2);
         Product lastFirstPage = firstPage.getLast();
-        List<Product> secondPage = products.findListingPage(null, "needle", lastFirstPage.getSellerId(),
+        List<Product> secondPage = products.findListingPage(null, null, "needle", lastFirstPage.getSellerId(),
                 lastFirstPage.getProductId(), 2);
         assertThat(secondPage).hasSize(2);
         Product lastSecondPage = secondPage.getLast();
-        List<Product> thirdPage = products.findListingPage(null, "needle", lastSecondPage.getSellerId(),
+        List<Product> thirdPage = products.findListingPage(null, null, "needle", lastSecondPage.getSellerId(),
                 lastSecondPage.getProductId(), 2);
         List<UUID> expectedIds = expected.stream().map(Product::getProductId).toList();
         assertThat(firstPage).extracting(Product::getProductId).containsExactlyElementsOf(expectedIds.subList(0, 2));
         assertThat(secondPage).extracting(Product::getProductId).containsExactlyElementsOf(expectedIds.subList(2, 4));
         assertThat(thirdPage).isEmpty();
-        assertThat(products.findListingPage(firstSeller, "needle", null, null, 10))
+        assertThat(products.findListingPage(firstSeller, null, "needle", null, null, 10))
                 .hasSize(3).allSatisfy(product -> assertThat(product.getSellerId()).isEqualTo(firstSeller));
         productService.registerSku(expected.get(0).getSellerId(), expected.get(0).getProductId(),
                 new RegisterSellerSkuRequest("CURRENT-PAGE-SKU", 100, 1));
         productService.registerSku(expected.get(2).getSellerId(), expected.get(2).getProductId(),
                 new RegisterSellerSkuRequest("LOOKAHEAD-SKU", 100, 1));
-        var servicePage = productService.listProductsPage(null, " NEEDLE ", 2, null);
+        var servicePage = productService.listProductsPage(null, null, " NEEDLE ", 2, null);
         assertThat(servicePage.items()).hasSize(2);
         assertThat(servicePage.nextCursor()).isNotBlank();
         assertThat(servicePage.items().getFirst().variants()).extracting(variant -> variant.skuId())
                 .containsExactly("CURRENT-PAGE-SKU");
         assertThat(servicePage.items().get(1).variants()).isEmpty();
-        var serviceNextPage = productService.listProductsPage(null, " NEEDLE ", 2, servicePage.nextCursor());
+        var serviceNextPage = productService.listProductsPage(
+                null, null, " NEEDLE ", 2, servicePage.nextCursor());
         assertThat(serviceNextPage.items()).extracting(item -> item.product().productId())
                 .containsExactlyElementsOf(expectedIds.subList(2, 4));
         assertThat(serviceNextPage.nextCursor()).isNull();
@@ -127,18 +130,20 @@ class CatalogIntegrationTest {
     @Test
     void repositoryCursorMatchesJavaUuidNaturalOrderAndSearchTreatsWildcardsLiterally() {
         UUID sellerId = sellerService.createSeller().sellerId();
+        UUID categoryId = jdbc.queryForObject("SELECT category_id FROM product_category WHERE seller_id=? AND code=?",
+                UUID.class, sellerId, "UNCATEGORIZED");
         UUID negativeLeastSignificantBits = UUID.fromString("00000000-0000-0000-8000-000000000000");
         UUID positiveLeastSignificantBits = UUID.fromString("00000000-0000-0000-7fff-ffffffffffff");
-        jdbc.update("INSERT INTO product (product_id, seller_id, name, description) VALUES (?, ?, ?, ?)",
-                positiveLeastSignificantBits, sellerId, "literal % value", "description");
-        jdbc.update("INSERT INTO product (product_id, seller_id, name, description) VALUES (?, ?, ?, ?)",
-                negativeLeastSignificantBits, sellerId, "literal wildcard", "description");
-        List<Product> firstPage = products.findListingPage(sellerId, "", null, null, 1);
+        jdbc.update("INSERT INTO product (product_id, seller_id, category_id, name, description) VALUES (?, ?, ?, ?, ?)",
+                positiveLeastSignificantBits, sellerId, categoryId, "literal % value", "description");
+        jdbc.update("INSERT INTO product (product_id, seller_id, category_id, name, description) VALUES (?, ?, ?, ?, ?)",
+                negativeLeastSignificantBits, sellerId, categoryId, "literal wildcard", "description");
+        List<Product> firstPage = products.findListingPage(sellerId, null, "", null, null, 1);
         assertThat(firstPage).extracting(Product::getProductId).containsExactly(negativeLeastSignificantBits);
-        List<Product> secondPage = products.findListingPage(sellerId, "", sellerId,
+        List<Product> secondPage = products.findListingPage(sellerId, null, "", sellerId,
                 negativeLeastSignificantBits, 1);
         assertThat(secondPage).extracting(Product::getProductId).containsExactly(positiveLeastSignificantBits);
-        assertThat(products.findListingPage(sellerId, "%", null, null, 10))
+        assertThat(products.findListingPage(sellerId, null, "%", null, null, 10))
                 .extracting(Product::getProductId).containsExactly(positiveLeastSignificantBits);
     }
 
@@ -193,4 +198,105 @@ class CatalogIntegrationTest {
                 .productId();
         return products.findById(productId).orElseThrow();
     }
+    @Test
+    void sellerCategoriesAssignProductsAndFilterWithBoundCursors() throws Exception {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        UUID otherSellerId = sellerService.createSeller().sellerId();
+        String defaultCategory = mockMvc.perform(get("/api/sellers/{sellerId}/product-categories", sellerId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].code").value("UNCATEGORIZED"))
+                .andExpect(jsonPath("$[0].name").value("미분류"))
+                .andReturn().getResponse().getContentAsString();
+        String categoryBody = mockMvc.perform(post("/api/sellers/{sellerId}/product-categories", sellerId)
+                        .contentType("application/json").content("{\"code\":\"TEA\",\"name\":\"Tea\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID categoryId = UUID.fromString(objectMapper.readTree(categoryBody).get("categoryId").stringValue());
+        mockMvc.perform(post("/api/sellers/{sellerId}/product-categories", sellerId)
+                        .contentType("application/json").content("{\"code\":\"TEA\",\"name\":\"Duplicate\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFLICT"));
+        mockMvc.perform(put("/api/sellers/{sellerId}/product-categories/{categoryId}", sellerId, categoryId)
+                        .contentType("application/json").content("{\"name\":\"Tea leaves\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Tea leaves"));
+        mockMvc.perform(get("/api/sellers/{sellerId}/product-categories", sellerId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].code").value("TEA"))
+                .andExpect(jsonPath("$[1].code").value("UNCATEGORIZED"));
+        String productBody = mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
+                        .contentType("application/json")
+                        .content("{\"name\":\"Tea one\",\"description\":\"one\",\"categoryId\":\""
+                                + categoryId + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.categoryId").value(categoryId.toString()))
+                .andReturn().getResponse().getContentAsString();
+        UUID productId = UUID.fromString(objectMapper.readTree(productBody).get("productId").stringValue());
+        String skuId = "catalog-category-" + UUID.randomUUID();
+        productService.registerSku(sellerId, productId, new RegisterSellerSkuRequest(skuId, 100, 3));
+        String inventoryQuery = """
+                SELECT initial_capacity, available, reserved, claimed
+                FROM inventory_pool
+                WHERE seller_id = ? AND sku_id = ?
+                """;
+        var inventoryBefore = jdbc.queryForMap(inventoryQuery, sellerId, skuId);
+        String defaultId = objectMapper.readTree(defaultCategory).get(0).get("categoryId").stringValue();
+        mockMvc.perform(put("/api/sellers/{sellerId}/product-categories/{categoryId}", sellerId, defaultId)
+                        .contentType("application/json").content("{\"name\":\"Changed default\"}"))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
+                        .contentType("application/json")
+                        .content("{\"name\":\"Tea two\",\"description\":\"two\",\"categoryId\":\""
+                                + categoryId + "\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
+                        .contentType("application/json")
+                        .content("{\"name\":\"Tea default\",\"description\":\"default\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.categoryId").value(defaultId));
+        mockMvc.perform(get("/api/products").param("categoryId", categoryId.toString()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(get("/api/sellers/{sellerId}/products", otherSellerId)
+                        .param("categoryId", categoryId.toString()))
+                .andExpect(status().isNotFound());
+        String globalSellerBody = mockMvc.perform(get("/api/products")
+                        .param("sellerId", sellerId.toString()).param("categoryId", categoryId.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        ProductListingPageResponse globalSellerPage =
+                objectMapper.readValue(globalSellerBody, ProductListingPageResponse.class);
+        assertThat(globalSellerPage.items()).hasSize(2).allSatisfy(item ->
+                assertThat(item.product().categoryId()).isEqualTo(categoryId));
+        String pageBody = mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
+                        .param("categoryId", categoryId.toString()).param("query", "TEA").param("limit", "1"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        ProductListingPageResponse page = objectMapper.readValue(pageBody, ProductListingPageResponse.class);
+        assertThat(page.items()).hasSize(1);
+        UUID firstPageProductId = page.items().getFirst().product().productId();
+        assertThat(page.items().getFirst().product().categoryId()).isEqualTo(categoryId);
+        assertThat(page.nextCursor()).isNotBlank();
+        String nextPageBody = mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
+                        .param("categoryId", categoryId.toString()).param("query", "TEA").param("limit", "1")
+                        .param("cursor", page.nextCursor()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        ProductListingPageResponse nextPage = objectMapper.readValue(nextPageBody, ProductListingPageResponse.class);
+        assertThat(nextPage.items()).hasSize(1);
+        UUID secondPageProductId = nextPage.items().getFirst().product().productId();
+        assertThat(secondPageProductId).isNotEqualTo(firstPageProductId);
+        assertThat(List.of(firstPageProductId, secondPageProductId)).contains(productId);
+        assertThat(nextPage.items().getFirst().product().categoryId()).isEqualTo(categoryId);
+        assertThat(nextPage.nextCursor()).isNull();
+        mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
+                        .param("categoryId", defaultId).param("limit", "1").param("cursor", page.nextCursor()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
+                        .param("categoryId", categoryId.toString()).param("query", "Different").param("limit", "1")
+                        .param("cursor", page.nextCursor()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/category", sellerId, productId)
+                        .contentType("application/json").content("{\"categoryId\":\"" + defaultId + "\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.categoryId").value(defaultId));
+        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/category", otherSellerId, productId)
+                        .contentType("application/json").content("{\"categoryId\":\"" + defaultId + "\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/sellers/{sellerId}/product-categories", sellerId))
+                .andExpect(status().isOk());
+        assertThat(jdbc.queryForMap(inventoryQuery, sellerId, skuId)).isEqualTo(inventoryBefore);
+    }
+
 }
