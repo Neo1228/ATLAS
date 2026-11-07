@@ -136,7 +136,7 @@ class ProductServiceImplTest {
         Product product = product(sellerId, productId, "Tea");
         when(products.findById(productId)).thenReturn(Optional.of(product));
         when(sellerSkus.findBySellerIdAndSkuId(sellerId, "TEA-1")).thenReturn(Optional.empty());
-        when(sellerSkus.save(any(SellerSku.class))).thenAnswer(call -> call.getArgument(0));
+        when(sellerSkus.saveAndFlush(any(SellerSku.class))).thenAnswer(call -> call.getArgument(0));
 
         SellerSkuResponse response = service.registerSku(sellerId, productId,
                 new RegisterSellerSkuRequest("TEA-1", 1200, 0));
@@ -144,7 +144,7 @@ class ProductServiceImplTest {
         assertEquals("Tea", response.productName());
         assertEquals(1200, response.priceWon());
         ArgumentCaptor<SellerSku> savedSku = ArgumentCaptor.forClass(SellerSku.class);
-        verify(sellerSkus).save(savedSku.capture());
+        verify(sellerSkus).saveAndFlush(savedSku.capture());
         assertEquals(now, savedSku.getValue().getCreatedAt());
         verify(inventory).createInventoryPool(new CreateInventoryPoolRequest(sellerId, "TEA-1", 0));
     }

@@ -10,6 +10,7 @@ public class InventoryException extends RuntimeException {
         INSUFFICIENT_STOCK,
         CONFLICT,
         NOT_FOUND,
+        LOCATION_NOT_FOUND,
         POOL_NOT_FOUND,
         INVALID_REQUEST
     }

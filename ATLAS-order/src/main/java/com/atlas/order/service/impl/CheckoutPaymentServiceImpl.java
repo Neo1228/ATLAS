@@ -327,6 +327,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         ReservationStatus inventoryState = reservations.isEmpty() ? null : reservations.get(0).status();
         return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), order.paymentAttemptId(),
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState, null, order.source(),
+                order.fulfillmentLocationId(),
                 itemResponses, total);
     }
 }

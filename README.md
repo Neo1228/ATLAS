@@ -2,9 +2,9 @@
 
 전체 이커머스 플랫폼의 구매·판매 흐름과 거래 정합성·장애 복구를 검증하는 로컬 학습 프로젝트. 현재 일반 구매 흐름과 한정판매 경로를 함께 개발.
 
-- 일반 구매: Seller-SKU → Cart → Order → Fake PSP 결제 → 명시적 Reorder·수동 fulfillment·배송 전 부분 환불 기록.
-- 한정판매: Seller-SKU shared inventory, FIFO/K 대기열, 주문·결제 정합성.
-- 미구현: 실제 사용자 인증·tenant 격리, live payment/refund, carrier 연동, cloud 배포, production SLO/capacity.
+- 일반 구매: Seller-SKU → Buyer-wide Cart·Seller별 PurchaseOrder → Fake PSP 결제 → Reorder·수동 fulfillment·배송 전 부분 환불·Delivered return.
+- 한정판매: Seller-SKU 재고, FIFO/K 대기열, location-aware reservation·주문 routing.
+- Seller는 fulfillment location을 관리하며 각 Seller 주문은 모든 line을 처리할 단일 location을 사용합니다. 위치 선택은 priority·UUID 순이며 DEFAULT는 기존 재고의 보존 매핑입니다. 실제 인증·tenant 격리, live payment/refund, carrier·주소 기반 routing, cloud 배포, production SLO/capacity는 미구현.
 - 요구사항: [Requirements Index](docs/01-requirements/requirements-index.md)
 - 결정: [Decision Log](docs/00-governance/decision-log.md)
 - 로컬 실행 및 검증: 아래 [환경 설정](#로컬-실행-환경)
@@ -35,14 +35,14 @@
 | [ATLAS-cart](ATLAS-cart) | `:cart-module` | Buyer 단위 Cart, Seller-SKU별 CartItem |
 | [ATLAS-campaign](ATLAS-campaign) | `:campaign-module` | Campaign과 판매 자격 |
 | [ATLAS-admission](ATLAS-admission) | `:admission-module` | Seller-SKU FIFO/K, ticket, expiry |
-| [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | 공유 재고, 수량 reservation |
-| [ATLAS-order](ATLAS-order) | `:order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem, fulfillment·refund·return 조정 |
+| [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | Seller location·공유 재고 pool, reservation·transfer |
+| [ATLAS-order](ATLAS-order) | `:order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem·location snapshot, fulfillment·refund·return 조정 |
 | [ATLAS-payment](ATLAS-payment) | `:payment-module` | Payment attempt와 Fake PSP 상태 |
 | [ATLAS-settlement](ATLAS-settlement) | `:settlement-module` | Gross capture 원장과 Seller Order allocation; local refund reversal |
 
 - 모듈 간 호출은 공개 `.service`/DTO 계약 사용. Entity·repository 직접 참조 금지.
 - CRUD는 JPA, PostgreSQL 특화 동시성 SQL은 모듈 내부 `.repository`에서 처리.
-- Checkout capture는 BuyerCheckout gross 원장과 Seller별 allocation으로 기록. 배송 전 refund reversal은 별도 append-only journal ([D-066/D-068/D-071](docs/00-governance/decision-log.md), [ADR-0011](docs/02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md), [ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md), [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md)).
+- Location routing은 모든 Seller 주문 line을 만족하는 active location 하나를 priority ASC, UUID ASC로 정합니다. Reservation/PurchaseOrder가 선택 위치를 보존하고 return-restock도 이를 사용합니다. 기존 재고는 V16에서 DEFAULT로 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
 - 배송 전 부분 환불은 OrderItem 수량과 KRW price snapshot으로 local refund record 및 append-only reversal을 남깁니다. `executionMode: LOCAL_LEDGER_ONLY`는 실제 PSP 요청이나 고객 자금 이동이 없음을 뜻합니다. 상태 전이는 기존 `OrderState.PAID`와 분리하며, 환불 수량만 재고로 복원 ([D-068](docs/00-governance/decision-log.md), [ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md)).
 - 생성 primary ID는 UUIDv7. 근거·한계: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/02-decisions/adr/ADR-0007-uuidv7-identifiers.md).
 - Schema는 Flyway 소유, Hibernate는 `ddl-auto: validate`.
@@ -64,6 +64,9 @@ docker compose up -d --wait postgres
 ## 기본 구매 흐름
 
 일반 구매는 Buyer-wide Cart와 Seller별 주문. 한 Cart checkout은 BuyerCheckout 1건, Seller당 PurchaseOrder 1건, Fake PSP attempt/capture 1회를 사용. 한정판매 Campaign은 별도 구매 경로.
+- Location 관리: Seller 생성 `POST /api/sellers/{sellerId}/fulfillment-locations`, 목록 `GET /api/sellers/{sellerId}/fulfillment-locations`, 수정 `PUT /api/sellers/{sellerId}/fulfillment-locations/{locationId}`.
+- 위치별 재고 조회 `GET /api/sellers/{sellerId}/inventory/locations/{locationId}`·조정 `POST /api/sellers/{sellerId}/inventory/locations/{locationId}/skus/{skuId}/capacity-adjustments`. 기존 `/api/sellers/{sellerId}/inventory/{skuId}/capacity-adjustments`는 `DEFAULT` location 대상.
+- 재고 이전 `POST /api/sellers/{sellerId}/inventory/transfers`와 `Idempotency-Key`. Checkout 라인은 Seller 주문별 한 location에서 처리. 우선순위 ASC, 동률 UUID ASC ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
 
 1. Seller 생성: `POST /api/sellers`.
 2. Product 등록: `POST /api/sellers/{sellerId}/products`.

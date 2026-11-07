@@ -683,9 +683,9 @@ assertUuidV7(paymentOrderId);
                 inventory.find(sellerId, firstSku),
                 inventory.find(sellerId, secondSku),
                 inventory.find(otherSellerId, otherSellerSku));
-        assertThat(stock).extracting(InventoryPoolResponse::available).containsExactly(4, 3, 5);
-        assertThat(stock).extracting(InventoryPoolResponse::reserved).containsExactly(0, 0, 0);
-        assertThat(stock).extracting(InventoryPoolResponse::claimed).containsExactly(0, 0, 0);
+        assertThat(stock).extracting(InventoryPoolResponse::available).containsExactly(4L, 3L, 5L);
+        assertThat(stock).extracting(InventoryPoolResponse::reserved).containsExactly(0L, 0L, 0L);
+        assertThat(stock).extracting(InventoryPoolResponse::claimed).containsExactly(0L, 0L, 0L);
         stock.forEach(BuyerFlowIntegrationTest::assertConserved);
     }
 

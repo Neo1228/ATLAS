@@ -11,7 +11,6 @@ import static org.mockito.Mockito.when;
 import com.atlas.cart.dto.request.ReorderCartRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.cart.service.CartService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.request.OrderReorderRequest;
@@ -63,8 +62,8 @@ class OrderReorderServiceImplTest {
         when(clock.instant()).thenReturn(NOW);
         when(reorderRequests.insertIfAbsent(SELLER_ID, BUYER_REF, "reorder-key", ORDER_ID, true, NOW))
                 .thenReturn(true);
-        when(inventory.findAll(SELLER_ID, List.of(SKU_ID)))
-                .thenReturn(List.of(new InventoryPoolResponse(SELLER_ID, SKU_ID, 5, 3, 2, 0)));
+        when(inventory.findFulfillmentLocation(eq(SELLER_ID), any()))
+                .thenReturn(Optional.of(UUID.randomUUID()));
         when(carts.mergeItems(any(ReorderCartRequest.class))).thenReturn(expected);
 
         assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
@@ -86,7 +85,7 @@ class OrderReorderServiceImplTest {
         assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
         verify(carts).find(BUYER_REF);
         verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
-        verify(inventory, never()).findAll(any(), any());
+        verify(inventory, never()).findFulfillmentLocation(any(), any());
     }
 
     @Test
@@ -113,8 +112,8 @@ class OrderReorderServiceImplTest {
         when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(order));
         when(reorderRequests.find(SELLER_ID, BUYER_REF, "reorder-key")).thenReturn(Optional.empty());
         when(items.findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID)).thenReturn(List.of(item));
-        when(inventory.findAll(SELLER_ID, List.of(SKU_ID)))
-                .thenReturn(List.of(new InventoryPoolResponse(SELLER_ID, "SKU-1", 1, 1, 0, 0)));
+        when(inventory.findFulfillmentLocation(eq(SELLER_ID), any()))
+                .thenReturn(Optional.empty());
 
         InventoryException unavailable = assertThrows(InventoryException.class,
                 () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));

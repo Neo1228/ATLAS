@@ -65,7 +65,7 @@ public class ProductServiceImpl implements ProductService {
         if (sellerSkus.findBySellerIdAndSkuId(sellerId, request.skuId()).isPresent()) {
             throw new CatalogException(Code.CONFLICT, "Seller SKU is already registered");
         }
-        SellerSku sku = sellerSkus.save(new SellerSku(sellerId, productId, request.skuId(),
+        SellerSku sku = sellerSkus.saveAndFlush(new SellerSku(sellerId, productId, request.skuId(),
                 request.priceWon(), clock.instant()));
         inventory.createInventoryPool(new CreateInventoryPoolRequest(sellerId, request.skuId(), request.initialStock()));
         return toResponse(product, sku);

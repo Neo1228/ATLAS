@@ -11,69 +11,32 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.util.UUID;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.UuidGenerator;
 
 @Entity
-@Table(name = "inventory_reservation", uniqueConstraints =
-        @UniqueConstraint(name = "uk_inventory_reservation_order_sku", columnNames = {"order_id", "seller_id", "sku_id"}))
+@Table(name="inventory_reservation",uniqueConstraints=@UniqueConstraint(name="uk_inventory_reservation_order_sku",columnNames={"order_id","seller_id","sku_id"}))
+@Getter
+@NoArgsConstructor
 public class Reservation {
-    @Id
-    @GeneratedValue
-    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
-    @Column(name = "reservation_id", nullable = false)
-    @Getter
-    private UUID reservationId;
-
-    @Column(name = "order_id", nullable = false)
-    @Getter
-    private UUID orderId;
-
-    @Column(name = "campaign_id")
-    @Getter
-    private UUID campaignId;
-
-    @Column(name = "seller_id", nullable = false)
-    @Getter
-    private UUID sellerId;
-
-    @Column(name = "sku_id", nullable = false, length = 128)
-    @Getter
-    private String skuId;
-
-    @Column(nullable = false)
-    @Getter
-    private int quantity;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
-    @Getter
-    private ReservationStatus status;
-
+    @Id @GeneratedValue @UuidGenerator(style=UuidGenerator.Style.VERSION_7) @Column(name="reservation_id") private UUID reservationId;
+    @Column(name="order_id",nullable=false) private UUID orderId;
+    @Column(name="campaign_id") private UUID campaignId;
+    @Column(name="seller_id",nullable=false) private UUID sellerId;
+    @Column(name="sku_id",nullable=false,length=128) private String skuId;
+    @Column(name="location_id",nullable=false) private UUID locationId;
     @Column(name = "restored_quantity", nullable = false)
-    @Getter
     private int restoredQuantity;
-
-    protected Reservation() {
-    }
-
-    public Reservation(UUID orderId, UUID campaignId, UUID sellerId, String skuId, int quantity,
-                       ReservationStatus status) {
-        this.orderId = orderId;
-        this.campaignId = campaignId;
-        this.sellerId = sellerId;
-        this.skuId = skuId;
-        this.quantity = quantity;
-        this.status = status;
-    }
-
-    public void setStatus(ReservationStatus status) {
-        this.status = status;
-    }
-
-    public void restoreClaimedQuantity(int quantity) {
-        if (status != ReservationStatus.CLAIMED || quantity < 1 || quantity > this.quantity - restoredQuantity) {
+    @Column(nullable=false) private int quantity;
+    @Enumerated(EnumType.STRING) @Column(nullable=false,length=16) private ReservationStatus status;
+    public Reservation(UUID orderId,UUID campaignId,UUID sellerId,String skuId,int quantity,ReservationStatus status,UUID locationId){this.orderId=orderId;this.campaignId=campaignId;this.sellerId=sellerId;this.skuId=skuId;this.quantity=quantity;this.status=status;this.locationId=locationId;}
+    public void setStatus(ReservationStatus status){this.status=status;}
+    public void restoreClaimedQuantity(int restored) {
+        if (status != ReservationStatus.CLAIMED
+                || restored < 1
+                || restored > quantity - restoredQuantity) {
             throw new IllegalStateException("refunded quantity exceeds claimed reservation");
         }
-        restoredQuantity += quantity;
+        restoredQuantity += restored;
     }
 }

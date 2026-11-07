@@ -56,6 +56,9 @@ public class PurchaseOrder {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "fulfillment_location_id")
+    private UUID fulfillmentLocationId;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -113,6 +116,14 @@ public class PurchaseOrder {
     public UUID paymentAttemptId() { return paymentAttemptId; }
     public Instant createdAt() { return createdAt; }
     public Instant updatedAt() { return updatedAt; }
+    public UUID fulfillmentLocationId() {
+        return fulfillmentLocationId;
+    }
+
+    public void setFulfillmentLocationId(UUID fulfillmentLocationId) {
+        this.fulfillmentLocationId = fulfillmentLocationId;
+    }
+
 
     public void updateState(OrderState state, UUID paymentAttemptId, Instant updatedAt) {
         this.state = state;
