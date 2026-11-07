@@ -2,7 +2,7 @@
 
 - 상태: 구현 반영·local PostgreSQL Testcontainers/full Gradle check 통과
 - 결정: [D-077](../../00-governance/decision-log.md)
-- 추적: [Issue #168](https://github.com/Neo1228/ATLAS/issues/168)
+- 추적: [Issue #168](https://github.com/Neo1228/ATLAS/issues/168), [PR #169](https://github.com/Neo1228/ATLAS/pull/169)
 - 요구사항: [FR-012 / BR-012 / INV-009 / Q-010](../../01-requirements/requirements-index.md)
 - 대체 범위: [D-074 / ADR-0019](ADR-0019-seller-product-categories.md)의 flat-only 분류 모델. Seller 소유권·Product 단일 Category 연결·V18 데이터 보존은 유지.
 
