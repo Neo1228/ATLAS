@@ -3,6 +3,7 @@
 전체 이커머스 플랫폼의 구매·판매 흐름과 거래 정합성·장애 복구를 검증하는 로컬 학습 프로젝트. 현재 일반 구매 흐름과 한정판매 경로를 함께 개발.
 
 - 일반 구매: Seller-SKU → Seller별 상품 분류·탐색 → Buyer-wide Cart·Seller별 PurchaseOrder → Fake PSP 결제 → 분할 출고·배송·Reorder·환불/반품.
+- Seller 정산 명세: capture·BuyerCheckout Seller allocation·local refund reversal의 내부 ledger movement를 기간별 조회. 실제 payout·PSP 대사는 범위 밖 ([D-075](docs/00-governance/decision-log.md), [ADR-0020](docs/02-decisions/adr/ADR-0020-seller-settlement-statement.md)).
 - 한정판매: Seller-SKU 재고, FIFO/K 대기열, location-aware reservation·주문 routing.
 - Seller는 fulfillment location을 관리하며 각 Seller 주문은 모든 line을 처리할 단일 location을 사용합니다. 위치 선택은 priority·UUID 순이며 DEFAULT는 기존 재고의 보존 매핑입니다. Shipment는 수동으로 기록하며 실제 carrier 연동은 없음. 인증·tenant 격리, live payment/refund, cloud 배포, production SLO/capacity는 미구현.
 - 요구사항: [Requirements Index](docs/01-requirements/requirements-index.md)
@@ -38,7 +39,7 @@
 | [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | Seller location·공유 재고 pool, reservation·transfer |
 | [ATLAS-order](ATLAS-order) | `:order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem·location snapshot, Shipment·fulfillment·refund·return |
 | [ATLAS-payment](ATLAS-payment) | `:payment-module` | Payment attempt와 Fake PSP 상태 |
-| [ATLAS-settlement](ATLAS-settlement) | `:settlement-module` | Gross capture 원장과 Seller Order allocation; local refund reversal |
+| [ATLAS-settlement](ATLAS-settlement) | `:settlement-module` | 내부 gross-capture 원장, Seller allocation, local refund reversal, read-only Seller statement; 실제 payout 없음 |
 
 - 모듈 간 호출은 공개 `.service`/DTO 계약 사용. Entity·repository 직접 참조 금지.
 - CRUD는 JPA, PostgreSQL 특화 동시성 SQL은 모듈 내부 `.repository`에서 처리.
@@ -87,6 +88,8 @@ docker compose up -d --wait postgres
 10. 배송 전 직접 환불: `POST /api/sellers/{sellerId}/orders/{orderId}/refund-records`에 `Idempotency-Key`와 OrderItem 수량 전달. 첫 Shipment 전 `UNFULFILLED`/`IN_PROGRESS` 상태에서만 허용. Summary 조회는 `GET /api/sellers/{sellerId}/orders/{orderId}/refund-record`; local ledger 기록이며 PSP 호출·자금 이동 없음 ([ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
 11. 반품: 출고 가능 수량 전체 배송 뒤 Buyer가 `POST /api/buyers/{buyerRef}/orders/{orderId}/returns`로 요청. Seller는 `PUT /api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt`로 수령, `/api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/inspection`으로 검수 결과 기록; `PASSED`만 local refund/restock, `FAILED`는 claimed 유지. 상태는 `GET /api/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}`로 조회. PSP 호출·자금 이동 없음 ([ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
 12. 환불 summary: 모든 OrderItem의 환불 수량이 주문 수량에 도달해야 `FULLY_RECORDED`. 일부 item만 전량 환불하면 `PARTIALLY_RECORDED`; 남은 item은 계속 fulfillment 가능.
+13. Seller 내부 정산 명세: `GET /api/sellers/{sellerId}/settlement-statement?from=<UTC Instant>&to=<UTC Instant>`. 기간은 `[from,to)`·`recorded_at` 기준; capture 양수, checkout Seller allocation, refund reversal 음수. Cursor v1, 기본 limit 10·최대 100.
+    - 응답은 내부 ledger movement이며 payout·외부 PSP 대사가 아님. 각 요청은 snapshot-consistent; 여러 page 요청 간 snapshot은 고정되지 않음 ([D-075](docs/00-governance/decision-log.md), [ADR-0020](docs/02-decisions/adr/ADR-0020-seller-settlement-statement.md)).
 
 Cart는 Buyer 소유이며 여러 Seller의 SKU·수량을 포함할 수 있음. Checkout은 현재 Seller-SKU·가격을 재검증하고 OrderItem snapshot 저장. 하나라도 재고 부족이면 전체 checkout rollback. 취소·만료 후 Cart 자동 복원 없음; terminal Seller Order를 명시적으로 Reorder. `RESERVED` checkout은 `POST /api/checkouts/{checkoutId}/cancel`로 취소하며 모든 예약을 해제 ([D-063/D-071](docs/00-governance/decision-log.md), [Q-011](docs/01-requirements/requirements-index.md#assumptions-and-open-questions)).
 

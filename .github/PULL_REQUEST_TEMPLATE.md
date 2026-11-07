@@ -23,11 +23,11 @@
 - 도식 또는 N/A 사유:
 
 ## 추적
-- Issues:
+- Issues: Closes #N — [Issue #N](https://github.com/OWNER/REPO/issues/N)
   <!-- 완료: Closes #N — [Issue #N](https://github.com/OWNER/REPO/issues/N) -->
   <!-- 일부 반영: Refs #N — [Issue #N](https://github.com/OWNER/REPO/issues/N) -->
   <!-- Closes/Refs와 #N은 plain text. Markdown link로 감싸지 않음. -->
-- 요구사항·결정·규칙 ID: <!-- 관련 기준 문서로 직접 연결. -->
+- 요구사항·결정·규칙 ID: [관련 ID](https://github.com/OWNER/REPO/blob/main/docs/01-requirements/requirements-index.md) <!-- 실제 ID·기준 문서로 교체. 해당 없으면 N/A와 구체적 사유. -->
 - 기준 문서·근거 자료: <!-- 문서·외부 자료 링크. 본문에 근거·영향 설명 유지. -->
 - Commit links:
 

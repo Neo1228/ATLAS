@@ -8,6 +8,7 @@ dependencies {
     implementation project(':inventory-module')
     implementation project(':order-module')
     implementation project(':payment-module')
+    implementation project(':settlement-module')
     implementation project(':catalog-module')
     implementation project(':cart-module')
 
@@ -23,7 +24,6 @@ dependencies {
     annotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
 
     testImplementation 'com.tngtech.archunit:archunit:1.5.1'
-    testImplementation project(':settlement-module')
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
     testImplementation 'org.testcontainers:testcontainers-postgresql'

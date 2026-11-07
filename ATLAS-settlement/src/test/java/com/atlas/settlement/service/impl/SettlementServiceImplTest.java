@@ -17,6 +17,8 @@ import static org.mockito.Mockito.when;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
+import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
+import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
@@ -27,6 +29,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
 class SettlementServiceImplTest {
@@ -205,4 +209,42 @@ class SettlementServiceImplTest {
     private static CheckoutSettlementAllocation stored(SellerOrderAllocationRequest allocation) {
         return new CheckoutSettlementAllocation(allocation.orderId(), allocation.sellerId(), allocation.amountWon());
     }
+
+    @Test
+    void sellerStatementRejectsInvalidRangeAndPageLimits() {
+        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, Clock.fixed(now, ZoneOffset.UTC));
+        UUID sellerId = UUID.randomUUID();
+        Instant from = Instant.parse("2025-01-01T00:00:00Z");
+        Instant to = Instant.parse("2025-02-01T00:00:00Z");
+        assertInvalidStatement(statementService, new SellerSettlementStatementRequest(sellerId, to, from, 10, null));
+        assertInvalidStatement(statementService, new SellerSettlementStatementRequest(sellerId, from, to, 0, null));
+        assertInvalidStatement(statementService, new SellerSettlementStatementRequest(sellerId, from, to, 101, null));
+    }
+
+    @Test
+    void sellerStatementRejectsMalformedAndWrongScopeCursors() {
+        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, Clock.fixed(now, ZoneOffset.UTC));
+        UUID sellerId = UUID.randomUUID();
+        Instant from = Instant.parse("2025-01-01T00:00:00Z");
+        Instant to = Instant.parse("2025-02-01T00:00:00Z");
+        assertInvalidStatement(statementService, new SellerSettlementStatementRequest(sellerId, from, to, 10, "!"));
+        assertInvalidStatement(statementService, new SellerSettlementStatementRequest(sellerId, from, to, 10,
+                cursor("v2|" + sellerId + "|" + from + "|" + to + "|" + from + "|" + UUID.randomUUID())));
+        assertInvalidStatement(statementService, new SellerSettlementStatementRequest(sellerId, from, to, 10,
+                cursor("v1|" + sellerId + "|" + from + "|" + to + "|not-an-instant|" + UUID.randomUUID())));
+        assertInvalidStatement(statementService, new SellerSettlementStatementRequest(UUID.randomUUID(), from, to, 10,
+                cursor("v1|" + sellerId + "|" + from + "|" + to + "|" + from + "|" + UUID.randomUUID())));
+    }
+
+    private static void assertInvalidStatement(SettlementServiceImpl statementService,
+                                               SellerSettlementStatementRequest request) {
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> statementService.getSellerStatement(request));
+        assertEquals(SettlementException.Code.INVALID_REQUEST, exception.getCode());
+    }
+
+    private static String cursor(String value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
 }

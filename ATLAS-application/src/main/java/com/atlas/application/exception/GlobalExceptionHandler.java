@@ -7,6 +7,7 @@ import com.atlas.catalog.exception.CatalogException;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.payment.exception.PaymentException;
+import com.atlas.settlement.exception.SettlementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -29,7 +30,8 @@ public class GlobalExceptionHandler {
             CatalogException.class,
             InventoryException.class,
             OrderException.class,
-            PaymentException.class
+            PaymentException.class,
+            SettlementException.class
     })
     ResponseEntity<ProblemDetail> moduleException(RuntimeException exception) {
         if (exception instanceof CampaignException campaign) {
@@ -87,6 +89,13 @@ public class GlobalExceptionHandler {
                 case ATTEMPT_NOT_FOUND ->
                         response(HttpStatus.NOT_FOUND, "PAYMENT_ATTEMPT_NOT_FOUND", payment.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", payment.getMessage());
+            };
+        }
+
+        if (exception instanceof SettlementException settlement) {
+            return switch (settlement.getCode()) {
+                case INVALID_REQUEST -> response(
+                        HttpStatus.BAD_REQUEST, "INVALID_REQUEST", settlement.getMessage());
             };
         }
         return internalError(exception);
