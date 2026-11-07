@@ -2,9 +2,9 @@
 
 전체 이커머스 플랫폼의 구매·판매 흐름과 거래 정합성·장애 복구를 검증하는 로컬 학습 프로젝트. 현재 일반 구매 흐름과 한정판매 경로를 함께 개발.
 
-- 일반 구매: Seller-SKU → Buyer-wide Cart·Seller별 PurchaseOrder → Fake PSP 결제 → Reorder·수동 fulfillment·배송 전 부분 환불·Delivered return.
+- 일반 구매: Seller-SKU → Buyer-wide Cart·Seller별 PurchaseOrder → Fake PSP 결제 → 분할 출고·배송·Reorder·환불/반품.
 - 한정판매: Seller-SKU 재고, FIFO/K 대기열, location-aware reservation·주문 routing.
-- Seller는 fulfillment location을 관리하며 각 Seller 주문은 모든 line을 처리할 단일 location을 사용합니다. 위치 선택은 priority·UUID 순이며 DEFAULT는 기존 재고의 보존 매핑입니다. 실제 인증·tenant 격리, live payment/refund, carrier·주소 기반 routing, cloud 배포, production SLO/capacity는 미구현.
+- Seller는 fulfillment location을 관리하며 각 Seller 주문은 모든 line을 처리할 단일 location을 사용합니다. 위치 선택은 priority·UUID 순이며 DEFAULT는 기존 재고의 보존 매핑입니다. Shipment는 수동으로 기록하며 실제 carrier 연동은 없음. 인증·tenant 격리, live payment/refund, cloud 배포, production SLO/capacity는 미구현.
 - 요구사항: [Requirements Index](docs/01-requirements/requirements-index.md)
 - 결정: [Decision Log](docs/00-governance/decision-log.md)
 - 로컬 실행 및 검증: 아래 [환경 설정](#로컬-실행-환경)
@@ -36,13 +36,14 @@
 | [ATLAS-campaign](ATLAS-campaign) | `:campaign-module` | Campaign과 판매 자격 |
 | [ATLAS-admission](ATLAS-admission) | `:admission-module` | Seller-SKU FIFO/K, ticket, expiry |
 | [ATLAS-inventory](ATLAS-inventory) | `:inventory-module` | Seller location·공유 재고 pool, reservation·transfer |
-| [ATLAS-order](ATLAS-order) | `:order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem·location snapshot, fulfillment·refund·return 조정 |
+| [ATLAS-order](ATLAS-order) | `:order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem·location snapshot, Shipment·fulfillment·refund·return |
 | [ATLAS-payment](ATLAS-payment) | `:payment-module` | Payment attempt와 Fake PSP 상태 |
 | [ATLAS-settlement](ATLAS-settlement) | `:settlement-module` | Gross capture 원장과 Seller Order allocation; local refund reversal |
 
 - 모듈 간 호출은 공개 `.service`/DTO 계약 사용. Entity·repository 직접 참조 금지.
 - CRUD는 JPA, PostgreSQL 특화 동시성 SQL은 모듈 내부 `.repository`에서 처리.
 - Location routing은 모든 Seller 주문 line을 만족하는 active location 하나를 priority ASC, UUID ASC로 정합니다. Reservation/PurchaseOrder가 선택 위치를 보존하고 return-restock도 이를 사용합니다. 기존 재고는 V16에서 DEFAULT로 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
+- SellerOrder shipment는 dispatch 시 생성하며 한 주문의 OrderItem quantity를 여러 package로 나눠 출고할 수 있습니다. 직접 pre-shipment refund를 뺀 전체 수량 배송 전에는 Return을 받지 않습니다. Carrier/tracking은 선택 metadata; 외부 운송사 연동은 없음 ([D-073](docs/00-governance/decision-log.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
 - 배송 전 부분 환불은 OrderItem 수량과 KRW price snapshot으로 local refund record 및 append-only reversal을 남깁니다. `executionMode: LOCAL_LEDGER_ONLY`는 실제 PSP 요청이나 고객 자금 이동이 없음을 뜻합니다. 상태 전이는 기존 `OrderState.PAID`와 분리하며, 환불 수량만 재고로 복원 ([D-068](docs/00-governance/decision-log.md), [ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md)).
 - 생성 primary ID는 UUIDv7. 근거·한계: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/02-decisions/adr/ADR-0007-uuidv7-identifiers.md).
 - Schema는 Flyway 소유, Hibernate는 `ddl-auto: validate`.
@@ -79,10 +80,10 @@ docker compose up -d --wait postgres
 6. Buyer checkout: `POST /api/buyers/{buyerRef}/cart/checkout`과 `Idempotency-Key`. 재고 예약은 전체 Seller에 대해 all-or-nothing.
 7. Parent Checkout과 Seller별 Order 조회: `GET /api/checkouts/{checkoutId}`, `GET /api/orders/{orderId}`.
 8. 결제 조정: `POST /api/checkouts/{checkoutId}/payment`; 미확정 결과는 `/reconcile`, 미결제 취소는 `/cancel`. 모두 같은 checkout attempt를 사용.
-9. Fulfillment는 Seller별 PurchaseOrder당 1건. Seller는 `PUT /api/sellers/{sellerId}/orders/{orderId}/fulfillment`로 순차 상태 전이; Buyer는 `GET /api/orders/{orderId}/fulfillment`로 조회. `DELIVERED`는 local simulation.
-10. Pre-shipment refund: `POST /api/sellers/{sellerId}/orders/{orderId}/refund-records` with `Idempotency-Key` and OrderItem quantities; summary `GET /api/sellers/{sellerId}/orders/{orderId}/refund-record`. `UNFULFILLED`/`IN_PROGRESS` only; local ledger, no PSP refund or money movement ([ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md)).
-11. Delivered return: Buyer requests at `POST /api/buyers/{buyerRef}/orders/{orderId}/returns`; Seller records receipt and per-OrderItem `PASSED`/`FAILED` at `PUT /api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt` and `/inspection`. Only passed quantities receive local refund/restock; failed quantities stay claimed. Status: `GET /api/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}`. No PSP refund or money movement ([ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md)).
-Order-level 환불 summary는 모든 OrderItem의 누적 환불 수량이 주문 수량에 도달해야 `FULLY_RECORDED`가 됩니다. 한 item만 전량 환불한 경우 summary는 `PARTIALLY_RECORDED`이며 남은 item의 fulfillment는 계속 가능합니다.
+9. 배송: Seller가 `POST /api/sellers/{sellerId}/orders/{orderId}/fulfillment/start`로 이행 시작. 실제 출고는 OrderItem 수량과 `Idempotency-Key`를 담아 `POST /api/sellers/{sellerId}/orders/{orderId}/shipments`; package 배송 완료는 `PUT /api/sellers/{sellerId}/orders/{orderId}/shipments/{shipmentId}/delivery`. Shipment 목록은 Buyer 소유 확인을 거치는 `GET /api/buyers/{buyerRef}/orders/{orderId}/shipments`; summary는 `GET /api/orders/{orderId}/fulfillment`. Summary 상태 직접 지정 API 없음.
+10. 배송 전 직접 환불: `POST /api/sellers/{sellerId}/orders/{orderId}/refund-records`에 `Idempotency-Key`와 OrderItem 수량 전달. 첫 Shipment 전 `UNFULFILLED`/`IN_PROGRESS` 상태에서만 허용. Summary 조회는 `GET /api/sellers/{sellerId}/orders/{orderId}/refund-record`; local ledger 기록이며 PSP 호출·자금 이동 없음 ([ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
+11. 반품: 출고 가능 수량 전체 배송 뒤 Buyer가 `POST /api/buyers/{buyerRef}/orders/{orderId}/returns`로 요청. Seller는 `PUT /api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt`로 수령, `/api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/inspection`으로 검수 결과 기록; `PASSED`만 local refund/restock, `FAILED`는 claimed 유지. 상태는 `GET /api/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}`로 조회. PSP 호출·자금 이동 없음 ([ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
+12. 환불 summary: 모든 OrderItem의 환불 수량이 주문 수량에 도달해야 `FULLY_RECORDED`. 일부 item만 전량 환불하면 `PARTIALLY_RECORDED`; 남은 item은 계속 fulfillment 가능.
 
 Cart는 Buyer 소유이며 여러 Seller의 SKU·수량을 포함할 수 있음. Checkout은 현재 Seller-SKU·가격을 재검증하고 OrderItem snapshot 저장. 하나라도 재고 부족이면 전체 checkout rollback. 취소·만료 후 Cart 자동 복원 없음; terminal Seller Order를 명시적으로 Reorder. `RESERVED` checkout은 `POST /api/checkouts/{checkoutId}/cancel`로 취소하며 모든 예약을 해제 ([D-063/D-071](docs/00-governance/decision-log.md), [Q-011](docs/01-requirements/requirements-index.md#assumptions-and-open-questions)).
 
@@ -90,4 +91,4 @@ Cart는 Buyer 소유이며 여러 Seller의 SKU·수량을 포함할 수 있음.
 
 ## Database 시작 정책
 
-V6/V7은 clean-start 전용. V8 Reorder, V9 fulfillment, V10 capture ledger, V11 pre-shipment refund, V12 inventory audit, V13 durable Fake PSP, V14 BuyerCheckout·Buyer-wide Cart, V15 delivered return/inspection schema. V14는 기존 commerce row가 있으면 중단하며 mapping/backfill 없음. 근거: [D-055/D-071](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md).
+V6/V7은 clean-start 전용. V8 Reorder, V9 fulfillment, V10 capture ledger, V11 pre-shipment refund, V12 inventory audit, V13 durable Fake PSP, V14 BuyerCheckout·Buyer-wide Cart, V15 delivered return/inspection, V16 fulfillment location·transfer, V17 SellerOrder shipment·partial dispatch를 추가. 기존 migration은 수정하지 않으며, V14는 기존 commerce row가 있으면 mapping/backfill 없이 중단. 근거: [D-055/D-071/D-072/D-073](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md).

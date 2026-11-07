@@ -76,6 +76,7 @@ public class GlobalExceptionHandler {
         }
         if (exception instanceof OrderException order) {
             return switch (order.code()) {
+                case SHIPMENT_NOT_FOUND -> response(HttpStatus.NOT_FOUND, "ORDER_SHIPMENT_NOT_FOUND", order.getMessage());
                 case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", order.getMessage());
                 case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", order.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", order.getMessage());

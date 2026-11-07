@@ -127,8 +127,9 @@ links:
 | REF-115 | Stripe, List pagination / product documentation | https://docs.stripe.com/api/pagination | 2026-11-05 | Cursor pagination contract; list limit default 10 and maximum 100 | ✓ Stripe `v1` API precedent only; not ATLAS capacity or latency evidence |
 | REF-116 | Meituan Engineering, Trade System Design Practice | https://tech.meituan.com/2024/05/09/DDD-Practice-Trading-System.html | 2026-11-06 | Marketplace trade lifecycle and business-boundary comparison; no DDD package pattern or scale figure copied | △ Case-specific; not ATLAS capacity evidence |
 | REF-117 | Shopify Engineering, Deconstructing the Monolith | https://shopify.engineering/shopify-monolith | 2026-11-06 | Modular-monolith boundary comparison | △ Shopify team/scale is not an ATLAS traffic or capacity target |
+| REF-118 | Alibaba Open Platform, 物流发货 API / product documentation | https://open.taobao.com/doc.htm?docId=101128&docType=1 | 2026-11-07 | Order-level and split-shipment API contract comparison | △ Alibaba-specific API. ATLAS adopts no provider contract, delivery workflow, or scale assumption. |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117는 ATLAS
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117/118는 ATLAS
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
@@ -148,3 +149,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0014](../02-decisions/adr/ADR-0014-seller-inventory-capacity-adjustment.md): D-069은 재고 capacity 조정, audit, idempotency를 정한 소유자 정책.
 - [ADR-0015](../02-decisions/adr/ADR-0015-durable-fake-psp-progression.md): D-070은 Fake PSP progression·결과 저장, same-key replay, manual recovery의 local-only 경계를 정한 소유자 결정.
 - [ADR-0016](../02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md): REF-116은 business boundary 비교, REF-117은 modular monolith 비교. 기술·규모는 복사하지 않음.
+- [ADR-0018](../02-decisions/adr/ADR-0018-seller-order-shipments.md): REF-112의 Meituan 주문 여정과 REF-118의 전체·분할 출고 contract만 비교. Shipment·refund 경계는 소유자 결정이며 외부 사례의 업무·규모·성능을 일반화하지 않음.

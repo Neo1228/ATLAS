@@ -2,12 +2,10 @@ package com.atlas.application.controller.order;
 
 import com.atlas.application.controller.dto.ReorderHttpRequest;
 import com.atlas.application.controller.dto.OrderRefundHttpRequest;
-import com.atlas.application.controller.dto.UpdateFulfillmentHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnInspectionHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.order.dto.request.OrderReorderRequest;
-import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.OrderRefundResponse;
@@ -15,8 +13,6 @@ import com.atlas.order.dto.response.OrderRefundSummaryResponse;
 import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
-import com.atlas.order.persistence.state.FulfillmentStatus;
-import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.service.OrderRefundService;
@@ -40,7 +36,6 @@ public class OrderController {
 
     private final OrderService orders;
     private final OrderReorderService reorders;
-    private final OrderFulfillmentService fulfillments;
     private final OrderRefundService refunds;
     private final OrderReturnService returns;
 
@@ -66,16 +61,6 @@ public class OrderController {
         return orders.cancel(orderId, idempotencyKey);
     }
 
-    @GetMapping("/orders/{orderId}/fulfillment")
-    public OrderFulfillmentResponse fulfillment(@PathVariable UUID orderId) {
-        return fulfillments.find(orderId);
-    }
-
-    @PutMapping("/sellers/{sellerId}/orders/{orderId}/fulfillment")
-    public OrderFulfillmentResponse updateFulfillment(@PathVariable UUID sellerId,
-            @PathVariable UUID orderId, @Valid @RequestBody UpdateFulfillmentHttpRequest request) {
-        return fulfillments.updateStatus(sellerId, orderId, request.status());
-    }
 
     @PostMapping("/orders/{orderId}/reorder")
     public CartResponse reorder(@PathVariable UUID orderId,

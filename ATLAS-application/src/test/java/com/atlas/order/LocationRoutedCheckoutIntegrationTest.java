@@ -26,6 +26,7 @@ import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.response.OrderReturnResponse;
+import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.persistence.state.FakePspResult;
 import com.atlas.payment.persistence.state.PaymentPhase;
@@ -258,15 +259,27 @@ class LocationRoutedCheckoutIntegrationTest {
         assertThat(inventory.findFulfillmentLocation(sellerId, List.of(
                 new ReserveInventoryBatchRequest.Item(sellerId, sku, 1)))).contains(preferred.locationId());
 
-        for (String fulfillmentStatus : List.of("IN_PROGRESS", "SHIPPED", "DELIVERED")) {
-            mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"status\":\"" + fulfillmentStatus + "\"}"))
-                    .andExpect(status().isOk());
-        }
+        mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start",
+                        sellerId, order.orderId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
 
         UUID orderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id=?", UUID.class, order.orderId());
+        String shipmentJson = mockMvc.perform(post(
+                        "/api/sellers/{sellerId}/orders/{orderId}/shipments", sellerId, order.orderId())
+                        .header("Idempotency-Key", "location-shipment-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"orderItemId\":\"" + orderItemId + "\",\"quantity\":1}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SHIPPED"))
+                .andReturn().getResponse().getContentAsString();
+        UUID shipmentId = mapper.readValue(shipmentJson, OrderShipmentResponse.class).shipmentId();
+        mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/shipments/{shipmentId}/delivery",
+                        sellerId, order.orderId(), shipmentId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DELIVERED"));
+
         String returnJson = mockMvc.perform(post(
                         "/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, order.orderId())
                         .header("Idempotency-Key", "location-return-key-" + UUID.randomUUID())

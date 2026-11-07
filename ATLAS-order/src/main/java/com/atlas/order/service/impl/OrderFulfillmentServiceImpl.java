@@ -4,11 +4,11 @@ import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderFulfillment;
 import com.atlas.order.persistence.entity.PurchaseOrder;
-import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.repository.OrderFulfillmentRepository;
-import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.repository.OrderRefundRepository;
+import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.OrderFulfillmentService;
 import java.time.Clock;
 import java.util.Objects;
@@ -35,26 +35,28 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
     @Override
     @Transactional(readOnly = true)
     public OrderFulfillmentResponse find(UUID orderId) {
-        PurchaseOrder order = requireOrder(orderId);
+        PurchaseOrder order = orders.findById(orderId).orElseThrow(() -> notFound("Order not found"));
         requirePaid(order);
         return fulfillments.findById(orderId).map(OrderFulfillmentServiceImpl::response)
-                .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Fulfillment not found"));
+                .orElseThrow(() -> notFound("Fulfillment not found"));
     }
 
     @Override
     @Transactional
-    public OrderFulfillmentResponse updateStatus(UUID sellerId, UUID orderId, FulfillmentStatus status) {
+    public OrderFulfillmentResponse start(UUID sellerId, UUID orderId) {
         PurchaseOrder order = lockOrder(orderId);
         requirePaid(order);
-        if (!order.sellerId().equals(sellerId)) {
-            throw new OrderException(OrderException.Code.CONFLICT, "Seller does not own order");
-        }
+        requireSeller(order, sellerId);
         OrderFulfillment fulfillment = fulfillments.findById(orderId)
-                .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Fulfillment not found"));
-        if (status != fulfillment.status() && refunds.isFullyRefunded(orderId)) {
-            throw new OrderException(OrderException.Code.CONFLICT, "Fully refunded orders cannot advance fulfillment");
+                .orElseThrow(() -> notFound("Fulfillment not found"));
+        if (fulfillment.status() == FulfillmentStatus.IN_PROGRESS) {
+            return response(fulfillment);
         }
-        fulfillment.transitionTo(status, clock.instant());
+        if (fulfillment.status() != FulfillmentStatus.UNFULFILLED) {
+            throw conflict("Fulfillment has already advanced");
+        }
+        if (refunds.isFullyRefunded(orderId)) throw conflict("Fully refunded orders cannot start fulfillment");
+        fulfillment.start(clock.instant());
         return response(fulfillments.save(fulfillment));
     }
 
@@ -68,24 +70,27 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
         }
     }
 
-    private PurchaseOrder requireOrder(UUID orderId) {
-        return orders.findById(orderId).orElseThrow(() -> new OrderException(
-                OrderException.Code.NOT_FOUND, "Order not found"));
-    }
-
     private PurchaseOrder lockOrder(UUID orderId) {
-        return orders.findWithLockByOrderId(orderId).orElseThrow(() -> new OrderException(
-                OrderException.Code.NOT_FOUND, "Order not found"));
+        return orders.findWithLockByOrderId(orderId).orElseThrow(() -> notFound("Order not found"));
     }
 
     private static void requirePaid(PurchaseOrder order) {
-        if (order.state() != OrderState.PAID) {
-            throw new OrderException(OrderException.Code.CONFLICT, "Fulfillment requires a paid order");
-        }
+        if (order.state() != OrderState.PAID) throw conflict("Fulfillment requires a paid order");
+    }
+
+    private static void requireSeller(PurchaseOrder order, UUID sellerId) {
+        if (sellerId == null || !order.sellerId().equals(sellerId)) throw conflict("Seller does not own order");
     }
 
     private static OrderFulfillmentResponse response(OrderFulfillment fulfillment) {
         return new OrderFulfillmentResponse(fulfillment.orderId(), fulfillment.status(), fulfillment.createdAt(),
                 fulfillment.updatedAt(), fulfillment.inProgressAt(), fulfillment.shippedAt(), fulfillment.deliveredAt());
+    }
+
+    private static OrderException notFound(String message) {
+        return new OrderException(OrderException.Code.NOT_FOUND, message);
+    }
+    private static OrderException conflict(String message) {
+        return new OrderException(OrderException.Code.CONFLICT, message);
     }
 }
