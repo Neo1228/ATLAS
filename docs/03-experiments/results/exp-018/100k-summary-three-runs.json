@@ -1,0 +1,4609 @@
+{
+  "input": {
+    "products": 100000,
+    "sellers": 100,
+    "categories": 1100,
+    "checkout_rows": 100000,
+    "order_rows": 100000,
+    "journals": 100000,
+    "allocations": 100000,
+    "entries": 200000,
+    "product_channels": 200000,
+    "topology": "100 Sellers; each has one root and 10 children; 100 products per child",
+    "settlementPeriod": "full 100000s or narrow first 10000s",
+    "PostgreSQL": "18.6",
+    "cache": "warm after ANALYZE"
+  },
+  "results": [
+    {
+      "scenario": "global-all",
+      "runs": [
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 285.899,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 50000,
+              "actualRows": 101,
+              "actualMs": 111.237,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 50000,
+              "actualRows": 100000,
+              "actualMs": 92.679,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 21.909,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 38.064,
+              "sharedHit": 4186,
+              "sharedRead": 1
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 38.054,
+              "sharedHit": 4186,
+              "sharedRead": 1
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 12.739,
+              "sharedHit": 4186,
+              "sharedRead": 1
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 12.714,
+              "sharedHit": 4186,
+              "sharedRead": 1
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.149,
+              "sharedHit": 2,
+              "sharedRead": 1
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 9.563,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 4.087,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 2.673,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 7.852,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 9.234,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 23.028,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 23.018,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 9.179,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 9.099,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.027,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.955,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.236,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.418,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.077,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.333,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 221.708,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 50000,
+              "actualRows": 101,
+              "actualMs": 90.536,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 50000,
+              "actualRows": 100000,
+              "actualMs": 72.942,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 16.388,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 21.108,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 21.102,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 8.918,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.895,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.014,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.783,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.114,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.404,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.093,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.258,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 20.434,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 20.426,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 8.702,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.635,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.016,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.942,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.219,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.442,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.207,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 4.996,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 215.25,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 50000,
+              "actualRows": 101,
+              "actualMs": 88.278,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 50000,
+              "actualRows": 100000,
+              "actualMs": 70.632,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 15.458,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 20.495,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 20.487,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 8.757,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.734,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.02,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.699,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.102,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.36,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.965,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.023,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 18.51,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 18.502,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 8.168,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.107,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.014,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.42,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.189,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.452,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 4.985,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "global-broad",
+      "runs": [
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 204.358,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 16667,
+              "actualRows": 101,
+              "actualMs": 72.315,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 16667,
+              "actualRows": 10000,
+              "actualMs": 70.162,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 16.269,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 20.993,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 20.986,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 8.983,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.959,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.013,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.924,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.138,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.401,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.091,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.029,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 20.149,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 20.141,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 9.123,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 9.058,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.014,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.724,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.198,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.267,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.665,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.927,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 210.852,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 16667,
+              "actualRows": 101,
+              "actualMs": 74.751,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 16667,
+              "actualRows": 10000,
+              "actualMs": 72.572,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 16.704,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 19.664,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 19.657,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 8.8,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.776,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.012,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.85,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.151,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.314,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.835,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.702,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 19.573,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 19.566,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 8.645,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.582,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.013,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.86,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.246,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.164,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.371,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.09,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 239.222,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 16667,
+              "actualRows": 101,
+              "actualMs": 79.536,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 16667,
+              "actualRows": 10000,
+              "actualMs": 77.303,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 16.628,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 28.136,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 28.125,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 10.956,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 10.923,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.04,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 8.801,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.795,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.825,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 5.308,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.242,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 29.326,
+              "sharedHit": 4216,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 29.319,
+              "sharedHit": 4216,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 8.116,
+              "sharedHit": 4216,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.052,
+              "sharedHit": 4186,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.006,
+              "sharedHit": 2,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 18.902,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 100000,
+              "actualMs": 8.334,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.808,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.692,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.183,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "global-needle",
+      "runs": [
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 220.637,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 16667,
+              "actualRows": 101,
+              "actualMs": 65.238,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 16667,
+              "actualRows": 1000,
+              "actualMs": 64.855,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 15.305,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 25.64,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 25.633,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 10.62,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 10.586,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.035,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 8.661,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 4.046,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.612,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.695,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.651,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 20.728,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 20.707,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 8.642,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.574,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.015,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.533,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.049,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.227,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.508,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.044,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 199.982,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 16667,
+              "actualRows": 101,
+              "actualMs": 67.852,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 16667,
+              "actualRows": 1000,
+              "actualMs": 67.467,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 16.419,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 22.981,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 22.975,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 9.059,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 9.035,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.013,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.921,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.177,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.316,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.839,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.265,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 19.505,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 19.497,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 8.267,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.207,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.014,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.498,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.05,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.159,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.362,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.047,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 209.526,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 16667,
+              "actualRows": 101,
+              "actualMs": 65.805,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 16667,
+              "actualRows": 1000,
+              "actualMs": 65.413,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 15.574,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 21.388,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 21.381,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 8.807,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.783,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.012,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.876,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.015,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.342,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.911,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.643,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 28.085,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 28.076,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 33.67,
+              "actualMs": 9.362,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 9.3,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.015,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 7.534,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.967,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.267,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.671,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.222,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "seller-root",
+      "runs": [
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 9.956,
+              "sharedHit": 3364,
+              "sharedRead": 694
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.083,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 1,
+              "actualRows": 5,
+              "actualMs": 0.036,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product_category",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.027,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_category_seller_category_unique",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.011,
+              "sharedHit": 4,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 10,
+              "actualRows": 5.5,
+              "actualMs": 0.003,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "WorkTable Scan",
+              "planRows": 10,
+              "actualRows": 5.5,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 238,
+              "actualRows": 101,
+              "actualMs": 9.946,
+              "sharedHit": 3364,
+              "sharedRead": 694
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product",
+              "planRows": 238,
+              "actualRows": 1000,
+              "actualMs": 9.314,
+              "sharedHit": 3361,
+              "sharedRead": 694
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_seller_idx",
+              "planRows": 953,
+              "actualRows": 1000,
+              "actualMs": 0.255,
+              "sharedHit": 0,
+              "sharedRead": 12
+            },
+            {
+              "node": "CTE Scan",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.084,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "product_channel_availability",
+              "index": "product_channel_availability_pk",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.008,
+              "sharedHit": 3318,
+              "sharedRead": 682
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 18.115,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 18.106,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 14.022,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 13.999,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.011,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 9.881,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 5.344,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.504,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.396,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.138,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 17.097,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 17.089,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 34,
+              "actualMs": 13.057,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 12.994,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.014,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 9.622,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 5.219,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.453,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.235,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.017,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 4.869,
+              "sharedHit": 4058,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.087,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 1,
+              "actualRows": 5,
+              "actualMs": 0.035,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product_category",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.025,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_category_seller_category_unique",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.008,
+              "sharedHit": 4,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 10,
+              "actualRows": 5.5,
+              "actualMs": 0.003,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "WorkTable Scan",
+              "planRows": 10,
+              "actualRows": 5.5,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 238,
+              "actualRows": 101,
+              "actualMs": 4.859,
+              "sharedHit": 4058,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product",
+              "planRows": 238,
+              "actualRows": 1000,
+              "actualMs": 4.242,
+              "sharedHit": 4055,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_seller_idx",
+              "planRows": 953,
+              "actualRows": 1000,
+              "actualMs": 0.084,
+              "sharedHit": 12,
+              "sharedRead": 0
+            },
+            {
+              "node": "CTE Scan",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.087,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "product_channel_availability",
+              "index": "product_channel_availability_pk",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.003,
+              "sharedHit": 4000,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 23.651,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 23.639,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 17.808,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 17.781,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.017,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 15.383,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 6.427,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 4.599,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 3.112,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 3.557,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 21.706,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 21.698,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 67.33,
+              "actualMs": 16.148,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 16.07,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.015,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 13.855,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 5.754,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 2.884,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 2.647,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 3.28,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 4.985,
+              "sharedHit": 4058,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.057,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 1,
+              "actualRows": 5,
+              "actualMs": 0.024,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product_category",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.015,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_category_seller_category_unique",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.005,
+              "sharedHit": 4,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 10,
+              "actualRows": 5.5,
+              "actualMs": 0.003,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "WorkTable Scan",
+              "planRows": 10,
+              "actualRows": 5.5,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 238,
+              "actualRows": 101,
+              "actualMs": 4.975,
+              "sharedHit": 4058,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product",
+              "planRows": 238,
+              "actualRows": 1000,
+              "actualMs": 4.282,
+              "sharedHit": 4055,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_seller_idx",
+              "planRows": 953,
+              "actualRows": 1000,
+              "actualMs": 0.038,
+              "sharedHit": 12,
+              "sharedRead": 0
+            },
+            {
+              "node": "CTE Scan",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.057,
+              "sharedHit": 26,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "product_channel_availability",
+              "index": "product_channel_availability_pk",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.003,
+              "sharedHit": 4000,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 18.264,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 18.255,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 11.051,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 11.017,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.012,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 8.908,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.081,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 2.445,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 2.376,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.253,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 13.224,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 13.203,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 101,
+              "actualMs": 9.074,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.998,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.013,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 7.063,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.028,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.646,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.571,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 2.864,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "seller-child",
+      "runs": [
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 100,
+              "actualMs": 0.638,
+              "sharedHit": 445,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 1,
+              "actualMs": 0.044,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.042,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product_category",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.029,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_category_seller_category_unique",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.009,
+              "sharedHit": 2,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 10,
+              "actualRows": 1,
+              "actualMs": 0.004,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "WorkTable Scan",
+              "planRows": 10,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 238,
+              "actualRows": 100,
+              "actualMs": 0.629,
+              "sharedHit": 445,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product",
+              "planRows": 238,
+              "actualRows": 100,
+              "actualMs": 0.538,
+              "sharedHit": 442,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_seller_idx",
+              "planRows": 953,
+              "actualRows": 1000,
+              "actualMs": 0.042,
+              "sharedHit": 12,
+              "sharedRead": 0
+            },
+            {
+              "node": "CTE Scan",
+              "planRows": 11,
+              "actualRows": 1,
+              "actualMs": 0.043,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "product_channel_availability",
+              "index": "product_channel_availability_pk",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.003,
+              "sharedHit": 400,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 17.161,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 17.153,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 13.577,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 13.553,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.011,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 9.392,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 4.892,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.462,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.271,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.205,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 12.913,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 12.904,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 101,
+              "actualMs": 9.72,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 9.65,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.013,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 7.743,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.161,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 2.18,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 2.107,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 2.823,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 100,
+              "actualMs": 0.64,
+              "sharedHit": 445,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 1,
+              "actualMs": 0.043,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.041,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product_category",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.029,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_category_seller_category_unique",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.012,
+              "sharedHit": 2,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 10,
+              "actualRows": 1,
+              "actualMs": 0.004,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "WorkTable Scan",
+              "planRows": 10,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 238,
+              "actualRows": 100,
+              "actualMs": 0.631,
+              "sharedHit": 445,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product",
+              "planRows": 238,
+              "actualRows": 100,
+              "actualMs": 0.541,
+              "sharedHit": 442,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_seller_idx",
+              "planRows": 953,
+              "actualRows": 1000,
+              "actualMs": 0.039,
+              "sharedHit": 12,
+              "sharedRead": 0
+            },
+            {
+              "node": "CTE Scan",
+              "planRows": 11,
+              "actualRows": 1,
+              "actualMs": 0.042,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "product_channel_availability",
+              "index": "product_channel_availability_pk",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.003,
+              "sharedHit": 400,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 13.819,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 13.806,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 9.874,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 9.848,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.013,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 7.369,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.275,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.644,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.58,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 3.674,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 16.093,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 16.085,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 67.33,
+              "actualMs": 11.601,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 11.532,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.016,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 8.36,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 3.909,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.527,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 500,
+              "actualMs": 2.195,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 4.715,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 100,
+              "actualMs": 0.694,
+              "sharedHit": 445,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 1,
+              "actualMs": 0.054,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.051,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product_category",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.038,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_category_seller_category_unique",
+              "planRows": 11,
+              "actualRows": 11,
+              "actualMs": 0.012,
+              "sharedHit": 2,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 10,
+              "actualRows": 1,
+              "actualMs": 0.005,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "WorkTable Scan",
+              "planRows": 10,
+              "actualRows": 1,
+              "actualMs": 0.001,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 238,
+              "actualRows": 100,
+              "actualMs": 0.684,
+              "sharedHit": 445,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Heap Scan",
+              "relation": "product",
+              "planRows": 238,
+              "actualRows": 100,
+              "actualMs": 0.582,
+              "sharedHit": 442,
+              "sharedRead": 0
+            },
+            {
+              "node": "Bitmap Index Scan",
+              "index": "product_seller_idx",
+              "planRows": 953,
+              "actualRows": 1000,
+              "actualMs": 0.063,
+              "sharedHit": 12,
+              "sharedRead": 0
+            },
+            {
+              "node": "CTE Scan",
+              "planRows": 11,
+              "actualRows": 1,
+              "actualMs": 0.052,
+              "sharedHit": 13,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "product_channel_availability",
+              "index": "product_channel_availability_pk",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 0.003,
+              "sharedHit": 400,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 13.509,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 13.5,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 9.972,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 9.946,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.013,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 7.172,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 2.977,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.719,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.675,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 4.122,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 11.316,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 1079,
+              "actualRows": 101,
+              "actualMs": 11.307,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 451,
+              "actualRows": 101,
+              "actualMs": 8.47,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 451,
+              "actualRows": 333.33,
+              "actualMs": 8.397,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.014,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 6.688,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 58812,
+              "actualRows": 33333.33,
+              "actualMs": 2.867,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.504,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.446,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 2.523,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "settlement-narrow",
+      "runs": [
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 227.409,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 50000,
+              "actualRows": 101,
+              "actualMs": 101.065,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 50000,
+              "actualRows": 100000,
+              "actualMs": 82.539,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 19.212,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 16.944,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 16.938,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 5.648,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 47,
+              "actualRows": 333.33,
+              "actualMs": 5.626,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.021,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 63,
+              "actualRows": 333.33,
+              "actualMs": 3.715,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 5842,
+              "actualRows": 3333.33,
+              "actualMs": 2.162,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.266,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.674,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.644,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 20.213,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 109,
+              "actualRows": 101,
+              "actualMs": 20.206,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 47,
+              "actualRows": 33.67,
+              "actualMs": 5.891,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 47,
+              "actualRows": 333.33,
+              "actualMs": 5.804,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.021,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 63,
+              "actualRows": 500,
+              "actualMs": 6.034,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 5842,
+              "actualRows": 5000,
+              "actualMs": 3.33,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 500,
+              "actualMs": 2.177,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.16,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.244,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 212.539,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 50000,
+              "actualRows": 101,
+              "actualMs": 91.551,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 50000,
+              "actualRows": 100000,
+              "actualMs": 74.108,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 16.235,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 19.867,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 19.86,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 6.497,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 47,
+              "actualRows": 333.33,
+              "actualMs": 6.466,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.015,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 63,
+              "actualRows": 333.33,
+              "actualMs": 4.455,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 5842,
+              "actualRows": 3333.33,
+              "actualMs": 2.423,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.689,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.897,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.934,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 17.148,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 109,
+              "actualRows": 101,
+              "actualMs": 17.14,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 47,
+              "actualRows": 33.67,
+              "actualMs": 5.67,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 47,
+              "actualRows": 333.33,
+              "actualMs": 5.607,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.015,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 63,
+              "actualRows": 333.33,
+              "actualMs": 3.712,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 5842,
+              "actualRows": 3333.33,
+              "actualMs": 2.145,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.253,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.57,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.609,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 224.74,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Recursive Union",
+              "planRows": 11,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Result",
+              "planRows": 0,
+              "actualRows": 0,
+              "actualMs": 0,
+              "sharedHit": 0,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 50000,
+              "actualRows": 101,
+              "actualMs": 91.374,
+              "sharedHit": 3425,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product",
+              "planRows": 50000,
+              "actualRows": 100000,
+              "actualMs": 73.893,
+              "sharedHit": 3422,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "product_channel_availability",
+              "planRows": 100040,
+              "actualRows": 100000,
+              "actualMs": 16.329,
+              "sharedHit": 1618,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 18.999,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather",
+              "planRows": 2,
+              "actualRows": 3,
+              "actualMs": 18.992,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Aggregate",
+              "planRows": 1,
+              "actualRows": 1,
+              "actualMs": 6.116,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 47,
+              "actualRows": 333.33,
+              "actualMs": 6.094,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.016,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 63,
+              "actualRows": 333.33,
+              "actualMs": 4.01,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 5842,
+              "actualRows": 3333.33,
+              "actualMs": 2.306,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.388,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 4.053,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 6.171,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ],
+          [
+            {
+              "node": "Limit",
+              "planRows": 101,
+              "actualRows": 101,
+              "actualMs": 16.73,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Gather Merge",
+              "planRows": 109,
+              "actualRows": 101,
+              "actualMs": 16.722,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Sort",
+              "planRows": 47,
+              "actualRows": 33.67,
+              "actualMs": 5.641,
+              "sharedHit": 4217,
+              "sharedRead": 0
+            },
+            {
+              "node": "Append",
+              "planRows": 47,
+              "actualRows": 333.33,
+              "actualMs": 5.58,
+              "sharedHit": 4187,
+              "sharedRead": 0
+            },
+            {
+              "node": "Index Scan",
+              "relation": "settlement_journal",
+              "index": "settlement_journal_source_refund_id_key",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 0.016,
+              "sharedHit": 3,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash Join",
+              "planRows": 63,
+              "actualRows": 333.33,
+              "actualMs": 3.74,
+              "sharedHit": 2717,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 5842,
+              "actualRows": 3333.33,
+              "actualMs": 2.223,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            },
+            {
+              "node": "Hash",
+              "planRows": 634,
+              "actualRows": 333.33,
+              "actualMs": 1.225,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_seller_allocation",
+              "planRows": 634,
+              "actualRows": 1000,
+              "actualMs": 3.555,
+              "sharedHit": 1250,
+              "sharedRead": 0
+            },
+            {
+              "node": "Seq Scan",
+              "relation": "settlement_journal",
+              "planRows": 1,
+              "actualRows": 0,
+              "actualMs": 5.44,
+              "sharedHit": 1467,
+              "sharedRead": 0
+            }
+          ]
+        ]
+      ]
+    }
+  ]
+}
