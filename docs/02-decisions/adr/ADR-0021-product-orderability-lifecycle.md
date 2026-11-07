@@ -2,7 +2,7 @@
 
 - 상태: 승인
 - 결정: D-076
-- 추적: [Issue #165](https://github.com/Neo1228/ATLAS/issues/165)
+- 추적: [Issue #165](https://github.com/Neo1228/ATLAS/issues/165), [PR #166](https://github.com/Neo1228/ATLAS/pull/166)
 - 요구사항: [FR-013 / BR-013 / INV-010 / Q-010](../../01-requirements/requirements-index.md)
 - 관련 결정: [D-061 / D-074](../../00-governance/decision-log.md)
 - 관련 ADR: [ADR-0008](ADR-0008-catalog-cart-order-boundaries.md), [ADR-0019](ADR-0019-seller-product-categories.md)
