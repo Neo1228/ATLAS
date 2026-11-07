@@ -1,5 +1,7 @@
 package com.atlas;
-
+import com.atlas.catalog.exception.CatalogException;
+import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.service.ProductStatus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -163,6 +165,116 @@ class BuyerFlowIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"code\":\"CART_NOT_FOUND\""));
+    }
+
+    @Test
+    void campaignCheckoutRejectsProductWhenCampaignChannelIsDisabled() {
+        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        QueueTicketResponse failedTicket = join(campaign, "buyer-product-channel", "campaign-channel-disabled");
+        QueueTicketResponse waitingTicket = join(campaign, "buyer-product-channel-next", "campaign-channel-next");
+        assertThat(failedTicket.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(waitingTicket.status()).isEqualTo(TicketStatus.WAITING);
+
+        UUID productId = jdbc.queryForObject(
+                "SELECT product_id FROM seller_sku WHERE seller_id = ? AND sku_id = ?",
+                UUID.class, campaign.sellerId(), campaign.skuId());
+        products.updateChannelAvailability(campaign.sellerId(), productId, ProductSalesChannel.CAMPAIGN, false);
+        assertThatThrownBy(() -> orders.startCheckout(campaign.campaignId(), failedTicket.ticketId()))
+                .isInstanceOfSatisfying(CatalogException.class, exception ->
+                        assertThat(exception.code()).isEqualTo(CatalogException.Code.PRODUCT_NOT_ORDERABLE));
+        assertThat(admission.find(campaign.campaignId(), failedTicket.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_FAILED);
+        assertThat(admission.find(campaign.campaignId(), waitingTicket.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE ticket_id = ?",
+                Integer.class, failedTicket.ticketId())).isZero();
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        assertThat(stock.available()).isEqualTo(2);
+        assertThat(stock.reserved()).isZero();
+        products.updateChannelAvailability(campaign.sellerId(), productId, ProductSalesChannel.CAMPAIGN, true);
+        QueueTicketResponse rejoined = join(campaign, "buyer-product-channel", "campaign-channel-reactivated");
+        assertThat(rejoined.ticketId()).isNotEqualTo(failedTicket.ticketId());
+        assertThat(admission.find(campaign.campaignId(), failedTicket.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_FAILED);
+    }
+
+    @Test
+    void reservedCartOrderCanCompleteAfterProductDeactivation() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "deactivate-cart-" + UUID.randomUUID();
+        ProductResponse product = registerProductSku(sellerId, skuId, 100, 2);
+        String buyerRef = "deactivate-cart-buyer-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+        CheckoutResponse checkout = objectMapper.readValue(mockMvc.perform(
+                        post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                                .header("Idempotency-Key", "deactivate-cart-" + UUID.randomUUID()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                CheckoutResponse.class);
+        OrderResponse order = checkout.orders().getFirst();
+        assertThat(order.state()).isEqualTo(OrderState.RESERVED);
+        assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+        products.updateStatus(sellerId, product.productId(), ProductStatus.INACTIVE);
+
+        CheckoutResponse paid = objectMapper.readValue(mockMvc.perform(
+                        post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                CheckoutResponse.class);
+        assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(paid.orders()).singleElement().satisfies(paidOrder -> {
+            assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
+            assertThat(paidOrder.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
+        });
+        InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+        assertThat(stock.available()).isEqualTo(1);
+        assertThat(stock.reserved()).isZero();
+        assertThat(stock.claimed()).isEqualTo(1);
+    }
+
+    @Test
+    void cartCheckoutRejectsDeactivatedProductWithoutChangingCartOrInventory() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse availableProduct = products.createProduct(
+                sellerId, new CreateProductRequest("orderable-cart-product", null));
+        ProductResponse inactiveProduct = products.createProduct(
+                sellerId, new CreateProductRequest("inactive-cart-product", null));
+        String availableSku = "orderable-cart-" + UUID.randomUUID();
+        String inactiveSku = "inactive-cart-" + UUID.randomUUID();
+        products.registerSku(sellerId, availableProduct.productId(),
+                new RegisterSellerSkuRequest(availableSku, 100, 2));
+        products.registerSku(sellerId, inactiveProduct.productId(),
+                new RegisterSellerSkuRequest(inactiveSku, 200, 3));
+        String buyerRef = "inactive-product-cart-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, availableSku)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        buyerRef, sellerId, inactiveSku)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+        products.updateStatus(sellerId, inactiveProduct.productId(), ProductStatus.INACTIVE);
+
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "inactive-cart-" + UUID.randomUUID()))
+                .andExpect(status().isConflict())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("\"code\":\"PRODUCT_NOT_ORDERABLE\""));
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?", Integer.class, buyerRef)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM purchase_order WHERE buyer_ref = ?", Integer.class, buyerRef)).isZero();
+        assertThat(carts.find(buyerRef).items()).hasSize(2);
+        InventoryPoolResponse availableStock = inventory.find(sellerId, availableSku);
+        InventoryPoolResponse inactiveStock = inventory.find(sellerId, inactiveSku);
+        assertThat(availableStock.available()).isEqualTo(2);
+        assertThat(availableStock.reserved()).isZero();
+        assertThat(inactiveStock.available()).isEqualTo(3);
+        assertThat(inactiveStock.reserved()).isZero();
     }
 
     @Test

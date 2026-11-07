@@ -13,6 +13,8 @@ import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.exception.CatalogException;
+import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.exception.OrderException;
@@ -64,7 +66,7 @@ class CheckoutBehaviorTest {
         when(orders.findByTicketId(TICKET)).thenReturn(Optional.empty());
         when(admission.requireCheckoutSlot(CAMPAIGN, TICKET)).thenReturn(ticket);
         when(admission.startCheckout(CAMPAIGN, TICKET)).thenReturn(ticket);
-        when(catalog.find(SELLER, "SKU-1"))
+        when(catalog.findOrderableSellerSku(SELLER, "SKU-1", ProductSalesChannel.CAMPAIGN))
                 .thenReturn(new SellerSkuResponse(SELLER, productId, "SKU-1", "Product", 1_500));
         when(inventory.tryReserve(any())).thenReturn(Optional.empty());
         when(inventory.findReservations(any())).thenReturn(List.of());
@@ -87,6 +89,45 @@ class CheckoutBehaviorTest {
 
         verify(admission).releaseCheckoutSlot(CAMPAIGN, TICKET,
                 CheckoutSlotReleaseReason.INVENTORY_UNAVAILABLE);
+    }
+
+    @Test
+    void unavailableCampaignProductReleasesSlotAndCommitsBeforeThrowing() {
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderItemRepository items = mock(OrderItemRepository.class);
+        AdmissionService admission = mock(AdmissionService.class);
+        InventoryService inventory = mock(InventoryService.class);
+        SellerSkuService catalog = mock(SellerSkuService.class);
+        QueueTicketResponse ticket = new QueueTicketResponse(TICKET, CAMPAIGN, SELLER, "SKU-1", "buyer", 1,
+                TicketStatus.CHECKOUT_STARTED, NOW.plusSeconds(600), true);
+        when(orders.findByTicketId(TICKET)).thenReturn(Optional.empty());
+        when(admission.requireCheckoutSlot(CAMPAIGN, TICKET)).thenReturn(ticket);
+        when(catalog.findOrderableSellerSku(SELLER, "SKU-1", ProductSalesChannel.CAMPAIGN))
+                .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "unavailable"));
+        AtomicReference<Boolean> committed = new AtomicReference<>(false);
+        PlatformTransactionManager manager = new PlatformTransactionManager() {
+            @Override public TransactionStatus getTransaction(TransactionDefinition definition) {
+                return new SimpleTransactionStatus();
+            }
+            @Override public void commit(TransactionStatus status) { committed.set(true); }
+            @Override public void rollback(TransactionStatus status) { }
+        };
+        OrderServiceImpl service = new OrderServiceImpl(manager, orders, items,
+                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
+                inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
+                fixedClock(), Duration.ofMinutes(10));
+
+        CatalogException exception = assertThrows(CatalogException.class,
+                () -> service.startCheckout(CAMPAIGN, TICKET));
+
+        assertEquals(CatalogException.Code.PRODUCT_NOT_ORDERABLE, exception.code());
+        assertEquals(true, committed.get());
+        verify(admission).releaseCheckoutSlot(CAMPAIGN, TICKET,
+                CheckoutSlotReleaseReason.PRODUCT_NOT_ORDERABLE);
+        verify(admission, never()).startCheckout(CAMPAIGN, TICKET);
+        verify(orders, never()).save(any(PurchaseOrder.class));
+        verify(items, never()).save(any(OrderItem.class));
+        verify(inventory, never()).tryReserve(any());
     }
 
     @Test

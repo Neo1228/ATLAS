@@ -62,6 +62,7 @@ public class GlobalExceptionHandler {
             return switch (catalog.code()) {
                 case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "CATALOG_RESOURCE_NOT_FOUND", catalog.getMessage());
                 case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", catalog.getMessage());
+                case PRODUCT_NOT_ORDERABLE -> response(HttpStatus.CONFLICT, "PRODUCT_NOT_ORDERABLE", catalog.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", catalog.getMessage());
             };
         }

@@ -13,6 +13,11 @@ public interface ProductService {
     SellerSkuResponse registerSku(UUID sellerId, UUID productId, RegisterSellerSkuRequest request);
     SellerSkuResponse updateSkuPrice(UUID sellerId, UUID productId, String skuId, long priceWon);
     ProductResponse updateProductCategory(UUID sellerId, UUID productId, UUID categoryId);
+    ProductResponse updateStatus(UUID sellerId, UUID productId, ProductStatus status);
+    ProductResponse updateChannelAvailability(UUID sellerId, UUID productId, ProductSalesChannel channel,
+            boolean available);
+    ProductListingPageResponse listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
+            Integer limit, String cursor);
     ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query, Integer limit, String cursor);
     ProductListingResponse findProduct(UUID productId);
 }

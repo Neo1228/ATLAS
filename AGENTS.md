@@ -66,7 +66,8 @@ docker compose up -d --wait postgres
 - 애플리케이션 실행: `./gradlew :application-module:bootRun`
 - 전체 컴파일·Checkstyle·단위/통합 테스트·실행 archive 검사: `./gradlew --no-daemon check :application-module:bootJar`
 - Markdown 검사: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
-- 기본 API 주소: `127.0.0.1:8080`. Colima에서는 현재 Docker context의 `DOCKER_HOST` 사용; 기기별 socket 경로 하드코딩 금지.
+- 기본 API 주소: `127.0.0.1:8080`.
+- Colima/Testcontainers: `export DOCKER_HOST="$(docker context inspect --format '{{ .Endpoints.docker.Host }}')"` 및 `export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. 기기별 socket 경로 하드코딩 금지.
 - 사용자가 금지한 `view` command 실행 금지. 파일 확인은 정적 read/search 도구 사용.
 
 ## 코드 규칙 및 공통 패턴
@@ -80,6 +81,7 @@ docker compose up -d --wait postgres
 - 계층 경계: Controller는 HTTP binding·status·transport token 변환과 Service 호출만 담당. Use-case policy·transaction·repository 접근 금지.
 - Service는 유스케이스·정책 검증·transaction 경계와 비즈니스 오류 변환 담당. Repository는 SQL/JPA와 persistence 결과만 담당하며 HTTP DTO·HTTP 예외에 의존 금지. 조회 projection record는 `.persistence.projection`에 배치.
 - 생성자 DI로 필요한 공개 Service만 연결. 모듈 간 entity/repository 직접 참조 및 계층 우회 금지.
+- Product 판매 상태와 채널 가용성은 Catalog 소유. 주문·대기열은 Catalog 공개 Service로 판정; 공개 목록은 판매 가능한 상품만 노출하고 Seller 관리 목록은 비활성 상태도 보존.
 - Schema는 Flyway가 관리하고 Hibernate는 `ddl-auto: validate`만 수행. 병렬 작업의 migration version은 coordinator가 배정.
 - 모듈별 오류는 타입이 지정된 예외와 `Code`로 표현. `GlobalExceptionHandler`는 RFC 9457 `ProblemDetail`과 고정 `code` 반환. 예기치 않은 500 응답에 내부 상세를 노출하지 않음.
 - GET 등 조회 요청은 상태를 변경하지 않음. 만료·재시도·대기열 승격은 상태 변경 요청이나 scheduler가 처리.
@@ -112,7 +114,7 @@ docker compose up -d --wait postgres
 ## 테스트와 품질 점검
 
 - 단위 테스트는 각 `ATLAS-*/src/test`, Spring/PostgreSQL 통합·아키텍처 테스트는 `ATLAS-application/src/test`.
-- 주요 테스트: `ModuleBoundaryTest`, `CatalogIntegrationTest`, `ProductCategoryMigrationIntegrationTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `SettlementStatementIntegrationTest`, `OrderShipmentIntegrationTest`, `OrderShipmentMigrationIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `SellerSkuGlobalFifoMigrationIntegrationTest`.
+- 주요 테스트: `ModuleBoundaryTest`, `CatalogIntegrationTest`, `ProductCategoryMigrationIntegrationTest`, `ProductOrderabilityMigrationIntegrationTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `SettlementStatementIntegrationTest`, `OrderShipmentIntegrationTest`, `OrderShipmentMigrationIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `SellerSkuGlobalFifoMigrationIntegrationTest`.
 - Controller slice test는 Service-owned validation의 typed exception을 stub하고 HTTP mapping을 확인. Mock을 통과시키려고 domain policy를 Controller로 옮기지 않음.
 - Direct SQL fixture는 대상 schema와 일치시킴: 현재 schema의 `NOT NULL`·FK 필수 값을 채우고, migration upgrade fixture는 predecessor Flyway version을 고정.
 - PostgreSQL 전용 SQL, 잠금, migration, 동시성, transaction rollback은 Testcontainers의 실제 PostgreSQL에서 검증. Docker 접근 필요; CI는 `docker info` 확인.
@@ -132,4 +134,4 @@ docker compose up -d --wait postgres
 - 병렬 세션마다 하나의 plan/worktree와 명시적 허용 파일 목록 사용. 공통 요구사항·결정·README·참고자료·migration·build 파일은 통합 담당자 한 명만 수정. 충돌이 있는 rebase와 migration version은 먼저 조정하고 검사 재실행.
 - 소유자가 plan을 참고용으로만 지정하면 배정된 local worktree에 미커밋 상태로 유지. 게시하거나 별도 Issue/PR 만들지 않음.
 - 복잡한 Issue/PR은 배경, 선택 이유·대안, 상태/금전/재고 영향, 한계, 검증을 설명하고 요구사항·결정 기록을 직접 링크. 출처 없는 ID 나열이나 실행하지 않은 테스트를 성공으로 주장하지 않음.
-- PR의 `Issues:` 필드는 `Closes #N — [Issue #N](URL)` 또는 `Refs #N — [Issue #N](URL)`을 같은 줄에 작성. `요구사항·결정·규칙 ID`도 같은 줄에 직접 링크하거나 `N/A: 구체적 사유` 표기. `.github/workflows/docs-lint.yml`이 두 필드를 검사.
+- PR의 `Issues:` 필드는 `Closes #N — [Issue #N](https://github.com/OWNER/REPO/issues/N)` 또는 `Refs #N — [Issue #N](https://github.com/OWNER/REPO/issues/N)`을 같은 줄에 작성. `요구사항·결정·규칙 ID`도 같은 줄에 직접 링크하거나 `N/A: 구체적 사유` 표기. `.github/workflows/docs-lint.yml`이 두 필드를 검사.

@@ -39,7 +39,7 @@ class ProductControllerPaginationTest {
 
     @Test
     void invalidCursorFromSellerListingMapsToBadRequest() throws Exception {
-        when(service.listProductsPage(sellerId, null, null, null, cursor)).thenThrow(invalidCursor);
+        when(service.listSellerProductsPage(sellerId, null, null, null, cursor)).thenThrow(invalidCursor);
 
         mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId).param("cursor", cursor))
                 .andExpect(status().isBadRequest())

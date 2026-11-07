@@ -1,5 +1,7 @@
 package com.atlas.application.controller.seller;
 
+import com.atlas.application.controller.dto.UpdateProductChannelAvailabilityHttpRequest;
+import com.atlas.application.controller.dto.UpdateProductStatusHttpRequest;
 import com.atlas.application.controller.dto.UpdateSkuPriceHttpRequest;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
@@ -47,13 +49,25 @@ public class ProductController {
     public ProductListingPageResponse listSellerProducts(@PathVariable UUID sellerId,
             @RequestParam(required = false) String query, @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) Integer limit, @RequestParam(required = false) String cursor) {
-        return products.listProductsPage(sellerId, categoryId, query, limit, cursor);
+ return products.listSellerProductsPage(sellerId, categoryId, query, limit, cursor);
     }
 
     @GetMapping("/products/{productId}")
     public ProductListingResponse findProduct(@PathVariable UUID productId) {
         return products.findProduct(productId);
     }
+
+ @PutMapping("/sellers/{sellerId}/products/{productId}/status")
+ public ProductResponse updateProductStatus(@PathVariable UUID sellerId, @PathVariable UUID productId,
+ @Valid @RequestBody UpdateProductStatusHttpRequest request) {
+ return products.updateStatus(sellerId, productId, request.status());
+ }
+
+ @PutMapping("/sellers/{sellerId}/products/{productId}/channel-availability")
+ public ProductResponse updateProductChannelAvailability(@PathVariable UUID sellerId, @PathVariable UUID productId,
+ @Valid @RequestBody UpdateProductChannelAvailabilityHttpRequest request) {
+ return products.updateChannelAvailability(sellerId, productId, request.channel(), request.available());
+ }
 
     @PutMapping("/sellers/{sellerId}/products/{productId}/category")
     public ProductResponse updateProductCategory(@PathVariable UUID sellerId, @PathVariable UUID productId,

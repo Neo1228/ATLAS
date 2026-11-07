@@ -132,8 +132,9 @@ links:
 | REF-119 | 美团技术团队, 外卖商品的标准化建设与应用 / engineering article | https://tech.meituan.com/2021/05/27/Food-Name-Standardization.html | 2026-11-07 | Merchant product-name variance and category-granularity challenges in discovery | △ Food-specific NLP/CV standardization case; pipeline and scale are not ATLAS requirements |
 | REF-120 | Shopify Engineering, Evolution of Product Classification / engineering article | https://shopify.engineering/evolution-product-classification | 2026-11-07 | Central Product Taxonomy and category-specific classification evolution; comparison for deferring global taxonomy/ML | △ Large-scale VLM system is case-specific; no scale or technology is adopted |
 | REF-121 | Meituan Engineering, 高性能平台设计—美团旅行结算平台实践 / engineering article | https://tech.meituan.com/2018/01/15/high-performance-platform-design.html | 2026-11-07 | Seller settlement statement와 posting/reconciliation 업무 흐름 비교 | △ 2018년 Meituan 여행 플랫폼 사례. 업무 흐름만 참고; broker·분산 구조·규모·성능 수치는 적용하지 않음 |
+| REF-122 | Shopify Help Center, Product status and availability / product documentation | https://help.shopify.com/en/manual/products/product-status | 2026-11-08 | Product 전역 판매 상태와 sales-channel availability를 분리하는 사례 비교 | △ Shopify 고유 정책. ATLAS는 개념 구분만 참고하며 Shopify의 상태 종류·채널 정책은 도입하지 않음 |
 
-REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117/118/119/120/121는 ATLAS
+REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117/118/119/120/121/122는 ATLAS
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
@@ -156,3 +157,4 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0018](../02-decisions/adr/ADR-0018-seller-order-shipments.md): REF-112의 Meituan 주문 여정과 REF-118의 전체·분할 출고 contract만 비교. Shipment·refund 경계는 소유자 결정이며 외부 사례의 업무·규모·성능을 일반화하지 않음.
 - [ADR-0019](../02-decisions/adr/ADR-0019-seller-product-categories.md): REF-119/120는 상품명 편차·분류 taxonomy evolution 사례를 제공. Seller-owned category·flat scope·PostgreSQL filtering은 D-074 소유자 결정이며 외부 pipeline/scale을 복사하지 않음.
 - [ADR-0020](../02-decisions/adr/ADR-0020-seller-settlement-statement.md): REF-121은 Seller 명세·대사 업무 흐름만 비교. 내부 ledger view·signed allocation·기간 cursor는 D-075 프로젝트 결정이며 외부 플랫폼 규모·아키텍처를 도입하지 않음.
+- [ADR-0021](../02-decisions/adr/ADR-0021-product-orderability-lifecycle.md): REF-122는 전역 Product status와 sales-channel availability를 분리한 Shopify 동작을 비교하며, ATLAS의 두 구매 channel과 상태 정책을 정하는 보편 사례로 일반화하지 않음.

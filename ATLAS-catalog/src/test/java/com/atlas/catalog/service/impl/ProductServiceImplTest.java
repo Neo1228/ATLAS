@@ -25,6 +25,8 @@ import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
+import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.service.ProductStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +34,7 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -59,6 +62,8 @@ class ProductServiceImplTest {
                 .thenReturn(List.of(first, second, lookahead));
         when(sellerSkus.findAllByProductIdIn(List.of(first.getProductId(), second.getProductId())))
                 .thenReturn(List.of());
+        when(products.findAvailableChannelsByProductIdIn(
+                List.of(first.getProductId(), second.getProductId()))).thenReturn(List.of());
 
         ProductListingPageResponse page = service.listProductsPage(sellerId, null, "  BLUE ", 2,
                 encodeCursor(sellerId, "blue", sellerId, cursorProduct));
@@ -136,6 +141,9 @@ class ProductServiceImplTest {
 
         assertEquals(sellerId, response.sellerId());
         assertEquals("Tea", response.name());
+        assertEquals(ProductStatus.ACTIVE, response.status());
+        assertEquals(List.of(ProductSalesChannel.ONLINE_STORE, ProductSalesChannel.CAMPAIGN),
+                response.availableChannels());
         verify(products).save(any(Product.class));
     }
 
@@ -208,7 +216,7 @@ class ProductServiceImplTest {
         when(earlierSku.getSkuId()).thenReturn("SKU-A");
         when(earlierSku.getPriceWon()).thenReturn(1200L);
         when(sellerSkus.findAllByProductId(listingProductId)).thenReturn(List.of(laterSku, earlierSku));
-        when(products.findById(listingProductId)).thenReturn(Optional.of(listingProduct));
+        when(products.findPublicOrderableByProductId(listingProductId)).thenReturn(Optional.of(listingProduct));
 
         List<String> productSkus = service.findProduct(listingProductId).variants().stream()
                 .map(SellerSkuResponse::skuId).toList();
@@ -216,11 +224,28 @@ class ProductServiceImplTest {
         assertEquals(List.of("SKU-A", "SKU-Z"), productSkus);
     }
 
+    @Test
+    void versionThreeCursorsCannotCrossPublicAndManagementListingScopes() {
+        String publicCursor = encode("v3:false:" + sellerId + ":-::" + sellerId + ":" + productId);
+        String managementCursor = encode("v3:true:" + sellerId + ":-::" + sellerId + ":" + productId);
+
+        CatalogException publicToManagement = assertThrows(CatalogException.class,
+                () -> service.listSellerProductsPage(sellerId, null, null, null, publicCursor));
+        CatalogException managementToPublic = assertThrows(CatalogException.class,
+                () -> service.listProductsPage(sellerId, null, null, null, managementCursor));
+
+        assertEquals(Code.INVALID_REQUEST, publicToManagement.code());
+        assertEquals(Code.INVALID_REQUEST, managementToPublic.code());
+    }
+
     private static Product product(UUID sellerId, UUID productId, String name) {
         Product product = mock(Product.class);
         when(product.getSellerId()).thenReturn(sellerId);
         when(product.getProductId()).thenReturn(productId);
         when(product.getName()).thenReturn(name);
+        when(product.getStatus()).thenReturn(ProductStatus.ACTIVE);
+        when(product.getChannelAvailability()).thenReturn(Map.of(
+                ProductSalesChannel.ONLINE_STORE, true, ProductSalesChannel.CAMPAIGN, true));
         return product;
     }
 
@@ -228,7 +253,8 @@ class ProductServiceImplTest {
         String sellerScope = filterSellerId == null ? "-" : filterSellerId.toString();
         String encodedKeyword = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
-        return encode("v1:" + sellerScope + ":" + encodedKeyword + ":" + positionSellerId + ":" + productId);
+        return encode("v3:false:" + sellerScope + ":-:" + encodedKeyword + ":"
+                + positionSellerId + ":" + productId);
     }
 
     private static String encode(String value) {

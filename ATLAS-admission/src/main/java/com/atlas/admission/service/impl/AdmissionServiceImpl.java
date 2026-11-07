@@ -15,6 +15,7 @@ import com.atlas.admission.persistence.entity.AdmissionPolicy;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.catalog.service.SellerSkuService;
+import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import java.time.Clock;
 import java.time.Instant;
@@ -47,7 +48,7 @@ public class AdmissionServiceImpl implements AdmissionService {
         if (sellerId == null || blank(skuId) || skuId.length() > 128 || maxActiveCheckouts < 1) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid seller-SKU admission policy");
         }
-        if (sellerSkus.find(sellerId, skuId) == null) {
+        if (sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN) == null) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Unknown Seller-SKU");
         }
         AdmissionPolicy policy = policies.findBySellerIdAndSkuId(sellerId, skuId)
@@ -64,19 +65,24 @@ public class AdmissionServiceImpl implements AdmissionService {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid queue join request");
         }
         CampaignResponse campaign = campaigns.requireOpen(request.campaignId(), request.skuId());
-        requireSellerSku(campaign);
         AdmissionPolicy policy = requirePolicy(campaign.sellerId(), campaign.skuId());
+        QueueTicketResponse prior = findByKey(request.campaignId(), request.idempotencyKey());
+        if (prior != null) {
+            queueRepository.createCounterIfAbsent(campaign.sellerId(), campaign.skuId());
+            if (!lockCounter(campaign.sellerId(), campaign.skuId())) {
+                throw new IllegalStateException("Admission counter initialization failed");
+            }
+            expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), clock.instant());
+            requireSamePayload(prior, request);
+            return requireTicket(request.campaignId(), prior.ticketId());
+        }
+        requireSellerSku(campaign);
         queueRepository.createCounterIfAbsent(campaign.sellerId(), campaign.skuId());
         if (!lockCounter(campaign.sellerId(), campaign.skuId())) {
             throw new IllegalStateException("Admission counter initialization failed");
         }
         Instant now = clock.instant();
         expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), now);
-        QueueTicketResponse prior = findByKey(request.campaignId(), request.idempotencyKey());
-        if (prior != null) {
-            requireSamePayload(prior, request);
-            return requireTicket(request.campaignId(), prior.ticketId());
-        }
         long sequence = queueRepository.incrementSequence(campaign.sellerId(), campaign.skuId());
         long active = tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(campaign.sellerId(), campaign.skuId());
         boolean slot = active < policy.getMaxActiveCheckouts();
@@ -89,7 +95,8 @@ public class AdmissionServiceImpl implements AdmissionService {
     }
 
     private SellerSkuResponse requireSellerSku(CampaignResponse campaign) {
-        SellerSkuResponse sellerSku = sellerSkus.find(campaign.sellerId(), campaign.skuId());
+        SellerSkuResponse sellerSku = sellerSkus.findOrderableSellerSku(
+                campaign.sellerId(), campaign.skuId(), ProductSalesChannel.CAMPAIGN);
         if (sellerSku == null) throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Campaign Seller-SKU is not registered");
         return sellerSku;
     }
@@ -151,7 +158,7 @@ public class AdmissionServiceImpl implements AdmissionService {
         TicketStatus status = switch (reason) {
             case INITIAL_AUTHORIZE_SUBMITTED -> TicketStatus.CHECKOUT_SUBMITTED;
             case CHECKOUT_WINDOW_EXPIRED -> TicketStatus.EXPIRED;
-            case INVENTORY_UNAVAILABLE, BUYER_CANCELLED -> TicketStatus.CHECKOUT_FAILED;
+            case INVENTORY_UNAVAILABLE, BUYER_CANCELLED, PRODUCT_NOT_ORDERABLE -> TicketStatus.CHECKOUT_FAILED;
         };
         tickets.releaseSlot(campaignId, ticketId, status);
         promote(ticket.sellerId(), ticket.skuId());
