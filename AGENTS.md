@@ -132,3 +132,4 @@ docker compose up -d --wait postgres
 - 병렬 세션마다 하나의 plan/worktree와 명시적 허용 파일 목록 사용. 공통 요구사항·결정·README·참고자료·migration·build 파일은 통합 담당자 한 명만 수정. 충돌이 있는 rebase와 migration version은 먼저 조정하고 검사 재실행.
 - 소유자가 plan을 참고용으로만 지정하면 배정된 local worktree에 미커밋 상태로 유지. 게시하거나 별도 Issue/PR 만들지 않음.
 - 복잡한 Issue/PR은 배경, 선택 이유·대안, 상태/금전/재고 영향, 한계, 검증을 설명하고 요구사항·결정 기록을 직접 링크. 출처 없는 ID 나열이나 실행하지 않은 테스트를 성공으로 주장하지 않음.
+- PR의 `Issues:` 필드는 `Closes #N — [Issue #N](URL)` 또는 `Refs #N — [Issue #N](URL)`을 같은 줄에 작성. `요구사항·결정·규칙 ID`도 같은 줄에 직접 링크하거나 `N/A: 구체적 사유` 표기. `.github/workflows/docs-lint.yml`이 두 필드를 검사.
