@@ -2,7 +2,7 @@
 
 - 상태: 승인
 - 결정: D-073
-- 추적: [Issue #159](https://github.com/Neo1228/ATLAS/issues/159), [FR-007 / BR-006 / BR-008 / Q-010](../../01-requirements/requirements-index.md)
+- 추적: [Issue #159](https://github.com/Neo1228/ATLAS/issues/159), [PR #160](https://github.com/Neo1228/ATLAS/pull/160), [FR-007 / BR-006 / BR-008 / Q-010](../../01-requirements/requirements-index.md)
 - 전제: [D-071](../../00-governance/decision-log.md), [D-072](../../00-governance/decision-log.md), [ADR-0017](ADR-0017-seller-fulfillment-locations.md)
 
 ## 맥락
