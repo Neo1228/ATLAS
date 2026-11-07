@@ -2,7 +2,7 @@
 
 - 상태: 승인
 - 결정: D-075
-- 추적: [Issue #163](https://github.com/Neo1228/ATLAS/issues/163)
+- 추적: [Issue #163](https://github.com/Neo1228/ATLAS/issues/163), [PR #164](https://github.com/Neo1228/ATLAS/pull/164)
 - 요구사항: [FR-003 / Q-006](../../01-requirements/requirements-index.md)
 - 관련 결정: [D-066 / D-068 / D-071](../../00-governance/decision-log.md)
 - 관련 ADR: [ADR-0011](ADR-0011-gross-capture-settlement-ledger.md), [ADR-0013](ADR-0013-pre-shipment-refund-recording.md), [ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)
