@@ -1,0 +1,558 @@
+{
+  "experiment": "EXP-022",
+  "status": "measured; production index not adopted",
+  "protocol": {
+    "postgresImage": "postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81",
+    "k6Image": "grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8",
+    "repeatsPerArm": 3,
+    "executionOrder": [
+      "exp173-b1-01a11f29",
+      "exp173-c1-303ec3c9",
+      "exp173-b2-ca249e7b",
+      "exp173-c2-0658457d",
+      "exp173-b3-454247d3",
+      "exp173-c3-a3120aaf"
+    ],
+    "operationsPerRepeat": 100,
+    "singleVus": 1,
+    "unitPriceWon": 100,
+    "seedBeforeSqlPrepare": true,
+    "walDeltaStartsAfterFixtureAndIndexPrepare": true,
+    "measuredOperation": "existing one-seller cart checkout and payment capture",
+    "candidateIndex": "settlement_journal(recorded_at, journal_id)",
+    "refundHttp": "excluded; end-to-end request/response contract not verified",
+    "trafficCapacitySloClaims": false
+  },
+  "environment": {
+    "os": "macOS 27.2 arm64",
+    "dockerEngine": "29.5.2",
+    "dockerServer": "Ubuntu 24.04.4 LTS",
+    "dockerCpus": 4,
+    "dockerMemoryBytes": 10405494784,
+    "javaImageId": "sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0"
+  },
+  "runs": [
+    {
+      "runId": "exp173-b1-01a11f29",
+      "arm": "baseline",
+      "repeat": 1,
+      "fixture": {
+        "runId": "exp173-b1-01a11f29",
+        "sellerId": "01a1bb43-6d63-7c00-9a51-61b8259f8aaf",
+        "skuId": "exp022-exp173-b1-01a11f29",
+        "priceWon": 100
+      },
+      "operations": 100,
+      "iterations": 100,
+      "httpRequests": 300,
+      "httpFailedRate": 0,
+      "checks": {
+        "passes": 500,
+        "fails": 0,
+        "value": 1
+      },
+      "operationLatencyMs": {
+        "min": 20,
+        "med": 26,
+        "max": 244,
+        "p(90)": 40,
+        "p(95)": 43.599999999999945,
+        "avg": 31.24
+      },
+      "walLsnBefore": "0/1D91E78",
+      "walLsnAfter": "0/1EA0B60",
+      "walBytesDelta": "1109224",
+      "databaseBytesBefore": 9713343,
+      "databaseBytesAfter": 10598079,
+      "databaseBytesDelta": 884736,
+      "journalBytesBefore": 32768,
+      "journalBytesAfter": 106496,
+      "journalBytesDelta": 73728,
+      "candidateIndexBytesBefore": null,
+      "candidateIndexBytesAfter": null,
+      "journalRows": 100,
+      "entryRows": 200,
+      "journalsNotExactlyTwoEntries": 0,
+      "unbalancedJournals": 0,
+      "rawResultFile": "exp173-b1-01a11f29-result.json",
+      "rawK6SummaryFile": "exp173-b1-01a11f29-measure.json",
+      "settings": "{\"server_version\" : \"18.6 (Debian 18.6-1.pgdg13+2)\", \"shared_buffers\" : \"128MB\", \"work_mem\" : \"4MB\", \"effective_cache_size\" : \"4GB\", \"random_page_cost\" : \"4\", \"synchronous_commit\" : \"on\", \"fsync\" : \"on\", \"full_page_writes\" : \"on\", \"max_connections\" : \"100\"}",
+      "applicationJarSha256": "19452d7965390f339cd206b29b8463e5c689d9a6ae895f3efc3f869ebad04dd4",
+      "k6Metrics": {
+        "operationLatency": {
+          "min": 20,
+          "med": 26,
+          "max": 244,
+          "p(90)": 40,
+          "p(95)": 43.599999999999945,
+          "avg": 31.24
+        },
+        "operationCount": {
+          "rate": 31.981928153515643,
+          "count": 100
+        },
+        "httpReqFailed": {
+          "passes": 0,
+          "fails": 300,
+          "value": 0
+        },
+        "checks": {
+          "passes": 500,
+          "fails": 0,
+          "value": 1
+        }
+      }
+    },
+    {
+      "runId": "exp173-c1-303ec3c9",
+      "arm": "candidate",
+      "repeat": 1,
+      "fixture": {
+        "runId": "exp173-c1-303ec3c9",
+        "sellerId": "01a1bb46-4c67-742b-81c0-3df8cf138bbc",
+        "skuId": "exp022-exp173-c1-303ec3c9",
+        "priceWon": 100
+      },
+      "operations": 100,
+      "iterations": 100,
+      "httpRequests": 300,
+      "httpFailedRate": 0,
+      "checks": {
+        "passes": 500,
+        "fails": 0,
+        "value": 1
+      },
+      "operationLatencyMs": {
+        "med": 27,
+        "max": 293,
+        "p(90)": 49.300000000000004,
+        "p(95)": 60.49999999999996,
+        "avg": 34.57,
+        "min": 21
+      },
+      "walLsnBefore": "0/1D928C8",
+      "walLsnAfter": "0/1EA3648",
+      "walBytesDelta": "1117568",
+      "databaseBytesBefore": 9729727,
+      "databaseBytesAfter": 10622655,
+      "databaseBytesDelta": 892928,
+      "journalBytesBefore": 40960,
+      "journalBytesAfter": 122880,
+      "journalBytesDelta": 81920,
+      "candidateIndexBytesBefore": 8192,
+      "candidateIndexBytesAfter": 16384,
+      "journalRows": 100,
+      "entryRows": 200,
+      "journalsNotExactlyTwoEntries": 0,
+      "unbalancedJournals": 0,
+      "rawResultFile": "exp173-c1-303ec3c9-result.json",
+      "rawK6SummaryFile": "exp173-c1-303ec3c9-measure.json",
+      "settings": "{\"server_version\" : \"18.6 (Debian 18.6-1.pgdg13+2)\", \"shared_buffers\" : \"128MB\", \"work_mem\" : \"4MB\", \"effective_cache_size\" : \"4GB\", \"random_page_cost\" : \"4\", \"synchronous_commit\" : \"on\", \"fsync\" : \"on\", \"full_page_writes\" : \"on\", \"max_connections\" : \"100\"}",
+      "applicationJarSha256": "19452d7965390f339cd206b29b8463e5c689d9a6ae895f3efc3f869ebad04dd4",
+      "k6Metrics": {
+        "operationLatency": {
+          "med": 27,
+          "max": 293,
+          "p(90)": 49.300000000000004,
+          "p(95)": 60.49999999999996,
+          "avg": 34.57,
+          "min": 21
+        },
+        "operationCount": {
+          "count": 100,
+          "rate": 28.88741852634727
+        },
+        "httpReqFailed": {
+          "passes": 0,
+          "fails": 300,
+          "value": 0
+        },
+        "checks": {
+          "passes": 500,
+          "fails": 0,
+          "value": 1
+        }
+      }
+    },
+    {
+      "runId": "exp173-b2-ca249e7b",
+      "arm": "baseline",
+      "repeat": 2,
+      "fixture": {
+        "runId": "exp173-b2-ca249e7b",
+        "sellerId": "01a1bb47-0c28-7f26-82e5-ebf8463d77c5",
+        "skuId": "exp022-exp173-b2-ca249e7b",
+        "priceWon": 100
+      },
+      "operations": 100,
+      "iterations": 100,
+      "httpRequests": 300,
+      "httpFailedRate": 0,
+      "checks": {
+        "fails": 0,
+        "passes": 500,
+        "value": 1
+      },
+      "operationLatencyMs": {
+        "p(95)": 50.099999999999994,
+        "avg": 31.36,
+        "min": 19,
+        "med": 27,
+        "max": 219,
+        "p(90)": 42.1
+      },
+      "walLsnBefore": "0/1D91E78",
+      "walLsnAfter": "0/1EA0B80",
+      "walBytesDelta": "1109256",
+      "databaseBytesBefore": 9713343,
+      "databaseBytesAfter": 10598079,
+      "databaseBytesDelta": 884736,
+      "journalBytesBefore": 32768,
+      "journalBytesAfter": 106496,
+      "journalBytesDelta": 73728,
+      "candidateIndexBytesBefore": null,
+      "candidateIndexBytesAfter": null,
+      "journalRows": 100,
+      "entryRows": 200,
+      "journalsNotExactlyTwoEntries": 0,
+      "unbalancedJournals": 0,
+      "rawResultFile": "exp173-b2-ca249e7b-result.json",
+      "rawK6SummaryFile": "exp173-b2-ca249e7b-measure.json",
+      "settings": "{\"server_version\" : \"18.6 (Debian 18.6-1.pgdg13+2)\", \"shared_buffers\" : \"128MB\", \"work_mem\" : \"4MB\", \"effective_cache_size\" : \"4GB\", \"random_page_cost\" : \"4\", \"synchronous_commit\" : \"on\", \"fsync\" : \"on\", \"full_page_writes\" : \"on\", \"max_connections\" : \"100\"}",
+      "applicationJarSha256": "19452d7965390f339cd206b29b8463e5c689d9a6ae895f3efc3f869ebad04dd4",
+      "k6Metrics": {
+        "operationLatency": {
+          "p(95)": 50.099999999999994,
+          "avg": 31.36,
+          "min": 19,
+          "med": 27,
+          "max": 219,
+          "p(90)": 42.1
+        },
+        "operationCount": {
+          "rate": 31.828431564167097,
+          "count": 100
+        },
+        "httpReqFailed": {
+          "fails": 300,
+          "passes": 0,
+          "value": 0
+        },
+        "checks": {
+          "fails": 0,
+          "passes": 500,
+          "value": 1
+        }
+      }
+    },
+    {
+      "runId": "exp173-c2-0658457d",
+      "arm": "candidate",
+      "repeat": 2,
+      "fixture": {
+        "runId": "exp173-c2-0658457d",
+        "sellerId": "01a1bb47-3c35-7356-affd-24ce02a6b159",
+        "skuId": "exp022-exp173-c2-0658457d",
+        "priceWon": 100
+      },
+      "operations": 100,
+      "iterations": 100,
+      "httpRequests": 300,
+      "httpFailedRate": 0,
+      "checks": {
+        "passes": 500,
+        "fails": 0,
+        "value": 1
+      },
+      "operationLatencyMs": {
+        "avg": 31.25,
+        "min": 19,
+        "med": 27,
+        "max": 251,
+        "p(90)": 42,
+        "p(95)": 46.05
+      },
+      "walLsnBefore": "0/1D928C8",
+      "walLsnAfter": "0/1EA3548",
+      "walBytesDelta": "1117312",
+      "databaseBytesBefore": 9729727,
+      "databaseBytesAfter": 10622655,
+      "databaseBytesDelta": 892928,
+      "journalBytesBefore": 40960,
+      "journalBytesAfter": 122880,
+      "journalBytesDelta": 81920,
+      "candidateIndexBytesBefore": 8192,
+      "candidateIndexBytesAfter": 16384,
+      "journalRows": 100,
+      "entryRows": 200,
+      "journalsNotExactlyTwoEntries": 0,
+      "unbalancedJournals": 0,
+      "rawResultFile": "exp173-c2-0658457d-result.json",
+      "rawK6SummaryFile": "exp173-c2-0658457d-measure.json",
+      "settings": "{\"server_version\" : \"18.6 (Debian 18.6-1.pgdg13+2)\", \"shared_buffers\" : \"128MB\", \"work_mem\" : \"4MB\", \"effective_cache_size\" : \"4GB\", \"random_page_cost\" : \"4\", \"synchronous_commit\" : \"on\", \"fsync\" : \"on\", \"full_page_writes\" : \"on\", \"max_connections\" : \"100\"}",
+      "applicationJarSha256": "19452d7965390f339cd206b29b8463e5c689d9a6ae895f3efc3f869ebad04dd4",
+      "k6Metrics": {
+        "operationLatency": {
+          "avg": 31.25,
+          "min": 19,
+          "med": 27,
+          "max": 251,
+          "p(90)": 42,
+          "p(95)": 46.05
+        },
+        "operationCount": {
+          "count": 100,
+          "rate": 31.934902923060587
+        },
+        "httpReqFailed": {
+          "passes": 0,
+          "fails": 300,
+          "value": 0
+        },
+        "checks": {
+          "passes": 500,
+          "fails": 0,
+          "value": 1
+        }
+      }
+    },
+    {
+      "runId": "exp173-b3-454247d3",
+      "arm": "baseline",
+      "repeat": 3,
+      "fixture": {
+        "runId": "exp173-b3-454247d3",
+        "sellerId": "01a1bb47-6bbc-7ed6-9c9b-7f12f8601635",
+        "skuId": "exp022-exp173-b3-454247d3",
+        "priceWon": 100
+      },
+      "operations": 100,
+      "iterations": 100,
+      "httpRequests": 300,
+      "httpFailedRate": 0,
+      "checks": {
+        "passes": 500,
+        "fails": 0,
+        "value": 1
+      },
+      "operationLatencyMs": {
+        "p(95)": 53.05,
+        "avg": 32.14,
+        "min": 20,
+        "med": 27,
+        "max": 233,
+        "p(90)": 42.300000000000004
+      },
+      "walLsnBefore": "0/1D91E78",
+      "walLsnAfter": "0/1EA0AD0",
+      "walBytesDelta": "1109080",
+      "databaseBytesBefore": 9713343,
+      "databaseBytesAfter": 10598079,
+      "databaseBytesDelta": 884736,
+      "journalBytesBefore": 32768,
+      "journalBytesAfter": 106496,
+      "journalBytesDelta": 73728,
+      "candidateIndexBytesBefore": null,
+      "candidateIndexBytesAfter": null,
+      "journalRows": 100,
+      "entryRows": 200,
+      "journalsNotExactlyTwoEntries": 0,
+      "unbalancedJournals": 0,
+      "rawResultFile": "exp173-b3-454247d3-result.json",
+      "rawK6SummaryFile": "exp173-b3-454247d3-measure.json",
+      "settings": "{\"server_version\" : \"18.6 (Debian 18.6-1.pgdg13+2)\", \"shared_buffers\" : \"128MB\", \"work_mem\" : \"4MB\", \"effective_cache_size\" : \"4GB\", \"random_page_cost\" : \"4\", \"synchronous_commit\" : \"on\", \"fsync\" : \"on\", \"full_page_writes\" : \"on\", \"max_connections\" : \"100\"}",
+      "applicationJarSha256": "19452d7965390f339cd206b29b8463e5c689d9a6ae895f3efc3f869ebad04dd4",
+      "k6Metrics": {
+        "operationLatency": {
+          "p(95)": 53.05,
+          "avg": 32.14,
+          "min": 20,
+          "med": 27,
+          "max": 233,
+          "p(90)": 42.300000000000004
+        },
+        "operationCount": {
+          "count": 100,
+          "rate": 31.083119693948866
+        },
+        "httpReqFailed": {
+          "passes": 0,
+          "fails": 300,
+          "value": 0
+        },
+        "checks": {
+          "passes": 500,
+          "fails": 0,
+          "value": 1
+        }
+      }
+    },
+    {
+      "runId": "exp173-c3-a3120aaf",
+      "arm": "candidate",
+      "repeat": 3,
+      "fixture": {
+        "runId": "exp173-c3-a3120aaf",
+        "sellerId": "01a1bb47-9b8f-7ecd-8549-a642134d41cf",
+        "skuId": "exp022-exp173-c3-a3120aaf",
+        "priceWon": 100
+      },
+      "operations": 100,
+      "iterations": 100,
+      "httpRequests": 300,
+      "httpFailedRate": 0,
+      "checks": {
+        "passes": 500,
+        "fails": 0,
+        "value": 1
+      },
+      "operationLatencyMs": {
+        "avg": 29.72,
+        "min": 20,
+        "med": 26,
+        "max": 199,
+        "p(90)": 38.1,
+        "p(95)": 47
+      },
+      "walLsnBefore": "0/1D928C8",
+      "walLsnAfter": "0/1EA3598",
+      "walBytesDelta": "1117392",
+      "databaseBytesBefore": 9729727,
+      "databaseBytesAfter": 10622655,
+      "databaseBytesDelta": 892928,
+      "journalBytesBefore": 40960,
+      "journalBytesAfter": 122880,
+      "journalBytesDelta": 81920,
+      "candidateIndexBytesBefore": 8192,
+      "candidateIndexBytesAfter": 16384,
+      "journalRows": 100,
+      "entryRows": 200,
+      "journalsNotExactlyTwoEntries": 0,
+      "unbalancedJournals": 0,
+      "rawResultFile": "exp173-c3-a3120aaf-result.json",
+      "rawK6SummaryFile": "exp173-c3-a3120aaf-measure.json",
+      "settings": "{\"server_version\" : \"18.6 (Debian 18.6-1.pgdg13+2)\", \"shared_buffers\" : \"128MB\", \"work_mem\" : \"4MB\", \"effective_cache_size\" : \"4GB\", \"random_page_cost\" : \"4\", \"synchronous_commit\" : \"on\", \"fsync\" : \"on\", \"full_page_writes\" : \"on\", \"max_connections\" : \"100\"}",
+      "applicationJarSha256": "19452d7965390f339cd206b29b8463e5c689d9a6ae895f3efc3f869ebad04dd4",
+      "k6Metrics": {
+        "operationLatency": {
+          "avg": 29.72,
+          "min": 20,
+          "med": 26,
+          "max": 199,
+          "p(90)": 38.1,
+          "p(95)": 47
+        },
+        "operationCount": {
+          "count": 100,
+          "rate": 33.616974233860304
+        },
+        "httpReqFailed": {
+          "passes": 0,
+          "fails": 300,
+          "value": 0
+        },
+        "checks": {
+          "passes": 500,
+          "fails": 0,
+          "value": 1
+        }
+      }
+    }
+  ],
+  "paired": [
+    {
+      "repeat": 1,
+      "walExtraBytes": 8344,
+      "operationMedianDifferenceMs": 1
+    },
+    {
+      "repeat": 2,
+      "walExtraBytes": 8056,
+      "operationMedianDifferenceMs": 0
+    },
+    {
+      "repeat": 3,
+      "walExtraBytes": 8312,
+      "operationMedianDifferenceMs": -1
+    }
+  ],
+  "comparison": {
+    "operationMedianMs": {
+      "baseline": [
+        26,
+        27,
+        27
+      ],
+      "candidate": [
+        27,
+        27,
+        26
+      ],
+      "medianOfRunMedians": {
+        "baseline": 27,
+        "candidate": 27
+      }
+    },
+    "p95DescriptiveRangeMs": {
+      "baseline": [
+        43.599999999999945,
+        53.05
+      ],
+      "candidate": [
+        46.05,
+        60.49999999999996
+      ]
+    },
+    "pairedWalExtraBytesPer100Captures": [
+      8344,
+      8056,
+      8312
+    ],
+    "medianPairedWalExtraBytes": 8312,
+    "databaseBytesDelta": {
+      "baseline": [
+        884736,
+        884736,
+        884736
+      ],
+      "candidate": [
+        892928,
+        892928,
+        892928
+      ]
+    },
+    "journalBytesDelta": {
+      "baseline": [
+        73728,
+        73728,
+        73728
+      ],
+      "candidate": [
+        81920,
+        81920,
+        81920
+      ]
+    },
+    "candidateIndexBytes": [
+      {
+        "before": 8192,
+        "after": 16384
+      },
+      {
+        "before": 8192,
+        "after": 16384
+      },
+      {
+        "before": 8192,
+        "after": 16384
+      }
+    ],
+    "allLedgerChecksPass": true,
+    "allK6ChecksPass": true
+  },
+  "interpretation": {
+    "writeCost": "Candidate arm added 8,056–8,344 WAL bytes per 100 captures; candidate index measured 16,384 bytes after 100 journal rows.",
+    "latency": "Median of the three run medians was 27 ms for both arms. The per-run ranges overlap; p95 values are descriptive only.",
+    "decision": "The tested application path shows index maintenance cost without a consistent request-latency improvement. No production index adoption; no capacity, concurrency, SLO, or traffic inference."
+  }
+}
