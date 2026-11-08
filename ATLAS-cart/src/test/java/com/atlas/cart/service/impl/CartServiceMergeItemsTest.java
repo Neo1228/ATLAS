@@ -40,11 +40,11 @@ class CartServiceMergeItemsTest {
         cart.setItemQuantity(sellerA, "sku", 2);
 
         when(skus.find(sellerB, "sku"))
-                .thenReturn(new SellerSkuResponse(sellerB, product, "sku", "item", 100L));
+                .thenReturn(new SellerSkuResponse(sellerB, product, "sku", "item", 100L, null, null, null, 100L));
         when(skus.find(sellerA, "kept"))
-                .thenReturn(new SellerSkuResponse(sellerA, UUID.randomUUID(), "kept", "kept", 100L));
+                .thenReturn(new SellerSkuResponse(sellerA, UUID.randomUUID(), "kept", "kept", 100L, null, null, null, 100L));
         when(skus.find(sellerA, "sku"))
-                .thenReturn(new SellerSkuResponse(sellerA, UUID.randomUUID(), "sku", "other", 100L));
+                .thenReturn(new SellerSkuResponse(sellerA, UUID.randomUUID(), "sku", "other", 100L, null, null, null, 100L));
         when(carts.findWithLockByBuyerRef(buyer)).thenReturn(Optional.of(cart));
 
         CartResponse response = service.mergeItems(new ReorderCartRequest(buyer, true, List.of(

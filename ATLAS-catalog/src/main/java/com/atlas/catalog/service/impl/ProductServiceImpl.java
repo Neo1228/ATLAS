@@ -23,6 +23,7 @@ import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.service.ProductStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -116,7 +117,7 @@ public class ProductServiceImpl implements ProductService {
         SellerSku sku = sellerSkus.saveAndFlush(new SellerSku(sellerId, productId, request.skuId(),
                 request.priceWon(), clock.instant()));
         inventory.createInventoryPool(new CreateInventoryPoolRequest(sellerId, request.skuId(), request.initialStock()));
-        return toResponse(product, sku);
+        return toResponse(product, sku, clock.instant());
     }
 
     @Override
@@ -125,13 +126,42 @@ public class ProductServiceImpl implements ProductService {
         if (sellerId == null || productId == null || skuId == null || skuId.isBlank() || priceWon <= 0) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid seller SKU price update");
         }
-        Product product = products.findById(productId).filter(candidate -> candidate.getSellerId().equals(sellerId))
-                .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller product: " + productId));
-        SellerSku sku = sellerSkus.findBySellerIdAndSkuId(sellerId, skuId)
-                .filter(candidate -> candidate.getProductId().equals(productId))
-                .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller SKU: " + skuId));
+        Product product = requireOwnedProduct(sellerId, productId);
+        SellerSku sku = requireOwnedSku(sellerId, productId, skuId);
+        if (sku.getSalePriceWon() != null && sku.getSalePriceWon() >= priceWon) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Regular price must exceed the sale price");
+        }
         sku.updatePrice(priceWon);
-        return toResponse(product, sellerSkus.save(sku));
+        return toResponse(product, sellerSkus.save(sku), clock.instant());
+    }
+
+    @Override
+    @Transactional
+    public SellerSkuResponse setSkuSalePrice(UUID sellerId, UUID productId, String skuId, long salePriceWon,
+            Instant startsAt, Instant endsAt) {
+        if (sellerId == null || productId == null || skuId == null || skuId.isBlank() || salePriceWon <= 0
+                || startsAt == null || endsAt == null || !startsAt.isBefore(endsAt)) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid SKU sale price window");
+        }
+        Product product = requireOwnedProduct(sellerId, productId);
+        SellerSku sku = requireOwnedSku(sellerId, productId, skuId);
+        if (salePriceWon >= sku.getPriceWon()) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Sale price must be below regular price");
+        }
+        sku.setSalePrice(salePriceWon, startsAt, endsAt);
+        return toResponse(product, sellerSkus.save(sku), clock.instant());
+    }
+
+    @Override
+    @Transactional
+    public SellerSkuResponse clearSkuSalePrice(UUID sellerId, UUID productId, String skuId) {
+        if (sellerId == null || productId == null || skuId == null || skuId.isBlank()) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid SKU sale price cancellation");
+        }
+        Product product = requireOwnedProduct(sellerId, productId);
+        SellerSku sku = requireOwnedSku(sellerId, productId, skuId);
+        sku.clearSalePrice();
+        return toResponse(product, sellerSkus.save(sku), clock.instant());
     }
 
     @Override
@@ -191,8 +221,9 @@ public class ProductServiceImpl implements ProductService {
                         ProductChannelAvailability::getProductId,
                         Collectors.mapping(row -> ProductSalesChannel.valueOf(row.getSalesChannel()),
                                 Collectors.toList())));
+        Instant pricingAt = clock.instant();
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
-                .map(sku -> toResponse(productsById.get(sku.getProductId()), sku))
+                .map(sku -> toResponse(productsById.get(sku.getProductId()), sku, pricingAt))
                 .collect(Collectors.groupingBy(SellerSkuResponse::productId));
         List<ProductListingResponse> items = page.stream().map(product -> new ProductListingResponse(
                 toResponse(product, availableChannelsByProductId.getOrDefault(product.getProductId(), List.of())),
@@ -221,14 +252,21 @@ public class ProductServiceImpl implements ProductService {
         return products.findById(productId).filter(candidate -> candidate.getSellerId().equals(sellerId))
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller product: " + productId));
     }
+    private SellerSku requireOwnedSku(UUID sellerId, UUID productId, String skuId) {
+        return sellerSkus.findBySellerIdAndSkuId(sellerId, skuId)
+                .filter(candidate -> candidate.getProductId().equals(productId))
+                .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller SKU: " + skuId));
+    }
     private ProductCategory requireOwnedCategory(UUID sellerId, UUID categoryId) {
         return categories.findByCategoryIdAndSellerId(categoryId, sellerId)
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller category: " + categoryId));
     }
 
     private ProductListingResponse toListing(Product product) {
+        Instant pricingAt = clock.instant();
         List<SellerSkuResponse> variants = sellerSkus.findAllByProductId(product.getProductId()).stream()
-                .map(sku -> toResponse(product, sku)).sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList();
+                .map(sku -> toResponse(product, sku, pricingAt))
+                .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList();
         return new ProductListingResponse(toResponse(product), variants);
     }
 
@@ -242,11 +280,12 @@ public class ProductServiceImpl implements ProductService {
                 product.getDescription(), product.getCategoryId(), product.getStatus(), availableChannels);
     }
 
-    private static SellerSkuResponse toResponse(Product product, SellerSku sku) {
+    private static SellerSkuResponse toResponse(Product product, SellerSku sku, Instant asOf) {
         return new SellerSkuResponse(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
-                product.getName(), sku.getPriceWon());
-    }
+                product.getName(), sku.getPriceWon(), sku.getSalePriceWon(), sku.getSaleStartsAt(),
+                sku.getSaleEndsAt(), sku.effectivePriceAt(asOf));
 
+    }
     private static ListingCursor decodeCursor(String cursor) {
         if (cursor == null || cursor.isBlank()) return null;
         try {

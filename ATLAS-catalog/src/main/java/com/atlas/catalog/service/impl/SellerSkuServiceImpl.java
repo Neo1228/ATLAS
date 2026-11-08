@@ -9,6 +9,8 @@ import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -24,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SellerSkuServiceImpl implements SellerSkuService {
     private final SellerSkuRepository sellerSkus;
     private final ProductRepository products;
+    private final Clock clock;
 
     @Override
     @Transactional(readOnly = true)
@@ -32,20 +35,27 @@ public class SellerSkuServiceImpl implements SellerSkuService {
         SellerSku sku = sellerSkus.findBySellerIdAndSkuId(sellerId, skuId).orElse(null);
         if (sku == null) return null;
         Product product = products.findById(sku.getProductId()).orElse(null);
-        return product == null ? null : toResponse(product, sku);
+        return product == null ? null : toResponse(product, sku, clock.instant());
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<SellerSkuResponse> findAll(UUID sellerId, List<String> skuIds) {
-        return findAllResponses(sellerId, skuIds);
+        return findAllResponses(sellerId, skuIds, clock.instant());
     }
 
     @Override
     @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
     public SellerSkuResponse findOrderableSellerSku(UUID sellerId, String skuId, ProductSalesChannel channel) {
-        if (sellerId == null || skuId == null || channel == null) return null;
-        List<SellerSkuResponse> matches = findOrderableSellerSkus(sellerId, List.of(skuId), channel);
+        return findOrderableSellerSku(sellerId, skuId, channel, clock.instant());
+    }
+
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
+    public SellerSkuResponse findOrderableSellerSku(UUID sellerId, String skuId, ProductSalesChannel channel,
+            Instant asOf) {
+        if (sellerId == null || skuId == null || channel == null || asOf == null) return null;
+        List<SellerSkuResponse> matches = findOrderableSellerSkus(sellerId, List.of(skuId), channel, asOf);
         return matches.isEmpty() ? null : matches.getFirst();
     }
 
@@ -53,7 +63,14 @@ public class SellerSkuServiceImpl implements SellerSkuService {
     @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
     public List<SellerSkuResponse> findOrderableSellerSkus(UUID sellerId, List<String> skuIds,
             ProductSalesChannel channel) {
-        if (sellerId == null || skuIds == null || skuIds.isEmpty() || channel == null) return List.of();
+        return findOrderableSellerSkus(sellerId, skuIds, channel, clock.instant());
+    }
+
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
+    public List<SellerSkuResponse> findOrderableSellerSkus(UUID sellerId, List<String> skuIds,
+            ProductSalesChannel channel, Instant asOf) {
+        if (sellerId == null || skuIds == null || skuIds.isEmpty() || channel == null || asOf == null) return List.of();
         List<String> ids = normalize(skuIds);
         if (ids.isEmpty()) return List.of();
         List<SellerSku> skus = sellerSkus.findAllBySellerIdAndSkuIdIn(sellerId, ids);
@@ -71,11 +88,11 @@ public class SellerSkuServiceImpl implements SellerSkuService {
         }
         return skus.stream().map(sku -> {
             Product product = productById.get(sku.getProductId());
-            return product == null ? null : toResponse(product, sku);
+            return product == null ? null : toResponse(product, sku, asOf);
         }).filter(Objects::nonNull).toList();
     }
 
-    private List<SellerSkuResponse> findAllResponses(UUID sellerId, List<String> skuIds) {
+    private List<SellerSkuResponse> findAllResponses(UUID sellerId, List<String> skuIds, Instant asOf) {
         if (sellerId == null || skuIds == null || skuIds.isEmpty()) return List.of();
         List<String> ids = normalize(skuIds);
         if (ids.isEmpty()) return List.of();
@@ -86,7 +103,7 @@ public class SellerSkuServiceImpl implements SellerSkuService {
                 .collect(Collectors.toMap(Product::getProductId, Function.identity()));
         return skus.stream().map(sku -> {
             Product product = productById.get(sku.getProductId());
-            return product == null ? null : toResponse(product, sku);
+            return product == null ? null : toResponse(product, sku, asOf);
         }).filter(Objects::nonNull).toList();
     }
 
@@ -94,8 +111,9 @@ public class SellerSkuServiceImpl implements SellerSkuService {
         return skuIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
     }
 
-    private static SellerSkuResponse toResponse(Product product, SellerSku sku) {
+    private static SellerSkuResponse toResponse(Product product, SellerSku sku, Instant asOf) {
         return new SellerSkuResponse(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
-                product.getName(), sku.getPriceWon());
+                product.getName(), sku.getPriceWon(), sku.getSalePriceWon(), sku.getSaleStartsAt(),
+                sku.getSaleEndsAt(), sku.effectivePriceAt(asOf));
     }
 }

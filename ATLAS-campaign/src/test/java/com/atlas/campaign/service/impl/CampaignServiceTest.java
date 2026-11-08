@@ -47,7 +47,8 @@ class CampaignServiceTest {
         UUID campaignId = UUID.randomUUID();
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
         when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN)).thenReturn(
-                new SellerSkuResponse(sellerId, UUID.randomUUID(), "sku-1", "Product", 1));
+                new SellerSkuResponse(sellerId, UUID.randomUUID(), "sku-1", "Product",
+                        1, null, null, null, 1));
         when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> {
             Campaign saved = invocation.getArgument(0);
             var id = Campaign.class.getDeclaredField("campaignId");

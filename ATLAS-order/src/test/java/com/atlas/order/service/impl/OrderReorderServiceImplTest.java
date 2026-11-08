@@ -71,7 +71,8 @@ class OrderReorderServiceImplTest {
                 .thenReturn(Optional.of(UUID.randomUUID()));
         when(sellerSkus.findOrderableSellerSkus(SELLER_ID, List.of(SKU_ID),
                 ProductSalesChannel.ONLINE_STORE))
-                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product", 100)));
+                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product",
+                        100, null, null, null, 100)));
         when(carts.mergeItems(any(ReorderCartRequest.class))).thenReturn(expected);
 
         assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
@@ -143,7 +144,8 @@ class OrderReorderServiceImplTest {
         when(items.findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID)).thenReturn(List.of(item));
         when(sellerSkus.findOrderableSellerSkus(SELLER_ID, List.of(SKU_ID),
                 ProductSalesChannel.ONLINE_STORE))
-                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product", 100)));
+                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product",
+                        100, null, null, null, 100)));
         when(inventory.findFulfillmentLocation(eq(SELLER_ID), any()))
                 .thenReturn(Optional.empty());
 

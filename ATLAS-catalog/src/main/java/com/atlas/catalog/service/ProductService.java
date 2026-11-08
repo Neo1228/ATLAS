@@ -6,12 +6,16 @@ import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.dto.response.ProductListingResponse;
 import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
+import java.time.Instant;
 import java.util.UUID;
 
 public interface ProductService {
     ProductResponse createProduct(UUID sellerId, CreateProductRequest request);
     SellerSkuResponse registerSku(UUID sellerId, UUID productId, RegisterSellerSkuRequest request);
     SellerSkuResponse updateSkuPrice(UUID sellerId, UUID productId, String skuId, long priceWon);
+    SellerSkuResponse setSkuSalePrice(UUID sellerId, UUID productId, String skuId, long salePriceWon,
+            Instant startsAt, Instant endsAt);
+    SellerSkuResponse clearSkuSalePrice(UUID sellerId, UUID productId, String skuId);
     ProductResponse updateProductCategory(UUID sellerId, UUID productId, UUID categoryId);
     ProductResponse updateStatus(UUID sellerId, UUID productId, ProductStatus status);
     ProductResponse updateChannelAvailability(UUID sellerId, UUID productId, ProductSalesChannel channel,

@@ -53,7 +53,8 @@ class AdmissionServiceTest {
     @BeforeEach
     void sellerSkuExists() {
         when(sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN))
-                .thenReturn(new SellerSkuResponse(sellerId, UUID.randomUUID(), skuId, "Product", 1000));
+                .thenReturn(new SellerSkuResponse(sellerId, UUID.randomUUID(), skuId, "Product",
+                        1000, null, null, null, 1000));
     }
 
     @Test
