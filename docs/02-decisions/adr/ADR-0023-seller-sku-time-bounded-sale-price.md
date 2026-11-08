@@ -1,9 +1,9 @@
 # ADR-0023 — Seller SKU 기간 한정 판매가
 
-- 상태: ✓ 구현·로컬 JDK 25/Testcontainers full Gradle check 통과 (42 suites, 207 tests, 0 failures/errors/skips); merge 전
+- 상태: ✓ 구현·JDK 25/Testcontainers full Gradle check 통과 (42 suites, 207 tests, 0 failures/errors/skips); [PR #184](https://github.com/Neo1228/ATLAS/pull/184)
 - 결정: D-078
 - 요구사항: FR-014
-- 추적: [Issue #183](https://github.com/Neo1228/ATLAS/issues/183)
+- 추적: [Issue #183](https://github.com/Neo1228/ATLAS/issues/183), [PR #184](https://github.com/Neo1228/ATLAS/pull/184)
 - 기존 범위: [ADR-0008](ADR-0008-catalog-cart-order-boundaries.md)는 당시 promotion·가격 이력을 미지원으로 기록. 본 ADR은 SKU 가격에 제한된 판매가 규칙을 추가하며 전체 가격 이력이나 할인 엔진을 도입하지 않음.
 
 ## 배경
