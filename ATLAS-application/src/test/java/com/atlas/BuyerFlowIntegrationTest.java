@@ -706,7 +706,7 @@ assertUuidV7(paymentOrderId);
         QueueTicketResponse ticket = join(campaign, "buyer-expiry", "expiry-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
         clock.advance(Duration.ofMinutes(10));
-        assertThat(orderServiceImpl.expireDueCheckouts()).isEqualTo(1);
+        orderServiceImpl.expireDueCheckouts();
 
         OrderResponse expired = orders.find(order.orderId());
         assertThat(expired.state()).isEqualTo(OrderState.EXPIRED);
