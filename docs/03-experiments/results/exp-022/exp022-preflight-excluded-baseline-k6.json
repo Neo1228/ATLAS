@@ -1,0 +1,26 @@
+{
+  "experiment": "EXP-022",
+  "status": "excluded preflight; not part of A/B",
+  "runId": "exp173-b1-1c64219f",
+  "arm": "baseline",
+  "reason": "The K6 capture iteration completed, but the orchestration runner failed while parsing the K6 summary metric schema before collecting the SQL after-snapshot. The run-owned database/container/network were disposed. Without the after-snapshot, this run cannot be paired or used for WAL, storage, or ledger conclusions.",
+  "k6Summary": {
+    "operationCount": 100,
+    "httpRequestCount": 300,
+    "httpFailedRate": 0,
+    "checks": {
+      "passes": 500,
+      "fails": 0,
+      "value": 1
+    },
+    "operationLatencyMs": {
+      "p(90)": 42,
+      "p(95)": 49.299999999999976,
+      "avg": 33.53,
+      "min": 21,
+      "med": 29.5,
+      "max": 223
+    }
+  },
+  "interpretation": "Descriptive k6 smoke evidence only; no capacity/SLO/throughput inference."
+}

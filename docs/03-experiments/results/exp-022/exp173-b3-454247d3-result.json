@@ -1,0 +1,72 @@
+{
+  "runId": "exp173-b3-454247d3",
+  "arm": "baseline",
+  "repeat": 3,
+  "database": "atlas_app_write_evidence_exp173-b3-454247d3",
+  "fixture": {
+    "runId": "exp173-b3-454247d3",
+    "sellerId": "01a1bb47-6bbc-7ed6-9c9b-7f12f8601635",
+    "skuId": "exp022-exp173-b3-454247d3",
+    "priceWon": 100
+  },
+  "settings": "{\"server_version\" : \"18.6 (Debian 18.6-1.pgdg13+2)\", \"shared_buffers\" : \"128MB\", \"work_mem\" : \"4MB\", \"effective_cache_size\" : \"4GB\", \"random_page_cost\" : \"4\", \"synchronous_commit\" : \"on\", \"fsync\" : \"on\", \"full_page_writes\" : \"on\", \"max_connections\" : \"100\"}",
+  "before": {
+    "database": "atlas_app_write_evidence_exp173-b3-454247d3",
+    "observedAt": "2026-11-08 13:09:42.735344+00",
+    "walLsn": "0/1D91E78",
+    "databaseBytes": 9713343,
+    "journalTotalBytes": 32768,
+    "journalHeapBytes": 0,
+    "journalAllIndexBytes": 32768,
+    "candidateIndexBytes": null,
+    "candidateIndexScans": null,
+    "journalRows": 0,
+    "entryRows": 0,
+    "journalsNotExactlyTwoEntries": 0,
+    "unbalancedJournals": 0,
+    "raw": "EXP-022 baseline: candidate index absent\nANALYZE\nANALYZE\natlas_app_write_evidence_exp173-b3-454247d3|2026-11-08 13:09:42.735344+00|0/1D91E78|9713343|32768|0|32768||\n0|0|0|0\n"
+  },
+  "after": {
+    "database": "atlas_app_write_evidence_exp173-b3-454247d3",
+    "observedAt": "2026-11-08 13:09:46.245103+00",
+    "walLsn": "0/1EA0AD0",
+    "databaseBytes": 10598079,
+    "journalTotalBytes": 106496,
+    "journalHeapBytes": 16384,
+    "journalAllIndexBytes": 65536,
+    "candidateIndexBytes": null,
+    "candidateIndexScans": null,
+    "journalRows": 100,
+    "entryRows": 200,
+    "journalsNotExactlyTwoEntries": 0,
+    "unbalancedJournals": 0,
+    "raw": "EXP-022 snapshot: index state matches expected arm\natlas_app_write_evidence_exp173-b3-454247d3|2026-11-08 13:09:46.245103+00|0/1EA0AD0|10598079|106496|16384|65536||\n100|200|0|0\n"
+  },
+  "walBytesDelta": "1109080",
+  "k6": {
+    "operations": 100,
+    "iterations": 100,
+    "httpRequests": 300,
+    "latency": {
+      "p(95)": 53.05,
+      "avg": 32.14,
+      "min": 20,
+      "med": 27,
+      "max": 233,
+      "p(90)": 42.300000000000004
+    },
+    "httpFailedRate": 0,
+    "checks": {
+      "passes": 500,
+      "fails": 0,
+      "value": 1
+    },
+    "summaryFile": "exp173-b3-454247d3-measure.json"
+  },
+  "appJarSha256": "19452d7965390f339cd206b29b8463e5c689d9a6ae895f3efc3f869ebad04dd4",
+  "imageIds": {
+    "postgres": "postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81",
+    "java": "sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0",
+    "k6": "grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8"
+  }
+}
