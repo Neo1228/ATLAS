@@ -1,0 +1,95 @@
+{
+  "postgresVersion": "18.6",
+  "dataset": {
+    "products": 100000,
+    "settlementJournals": 100000,
+    "sellerAllocations": 100000,
+    "settlementEntries": 200000,
+    "sellers": 100,
+    "settlementFixture": "checkout allocations only; timestamps advance by one second per checkout",
+    "narrowWindow": "2026-01-01T00:00:00Z inclusive to 2026-01-01T00:00:11Z exclusive; 10 matching rows for Seller 1"
+  },
+  "method": "EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON); three serial runs per case; warm cache; disposable PostgreSQL container; image defaults, no config overrides",
+  "candidateIndexes": [
+    {
+      "name": "exp018_candidate_seller_journal_idx",
+      "ddl": "CREATE INDEX ON settlement_seller_allocation (seller_id, journal_id)",
+      "sizeKiB": 4880
+    },
+    {
+      "name": "exp018_candidate_recorded_journal_idx",
+      "ddl": "CREATE INDEX ON settlement_journal (recorded_at, journal_id)",
+      "sizeKiB": 3976
+    }
+  ],
+  "results": [
+    {
+      "case": "full-period totals, before candidate indexes",
+      "runsMs": [22.39, 22.442, 24.594],
+      "medianMs": 22.442,
+      "allocationPlan": "Seq Scan of 100000-row table; 1000 rows match; 1137 shared hits"
+    },
+    {
+      "case": "full-period page, before candidate indexes",
+      "runsMs": [20.761, 21.336, 22.969],
+      "medianMs": 21.336,
+      "allocationPlan": "Seq Scan of 100000-row table; 1000 rows match; 1137 shared hits"
+    },
+    {
+      "case": "full-period totals, after seller/journal index",
+      "runsMs": [20.391, 20.821, 21.611],
+      "medianMs": 20.821,
+      "allocationPlan": "Bitmap Heap Scan; 1000 rows x 3 loops; 65 shared hits; journal Seq Scan remains"
+    },
+    {
+      "case": "full-period page, after seller/journal index",
+      "runsMs": [19.024, 19.78, 21.225],
+      "medianMs": 19.78,
+      "allocationPlan": "Bitmap Heap Scan; 1000 rows x 3 loops; 65 shared hits; journal Seq Scan remains"
+    },
+    {
+      "case": "10-second totals, before recorded_at index (seller/journal index present)",
+      "runsMs": [16.749, 16.817, 17.958],
+      "medianMs": 16.817,
+      "resultRows": 1,
+      "journalPlan": "Seq Scan; 10 matching rows; 1334 shared hits"
+    },
+    {
+      "case": "10-second page, before recorded_at index (seller/journal index present)",
+      "runsMs": [15.693, 15.693, 15.93],
+      "medianMs": 15.693,
+      "resultRows": 10,
+      "journalPlan": "Seq Scan; 10 matching rows; 1334 shared hits"
+    },
+    {
+      "case": "10-second totals, after recorded_at index",
+      "runsMs": [0.069, 0.077, 0.11],
+      "medianMs": 0.077,
+      "resultRows": 1,
+      "journalPlan": "Index Scan on candidate recorded_at/journal_id index; 4 shared hits"
+    },
+    {
+      "case": "10-second page, after recorded_at index",
+      "runsMs": [0.05, 0.055, 0.063],
+      "medianMs": 0.055,
+      "resultRows": 10,
+      "journalPlan": "Index Scan on candidate recorded_at/journal_id index; 4 shared hits"
+    },
+    {
+      "case": "full-period totals, after both candidate indexes",
+      "runsMs": [18.921, 19.742, 24.297],
+      "medianMs": 19.742,
+      "journalPlan": "Seq Scan remains; recorded_at index not selected"
+    },
+    {
+      "case": "full-period page, after both candidate indexes",
+      "runsMs": [17.343, 18.807, 18.946],
+      "medianMs": 18.807,
+      "journalPlan": "Seq Scan remains; recorded_at index not selected"
+    }
+  ],
+  "limits": [
+    "Single synthetic data shape and one database size; no application HTTP, concurrent load, cold-cache, or write-amplification measurement.",
+    "Indexes existed only in the disposable container. These numbers do not justify a migration or production index."
+  ]
+}

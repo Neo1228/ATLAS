@@ -1185,6 +1185,49 @@ assertUuidV7(paymentOrderId);
         }
     }
     @Test
+    void concurrentSameKeyCartCheckoutCreatesOneCheckoutAndReservation() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "same-key-checkout-" + UUID.randomUUID();
+        registerProductSku(sellerId, skuId, 100, 2);
+        String buyerRef = "same-key-checkout-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+        String idempotencyKey = "same-key-checkout-" + UUID.randomUUID();
+        CyclicBarrier start = new CyclicBarrier(2);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<CheckoutResponse> firstAttempt = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return cartCheckouts.checkout(buyerRef, idempotencyKey);
+            });
+            Future<CheckoutResponse> secondAttempt = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return cartCheckouts.checkout(buyerRef, idempotencyKey);
+            });
+
+            CheckoutResponse first = firstAttempt.get(20, TimeUnit.SECONDS);
+            CheckoutResponse second = secondAttempt.get(20, TimeUnit.SECONDS);
+            assertThat(second.checkoutId()).isEqualTo(first.checkoutId());
+            assertThat(second.orders()).extracting(OrderResponse::orderId)
+                    .containsExactlyElementsOf(first.orders().stream().map(OrderResponse::orderId).toList());
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?",
+                    Integer.class, buyerRef)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE checkout_id = ?",
+                    Integer.class, first.checkoutId())).isEqualTo(1);
+            OrderResponse order = first.orders().getFirst();
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM inventory_reservation WHERE order_id = ? AND status = 'RESERVED'",
+                    Integer.class, order.orderId())).isEqualTo(1);
+            assertThat(carts.find(buyerRef).items()).isEmpty();
+
+            InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+            assertThat(stock.available()).isEqualTo(1);
+            assertThat(stock.reserved()).isEqualTo(1);
+            assertThat(stock.claimed()).isZero();
+            assertConserved(stock);
+        }
+    }
+
+    @Test
     void buyerCheckoutReplayRequiresUnchangedCartFacts() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("checkout-idempotency", null));

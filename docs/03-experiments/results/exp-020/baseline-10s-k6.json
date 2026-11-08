@@ -1,0 +1,15 @@
+{
+  "experiment": "EXP-020",
+  "window": "10s",
+  "requests": 20,
+  "itemsPerRequest": 10,
+  "latencyMs": {
+    "median": 25.7108395,
+    "min": 19.400996,
+    "max": 123.403867,
+    "average": 30.642858150000002
+  },
+  "pacingSeconds": 0.5,
+  "vus": 1,
+  "note": "20 serial observations; descriptive only, no latency threshold or capacity claim."
+}
