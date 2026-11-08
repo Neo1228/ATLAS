@@ -128,7 +128,7 @@ docker compose up -d --wait postgres
 ## Git 및 병렬 작업
 
 - 하나의 목적·완료 기준·독립 검토 경계에는 Issue/PR 하나. 파일·클래스·엔드포인트별 분할 금지. 관련 코드·테스트·migration·문서를 묶고 원격 Issue/PR은 로컬 작업 완료 후 갱신.
-- 브랜치 이름: `<type>/<issue>-<short-topic>`. Commit 제목: `<type>(<scope>): <한국어 요약>`; 짧은 명령형 요약.
+- 브랜치 이름: `<type>/<issue>-<short-topic>`. PR·commit 제목: `<type>(<scope>): <한국어 요약>`; 짧은 명령형 요약. Squash merge 시 PR 제목이 main commit subject.
 - `main` 직접 push 금지. PR 확인 항목을 모두 완료하고 필수 CI 통과 후 squash merge.
 - 변경 전 `git status --short --branch`; stage 전에 `git diff`, `git diff --cached` 확인. 관련 파일만 stage. 승인 없는 reset/clean/shared history rewrite 금지.
 - 병렬 세션마다 하나의 plan/worktree와 명시적 허용 파일 목록 사용. 공통 요구사항·결정·README·참고자료·migration·build 파일은 통합 담당자 한 명만 수정. 충돌이 있는 rebase와 migration version은 먼저 조정하고 검사 재실행.

@@ -32,11 +32,12 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           node <<'NODE'
           const { execFileSync } = require("node:child_process");
-          const { BASE_SHA, HEAD_SHA } = process.env;
-          const subjects = execFileSync(
+          const { BASE_SHA, HEAD_SHA, PR_TITLE } = process.env;
+          const commitSubjects = execFileSync(
             "git",
             ["log", "--no-merges", "--format=%s", `${BASE_SHA}..${HEAD_SHA}`],
             { encoding: "utf8" },
@@ -44,16 +45,17 @@ jobs:
             .trim()
             .split(/\r?\n/)
             .filter(Boolean);
-
-          if (subjects.length === 0) {
+          if (commitSubjects.length === 0) {
             console.error("검사할 커밋이 없습니다.");
             process.exit(1);
           }
 
-          const pattern = /^[a-z]+(?:\([a-z0-9-]+\))?: .*\p{Script=Hangul}/u;
+          const subjects = [PR_TITLE, ...commitSubjects];
+
+          const pattern = /^[a-z]+\([a-z0-9-]+\): .*\p{Script=Hangul}/u;
           const invalidSubjects = subjects.filter((subject) => !pattern.test(subject));
           for (const subject of invalidSubjects) {
-            console.error(`::error title=잘못된 커밋 제목::${subject}`);
+            console.error(`::error title=잘못된 PR/커밋 제목::${subject}`);
           }
           if (invalidSubjects.length > 0) {
             console.error("형식: <type>(<scope>): <한국어 요약>");
