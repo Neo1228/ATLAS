@@ -14,6 +14,9 @@ import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.service.ProductSalesChannel;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,18 +25,15 @@ import org.junit.jupiter.api.Test;
 class SellerSkuOrderabilityTest {
     private final SellerSkuRepository skus = mock(SellerSkuRepository.class);
     private final ProductRepository products = mock(ProductRepository.class);
-    private final SellerSkuServiceImpl service = new SellerSkuServiceImpl(skus, products);
+    private final Clock clock = Clock.fixed(Instant.EPOCH, ZoneOffset.UTC);
+    private final SellerSkuServiceImpl service = new SellerSkuServiceImpl(skus, products, clock);
     private final UUID sellerId = UUID.randomUUID();
 
     @Test
     void unknownSkuIsOmittedAndOrderableSkuIsReturnedWithOneBatchProductLookup() {
         UUID productId = UUID.randomUUID();
-        SellerSku sku = mock(SellerSku.class);
+        SellerSku sku = new SellerSku(sellerId, productId, "SKU-1", 1200, Instant.EPOCH);
         Product product = mock(Product.class);
-        when(sku.getProductId()).thenReturn(productId);
-        when(sku.getSellerId()).thenReturn(sellerId);
-        when(sku.getSkuId()).thenReturn("SKU-1");
-        when(sku.getPriceWon()).thenReturn(1200L);
         when(product.getProductId()).thenReturn(productId);
         when(product.getName()).thenReturn("Tea");
         when(product.isOrderableOn(ProductSalesChannel.ONLINE_STORE)).thenReturn(true);

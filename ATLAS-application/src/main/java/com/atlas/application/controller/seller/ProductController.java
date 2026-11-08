@@ -1,5 +1,6 @@
 package com.atlas.application.controller.seller;
 
+import com.atlas.application.controller.dto.SetSkuSalePriceHttpRequest;
 import com.atlas.application.controller.dto.UpdateProductChannelAvailabilityHttpRequest;
 import com.atlas.application.controller.dto.UpdateProductStatusHttpRequest;
 import com.atlas.application.controller.dto.UpdateSkuPriceHttpRequest;
@@ -15,6 +16,7 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -86,5 +88,17 @@ public class ProductController {
     public SellerSkuResponse updateSkuPrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
             @PathVariable String skuId, @Valid @RequestBody UpdateSkuPriceHttpRequest request) {
         return products.updateSkuPrice(sellerId, productId, skuId, request.priceWon());
+    }
+    @PutMapping("/sellers/{sellerId}/products/{productId}/skus/{skuId}/sale-price")
+    public SellerSkuResponse setSkuSalePrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
+            @PathVariable String skuId, @Valid @RequestBody SetSkuSalePriceHttpRequest request) {
+        return products.setSkuSalePrice(sellerId, productId, skuId, request.salePriceWon(),
+                request.startsAt(), request.endsAt());
+    }
+
+    @DeleteMapping("/sellers/{sellerId}/products/{productId}/skus/{skuId}/sale-price")
+    public SellerSkuResponse clearSkuSalePrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
+            @PathVariable String skuId) {
+        return products.clearSkuSalePrice(sellerId, productId, skuId);
     }
 }

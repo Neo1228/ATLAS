@@ -3,6 +3,7 @@ package com.atlas.order.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
@@ -39,9 +40,10 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -66,8 +68,10 @@ class CheckoutBehaviorTest {
         when(orders.findByTicketId(TICKET)).thenReturn(Optional.empty());
         when(admission.requireCheckoutSlot(CAMPAIGN, TICKET)).thenReturn(ticket);
         when(admission.startCheckout(CAMPAIGN, TICKET)).thenReturn(ticket);
-        when(catalog.findOrderableSellerSku(SELLER, "SKU-1", ProductSalesChannel.CAMPAIGN))
-                .thenReturn(new SellerSkuResponse(SELLER, productId, "SKU-1", "Product", 1_500));
+        when(catalog.findOrderableSellerSku(eq(SELLER), eq("SKU-1"), eq(ProductSalesChannel.CAMPAIGN),
+                any(Instant.class)))
+                .thenReturn(new SellerSkuResponse(SELLER, productId, "SKU-1", "Product", 1_500,
+                        1_200L, NOW.minusSeconds(1), NOW.plusSeconds(600), 1_200));
         when(inventory.tryReserve(any())).thenReturn(Optional.empty());
         when(inventory.findReservations(any())).thenReturn(List.of());
         when(admission.find(CAMPAIGN, TICKET)).thenReturn(ticket);
@@ -85,7 +89,10 @@ class CheckoutBehaviorTest {
                 inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
                 fixedClock(), Duration.ofMinutes(10));
 
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
         service.startCheckout(CAMPAIGN, TICKET);
+        verify(items).save(itemCaptor.capture());
+        assertEquals(1_200, itemCaptor.getValue().unitPriceWon());
 
         verify(admission).releaseCheckoutSlot(CAMPAIGN, TICKET,
                 CheckoutSlotReleaseReason.INVENTORY_UNAVAILABLE);
@@ -102,7 +109,8 @@ class CheckoutBehaviorTest {
                 TicketStatus.CHECKOUT_STARTED, NOW.plusSeconds(600), true);
         when(orders.findByTicketId(TICKET)).thenReturn(Optional.empty());
         when(admission.requireCheckoutSlot(CAMPAIGN, TICKET)).thenReturn(ticket);
-        when(catalog.findOrderableSellerSku(SELLER, "SKU-1", ProductSalesChannel.CAMPAIGN))
+        when(catalog.findOrderableSellerSku(eq(SELLER), eq("SKU-1"), eq(ProductSalesChannel.CAMPAIGN),
+                any(Instant.class)))
                 .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "unavailable"));
         AtomicReference<Boolean> committed = new AtomicReference<>(false);
         PlatformTransactionManager manager = new PlatformTransactionManager() {

@@ -27,6 +27,14 @@ public class SellerSku {
 
     @Column(nullable = false)
     private long priceWon;
+    @Column(name = "sale_price_won")
+    private Long salePriceWon;
+
+    @Column(name = "sale_starts_at")
+    private Instant saleStartsAt;
+
+    @Column(name = "sale_ends_at")
+    private Instant saleEndsAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -42,6 +50,31 @@ public class SellerSku {
     }
 
     public void updatePrice(long priceWon) {
+        if (priceWon <= 0 || salePriceWon != null && salePriceWon >= priceWon) {
+            throw new IllegalArgumentException("Regular price must remain above the sale price");
+        }
         this.priceWon = priceWon;
+    }
+
+    public void setSalePrice(long salePriceWon, Instant saleStartsAt, Instant saleEndsAt) {
+        if (salePriceWon <= 0 || salePriceWon >= priceWon || saleStartsAt == null || saleEndsAt == null
+                || !saleStartsAt.isBefore(saleEndsAt)) {
+            throw new IllegalArgumentException("Invalid SKU sale price or window");
+        }
+        this.salePriceWon = salePriceWon;
+        this.saleStartsAt = saleStartsAt;
+        this.saleEndsAt = saleEndsAt;
+    }
+
+    public void clearSalePrice() {
+        salePriceWon = null;
+        saleStartsAt = null;
+        saleEndsAt = null;
+    }
+
+    public long effectivePriceAt(Instant instant) {
+        if (instant == null) throw new IllegalArgumentException("pricing instant is required");
+        return salePriceWon != null && !instant.isBefore(saleStartsAt) && instant.isBefore(saleEndsAt)
+                ? salePriceWon : priceWon;
     }
 }

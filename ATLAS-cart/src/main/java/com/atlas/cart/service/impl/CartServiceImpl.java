@@ -161,7 +161,7 @@ public class CartServiceImpl implements CartService {
         List<CartItemResponse> items = cart.items().stream().map(item -> {
             SellerSkuResponse sku = requireSellerSku(item.sellerId(), item.skuId());
             return new CartItemResponse(item.sellerId(), sku.productId(), sku.skuId(), item.quantity(),
-                    sku.productName(), sku.priceWon());
+                    sku.productName(), sku.effectivePriceWon());
         }).toList();
         return new CartResponse(cart.cartId(), cart.buyerRef(), items);
     }

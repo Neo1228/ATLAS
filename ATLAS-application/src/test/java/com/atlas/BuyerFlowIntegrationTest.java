@@ -38,6 +38,7 @@ import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.response.OrderRefundResponse;
 import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.exception.OrderException;
@@ -756,6 +757,65 @@ assertUuidV7(paymentOrderId);
         assertConserved(stock);
     }
 
+    @Test
+    void salePriceSnapshotFlowsThroughCheckoutCaptureAndRefundAfterWindowCloses() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "sale-" + UUID.randomUUID();
+        ProductResponse product = registerProductSku(sellerId, skuId, 1000, 1);
+        Instant startsAt = clock.instant().plus(Duration.ofMinutes(5));
+        Instant endsAt = startsAt.plus(Duration.ofMinutes(5));
+        products.setSkuSalePrice(sellerId, product.productId(), skuId, 800, startsAt, endsAt);
+        String buyerRef = "buyer-sale-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+        assertThat(carts.find(buyerRef).items()).singleElement()
+                .satisfies(item -> assertThat(item.priceWon()).isEqualTo(1000));
+
+        clock.set(startsAt);
+        assertThat(carts.find(buyerRef).items()).singleElement()
+                .satisfies(item -> assertThat(item.priceWon()).isEqualTo(800));
+        CheckoutResponse checkout = cartCheckouts.checkout(buyerRef, "sale-checkout-" + UUID.randomUUID());
+        OrderResponse reserved = checkout.orders().getFirst();
+        assertThat(checkout.totalWon()).isEqualTo(800);
+        UUID orderItemId = jdbc.queryForObject(
+                "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, reserved.orderId());
+        assertThat(jdbc.queryForObject(
+                "SELECT unit_price_won FROM order_item WHERE order_item_id = ?", Long.class, orderItemId))
+                .isEqualTo(800L);
+
+        CheckoutResponse paid = checkoutLifecycle.submit(checkout.checkoutId());
+        OrderResponse paidOrder = paid.orders().getFirst();
+        assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
+        assertThat(jdbc.queryForObject(
+                "SELECT gross_amount_won FROM settlement_journal WHERE checkout_id = ?",
+                Long.class, checkout.checkoutId())).isEqualTo(800L);
+
+        clock.set(endsAt);
+        assertThat(products.findProduct(product.productId()).variants().getFirst().effectivePriceWon())
+                .isEqualTo(1000);
+        assertThat(jdbc.queryForObject(
+                "SELECT unit_price_won FROM order_item WHERE order_item_id = ?", Long.class, orderItemId))
+                .isEqualTo(800L);
+
+        String refundBody = mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/refund-records",
+                        sellerId, paidOrder.orderId())
+                        .header("Idempotency-Key", "sale-refund-" + paidOrder.orderId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1}]}
+                                """.formatted(orderItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recordedAmountWon").value(800))
+                .andReturn().getResponse().getContentAsString();
+        OrderRefundResponse refund = objectMapper.readValue(refundBody, OrderRefundResponse.class);
+        assertThat(jdbc.queryForObject(
+                "SELECT gross_amount_won FROM settlement_journal WHERE source_refund_id = ?",
+                Long.class, refund.refundId())).isEqualTo(800L);
+        InventoryPoolResponse restored = inventory.find(sellerId, skuId);
+        assertThat(restored.available()).isEqualTo(1);
+        assertThat(restored.reserved()).isZero();
+        assertThat(restored.claimed()).isZero();
+        assertConserved(restored);
+    }
     @Test
     void ticketLookupDoesNotExpireTicketsOrPromoteWaitingBuyers() {
         CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));

@@ -104,6 +104,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         if (cart.items().isEmpty()) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "Cannot checkout an empty cart");
         }
+        Instant now = clock.instant();
 
         TreeMap<UUID, List<CartItemResponse>> sellerItems = groupItems(cart.items());
         List<SellerLines> snapshotsBySeller = new ArrayList<>(sellerItems.size());
@@ -113,7 +114,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                     .sorted(Comparator.comparing(CartItemResponse::skuId)).toList();
             List<String> skuIds = items.stream().map(CartItemResponse::skuId).toList();
             List<SellerSkuResponse> found = sellerSkus.findOrderableSellerSkus(
-                    seller.getKey(), skuIds, ProductSalesChannel.ONLINE_STORE);
+                    seller.getKey(), skuIds, ProductSalesChannel.ONLINE_STORE, now);
             Map<String, SellerSkuResponse> bySku = new HashMap<>();
             if (found != null) {
                 for (SellerSkuResponse sku : found) {
@@ -129,12 +130,11 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                     .toList();
             for (Line line : lines) {
                 checkoutTotal = Math.addExact(checkoutTotal,
-                        Math.multiplyExact(line.sku().priceWon(), line.cartItem().quantity()));
+                        Math.multiplyExact(line.sku().effectivePriceWon(), line.cartItem().quantity()));
             }
             snapshotsBySeller.add(new SellerLines(seller.getKey(), lines));
         }
 
-        Instant now = clock.instant();
         BuyerCheckout checkout = checkouts.save(new BuyerCheckout(buyerRef, idempotencyKey,
                 BuyerCheckoutState.RESERVED, checkoutTotal, now, now));
         UUID checkoutId = checkout.checkoutId();
@@ -146,7 +146,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
 
             List<OrderItem> snapshots = seller.lines().stream().map(line -> new OrderItem(savedChild,
                     line.sku().productId(), seller.sellerId(), line.sku().skuId(), line.sku().productName(),
-                    line.cartItem().quantity(), line.sku().priceWon())).toList();
+                    line.cartItem().quantity(), line.sku().effectivePriceWon())).toList();
             orderItems.saveAll(snapshots);
 
             List<ReserveInventoryBatchRequest.Item> reservations = seller.lines().stream()
@@ -217,7 +217,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         if (sku == null || !sellerId.equals(sku.sellerId()) || sku.skuId() == null
                 || !cartItem.skuId().equals(sku.skuId()) || sku.productId() == null
                 || !Objects.equals(cartItem.productId(), sku.productId()) || sku.productName() == null
-                || sku.productName().isBlank() || sku.priceWon() <= 0) {
+                || sku.productName().isBlank() || sku.effectivePriceWon() <= 0) {
             throw new OrderException(OrderException.Code.CONFLICT,
                     "Cart item no longer matches its seller SKU product");
         }

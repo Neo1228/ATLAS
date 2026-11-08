@@ -61,6 +61,6 @@ class CartServiceImplTest {
     }
 
     private static SellerSkuResponse sku(UUID seller, String id) {
-        return new SellerSkuResponse(seller, UUID.randomUUID(), id, "item", 100L);
+        return new SellerSkuResponse(seller, UUID.randomUUID(), id, "item", 100L, null, null, null, 100L);
     }
 }

@@ -2,6 +2,7 @@ package com.atlas.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -16,6 +17,7 @@ import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import tools.jackson.databind.ObjectMapper;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -24,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -197,6 +200,68 @@ class CatalogIntegrationTest {
                 Integer.class, sellerId, failingSku)).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM inventory_pool WHERE seller_id = ? AND sku_id = ?",
                 Integer.class, sellerId, failingSku)).isZero();
+    }
+
+    @Test
+    void sellerCanScheduleAndClearSkuSalePriceThroughHttp() throws Exception {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        UUID productId = productService.createProduct(sellerId,
+                new CreateProductRequest("sale-price-" + UUID.randomUUID(), "description")).productId();
+        String skuId = "sale-sku-" + UUID.randomUUID();
+        productService.registerSku(sellerId, productId, new RegisterSellerSkuRequest(skuId, 1000, 1));
+        Instant startsAt = Instant.now().minusSeconds(60);
+        Instant endsAt = Instant.now().plusSeconds(3600);
+        String path = "/api/sellers/{sellerId}/products/{productId}/skus/{skuId}/sale-price";
+        UUID otherSellerId = sellerService.createSeller().sellerId();
+        mockMvc.perform(put(path, otherSellerId, productId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"salePriceWon":800,"startsAt":"%s","endsAt":"%s"}
+                                """.formatted(startsAt, endsAt)))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(put(path, sellerId, productId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"salePriceWon":800,"startsAt":"%s","endsAt":"%s"}
+                                """.formatted(startsAt, startsAt)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(put(path, sellerId, productId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"salePriceWon":800,"startsAt":"%s","endsAt":"%s"}
+                                """.formatted(startsAt, endsAt)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priceWon").value(1000))
+                .andExpect(jsonPath("$.salePriceWon").value(800))
+                .andExpect(jsonPath("$.effectivePriceWon").value(800));
+
+        mockMvc.perform(get("/api/products/{productId}", productId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.variants[0].priceWon").value(1000))
+                .andExpect(jsonPath("$.variants[0].salePriceWon").value(800))
+                .andExpect(jsonPath("$.variants[0].effectivePriceWon").value(800));
+
+        mockMvc.perform(put(path, sellerId, productId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"salePriceWon":1000,"startsAt":"%s","endsAt":"%s"}
+                                """.formatted(startsAt, endsAt)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/skus/{skuId}/price",
+                        sellerId, productId, skuId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"priceWon\":700}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(delete(path, sellerId, productId, skuId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priceWon").value(1000))
+                .andExpect(jsonPath("$.effectivePriceWon").value(1000));
     }
 
     @Test

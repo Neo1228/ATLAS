@@ -36,6 +36,7 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 | `payment-module` | Payment attempt, 기존 Fake PSP 상태 | 독립 계약 |
 
 - `SellerSku`는 하나 이상의 SKU variant를 가진 Seller Product에 소속. 현재 단순 필드만 지원하며 옵션 조합·promotion·가격 이력은 추가하지 않음.
+- D-078/ADR-0023는 이 범위를 부분 확장해 SellerSku별 한 개의 seller-funded 기간 한정 sale price를 추가. Coupon·stacking·전체 가격 이력은 계속 제외.
 - `maxActiveCheckouts`는 상품 속성이 아닌 Admission policy. Catalog schema에서 제거하고 Admission 소유의 `(sellerId, skuId)` 정책으로 관리. 모든 Campaign은 같은 SKU policy를 공유.
 - 당시 Cart는 `(buyerRef, sellerId)` 기준이며 Seller 간 합치지 않았음. 현재 Buyer-wide Cart와 주문 cardinality는 [D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)에서 대체.
 - Cart의 가격은 안내용. Checkout에서 Catalog의 현재 가격을 다시 확인하고 OrderItem에 상품명·SKU·unit price(KRW)·quantity snapshot 저장.

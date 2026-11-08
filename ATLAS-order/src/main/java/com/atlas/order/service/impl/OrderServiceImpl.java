@@ -97,10 +97,11 @@ public final class OrderServiceImpl implements OrderService {
                 return new CheckoutStartOutcome(toResponse(existing), null);
             }
             QueueTicketResponse ticket = admission.requireCheckoutSlot(campaignId, ticketId);
+            Instant now = clock.instant();
             SellerSkuResponse sku;
             try {
                 sku = sellerSkus.findOrderableSellerSku(ticket.sellerId(), ticket.skuId(),
-                        ProductSalesChannel.CAMPAIGN);
+                        ProductSalesChannel.CAMPAIGN, now);
             } catch (CatalogException exception) {
                 if (exception.code() != CatalogException.Code.PRODUCT_NOT_ORDERABLE) throw exception;
                 admission.releaseCheckoutSlot(campaignId, ticketId,
@@ -111,11 +112,10 @@ public final class OrderServiceImpl implements OrderService {
                 throw new CatalogException(CatalogException.Code.NOT_FOUND, "Campaign SKU not found");
             }
             admission.startCheckout(campaignId, ticketId);
-            Instant now = clock.instant();
             PurchaseOrder saved = repository.save(new PurchaseOrder(campaignId, ticket.sellerId(), ticketId,
                     ticket.buyerRef(), OrderState.RESERVED, now.plus(checkoutWindow), null, now, now));
             items.save(new OrderItem(saved, sku.productId(), ticket.sellerId(), sku.skuId(),
-                    sku.productName(), 1, sku.priceWon()));
+                    sku.productName(), 1, sku.effectivePriceWon()));
             ReservationResponse reservation = inventory.tryReserve(new ReserveInventoryRequest(
                     saved.orderId(), campaignId, ticket.sellerId(), sku.skuId(), 1)).orElse(null);
             boolean reserved = reservation != null;
