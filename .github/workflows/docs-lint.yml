@@ -26,6 +26,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: 커밋 제목 형식 확인
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mapfile -t subjects < <(git log --no-merges --format=%s "${BASE_SHA}..${HEAD_SHA}")
+          if [[ ${#subjects[@]} -eq 0 ]]; then
+            echo "::error::검사할 커밋이 없습니다."
+            exit 1
+          fi
+
+          failed=0
+          for subject in "${subjects[@]}"; do
+            if [[ ! "$subject" =~ ^[a-z]+(\([a-z0-9-]+\))?:[[:space:]].*[가-힣].*$ ]]; then
+              echo "::error title=잘못된 커밋 제목::$subject"
+              echo "형식: <type>(<scope>): <한국어 요약>"
+              failed=1
+            fi
+          done
+          exit "$failed"
       - name: 체크리스트와 Issue 추적 형식 확인
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
