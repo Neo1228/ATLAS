@@ -33,21 +33,33 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          mapfile -t subjects < <(git log --no-merges --format=%s "${BASE_SHA}..${HEAD_SHA}")
-          if [[ ${#subjects[@]} -eq 0 ]]; then
-            echo "::error::검사할 커밋이 없습니다."
-            exit 1
-          fi
+          node <<'NODE'
+          const { execFileSync } = require("node:child_process");
+          const { BASE_SHA, HEAD_SHA } = process.env;
+          const subjects = execFileSync(
+            "git",
+            ["log", "--no-merges", "--format=%s", `${BASE_SHA}..${HEAD_SHA}`],
+            { encoding: "utf8" },
+          )
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean);
 
-          failed=0
-          for subject in "${subjects[@]}"; do
-            if [[ ! "$subject" =~ ^[a-z]+(\([a-z0-9-]+\))?:[[:space:]].*[가-힣].*$ ]]; then
-              echo "::error title=잘못된 커밋 제목::$subject"
-              echo "형식: <type>(<scope>): <한국어 요약>"
-              failed=1
-            fi
-          done
-          exit "$failed"
+          if (subjects.length === 0) {
+            console.error("검사할 커밋이 없습니다.");
+            process.exit(1);
+          }
+
+          const pattern = /^[a-z]+(?:\([a-z0-9-]+\))?: .*\p{Script=Hangul}/u;
+          const invalidSubjects = subjects.filter((subject) => !pattern.test(subject));
+          for (const subject of invalidSubjects) {
+            console.error(`::error title=잘못된 커밋 제목::${subject}`);
+          }
+          if (invalidSubjects.length > 0) {
+            console.error("형식: <type>(<scope>): <한국어 요약>");
+            process.exit(1);
+          }
+          NODE
       - name: 체크리스트와 Issue 추적 형식 확인
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
