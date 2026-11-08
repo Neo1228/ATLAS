@@ -721,7 +721,7 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
-    void buyerCannotStartAnotherPaymentWhileAnEarlierCampaignAttemptIsUnresolved() {
+    void buyerCannotStartAnotherPaymentWhileAnEarlierCampaignAttemptIsUnresolved() throws Exception {
         CampaignResponse campaign = openCampaign(2, 2, Duration.ofMinutes(5));
         QueueTicketResponse firstTicket = join(campaign, "same-buyer", "first-key");
         QueueTicketResponse secondTicket = join(campaign, "same-buyer", "second-key");
@@ -729,15 +729,31 @@ assertUuidV7(paymentOrderId);
         OrderResponse second = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
         fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
-        OrderResponse unknown = orders.submitPayment(first.orderId());
-        assertThat(unknown.state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
-        assertThatThrownBy(() -> orders.submitPayment(second.orderId()))
-                .isInstanceOfSatisfying(OrderException.class, exception ->
-                        assertThat(exception.code()).isEqualTo(OrderException.Code.CONFLICT));
+        mockMvc.perform(post("/api/orders/{orderId}/payment", first.orderId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value(OrderState.PAYMENT_UNKNOWN.name()))
+                .andExpect(jsonPath("$.paymentState").value(PaymentState.UNKNOWN.name()));
+        assertThat(orders.find(first.orderId()).state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
 
-        assertThat(orders.reconcilePayment(first.orderId(), "buyer-retry-" + first.orderId()).state())
-                .isEqualTo(OrderState.PAID);
-        assertThat(orders.submitPayment(second.orderId()).state()).isEqualTo(OrderState.PAID);
+        mockMvc.perform(post("/api/orders/{orderId}/payment", second.orderId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        mockMvc.perform(post("/api/orders/{orderId}/reconcile", first.orderId())
+                        .header("Idempotency-Key", "buyer-retry-" + first.orderId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value(OrderState.PAID.name()))
+                .andExpect(jsonPath("$.paymentState").value(PaymentState.CAPTURED.name()));
+        assertThat(orders.find(first.orderId()).state()).isEqualTo(OrderState.PAID);
+
+        mockMvc.perform(post("/api/orders/{orderId}/payment", second.orderId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value(OrderState.PAID.name()))
+                .andExpect(jsonPath("$.paymentState").value(PaymentState.CAPTURED.name()));
+        assertThat(orders.find(second.orderId()).state()).isEqualTo(OrderState.PAID);
+        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        assertThat(stock.claimed()).isEqualTo(2);
+        assertConserved(stock);
     }
 
     @Test
