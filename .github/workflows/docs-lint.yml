@@ -52,7 +52,7 @@ jobs:
 
           const subjects = [PR_TITLE, ...commitSubjects];
 
-          const pattern = /^[a-z]+(?:\([a-z0-9-]+\))?: .*\p{Script=Hangul}/u;
+          const pattern = /^[a-z]+\([a-z0-9-]+\): .*\p{Script=Hangul}/u;
           const invalidSubjects = subjects.filter((subject) => !pattern.test(subject));
           for (const subject of invalidSubjects) {
             console.error(`::error title=잘못된 PR/커밋 제목::${subject}`);
