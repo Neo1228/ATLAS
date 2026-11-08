@@ -589,24 +589,59 @@ class OrderRefundLifecycleIntegrationTest {
 
     @Test
     void sellerRefundHttpEndpointsExposeLocalRefundAndAggregateStatus() throws Exception {
-        Fixture fixture = paidOrder(1, 3, 200);
+        Fixture fixture = paidOrder(3, 3, 200);
+        String refundBody = """
+                {"items":[{"orderItemId":"%s","quantity":1}]}
+                """.formatted(fixture.orderItemId());
+
+        String originalResponse = mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/refund-records",
+                        fixture.sellerId(), fixture.orderId())
+                        .header("Idempotency-Key", "http-refund-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refundBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recordedAmountWon").value(200))
+                .andExpect(jsonPath("$.executionMode").value("LOCAL_LEDGER_ONLY"))
+                .andExpect(jsonPath("$.status").value("PARTIALLY_RECORDED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String replayedResponse = mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/refund-records",
+                        fixture.sellerId(), fixture.orderId())
+                        .header("Idempotency-Key", "http-refund-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refundBody))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(replayedResponse).isEqualTo(originalResponse);
 
         mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/refund-records",
                         fixture.sellerId(), fixture.orderId())
                         .header("Idempotency-Key", "http-refund-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"items":[{"orderItemId":"%s","quantity":1}]}
+                                {"items":[{"orderItemId":"%s","quantity":2}]}
                                 """.formatted(fixture.orderItemId())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.recordedAmountWon").value(200))
-                .andExpect(jsonPath("$.executionMode").value("LOCAL_LEDGER_ONLY"))
-                .andExpect(jsonPath("$.status").value("FULLY_RECORDED"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/refund-records",
+                        fixture.sellerId(), fixture.orderId())
+                        .header("Idempotency-Key", "http-refund-invalid-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":0}]}
+                                """.formatted(fixture.orderItemId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         mockMvc.perform(get("/api/sellers/{sellerId}/orders/{orderId}/refund-record",
                         fixture.sellerId(), fixture.orderId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("FULLY_RECORDED"))
+                .andExpect(jsonPath("$.status").value("PARTIALLY_RECORDED"))
                 .andExpect(jsonPath("$.totalRecordedAmountWon").value(200))
                 .andExpect(jsonPath("$.executionMode").value("LOCAL_LEDGER_ONLY"));
     }
