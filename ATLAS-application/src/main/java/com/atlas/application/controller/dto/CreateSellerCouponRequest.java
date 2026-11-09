@@ -12,5 +12,6 @@ public record CreateSellerCouponRequest(
         String code,
         @Positive long discountAmountWon,
         @NotNull Instant startsAt,
-        @NotNull Instant endsAt) {
+        @NotNull Instant endsAt,
+        @Positive Long maxRedemptions) {
 }

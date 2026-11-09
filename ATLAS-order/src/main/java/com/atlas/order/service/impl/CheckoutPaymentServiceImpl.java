@@ -5,6 +5,7 @@ import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderItemResponse;
+import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.BuyerCheckout;
@@ -43,13 +44,14 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private final OrderFulfillmentService fulfillment;
     private final PaymentService payments;
     private final SettlementService settlement;
+    private final SellerCouponService sellerCoupons;
     private final TransactionTemplate transactions;
     private final Clock clock;
 
     public CheckoutPaymentServiceImpl(PlatformTransactionManager transactionManager,
             BuyerCheckoutRepository checkouts, OrderRepository orders, OrderItemRepository items,
             InventoryService inventory, OrderFulfillmentService fulfillment, PaymentService payments,
-            SettlementService settlement, Clock clock) {
+            SettlementService settlement, SellerCouponService sellerCoupons, Clock clock) {
         this.transactions = new TransactionTemplate(transactionManager);
         this.checkouts = Objects.requireNonNull(checkouts);
         this.orders = Objects.requireNonNull(orders);
@@ -58,6 +60,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         this.fulfillment = Objects.requireNonNull(fulfillment);
         this.payments = Objects.requireNonNull(payments);
         this.settlement = Objects.requireNonNull(settlement);
+        this.sellerCoupons = Objects.requireNonNull(sellerCoupons);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -82,6 +85,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                         || !now.isBefore(order.checkoutExpiresAt()))) {
                     for (PurchaseOrder order : children) {
                         inventory.releaseAll(order.orderId());
+                        releaseCouponReservation(order, now);
                         order.updateState(OrderState.EXPIRED, order.paymentAttemptId(), now);
                     }
                     checkout.update(BuyerCheckoutState.EXPIRED, checkout.totalWon(), now);
@@ -148,6 +152,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
                 for (PurchaseOrder order : children) {
                     inventory.releaseAll(order.orderId());
+                    releaseCouponReservation(order, clock.instant());
                     order.updateState(OrderState.CANCELLED, order.paymentAttemptId(), clock.instant());
                 }
                 checkout.update(BuyerCheckoutState.CANCELLED, checkout.totalWon(), clock.instant());
@@ -222,6 +227,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 for (PurchaseOrder order : children) {
                     if (order.state() != OrderState.PAID) {
                         inventory.claimAll(order.orderId());
+                        redeemCouponReservation(order, now);
                         order.updateState(OrderState.PAID, payment.attemptId(), now);
                         fulfillment.initialize(order.orderId());
                     }
@@ -242,6 +248,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                     for (PurchaseOrder order : children) {
                         if (order.state() != OrderState.CANCELLED && order.state() != OrderState.FAILED) {
                             inventory.releaseAll(order.orderId());
+                            releaseCouponReservation(order, now);
                             order.updateState(terminalOrderState, payment.attemptId(), now);
                         }
                     }
@@ -289,6 +296,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 }
                 for (PurchaseOrder order : children) {
                     inventory.releaseAll(order.orderId());
+                    releaseCouponReservation(order, clock.instant());
                     order.updateState(OrderState.EXPIRED, order.paymentAttemptId(), clock.instant());
                 }
                 checkout.update(BuyerCheckoutState.EXPIRED, checkout.totalWon(), clock.instant());
@@ -297,6 +305,18 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             expired += changed == null ? 0 : changed;
         }
         return expired;
+    }
+
+    private void redeemCouponReservation(PurchaseOrder order, Instant at) {
+        if (order.sellerCouponId() != null) {
+            sellerCoupons.redeemRedemption(order.sellerId(), order.sellerCouponId(), order.orderId(), at);
+        }
+    }
+
+    private void releaseCouponReservation(PurchaseOrder order, Instant at) {
+        if (order.sellerCouponId() != null) {
+            sellerCoupons.releaseRedemption(order.sellerId(), order.sellerCouponId(), order.orderId(), at);
+        }
     }
 
     private BuyerCheckout requireCheckout(UUID checkoutId) {
