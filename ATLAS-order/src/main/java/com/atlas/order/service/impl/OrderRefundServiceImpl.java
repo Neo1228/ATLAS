@@ -188,7 +188,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                     }
                     requestedQuantities.put(item.orderItemId(), line.quantity());
                     recordedAmountWon = Math.addExact(recordedAmountWon,
-                            Math.multiplyExact(item.unitPriceWon(), line.quantity()));
+                            item.refundAmountWon(line.quantity(), previouslyRefunded));
                     quantitiesBySku.merge(item.skuId(), line.quantity(), Math::addExact);
                 }
             } catch (ArithmeticException overflow) {

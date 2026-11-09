@@ -20,6 +20,7 @@
 - Seller-funded 단가 할인. 한 SKU의 effective price는 `startsAt <= pricingAt < endsAt`일 때 sale price, 그 외 정가.
 - V1은 `ONLINE_STORE`와 `CAMPAIGN`에 같은 SellerSku effective price 적용. Channel별 가격 차등 없음.
 - Coupon code, 주문 단위 discount, stacking, platform-funded discount, 배송비·세금 계산, 전체 price history는 범위에서 제외.
+- 후속 결정: SellerOrder coupon은 [ADR-0024](ADR-0024-seller-coupon-allocation.md)에서 별도 범위로 추가. SKU sale-price 규칙과 coupon no-stacking은 유지.
 - Cart 조회는 현재 effective price를 안내. Checkout은 모든 line에 하나의 `pricingAt`을 적용해 Catalog 가격을 재확인하고 `OrderItem`에 실제 단가 snapshot 저장.
 - Settlement capture와 refund는 기존 OrderItem snapshot 기준. Promotion 변경·만료는 이미 생성된 주문의 가격에 영향 없음.
 

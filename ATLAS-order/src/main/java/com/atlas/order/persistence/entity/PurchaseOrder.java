@@ -61,6 +61,14 @@ public class PurchaseOrder {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+    @Column(name = "seller_coupon_id", updatable = false)
+    private UUID sellerCouponId;
+
+    @Column(name = "seller_coupon_code", length = 32, updatable = false)
+    private String sellerCouponCode;
+
+    @Column(name = "coupon_discount_won", nullable = false, updatable = false)
+    private long couponDiscountWon;
 
     protected PurchaseOrder() { }
 
@@ -136,5 +144,18 @@ public class PurchaseOrder {
 
     public void setCheckoutId(UUID checkoutId) {
         this.checkoutId = checkoutId;
+    }
+    public UUID sellerCouponId() { return sellerCouponId; }
+    public String sellerCouponCode() { return sellerCouponCode; }
+    public long couponDiscountWon() { return couponDiscountWon; }
+
+    public void applyCoupon(UUID couponId, String code, long discountAmountWon) {
+        if (source != OrderSource.CART || couponId == null || code == null || code.isBlank()
+                || discountAmountWon <= 0 || sellerCouponId != null) {
+            throw new IllegalArgumentException("Invalid SellerOrder coupon snapshot");
+        }
+        sellerCouponId = couponId;
+        sellerCouponCode = code;
+        couponDiscountWon = discountAmountWon;
     }
 }

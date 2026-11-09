@@ -142,11 +142,14 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             boolean anyPassed = row.items().stream().anyMatch(i -> i.inspectionResult() == OrderReturnInspectionResult.PASSED);
             boolean anyFailed = row.items().stream().anyMatch(i -> i.inspectionResult() == OrderReturnInspectionResult.FAILED);
             if (anyPassed) {
+                Map<UUID, Integer> previouslyRefunded = refundRecords.refundedQuantitiesByOrder(orderId);
                 var refund = refunds.recordInspectedReturnRefund(returnId);
                 Map<UUID, OrderItem> orderItems = new HashMap<>();
                 items.findByOrderOrderIdOrderBySkuIdAsc(orderId).forEach(i -> orderItems.put(i.orderItemId(), i));
                 for (OrderReturnItem line : row.items()) if (line.inspectionResult() == OrderReturnInspectionResult.PASSED) {
-                    long amount = Math.multiplyExact(orderItems.get(line.orderItemId()).unitPriceWon(), line.quantity());
+                    OrderItem item = orderItems.get(line.orderItemId());
+                    long amount = item.refundAmountWon(line.quantity(),
+                            previouslyRefunded.getOrDefault(line.orderItemId(), 0));
                     line.inspect(OrderReturnInspectionResult.PASSED, refund.refundId(), amount, at);
                 }
             }

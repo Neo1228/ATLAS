@@ -39,18 +39,34 @@ public class OrderItem {
     @Column(name = "quantity", nullable = false)
     private int quantity;
 
-    @Column(name = "unit_price_won", nullable = false)
+    @Column(name = "unit_price_won", nullable = false, updatable = false)
     private long unitPriceWon;
+
+    @Column(name = "coupon_discount_won", nullable = false, updatable = false)
+    private long couponDiscountWon;
 
     protected OrderItem() { }
 
     public OrderItem(PurchaseOrder order, UUID productId, UUID sellerId, String skuId,
                      String productName, int quantity, long unitPriceWon) {
+        this(order, productId, sellerId, skuId, productName, quantity, unitPriceWon, 0);
+    }
+
+    public OrderItem(PurchaseOrder order, UUID productId, UUID sellerId, String skuId,
+                     String productName, int quantity, long unitPriceWon, long couponDiscountWon) {
         if (order == null || productId == null || sellerId == null || skuId == null || skuId.isBlank()
                 || productName == null || productName.isBlank() || quantity <= 0 || unitPriceWon <= 0) {
             throw new IllegalArgumentException("Invalid order item snapshot");
         }
-        Math.multiplyExact(unitPriceWon, quantity);
+        long grossAmountWon = Math.multiplyExact(unitPriceWon, quantity);
+        if (couponDiscountWon < 0 || couponDiscountWon >= grossAmountWon) {
+            throw new IllegalArgumentException("Invalid order item coupon allocation");
+        }
+        long maximumUnitDiscountWon = couponDiscountWon / quantity
+                + (couponDiscountWon % quantity == 0 ? 0 : 1);
+        if (maximumUnitDiscountWon >= unitPriceWon) {
+            throw new IllegalArgumentException("Coupon allocation makes a line unit non-refundable");
+        }
         this.order = order;
         this.productId = productId;
         this.sellerId = sellerId;
@@ -58,6 +74,7 @@ public class OrderItem {
         this.productName = productName;
         this.quantity = quantity;
         this.unitPriceWon = unitPriceWon;
+        this.couponDiscountWon = couponDiscountWon;
     }
 
     public UUID orderItemId() { return orderItemId; }
@@ -68,5 +85,22 @@ public class OrderItem {
     public String productName() { return productName; }
     public int quantity() { return quantity; }
     public long unitPriceWon() { return unitPriceWon; }
-    public long lineTotalWon() { return Math.multiplyExact(unitPriceWon, quantity); }
+    public long couponDiscountWon() { return couponDiscountWon; }
+    public long lineTotalWon() {
+        return Math.subtractExact(Math.multiplyExact(unitPriceWon, quantity), couponDiscountWon);
+    }
+
+    public long refundAmountWon(int refundQuantity, int previouslyRefundedQuantity) {
+        int endQuantity = Math.addExact(previouslyRefundedQuantity, refundQuantity);
+        if (refundQuantity <= 0 || previouslyRefundedQuantity < 0 || endQuantity > quantity) {
+            throw new IllegalArgumentException("Refund quantity exceeds order item snapshot");
+        }
+        long discountPerUnit = couponDiscountWon / quantity;
+        int discountRemainder = (int) (couponDiscountWon % quantity);
+        int previouslyDiscountedUnits = Math.min(previouslyRefundedQuantity, discountRemainder);
+        int newlyDiscountedUnits = Math.min(endQuantity, discountRemainder) - previouslyDiscountedUnits;
+        long refundDiscountWon = Math.addExact(Math.multiplyExact(discountPerUnit, refundQuantity),
+                newlyDiscountedUnits);
+        return Math.subtractExact(Math.multiplyExact(unitPriceWon, refundQuantity), refundDiscountWon);
+    }
 }
