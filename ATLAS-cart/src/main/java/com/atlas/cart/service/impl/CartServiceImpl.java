@@ -10,10 +10,13 @@ import com.atlas.cart.repository.CartRepository;
 import com.atlas.cart.service.CartService;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.service.SellerSkuService;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -67,8 +70,18 @@ public class CartServiceImpl implements CartService {
             }
         }
 
+        Map<UUID, List<String>> requestedSkuIdsBySeller = new TreeMap<>();
         for (Key key : quantities.keySet()) {
-            SellerSkuResponse sku = requireSellerSku(key.sellerId(), key.skuId());
+            requestedSkuIdsBySeller.computeIfAbsent(key.sellerId(), ignored -> new ArrayList<>()).add(key.skuId());
+        }
+        Map<UUID, Map<String, SellerSkuResponse>> requestedSkusBySeller =
+                findSellerSkus(requestedSkuIdsBySeller);
+        for (Key key : quantities.keySet()) {
+            Map<String, SellerSkuResponse> skusById = requestedSkusBySeller.get(key.sellerId());
+            SellerSkuResponse sku = skusById == null ? null : skusById.get(key.skuId());
+            if (sku == null || !key.sellerId().equals(sku.sellerId())) {
+                throw new CartException(CartException.Code.SKU_NOT_FOUND, "seller SKU not found");
+            }
             if (!products.get(key).equals(sku.productId())) {
                 throw new CartException(CartException.Code.SKU_NOT_FOUND,
                         "seller SKU no longer belongs to source product");
@@ -157,9 +170,32 @@ public class CartServiceImpl implements CartService {
         return sku;
     }
 
+    private Map<UUID, Map<String, SellerSkuResponse>> findSellerSkus(
+            Map<UUID, List<String>> skuIdsBySeller) {
+        Map<UUID, Map<String, SellerSkuResponse>> skusBySeller = new HashMap<>();
+        for (Map.Entry<UUID, List<String>> sellerItems : skuIdsBySeller.entrySet()) {
+            Map<String, SellerSkuResponse> bySku = new HashMap<>();
+            for (SellerSkuResponse sku : sellerSkus.findAll(sellerItems.getKey(), sellerItems.getValue())) {
+                bySku.put(sku.skuId(), sku);
+            }
+            skusBySeller.put(sellerItems.getKey(), bySku);
+        }
+        return skusBySeller;
+    }
+
     private CartResponse toResponse(Cart cart) {
-        List<CartItemResponse> items = cart.items().stream().map(item -> {
-            SellerSkuResponse sku = requireSellerSku(item.sellerId(), item.skuId());
+        List<CartItem> cartItems = cart.items();
+        Map<UUID, List<String>> skuIdsBySeller = new TreeMap<>();
+        for (CartItem item : cartItems) {
+            skuIdsBySeller.computeIfAbsent(item.sellerId(), ignored -> new ArrayList<>()).add(item.skuId());
+        }
+        Map<UUID, Map<String, SellerSkuResponse>> skusBySeller = findSellerSkus(skuIdsBySeller);
+        List<CartItemResponse> items = cartItems.stream().map(item -> {
+            Map<String, SellerSkuResponse> sellerSkusById = skusBySeller.get(item.sellerId());
+            SellerSkuResponse sku = sellerSkusById == null ? null : sellerSkusById.get(item.skuId());
+            if (sku == null || !item.sellerId().equals(sku.sellerId())) {
+                throw new CartException(CartException.Code.SKU_NOT_FOUND, "seller SKU not found");
+            }
             return new CartItemResponse(item.sellerId(), sku.productId(), sku.skuId(), item.quantity(),
                     sku.productName(), sku.effectivePriceWon());
         }).toList();

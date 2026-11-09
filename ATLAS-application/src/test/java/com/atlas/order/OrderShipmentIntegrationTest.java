@@ -20,6 +20,8 @@ import com.atlas.order.dto.request.OrderShipmentRequest;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.response.OrderShipmentResponse;
+import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderFulfillmentService;
@@ -195,6 +197,29 @@ class OrderShipmentIntegrationTest {
     }
 
     @Test
+    void shipmentProgressAggregatesAcrossOrderItemsAndLoadsShipmentLines() {
+        MultiItemFixture fixture = paidOrderWithTwoItems();
+        fulfillments.start(fixture.sellerId(), fixture.orderId());
+
+        OrderShipmentResponse first = shipments.create(new OrderShipmentRequest(
+                fixture.sellerId(), fixture.orderId(), "multi-shipment-first-" + fixture.orderId(), null, null,
+                List.of(new OrderShipmentRequest.Item(fixture.firstOrderItemId(), 1))));
+        assertThat(fulfillments.find(fixture.orderId()).status()).isEqualTo(FulfillmentStatus.PARTIALLY_SHIPPED);
+
+        OrderShipmentResponse second = shipments.create(new OrderShipmentRequest(
+                fixture.sellerId(), fixture.orderId(), "multi-shipment-second-" + fixture.orderId(), null, null,
+                List.of(new OrderShipmentRequest.Item(fixture.secondOrderItemId(), 1))));
+        assertThat(fulfillments.find(fixture.orderId()).status()).isEqualTo(FulfillmentStatus.SHIPPED);
+        List<OrderShipmentResponse> listed = shipments.findAll(fixture.buyerRef(), fixture.orderId());
+        assertThat(listed).hasSize(2).allSatisfy(shipment -> assertThat(shipment.items()).hasSize(1));
+
+        shipments.deliver(fixture.sellerId(), fixture.orderId(), first.shipmentId());
+        assertThat(fulfillments.find(fixture.orderId()).status()).isEqualTo(FulfillmentStatus.SHIPPED);
+        shipments.deliver(fixture.sellerId(), fixture.orderId(), second.shipmentId());
+        assertThat(fulfillments.find(fixture.orderId()).status()).isEqualTo(FulfillmentStatus.DELIVERED);
+    }
+
+    @Test
     void concurrentFinalRefundAndDispatchSerializeOnOrder() throws Exception {
         Fixture fixture = paidOrder(1);
         fulfillments.start(fixture.sellerId(), fixture.orderId());
@@ -244,21 +269,44 @@ class OrderShipmentIntegrationTest {
                 List.of(new OrderShipmentRequest.Item(fixture.orderItemId(), quantity)));
     }
 
- private Fixture paidOrder(int quantity) {
- UUID sellerId = sellers.createSeller().sellerId();
- var product = products.createProduct(sellerId, new CreateProductRequest("Shipment partial test", null));
- String skuId = "shipment-partial-" + UUID.randomUUID();
- products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 250, quantity));
- String buyerRef = "shipment-partial-buyer-" + UUID.randomUUID();
- carts.setItemQuantity(sellerId, buyerRef, skuId, quantity);
- CheckoutResponse checkout = checkouts.checkout(buyerRef, "shipment-partial-checkout-" + UUID.randomUUID());
- OrderResponse reserved = checkout.orders().getFirst();
- UUID orderItemId = jdbc.queryForObject("SELECT order_item_id FROM order_item WHERE order_id = ?",
- UUID.class, reserved.orderId());
- OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().getFirst();
- assertThat(paid.state().name()).isEqualTo("PAID");
- return new Fixture(sellerId, paid.orderId(), orderItemId);
- }
+    private Fixture paidOrder(int quantity) {
+        UUID sellerId = sellers.createSeller().sellerId();
+        var product = products.createProduct(sellerId, new CreateProductRequest("Shipment partial test", null));
+        String skuId = "shipment-partial-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 250, quantity));
+        String buyerRef = "shipment-partial-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuId, quantity);
+        CheckoutResponse checkout = checkouts.checkout(buyerRef, "shipment-partial-checkout-" + UUID.randomUUID());
+        OrderResponse reserved = checkout.orders().getFirst();
+        UUID orderItemId = jdbc.queryForObject(
+                "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, reserved.orderId());
+        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().getFirst();
+        assertThat(paid.state().name()).isEqualTo("PAID");
+        return new Fixture(sellerId, paid.orderId(), orderItemId);
+    }
+
+    private MultiItemFixture paidOrderWithTwoItems() {
+        UUID sellerId = sellers.createSeller().sellerId();
+        var product = products.createProduct(sellerId, new CreateProductRequest("Shipment multi-item test", null));
+        String firstSku = "shipment-a-" + UUID.randomUUID();
+        String secondSku = "shipment-b-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 250, 1));
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 400, 1));
+        String buyerRef = "shipment-multi-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, firstSku, 1);
+        carts.setItemQuantity(sellerId, buyerRef, secondSku, 1);
+        CheckoutResponse checkout = checkouts.checkout(buyerRef, "shipment-multi-checkout-" + UUID.randomUUID());
+        OrderResponse reserved = checkout.orders().getFirst();
+        UUID firstItemId = jdbc.queryForObject(
+                "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
+                UUID.class, reserved.orderId(), firstSku);
+        UUID secondItemId = jdbc.queryForObject(
+                "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
+                UUID.class, reserved.orderId(), secondSku);
+        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().getFirst();
+        assertThat(paid.state().name()).isEqualTo("PAID");
+        return new MultiItemFixture(sellerId, paid.orderId(), buyerRef, firstItemId, secondItemId);
+    }
 
     private Fixture paidOrder() {
         UUID sellerId = sellers.createSeller().sellerId();
@@ -274,6 +322,10 @@ class OrderShipmentIntegrationTest {
         OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().getFirst();
         assertThat(paid.state().name()).isEqualTo("PAID");
         return new Fixture(sellerId, paid.orderId(), orderItemId);
+    }
+
+    private record MultiItemFixture(UUID sellerId, UUID orderId, String buyerRef,
+            UUID firstOrderItemId, UUID secondOrderItemId) {
     }
 
     private record Fixture(UUID sellerId, UUID orderId, UUID orderItemId) {

@@ -47,6 +47,7 @@
 - Location routing은 모든 Seller 주문 line을 만족하는 active location 하나를 priority ASC, UUID ASC로 정합니다. Reservation/PurchaseOrder가 선택 위치를 보존하고 return-restock도 이를 사용합니다. 기존 재고는 V16에서 DEFAULT로 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
 - SellerOrder shipment는 dispatch 시 생성하며 한 주문의 OrderItem quantity를 여러 package로 나눠 출고할 수 있습니다. 직접 pre-shipment refund를 뺀 전체 수량 배송 전에는 Return을 받지 않습니다. Carrier/tracking은 선택 metadata; 외부 운송사 연동은 없음 ([D-073](docs/00-governance/decision-log.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
 - 배송 전 부분 환불은 OrderItem 수량과 KRW price snapshot으로 local refund record 및 append-only reversal을 남깁니다. `executionMode: LOCAL_LEDGER_ONLY`는 실제 PSP 요청이나 고객 자금 이동이 없음을 뜻합니다. 상태 전이는 기존 `OrderState.PAID`와 분리하며, 환불 수량만 재고로 복원 ([D-068](docs/00-governance/decision-log.md), [ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md)).
+- Cart 응답은 Seller별 SKU를 Catalog에서 묶어 조회합니다. Inventory는 주문의 모든 SKU를 각 location에서 함께 확인하며, Shipment 요약은 OrderItem별 출고·배송 합계를 사용합니다.
 - 생성 primary ID는 UUIDv7. 근거·한계: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/02-decisions/adr/ADR-0007-uuidv7-identifiers.md).
 - Schema는 Flyway 소유, Hibernate는 `ddl-auto: validate`.
 ## 로컬 실행 환경
