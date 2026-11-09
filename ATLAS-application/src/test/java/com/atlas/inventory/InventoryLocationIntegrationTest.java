@@ -186,6 +186,7 @@ class InventoryLocationIntegrationTest {
                 new ReserveInventoryBatchRequest.Item(sellerId, sku, 1))))
                 .contains(defaultLocation(sellerId));
     }
+
     @Test
     void transferHttpRouteUsesIdempotencyKeyAndRejectsChangedReplayFacts() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();

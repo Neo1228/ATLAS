@@ -51,31 +51,43 @@ public class JdbcLocationRepository {
     }
 
     public Optional<UUID> advisorySelect(UUID sellerId, Map<String, Integer> requiredQuantities) {
-        if (requiredQuantities == null || requiredQuantities.isEmpty()) {
+        if (requiredQuantities == null || requiredQuantities.isEmpty()
+                || requiredQuantities.values().stream().anyMatch(quantity -> quantity == null || quantity < 1)) {
             return Optional.empty();
         }
-        for (InventoryLocationRecord location : find(sellerId)) {
-            if (!location.active()) {
-                continue;
-            }
-            boolean fulfillsEveryLine = true;
-            for (Map.Entry<String, Integer> requirement : requiredQuantities.entrySet()) {
-                List<Integer> available = jdbc.query("""
-                        SELECT available
-                        FROM inventory_pool
-                        WHERE seller_id = ? AND location_id = ? AND sku_id = ?
-                        """, (result, rowNumber) -> result.getInt("available"), sellerId,
-                        location.locationId(), requirement.getKey());
-                if (available.isEmpty() || available.getFirst() < requirement.getValue()) {
-                    fulfillsEveryLine = false;
-                    break;
-                }
-            }
-            if (fulfillsEveryLine) {
-                return Optional.of(location.locationId());
-            }
+        List<Map.Entry<String, Integer>> requirements = requiredQuantities.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .toList();
+        String requiredRows = String.join(", ", Collections.nCopies(requirements.size(), "(?, ?)"));
+        String query = """
+                WITH required(sku_id, required_quantity) AS (
+                    VALUES %s
+                )
+                SELECT location.location_id
+                FROM inventory_location location
+                CROSS JOIN required
+                LEFT JOIN inventory_pool pool
+                  ON pool.seller_id = location.seller_id
+                 AND pool.location_id = location.location_id
+                 AND pool.sku_id = required.sku_id
+                WHERE location.seller_id = ?
+                  AND location.active
+                GROUP BY location.location_id, location.priority
+                HAVING COUNT(pool.sku_id) = ?
+                   AND BOOL_AND(pool.available >= required.required_quantity)
+                ORDER BY location.priority, location.location_id
+                LIMIT 1
+                """.formatted(requiredRows);
+        List<Object> parameters = new ArrayList<>(requirements.size() * 2 + 2);
+        for (Map.Entry<String, Integer> requirement : requirements) {
+            parameters.add(requirement.getKey());
+            parameters.add(requirement.getValue());
         }
-        return Optional.empty();
+        parameters.add(sellerId);
+        parameters.add(requirements.size());
+        return jdbc.query(query, result -> result.next()
+                ? Optional.of(result.getObject("location_id", UUID.class))
+                : Optional.empty(), parameters.toArray());
     }
 
     public Optional<UUID> select(UUID sellerId, Map<String, Integer> requiredQuantities) {
@@ -84,17 +96,22 @@ public class JdbcLocationRepository {
             return Optional.empty();
         }
         List<String> skuIds = requiredQuantities.keySet().stream().sorted().toList();
-        for (String skuId : skuIds) {
-            jdbc.update("""
-                    INSERT INTO inventory_pool (
-                        seller_id, location_id, sku_id, initial_capacity, available, reserved, claimed
-                    )
-                    SELECT seller_id, location_id, ?, 0, 0, 0, 0
-                    FROM inventory_location
-                    WHERE seller_id = ? AND active
-                    ON CONFLICT (seller_id, location_id, sku_id) DO NOTHING
-                    """, skuId, sellerId);
-        }
+        String requestedSkus = String.join(", ", Collections.nCopies(skuIds.size(), "(?)"));
+        String insertMissingPools = """
+                INSERT INTO inventory_pool (
+                    seller_id, location_id, sku_id, initial_capacity, available, reserved, claimed
+                )
+                SELECT location.seller_id, location.location_id, requested.sku_id, 0, 0, 0, 0
+                FROM inventory_location location
+                CROSS JOIN (VALUES %s) AS requested(sku_id)
+                WHERE location.seller_id = ? AND location.active
+                ON CONFLICT (seller_id, location_id, sku_id) DO NOTHING
+                """.formatted(requestedSkus);
+        List<Object> insertParameters = new ArrayList<>(skuIds.size() + 1);
+        insertParameters.addAll(skuIds);
+        insertParameters.add(sellerId);
+        jdbc.update(insertMissingPools, insertParameters.toArray());
+
         String placeholders = String.join(",", Collections.nCopies(skuIds.size(), "?"));
         List<Object> parameters = new ArrayList<>();
         parameters.add(sellerId);
