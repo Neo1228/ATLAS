@@ -69,11 +69,15 @@ class GlobalExceptionHandlerTest {
 
 
     @Test
-    void settlementInvalidRequestMapsToBadRequest() {
-        var response = handler.moduleException(new SettlementException(
+    void settlementErrorsMapToStableClientStatuses() {
+        var invalid = handler.moduleException(new SettlementException(
                 SettlementException.Code.INVALID_REQUEST, "Invalid statement request"));
+        assertThat(invalid.getStatusCode().value()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(invalid.getBody().getProperties()).containsEntry("code", "INVALID_REQUEST");
 
-        assertThat(response.getStatusCode().value()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-        assertThat(response.getBody().getProperties()).containsEntry("code", "INVALID_REQUEST");
+        var conflict = handler.moduleException(new SettlementException(
+                SettlementException.Code.CONFLICT, "Capture facts conflict"));
+        assertThat(conflict.getStatusCode().value()).isEqualTo(HttpStatus.CONFLICT.value());
+        assertThat(conflict.getBody().getProperties()).containsEntry("code", "CONFLICT");
     }
 }

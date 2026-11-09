@@ -56,7 +56,7 @@ public class SettlementServiceImpl implements SettlementService {
         CaptureJournalRecord existing = journals.findByAttemptId(request.attemptId())
                 .orElseThrow(() -> new IllegalStateException("Capture journal conflict disappeared"));
         if (!existing.equals(facts)) {
-            throw new IllegalStateException("Capture attempt was posted with different facts");
+            throw conflict("Capture attempt was posted with different facts");
         }
     }
 
@@ -75,14 +75,14 @@ public class SettlementServiceImpl implements SettlementService {
         CheckoutSettlementRecord existing = journals.findCheckoutById(facts.checkoutId())
                 .orElseThrow(() -> new IllegalStateException("Checkout settlement was not visible after conflict"));
         if (!existing.equals(facts)) {
-            throw new IllegalStateException("Checkout settlement replay does not match original facts");
+            throw conflict("Checkout settlement replay does not match original facts");
         }
     }
 
     static CheckoutSettlementRecord validateAndNormalizeCheckoutCapture(CheckoutSettlementPostingRequest request) {
         if (request == null || request.checkoutId() == null || request.attemptId() == null
                 || request.totalAmountWon() <= 0 || request.allocations() == null || request.allocations().isEmpty()) {
-            throw new IllegalArgumentException("Checkout, attempt, and positive settlement allocations are required");
+            throw invalid("Checkout, attempt, and positive settlement allocations are required");
         }
         List<CheckoutSettlementAllocation> allocations = new ArrayList<>();
         Set<UUID> orderIds = new HashSet<>();
@@ -90,18 +90,18 @@ public class SettlementServiceImpl implements SettlementService {
         for (SellerOrderAllocationRequest allocation : request.allocations()) {
             if (allocation == null || allocation.orderId() == null || allocation.sellerId() == null
                     || allocation.amountWon() <= 0 || !orderIds.add(allocation.orderId())) {
-                throw new IllegalArgumentException("Checkout allocations must have unique orders and positive amounts");
+                throw invalid("Checkout allocations must have unique orders and positive amounts");
             }
             try {
                 total = Math.addExact(total, allocation.amountWon());
             } catch (ArithmeticException exception) {
-                throw new IllegalArgumentException("Checkout allocation total exceeds supported amount", exception);
+                throw invalid("Checkout allocation total exceeds supported amount");
             }
             allocations.add(new CheckoutSettlementAllocation(
                     allocation.orderId(), allocation.sellerId(), allocation.amountWon()));
         }
         if (total != request.totalAmountWon()) {
-            throw new IllegalArgumentException("Checkout total must equal the sum of seller allocations");
+            throw invalid("Checkout total must equal the sum of seller allocations");
         }
         allocations.sort(Comparator.comparing(CheckoutSettlementAllocation::orderId));
         return new CheckoutSettlementRecord(request.checkoutId(), request.attemptId(), request.totalAmountWon(),
@@ -123,21 +123,21 @@ public class SettlementServiceImpl implements SettlementService {
         RefundJournalRecord existing = journals.findByRefundId(request.refundId())
                 .orElseThrow(() -> new IllegalStateException("Refund journal conflict disappeared"));
         if (!existing.equals(facts)) {
-            throw new IllegalStateException("Refund was posted with different facts");
+            throw conflict("Refund was posted with different facts");
         }
     }
 
     private static void validate(CapturePostingRequest request) {
         if (request == null || request.orderId() == null || request.attemptId() == null || request.sellerId() == null
                 || request.grossAmountWon() <= 0) {
-            throw new IllegalArgumentException("Capture posting facts are invalid");
+            throw invalid("Capture posting facts are invalid");
         }
     }
 
     private static void validate(RefundPostingRequest request) {
         if (request == null || request.orderId() == null || request.refundId() == null || request.sellerId() == null
                 || request.amountWon() <= 0) {
-            throw new IllegalArgumentException("Refund posting facts are invalid");
+            throw invalid("Refund posting facts are invalid");
         }
     }
     @Override
@@ -187,7 +187,15 @@ public class SettlementServiceImpl implements SettlementService {
     }
 
     private static SettlementException invalidStatementRequest() {
-        return new SettlementException(SettlementException.Code.INVALID_REQUEST, "Seller statement request is invalid");
+        return invalid("Seller statement request is invalid");
+    }
+
+    private static SettlementException invalid(String message) {
+        return new SettlementException(SettlementException.Code.INVALID_REQUEST, message);
+    }
+
+    private static SettlementException conflict(String message) {
+        return new SettlementException(SettlementException.Code.CONFLICT, message);
     }
 
 }

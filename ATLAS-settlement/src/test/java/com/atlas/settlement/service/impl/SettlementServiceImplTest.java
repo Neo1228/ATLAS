@@ -16,21 +16,23 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
+import com.atlas.settlement.dto.request.RefundPostingRequest;
 import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
 import com.atlas.settlement.exception.SettlementException;
-import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
+import com.atlas.settlement.persistence.projection.RefundJournalRecord;
+import com.atlas.settlement.repository.SettlementJournalRepository;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
 class SettlementServiceImplTest {
@@ -72,15 +74,34 @@ class SettlementServiceImplTest {
         when(journals.findByAttemptId(attemptId)).thenReturn(Optional.of(
                 new CaptureJournalRecord(orderId, attemptId, sellerId, 2_400)));
 
-        assertThrows(IllegalStateException.class, () -> service.recordCapture(request));
+        assertSettlementCode(SettlementException.Code.CONFLICT, () -> service.recordCapture(request));
     }
 
     @Test
     void rejectsInvalidCaptureFactsBeforePersistence() {
-        assertThrows(IllegalArgumentException.class,
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
                 () -> service.recordCapture(new CapturePostingRequest(orderId, null, sellerId, 2_500)));
 
         verify(journals, never()).insertIfAbsent(any(CaptureJournalRecord.class), any(Instant.class));
+    }
+
+    @Test
+    void rejectsInvalidRefundFactsBeforePersistence() {
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
+                () -> service.recordRefund(new RefundPostingRequest(orderId, null, sellerId, 2_500)));
+        verify(journals, never()).insertRefundIfAbsent(any(RefundJournalRecord.class), any(Instant.class));
+    }
+
+    @Test
+    void rejectsRefundReplayWithChangedFacts() {
+        UUID refundId = UUID.randomUUID();
+        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        RefundJournalRecord original = new RefundJournalRecord(orderId, refundId, sellerId, 2_500);
+        when(journals.insertRefundIfAbsent(original, now)).thenReturn(Optional.empty());
+        when(journals.findByRefundId(refundId)).thenReturn(Optional.of(
+                new RefundJournalRecord(orderId, refundId, sellerId, 2_400)));
+
+        assertSettlementCode(SettlementException.Code.CONFLICT, () -> service.recordRefund(request));
     }
 
     @Test
@@ -109,22 +130,27 @@ class SettlementServiceImplTest {
         UUID attemptId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
-        assertThrows(IllegalArgumentException.class, () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, null, 1,
-                        List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
-        assertThrows(IllegalArgumentException.class, () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 0,
-                        List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
-        assertThrows(IllegalArgumentException.class, () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 2,
-                        List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
-        assertThrows(IllegalArgumentException.class, () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 1,
-                        List.of(new SellerOrderAllocationRequest(orderId, sellerId, 0)))));
-        assertThrows(IllegalArgumentException.class, () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 2, List.of(
-                        new SellerOrderAllocationRequest(orderId, sellerId, 1),
-                        new SellerOrderAllocationRequest(orderId, UUID.randomUUID(), 1)))));
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
+                () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
+                        new CheckoutSettlementPostingRequest(checkoutId, null, 1,
+                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
+                () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
+                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 0,
+                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
+                () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
+                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 2,
+                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
+                () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
+                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 1,
+                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 0)))));
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
+                () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
+                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 2, List.of(
+                                new SellerOrderAllocationRequest(orderId, sellerId, 1),
+                                new SellerOrderAllocationRequest(orderId, UUID.randomUUID(), 1)))));
     }
 
     @Test
@@ -190,13 +216,13 @@ class SettlementServiceImplTest {
                 .thenReturn(Optional.empty());
         when(journals.findCheckoutById(checkoutId)).thenReturn(Optional.of(originalFacts));
 
-        assertThrows(IllegalStateException.class, () -> checkoutService.recordCheckoutCapture(
+        assertSettlementCode(SettlementException.Code.CONFLICT, () -> checkoutService.recordCheckoutCapture(
                 new CheckoutSettlementPostingRequest(checkoutId, UUID.randomUUID(), 125,
                         List.of(originalAllocation))));
-        assertThrows(IllegalStateException.class, () -> checkoutService.recordCheckoutCapture(
+        assertSettlementCode(SettlementException.Code.CONFLICT, () -> checkoutService.recordCheckoutCapture(
                 new CheckoutSettlementPostingRequest(checkoutId, attemptId, 125,
                         List.of(new SellerOrderAllocationRequest(orderId, changedSellerId, 125)))));
-        assertThrows(IllegalStateException.class, () -> checkoutService.recordCheckoutCapture(
+        assertSettlementCode(SettlementException.Code.CONFLICT, () -> checkoutService.recordCheckoutCapture(
                 new CheckoutSettlementPostingRequest(checkoutId, attemptId, 126,
                         List.of(new SellerOrderAllocationRequest(orderId, originalSellerId, 126)))));
 
@@ -236,11 +262,16 @@ class SettlementServiceImplTest {
                 cursor("v1|" + sellerId + "|" + from + "|" + to + "|" + from + "|" + UUID.randomUUID())));
     }
 
+    private static void assertSettlementCode(SettlementException.Code code, Runnable action) {
+        SettlementException exception = assertThrows(SettlementException.class, action::run);
+        assertEquals(code, exception.code());
+    }
+
     private static void assertInvalidStatement(SettlementServiceImpl statementService,
                                                SellerSettlementStatementRequest request) {
         SettlementException exception = assertThrows(SettlementException.class,
                 () -> statementService.getSellerStatement(request));
-        assertEquals(SettlementException.Code.INVALID_REQUEST, exception.getCode());
+        assertEquals(SettlementException.Code.INVALID_REQUEST, exception.code());
     }
 
     private static String cursor(String value) {

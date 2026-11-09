@@ -194,11 +194,11 @@ class SettlementStatementIntegrationTest {
         assertThatThrownBy(() -> settlement.getSellerStatement(statementRequest(
                 secondSellerId, PERIOD_FROM, PERIOD_TO, 1, firstCursor)))
                 .isInstanceOfSatisfying(SettlementException.class, exception ->
-                        assertThat(exception.getCode()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
+                        assertThat(exception.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
         assertThatThrownBy(() -> settlement.getSellerStatement(statementRequest(
                 firstSellerId, PERIOD_FROM.plusSeconds(1), PERIOD_TO, 1, firstCursor)))
                 .isInstanceOfSatisfying(SettlementException.class, exception ->
-                        assertThat(exception.getCode()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
+                        assertThat(exception.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
         mockMvc.perform(get("/api/sellers/{sellerId}/settlement-statement", secondSellerId)
                         .queryParam("from", PERIOD_FROM.toString())
                         .queryParam("to", PERIOD_TO.toString())
