@@ -1,11 +1,14 @@
 package com.atlas.application.controller.seller;
 
+import com.atlas.application.controller.dto.CartCheckoutRequest;
 import com.atlas.application.controller.dto.SetCartItemQuantityHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.cart.service.CartService;
+import com.atlas.order.dto.request.SellerCouponRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.service.CartCheckoutService;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -56,7 +59,12 @@ public class CartController {
 
     @PostMapping("/checkout")
     public CheckoutResponse checkout(@PathVariable String buyerRef,
-                                     @RequestHeader("Idempotency-Key") String idempotencyKey) {
-        return checkout.checkout(buyerRef, idempotencyKey);
+                                     @RequestHeader("Idempotency-Key") String idempotencyKey,
+                                     @Valid @RequestBody(required = false) CartCheckoutRequest request) {
+        List<SellerCouponRequest> coupons = request == null || request.sellerCoupons() == null
+                ? List.of()
+                : request.sellerCoupons().stream()
+                        .map(item -> new SellerCouponRequest(item.sellerId(), item.code())).toList();
+        return checkout.checkout(buyerRef, idempotencyKey, coupons);
     }
 }

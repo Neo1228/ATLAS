@@ -22,6 +22,29 @@ class OrderItemTest {
 
         assertEquals(3_750, item.lineTotalWon());
     }
+    @Test
+    void couponDiscountSnapshotDrivesNetLineAndPartialRefundAmounts() {
+        OrderItem item = new OrderItem(cartOrder(), UUID.randomUUID(), UUID.randomUUID(), "SKU-1",
+                "Product", 3, 1_000, 43);
+
+        assertEquals(2_957, item.lineTotalWon());
+        assertEquals(985, item.refundAmountWon(1, 0));
+        assertEquals(986, item.refundAmountWon(1, 1));
+        assertEquals(986, item.refundAmountWon(1, 2));
+        assertEquals(item.lineTotalWon(), item.refundAmountWon(3, 0));
+    }
+
+    @Test
+    void rejectsCouponAllocationThatConsumesTheEntireOrderItem() {
+        assertThrows(IllegalArgumentException.class, () -> new OrderItem(cartOrder(), UUID.randomUUID(),
+                UUID.randomUUID(), "SKU-1", "Product", 1, 1_000, 1_000));
+    }
+
+    @Test
+    void rejectsCouponAllocationThatCreatesAZeroValueRefundUnit() {
+        assertThrows(IllegalArgumentException.class, () -> new OrderItem(cartOrder(), UUID.randomUUID(),
+                UUID.randomUUID(), "SKU-1", "Product", 2, 100, 199));
+    }
 
     @Test
     void rejectsLineTotalOverflowAtSnapshotCreation() {

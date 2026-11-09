@@ -393,14 +393,14 @@ public final class OrderServiceImpl implements OrderService {
         List<OrderItem> orderItems = items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId());
         List<OrderItemResponse> itemResponses = orderItems.stream().map(item -> new OrderItemResponse(
                 item.productId(), item.sellerId(), item.skuId(), item.productName(), item.quantity(),
-                item.unitPriceWon())).toList();
+                item.unitPriceWon(), item.couponDiscountWon(), item.lineTotalWon())).toList();
         long totalPriceWon = 0;
         for (OrderItem item : orderItems) totalPriceWon = Math.addExact(totalPriceWon, item.lineTotalWon());
         ReservationStatus inventoryState = reservations.isEmpty() ? null : reservations.get(0).status();
         return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), paymentAttemptId,
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState,
                 ticket == null ? null : ticket.status(), order.source(), order.fulfillmentLocationId(),
-                itemResponses, totalPriceWon);
+                itemResponses, totalPriceWon, order.sellerCouponCode(), order.couponDiscountWon());
     }
 
     private static boolean invalidIdempotencyKey(String idempotencyKey) {

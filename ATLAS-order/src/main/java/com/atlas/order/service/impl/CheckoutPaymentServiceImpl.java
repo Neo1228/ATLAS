@@ -318,7 +318,8 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         List<OrderItem> orderItems = items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId());
         List<OrderItemResponse> itemResponses = orderItems.stream()
                 .map(item -> new OrderItemResponse(item.productId(), item.sellerId(), item.skuId(),
-                        item.productName(), item.quantity(), item.unitPriceWon()))
+                        item.productName(), item.quantity(), item.unitPriceWon(),
+                        item.couponDiscountWon(), item.lineTotalWon()))
                 .toList();
         long total = 0;
         for (OrderItem item : orderItems) {
@@ -327,7 +328,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         ReservationStatus inventoryState = reservations.isEmpty() ? null : reservations.get(0).status();
         return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), order.paymentAttemptId(),
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState, null, order.source(),
-                order.fulfillmentLocationId(),
-                itemResponses, total);
+                order.fulfillmentLocationId(), itemResponses, total, order.sellerCouponCode(),
+                order.couponDiscountWon());
     }
 }

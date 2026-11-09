@@ -38,6 +38,7 @@ import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.response.OrderItemResponse;
 import com.atlas.order.dto.response.OrderRefundResponse;
 import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.dto.response.CheckoutResponse;
@@ -816,6 +817,186 @@ assertUuidV7(paymentOrderId);
         assertThat(restored.claimed()).isZero();
         assertConserved(restored);
     }
+    @Test
+    void sellerCouponsAllocatePerSellerAndPartialRefundUsesOrderSnapshot() throws Exception {
+        clock.set(Instant.parse("2026-01-01T00:00:00Z"));
+        UUID sellerA = sellers.createSeller().sellerId();
+        UUID sellerB = sellers.createSeller().sellerId();
+        String skuA1 = "coupon-a1-" + UUID.randomUUID();
+        String skuA2 = "coupon-a2-" + UUID.randomUUID();
+        String skuB = "coupon-b-" + UUID.randomUUID();
+        registerProductSku(sellerA, skuA1, 1000, 2);
+        registerProductSku(sellerA, skuA2, 2000, 1);
+        registerProductSku(sellerB, skuB, 500, 1);
+        Instant startsAt = clock.instant();
+        Instant endsAt = clock.instant().plus(Duration.ofMinutes(10));
+        record SellerCouponSeed(UUID sellerId, String code, long amountWon) { }
+        for (var coupon : List.of(
+                new SellerCouponSeed(sellerA, "seller-a-101", 101),
+                new SellerCouponSeed(sellerB, "seller-b-50", 50))) {
+            mockMvc.perform(post("/api/sellers/{sellerId}/coupons", coupon.sellerId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"code":"%s","discountAmountWon":%d,"startsAt":"%s","endsAt":"%s"}
+                                    """.formatted(coupon.code(), coupon.amountWon(), startsAt, endsAt)))
+                    .andExpect(status().isCreated());
+        }
+
+        String buyerRef = "coupon-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerA, buyerRef, skuA1, 2);
+        carts.setItemQuantity(sellerA, buyerRef, skuA2, 1);
+        carts.setItemQuantity(sellerB, buyerRef, skuB, 1);
+        String checkoutKey = "coupon-checkout-" + UUID.randomUUID();
+        String checkoutJson = mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", checkoutKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sellerCoupons":[
+                                  {"sellerId":"%s","code":"SELLER-A-101"},
+                                  {"sellerId":"%s","code":"seller-b-50"}
+                                ]}
+                                """.formatted(sellerA, sellerB)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", checkoutKey))
+                .andExpect(status().isConflict());
+        assertThat(checkout.totalWon()).isEqualTo(4349);
+        assertThat(checkout.orders()).hasSize(2);
+        OrderResponse orderA = checkout.orders().stream()
+                .filter(order -> order.items().getFirst().sellerId().equals(sellerA)).findFirst().orElseThrow();
+        OrderResponse orderB = checkout.orders().stream()
+                .filter(order -> order.items().getFirst().sellerId().equals(sellerB)).findFirst().orElseThrow();
+        assertThat(orderA.couponDiscountWon()).isEqualTo(101);
+        assertThat(orderA.totalPriceWon()).isEqualTo(3899);
+        assertThat(orderB.couponDiscountWon()).isEqualTo(50);
+        assertThat(orderB.totalPriceWon()).isEqualTo(450);
+        assertThat(orderA.items()).extracting(OrderItemResponse::couponDiscountWon).containsExactly(51L, 50L);
+        assertThat(orderA.items()).extracting(OrderItemResponse::lineTotalWon).containsExactly(1949L, 1950L);
+
+        String capturedJson = mockMvc.perform(post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        CheckoutResponse captured = objectMapper.readValue(capturedJson, CheckoutResponse.class);
+        assertThat(captured.totalWon()).isEqualTo(4349);
+        assertThat(jdbc.queryForObject("SELECT gross_amount_won FROM settlement_journal WHERE checkout_id = ?",
+                Long.class, checkout.checkoutId())).isEqualTo(4349L);
+        mockMvc.perform(delete("/api/sellers/{sellerId}/coupons/{code}", sellerA, "seller-a-101"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", checkoutKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sellerCoupons":[
+                                  {"sellerId":"%s","code":"SELLER-A-101"},
+                                  {"sellerId":"%s","code":"seller-b-50"}
+                                ]}
+                                """.formatted(sellerA, sellerB)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalWon").value(4349));
+
+        UUID firstItemId = jdbc.queryForObject(
+                "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
+                UUID.class, orderA.orderId(), skuA1);
+        assertThat(jdbc.queryForObject(
+                "SELECT coupon_discount_won FROM order_item WHERE order_item_id = ?", Long.class, firstItemId))
+                .isEqualTo(51L);
+        String firstRefundJson = mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/refund-records",
+                        sellerA, orderA.orderId())
+                        .header("Idempotency-Key", "coupon-refund-first-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1}]}
+                                """.formatted(firstItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recordedAmountWon").value(974))
+                .andReturn().getResponse().getContentAsString();
+        OrderRefundResponse firstRefund = objectMapper.readValue(firstRefundJson, OrderRefundResponse.class);
+        assertThat(jdbc.queryForObject(
+                "SELECT gross_amount_won FROM settlement_journal WHERE source_refund_id = ?",
+                Long.class, firstRefund.refundId())).isEqualTo(974L);
+        String secondRefundJson = mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/refund-records",
+                        sellerA, orderA.orderId())
+                        .header("Idempotency-Key", "coupon-refund-second-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1}]}
+                                """.formatted(firstItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recordedAmountWon").value(975))
+                .andReturn().getResponse().getContentAsString();
+        OrderRefundResponse secondRefund = objectMapper.readValue(secondRefundJson, OrderRefundResponse.class);
+        assertThat(jdbc.queryForObject(
+                "SELECT gross_amount_won FROM settlement_journal WHERE source_refund_id = ?",
+                Long.class, secondRefund.refundId())).isEqualTo(975L);
+    }
+
+    @Test
+    void sellerCouponCannotMakeAnyItemUnitRefundableForZeroWon() throws Exception {
+        clock.set(Instant.parse("2026-01-01T00:00:00Z"));
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuA = "coupon-zero-a-" + UUID.randomUUID();
+        String skuB = "coupon-zero-b-" + UUID.randomUUID();
+        registerProductSku(sellerId, skuA, 100, 2);
+        registerProductSku(sellerId, skuB, 1, 1);
+        Instant startsAt = clock.instant().minusSeconds(1);
+        Instant endsAt = clock.instant().plus(Duration.ofMinutes(10));
+        mockMvc.perform(post("/api/sellers/{sellerId}/coupons", sellerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"LOW-REFUND","discountAmountWon":200,"startsAt":"%s","endsAt":"%s"}
+                                """.formatted(startsAt, endsAt)))
+                .andExpect(status().isCreated());
+
+        String buyerRef = "coupon-zero-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuA, 2);
+        carts.setItemQuantity(sellerId, buyerRef, skuB, 1);
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "coupon-zero-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sellerCoupons":[{"sellerId":"%s","code":"LOW-REFUND"}]}
+                                """.formatted(sellerId)))
+                .andExpect(status().isBadRequest());
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?",
+                Integer.class, buyerRef)).isZero();
+        assertThat(carts.find(buyerRef).items()).hasSize(2);
+    }
+
+    @Test
+    void sellerCouponCannotStackWithAnActiveSkuSalePrice() throws Exception {
+        clock.set(Instant.parse("2026-01-01T00:00:00Z"));
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "coupon-sale-" + UUID.randomUUID();
+        ProductResponse product = registerProductSku(sellerId, skuId, 1000, 1);
+        Instant startsAt = clock.instant().minusSeconds(1);
+        Instant endsAt = clock.instant().plus(Duration.ofMinutes(10));
+        products.setSkuSalePrice(sellerId, product.productId(), skuId, 800, startsAt, endsAt);
+        mockMvc.perform(post("/api/sellers/{sellerId}/coupons", sellerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"NO-STACK","discountAmountWon":100,"startsAt":"%s","endsAt":"%s"}
+                                """.formatted(startsAt, endsAt)))
+                .andExpect(status().isCreated());
+
+        String buyerRef = "coupon-sale-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+        mockMvc.perform(post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "coupon-sale-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sellerCoupons":[{"sellerId":"%s","code":"NO-STACK"}]}
+                                """.formatted(sellerId)))
+                .andExpect(status().isConflict());
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?",
+                Integer.class, buyerRef)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_reservation WHERE sku_id = ?",
+                Integer.class, skuId)).isZero();
+        assertThat(carts.find(buyerRef).items()).hasSize(1);
+    }
+
     @Test
     void ticketLookupDoesNotExpireTicketsOrPromoteWaitingBuyers() {
         CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
