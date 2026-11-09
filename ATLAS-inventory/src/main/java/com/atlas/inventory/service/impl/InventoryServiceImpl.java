@@ -132,27 +132,84 @@ public class InventoryServiceImpl implements InventoryService {
                     "destination location must be active and have capacity for the transfer");
         };
     }
-    @Override public ReservationResponse reserve(ReserveInventoryRequest r){return tryReserve(r).orElseThrow(()->new InventoryException(InventoryException.Code.UNAVAILABLE,"inventory unavailable"));}
-    @Override public Optional<ReservationResponse> tryReserve(ReserveInventoryRequest r){
-        Objects.requireNonNull(r); validSku(r.sellerId(),r.skuId()); validOrder(r.orderId()); if(r.quantity()<1)throw invalid("quantity must be positive");
-        return transactions.execute(status->{
-            stock.lockOrder(r.orderId()); List<Reservation> prior=reservations.findLockedByOrderId(r.orderId());
-            if(!prior.isEmpty()){Reservation p=prior.get(0); if(prior.size()!=1||!Objects.equals(p.getCampaignId(),r.campaignId())||!p.getSellerId().equals(r.sellerId())||!p.getSkuId().equals(r.skuId())||p.getQuantity()!=r.quantity())throw conflict("order reservation facts differ"); return Optional.of(response(p));}
-            UUID location = locations.select(r.sellerId(), Map.of(r.skuId(), r.quantity())).orElse(null);
-            if(location==null)return Optional.empty();
-            if(stock.reserve(r.sellerId(),r.skuId(),location,r.quantity())!=1)return Optional.empty();
-            return Optional.of(response(reservations.save(new Reservation(r.orderId(),r.campaignId(),r.sellerId(),r.skuId(),r.quantity(),ReservationStatus.RESERVED,location))));
+    @Override
+    public ReservationResponse reserve(ReserveInventoryRequest request) {
+        return tryReserve(request).orElseThrow(() -> new InventoryException(
+                InventoryException.Code.UNAVAILABLE, "inventory unavailable"));
+    }
+
+    @Override
+    public Optional<ReservationResponse> tryReserve(ReserveInventoryRequest request) {
+        Objects.requireNonNull(request);
+        validSku(request.sellerId(), request.skuId());
+        validOrder(request.orderId());
+        if (request.quantity() < 1) throw invalid("quantity must be positive");
+
+        return transactions.execute(status -> {
+            stock.lockOrder(request.orderId());
+            List<Reservation> prior = reservations.findLockedByOrderId(request.orderId());
+            if (!prior.isEmpty()) {
+                Reservation existing = prior.get(0);
+                if (prior.size() != 1
+                        || !Objects.equals(existing.getCampaignId(), request.campaignId())
+                        || !existing.getSellerId().equals(request.sellerId())
+                        || !existing.getSkuId().equals(request.skuId())
+                        || existing.getQuantity() != request.quantity()) {
+                    throw conflict("order reservation facts differ");
+                }
+                return Optional.of(response(existing));
+            }
+
+            UUID location = locations.select(
+                    request.sellerId(), Map.of(request.skuId(), request.quantity())).orElse(null);
+            if (location == null) return Optional.empty();
+            if (stock.reserve(request.sellerId(), request.skuId(), location, request.quantity()) != 1) {
+                return Optional.empty();
+            }
+            Reservation reservation = new Reservation(
+                    request.orderId(), request.campaignId(), request.sellerId(), request.skuId(),
+                    request.quantity(), ReservationStatus.RESERVED, location);
+            return Optional.of(response(reservations.save(reservation)));
         });
     }
-    @Override public List<ReservationResponse> reserveAll(ReserveInventoryBatchRequest r){
-        Objects.requireNonNull(r); validateOrder(r.orderId()); if(r.items()==null||r.items().isEmpty())throw invalid("reservation lines are required");
-        List<ReserveInventoryBatchRequest.Item> items=r.items().stream().sorted(Comparator.comparing(ReserveInventoryBatchRequest.Item::sellerId).thenComparing(ReserveInventoryBatchRequest.Item::skuId)).toList();
-        for(int i=0;i<items.size();i++){var x=items.get(i);validSku(x.sellerId(),x.skuId());if(x.quantity()<1)throw invalid("quantity must be positive");if(i>0&&items.get(i-1).sellerId().equals(x.sellerId())&&items.get(i-1).skuId().equals(x.skuId()))throw invalid("duplicate seller/SKU line");}
-        return Objects.requireNonNull(transactions.execute(status->{
-            stock.lockOrder(r.orderId()); List<Reservation> prior=reservations.findLockedByOrderId(r.orderId());
-            if(!prior.isEmpty()){if(!matches(prior,r.campaignId(),items))throw conflict("order reservation facts differ");return prior.stream().map(InventoryServiceImpl::response).toList();}
-            Map<UUID,List<ReserveInventoryBatchRequest.Item>> bySeller=items.stream().collect(Collectors.groupingBy(ReserveInventoryBatchRequest.Item::sellerId,TreeMap::new,Collectors.toList()));
-            Map<UUID,UUID> chosen=new HashMap<>();
+
+    @Override
+    public List<ReservationResponse> reserveAll(ReserveInventoryBatchRequest request) {
+        Objects.requireNonNull(request);
+        validateOrder(request.orderId());
+        if (request.items() == null || request.items().isEmpty()) {
+            throw invalid("reservation lines are required");
+        }
+
+        List<ReserveInventoryBatchRequest.Item> items = request.items().stream()
+                .sorted(Comparator.comparing(ReserveInventoryBatchRequest.Item::sellerId)
+                        .thenComparing(ReserveInventoryBatchRequest.Item::skuId))
+                .toList();
+        for (int i = 0; i < items.size(); i++) {
+            ReserveInventoryBatchRequest.Item item = items.get(i);
+            validSku(item.sellerId(), item.skuId());
+            if (item.quantity() < 1) throw invalid("quantity must be positive");
+            if (i > 0
+                    && items.get(i - 1).sellerId().equals(item.sellerId())
+                    && items.get(i - 1).skuId().equals(item.skuId())) {
+                throw invalid("duplicate seller/SKU line");
+            }
+        }
+
+        return Objects.requireNonNull(transactions.execute(status -> {
+            stock.lockOrder(request.orderId());
+            List<Reservation> prior = reservations.findLockedByOrderId(request.orderId());
+            if (!prior.isEmpty()) {
+                if (!matches(prior, request.campaignId(), items)) {
+                    throw conflict("order reservation facts differ");
+                }
+                return prior.stream().map(InventoryServiceImpl::response).toList();
+            }
+
+            Map<UUID, List<ReserveInventoryBatchRequest.Item>> bySeller = items.stream()
+                    .collect(Collectors.groupingBy(
+                            ReserveInventoryBatchRequest.Item::sellerId, TreeMap::new, Collectors.toList()));
+            Map<UUID, UUID> chosen = new HashMap<>();
             for (var seller : bySeller.entrySet()) {
                 UUID location = locations.select(seller.getKey(), requiredQuantities(seller.getValue()))
                         .orElseThrow(() -> new InventoryException(
@@ -160,19 +217,69 @@ public class InventoryServiceImpl implements InventoryService {
                                 "no single active location can fulfill seller order"));
                 chosen.put(seller.getKey(), location);
             }
-            ArrayList<Reservation> saved=new ArrayList<>();
-            for(var item:items){UUID location=chosen.get(item.sellerId());if(stock.reserve(item.sellerId(),item.skuId(),location,item.quantity())!=1)throw new InventoryException(InventoryException.Code.INSUFFICIENT_STOCK,"inventory changed or location became inactive");saved.add(new Reservation(r.orderId(),r.campaignId(),item.sellerId(),item.skuId(),item.quantity(),ReservationStatus.RESERVED,location));}
+
+            ArrayList<Reservation> saved = new ArrayList<>();
+            for (ReserveInventoryBatchRequest.Item item : items) {
+                UUID location = chosen.get(item.sellerId());
+                if (stock.reserve(item.sellerId(), item.skuId(), location, item.quantity()) != 1) {
+                    throw new InventoryException(
+                            InventoryException.Code.INSUFFICIENT_STOCK,
+                            "inventory changed or location became inactive");
+                }
+                saved.add(new Reservation(
+                        request.orderId(), request.campaignId(), item.sellerId(), item.skuId(),
+                        item.quantity(), ReservationStatus.RESERVED, location));
+            }
             return reservations.saveAll(saved).stream().map(InventoryServiceImpl::response).toList();
         }));
     }
-    @Override public ReservationResponse claim(UUID orderId){return first(claimAll(orderId));}
-    @Override public List<ReservationResponse> claimAll(UUID orderId){return transition(orderId,ReservationStatus.CLAIMED);}
-    @Override public ReservationResponse release(UUID orderId){return first(releaseAll(orderId));}
-    @Override public List<ReservationResponse> releaseAll(UUID orderId){return transition(orderId,ReservationStatus.RELEASED);}
-    private List<ReservationResponse> transition(UUID orderId,ReservationStatus target){
-        validOrder(orderId); return Objects.requireNonNull(transactions.execute(status->{stock.lockOrder(orderId);List<Reservation> rows=reservations.findLockedByOrderId(orderId);if(rows.isEmpty())throw new InventoryException(InventoryException.Code.NOT_FOUND,"reservation not found");
-            for(Reservation r:rows){if(r.getStatus()==target)continue;if(r.getStatus()!=ReservationStatus.RESERVED)throw conflict("reservation cannot transition from "+r.getStatus());int n=target==ReservationStatus.CLAIMED?stock.claim(r.getSellerId(),r.getSkuId(),r.getLocationId(),r.getQuantity()):stock.release(r.getSellerId(),r.getSkuId(),r.getLocationId(),r.getQuantity());if(n!=1)throw new IllegalStateException("inventory reservation counters inconsistent");r.setStatus(target);}
-            return reservations.saveAll(rows).stream().map(InventoryServiceImpl::response).toList();}));
+
+    @Override
+    public ReservationResponse claim(UUID orderId) {
+        return first(claimAll(orderId));
+    }
+
+    @Override
+    public List<ReservationResponse> claimAll(UUID orderId) {
+        return transition(orderId, ReservationStatus.CLAIMED);
+    }
+
+    @Override
+    public ReservationResponse release(UUID orderId) {
+        return first(releaseAll(orderId));
+    }
+
+    @Override
+    public List<ReservationResponse> releaseAll(UUID orderId) {
+        return transition(orderId, ReservationStatus.RELEASED);
+    }
+
+    private List<ReservationResponse> transition(UUID orderId, ReservationStatus target) {
+        validOrder(orderId);
+        return Objects.requireNonNull(transactions.execute(status -> {
+            stock.lockOrder(orderId);
+            List<Reservation> rows = reservations.findLockedByOrderId(orderId);
+            if (rows.isEmpty()) {
+                throw new InventoryException(InventoryException.Code.NOT_FOUND, "reservation not found");
+            }
+
+            for (Reservation reservation : rows) {
+                if (reservation.getStatus() == target) continue;
+                if (reservation.getStatus() != ReservationStatus.RESERVED) {
+                    throw conflict("reservation cannot transition from " + reservation.getStatus());
+                }
+                int updated = target == ReservationStatus.CLAIMED
+                        ? stock.claim(reservation.getSellerId(), reservation.getSkuId(),
+                                reservation.getLocationId(), reservation.getQuantity())
+                        : stock.release(reservation.getSellerId(), reservation.getSkuId(),
+                                reservation.getLocationId(), reservation.getQuantity());
+                if (updated != 1) {
+                    throw new IllegalStateException("inventory reservation counters inconsistent");
+                }
+                reservation.setStatus(target);
+            }
+            return reservations.saveAll(rows).stream().map(InventoryServiceImpl::response).toList();
+        }));
     }
     @Override
     public void restoreClaimed(UUID orderId, UUID sellerId, String skuId, int quantity) {
@@ -229,7 +336,16 @@ public class InventoryServiceImpl implements InventoryService {
                 record.sourceLocationId(), record.destinationLocationId(), record.idempotencyKey(),
                 record.quantity(), record.reason(), record.createdAt());
     }
-    private static boolean matches(List<Reservation> prior,UUID campaign,List<ReserveInventoryBatchRequest.Item> items){return Objects.equals(prior.get(0).getCampaignId(),campaign)&&prior.size()==items.size()&&items.stream().allMatch(i->prior.stream().anyMatch(p->Objects.equals(p.getSellerId(),i.sellerId())&&Objects.equals(p.getSkuId(),i.skuId())&&p.getQuantity()==i.quantity()));}
+    private static boolean matches(
+            List<Reservation> prior, UUID campaign, List<ReserveInventoryBatchRequest.Item> items) {
+        return Objects.equals(prior.get(0).getCampaignId(), campaign)
+                && prior.size() == items.size()
+                && items.stream().allMatch(item -> prior.stream().anyMatch(reservation ->
+                        Objects.equals(reservation.getSellerId(), item.sellerId())
+                                && Objects.equals(reservation.getSkuId(), item.skuId())
+                                && reservation.getQuantity() == item.quantity()));
+    }
+
     private static Map<String, Integer> requiredQuantities(
             List<ReserveInventoryBatchRequest.Item> items) {
         Map<String, Integer> quantities = new TreeMap<>();
@@ -242,14 +358,58 @@ public class InventoryServiceImpl implements InventoryService {
         }
         return quantities;
     }
-    private static void validateItems(UUID seller,List<ReserveInventoryBatchRequest.Item> items){if(items==null||items.isEmpty())throw invalid("reservation lines are required");for(var i:items){if(!seller.equals(i.sellerId()))throw invalid("seller mismatch");validSku(i.sellerId(),i.skuId());if(i.quantity()<1)throw invalid("quantity must be positive");}}
-    private static ReservationResponse response(Reservation r){return new ReservationResponse(r.getOrderId(),r.getCampaignId(),r.getSellerId(),r.getSkuId(),r.getQuantity(),r.getStatus(),r.getLocationId());}
-    private static ReservationResponse first(List<ReservationResponse> x){if(x==null||x.isEmpty())throw new InventoryException(InventoryException.Code.NOT_FOUND,"reservation not found");return x.get(0);}
-    private static void validSeller(UUID x){if(x==null)throw invalid("sellerId required");}
-    private static void validSku(UUID s,String sku){validSeller(s);if(sku==null||sku.isBlank()||sku.length()>128)throw invalid("skuId required");}
-    private static void validOrder(UUID x){if(x==null)throw invalid("orderId required");}
-    private static void validateOrder(UUID x){validOrder(x);}
-    private static boolean blank(String x){return x==null||x.isBlank();}
-    private static InventoryException invalid(String m){return new InventoryException(InventoryException.Code.INVALID_REQUEST,m);}
-    private static InventoryException conflict(String m){return new InventoryException(InventoryException.Code.CONFLICT,m);}
+
+    private static void validateItems(UUID seller, List<ReserveInventoryBatchRequest.Item> items) {
+        if (items == null || items.isEmpty()) throw invalid("reservation lines are required");
+        for (ReserveInventoryBatchRequest.Item item : items) {
+            if (!seller.equals(item.sellerId())) throw invalid("seller mismatch");
+            validSku(item.sellerId(), item.skuId());
+            if (item.quantity() < 1) throw invalid("quantity must be positive");
+        }
+    }
+
+    private static ReservationResponse response(Reservation reservation) {
+        return new ReservationResponse(
+                reservation.getOrderId(), reservation.getCampaignId(), reservation.getSellerId(),
+                reservation.getSkuId(), reservation.getQuantity(), reservation.getStatus(),
+                reservation.getLocationId());
+    }
+
+    private static ReservationResponse first(List<ReservationResponse> reservations) {
+        if (reservations == null || reservations.isEmpty()) {
+            throw new InventoryException(InventoryException.Code.NOT_FOUND, "reservation not found");
+        }
+        return reservations.get(0);
+    }
+
+    private static void validSeller(UUID sellerId) {
+        if (sellerId == null) throw invalid("sellerId required");
+    }
+
+    private static void validSku(UUID sellerId, String skuId) {
+        validSeller(sellerId);
+        if (skuId == null || skuId.isBlank() || skuId.length() > 128) {
+            throw invalid("skuId required");
+        }
+    }
+
+    private static void validOrder(UUID orderId) {
+        if (orderId == null) throw invalid("orderId required");
+    }
+
+    private static void validateOrder(UUID orderId) {
+        validOrder(orderId);
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static InventoryException invalid(String message) {
+        return new InventoryException(InventoryException.Code.INVALID_REQUEST, message);
+    }
+
+    private static InventoryException conflict(String message) {
+        return new InventoryException(InventoryException.Code.CONFLICT, message);
+    }
 }

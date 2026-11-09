@@ -244,8 +244,12 @@ class OrderShipmentIntegrationTest {
         barrier.await();
         boolean refundWon;
         boolean dispatchWon;
-        try { refundWon = refund.get(); dispatchWon = dispatch.get(); }
-        finally { workers.shutdownNow(); }
+        try {
+            refundWon = refund.get();
+            dispatchWon = dispatch.get();
+        } finally {
+            workers.shutdownNow();
+        }
         assertThat(refundWon).isNotEqualTo(dispatchWon);
         Integer shipmentCount = jdbc.queryForObject("SELECT COUNT(*) FROM order_shipment WHERE order_id=?", Integer.class, fixture.orderId());
         assertThat(shipmentCount).isEqualTo(dispatchWon ? 1 : 0);

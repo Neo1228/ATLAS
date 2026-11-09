@@ -88,7 +88,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "settlement_seller_allocation")).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(38); // thirty-seven application tables plus Flyway history
+                Integer.class, schema)).isEqualTo(38); // 애플리케이션 테이블 37개와 Flyway 이력 테이블
     }
 
     @Test
@@ -132,7 +132,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
             assertThat(tableExists(isolatedJdbc, "campaign_seller_backfill")).isFalse();
             assertThat(isolatedJdbc.queryForObject(
                     "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                    Integer.class, isolatedSchema)).isEqualTo(8); // seven legacy tables plus Flyway history
+                    Integer.class, isolatedSchema)).isEqualTo(8); // 이전 스키마 테이블 7개와 Flyway 이력 테이블
             assertThat(isolatedJdbc.queryForObject(
                     "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '6' AND success",
                     Integer.class)).isZero();

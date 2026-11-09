@@ -115,7 +115,7 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ProblemDetail> internalError(Exception exception) {
-        LOGGER.error("Unhandled HTTP exception", exception);
+        LOGGER.error("처리되지 않은 HTTP 예외", exception);
         return response(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected server error");
     }
 

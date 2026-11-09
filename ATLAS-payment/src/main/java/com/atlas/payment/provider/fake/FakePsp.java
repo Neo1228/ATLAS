@@ -7,7 +7,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import org.springframework.stereotype.Component;
 
-/** 진행 결과를 PostgreSQL에 저장하는 local-only PSP simulator. 실제 PSP 호출 없음. */
+/** 진행 결과를 PostgreSQL에 저장하는 로컬 전용 가짜 PSP 시뮬레이터다. 실제 PSP를 호출하지 않는다. */
 @Component
 public class FakePsp {
 

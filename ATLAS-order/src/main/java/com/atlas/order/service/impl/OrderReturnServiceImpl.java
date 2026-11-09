@@ -170,12 +170,19 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         if (!row.orderId().equals(orderId) || !row.sellerId().equals(sellerId)) throw conflict("Seller does not own return");
     }
     private static List<OrderReturnRequest.Item> normalize(List<OrderReturnRequest.Item> lines) {
-        List<OrderReturnRequest.Item> result = new ArrayList<>(); HashSet<UUID> ids = new HashSet<>();
+        List<OrderReturnRequest.Item> result = new ArrayList<>();
+        HashSet<UUID> ids = new HashSet<>();
         for (OrderReturnRequest.Item line : lines) {
-            if (line == null || line.orderItemId() == null || line.quantity() <= 0) throw invalid("Return line id and positive quantity are required");
-            if (!ids.add(line.orderItemId())) throw invalid("Duplicate return lines must be combined"); result.add(line);
+            if (line == null || line.orderItemId() == null || line.quantity() <= 0) {
+                throw invalid("Return line id and positive quantity are required");
+            }
+            if (!ids.add(line.orderItemId())) {
+                throw invalid("Duplicate return lines must be combined");
+            }
+            result.add(line);
         }
-        result.sort(Comparator.comparing(OrderReturnRequest.Item::orderItemId)); return List.copyOf(result);
+        result.sort(Comparator.comparing(OrderReturnRequest.Item::orderItemId));
+        return List.copyOf(result);
     }
     private static Map<UUID, OrderReturnInspectionResult> normalizeDecisions(List<OrderReturnInspectionRequest.Item> lines) {
         Map<UUID, OrderReturnInspectionResult> map = new HashMap<>();

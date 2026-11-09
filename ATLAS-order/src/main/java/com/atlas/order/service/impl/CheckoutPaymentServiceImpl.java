@@ -178,8 +178,8 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         }
         PaymentResponse currentPayment = payments.findCheckout(checkoutId);
         if (currentPayment == null || currentPayment.state() == PaymentState.NOT_STARTED) {
-            // The submitter may have crossed the local pending transition but not yet persisted its attempt.
-            // Keep every reservation held until that in-flight PSP operation becomes observable.
+            // 요청 스레드가 로컬 상태를 결제 대기로 바꿨지만 결제 시도는 아직 저장되지 않았을 수 있다.
+            // 진행 중인 PSP 작업 결과를 확인할 수 있을 때까지 모든 예약을 유지한다.
             return toResponse(marked);
         }
         PaymentResponse payment = payments.reconcileCheckoutForCancellation(checkoutId, idempotencyKey);
