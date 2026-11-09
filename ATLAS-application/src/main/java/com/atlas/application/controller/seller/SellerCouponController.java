@@ -8,6 +8,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,7 +27,12 @@ public class SellerCouponController {
     public SellerCouponResponse create(@PathVariable UUID sellerId,
                                        @Valid @RequestBody CreateSellerCouponRequest request) {
         return coupons.create(sellerId, request.code(), request.discountAmountWon(),
-                request.startsAt(), request.endsAt());
+                request.startsAt(), request.endsAt(), request.maxRedemptions());
+    }
+
+    @GetMapping("/{code}")
+    public SellerCouponResponse find(@PathVariable UUID sellerId, @PathVariable String code) {
+        return coupons.find(sellerId, code);
     }
 
     @DeleteMapping("/{code}")

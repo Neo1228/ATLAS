@@ -28,6 +28,14 @@ public class SellerCoupon {
 
     @Column(name = "discount_amount_won", nullable = false)
     private long discountAmountWon;
+    @Column(name = "max_redemptions", updatable = false)
+    private Long maxRedemptions;
+
+    @Column(name = "reserved_count", nullable = false, updatable = false)
+    private long reservedCount;
+
+    @Column(name = "redeemed_count", nullable = false, updatable = false)
+    private long redeemedCount;
 
     @Column(name = "starts_at", nullable = false)
     private Instant startsAt;
@@ -42,11 +50,20 @@ public class SellerCoupon {
 
     public SellerCoupon(UUID sellerId, String code, long discountAmountWon,
                         Instant startsAt, Instant endsAt) {
+        this(sellerId, code, discountAmountWon, startsAt, endsAt, null);
+    }
+
+    public SellerCoupon(UUID sellerId, String code, long discountAmountWon,
+                        Instant startsAt, Instant endsAt, Long maxRedemptions) {
+        if (maxRedemptions != null && maxRedemptions <= 0) {
+            throw new IllegalArgumentException("Coupon redemption limit must be positive");
+        }
         this.sellerId = sellerId;
         this.code = code;
         this.discountAmountWon = discountAmountWon;
         this.startsAt = startsAt;
         this.endsAt = endsAt;
+        this.maxRedemptions = maxRedemptions;
         this.active = true;
     }
 

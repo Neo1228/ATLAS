@@ -203,6 +203,10 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                         "Inventory reservations disagree on fulfillment location");
             }
             savedChild.setFulfillmentLocationId(locationId);
+            if (seller.coupon() != null) {
+                sellerCoupons.reserveRedemption(seller.sellerId(), seller.coupon().couponId(),
+                        savedChild.orderId(), now);
+            }
         }
         carts.clearForCheckout(buyerRef);
         return checkoutId;

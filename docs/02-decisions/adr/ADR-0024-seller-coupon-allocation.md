@@ -37,7 +37,7 @@ ADR-0023은 SKU별 sale price와 주문 단가 snapshot을 도입했지만 order
 - [Woshipm 분석 글](https://www.woshipm.com/operate/6414206.html)은 부분 환불과 coupon 사용 상태를 다룬 사용자 기고 자료입니다. 기술 표준이 아닌 보조 product 사례로만 사용했습니다.
 - Proportional allocation은 line별 net amount 합계가 SellerOrder 결제액과 일치하고, partial refund가 원래 할인 배분을 보존하는 대가로 계산 코드와 snapshot 저장량을 늘립니다.
 - [SettlementServiceImpl](../../../ATLAS-settlement/src/main/java/com/atlas/settlement/service/impl/SettlementServiceImpl.java)는 환불 posting 0원을 거절. Coupon allocation은 무료 item unit을 만들지 않음.
-- V1에서 coupon 사용량 제한을 제외해 redemption reservation state machine을 피합니다. 필요성은 트래픽·운영 시나리오가 생긴 뒤 별도 근거로 판단합니다.
+- V1은 사용 횟수 제한 없이 재사용 가능. Finite global cap은 [ADR-0025](ADR-0025-limited-coupon-redemption.md)에서 별도 redemption state machine과 함께 추가.
 
 ## 검증 기준
 
