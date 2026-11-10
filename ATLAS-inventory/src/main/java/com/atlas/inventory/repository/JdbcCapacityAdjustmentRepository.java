@@ -19,22 +19,28 @@ public class JdbcCapacityAdjustmentRepository {
     }
 
     public void lock(UUID seller, String sku, String key) {
-        UUID location = defaultLocation(seller);
-        if (location == null) {
-            jdbc.query(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
-                    resultSet -> { },
-                    seller + ":DEFAULT:" + sku + ":" + key);
-            return;
-        }
-        lock(seller, location, sku, key);
+        lockAdjustmentKey(seller, "DEFAULT", sku, key);
     }
 
-    public void lock(UUID seller, UUID location, String sku, String key) {
+    public boolean lock(UUID seller, UUID location, String sku, String key) {
+        String locationCode;
+        try {
+            locationCode = jdbc.queryForObject(
+                    "SELECT location_code FROM inventory_location WHERE seller_id = ? AND location_id = ?",
+                    String.class, seller, location);
+        } catch (EmptyResultDataAccessException exception) {
+            return false;
+        }
+        String locationScope = "DEFAULT".equals(locationCode) ? "DEFAULT" : location.toString();
+        lockAdjustmentKey(seller, locationScope, sku, key);
+        return true;
+    }
+
+    private void lockAdjustmentKey(UUID seller, String locationScope, String sku, String key) {
         jdbc.query(
                 "SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
                 resultSet -> { },
-                seller + ":" + location + ":" + sku + ":" + key);
+                seller + ":" + locationScope + ":" + sku + ":" + key);
     }
 
     public Optional<CapacityAdjustmentRecord> find(UUID seller, String sku, String key) {

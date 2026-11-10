@@ -28,8 +28,19 @@ Seller가 재고 수량을 정정할 때 `reserved`와 `claimed` 재고를 보�
 
 - 가용 재고보다 큰 감소는 거부. 예약·판매 완료 수량의 취소나 복구는 별도 업무 흐름.
 - 요청자 인증·인가와 다중 창고·lot 재고는 현재 범위 밖.
-- PostgreSQL advisory lock과 unique constraint로 동시 동일 key 처리를 보호.
-- 통합 검증: replay, key 재사용 conflict, available 초과 감소, overflow rollback, 동시 동일 key, 재고 보존식.
+- 기본 API는 `DEFAULT` sentinel을 advisory lock scope로 사용합니다.
+- 위치 API는 seller-scoped `location_code`를 확인해 DEFAULT에는 같은 sentinel을,
+  다른 위치에는 UUID를 사용합니다.
+  DEFAULT row 생성 전후에도 잠금 identity는 같고 non-default 위치는 독립적으로 잠급니다.
+- Explicit location ID가 없으면 기존 `POOL_NOT_FOUND`로 실패합니다.
+  location row 생성 뒤 재시도해야 하며, lock 후 row가 생겨도 현재 요청을 계속하지 않습니다.
+- audit unique key는 seller/location/SKU/idempotency key로 유지해 위치별 replay와 fact 비교를 보존합니다.
+  같은 key를 다른 location에서 재사용해도 결과를 공유하지 않습니다.
+- 위치 API는 location code 확인을 위해 read를 한 번 추가합니다. 위치별 잠금을 보존하면서
+  DEFAULT 생성 경합을 막기 위한 의도된 비용입니다.
+- PostgreSQL advisory lock과 unique constraint로 동시 동일 key 처리를 보호합니다.
+- 검증: replay, key 재사용 conflict, available 초과 감소, overflow rollback, 동시 동일 key,
+  재고 보존식 및 DEFAULT sentinel/non-default UUID 잠금 test.
 
 ## 관련 문서
 
