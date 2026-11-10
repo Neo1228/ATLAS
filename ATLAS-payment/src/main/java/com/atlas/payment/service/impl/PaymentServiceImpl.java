@@ -347,7 +347,7 @@ public class PaymentServiceImpl implements PaymentService {
                     attempt = repository.findWithLockByProviderCaptureId(event.resourceId());
                 }
                 if (attempt.isEmpty()) {
-                    return new PaymentWebhookResult(false, false, null, null, null, false);
+                    return new PaymentWebhookResult(false, false, null, null, null, false, true);
                 }
                 PaymentAttempt current = attempt.get();
                 if (!"COMPLETED".equalsIgnoreCase(event.resourceStatus())
@@ -359,7 +359,7 @@ public class PaymentServiceImpl implements PaymentService {
                         && !event.providerOrderId().equals(current.getProviderOrderId()))
                         || (current.getProviderCaptureId() != null
                         && !event.resourceId().equals(current.getProviderCaptureId()))) {
-                    return new PaymentWebhookResult(false, false, null, null, null, false);
+                    return rejectedWebhook(event, now);
                 }
                 if (!webhookEvents.insertReceived(event, now)) {
                     return new PaymentWebhookResult(true, true, null, null, null, false);
@@ -376,11 +376,11 @@ public class PaymentServiceImpl implements PaymentService {
             PaymentRefundState refundState = refundWebhookState(event.eventType());
             if (refundState != null) {
                 if (event.resourceId() == null) {
-                    return new PaymentWebhookResult(false, false, null, null, null, false);
+                    return new PaymentWebhookResult(false, false, null, null, null, false, true);
                 }
                 var operation = refunds.findByProviderRefundIdForUpdate(event.resourceId());
                 if (operation.isEmpty()) {
-                    return new PaymentWebhookResult(false, false, null, null, null, false);
+                    return new PaymentWebhookResult(false, false, null, null, null, false, true);
                 }
                 PaymentRefundOperation current = operation.get();
                 String expectedStatus = switch (refundState) {
@@ -394,7 +394,7 @@ public class PaymentServiceImpl implements PaymentService {
                         || !expectedStatus.equalsIgnoreCase(event.resourceStatus())
                         || (event.relatedCaptureId() != null
                         && !current.captureId().equals(event.relatedCaptureId()))) {
-                    return new PaymentWebhookResult(false, false, null, null, null, false);
+                    return rejectedWebhook(event, now);
                 }
                 if (!webhookEvents.insertReceived(event, now)) {
                     return new PaymentWebhookResult(true, true, null, null, null, false);
@@ -413,6 +413,14 @@ public class PaymentServiceImpl implements PaymentService {
             return new PaymentWebhookResult(false, true, null, null, null, false);
         }));
     }
+    private PaymentWebhookResult rejectedWebhook(PaymentWebhookEvent event, Instant now) {
+        if (!webhookEvents.insertReceived(event, now)) {
+            return new PaymentWebhookResult(true, true, null, null, null, false);
+        }
+        webhookEvents.markFailed(event.eventId(), now);
+        return new PaymentWebhookResult(false, false, null, null, null, false);
+    }
+
 
     private static PaymentRefundState refundWebhookState(String eventType) {
         return switch (eventType) {

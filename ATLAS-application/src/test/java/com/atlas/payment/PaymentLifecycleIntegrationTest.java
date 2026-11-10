@@ -12,6 +12,8 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.application.service.PayPalWebhookService;
+import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +45,10 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     @Autowired
     private PaymentService payments;
+    @Autowired
+    private PayPalWebhookService webhookService;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void paypalAuthorizationCaptureAndReplayUseTheLocalProvider() throws Exception {
@@ -196,43 +202,70 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     @Test
-    void rejectedCaptureWebhooksDoNotMutatePaymentOrConsumeEventId() throws Exception {
-        assertCaptureWebhookRejectedThenAccepted("17200.01", "KRW", false);
-        assertCaptureWebhookRejectedThenAccepted("17200", "USD", false);
-        assertCaptureWebhookRejectedThenAccepted("17200", "KRW", true);
+    void unmatchedCaptureWebhookRemainsRetryableWhileMappedMismatchIsQuarantined() throws Exception {
+        assertCaptureWebhookMismatchIsQuarantined("17200.01", "KRW");
+        assertCaptureWebhookMismatchIsQuarantined("17200", "USD");
+        assertUnknownCaptureWebhookCanBeRetried();
     }
 
-    private void assertCaptureWebhookRejectedThenAccepted(String amount, String currency, boolean unknownOrder)
-            throws Exception {
+    private void assertCaptureWebhookMismatchIsQuarantined(String amount, String currency) throws Exception {
         UUID orderId = UUID.randomUUID();
         PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
         PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
         String eventId = "WH-" + UUID.randomUUID();
         String captureId = "CAPTURE-WH-" + UUID.randomUUID();
-        String eventOrderId = unknownOrder ? authorized.providerOrderId() + "-unknown" : authorized.providerOrderId();
         PaymentWebhookSignature signature = new PaymentWebhookSignature(
-                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local", "2026-11-09T00:00:00Z");
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId, amount, currency);
 
-        PaymentWebhookEvent rejectedEvent = payments.verifyPayPalWebhook(signature,
-                captureWebhook(eventId, eventOrderId, captureId, amount, currency));
+        webhookService.handle(signature, rawBody);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
-        PaymentWebhookResult rejected = payments.processVerifiedPayPalWebhook(rejectedEvent);
-        assertThat(rejected.accepted()).isFalse();
-        assertThat(rejected.duplicate()).isFalse();
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("FAILED");
         PaymentResponse unchanged = payments.find(orderId);
         assertThat(unchanged).usingRecursiveComparison().isEqualTo(authorized);
         assertThat(unchanged.state()).isEqualTo(PaymentState.AUTHORIZED);
         assertThat(unchanged.providerCaptureId()).isNull();
 
-        PaymentWebhookEvent correctedEvent = payments.verifyPayPalWebhook(signature,
+        PaymentWebhookEvent rejectedEvent = payments.verifyPayPalWebhook(signature, rawBody);
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        PaymentWebhookResult duplicate = payments.processVerifiedPayPalWebhook(rejectedEvent);
+        assertThat(duplicate.duplicate()).isTrue();
+        assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.AUTHORIZED);
+    }
+
+    private void assertUnknownCaptureWebhookCanBeRetried() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
+        String eventId = "WH-" + UUID.randomUUID();
+        String captureId = "CAPTURE-WH-" + UUID.randomUUID();
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String unmatchedRawBody = captureWebhook(
+                eventId, authorized.providerOrderId() + "-unknown", captureId, "17200", "KRW");
+        assertThatThrownBy(() -> webhookService.handle(signature, unmatchedRawBody))
+                .isInstanceOf(PaymentException.class)
+                .hasMessageContaining("correlated yet");
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        PaymentWebhookEvent unmatched = payments.verifyPayPalWebhook(signature, unmatchedRawBody);
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        PaymentWebhookResult retryable = payments.processVerifiedPayPalWebhook(unmatched);
+        assertThat(retryable.accepted()).isFalse();
+        assertThat(retryable.retryable()).isTrue();
+        assertThat(retryable.duplicate()).isFalse();
+        assertThat(payments.find(orderId)).usingRecursiveComparison().isEqualTo(authorized);
+
+        PaymentWebhookEvent corrected = payments.verifyPayPalWebhook(signature,
                 captureWebhook(eventId, authorized.providerOrderId(), captureId, "17200", "KRW"));
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
-        PaymentWebhookResult accepted = payments.processVerifiedPayPalWebhook(correctedEvent);
+        PaymentWebhookResult accepted = payments.processVerifiedPayPalWebhook(corrected);
         assertThat(accepted.accepted()).isTrue();
         assertThat(accepted.duplicate()).isFalse();
-        PaymentResponse captured = payments.find(orderId);
-        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
-        assertThat(captured.providerCaptureId()).isEqualTo(captureId);
+        assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
     }
 
     private static String captureWebhook(String eventId, String providerOrderId, String captureId,

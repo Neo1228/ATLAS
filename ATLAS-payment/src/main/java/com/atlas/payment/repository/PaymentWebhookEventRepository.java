@@ -31,4 +31,13 @@ public class PaymentWebhookEventRepository {
                 """, Timestamp.from(processedAt), eventId);
         if (updated != 1) throw new IllegalStateException("Webhook event was not in RECEIVED state");
     }
+    public void markFailed(String eventId, Instant processedAt) {
+        int updated = jdbc.update("""
+                UPDATE payment_provider_webhook_event
+                SET processing_status = 'FAILED', processed_at = ?
+                WHERE event_id = ? AND processing_status = 'RECEIVED'
+                """, Timestamp.from(processedAt), eventId);
+        if (updated != 1) throw new IllegalStateException("Webhook not RECEIVED: " + eventId);
+    }
+
 }
