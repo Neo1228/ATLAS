@@ -83,6 +83,11 @@ public class AdmissionServiceImpl implements AdmissionService {
         }
         Instant now = clock.instant();
         expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), now);
+        QueueTicketResponse concurrentPrior = findByKey(request.campaignId(), request.idempotencyKey());
+        if (concurrentPrior != null) {
+            requireSamePayload(concurrentPrior, request);
+            return requireTicket(request.campaignId(), concurrentPrior.ticketId());
+        }
         long sequence = queueRepository.incrementSequence(campaign.sellerId(), campaign.skuId());
         long active = tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(campaign.sellerId(), campaign.skuId());
         boolean slot = active < policy.getMaxActiveCheckouts();

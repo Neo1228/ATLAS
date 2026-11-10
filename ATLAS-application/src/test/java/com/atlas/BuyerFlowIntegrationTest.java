@@ -471,6 +471,37 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
+    void concurrentJoinWithSameIdempotencyKeyReturnsOneTicket() throws Exception {
+        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        String buyerRef = "buyer-duplicate-join-" + UUID.randomUUID();
+        String idempotencyKey = "duplicate-join-" + UUID.randomUUID();
+        CyclicBarrier start = new CyclicBarrier(3);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<QueueTicketResponse> first = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(campaign, buyerRef, idempotencyKey);
+            });
+            Future<QueueTicketResponse> second = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(campaign, buyerRef, idempotencyKey);
+            });
+
+            start.await(10, TimeUnit.SECONDS);
+            QueueTicketResponse firstResult = first.get(10, TimeUnit.SECONDS);
+            QueueTicketResponse secondResult = second.get(10, TimeUnit.SECONDS);
+
+            assertThat(secondResult.ticketId()).isEqualTo(firstResult.ticketId());
+            assertThat(secondResult.sequence()).isEqualTo(firstResult.sequence());
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM admission_ticket WHERE campaign_id = ? AND idempotency_key = ?",
+                    Integer.class, campaign.campaignId(), idempotencyKey)).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                    "SELECT last_sequence FROM admission_counter WHERE seller_id = ? AND sku_id = ?",
+                    Long.class, campaign.sellerId(), campaign.skuId())).isEqualTo(1L);
+        }
+    }
+
+    @Test
     void concurrentCampaignsShareGlobalSellerSkuFifoAndCapacity() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "shared-" + UUID.randomUUID();
