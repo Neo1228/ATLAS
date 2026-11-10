@@ -108,6 +108,10 @@ public class SellerSkuServiceImpl implements SellerSkuService {
     }
 
     private static List<String> normalize(List<String> skuIds) {
+
+        return skuIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+    }
+
     private SellerSkuProducts loadSellerSkuProducts(UUID sellerId, List<String> skuIds) {
         List<SellerSku> skus = sellerSkus.findAllBySellerIdAndSkuIdIn(sellerId, skuIds);
         if (skus.isEmpty()) return new SellerSkuProducts(List.of(), List.of(), Map.of());
@@ -120,10 +124,6 @@ public class SellerSkuServiceImpl implements SellerSkuService {
     private record SellerSkuProducts(
             List<SellerSku> skus, List<UUID> productIds, Map<UUID, Product> productById) {
     }
-
-        return skuIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
-    }
-
     private static SellerSkuResponse toResponse(Product product, SellerSku sku, Instant asOf) {
         return new SellerSkuResponse(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
                 product.getName(), sku.getPriceWon(), sku.getSalePriceWon(), sku.getSaleStartsAt(),
