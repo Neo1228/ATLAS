@@ -25,7 +25,16 @@
 - 각 모듈은 위 표의 자기 상태를 소유한다. 한 모듈의 성공 응답만으로 다른 모듈의 상태가 완료됐다고 해석하지 않는다.
 - Request/correlation ID는 진단용이며 idempotency key가 아니다. Idempotency key는 업무 작업의 재전송 식별자이고 provider request ID와 같은 범위의 키가 아니다.
 - Caller와 operator에는 pending/unknown을 terminal failure/success로 표시하지 않는다. Reconciliation 결과를 반영한 뒤에만 definitive state를 반환한다.
-- 새로운 `saga`, `outbox`, queue 또는 분산 lock은 이 ADR에서 도입하지 않는다. 현재 구현의 DB transaction, row/owner locking, unique constraints, durable operation rows, provider retry IDs를 우선 사용한다.
+- Order/payment owner lock은 같은 owner의 상충 작업을 프로세스 안에서 직렬화합니다.
+  기존 256개 hash stripe는 다른 owner까지 같은 monitor로 묶어 provider 응답을 기다리게 했습니다.
+  이제 holder/waiter 참조 수를 추적하는 UUID별 registry를 쓰고 마지막 사용 뒤 항목을 회수합니다.
+  같은 owner의 직렬화는 유지합니다.
+- 이 registry는 JVM 내부 전용이며 여러 instance를 조정하지 않습니다.
+  Provider request ID는 같은 operation 재전송을 보호하지만 capture/void처럼 서로 다른 operation의 우선순위는 정하지 않습니다.
+  다중 instance 동시성은 별도 DB 상태 전이 설계와 검증 전까지 보장하지 않습니다.
+- 새 `saga`, `outbox`, queue, 분산 lock은 도입하지 않습니다.
+  현재 DB transaction, row lock, unique constraint, durable operation row, provider retry ID를 사용합니다.
+  추가 운영 인프라는 장애·지연 근거가 생길 때 별도 결정합니다.
 
 ## trade-off와 후속 도입 기준
 
