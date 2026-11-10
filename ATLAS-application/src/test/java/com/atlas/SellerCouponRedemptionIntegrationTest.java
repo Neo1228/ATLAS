@@ -23,10 +23,8 @@ import com.atlas.order.persistence.state.BuyerCheckoutState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.impl.CheckoutPaymentServiceImpl;
-import com.atlas.payment.persistence.state.FakePspResult;
-import com.atlas.payment.persistence.state.PaymentPhase;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.payment.persistence.state.PaymentState;
-import com.atlas.payment.provider.fake.FakePsp;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -56,7 +54,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Testcontainers
 @SpringBootTest
 @AutoConfigureMockMvc
-class SellerCouponRedemptionIntegrationTest {
+class SellerCouponRedemptionIntegrationTest extends PayPalIntegrationTestSupport {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
             .withDatabaseName("atlas")
@@ -82,8 +80,12 @@ class SellerCouponRedemptionIntegrationTest {
     @Autowired private CheckoutPaymentServiceImpl checkoutPayments;
     @Autowired private OrderRefundService refunds;
     @Autowired private InventoryService inventory;
-    @Autowired private FakePsp fakePsp;
     @Autowired private JdbcTemplate jdbc;
+
+    private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
+        CheckoutResponse pending = checkoutPayments.submit(checkoutId);
+        return checkoutPayments.completeApproval(checkoutId, approvalToken(pending.paymentApprovalUrl()));
+    }
 
     @Test
     void concurrentCheckoutsCannotExceedCouponCapAndRefundDoesNotRestoreUses() throws Exception {
@@ -153,7 +155,7 @@ class SellerCouponRedemptionIntegrationTest {
                     .andExpect(jsonPath("$.remainingCount").value(0));
 
             List<CheckoutResponse> paid = reserved.stream()
-                    .map(checkout -> checkoutPayments.submit(checkout.checkoutId())).toList();
+                    .map(checkout -> completePayPalCheckout(checkout.checkoutId())).toList();
             assertThat(paid).allSatisfy(checkout -> assertThat(checkout.paymentState()).isEqualTo(PaymentState.CAPTURED));
             assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(0, cap, 0, cap, 0));
             var redeemedUsage = coupons.find(sku.sellerId(), code);
@@ -165,7 +167,7 @@ class SellerCouponRedemptionIntegrationTest {
             UUID orderItemId = orderItemId(order.orderId(), sku.skuId());
             OrderRefundResponse refund = refunds.refund(new OrderRefundRequest(sku.sellerId(), order.orderId(),
                     "cap-refund-" + UUID.randomUUID(), List.of(new OrderRefundRequest.Item(orderItemId, 1))));
-            assertThat(refund.recordedAmountWon()).isEqualTo(900);
+            assertThat(refund.refundAmountWon()).isEqualTo(900);
             assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(0, cap, 0, cap, 0));
 
             String nextBuyer = "cap-exhausted-buyer-" + UUID.randomUUID();
@@ -219,50 +221,42 @@ class SellerCouponRedemptionIntegrationTest {
     }
 
     @Test
-    void unknownPaymentHoldsCapacityUntilCaptureIsReconciledEvenAfterCouponDeactivation() {
+    void approvalPendingHoldsCouponUntilCaptureIsConfirmedAfterDeactivation() {
         SkuFixture sku = createSku(sellers.createSeller().sellerId(), 1_000, 2);
         String code = createCoupon(sku.sellerId(), 100, 1);
         String buyer = "cap-unknown-buyer-" + UUID.randomUUID();
         CheckoutResponse reserved = checkout(buyer, sku, code);
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING, FakePspResult.UNKNOWN, FakePspResult.CAPTURED);
 
-        CheckoutResponse unknown = checkoutPayments.submit(reserved.checkoutId());
-        assertThat(unknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
+        CheckoutResponse awaitingApproval = checkoutPayments.submit(reserved.checkoutId());
+        assertThat(awaitingApproval.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        assertThat(awaitingApproval.paymentApprovalUrl()).contains("localhost");
         assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(1, 0, 1, 0, 0));
 
         coupons.deactivate(sku.sellerId(), code);
-        CheckoutResponse capturePending = checkoutPayments.reconcile(reserved.checkoutId(), "cap-reconcile-1");
-        assertThat(capturePending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
-        assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(1, 0, 1, 0, 0));
-
-        CheckoutResponse captureUnknown = checkoutPayments.reconcile(reserved.checkoutId(), "cap-reconcile-2");
-        assertThat(captureUnknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
-        assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(1, 0, 1, 0, 0));
-
-        CheckoutResponse captured = checkoutPayments.reconcile(reserved.checkoutId(), "cap-reconcile-3");
+        String providerOrderId = awaitingApproval.paymentApprovalUrl()
+                .substring(awaitingApproval.paymentApprovalUrl().lastIndexOf('/') + 1);
+        CheckoutResponse captured = checkoutPayments.completeApproval(reserved.checkoutId(), providerOrderId);
         assertThat(captured.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(0, 1, 0, 1, 0));
-        checkoutPayments.reconcile(reserved.checkoutId(), "cap-reconcile-4");
+
+        CheckoutResponse replay = checkoutPayments.reconcile(reserved.checkoutId(), "cap-reconcile-replay");
+        assertThat(replay.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(0, 1, 0, 1, 0));
     }
 
     @Test
-    void voidPendingKeepsCapacityUntilVoidIsConfirmed() {
+    void cancellationBeforeApprovalReleasesReservedCouponCapacity() {
         SkuFixture sku = createSku(sellers.createSeller().sellerId(), 1_000, 2);
         String code = createCoupon(sku.sellerId(), 100, 1);
         CheckoutResponse reserved = checkout("cap-void-buyer-" + UUID.randomUUID(), sku, code);
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.AUTHORIZED);
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.DECLINED);
-        fakePsp.enqueue(PaymentPhase.VOID, FakePspResult.PENDING, FakePspResult.VOIDED);
 
-        CheckoutResponse voidPending = checkoutPayments.submit(reserved.checkoutId());
-        assertThat(voidPending.paymentState()).isEqualTo(PaymentState.VOID_PENDING);
+        CheckoutResponse awaitingApproval = checkoutPayments.submit(reserved.checkoutId());
+        assertThat(awaitingApproval.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(1, 0, 1, 0, 0));
 
-        CheckoutResponse voided = checkoutPayments.reconcile(reserved.checkoutId(), "cap-void-reconcile");
+        CheckoutResponse voided = checkoutPayments.cancel(reserved.checkoutId(), "cap-void-cancel");
         assertThat(voided.paymentState()).isEqualTo(PaymentState.VOIDED);
-        assertThat(voided.state()).isEqualTo(BuyerCheckoutState.FAILED);
+        assertThat(voided.state()).isEqualTo(BuyerCheckoutState.CANCELLED);
         assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(0, 0, 0, 0, 1));
     }
 
@@ -298,7 +292,7 @@ class SellerCouponRedemptionIntegrationTest {
         String secondCode = createCoupon(secondSeller, 100, 1);
 
         CheckoutResponse consumed = checkout("cap-preconsume-buyer-" + UUID.randomUUID(), secondSku, secondCode);
-        assertThat(checkoutPayments.submit(consumed.checkoutId()).paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(completePayPalCheckout(consumed.checkoutId()).paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(counts(secondSeller, secondCode)).isEqualTo(new CouponCounts(0, 1, 0, 1, 0));
 
         String buyer = "cap-multiseller-buyer-" + UUID.randomUUID();

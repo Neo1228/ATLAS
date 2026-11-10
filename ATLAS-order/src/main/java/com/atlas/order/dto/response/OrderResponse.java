@@ -13,7 +13,7 @@ public record OrderResponse(UUID orderId, UUID campaignId, UUID ticketId, UUID p
                             Instant checkoutExpiresAt, ReservationStatus inventoryState,
                             PaymentState paymentState, TicketStatus ticketState, OrderSource source,
                             UUID fulfillmentLocationId, List<OrderItemResponse> items, long totalPriceWon,
-                            String sellerCouponCode, long couponDiscountWon) {
+                            String sellerCouponCode, long couponDiscountWon, String paymentApprovalUrl) {
     public OrderResponse {
         items = List.copyOf(items);
     }
@@ -21,8 +21,18 @@ public record OrderResponse(UUID orderId, UUID campaignId, UUID ticketId, UUID p
     public OrderResponse(UUID orderId, UUID campaignId, UUID ticketId, UUID paymentAttemptId, OrderState state,
                          Instant checkoutExpiresAt, ReservationStatus inventoryState,
                          PaymentState paymentState, TicketStatus ticketState, OrderSource source,
+                         UUID fulfillmentLocationId, List<OrderItemResponse> items, long totalPriceWon,
+                         String sellerCouponCode, long couponDiscountWon) {
+        this(orderId, campaignId, ticketId, paymentAttemptId, state, checkoutExpiresAt, inventoryState,
+                paymentState, ticketState, source, fulfillmentLocationId, items, totalPriceWon,
+                sellerCouponCode, couponDiscountWon, null);
+    }
+
+    public OrderResponse(UUID orderId, UUID campaignId, UUID ticketId, UUID paymentAttemptId, OrderState state,
+                         Instant checkoutExpiresAt, ReservationStatus inventoryState,
+                         PaymentState paymentState, TicketStatus ticketState, OrderSource source,
                          UUID fulfillmentLocationId, List<OrderItemResponse> items, long totalPriceWon) {
         this(orderId, campaignId, ticketId, paymentAttemptId, state, checkoutExpiresAt, inventoryState,
-                paymentState, ticketState, source, fulfillmentLocationId, items, totalPriceWon, null, 0);
+                paymentState, ticketState, source, fulfillmentLocationId, items, totalPriceWon, null, 0, null);
     }
 }

@@ -15,6 +15,19 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  security:
+    oauth2:
+      client:
+        registration:
+          paypal:
+            client-id: ${PAYPAL_CLIENT_ID:disabled}
+            client-secret: ${PAYPAL_CLIENT_SECRET:disabled}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+        provider:
+          paypal:
+            token-uri: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}/v1/oauth2/token
+
 
 atlas:
   checkout-window: PT10M
@@ -22,3 +35,12 @@ atlas:
     expiry-poll-interval: PT1S
   orders:
     expiry-poll-interval: PT1S
+  payment:
+    provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
+    paypal:
+      base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
+      client-id: ${PAYPAL_CLIENT_ID:}
+      client-secret: ${PAYPAL_CLIENT_SECRET:}
+      webhook-id: ${PAYPAL_WEBHOOK_ID:}
+      return-url: ${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}/api/checkouts/{checkoutId}/payment/return
+      cancel-url: ${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}/api/checkouts/{checkoutId}/payment/cancel

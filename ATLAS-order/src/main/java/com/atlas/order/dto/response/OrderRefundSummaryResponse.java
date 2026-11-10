@@ -5,5 +5,5 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record OrderRefundSummaryResponse(UUID orderId, OrderRefundStatus status, long totalRecordedAmountWon,
-                                         String executionMode, Instant updatedAt) {
+                                         Instant updatedAt) {
 }

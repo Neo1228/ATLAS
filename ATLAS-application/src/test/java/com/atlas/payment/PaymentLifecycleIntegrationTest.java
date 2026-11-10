@@ -1,33 +1,36 @@
 package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.payment.persistence.state.FakePspResult;
-import com.atlas.payment.persistence.state.PaymentPhase;
-import com.atlas.payment.service.PaymentService;
-import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.dto.response.PaymentResponse;
-import com.atlas.payment.provider.fake.FakePsp;
-
+import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.persistence.state.PaymentRefundState;
+import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.exception.PaymentException;
+import com.atlas.payment.provider.PaymentWebhookEvent;
+import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.service.PaymentService;
+import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import okhttp3.mockwebserver.RecordedRequest;
 
 @Testcontainers
 @SpringBootTest
-class PaymentLifecycleIntegrationTest {
-
+class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
-            .withDatabaseName("atlas")
-            .withUsername("atlas")
-            .withPassword("atlas");
+    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
+            .withDatabaseName("atlas");
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry properties) {
@@ -38,66 +41,171 @@ class PaymentLifecycleIntegrationTest {
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
     }
 
-    @Autowired private PaymentService payments;
-    @Autowired private FakePsp fakePsp;
+    @Autowired
+    private PaymentService payments;
 
     @Test
-    void attemptsAreIdempotentAndUnknownPhasesRecoverOnSameAttempt() {
-        UUID successOrder = UUID.randomUUID();
-        PaymentResponse captured = payments.submitInitial(successOrder);
-        PaymentResponse repeated = payments.submitInitial(successOrder);
-        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
-        assertThat(repeated).isEqualTo(captured);
+    void paypalAuthorizationCaptureAndReplayUseTheLocalProvider() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        BigDecimal amountWon = BigDecimal.valueOf(12900);
 
-        UUID pendingOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
-        PaymentResponse pending = payments.submitInitial(pendingOrder);
+        PaymentResponse pending = payments.submitInitial(orderId, amountWon);
         assertThat(pending.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
-        assertThat(pending.authorizationActive()).isTrue();
-        assertThat(payments.voidAuthorization(pendingOrder, "pending-void-" + pendingOrder)).isEqualTo(pending);
-        assertThat(payments.submitInitial(pendingOrder).attemptId()).isEqualTo(pending.attemptId());
-        PaymentResponse recovered = payments.reconcile(pendingOrder, "pending-reconcile-" + pendingOrder);
+        assertThat(pending.providerOrderId()).isNotBlank();
+        assertThat(pending.approvalUrl()).contains("localhost");
+
+        RecordedRequest firstRequest = takePayPalRequest();
+        if ("/v1/oauth2/token".equals(firstRequest.getPath())) {
+            assertThat(firstRequest.getHeader("Authorization")).startsWith("Basic ");
+            firstRequest = takePayPalRequest();
+        }
+        RecordedRequest createOrder = firstRequest;
+        assertThat(createOrder.getMethod()).isEqualTo("POST");
+        assertThat(createOrder.getPath()).isEqualTo("/v2/checkout/orders");
+        assertThat(createOrder.getHeader("Authorization")).isEqualTo("Bearer local-access-token");
+        assertThat(createOrder.getHeader("PayPal-Request-Id")).isNotBlank();
+        assertThat(createOrder.getBody().readUtf8())
+                .contains("\"intent\":\"AUTHORIZE\"")
+                .contains("\"currency_code\":\"KRW\"")
+                .contains("\"value\":\"12900\"");
+
+        PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
+        assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
+        RecordedRequest approvedOrder = takePayPalRequest();
+        assertThat(approvedOrder.getMethod()).isEqualTo("GET");
+        assertThat(approvedOrder.getPath()).isEqualTo("/v2/checkout/orders/" + pending.providerOrderId());
+        RecordedRequest authorize = takePayPalRequest();
+        assertThat(authorize.getPath()).isEqualTo("/v2/checkout/orders/" + pending.providerOrderId() + "/authorize");
+        assertThat(authorize.getHeader("PayPal-Request-Id")).isNotBlank();
+        assertThat(authorize.getBody().readUtf8()).isEqualTo("{}");
+
+        String captureKey = "capture-replay-" + orderId;
+        PaymentResponse captured = payments.reconcile(orderId, captureKey);
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
+        RecordedRequest capture = takePayPalRequest();
+        assertThat(capture.getPath()).contains("/capture");
+        assertThat(capture.getHeader("PayPal-Request-Id")).isNotBlank().hasSizeLessThanOrEqualTo(38);
+        assertThat(capture.getBody().readUtf8())
+                .contains("\"currency_code\":\"KRW\"")
+                .contains("\"value\":\"12900\"")
+                .contains("\"final_capture\":true");
+
+        PaymentResponse approvalReplay = payments.completeApproval(orderId, pending.providerOrderId());
+        assertThat(approvalReplay.state()).isEqualTo(PaymentState.CAPTURED);
+        PaymentResponse replay = payments.reconcile(orderId, captureKey);
+        assertThat(replay.attemptId()).isEqualTo(captured.attemptId());
+        assertThat(replay.state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(PAYPAL.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
+    }
+
+    @Test
+    void lostCaptureResponseRetriesWithTheSameProviderRequestId() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
+        assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
+
+        String idempotencyKey = "lost-capture-" + orderId;
+        disconnectNextCaptureResponse();
+        PaymentResponse uncertain = payments.reconcile(orderId, idempotencyKey);
+        assertThat(uncertain.state()).isIn(PaymentState.UNKNOWN, PaymentState.CAPTURE_PENDING);
+        RecordedRequest firstCapture = nextCaptureRequest();
+
+        PaymentResponse recovered = payments.reconcile(orderId, idempotencyKey);
         assertThat(recovered.state()).isEqualTo(PaymentState.CAPTURED);
-        assertThat(recovered.attemptId()).isEqualTo(pending.attemptId());
+        RecordedRequest replayedCapture = nextCaptureRequest();
+        assertThat(firstCapture.getHeader("PayPal-Request-Id"))
+                .isEqualTo(replayedCapture.getHeader("PayPal-Request-Id"));
+        assertThat(captureRequestCount()).isEqualTo(2);
+    }
 
-        UUID declineOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.DECLINED);
-        PaymentResponse declined = payments.submitInitial(declineOrder);
-        assertThat(declined.state()).isEqualTo(PaymentState.DECLINED);
-        assertThat(declined.authorizationActive()).isFalse();
+    @Test
+    void lostAuthorizationResponseIsUnknownAndRecoversWithTheSameProviderRequestId() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        disconnectNextAuthorizationResponse();
 
-        UUID voidOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.DECLINED);
-        fakePsp.enqueue(PaymentPhase.VOID, FakePspResult.PENDING, FakePspResult.UNKNOWN, FakePspResult.VOIDED);
-        PaymentResponse captureDeclined = payments.submitInitial(voidOrder);
-        assertThat(captureDeclined.state()).isEqualTo(PaymentState.DECLINED);
-        assertThat(captureDeclined.authorizationActive()).isTrue();
+        PaymentResponse uncertain = payments.completeApproval(orderId, pending.providerOrderId());
+        assertThat(uncertain.state()).isEqualTo(PaymentState.UNKNOWN);
+        String authorizePath = "/v2/checkout/orders/" + pending.providerOrderId() + "/authorize";
+        RecordedRequest firstAuthorization = nextPayPalRequestAtPath(authorizePath);
 
-        PaymentResponse voidPending = payments.voidAuthorization(voidOrder, "void-start-" + voidOrder);
-        assertThat(voidPending.state()).isEqualTo(PaymentState.VOID_PENDING);
-        assertThat(voidPending.authorizationActive()).isTrue();
-        PaymentResponse voidUnknown = payments.reconcile(voidOrder, "void-reconcile-unknown-" + voidOrder);
-        assertThat(voidUnknown.state()).isEqualTo(PaymentState.UNKNOWN);
-        assertThat(voidUnknown.authorizationActive()).isTrue();
-        PaymentResponse voided = payments.reconcile(voidOrder, "void-reconcile-done-" + voidOrder);
-        assertThat(voided.state()).isEqualTo(PaymentState.VOIDED);
-        assertThat(voided.authorizationActive()).isFalse();
-        UUID captureRecoveryOrder = UUID.randomUUID();
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING,
-                FakePspResult.UNKNOWN, FakePspResult.CAPTURED);
-        PaymentResponse capturePending = payments.submitInitial(captureRecoveryOrder);
-        assertThat(capturePending.state()).isEqualTo(PaymentState.CAPTURE_PENDING);
-        assertThat(capturePending.authorizationActive()).isTrue();
-        assertThat(payments.voidAuthorization(captureRecoveryOrder, "capture-void-" + captureRecoveryOrder))
-                .isEqualTo(capturePending);
-        PaymentResponse captureUnknown = payments.reconcile(captureRecoveryOrder, "capture-reconcile-unknown-" + captureRecoveryOrder);
-        assertThat(captureUnknown.state()).isEqualTo(PaymentState.UNKNOWN);
-        PaymentResponse captureRecovered = payments.reconcile(captureRecoveryOrder, "capture-reconcile-done-" + captureRecoveryOrder);
-        assertThat(captureRecovered.state()).isEqualTo(PaymentState.CAPTURED);
-        assertThat(captureRecovered.attemptId()).isEqualTo(capturePending.attemptId());
+        PaymentResponse recovered = payments.reconcile(orderId, "lost-authorization-" + orderId);
+        assertThat(recovered.state()).isEqualTo(PaymentState.CAPTURED);
+        RecordedRequest retriedAuthorization = nextPayPalRequestAtPath(authorizePath);
+        assertThat(retriedAuthorization.getHeader("PayPal-Request-Id"))
+                .isEqualTo(firstAuthorization.getHeader("PayPal-Request-Id"));
+    }
 
-        assertThat(payments.find(successOrder)).isEqualTo(captured);
-        assertThat(payments.find(voidOrder)).isEqualTo(voided);
-        assertThat(payments.find(captureRecoveryOrder)).isEqualTo(captureRecovered);
+    @Test
+    void pendingRefundIsRecoveredByProviderGetAndReplayKeepsProviderRefundId() {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        payments.completeApproval(orderId, pending.providerOrderId());
+        assertThat(payments.reconcile(orderId, "capture-for-refund-" + orderId).state())
+                .isEqualTo(PaymentState.CAPTURED);
+
+        String refundKey = "refund-pending-" + orderId;
+        queueRefundStatus("PENDING");
+        PaymentRefundResponse refundPending = payments.refundOrder(orderId, refundKey, 17200);
+        assertThat(refundPending.status()).isEqualTo(PaymentRefundState.PENDING);
+        assertThat(refundPending.providerRefundId()).isNotBlank();
+
+        PaymentRefundResponse completed = payments.refundOrder(orderId, refundKey, 17200);
+        assertThat(completed.status()).isEqualTo(PaymentRefundState.COMPLETED);
+        assertThat(completed.providerRefundId()).isEqualTo(refundPending.providerRefundId());
+        PaymentRefundResponse replay = payments.refundOrder(orderId, refundKey, 17200);
+        assertThat(replay.refundOperationId()).isEqualTo(completed.refundOperationId());
+        assertThat(replay.providerRefundId()).isEqualTo(completed.providerRefundId());
+    }
+    @Test
+    void webhookSignatureIsVerifiedAndDuplicateCaptureEventIsIdempotent() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        payments.completeApproval(orderId, pending.providerOrderId());
+        PaymentResponse captured = payments.reconcile(orderId, "webhook-capture-" + orderId);
+
+        String eventId = "WH-" + UUID.randomUUID();
+        String rawEvent = "{\"id\":\"" + eventId
+                + "\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"id\":\""
+                + captured.providerCaptureId() + "\",\"status\":\"COMPLETED\"}}";
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local", "2026-11-09T00:00:00Z");
+        PaymentWebhookEvent event = payments.verifyPayPalWebhook(signature, rawEvent);
+        assertThat(event.eventId()).isEqualTo(eventId);
+        RecordedRequest verificationRequest = nextPayPalRequestAtPath(
+                "/v1/notifications/verify-webhook-signature");
+        assertThat(verificationRequest.getMethod()).isEqualTo("POST");
+        assertThat(verificationRequest.getBody().readUtf8())
+                .contains("\"webhook_id\":\"local-test-webhook\"")
+                .contains("\"id\":\"" + eventId + "\"");
+        PaymentWebhookResult accepted = payments.processVerifiedPayPalWebhook(event);
+        assertThat(accepted.accepted()).isTrue();
+        PaymentWebhookResult duplicate = payments.processVerifiedPayPalWebhook(event);
+        assertThat(duplicate.duplicate()).isTrue();
+        assertThat(payments.find(orderId).providerCaptureId()).isEqualTo(captured.providerCaptureId());
+
+        queueWebhookVerificationStatus("FAILURE");
+        assertThatThrownBy(() -> payments.verifyPayPalWebhook(signature, rawEvent))
+                .isInstanceOf(PaymentException.class);
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+    }
+    private RecordedRequest nextPayPalRequestAtPath(String path) throws InterruptedException {
+        RecordedRequest request;
+        while ((request = takePayPalRequest()) != null) {
+            if (request.getPath().equals(path)) {
+                return request;
+            }
+        }
+        return null;
+    }
+    private RecordedRequest nextCaptureRequest() throws InterruptedException {
+        RecordedRequest request;
+        while ((request = takePayPalRequest()) != null) {
+            if (request.getPath().contains("/capture")) {
+                return request;
+            }
+        }
+        return null;
     }
 }

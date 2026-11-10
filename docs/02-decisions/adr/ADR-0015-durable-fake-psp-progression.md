@@ -1,6 +1,6 @@
 # ADR-0015: Fake PSP 진행 상태의 PostgreSQL 저장
 
-- 상태: 승인
+- 상태: 일부 대체 — Fake PSP-only runtime은 [ADR-0026](ADR-0026-paypal-sandbox-payments.md)으로 교체. Durable provider-operation 기록과 업무 transaction 분리 원칙은 유지.
 - 날짜: 2026-11-05
 - 결정: D-070
 - 요구사항: FR-010
@@ -17,6 +17,7 @@
 - provider 결과 기록은 독립 transaction으로 먼저 commit. Order·inventory·settlement·fulfillment 효과는 기존 업무 transaction에서 처리.
 - 수동 reconcile/cancel 요청에 `Idempotency-Key` 필수. 내부 suffix를 포함한 저장 key 길이를 `VARCHAR(255)` 이내로 제한.
 - Fake PSP는 로컬 시뮬레이터만 담당. 외부 PSP 호출, 실제 자금 이동, 자동 polling/worker는 추가하지 않음.
+- 후속 결정: [ADR-0026](ADR-0026-paypal-sandbox-payments.md)은 실제 PayPal Sandbox provider를 추가하며, 이 ADR의 Fake PSP 전용 범위를 대체.
 
 ## 선택 이유와 대안
 

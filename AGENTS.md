@@ -22,12 +22,12 @@
 | `admission-module` | FIFO 대기열, ticket, checkout slot, queue policy |
 | `inventory-module` | 공유 재고 pool, reservation, 수량 보존 |
 | `order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem·location snapshot, Shipment·fulfillment·refund·return |
-| `payment-module` | PaymentAttempt와 Fake PSP 상태 |
+| `payment-module` | PaymentAttempt, PayPal provider operation·resource state; Sandbox payment integration (credentials absent이면 disabled) |
 | `settlement-module` | 내부 gross-capture 원장, Seller allocation, local refund reversal, read-only Seller statement; 실제 payout 없음 |
 
 - Current Cart·checkout cardinality and return policy: [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md).
 - 모듈 간 호출은 공개 `.service`/DTO 계약으로 제한. 다른 모듈의 entity/repository 직접 참조 금지.
-- 일반 Cart 구매: Buyer-wide Cart `(sellerId, skuId)` → BuyerCheckout와 Seller별 PurchaseOrder → OrderItem snapshot → 전체 재고 atomic reservation → checkout당 Fake PSP attempt/capture 1회 → Seller별 allocation·fulfillment. Delivered return은 Seller 수령 후 OrderItem 검수; PASSED만 local refund/restock, FAILED는 claimed 유지.
+- 일반 Cart 구매: Buyer-wide Cart `(sellerId, skuId)` → BuyerCheckout와 Seller별 PurchaseOrder → OrderItem snapshot → 전체 재고 atomic reservation → PayPal order·구매자 승인·authorization/capture → 확인된 capture의 Seller별 allocation·fulfillment. Provider disabled 시 payment request는 명시적으로 실패. Delivered return은 Seller 수령 후 OrderItem 검수; PASSED만 local refund/restock, FAILED는 claimed 유지.
 - Catalog discovery: Seller-owned flat ProductCategory와 Product의 same-Seller ownership은 Catalog 소유. `categoryId` filter는 Seller scope에서만 허용; Inventory availability는 query 조건이 아님 ([D-074](docs/00-governance/decision-log.md), [ADR-0019](docs/02-decisions/adr/ADR-0019-seller-product-categories.md)).
 - Shipment는 실제 dispatch 시점에 기록. SellerOrder마다 여러 package와 OrderItem 수량 분할 가능; `shipped + direct pre-shipment refunded <= ordered`. 모든 net shippable quantity delivery 전 Return 거부. Carrier 연동 없이 local simulation ([D-073](docs/00-governance/decision-log.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
 - Location-aware 재고: Inventory가 SellerOrder의 모든 line을 충족하는 active location 하나를 priority ASC·UUID ASC로 선택. 주문 분할 금지. Reservation/PurchaseOrder에 선택 위치를 저장하고 claim·release·return-restock에 재사용. 기존 pool은 V16에서 `DEFAULT`로 보존 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
@@ -84,12 +84,17 @@ docker compose up -d --wait postgres
 - Product 판매 상태와 채널 가용성은 Catalog 소유. 주문·대기열은 Catalog 공개 Service로 판정; 공개 목록은 판매 가능한 상품만 노출하고 Seller 관리 목록은 비활성 상태도 보존.
 - Schema는 Flyway가 관리하고 Hibernate는 `ddl-auto: validate`만 수행. 병렬 작업의 migration version은 coordinator가 배정.
 - 모듈별 오류는 타입이 지정된 예외와 `Code`로 표현. `GlobalExceptionHandler`는 RFC 9457 `ProblemDetail`과 고정 `code` 반환. 예기치 않은 500 응답에 내부 상세를 노출하지 않음.
-- GET 등 조회 요청은 상태를 변경하지 않음. 만료·재시도·대기열 승격은 상태 변경 요청이나 scheduler가 처리.
+- GET 조회는 상태 변경 금지. PayPal return/cancel redirect는 provider protocol callback 예외이며, 저장된 order ID·금액·통화 확인과 idempotency 필수 ([ADR-0026](docs/02-decisions/adr/ADR-0026-paypal-sandbox-payments.md)). 그 외 상태 변경은 POST 또는 scheduler에서 처리.
+- API·Actuator 기본 bind는 `127.0.0.1`. `ATLAS_SERVER_ADDRESS`·`MANAGEMENT_SERVER_ADDRESS=0.0.0.0`은 격리된 local Docker 테스트에서만 허용; host/public 노출 금지.
+- PayPal OAuth2 Client는 outbound 인증 전용. `ApiSecurityConfiguration`은 loopback-only API의 `permitAll`·CSRF 비활성 정책; inbound 인증은 비범위.
 - Transaction 경계는 도메인 불변조건 기준. PostgreSQL 잠금/SQL 경합은 실제 DB로 검증. `@Transactional` proxy 대상 class/method에 `final` 사용 금지.
 - CQRS, CommandBus, handler/mediator, 사전 `common` module, 범용 base/mapper/framework 금지. 실제 요구 없이 모듈·라이브러리·인프라 추가 금지.
 - 신규 라이브러리가 직접 구현보다 적합하면 기능·호환성·보안·유지보수·라이선스·실행/테스트/빌드 범위와 대안을 Issue/PR에 기록.
 - 주요 식별자는 UUIDv7 결정(D-056)과 현재 migration을 확인. Hibernate ID 생성 API와 버전은 Spring Boot BOM 기준 검증.
 
+- 외부 결제: provider HTTP 호출은 업무 DB transaction 밖에서 수행. provider operation ID와 결과를 저장하고, endpoint별 idempotency 지원을 확인. timeout/unknown은 상태 조회 후 재조정; 무조건 재시도 금지.
+- 내부 settlement ledger는 provider에서 확인된 capture/refund만 반영. 원장 기록을 실제 판매자 지급으로 표현하지 않음.
+- 비밀값은 코드·문서·fixture·로그·Issue/PR 본문에 기록 금지. 개발용 Sandbox credential은 소유자 승인 후 GitHub Actions Secrets 또는 ignore된 `.env.local`에서만 사용. GitHub Actions Secrets는 로컬로 자동 전달되지 않음.
 ## 중요 파일
 
 - `settings.gradle`: Gradle project와 `ATLAS-*` 디렉터리 연결.
@@ -107,8 +112,9 @@ docker compose up -d --wait postgres
 - 저장소에서 고정한 버전: Java 25, Gradle Wrapper 9.8.2, Spring Boot 4.1.2, PostgreSQL 18.6.
 - 전역 Gradle 대신 저장소 Wrapper 사용. 일반 의존성은 `implementation`, PostgreSQL/Flyway는 실행 시, Lombok은 `compileOnly`+`annotationProcessor`, 테스트 도구는 테스트 전용.
 - 테스트 도구: JUnit Platform, Spring Boot Test, Testcontainers PostgreSQL 18.6, ArchUnit 1.5.1. Backend CI는 Java 25와 Docker 확인 뒤 Gradle check 실행.
+- PayPal HTTP 계약은 test-only MockWebServer로 검증. Runtime FakePsp·가짜 성공 fallback 금지; CI는 Sandbox 결제 호출 금지.
 - 문서 검사는 Node 22와 markdownlint-cli2 0.24.0 사용. `package.json` 또는 별도 JavaScript package-manager workflow는 없음.
-- 클라우드 및 실제 결제·환불은 범위 밖. PayPal Sandbox는 미래 후보일 뿐 승인된 통합이 아니며 Fake PSP는 PayPal 동작을 재현하지 않음.
+- Cloud 배포, live 결제·환불, seller payout은 비범위. PayPal Sandbox 결제·환불 연동은 ADR-0026에서 승인; 자격 증명 없이는 비활성. Sandbox 결과를 운영 근거로 해석하지 않음.
 - Cache, broker, search service, worker, 외부 library를 선제 도입하지 않음. PostgreSQL 기본 구현의 병목·기능 공백을 재현한 뒤 비용과 대안을 비교.
 
 ## 테스트와 품질 점검

@@ -51,10 +51,12 @@ import com.atlas.order.service.OrderService;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.impl.OrderServiceImpl;
 import com.atlas.order.service.impl.CheckoutPaymentServiceImpl;
-import com.atlas.payment.persistence.state.FakePspResult;
-import com.atlas.payment.persistence.state.PaymentPhase;
+import com.atlas.payment.PayPalIntegrationTestSupport;
+import com.atlas.application.service.PayPalWebhookService;
+import com.atlas.payment.dto.response.PaymentResponse;
+import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.state.PaymentState;
-import com.atlas.payment.provider.fake.FakePsp;
 import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Duration;
@@ -92,7 +94,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest
-class BuyerFlowIntegrationTest {
+class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
 
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
@@ -111,7 +113,9 @@ class BuyerFlowIntegrationTest {
 
     @Autowired private OrderServiceImpl orderServiceImpl;
     @Autowired private CheckoutPaymentServiceImpl checkoutLifecycle;
+    @Autowired private PaymentService payments;
 
+    @Autowired private PayPalWebhookService paypalWebhooks;
     @Autowired private AdmissionServiceImpl admissionServiceImpl;
     @Autowired private AdmissionService admission;
     @Autowired private CampaignService campaigns;
@@ -122,12 +126,19 @@ class BuyerFlowIntegrationTest {
     @Autowired private OrderService orders;
     @Autowired private OrderFulfillmentService orderFulfillments;
     @Autowired private CartCheckoutService cartCheckouts;
-    @Autowired private FakePsp fakePsp;
     @Autowired private AdjustableClock clock;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private MockMvc mockMvc;
 @Autowired private JdbcTemplate jdbc;
 
+
+    private CheckoutResponse completePayPalCheckout(CheckoutResponse pending) {
+        return checkoutLifecycle.completeApproval(pending.checkoutId(), approvalToken(pending.paymentApprovalUrl()));
+    }
+
+    private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
+        return completePayPalCheckout(checkoutLifecycle.submit(checkoutId));
+    }
     @BeforeEach
     void resetClock() {
         clock.set(Instant.parse("2026-11-02T00:00:00Z"));
@@ -297,10 +308,7 @@ class BuyerFlowIntegrationTest {
         assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         products.updateStatus(sellerId, product.productId(), ProductStatus.INACTIVE);
 
-        CheckoutResponse paid = objectMapper.readValue(mockMvc.perform(
-                        post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
-                CheckoutResponse.class);
+        CheckoutResponse paid = completePayPalCheckout(checkout.checkoutId());
         assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(paid.orders()).singleElement().satisfies(paidOrder -> {
             assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
@@ -379,7 +387,10 @@ assertUuidV7(first.ticketId());
 assertUuidV7(order.orderId());
         assertThat(order.state()).isEqualTo(OrderState.RESERVED);
         assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
-        assertThat(orders.submitPayment(order.orderId()).state()).isEqualTo(OrderState.PAID);
+        OrderResponse paymentPending = orders.submitPayment(order.orderId());
+        OrderResponse paid = orders.completePaymentApproval(order.orderId(),
+                approvalToken(paymentPending.paymentApprovalUrl()));
+        assertThat(paid.state()).isEqualTo(OrderState.PAID);
 
         OrderFulfillmentResponse fulfillment = objectMapper.readValue(
                 mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
@@ -532,7 +543,10 @@ assertUuidV7(paymentOrderId);
         assertThat(held.available()).isZero();
         assertThat(held.reserved()).isEqualTo(1);
         assertConserved(held);
-        assertThat(orders.submitPayment(first.orderId()).state()).isEqualTo(OrderState.PAID);
+        OrderResponse paymentPending = orders.submitPayment(first.orderId());
+        OrderResponse paid = orders.completePaymentApproval(first.orderId(),
+                approvalToken(paymentPending.paymentApprovalUrl()));
+        assertThat(paid.state()).isEqualTo(OrderState.PAID);
     }
 
     @Test
@@ -540,9 +554,13 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-recovery", "recovery-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
-        OrderResponse unknown = orders.submitPayment(order.orderId());
+        OrderResponse pending = orders.submitPayment(order.orderId());
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        String providerOrderId = pending.paymentApprovalUrl()
+                .substring(pending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        queueAuthorizationStatus("UNKNOWN");
+        OrderResponse unknown = orders.completePaymentApproval(order.orderId(), providerOrderId);
         assertThat(unknown.state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
         assertThat(unknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
         assertThat(unknown.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
@@ -566,7 +584,6 @@ assertUuidV7(paymentOrderId);
                 "max-reconcile-ticket");
         OrderResponse reconcileOrder = orders.startCheckout(reconcileCampaign.campaignId(),
                 reconcileTicket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
         orders.submitPayment(reconcileOrder.orderId());
         assertThatCode(() -> orders.reconcilePayment(reconcileOrder.orderId(), maximumKey))
                 .doesNotThrowAnyException();
@@ -574,7 +591,6 @@ assertUuidV7(paymentOrderId);
         CampaignResponse cancelCampaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse cancelTicket = join(cancelCampaign, "buyer-max-cancel", "max-cancel-ticket");
         OrderResponse cancelOrder = orders.startCheckout(cancelCampaign.campaignId(), cancelTicket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.UNKNOWN);
         orders.submitPayment(cancelOrder.orderId());
         assertThatCode(() -> orders.cancel(cancelOrder.orderId(), maximumKey))
                 .doesNotThrowAnyException();
@@ -585,11 +601,9 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-oversized-key", "oversized-key-ticket");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
         OrderResponse pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
 
-        long operationCount = jdbc.queryForObject("SELECT COUNT(*) FROM payment_fake_psp_operation", Long.class);
         String oversizedKey = "x".repeat(222);
         assertThatThrownBy(() -> orders.reconcilePayment(order.orderId(), oversizedKey))
                 .isInstanceOfSatisfying(OrderException.class, exception ->
@@ -598,8 +612,6 @@ assertUuidV7(paymentOrderId);
                 .isInstanceOfSatisfying(OrderException.class, exception ->
                         assertThat(exception.code()).isEqualTo(OrderException.Code.INVALID_REQUEST));
 
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_fake_psp_operation", Long.class))
-                .isEqualTo(operationCount);
         assertThat(orders.find(order.orderId()).paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(orders.cancel(order.orderId(), "oversized-key-cleanup").state()).isEqualTo(OrderState.CANCELLED);
     }
@@ -609,16 +621,13 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-cancel", "cancel-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING,
-                FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
         OrderResponse pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
-        OrderResponse retry = orders.cancel(order.orderId(), "cancel-operation-1");
-        assertThat(retry.state()).isEqualTo(OrderState.CANCEL_PENDING);
-        assertThat(retry.paymentState()).isEqualTo(PaymentState.UNKNOWN);
-        assertThat(orders.cancel(order.orderId(), "cancel-operation-1")).isEqualTo(retry);
-        OrderResponse cancelled = orders.cancel(order.orderId(), "cancel-operation-2");
+        OrderResponse cancelled = orders.cancel(order.orderId(), "cancel-operation-1");
+        assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
+        assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
+        assertThat(orders.cancel(order.orderId(), "cancel-operation-1")).isEqualTo(cancelled);
 
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
@@ -634,9 +643,13 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-api-recovery", "api-recovery-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
 
-        OrderResponse unknown = orders.submitPayment(order.orderId());
+        OrderResponse pending = orders.submitPayment(order.orderId());
+        String providerOrderId = pending.paymentApprovalUrl()
+                .substring(pending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        queueAuthorizationStatus("UNKNOWN");
+        OrderResponse unknown = orders.completePaymentApproval(order.orderId(), providerOrderId);
+        assertThat(unknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
         mockMvc.perform(post("/api/orders/{orderId}/reconcile", order.orderId())
                         .header("Idempotency-Key", "reconcile-" + order.orderId()))
                 .andExpect(status().isOk())
@@ -668,7 +681,6 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-api-cancel", "api-cancel-key");
         OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
 
         orders.submitPayment(order.orderId());
         mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId())
@@ -729,29 +741,29 @@ assertUuidV7(paymentOrderId);
         QueueTicketResponse secondTicket = join(campaign, "same-buyer", "second-key");
         OrderResponse first = orders.startCheckout(campaign.campaignId(), firstTicket.ticketId());
         OrderResponse second = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
-
-        mockMvc.perform(post("/api/orders/{orderId}/payment", first.orderId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value(OrderState.PAYMENT_UNKNOWN.name()))
-                .andExpect(jsonPath("$.paymentState").value(PaymentState.UNKNOWN.name()));
-        assertThat(orders.find(first.orderId()).state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
+        OrderResponse firstPending = objectMapper.readValue(mockMvc.perform(post("/api/orders/{orderId}/payment", first.orderId()))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(), OrderResponse.class);
+        assertThat(firstPending.state()).isEqualTo(OrderState.PAYMENT_PENDING);
+        assertThat(firstPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
 
         mockMvc.perform(post("/api/orders/{orderId}/payment", second.orderId()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"));
 
-        mockMvc.perform(post("/api/orders/{orderId}/reconcile", first.orderId())
-                        .header("Idempotency-Key", "buyer-retry-" + first.orderId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value(OrderState.PAID.name()))
-                .andExpect(jsonPath("$.paymentState").value(PaymentState.CAPTURED.name()));
+        String firstProviderOrderId = firstPending.paymentApprovalUrl()
+                .substring(firstPending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        OrderResponse firstPaid = orders.completePaymentApproval(first.orderId(), firstProviderOrderId);
+        assertThat(firstPaid.state()).isEqualTo(OrderState.PAID);
+        assertThat(firstPaid.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(orders.find(first.orderId()).state()).isEqualTo(OrderState.PAID);
 
-        mockMvc.perform(post("/api/orders/{orderId}/payment", second.orderId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value(OrderState.PAID.name()))
-                .andExpect(jsonPath("$.paymentState").value(PaymentState.CAPTURED.name()));
+        OrderResponse secondPending = orders.submitPayment(second.orderId());
+        String secondProviderOrderId = secondPending.paymentApprovalUrl()
+                .substring(secondPending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        OrderResponse secondPaid = orders.completePaymentApproval(second.orderId(), secondProviderOrderId);
+        assertThat(secondPaid.state()).isEqualTo(OrderState.PAID);
+        assertThat(secondPaid.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(orders.find(second.orderId()).state()).isEqualTo(OrderState.PAID);
         InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(2);
@@ -783,7 +795,7 @@ assertUuidV7(paymentOrderId);
                 "SELECT unit_price_won FROM order_item WHERE order_item_id = ?", Long.class, orderItemId))
                 .isEqualTo(800L);
 
-        CheckoutResponse paid = checkoutLifecycle.submit(checkout.checkoutId());
+        CheckoutResponse paid = completePayPalCheckout(checkout.checkoutId());
         OrderResponse paidOrder = paid.orders().getFirst();
         assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
         assertThat(jdbc.queryForObject(
@@ -805,7 +817,7 @@ assertUuidV7(paymentOrderId);
                                 {"items":[{"orderItemId":"%s","quantity":1}]}
                                 """.formatted(orderItemId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.recordedAmountWon").value(800))
+                .andExpect(jsonPath("$.refundAmountWon").value(800))
                 .andReturn().getResponse().getContentAsString();
         OrderRefundResponse refund = objectMapper.readValue(refundBody, OrderRefundResponse.class);
         assertThat(jdbc.queryForObject(
@@ -875,9 +887,7 @@ assertUuidV7(paymentOrderId);
         assertThat(orderA.items()).extracting(OrderItemResponse::couponDiscountWon).containsExactly(51L, 50L);
         assertThat(orderA.items()).extracting(OrderItemResponse::lineTotalWon).containsExactly(1949L, 1950L);
 
-        String capturedJson = mockMvc.perform(post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        CheckoutResponse captured = objectMapper.readValue(capturedJson, CheckoutResponse.class);
+        CheckoutResponse captured = completePayPalCheckout(checkout.checkoutId());
         assertThat(captured.totalWon()).isEqualTo(4349);
         assertThat(jdbc.queryForObject("SELECT gross_amount_won FROM settlement_journal WHERE checkout_id = ?",
                 Long.class, checkout.checkoutId())).isEqualTo(4349L);
@@ -909,7 +919,7 @@ assertUuidV7(paymentOrderId);
                                 {"items":[{"orderItemId":"%s","quantity":1}]}
                                 """.formatted(firstItemId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.recordedAmountWon").value(974))
+                .andExpect(jsonPath("$.refundAmountWon").value(974))
                 .andReturn().getResponse().getContentAsString();
         OrderRefundResponse firstRefund = objectMapper.readValue(firstRefundJson, OrderRefundResponse.class);
         assertThat(jdbc.queryForObject(
@@ -923,7 +933,7 @@ assertUuidV7(paymentOrderId);
                                 {"items":[{"orderItemId":"%s","quantity":1}]}
                                 """.formatted(firstItemId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.recordedAmountWon").value(975))
+                .andExpect(jsonPath("$.refundAmountWon").value(975))
                 .andReturn().getResponse().getContentAsString();
         OrderRefundResponse secondRefund = objectMapper.readValue(secondRefundJson, OrderRefundResponse.class);
         assertThat(jdbc.queryForObject(
@@ -1323,9 +1333,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
                 .path("items").size()).isZero();
 
-        CheckoutResponse paid = objectMapper.readValue(mockMvc.perform(
-                post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        CheckoutResponse paid = completePayPalCheckout(checkout.checkoutId());
         assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(paid.orders()).allSatisfy(order -> {
             assertThat(order.state()).isEqualTo(OrderState.PAID);
@@ -1381,18 +1389,17 @@ assertUuidV7(paymentOrderId);
                 CheckoutResponse.class);
         assertThat(checkout.orders()).hasSize(2);
 
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.UNKNOWN, FakePspResult.AUTHORIZED);
         CheckoutResponse unknown = objectMapper.readValue(mockMvc.perform(
                 post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
                 CheckoutResponse.class);
-        assertThat(unknown.state().name()).isEqualTo("PAYMENT_UNKNOWN");
-        assertThat(unknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
+        assertThat(unknown.state().name()).isEqualTo("PAYMENT_PENDING");
+        assertThat(unknown.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(unknown.paymentAttemptId()).isNotNull();
         List<OrderResponse> unknownOrders = unknown.orders();
         assertThat(unknownOrders).hasSize(2);
         assertThat(unknownOrders).allSatisfy(order -> {
-            assertThat(order.state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
+            assertThat(order.state()).isEqualTo(OrderState.PAYMENT_PENDING);
             assertThat(order.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
             assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         });
@@ -1405,17 +1412,15 @@ assertUuidV7(paymentOrderId);
         clock.advance(Duration.ofMinutes(11));
         checkoutLifecycle.expireDueCheckouts();
         CheckoutResponse heldCheckout = checkoutLifecycle.find(checkout.checkoutId());
-        assertThat(heldCheckout.state()).isEqualTo(BuyerCheckoutState.PAYMENT_UNKNOWN);
+        assertThat(heldCheckout.state()).isEqualTo(BuyerCheckoutState.PAYMENT_PENDING);
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
             assertThat(inventory.find(sellerId, sku).reserved()).isEqualTo(1);
         }
 
 
-        CheckoutResponse recovered = objectMapper.readValue(mockMvc.perform(
-                post("/api/checkouts/{checkoutId}/reconcile", checkout.checkoutId())
-                        .header("Idempotency-Key", "unknown-reconcile-" + checkout.checkoutId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
-                CheckoutResponse.class);
+        String providerOrderId = unknown.paymentApprovalUrl()
+                .substring(unknown.paymentApprovalUrl().lastIndexOf('/') + 1);
+        CheckoutResponse recovered = checkoutLifecycle.completeApproval(checkout.checkoutId(), providerOrderId);
         assertThat(recovered.state().name()).isEqualTo("PAID");
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
@@ -1589,7 +1594,6 @@ assertUuidV7(paymentOrderId);
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
         OrderResponse order = checkout.orders().getFirst();
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
         CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
                 post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
@@ -1821,10 +1825,8 @@ assertUuidV7(paymentOrderId);
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse competitorCheckout = objectMapper.readValue(competitorJson, CheckoutResponse.class);
         OrderResponse competitorOrder = competitorCheckout.orders().getFirst();
-        assertThat(objectMapper.readValue(mockMvc.perform(
-                post("/api/checkouts/{checkoutId}/payment", competitorCheckout.checkoutId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class)
-                .state().name()).isEqualTo("PAID");
+        CheckoutResponse paidCompetitor = completePayPalCheckout(competitorCheckout.checkoutId());
+        assertThat(paidCompetitor.state().name()).isEqualTo("PAID");
 
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
                         buyerRef, sellerId, existingSku)
@@ -1873,7 +1875,11 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isNotFound());
         mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start",
                         sellerId, order.orderId())).andExpect(status().isConflict());
-        mockMvc.perform(post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+        CheckoutResponse paymentPending = objectMapper.readValue(mockMvc.perform(
+                        post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        mockMvc.perform(get("/api/checkouts/{checkoutId}/payment/return", paymentPending.checkoutId())
+                        .param("token", approvalToken(paymentPending.paymentApprovalUrl())))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start",
                         UUID.randomUUID(), order.orderId())).andExpect(status().isConflict());
@@ -1923,12 +1929,15 @@ assertUuidV7(paymentOrderId);
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
         OrderResponse order = checkout.orders().getFirst();
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING, FakePspResult.CAPTURED);
         CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
                         post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
-        assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         UUID attemptId = pending.paymentAttemptId();
+        assertThat(attemptId).isNotNull();
+        String token = pending.paymentApprovalUrl()
+                .substring(pending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        int captureRequestsBeforeReturn = captureRequestCount();
         assertThat(attemptId).isNotNull();
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_fulfillment_insert() RETURNS TRIGGER AS $$
@@ -1944,9 +1953,10 @@ assertUuidV7(paymentOrderId);
                 FOR EACH ROW EXECUTE FUNCTION fail_fulfillment_insert()
                 """);
         try {
-            assertThatThrownBy(() -> checkoutLifecycle.reconcile(checkout.checkoutId(),
-                    "downstream-retry-" + order.orderId()))
-                    .isInstanceOf(RuntimeException.class);
+        mockMvc.perform(get("/api/checkouts/{checkoutId}/payment/return", checkout.checkoutId())
+                        .param("token", token))
+                .andExpect(status().is5xxServerError());
+        assertThat(captureRequestCount()).isEqualTo(captureRequestsBeforeReturn + 1);
             OrderResponse unchanged = orders.find(order.orderId());
             assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);
             assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
@@ -1968,6 +1978,7 @@ assertUuidV7(paymentOrderId);
         CheckoutResponse recoveredCheckout = checkoutLifecycle.reconcile(checkout.checkoutId(),
                 "downstream-retry-" + order.orderId());
         OrderResponse recovered = recoveredCheckout.orders().getFirst();
+        assertThat(captureRequestCount()).isEqualTo(captureRequestsBeforeReturn + 1);
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
@@ -2077,6 +2088,33 @@ assertUuidV7(paymentOrderId);
         assertConserved(stock);
     }
 
+    @Test
+    void duplicateVerifiedCaptureWebhookDoesNotDuplicateLedgerOrInventoryEffects() {
+        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse ticket = join(campaign, "webhook-buyer", "webhook-key");
+        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderResponse awaitingApproval = orders.submitPayment(order.orderId());
+        String providerOrderId = awaitingApproval.paymentApprovalUrl()
+                .substring(awaitingApproval.paymentApprovalUrl().lastIndexOf('/') + 1);
+        OrderResponse paid = orders.completePaymentApproval(order.orderId(), providerOrderId);
+        PaymentResponse captured = payments.find(order.orderId());
+
+        String eventId = "WH-" + UUID.randomUUID();
+        String rawBody = "{\"id\":\"" + eventId
+                + "\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"id\":\""
+                + captured.providerCaptureId() + "\",\"status\":\"COMPLETED\"}}";
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-webhook-" + eventId,
+                "signature-local", "2026-11-09T00:00:00Z");
+        paypalWebhooks.handle(signature, rawBody);
+        paypalWebhooks.handle(signature, rawBody);
+
+        assertThat(orders.find(order.orderId()).state()).isEqualTo(OrderState.PAID);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM settlement_journal WHERE source_attempt_id = ?",
+                Long.class, paid.paymentAttemptId())).isEqualTo(1L);
+        assertThat(inventory.find(campaign.sellerId(), campaign.skuId()).claimed()).isEqualTo(1);
+    }
     @TestConfiguration
     static class ClockConfiguration {
         @Bean

@@ -46,7 +46,7 @@
 - CRUD는 JPA, PostgreSQL 특화 동시성 SQL은 모듈 내부 `.repository`에서 처리.
 - Location routing은 모든 Seller 주문 line을 만족하는 active location 하나를 priority ASC, UUID ASC로 정합니다. Reservation/PurchaseOrder가 선택 위치를 보존하고 return-restock도 이를 사용합니다. 기존 재고는 V16에서 DEFAULT로 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
 - SellerOrder shipment는 dispatch 시 생성하며 한 주문의 OrderItem quantity를 여러 package로 나눠 출고할 수 있습니다. 직접 pre-shipment refund를 뺀 전체 수량 배송 전에는 Return을 받지 않습니다. Carrier/tracking은 선택 metadata; 외부 운송사 연동은 없음 ([D-073](docs/00-governance/decision-log.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
-- 배송 전 부분 환불은 OrderItem 수량과 KRW price snapshot으로 local refund record 및 append-only reversal을 남깁니다. `executionMode: LOCAL_LEDGER_ONLY`는 실제 PSP 요청이나 고객 자금 이동이 없음을 뜻합니다. 상태 전이는 기존 `OrderState.PAID`와 분리하며, 환불 수량만 재고로 복원 ([D-068](docs/00-governance/decision-log.md), [ADR-0013](docs/02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md)).
+- PayPal Sandbox: 승인 후 capture, 완료 환불만 내부 원장·재고에 반영. Seller payout 미구현. [D-081](docs/00-governance/decision-log.md), [ADR-0026](docs/02-decisions/adr/ADR-0026-paypal-sandbox-payments.md).
 - Cart 응답은 Seller별 SKU를 Catalog에서 묶어 조회합니다. Inventory는 주문의 모든 SKU를 각 location에서 함께 확인하며, Shipment 요약은 OrderItem별 출고·배송 합계를 사용합니다.
 - 생성 primary ID는 UUIDv7. 근거·한계: [D-056](docs/00-governance/decision-log.md), [ADR-0007](docs/02-decisions/adr/ADR-0007-uuidv7-identifiers.md).
 - Schema는 Flyway 소유, Hibernate는 `ddl-auto: validate`.
@@ -64,10 +64,13 @@ docker compose up -d --wait postgres
 - API bind address: `127.0.0.1:8080`.
 - 전체 compile·Checkstyle·unit/integration tests: `./gradlew --no-daemon check :application-module:bootJar`.
 - Colima/Testcontainers 환경 변수: [AGENTS.md](AGENTS.md#개발-명령).
+- PayPal Sandbox는 선택 설정. `.env.example`을 `.env.local`로 복사해 Sandbox 값을 입력하고, 파일 권한을 `600`으로 제한. 실행 전 `set -a; source .env.local; set +a`.
+- PayPal 실행 설정: 자격 증명을 준비한 경우 `.env.local`에 `ATLAS_PAYMENT_PROVIDER=paypal`; 기본값은 `disabled`. 환경 변수: `PAYPAL_BASE_URL`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`.
+- GitHub Actions Secrets에는 개발용 Sandbox 값 저장. Secrets는 로컬 컴퓨터로 전달되지 않으므로, 로컬에서는 password manager 등 보안 저장소에서 `.env.local`로 별도 설정.
 
 ## 기본 구매 흐름
 
-일반 구매는 Buyer-wide Cart와 Seller별 주문. 한 Cart checkout은 BuyerCheckout 1건, Seller당 PurchaseOrder 1건, Fake PSP attempt/capture 1회를 사용. 한정판매 Campaign은 별도 구매 경로.
+일반 구매는 Buyer-wide Cart와 Seller별 주문. Cart checkout은 BuyerCheckout 1건과 Seller당 PurchaseOrder 1건을 만들고, PayPal order 승인 후 capture. 확인된 capture/refund만 내부 settlement ledger에 반영. Sandbox 자격 증명 없이는 결제 요청이 명시적으로 비활성화됨. 한정판매 Campaign은 별도 구매 경로.
 - Location 관리: Seller 생성 `POST /api/sellers/{sellerId}/fulfillment-locations`, 목록 `GET /api/sellers/{sellerId}/fulfillment-locations`, 수정 `PUT /api/sellers/{sellerId}/fulfillment-locations/{locationId}`.
 - 위치별 재고 조회 `GET /api/sellers/{sellerId}/inventory/locations/{locationId}`·조정 `POST /api/sellers/{sellerId}/inventory/locations/{locationId}/skus/{skuId}/capacity-adjustments`. 기존 `/api/sellers/{sellerId}/inventory/{skuId}/capacity-adjustments`는 `DEFAULT` location 대상.
 - 재고 이전 `POST /api/sellers/{sellerId}/inventory/transfers`와 `Idempotency-Key`. Checkout 라인은 Seller 주문별 한 location에서 처리. 우선순위 ASC, 동률 UUID ASC ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
@@ -101,3 +104,5 @@ Cart는 Buyer 소유이며 여러 Seller의 SKU·수량을 포함할 수 있음.
 ## Database 시작 정책
 
 V6/V7은 clean-start 전용. V8 Reorder, V9 fulfillment, V10 capture ledger, V11 pre-shipment refund, V12 inventory audit, V13 durable Fake PSP, V14 BuyerCheckout·Buyer-wide Cart, V15 delivered return/inspection, V16 fulfillment location·transfer, V17 SellerOrder shipment·partial dispatch, V18 Seller ProductCategory·Product backfill, V19 Product 판매 상태·채널별 가용성을 추가. 기존 migration은 수정하지 않으며, V14는 기존 commerce row가 있으면 mapping/backfill 없이 중단. 근거: [D-055/D-071/D-072/D-073/D-074/D-076](docs/00-governance/decision-log.md), [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md), [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md), [ADR-0019](docs/02-decisions/adr/ADR-0019-seller-product-categories.md), [ADR-0021](docs/02-decisions/adr/ADR-0021-product-orderability-lifecycle.md).
+
+- V13은 Flyway history 보존용 과거 schema. V24에서 Fake PSP 테이블을 제거하고 PayPal provider operation·webhook schema로 전환.

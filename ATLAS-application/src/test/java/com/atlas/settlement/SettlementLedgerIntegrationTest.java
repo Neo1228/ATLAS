@@ -15,10 +15,8 @@ import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderService;
-import com.atlas.payment.persistence.state.FakePspResult;
-import com.atlas.payment.persistence.state.PaymentPhase;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.payment.persistence.state.PaymentState;
-import com.atlas.payment.provider.fake.FakePsp;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
@@ -41,7 +39,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
 @SpringBootTest
-class SettlementLedgerIntegrationTest {
+class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
             .withDatabaseName("atlas")
@@ -63,7 +61,6 @@ class SettlementLedgerIntegrationTest {
     @Autowired private CartCheckoutService checkouts;
     @Autowired private OrderService orders;
     @Autowired private CheckoutPaymentService checkoutPayments;
-    @Autowired private FakePsp fakePsp;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PaymentService payments;
     @Autowired private SettlementService settlement;
@@ -75,7 +72,12 @@ class SettlementLedgerIntegrationTest {
         String buyerRef = "settlement-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 2);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "settlement-" + UUID.randomUUID());
-        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().get(0);
+        CheckoutResponse authorizationPending = checkoutPayments.submit(checkout.checkoutId());
+        assertThat(authorizationPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        String providerOrderId = authorizationPending.paymentApprovalUrl()
+                .substring(authorizationPending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        CheckoutResponse completed = checkoutPayments.completeApproval(checkout.checkoutId(), providerOrderId);
+        OrderResponse paid = completed.orders().get(0);
 
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
@@ -98,9 +100,14 @@ class SettlementLedgerIntegrationTest {
         String buyerRef = "declined-settlement-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "declined-settlement-" + UUID.randomUUID());
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.DECLINED);
 
-        OrderResponse declined = checkoutPayments.submit(checkout.checkoutId()).orders().get(0);
+        CheckoutResponse authorizationPending = checkoutPayments.submit(checkout.checkoutId());
+        assertThat(authorizationPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        String providerOrderId = authorizationPending.paymentApprovalUrl()
+                .substring(authorizationPending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        queueAuthorizationStatus("DENIED");
+        CheckoutResponse declinedCheckout = checkoutPayments.completeApproval(checkout.checkoutId(), providerOrderId);
+        OrderResponse declined = declinedCheckout.orders().get(0);
 
         assertThat(declined.paymentState()).isEqualTo(PaymentState.DECLINED);
         assertThat(declined.paymentAttemptId()).isNotNull();
@@ -114,10 +121,12 @@ class SettlementLedgerIntegrationTest {
         String buyerRef = "settlement-retry-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "settlement-retry-" + UUID.randomUUID());
-        fakePsp.enqueue(PaymentPhase.CAPTURE, FakePspResult.PENDING, FakePspResult.CAPTURED);
 
-        OrderResponse pending = checkoutPayments.submit(checkout.checkoutId()).orders().get(0);
-        assertThat(pending.paymentState()).isEqualTo(PaymentState.CAPTURE_PENDING);
+        CheckoutResponse authorizationPending = checkoutPayments.submit(checkout.checkoutId());
+        assertThat(authorizationPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        String providerOrderId = authorizationPending.paymentApprovalUrl()
+                .substring(authorizationPending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        OrderResponse pending = authorizationPending.orders().get(0);
         assertThat(pending.paymentAttemptId()).isNotNull();
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_seller_payable_entry() RETURNS TRIGGER AS $$
@@ -135,9 +144,8 @@ class SettlementLedgerIntegrationTest {
                 FOR EACH ROW EXECUTE FUNCTION fail_seller_payable_entry()
                 """);
         try {
-            assertThatThrownBy(() -> checkoutPayments.reconcile(
-                    checkout.checkoutId(), "settlement-downstream-" + checkout.checkoutId()))
-                    .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> checkoutPayments.completeApproval(checkout.checkoutId(), providerOrderId))
+                .isInstanceOf(RuntimeException.class);
             assertThat(journalCount(pending.paymentAttemptId())).isZero();
             OrderResponse unchanged = orders.find(pending.orderId());
             assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);

@@ -90,6 +90,10 @@ public class GlobalExceptionHandler {
                 case ATTEMPT_NOT_FOUND ->
                         response(HttpStatus.NOT_FOUND, "PAYMENT_ATTEMPT_NOT_FOUND", payment.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", payment.getMessage());
+                case PAYMENT_PROVIDER_DISABLED ->
+                        response(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_PROVIDER_DISABLED", payment.getMessage());
+                case PAYMENT_PROVIDER_UNAVAILABLE ->
+                        response(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_PROVIDER_UNAVAILABLE", payment.getMessage());
             };
         }
 

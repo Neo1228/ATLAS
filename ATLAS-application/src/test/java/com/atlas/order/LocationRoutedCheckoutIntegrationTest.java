@@ -1,6 +1,7 @@
 package com.atlas.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -28,9 +29,7 @@ import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.response.OrderReturnResponse;
 import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.service.OrderService;
-import com.atlas.payment.persistence.state.FakePspResult;
-import com.atlas.payment.persistence.state.PaymentPhase;
-import com.atlas.payment.provider.fake.FakePsp;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -51,7 +50,7 @@ import tools.jackson.databind.ObjectMapper;
 @Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest
-class LocationRoutedCheckoutIntegrationTest {
+class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 
@@ -73,7 +72,6 @@ class LocationRoutedCheckoutIntegrationTest {
     @Autowired private CampaignService campaigns;
     @Autowired private AdmissionService admission;
     @Autowired private OrderService orders;
-    @Autowired private FakePsp fakePsp;
     @Autowired private ObjectMapper mapper;
 
     @Test
@@ -184,7 +182,6 @@ class LocationRoutedCheckoutIntegrationTest {
         UUID selectedLocation = orderLocation(order);
         assertThat(selectedLocation).isEqualTo(location.locationId());
 
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
         orders.submitPayment(order.orderId());
         String cancelKey = "location-cancel-" + UUID.randomUUID();
         orders.cancel(order.orderId(), cancelKey);
@@ -212,7 +209,6 @@ class LocationRoutedCheckoutIntegrationTest {
                                 campaign.campaignId(), ticket.ticketId()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderResponse.class);
 
-        fakePsp.enqueue(PaymentPhase.AUTHORIZATION, FakePspResult.PENDING, FakePspResult.AUTHORIZED);
         mockMvc.perform(post("/api/orders/{orderId}/payment", order.orderId()))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId())
@@ -247,8 +243,14 @@ class LocationRoutedCheckoutIntegrationTest {
         OrderResponse order = checkout.orders().getFirst();
         assertThat(order.fulfillmentLocationId()).isEqualTo(origin.locationId());
 
-        CheckoutResponse paid = mapper.readValue(mockMvc.perform(
+        CheckoutResponse paymentPending = mapper.readValue(mockMvc.perform(
                         post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        String providerOrderId = paymentPending.paymentApprovalUrl()
+                .substring(paymentPending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        CheckoutResponse paid = mapper.readValue(mockMvc.perform(
+                        get("/api/checkouts/{checkoutId}/payment/return", paymentPending.checkoutId())
+                                .param("token", providerOrderId))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
         assertThat(paid.orders().getFirst().state().name()).isEqualTo("PAID");
 
