@@ -475,8 +475,26 @@ assertUuidV7(paymentOrderId);
         CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
         String buyerRef = "buyer-duplicate-join-" + UUID.randomUUID();
         String idempotencyKey = "duplicate-join-" + UUID.randomUUID();
+        jdbc.update("INSERT INTO admission_counter (seller_id, sku_id, last_sequence) VALUES (?, ?, 0) "
+                + "ON CONFLICT (seller_id, sku_id) DO NOTHING", campaign.sellerId(), campaign.skuId());
         CyclicBarrier start = new CyclicBarrier(3);
-        try (var executor = Executors.newFixedThreadPool(2)) {
+        try (var executor = Executors.newFixedThreadPool(2);
+                var lockConnection = java.util.Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
+            lockConnection.setAutoCommit(false);
+            int blockerPid;
+            try (var statement = lockConnection.createStatement();
+                    var result = statement.executeQuery("SELECT pg_backend_pid()")) {
+                result.next();
+                blockerPid = result.getInt(1);
+            }
+            try (var statement = lockConnection.prepareStatement(
+                    "SELECT last_sequence FROM admission_counter WHERE seller_id = ? AND sku_id = ? FOR UPDATE")) {
+                statement.setObject(1, campaign.sellerId());
+                statement.setString(2, campaign.skuId());
+                try (var result = statement.executeQuery()) {
+                    result.next();
+                }
+            }
             Future<QueueTicketResponse> first = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(campaign, buyerRef, idempotencyKey);
@@ -487,6 +505,21 @@ assertUuidV7(paymentOrderId);
             });
 
             start.await(10, TimeUnit.SECONDS);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            int blockedJoinCount = 0;
+            while (System.nanoTime() < deadline) {
+                blockedJoinCount = jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_stat_activity
+                        WHERE ? = ANY(pg_blocking_pids(pid))
+                          AND position('FROM admission_counter' in query) > 0
+                        """, Integer.class, blockerPid);
+                if (blockedJoinCount == 2) {
+                    break;
+                }
+                Thread.sleep(10);
+            }
+            assertThat(blockedJoinCount).isEqualTo(2);
+            lockConnection.commit();
             QueueTicketResponse firstResult = first.get(10, TimeUnit.SECONDS);
             QueueTicketResponse secondResult = second.get(10, TimeUnit.SECONDS);
 
