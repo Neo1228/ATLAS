@@ -170,7 +170,7 @@ public final class OrderServiceImpl implements OrderService {
             return requireOrder(orderId);
         });
         if (prepared.state() != OrderState.PAYMENT_SUBMITTED) return find(orderId);
-        // The external PSP call remains outside the database transaction.
+        // 외부 PSP 호출은 DB 트랜잭션 밖에서 수행한다.
         PaymentResponse payment = payments.submitInitial(orderId);
         if (payment.state() == PaymentState.DECLINED && payment.authorizationActive()) {
             payment = payments.voidAuthorization(orderId, "submit-void:" + orderId);

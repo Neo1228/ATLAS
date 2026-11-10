@@ -52,7 +52,7 @@ public class OrderFulfillment {
         return true;
     }
 
-    /** Derives summary state from shipment totals; callers cannot set a state directly. */
+    /** 출고 수량을 바탕으로 요약 상태를 계산한다. 호출자가 상태를 직접 지정할 수 없다. */
     public boolean refreshSummary(long totalShippable, long totalDispatched, long totalDelivered, Instant now) {
         Objects.requireNonNull(now);
         if (totalShippable <= 0) return false;
