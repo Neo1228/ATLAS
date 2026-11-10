@@ -1,10 +1,12 @@
 package com.atlas.payment.repository;
 
 import com.atlas.payment.persistence.entity.PaymentAttempt;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -35,5 +37,12 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
 
     Optional<PaymentAttempt> findByOrderId(UUID orderId);
     Optional<PaymentAttempt> findByCheckoutId(UUID checkoutId);
+    Optional<PaymentAttempt> findByProviderOrderId(String providerOrderId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select attempt from PaymentAttempt attempt where attempt.providerOrderId = :providerOrderId")
+    Optional<PaymentAttempt> findWithLockByProviderOrderId(@Param("providerOrderId") String providerOrderId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select attempt from PaymentAttempt attempt where attempt.providerCaptureId = :providerCaptureId")
+    Optional<PaymentAttempt> findWithLockByProviderCaptureId(@Param("providerCaptureId") String providerCaptureId);
     Optional<PaymentAttempt> findByProviderCaptureId(String providerCaptureId);
 }

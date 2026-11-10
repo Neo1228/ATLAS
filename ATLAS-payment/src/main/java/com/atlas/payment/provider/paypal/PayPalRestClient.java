@@ -125,15 +125,32 @@ public class PayPalRestClient {
                     new TypeReference<Map<String, Object>>() { });
             Object rawResource = event.get("resource");
             Map<?, ?> resource = rawResource instanceof Map<?, ?> map ? map : Map.of();
+            Object rawAmount = resource.get("amount");
+            Map<?, ?> amount = rawAmount instanceof Map<?, ?> map ? map : Map.of();
+            Object rawSupplementary = resource.get("supplementary_data");
+            Map<?, ?> supplementary = rawSupplementary instanceof Map<?, ?> map ? map : Map.of();
+            Object rawRelatedIds = supplementary.get("related_ids");
+            Map<?, ?> relatedIds = rawRelatedIds instanceof Map<?, ?> map ? map : Map.of();
             Object eventId = event.get("id");
             Object eventType = event.get("event_type");
             Object resourceId = resource.get("id");
             Object resourceStatus = resource.get("status");
+            Object amountValue = amount.get("value");
+            BigDecimal resourceAmount = amountValue instanceof String value
+                    ? new BigDecimal(value) : null;
+            Object resourceCurrency = amount.get("currency_code");
+            Object providerOrderId = relatedIds.get("order_id");
+            Object relatedCaptureId = resource.get("capture_id");
+            if (relatedCaptureId == null) relatedCaptureId = relatedIds.get("capture_id");
             return new PaymentWebhookEvent(
                     eventId instanceof String value ? value : null,
                     eventType instanceof String value ? value : null,
                     resourceId instanceof String value ? value : null,
-                    resourceStatus instanceof String value ? value : null);
+                    resourceStatus instanceof String value ? value : null,
+                    providerOrderId instanceof String value ? value : null,
+                    relatedCaptureId instanceof String value ? value : null,
+                    resourceAmount,
+                    resourceCurrency instanceof String value ? value : null);
         } catch (JacksonException exception) {
             throw new IllegalArgumentException("PayPal webhook body is not valid JSON", exception);
         }

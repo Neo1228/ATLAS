@@ -12,6 +12,8 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.application.service.PayPalWebhookService;
+import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +45,10 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     @Autowired
     private PaymentService payments;
+    @Autowired
+    private PayPalWebhookService webhookService;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void paypalAuthorizationCaptureAndReplayUseTheLocalProvider() throws Exception {
@@ -166,13 +172,16 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentResponse captured = payments.reconcile(orderId, "webhook-capture-" + orderId);
 
         String eventId = "WH-" + UUID.randomUUID();
-        String rawEvent = "{\"id\":\"" + eventId
-                + "\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"id\":\""
-                + captured.providerCaptureId() + "\",\"status\":\"COMPLETED\"}}";
+        String captureId = captured.providerCaptureId();
+        String rawEvent = captureWebhook(eventId, captured.providerOrderId(), captureId, "17200", "KRW");
         PaymentWebhookSignature signature = new PaymentWebhookSignature(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local", "2026-11-09T00:00:00Z");
         PaymentWebhookEvent event = payments.verifyPayPalWebhook(signature, rawEvent);
         assertThat(event.eventId()).isEqualTo(eventId);
+        assertThat(event.providerOrderId()).isEqualTo(captured.providerOrderId());
+        assertThat(event.resourceId()).isEqualTo(captureId);
+        assertThat(event.resourceAmount()).isEqualTo(BigDecimal.valueOf(17200));
+        assertThat(event.resourceCurrency()).isEqualTo("KRW");
         RecordedRequest verificationRequest = nextPayPalRequestAtPath(
                 "/v1/notifications/verify-webhook-signature");
         assertThat(verificationRequest.getMethod()).isEqualTo("POST");
@@ -183,12 +192,89 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(accepted.accepted()).isTrue();
         PaymentWebhookResult duplicate = payments.processVerifiedPayPalWebhook(event);
         assertThat(duplicate.duplicate()).isTrue();
-        assertThat(payments.find(orderId).providerCaptureId()).isEqualTo(captured.providerCaptureId());
+        assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(payments.find(orderId).providerCaptureId()).isEqualTo(captureId);
 
         queueWebhookVerificationStatus("FAILURE");
         assertThatThrownBy(() -> payments.verifyPayPalWebhook(signature, rawEvent))
                 .isInstanceOf(PaymentException.class);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+    }
+
+    @Test
+    void unmatchedCaptureWebhookRemainsRetryableWhileMappedMismatchIsQuarantined() throws Exception {
+        assertCaptureWebhookMismatchIsQuarantined("17200.01", "KRW");
+        assertCaptureWebhookMismatchIsQuarantined("17200", "USD");
+        assertUnknownCaptureWebhookCanBeRetried();
+    }
+
+    private void assertCaptureWebhookMismatchIsQuarantined(String amount, String currency) throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
+        String eventId = "WH-" + UUID.randomUUID();
+        String captureId = "CAPTURE-WH-" + UUID.randomUUID();
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId, amount, currency);
+
+        webhookService.handle(signature, rawBody);
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("FAILED");
+        PaymentResponse unchanged = payments.find(orderId);
+        assertThat(unchanged).usingRecursiveComparison().isEqualTo(authorized);
+        assertThat(unchanged.state()).isEqualTo(PaymentState.AUTHORIZED);
+        assertThat(unchanged.providerCaptureId()).isNull();
+
+        PaymentWebhookEvent rejectedEvent = payments.verifyPayPalWebhook(signature, rawBody);
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        PaymentWebhookResult duplicate = payments.processVerifiedPayPalWebhook(rejectedEvent);
+        assertThat(duplicate.duplicate()).isTrue();
+        assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.AUTHORIZED);
+    }
+
+    private void assertUnknownCaptureWebhookCanBeRetried() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
+        String eventId = "WH-" + UUID.randomUUID();
+        String captureId = "CAPTURE-WH-" + UUID.randomUUID();
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String unmatchedRawBody = captureWebhook(
+                eventId, authorized.providerOrderId() + "-unknown", captureId, "17200", "KRW");
+        assertThatThrownBy(() -> webhookService.handle(signature, unmatchedRawBody))
+                .isInstanceOf(PaymentException.class)
+                .hasMessageContaining("correlated yet");
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        PaymentWebhookEvent unmatched = payments.verifyPayPalWebhook(signature, unmatchedRawBody);
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        PaymentWebhookResult retryable = payments.processVerifiedPayPalWebhook(unmatched);
+        assertThat(retryable.accepted()).isFalse();
+        assertThat(retryable.retryable()).isTrue();
+        assertThat(retryable.duplicate()).isFalse();
+        assertThat(payments.find(orderId)).usingRecursiveComparison().isEqualTo(authorized);
+
+        PaymentWebhookEvent corrected = payments.verifyPayPalWebhook(signature,
+                captureWebhook(eventId, authorized.providerOrderId(), captureId, "17200", "KRW"));
+        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
+        PaymentWebhookResult accepted = payments.processVerifiedPayPalWebhook(corrected);
+        assertThat(accepted.accepted()).isTrue();
+        assertThat(accepted.duplicate()).isFalse();
+        assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
+    }
+
+    private static String captureWebhook(String eventId, String providerOrderId, String captureId,
+            String amount, String currency) {
+        return "{\"id\":\"" + eventId
+                + "\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"id\":\"" + captureId
+                + "\",\"status\":\"COMPLETED\",\"amount\":{\"currency_code\":\"" + currency
+                + "\",\"value\":\"" + amount
+                + "\"},\"supplementary_data\":{\"related_ids\":{\"order_id\":\"" + providerOrderId + "\"}}}}";
     }
     private RecordedRequest nextPayPalRequestAtPath(String path) throws InterruptedException {
         RecordedRequest request;

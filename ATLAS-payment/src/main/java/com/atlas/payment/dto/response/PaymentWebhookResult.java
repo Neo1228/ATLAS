@@ -9,5 +9,10 @@ public record PaymentWebhookResult(
         UUID refundOperationId,
         PaymentRefundState refundStatus,
         UUID paymentAttemptId,
-        boolean captureConfirmed) {
+        boolean captureConfirmed,
+        boolean retryable) {
+    public PaymentWebhookResult(boolean duplicate, boolean accepted, UUID refundOperationId,
+            PaymentRefundState refundStatus, UUID paymentAttemptId, boolean captureConfirmed) {
+        this(duplicate, accepted, refundOperationId, refundStatus, paymentAttemptId, captureConfirmed, false);
+    }
 }

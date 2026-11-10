@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -339,48 +340,95 @@ public class PaymentServiceImpl implements PaymentService {
         if (event == null) throw invalidRequest("Verified PayPal webhook event is required");
         Instant now = Instant.now();
         return Objects.requireNonNull(transactions.execute(status -> {
+            if ("PAYMENT.CAPTURE.COMPLETED".equals(event.eventType())) {
+                Optional<PaymentAttempt> attempt = event.providerOrderId() == null
+                        ? Optional.empty() : repository.findWithLockByProviderOrderId(event.providerOrderId());
+                if (attempt.isEmpty() && event.resourceId() != null) {
+                    attempt = repository.findWithLockByProviderCaptureId(event.resourceId());
+                }
+                if (attempt.isEmpty()) {
+                    return new PaymentWebhookResult(false, false, null, null, null, false, true);
+                }
+                PaymentAttempt current = attempt.get();
+                if (!"COMPLETED".equalsIgnoreCase(event.resourceStatus())
+                        || event.resourceAmount() == null || current.getTotalWon() == null
+                        || event.resourceAmount().compareTo(BigDecimal.valueOf(current.getTotalWon())) != 0
+                        || !"KRW".equalsIgnoreCase(event.resourceCurrency())
+                        || event.resourceId() == null
+                        || (event.providerOrderId() != null
+                        && !event.providerOrderId().equals(current.getProviderOrderId()))
+                        || (current.getProviderCaptureId() != null
+                        && !event.resourceId().equals(current.getProviderCaptureId()))) {
+                    return rejectedWebhook(event, now);
+                }
+                if (!webhookEvents.insertReceived(event, now)) {
+                    return new PaymentWebhookResult(true, true, null, null, null, false);
+                }
+                current.setProviderCaptureId(event.resourceId());
+                current.setState(PaymentState.CAPTURED);
+                current.setPaymentPhase(PaymentPhase.CAPTURE);
+                current.setAuthorizationActive(false);
+                repository.save(current);
+                webhookEvents.markProcessed(event.eventId(), now);
+                return new PaymentWebhookResult(false, true, null, null, current.getAttemptId(), true);
+            }
+
+            PaymentRefundState refundState = refundWebhookState(event.eventType());
+            if (refundState != null) {
+                if (event.resourceId() == null) {
+                    return new PaymentWebhookResult(false, false, null, null, null, false, true);
+                }
+                var operation = refunds.findByProviderRefundIdForUpdate(event.resourceId());
+                if (operation.isEmpty()) {
+                    return new PaymentWebhookResult(false, false, null, null, null, false, true);
+                }
+                PaymentRefundOperation current = operation.get();
+                String expectedStatus = switch (refundState) {
+                    case COMPLETED -> "COMPLETED";
+                    case PENDING, UNKNOWN -> "PENDING";
+                    case FAILED -> "FAILED";
+                };
+                if (event.resourceAmount() == null
+                        || event.resourceAmount().compareTo(BigDecimal.valueOf(current.amountWon())) != 0
+                        || !current.currency().equalsIgnoreCase(event.resourceCurrency())
+                        || !expectedStatus.equalsIgnoreCase(event.resourceStatus())
+                        || (event.relatedCaptureId() != null
+                        && !current.captureId().equals(event.relatedCaptureId()))) {
+                    return rejectedWebhook(event, now);
+                }
+                if (!webhookEvents.insertReceived(event, now)) {
+                    return new PaymentWebhookResult(true, true, null, null, null, false);
+                }
+                refunds.updateResult(current.refundOperationId(), refundState, event.resourceId(),
+                        event.resourceStatus(), now);
+                webhookEvents.markProcessed(event.eventId(), now);
+                return new PaymentWebhookResult(false, true, current.refundOperationId(),
+                        refundState, null, false);
+            }
+
             if (!webhookEvents.insertReceived(event, now)) {
                 return new PaymentWebhookResult(true, true, null, null, null, false);
             }
-            UUID refundOperationId = null;
-            PaymentRefundState refundStatus = null;
-            UUID attemptId = null;
-            boolean captureConfirmed = false;
-            if (event.eventType().startsWith("PAYMENT.REFUND.")
-                    || "PAYMENT.CAPTURE.REFUNDED".equals(event.eventType())) {
-                PaymentRefundState eventState = switch (event.eventType()) {
-                    case "PAYMENT.REFUND.COMPLETED" -> PaymentRefundState.COMPLETED;
-                    case "PAYMENT.CAPTURE.REFUNDED" -> PaymentRefundState.COMPLETED;
-                    case "PAYMENT.REFUND.PENDING" -> PaymentRefundState.PENDING;
-                    case "PAYMENT.REFUND.FAILED" -> PaymentRefundState.FAILED;
-                    default -> null;
-                };
-                if (eventState != null && event.resourceId() != null) {
-                    var operation = refunds.findByProviderRefundIdForUpdate(event.resourceId());
-                    if (operation.isPresent()) {
-                        PaymentRefundOperation current = operation.get();
-                        refunds.updateResult(current.refundOperationId(), eventState, event.resourceId(),
-                                event.resourceStatus(), now);
-                        refundOperationId = current.refundOperationId();
-                        refundStatus = eventState;
-                    }
-                }
-            } else if ("PAYMENT.CAPTURE.COMPLETED".equals(event.eventType()) && event.resourceId() != null) {
-                var attempt = repository.findByProviderCaptureId(event.resourceId());
-                if (attempt.isPresent()) {
-                    PaymentAttempt current = attempt.get();
-                    current.setState(PaymentState.CAPTURED);
-                    current.setPaymentPhase(PaymentPhase.CAPTURE);
-                    current.setAuthorizationActive(false);
-                    repository.save(current);
-                    attemptId = current.getAttemptId();
-                    captureConfirmed = true;
-                }
-            }
             webhookEvents.markProcessed(event.eventId(), now);
-            return new PaymentWebhookResult(false, true, refundOperationId, refundStatus, attemptId,
-                    captureConfirmed);
+            return new PaymentWebhookResult(false, true, null, null, null, false);
         }));
+    }
+    private PaymentWebhookResult rejectedWebhook(PaymentWebhookEvent event, Instant now) {
+        if (!webhookEvents.insertReceived(event, now)) {
+            return new PaymentWebhookResult(true, true, null, null, null, false);
+        }
+        webhookEvents.markFailed(event.eventId(), now);
+        return new PaymentWebhookResult(false, false, null, null, null, false);
+    }
+
+
+    private static PaymentRefundState refundWebhookState(String eventType) {
+        return switch (eventType) {
+            case "PAYMENT.REFUND.COMPLETED", "PAYMENT.CAPTURE.REFUNDED" -> PaymentRefundState.COMPLETED;
+            case "PAYMENT.REFUND.PENDING" -> PaymentRefundState.PENDING;
+            case "PAYMENT.REFUND.FAILED" -> PaymentRefundState.FAILED;
+            default -> null;
+        };
     }
 
     private static PaymentRefundResponse refundResponse(PaymentRefundOperation operation, PaymentRefundState state,

@@ -81,6 +81,11 @@ sequenceDiagram
 - 현재 API는 `127.0.0.1` loopback 전용. `buyerRef`·`checkoutId`는 auth/tenant 경계가 아니므로 공개망 노출 금지; 인증·인가·tenant isolation은 [Q-007](../../01-requirements/requirements-index.md#assumptions-and-open-questions) 후속.
 - Seller payout, dispute/chargeback, buyer account onboarding, live credentials는 별도 결정과 검증 대상.
 
+- Webhook 서명 검증은 PayPal payload의 진위만 증명하며, 로컬 결제와의 상관관계나 재무 사실을 보증하지 않는다. resource가 로컬 operation에 아직 매핑되지 않으면 결제 상태와 event ID를 기록하지 않고 일시 실패(503)로 응답한다. 재전달 시 operation이 생성되거나 매핑될 수 있기 때문이다.
+- resource가 이미 로컬 operation에 매핑된 뒤 금액·통화·상태·order/capture identity가 다르면 영구 불일치로 분류한다. 상태/원장은 바꾸지 않고 event ID를 `FAILED`로 기록한 뒤 acknowledged rejection(204)으로 끝내 재시도를 멈춘다. 이 격리는 영구 잘못된 payload의 무한 재전달 비용과 transient unmatched event의 복구 가능성 사이의 tradeoff다.
+- 상관관계 결과와 event ID는 기존 DB의 unique event ID 및 row lock을 사용해 하나의 outer transaction 안에서 기록한다. `FAILED`는 처리 완료와 구분되며 동일 event ID 재전달은 duplicate로 처리한다. 처리와 reconciliation은 동기식으로 유지하고 별도 queue, worker, retry 계층은 도입하지 않는다. 다른 시스템에 별도 side effect를 발행하게 되면 outbox를 다시 검토한다.
+- PayPal endpoint는 공식 sandbox를 기본값으로 한다. 공식 sandbox hostname과 로컬 loopback 테스트만 허용해 임의 host 사용을 막는다. Live 결제 처리는 의도적으로 지원하지 않으며 이 프로젝트 범위 밖이다. 실결제를 위한 hostname은 항상 거절하여 실결제 오구성 및 임의 endpoint로의 서버 요청을 예방한다.
+
 ## 참고 자료
 
 - [PayPal OAuth 2.0](https://developer.paypal.com/api/rest/authentication/)
