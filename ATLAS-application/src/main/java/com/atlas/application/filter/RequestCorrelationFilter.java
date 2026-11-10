@@ -22,8 +22,13 @@ public class RequestCorrelationFilter extends OncePerRequestFilter {
         String requestId = UUID.randomUUID().toString();
         request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
-        try (MDC.MDCCloseable ignored = MDC.putCloseable(REQUEST_ID_MDC_KEY, requestId)) {
+        String previousRequestId = MDC.get(REQUEST_ID_MDC_KEY);
+        MDC.put(REQUEST_ID_MDC_KEY, requestId);
+        try {
             chain.doFilter(request, response);
+        } finally {
+            if (previousRequestId == null) MDC.remove(REQUEST_ID_MDC_KEY);
+            else MDC.put(REQUEST_ID_MDC_KEY, previousRequestId);
         }
     }
 }
