@@ -31,6 +31,7 @@ import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
+import com.atlas.account.dto.response.AccountTokenResponse;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
@@ -74,6 +75,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -84,6 +86,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -93,7 +98,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @SpringBootTest
 class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
 
@@ -131,6 +136,11 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private MockMvc mockMvc;
 @Autowired private JdbcTemplate jdbc;
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
 
     private CheckoutResponse completePayPalCheckout(CheckoutResponse pending) {
@@ -2056,6 +2066,23 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void sellerCanRegisterProductAndSkuThroughCatalogApi() throws Exception {
+        String accountJson = mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"seller-api@example.com","password":"long-enough-password"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        AccountTokenResponse account = objectMapper.readValue(accountJson, AccountTokenResponse.class);
+        Instant tokenTime = Instant.now();
+        Jwt testJwt = Jwt.withTokenValue("test-token")
+                .header("alg", "none")
+                .subject(account.accountId().toString())
+                .issuedAt(tokenTime)
+                .expiresAt(tokenTime.plusSeconds(600))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(testJwt));
+
         String sellerJson = mockMvc.perform(post("/api/sellers"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
@@ -2108,7 +2135,6 @@ assertUuidV7(paymentOrderId);
         InventoryPoolResponse stock = inventory.find(sellerId, "seller-api-sku");
         assertThat(stock.initialCapacity()).isEqualTo(5);
     }
-
     private CampaignResponse openCampaign(int initialStock, int maxActiveCheckouts, Duration ticketTtl) {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "sku-" + UUID.randomUUID();

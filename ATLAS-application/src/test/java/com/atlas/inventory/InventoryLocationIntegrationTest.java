@@ -38,7 +38,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @SpringBootTest
 class InventoryLocationIntegrationTest {
     @Container

@@ -10,4 +10,5 @@ public interface OrderService {
     OrderResponse reconcilePayment(UUID orderId, String idempotencyKey);
     OrderResponse cancel(UUID orderId, String idempotencyKey);
     OrderResponse find(UUID orderId);
+    boolean isOwnedByBuyer(UUID orderId, String buyerRef);
 }

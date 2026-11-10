@@ -61,7 +61,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @SpringBootTest
 class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Container

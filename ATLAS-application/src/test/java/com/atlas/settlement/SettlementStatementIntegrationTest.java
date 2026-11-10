@@ -49,7 +49,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @SpringBootTest
 class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
     private static final Instant PERIOD_FROM = Instant.parse("2020-01-01T00:00:00Z");

@@ -1,5 +1,6 @@
 package com.atlas.application.exception;
 
+import com.atlas.account.domain.AccountException;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.campaign.exception.CampaignException;
 import com.atlas.cart.exception.CartException;
@@ -25,6 +26,7 @@ public class GlobalExceptionHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler({
+            AccountException.class,
             CampaignException.class,
             AdmissionException.class,
             CartException.class,
@@ -35,6 +37,15 @@ public class GlobalExceptionHandler {
             SettlementException.class
     })
     ResponseEntity<ProblemDetail> moduleException(RuntimeException exception) {
+        if (exception instanceof AccountException account) {
+            return switch (account.code()) {
+                case INVALID_CREDENTIALS, INVALID_REFRESH_TOKEN, REFRESH_TOKEN_REUSED, ACCOUNT_DISABLED ->
+                        response(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", account.getMessage());
+                case EMAIL_ALREADY_USED -> response(HttpStatus.CONFLICT, "ACCOUNT_CONFLICT", account.getMessage());
+                case RESOURCE_NOT_OWNED -> response(HttpStatus.FORBIDDEN, "FORBIDDEN", account.getMessage());
+                case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", account.getMessage());
+            };
+        }
         if (exception instanceof CampaignException campaign) {
             return switch (campaign.code()) {
                 case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "CAMPAIGN_NOT_FOUND", campaign.getMessage());
