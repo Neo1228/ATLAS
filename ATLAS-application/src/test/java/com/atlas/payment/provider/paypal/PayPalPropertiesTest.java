@@ -11,7 +11,6 @@ class PayPalPropertiesTest {
         PayPalProperties properties = new PayPalProperties();
 
         assertThat(properties.getBaseUrl()).isEqualTo("https://api-m.sandbox.paypal.com");
-        assertThat(properties.isLivePaymentsEnabled()).isFalse();
         properties.validateBaseUrl();
     }
 
@@ -30,7 +29,5 @@ class PayPalPropertiesTest {
 
         assertThatThrownBy(properties::validateBaseUrl).isInstanceOf(IllegalStateException.class);
 
-        properties.setLivePaymentsEnabled(true);
-        properties.validateBaseUrl();
     }
 }

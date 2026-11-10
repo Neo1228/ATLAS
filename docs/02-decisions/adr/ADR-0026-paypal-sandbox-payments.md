@@ -84,7 +84,7 @@ sequenceDiagram
 - Webhook 서명 검증은 PayPal이 보낸 payload의 진위만 증명한다. 서명된 이벤트가 우리 결제에 해당하는지 또는 재무 사실이 맞는지까지 보증하지 않으므로, capture 완료 이벤트는 provider order/capture ID, `COMPLETED`, 저장된 결제 총액, `KRW`를 대조한다. 미확인 주문이나 금액·통화 불일치는 PaymentAttempt를 변경하지 않고 event ID도 선점하지 않는다.
 - 상관관계·금액 검증 후에만 기존 DB의 unique event ID와 PaymentAttempt를 같은 transaction에서 기록한다. DB row lock과 event ID 제약으로 동시 처리와 재전달을 다루므로 분산 lock은 중복된 조정 수단이다. 현재 변경 효과는 한 DB 안의 상태 전이뿐이므로 outbox, 별도 inbox, 비동기 worker/queue도 추가하지 않는다. 다른 시스템에 별도 side effect를 발행하게 되면 outbox를 다시 검토한다.
 - 서명 검증은 PayPal API 왕복을 포함해 동기 처리하므로 요청 latency가 늘고, 검증/일시적 상관관계 실패의 재시도는 PayPal 재전달에 의존한다. 별도 비동기 재시도 계층을 두지 않는 대신 흐름을 단순하게 유지한다. 거절 이벤트를 저장하지 않으므로 동일 event ID의 수정된/재전달된 payload가 나중에 검증되면 처리할 수 있다.
-- PayPal endpoint는 공식 sandbox를 기본값으로 한다. 공식 sandbox/live hostname과 로컬 loopback 테스트만 허용해 임의 host 사용을 막는다. live hostname은 별도 `ATLAS_PAYMENT_PAYPAL_LIVE_ENABLED=true` 명시가 없으면 거절하여 실결제 오구성 및 임의 endpoint로의 서버 요청을 예방한다.
+- PayPal endpoint는 공식 sandbox를 기본값으로 한다. 공식 sandbox hostname과 로컬 loopback 테스트만 허용해 임의 host 사용을 막는다. Live 결제 처리는 의도적으로 지원하지 않으며 이 프로젝트 범위 밖이다. 실결제를 위한 hostname은 항상 거절하여 실결제 오구성 및 임의 endpoint로의 서버 요청을 예방한다.
 
 ## 참고 자료
 

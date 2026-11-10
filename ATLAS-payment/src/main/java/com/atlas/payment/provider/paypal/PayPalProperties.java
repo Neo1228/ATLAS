@@ -9,7 +9,6 @@ import org.springframework.util.StringUtils;
 @ConfigurationProperties(prefix = "atlas.payment.paypal")
 public class PayPalProperties {
     private String baseUrl = "https://api-m.sandbox.paypal.com";
-    private boolean livePaymentsEnabled;
     private String clientId;
     private String clientSecret;
     private String webhookId;
@@ -18,10 +17,6 @@ public class PayPalProperties {
 
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
-    public boolean isLivePaymentsEnabled() { return livePaymentsEnabled; }
-    public void setLivePaymentsEnabled(boolean livePaymentsEnabled) {
-        this.livePaymentsEnabled = livePaymentsEnabled;
-    }
     public String getClientId() { return clientId; }
     public void setClientId(String clientId) { this.clientId = clientId; }
     public String getClientSecret() { return clientSecret; }
@@ -43,19 +38,14 @@ public class PayPalProperties {
         String host = endpoint.getHost();
         boolean local = "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host);
         boolean sandbox = "api-m.sandbox.paypal.com".equalsIgnoreCase(host);
-        boolean live = "api-m.paypal.com".equalsIgnoreCase(host);
         String path = endpoint.getPath();
-        if ((!local && !sandbox && !live)
+        if ((!local && !sandbox)
                 || (path != null && !path.isBlank() && !"/".equals(path))
                 || endpoint.getUserInfo() != null || endpoint.getQuery() != null || endpoint.getFragment() != null) {
             throw new IllegalStateException("PayPal base URL must use an approved PayPal or local test endpoint");
         }
-        if ((sandbox || live) && !"https".equalsIgnoreCase(endpoint.getScheme())) {
+        if (sandbox && !"https".equalsIgnoreCase(endpoint.getScheme())) {
             throw new IllegalStateException("PayPal endpoints must use HTTPS");
-        }
-        if (live != livePaymentsEnabled) {
-            throw new IllegalStateException(
-                    "Live PayPal payments require the explicit ATLAS_PAYMENT_PAYPAL_LIVE_ENABLED opt-in");
         }
     }
 
