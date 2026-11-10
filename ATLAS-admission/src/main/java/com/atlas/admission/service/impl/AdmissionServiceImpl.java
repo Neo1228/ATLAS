@@ -99,6 +99,9 @@ public class AdmissionServiceImpl implements AdmissionService {
                 slot ? TicketStatus.CHECKOUT_ACTIVE : TicketStatus.WAITING,
                 expiresAt, now, slot ? now : null, slot));
         return requireTicket(request.campaignId(), ticket.getTicketId());
+
+    }
+
     private QueueTicketResponse replayPrior(QueueTicketResponse prior, JoinQueueRequest request) {
         requireSamePayload(prior, request);
         queueRepository.createCounterIfAbsent(prior.sellerId(), prior.skuId());
