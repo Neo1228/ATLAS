@@ -19,6 +19,7 @@ import com.atlas.catalog.service.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.inventory.service.InventoryService;
+import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.OrderItem;
@@ -33,6 +34,7 @@ import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.lang.reflect.Field;
 import java.time.Clock;
@@ -137,6 +139,41 @@ class CheckoutBehaviorTest {
         verify(orders, never()).save(any(PurchaseOrder.class));
         verify(items, never()).save(any(OrderItem.class));
         verify(inventory, never()).tryReserve(any());
+    }
+
+    @Test
+    void reconcilesCapturedOrderPaymentAndRecordsSettlement() {
+        UUID orderId = UUID.randomUUID();
+        UUID attemptId = UUID.randomUUID();
+        PurchaseOrder order = new PurchaseOrder(SELLER, "buyer", "checkout-key",
+                OrderState.PAYMENT_SUBMITTED, NOW.plusSeconds(600), NOW, NOW);
+        setOrderId(order, orderId);
+        OrderItem orderItem = new OrderItem(order, UUID.randomUUID(), SELLER, "SKU-1", "Product", 2, 1_000);
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderItemRepository items = mock(OrderItemRepository.class);
+        InventoryService inventory = mock(InventoryService.class);
+        OrderFulfillmentService fulfillment = mock(OrderFulfillmentService.class);
+        PaymentService payments = mock(PaymentService.class);
+        SettlementService settlement = mock(SettlementService.class);
+        when(orders.findById(orderId)).thenReturn(Optional.of(order));
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
+        when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(orderItem));
+        when(inventory.findReservations(orderId)).thenReturn(List.of());
+        when(payments.find(orderId)).thenReturn(
+                new PaymentResponse(orderId, attemptId, PaymentState.CAPTURED, false));
+
+        OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
+                mock(JdbcBuyerLockRepository.class), fulfillment, mock(AdmissionService.class), inventory,
+                payments, mock(SellerSkuService.class), settlement, fixedClock(), Duration.ofMinutes(10));
+
+        OrderResponse response = service.reconcilePayment(orderId, "captured-reconciliation");
+
+        assertEquals(OrderState.PAID, response.state());
+        assertEquals(PaymentState.CAPTURED, response.paymentState());
+        verify(settlement).recordCapture(new CapturePostingRequest(orderId, attemptId, SELLER, 2_000));
+        verify(inventory).claimAll(orderId);
+        verify(inventory, never()).releaseAll(orderId);
+        verify(fulfillment).initialize(orderId);
     }
 
     @Test
