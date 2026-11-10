@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +16,7 @@ import org.springframework.jdbc.core.RowCallbackHandler;
 
 class JdbcCapacityAdjustmentRepositoryTest {
     @Test
-    void usesStableSellerSkuKeyAcrossDefaultAndLocationRoutes() {
+    void stabilizesDefaultLocationLockAndKeepsOtherLocationsSeparate() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         List<String> lockKeys = new ArrayList<>();
         doAnswer(invocation -> {
@@ -26,18 +27,32 @@ class JdbcCapacityAdjustmentRepositoryTest {
                 eq("SELECT pg_advisory_xact_lock(hashtextextended(?,0))"),
                 any(RowCallbackHandler.class), any(Object[].class));
 
-        JdbcCapacityAdjustmentRepository repository = new JdbcCapacityAdjustmentRepository(jdbc);
+        String locationCodeQuery =
+                "SELECT location_code FROM inventory_location WHERE seller_id = ? AND location_id = ?";
         UUID sellerId = UUID.randomUUID();
+        UUID defaultLocationId = UUID.randomUUID();
+        UUID firstLocationId = UUID.randomUUID();
+        UUID secondLocationId = UUID.randomUUID();
+        when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(defaultLocationId)))
+                .thenReturn("DEFAULT");
+        when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(firstLocationId)))
+                .thenReturn("WAREHOUSE-A");
+        when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(secondLocationId)))
+                .thenReturn("WAREHOUSE-B");
+
+        JdbcCapacityAdjustmentRepository repository = new JdbcCapacityAdjustmentRepository(jdbc);
         String skuId = "sku-1";
         String idempotencyKey = "adjustment-1";
-        UUID defaultLocationId = UUID.randomUUID();
-        UUID otherLocationId = UUID.randomUUID();
 
         repository.lock(sellerId, skuId, idempotencyKey);
         repository.lock(sellerId, defaultLocationId, skuId, idempotencyKey);
-        repository.lock(sellerId, otherLocationId, skuId, idempotencyKey);
+        repository.lock(sellerId, firstLocationId, skuId, idempotencyKey);
+        repository.lock(sellerId, secondLocationId, skuId, idempotencyKey);
 
-        String expectedKey = sellerId + ":" + skuId + ":" + idempotencyKey;
-        assertThat(lockKeys).containsExactly(expectedKey, expectedKey, expectedKey);
+        String defaultLockKey = sellerId + ":DEFAULT:" + skuId + ":" + idempotencyKey;
+        String firstLocationLockKey = sellerId + ":" + firstLocationId + ":" + skuId + ":" + idempotencyKey;
+        String secondLocationLockKey = sellerId + ":" + secondLocationId + ":" + skuId + ":" + idempotencyKey;
+        assertThat(lockKeys).containsExactly(
+                defaultLockKey, defaultLockKey, firstLocationLockKey, secondLocationLockKey);
     }
 }

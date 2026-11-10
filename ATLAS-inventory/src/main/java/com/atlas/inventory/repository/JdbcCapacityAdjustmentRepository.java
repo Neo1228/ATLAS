@@ -19,19 +19,30 @@ public class JdbcCapacityAdjustmentRepository {
     }
 
     public void lock(UUID seller, String sku, String key) {
-        lockAdjustmentKey(seller, sku, key);
+        lockAdjustmentKey(seller, "DEFAULT", sku, key);
     }
 
     public void lock(UUID seller, UUID location, String sku, String key) {
-        // 감사 이력은 위치별이지만, 잠금 키는 DEFAULT 위치 생성 시점과 무관하게 고정한다.
-        lockAdjustmentKey(seller, sku, key);
+        // DEFAULT 위치의 UUID가 늦게 생겨도 기존 API와 같은 잠금을 사용한다.
+        lockAdjustmentKey(seller, locationLockScope(seller, location), sku, key);
     }
 
-    private void lockAdjustmentKey(UUID seller, String sku, String key) {
+    private String locationLockScope(UUID seller, UUID location) {
+        try {
+            String locationCode = jdbc.queryForObject(
+                    "SELECT location_code FROM inventory_location WHERE seller_id = ? AND location_id = ?",
+                    String.class, seller, location);
+            return "DEFAULT".equals(locationCode) ? "DEFAULT" : location.toString();
+        } catch (EmptyResultDataAccessException exception) {
+            return location.toString();
+        }
+    }
+
+    private void lockAdjustmentKey(UUID seller, String locationScope, String sku, String key) {
         jdbc.query(
                 "SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
                 resultSet -> { },
-                seller + ":" + sku + ":" + key);
+                seller + ":" + locationScope + ":" + sku + ":" + key);
     }
 
     public Optional<CapacityAdjustmentRecord> find(UUID seller, String sku, String key) {
