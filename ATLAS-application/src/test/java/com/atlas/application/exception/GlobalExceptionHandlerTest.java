@@ -10,10 +10,23 @@ import com.atlas.order.exception.OrderException;
 import com.atlas.settlement.exception.SettlementException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.slf4j.MDC;
 
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+    @Test
+    void errorResponseIncludesRequestIdFromCurrentRequestContext() {
+        MDC.put("requestId", "request-123");
+        try {
+            var response = handler.moduleException(new OrderException(
+                    OrderException.Code.CONFLICT, "Conflict"));
+            assertThat(response.getBody().getProperties()).containsEntry("requestId", "request-123");
+        } finally {
+            MDC.remove("requestId");
+        }
+    }
 
     @Test
     void unexpectedErrorsUseAStableProblemCodeWithoutExposingExceptionDetails() {
