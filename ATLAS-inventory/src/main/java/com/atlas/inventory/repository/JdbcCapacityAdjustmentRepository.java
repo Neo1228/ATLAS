@@ -22,20 +22,18 @@ public class JdbcCapacityAdjustmentRepository {
         lockAdjustmentKey(seller, "DEFAULT", sku, key);
     }
 
-    public void lock(UUID seller, UUID location, String sku, String key) {
-        // DEFAULT 위치의 UUID가 늦게 생겨도 기존 API와 같은 잠금을 사용한다.
-        lockAdjustmentKey(seller, locationLockScope(seller, location), sku, key);
-    }
-
-    private String locationLockScope(UUID seller, UUID location) {
+    public boolean lock(UUID seller, UUID location, String sku, String key) {
+        String locationCode;
         try {
-            String locationCode = jdbc.queryForObject(
+            locationCode = jdbc.queryForObject(
                     "SELECT location_code FROM inventory_location WHERE seller_id = ? AND location_id = ?",
                     String.class, seller, location);
-            return "DEFAULT".equals(locationCode) ? "DEFAULT" : location.toString();
         } catch (EmptyResultDataAccessException exception) {
-            return location.toString();
+            return false;
         }
+        String locationScope = "DEFAULT".equals(locationCode) ? "DEFAULT" : location.toString();
+        lockAdjustmentKey(seller, locationScope, sku, key);
+        return true;
     }
 
     private void lockAdjustmentKey(UUID seller, String locationScope, String sku, String key) {

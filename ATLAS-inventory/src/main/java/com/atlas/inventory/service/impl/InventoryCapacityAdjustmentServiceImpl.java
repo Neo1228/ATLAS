@@ -50,8 +50,8 @@ public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacity
             // 위치가 null이면 기존 DEFAULT API 요청이므로 저장소에서 해당 재고 풀을 찾는다.
             if (location == null) {
                 adjustments.lock(seller, sku, key);
-            } else {
-                adjustments.lock(seller, location, sku, key);
+            } else if (!adjustments.lock(seller, location, sku, key)) {
+                throw new InventoryException(InventoryException.Code.POOL_NOT_FOUND, "inventory pool not found");
             }
 
             var prior = location == null

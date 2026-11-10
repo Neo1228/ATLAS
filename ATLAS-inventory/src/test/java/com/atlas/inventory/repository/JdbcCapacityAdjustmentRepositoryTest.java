@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 
@@ -33,21 +34,25 @@ class JdbcCapacityAdjustmentRepositoryTest {
         UUID defaultLocationId = UUID.randomUUID();
         UUID firstLocationId = UUID.randomUUID();
         UUID secondLocationId = UUID.randomUUID();
+        UUID missingLocationId = UUID.randomUUID();
         when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(defaultLocationId)))
                 .thenReturn("DEFAULT");
         when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(firstLocationId)))
                 .thenReturn("WAREHOUSE-A");
         when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(secondLocationId)))
                 .thenReturn("WAREHOUSE-B");
+        when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(missingLocationId)))
+                .thenThrow(new EmptyResultDataAccessException(1));
 
         JdbcCapacityAdjustmentRepository repository = new JdbcCapacityAdjustmentRepository(jdbc);
         String skuId = "sku-1";
         String idempotencyKey = "adjustment-1";
 
         repository.lock(sellerId, skuId, idempotencyKey);
-        repository.lock(sellerId, defaultLocationId, skuId, idempotencyKey);
-        repository.lock(sellerId, firstLocationId, skuId, idempotencyKey);
-        repository.lock(sellerId, secondLocationId, skuId, idempotencyKey);
+        assertThat(repository.lock(sellerId, defaultLocationId, skuId, idempotencyKey)).isTrue();
+        assertThat(repository.lock(sellerId, firstLocationId, skuId, idempotencyKey)).isTrue();
+        assertThat(repository.lock(sellerId, secondLocationId, skuId, idempotencyKey)).isTrue();
+        assertThat(repository.lock(sellerId, missingLocationId, skuId, idempotencyKey)).isFalse();
 
         String defaultLockKey = sellerId + ":DEFAULT:" + skuId + ":" + idempotencyKey;
         String firstLocationLockKey = sellerId + ":" + firstLocationId + ":" + skuId + ":" + idempotencyKey;

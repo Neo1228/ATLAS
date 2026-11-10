@@ -32,6 +32,8 @@ Seller가 재고 수량을 정정할 때 `reserved`와 `claimed` 재고를 보�
 - 위치 API는 seller-scoped `location_code`를 확인해 DEFAULT에는 같은 sentinel을,
   다른 위치에는 UUID를 사용합니다.
   DEFAULT row 생성 전후에도 잠금 identity는 같고 non-default 위치는 독립적으로 잠급니다.
+- Explicit location ID가 없으면 기존 `POOL_NOT_FOUND`로 실패합니다.
+  location row 생성 뒤 재시도해야 하며, lock 후 row가 생겨도 현재 요청을 계속하지 않습니다.
 - audit unique key는 seller/location/SKU/idempotency key로 유지해 위치별 replay와 fact 비교를 보존합니다.
   같은 key를 다른 location에서 재사용해도 결과를 공유하지 않습니다.
 - 위치 API는 location code 확인을 위해 read를 한 번 추가합니다. 위치별 잠금을 보존하면서
