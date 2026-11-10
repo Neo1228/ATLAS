@@ -20,6 +20,7 @@ import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.repository.AdmissionPolicyRepository;
 import com.atlas.admission.repository.JdbcQueueRepository;
 import com.atlas.admission.repository.TicketRepository;
+import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.campaign.persistence.state.CampaignStatus;
 import com.atlas.campaign.service.CampaignService;
@@ -121,8 +122,8 @@ class AdmissionServiceTest {
     @Test
     void unavailableProductRejectsJoinBeforeQueueOrIdempotencySideEffects() {
         UUID campaignId = UUID.randomUUID();
-        when(campaigns.requireOpen(campaignId, skuId)).thenReturn(new CampaignResponse(
-                campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5)));
+        when(campaigns.findOpenForAdmission(campaignId, skuId)).thenReturn(Optional.of(
+                new CampaignResponse(campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5))));
         when(policies.findBySellerIdAndSkuId(sellerId, skuId))
                 .thenReturn(Optional.of(new AdmissionPolicy(sellerId, skuId, 2)));
         when(sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN))
@@ -138,14 +139,25 @@ class AdmissionServiceTest {
     }
 
     @Test
-    void existingIdempotencyKeyReplaysWhenProductIsNoLongerOrderable() {
+    void closedCampaignRejectsNewJoinBeforeQueueMutation() {
+        UUID campaignId = UUID.randomUUID();
+        when(campaigns.findOpenForAdmission(campaignId, skuId)).thenReturn(Optional.empty());
+
+        CampaignException exception = assertThrows(CampaignException.class,
+                () -> admission.join(new JoinQueueRequest(campaignId, skuId, "buyer", "new-key")));
+
+        assertEquals(CampaignException.Code.NOT_ELIGIBLE, exception.code());
+        verify(queueRepository, never()).createCounterIfAbsent(sellerId, skuId);
+        verify(queueRepository, never()).lockCounter(sellerId, skuId);
+        verify(tickets, never()).save(any());
+    }
+
+
+    @Test
+    void existingIdempotencyKeyReplaysAfterCampaignCloses() {
         UUID campaignId = UUID.randomUUID();
         UUID ticketId = UUID.randomUUID();
         String key = "existing-key";
-        when(campaigns.requireOpen(campaignId, skuId)).thenReturn(new CampaignResponse(
-                campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5)));
-        when(policies.findBySellerIdAndSkuId(sellerId, skuId))
-                .thenReturn(Optional.of(new AdmissionPolicy(sellerId, skuId, 2)));
         Instant expiresAt = Instant.now().plusSeconds(60);
         QueueTicket prior = mock(QueueTicket.class);
         when(prior.getTicketId()).thenReturn(ticketId);
@@ -171,6 +183,8 @@ class AdmissionServiceTest {
                 sellerId, skuId, ProductSalesChannel.CAMPAIGN);
         verify(queueRepository, never()).incrementSequence(sellerId, skuId);
         verify(tickets, never()).save(any());
+        verify(campaigns, never()).findOpenForAdmission(campaignId, skuId);
+        verify(policies, never()).findBySellerIdAndSkuId(sellerId, skuId);
     }
 
     @Test

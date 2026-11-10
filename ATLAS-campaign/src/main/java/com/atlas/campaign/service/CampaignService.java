@@ -2,6 +2,7 @@ package com.atlas.campaign.service;
 
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
 import com.atlas.campaign.dto.response.CampaignResponse;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface CampaignService {
@@ -10,7 +11,9 @@ public interface CampaignService {
 
     CampaignResponse open(UUID campaignId);
 
-    CampaignResponse requireOpen(UUID campaignId, String skuId);
+    CampaignResponse close(UUID sellerId, UUID campaignId);
+
+    Optional<CampaignResponse> findOpenForAdmission(UUID campaignId, String skuId);
 
     CampaignResponse find(UUID campaignId);
 }

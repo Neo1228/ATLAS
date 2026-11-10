@@ -38,12 +38,18 @@ Oversell은 막을 수 있으나 Owner가 선택한 Campaign 간 global FIFO를 
 ## 결정
 
 - **식별자:** Seller=Tenant. Seller가 SKU를 소유하며 `(sellerId, skuId)`가 Seller-SKU 식별자입니다.
-- **Seller API:** 로컬 Seller 등록은 server-generated UUID를 반환합니다. 다른 요청은 `sellerId`를 전달합니다. 인증·인가는 없으며 이 값은 데이터 식별자일 뿐 Tenant 보안 경계가 아닙니다.
+- **Seller API:** 로컬 Seller 등록은 server-generated UUID를 반환합니다. 다른 요청은 `sellerId`를 전달하지만 이는 인증 주체가 아닌 데이터 식별자입니다.
+  API 소유권 검증은 Account JWT/owner interceptor를 통해 이뤄집니다 ([ADR-0027](ADR-0027-account-jwt-authentication.md)); 이 ADR은 그 보안 경계를 변경하지 않습니다.
 - **재고:** Seller-SKU 등록 때 `initialStock`을 설정하고 pool을 한 번 생성합니다. Campaign 생성은 재고를 만들거나 늘리지 않습니다. 재고 pool/reservation은 `inventory-module` 소유입니다.
 - **대기열:** 모든 Campaign이 Seller-SKU 전역 FIFO와 K를 공유합니다. 새 Seller-SKU 등록 때 `maxActiveCheckouts`를 설정합니다.
 - **K 값:** Seller-SKU 등록 때 새 값을 설정합니다. 과거 Campaign의 K를 합산하거나 보존하지 않습니다 ([D-055](../../00-governance/decision-log.md)).
 - **모듈:** Seller, SKU, Campaign은 기존 `campaign-module` 소유입니다. 별도 Catalog/Seller module을 추가하지 않습니다.
 - **호환성:** Ticket TTL과 `(campaignId, idempotencyKey)` 재요청 범위는 Campaign별로 유지합니다. `campaignId`는 ticket/order 귀속 정보로 보존합니다.
+- **종료:** Seller가 Campaign을 `OPEN`에서 `CLOSED`로 바꾸면 신규 join만 막습니다.
+  기존 ticket/checkout/payment는 취소하지 않고 동일 key replay는 status gate보다 먼저 처리합니다.
+- **동시성:** Admission join transaction은 ticket 발급이 끝날 때까지 Campaign row의 `PESSIMISTIC_READ`를 유지합니다.
+  open/close는 같은 row에 `PESSIMISTIC_WRITE`를 사용해 close commit과 발급을 선형화합니다.
+  이 row-local barrier는 Seller-SKU counter lock을 대체하거나 다른 Campaign까지 직렬화하지 않습니다.
 - **기존 데이터:** V6는 새로 시작하는 방식만 지원합니다. V1–V5 application table에 행이 있으면 DDL 전에 실패하며 data/schema를 변경하지 않습니다. 비어 있을 때만 이전 schema를 제거하고 현재 Seller-SKU schema를 만듭니다. mapping·aggregate·backfill·기존 data 보존은 하지 않습니다. 필요한 local data는 앱 밖에서 보관·초기화해야 하며 앱은 조용히 삭제하지 않습니다 ([D-055](../../00-governance/decision-log.md), [ADR-0006](ADR-0006-v6-clean-start.md)). D-049의 공유 재고·전역 FIFO/K는 유지합니다.
 
 ## 흐름 도식

@@ -12,6 +12,7 @@ import com.atlas.admission.repository.TicketRepository;
 import com.atlas.admission.repository.JdbcQueueRepository;
 import com.atlas.admission.repository.AdmissionPolicyRepository;
 import com.atlas.admission.persistence.entity.AdmissionPolicy;
+import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.campaign.dto.response.CampaignResponse;
 import com.atlas.catalog.service.SellerSkuService;
@@ -20,6 +21,7 @@ import com.atlas.catalog.dto.response.SellerSkuResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -64,18 +66,18 @@ public class AdmissionServiceImpl implements AdmissionService {
                 || blank(request.idempotencyKey()) || request.idempotencyKey().length() > 256) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid queue join request");
         }
-        CampaignResponse campaign = campaigns.requireOpen(request.campaignId(), request.skuId());
-        AdmissionPolicy policy = requirePolicy(campaign.sellerId(), campaign.skuId());
         QueueTicketResponse prior = findByKey(request.campaignId(), request.idempotencyKey());
-        if (prior != null) {
-            queueRepository.createCounterIfAbsent(campaign.sellerId(), campaign.skuId());
-            if (!lockCounter(campaign.sellerId(), campaign.skuId())) {
-                throw new IllegalStateException("Admission counter initialization failed");
-            }
-            expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), clock.instant());
-            requireSamePayload(prior, request);
-            return requireTicket(request.campaignId(), prior.ticketId());
+        if (prior != null) return replayPrior(prior, request);
+        Optional<CampaignResponse> openCampaign = campaigns.findOpenForAdmission(
+                request.campaignId(), request.skuId());
+        if (openCampaign.isEmpty()) {
+            QueueTicketResponse concurrentPrior = findByKey(request.campaignId(), request.idempotencyKey());
+            if (concurrentPrior != null) return replayPrior(concurrentPrior, request);
+            throw new CampaignException(CampaignException.Code.NOT_ELIGIBLE,
+                    "Campaign is not open SKU " + request.skuId() + ": " + request.campaignId());
         }
+        CampaignResponse campaign = openCampaign.get();
+        AdmissionPolicy policy = requirePolicy(campaign.sellerId(), campaign.skuId());
         requireSellerSku(campaign);
         queueRepository.createCounterIfAbsent(campaign.sellerId(), campaign.skuId());
         if (!lockCounter(campaign.sellerId(), campaign.skuId())) {
@@ -97,6 +99,17 @@ public class AdmissionServiceImpl implements AdmissionService {
                 slot ? TicketStatus.CHECKOUT_ACTIVE : TicketStatus.WAITING,
                 expiresAt, now, slot ? now : null, slot));
         return requireTicket(request.campaignId(), ticket.getTicketId());
+
+    }
+
+    private QueueTicketResponse replayPrior(QueueTicketResponse prior, JoinQueueRequest request) {
+        requireSamePayload(prior, request);
+        queueRepository.createCounterIfAbsent(prior.sellerId(), prior.skuId());
+        if (!lockCounter(prior.sellerId(), prior.skuId())) {
+            throw new IllegalStateException("Admission counter initialization failed");
+        }
+        expireDueTicketsForSellerSku(prior.sellerId(), prior.skuId(), clock.instant());
+        return requireTicket(request.campaignId(), prior.ticketId());
     }
 
     private SellerSkuResponse requireSellerSku(CampaignResponse campaign) {
