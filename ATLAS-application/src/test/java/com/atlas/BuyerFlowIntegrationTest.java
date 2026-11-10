@@ -512,7 +512,6 @@ assertUuidV7(paymentOrderId);
                 blockedJoinCount = jdbc.queryForObject("""
                         SELECT count(*) FROM pg_stat_activity
                         WHERE ? = ANY(pg_blocking_pids(pid))
-                          AND position('FROM admission_counter' in query) > 0
                         """, Integer.class, blockerPid);
                 if (blockedJoinCount == 2) {
                     break;
