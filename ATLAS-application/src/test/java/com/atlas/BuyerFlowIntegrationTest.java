@@ -66,6 +66,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Stream;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
@@ -479,7 +480,7 @@ assertUuidV7(paymentOrderId);
                 + "ON CONFLICT (seller_id, sku_id) DO NOTHING", campaign.sellerId(), campaign.skuId());
         CyclicBarrier start = new CyclicBarrier(3);
         try (var executor = Executors.newFixedThreadPool(2);
-                var lockConnection = java.util.Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
+                var lockConnection = Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
             lockConnection.setAutoCommit(false);
             int blockerPid;
             try (var statement = lockConnection.createStatement();
