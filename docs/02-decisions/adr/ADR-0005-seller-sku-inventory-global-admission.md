@@ -68,6 +68,7 @@ flowchart LR
 - Campaign 간 동시 주문은 하나의 Seller-SKU 재고 잔량을 사용하며 conditional stock update로 oversell을 방지합니다.
 - Admission counter/sequence/hold slot 수/만료/승격의 기준을 Seller-SKU로 통일합니다. Slot release 시 다음 전역 FIFO ticket을 승격합니다.
 - Campaign별 FIFO보다 transaction lock 범위가 넓어져 같은 Seller-SKU 진입이 직렬화됩니다. 이는 correctness test 대상이며 처리량·용량 주장이 아닙니다.
+- 동일 idempotency key의 중복 진입은 counter row lock 뒤에도 재조회합니다. 잠금 전 조회와 잠금 획득 사이에 같은 요청이 들어올 수 있어, 재조회 없이는 유니크 제약 위반이 정상 재생 응답 대신 발생할 수 있습니다. 기존 Seller-SKU counter 잠금을 재사용하며 새 잠금이나 트랜잭션 기법을 추가하지 않습니다. 동시 요청은 하나의 ticket/sequence를 반환해야 합니다.
 - `Campaign.inventoryCapacity`와 Campaign `maxActiveCheckouts`를 제거합니다. Seller-SKU 등록 API가 `initialStock`과 K를 소유합니다.
 - `sellerId`는 인증 주체가 아닙니다. bind address를 외부로 바꾸거나 인증 없이 외부 network에 노출하는 것은 승인 범위 밖입니다.
 - 기존 mapping template은 사용하지 않습니다. V6는 기존 데이터를 변환·보존하지 않으며 새로 시작하는 조건은 [ADR-0006](ADR-0006-v6-clean-start.md)에 따릅니다.

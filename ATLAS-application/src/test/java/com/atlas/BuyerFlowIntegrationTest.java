@@ -66,6 +66,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Stream;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
@@ -467,6 +468,64 @@ assertUuidV7(paymentOrderId);
                     CheckoutSlotReleaseReason.BUYER_CANCELLED);
             assertThat(admission.find(campaign.campaignId(), tickets.get(2).ticketId()).status())
                     .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        }
+    }
+
+    @Test
+    void concurrentJoinWithSameIdempotencyKeyReturnsOneTicket() throws Exception {
+        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        String buyerRef = "buyer-duplicate-join-" + UUID.randomUUID();
+        String idempotencyKey = "duplicate-join-" + UUID.randomUUID();
+        jdbc.update("INSERT INTO admission_counter (seller_id, sku_id, last_sequence) VALUES (?, ?, 0) "
+                + "ON CONFLICT (seller_id, sku_id) DO NOTHING", campaign.sellerId(), campaign.skuId());
+        CyclicBarrier start = new CyclicBarrier(3);
+        try (var executor = Executors.newFixedThreadPool(2);
+                var lockConnection = Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
+            lockConnection.setAutoCommit(false);
+            try (var statement = lockConnection.prepareStatement(
+                    "SELECT last_sequence FROM admission_counter WHERE seller_id = ? AND sku_id = ? FOR UPDATE")) {
+                statement.setObject(1, campaign.sellerId());
+                statement.setString(2, campaign.skuId());
+                try (var result = statement.executeQuery()) {
+                    result.next();
+                }
+            }
+            Future<QueueTicketResponse> first = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(campaign, buyerRef, idempotencyKey);
+            });
+            Future<QueueTicketResponse> second = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return join(campaign, buyerRef, idempotencyKey);
+            });
+
+            start.await(10, TimeUnit.SECONDS);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            int blockedJoinCount = 0;
+            while (System.nanoTime() < deadline) {
+                blockedJoinCount = jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_stat_activity
+                        WHERE wait_event_type = 'Lock'
+                          AND position('admission_counter' in query) > 0
+                        """, Integer.class);
+                if (blockedJoinCount == 2) {
+                    break;
+                }
+                Thread.sleep(10);
+            }
+            assertThat(blockedJoinCount).isEqualTo(2);
+            lockConnection.commit();
+            QueueTicketResponse firstResult = first.get(10, TimeUnit.SECONDS);
+            QueueTicketResponse secondResult = second.get(10, TimeUnit.SECONDS);
+
+            assertThat(secondResult.ticketId()).isEqualTo(firstResult.ticketId());
+            assertThat(secondResult.sequence()).isEqualTo(firstResult.sequence());
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM admission_ticket WHERE campaign_id = ? AND idempotency_key = ?",
+                    Integer.class, campaign.campaignId(), idempotencyKey)).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                    "SELECT last_sequence FROM admission_counter WHERE seller_id = ? AND sku_id = ?",
+                    Long.class, campaign.sellerId(), campaign.skuId())).isEqualTo(1L);
         }
     }
 
