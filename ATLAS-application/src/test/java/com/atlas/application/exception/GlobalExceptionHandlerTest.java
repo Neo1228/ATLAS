@@ -12,7 +12,7 @@ import com.atlas.settlement.exception.SettlementException;
 import org.slf4j.MDC;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.slf4j.MDC;
+import org.springframework.web.server.ResponseStatusException;
 
 class GlobalExceptionHandlerTest {
 
@@ -40,6 +40,18 @@ class GlobalExceptionHandlerTest {
                 .isEqualTo("서버에서 요청을 처리하지 못했습니다. 요청 ID를 고객 지원에 전달해 주세요.")
                 .doesNotContain("database password leaked");
     }
+    @Test
+    void serverErrorResponseIsSanitizedAndMappedToInternalError() {
+        var response = handler.handleUnexpected(new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE, "provider detail should stay server-side"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        assertThat(response.getBody().getProperties()).containsEntry("code", "INTERNAL_ERROR");
+        assertThat(response.getBody().getDetail())
+                .isEqualTo("서버에서 요청을 처리하지 못했습니다. 요청 ID를 고객 지원에 전달해 주세요.")
+                .doesNotContain("provider detail");
+    }
+
 
     @Test
     void moduleExceptionCodesMapToStableClientStatuses() {
