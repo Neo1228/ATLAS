@@ -105,7 +105,7 @@ class CampaignServiceTest {
         UUID sellerId = UUID.randomUUID();
         UUID campaignId = UUID.randomUUID();
         Campaign entity = new Campaign(sellerId, "sku-1", CampaignStatus.CLOSED, 300, Instant.now());
-        when(repository.findById(campaignId)).thenReturn(Optional.of(entity));
+        when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
         when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN))
                 .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "Unavailable"));
         CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC());
@@ -113,6 +113,69 @@ class CampaignServiceTest {
         assertThrows(CatalogException.class, () -> service.open(campaignId));
 
         verify(repository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    void closesOpenCampaignForOwningSeller() {
+        CampaignRepository repository = mock(CampaignRepository.class);
+        UUID sellerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        Campaign entity = new Campaign(sellerId, "sku-1", CampaignStatus.OPEN, 300, Instant.now());
+        when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
+        when(repository.save(entity)).thenReturn(entity);
+        CampaignServiceImpl service = new CampaignServiceImpl(
+                repository, mock(SellerSkuService.class), Clock.systemUTC());
+
+        var response = service.close(sellerId, campaignId);
+
+        assertEquals(CampaignStatus.CLOSED, response.status());
+        verify(repository).save(entity);
+    }
+
+    @Test
+    void closingAlreadyClosedCampaignIsIdempotent() {
+        CampaignRepository repository = mock(CampaignRepository.class);
+        UUID sellerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        Campaign entity = new Campaign(sellerId, "sku-1", CampaignStatus.CLOSED, 300, Instant.now());
+        when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
+        CampaignServiceImpl service = new CampaignServiceImpl(
+                repository, mock(SellerSkuService.class), Clock.systemUTC());
+
+        var response = service.close(sellerId, campaignId);
+
+        assertEquals(CampaignStatus.CLOSED, response.status());
+        verify(repository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    void closeRejectsCampaignOwnedByAnotherSeller() {
+        CampaignRepository repository = mock(CampaignRepository.class);
+        UUID ownerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        Campaign entity = new Campaign(ownerId, "sku-1", CampaignStatus.OPEN, 300, Instant.now());
+        when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
+        CampaignServiceImpl service = new CampaignServiceImpl(
+                repository, mock(SellerSkuService.class), Clock.systemUTC());
+
+        CampaignException exception = assertThrows(CampaignException.class,
+                () -> service.close(UUID.randomUUID(), campaignId));
+
+        assertEquals(CampaignException.Code.NOT_FOUND, exception.code());
+        verify(repository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    void closedCampaignIsNotOpenForAdmission() {
+        CampaignRepository repository = mock(CampaignRepository.class);
+        UUID sellerId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        Campaign entity = new Campaign(sellerId, "sku-1", CampaignStatus.CLOSED, 300, Instant.now());
+        when(repository.findForAdmission(campaignId)).thenReturn(Optional.of(entity));
+        CampaignServiceImpl service = new CampaignServiceImpl(
+                repository, mock(SellerSkuService.class), Clock.systemUTC());
+
+        assertEquals(Optional.empty(), service.findOpenForAdmission(campaignId, "sku-1"));
     }
 
     @Test
