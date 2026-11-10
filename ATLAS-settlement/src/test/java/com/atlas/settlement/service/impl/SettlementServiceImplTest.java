@@ -151,6 +151,11 @@ class SettlementServiceImplTest {
                         new CheckoutSettlementPostingRequest(checkoutId, attemptId, 2, List.of(
                                 new SellerOrderAllocationRequest(orderId, sellerId, 1),
                                 new SellerOrderAllocationRequest(orderId, UUID.randomUUID(), 1)))));
+        assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
+                () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
+                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, Long.MAX_VALUE, List.of(
+                                new SellerOrderAllocationRequest(orderId, sellerId, Long.MAX_VALUE),
+                                new SellerOrderAllocationRequest(UUID.randomUUID(), sellerId, 1)))));
     }
 
     @Test
