@@ -156,7 +156,7 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                     assertThat(result.getResponse().getContentType())
                             .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
                     assertThat(result.getResponse().getContentAsString())
-                            .contains("\"code\":\"INVALID_REQUEST\"", "\"detail\":\"Request validation failed\"");
+                            .contains("\"code\":\"INVALID_REQUEST\"", "\"detail\":\"요청 정보를 확인해 주세요.\"");
                 });
 
         mockMvc.perform(get("/api/campaigns/{campaignId}", UUID.randomUUID()))

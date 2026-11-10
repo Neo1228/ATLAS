@@ -126,7 +126,7 @@ class CatalogIntegrationTest {
                         .param("cursor", firstHttpPage.nextCursor()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.detail").value("Invalid product cursor"));
+                .andExpect(jsonPath("$.detail").value("요청 정보를 확인해 주세요."));
         assertThat(products.count()).isEqualTo(countBeforeGet);
     }
 

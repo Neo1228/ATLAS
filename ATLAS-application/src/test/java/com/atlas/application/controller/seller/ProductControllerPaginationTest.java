@@ -34,7 +34,7 @@ class ProductControllerPaginationTest {
         mockMvc.perform(get("/api/products").param("cursor", cursor))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.detail").value("Invalid product cursor"));
+                .andExpect(jsonPath("$.detail").value("요청 정보를 확인해 주세요."));
     }
 
     @Test
@@ -44,7 +44,7 @@ class ProductControllerPaginationTest {
         mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId).param("cursor", cursor))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.detail").value("Invalid product cursor"));
+                .andExpect(jsonPath("$.detail").value("요청 정보를 확인해 주세요."));
     }
 
     @Test
