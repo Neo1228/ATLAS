@@ -22,6 +22,7 @@ public class PayPalOAuth2ClientConfiguration {
                 || properties.getClientSecret() == null || properties.getClientSecret().isBlank()) {
             throw new IllegalStateException("PayPal provider requires PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET");
         }
+        properties.validateBaseUrl();
         String baseUrl = properties.getBaseUrl().replaceAll("/+$", "");
         ClientRegistration registration = ClientRegistration.withRegistrationId("paypal")
                 .clientId(properties.getClientId())

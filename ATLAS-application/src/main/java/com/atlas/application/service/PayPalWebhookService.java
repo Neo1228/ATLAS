@@ -40,8 +40,8 @@ public class PayPalWebhookService {
             PaymentWebhookResult result = payments.processVerifiedPayPalWebhook(event);
             if (result.duplicate()) return;
             if (!result.accepted()) {
-                throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
-                        "PayPal webhook event was not accepted");
+                throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
+                        "PayPal webhook could not be correlated yet; retry delivery");
             }
 
             if (result.captureConfirmed() && result.paymentAttemptId() != null) {

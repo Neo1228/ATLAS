@@ -38,6 +38,7 @@ atlas:
   payment:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
     paypal:
+      live-payments-enabled: ${ATLAS_PAYMENT_PAYPAL_LIVE_ENABLED:false}
       base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
       client-id: ${PAYPAL_CLIENT_ID:}
       client-secret: ${PAYPAL_CLIENT_SECRET:}
