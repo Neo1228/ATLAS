@@ -9,11 +9,12 @@ public class SettlementException extends RuntimeException {
         this.code = code;
     }
 
-    public Code getCode() {
+    public Code code() {
         return code;
     }
 
     public enum Code {
-        INVALID_REQUEST
+        INVALID_REQUEST,
+        CONFLICT
     }
 }

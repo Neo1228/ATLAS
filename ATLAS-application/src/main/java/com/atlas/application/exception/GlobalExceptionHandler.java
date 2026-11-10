@@ -94,9 +94,10 @@ public class GlobalExceptionHandler {
         }
 
         if (exception instanceof SettlementException settlement) {
-            return switch (settlement.getCode()) {
-                case INVALID_REQUEST -> response(
-                        HttpStatus.BAD_REQUEST, "INVALID_REQUEST", settlement.getMessage());
+            return switch (settlement.code()) {
+                case INVALID_REQUEST ->
+                        response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", settlement.getMessage());
+                case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", settlement.getMessage());
             };
         }
         return internalError(exception);
