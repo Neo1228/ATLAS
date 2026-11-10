@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,6 +33,19 @@ public class BuyerCheckoutController {
     public CheckoutResponse cancel(@PathVariable UUID checkoutId,
                                    @RequestHeader("Idempotency-Key") String idempotencyKey) {
         return checkoutPayments.cancel(checkoutId, idempotencyKey);
+    }
+
+    @GetMapping("/payment/return")
+    public CheckoutResponse paymentReturn(@PathVariable UUID checkoutId,
+            @RequestParam("token") String providerOrderId) {
+        return checkoutPayments.completeApproval(checkoutId, providerOrderId);
+    }
+
+    @GetMapping("/payment/cancel")
+    public CheckoutResponse paymentCancel(@PathVariable UUID checkoutId,
+            @RequestParam(value = "token", required = false) String providerOrderId) {
+        return checkoutPayments.cancel(checkoutId, "paypal-cancel:" + checkoutId
+                + (providerOrderId == null ? "" : ":" + providerOrderId));
     }
 
     @GetMapping

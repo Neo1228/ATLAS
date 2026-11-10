@@ -19,6 +19,7 @@ links:
 ## 배경
 
 현재 capture 원장은 확인된 결제 총액을 내부적으로 기록하지만 실제 PSP 정산이나 판매자 송금을 증명하지 않습니다. 결제 완료 뒤 취소·환불 및 claim 재고 처리 정책은 미정이었습니다. 이 구현도 Fake PSP의 refund operation을 호출하지 않으며 외부 자금 이동을 수행하지 않습니다.
+- 후속 결정: 환불 적격성·금액 snapshot·원장 reversal은 유지. 실제 PayPal refund 호출과 provider-confirmed 처리 경계는 [ADR-0026](ADR-0026-paypal-sandbox-payments.md)에서 추가.
 
 ## 결정
 

@@ -19,11 +19,13 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.payment.dto.response.PaymentResponse;
+import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
 import com.atlas.settlement.service.SettlementService;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -106,7 +108,33 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 && prepared.state() != BuyerCheckoutState.PAYMENT_UNKNOWN)) {
             throw new OrderException(OrderException.Code.CONFLICT, "Checkout is expired or terminal");
         }
-        PaymentResponse payment = payments.submitCheckout(checkoutId);
+        PaymentResponse payment;
+        try {
+            payment = payments.submitCheckout(checkoutId, BigDecimal.valueOf(prepared.totalWon()));
+        } catch (PaymentException exception) {
+            if (exception.code() == PaymentException.Code.PAYMENT_PROVIDER_DISABLED) {
+                PaymentResponse attempt = payments.findCheckout(checkoutId);
+                if (attempt == null || attempt.state() == PaymentState.NOT_STARTED) {
+                    transactions.execute(status -> {
+                        BuyerCheckout current = checkouts.findWithLockByCheckoutId(checkoutId)
+                                .orElseThrow(() -> new OrderException(
+                                        OrderException.Code.NOT_FOUND, "Checkout not found"));
+                        if (current.state() == BuyerCheckoutState.PAYMENT_PENDING
+                                || current.state() == BuyerCheckoutState.PAYMENT_UNKNOWN) {
+                            Instant now = clock.instant();
+                            for (PurchaseOrder order : orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId)) {
+                                if (order.state() == OrderState.PAYMENT_SUBMITTED) {
+                                    order.updateState(OrderState.RESERVED, order.paymentAttemptId(), now);
+                                }
+                            }
+                            current.update(BuyerCheckoutState.RESERVED, current.totalWon(), now);
+                        }
+                        return null;
+                    });
+                }
+            }
+            throw exception;
+        }
         BuyerCheckout latest = transactions.execute(status -> checkouts.findById(checkoutId)
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found")));
         boolean cancellationRequested = (latest.state() == BuyerCheckoutState.CANCEL_PENDING || latest.state() == BuyerCheckoutState.CANCELLED);
@@ -115,6 +143,18 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             payment = payments.voidCheckoutAuthorization(checkoutId, "submit-void:" + checkoutId);
         }
         return applyPaymentResult(checkoutId, payment);
+    }
+
+    @Override
+    public CheckoutResponse completeApproval(UUID checkoutId, String providerOrderId) {
+        PaymentResponse payment = payments.completeCheckoutApproval(checkoutId, providerOrderId);
+        if (payment.state() == PaymentState.AUTHORIZATION_PENDING
+                || payment.state() == PaymentState.CAPTURE_PENDING
+                || payment.state() == PaymentState.UNKNOWN
+                || payment.state() == PaymentState.VOID_PENDING) {
+            return applyPaymentResult(checkoutId, payment);
+        }
+        return reconcile(checkoutId, "paypal-approval:" + providerOrderId);
     }
 
     @Override
@@ -330,7 +370,8 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 .stream().map(order -> toResponse(order, payment)).toList();
         return new CheckoutResponse(checkout.checkoutId(), checkout.buyerRef(), checkout.state(),
                 checkout.totalWon(), childResponses, payment == null ? null : payment.attemptId(),
-                payment == null ? PaymentState.NOT_STARTED : payment.state());
+                payment == null ? PaymentState.NOT_STARTED : payment.state(),
+                payment == null ? null : payment.approvalUrl());
     }
     private OrderResponse toResponse(PurchaseOrder order, PaymentResponse payment) {
         List<ReservationResponse> reservations = inventory.findReservations(order.orderId());

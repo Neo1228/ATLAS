@@ -33,7 +33,7 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 | `admission-module` | FIFO ticket, 전역 sequence, SKU별 `maxActiveCheckouts` policy | Campaign·Catalog 계약 |
 | `inventory-module` | Seller-SKU stock pool, 주문별 여러 SKU reservation | 독립 계약 |
 | `order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem, checkout·결제 조정, fulfillment | Admission·Catalog·Cart·Inventory·Payment contracts |
-| `payment-module` | Payment attempt, 기존 Fake PSP 상태 | 독립 계약 |
+| `payment-module` | PaymentAttempt, provider operation·resource state, PayPal adapter | 독립 계약 |
 
 - `SellerSku`는 하나 이상의 SKU variant를 가진 Seller Product에 소속. 현재 단순 필드만 지원하며 옵션 조합·promotion·가격 이력은 추가하지 않음.
 - D-078/ADR-0023는 이 범위를 부분 확장해 SellerSku별 한 개의 seller-funded 기간 한정 sale price를 추가. Coupon·stacking·전체 가격 이력은 계속 제외.

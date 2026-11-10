@@ -18,7 +18,8 @@ links:
 
 ## 배경
 
-현재 `PaymentService.reconcile`은 한 `PaymentAttempt`의 AUTHORIZE/CAPTURE/VOID 상태를 Fake PSP와 재조정합니다. PSP 거래 내역을 가져오거나 Seller별 정산 원장을 만들지는 않습니다. Q-006은 원장·수수료·보류금·지급·회계 정정을 별도 정책으로 남겨 두었습니다.
+ADR 작성 당시 `PaymentService.reconcile`은 `PaymentAttempt`의 AUTHORIZE/CAPTURE/VOID 상태를 Fake PSP와 재조정했습니다. PSP 거래 내역이나 Seller별 외부 송금은 처리하지 않았습니다. Q-006은 원장·수수료·보류금·지급·회계 정정을 별도 정책으로 남겼습니다.
+- 현행 provider 연동과 확정 capture/refund 원장 기록은 [ADR-0026](ADR-0026-paypal-sandbox-payments.md) 참조. 내부 원장은 판매자 송금을 의미하지 않음.
 
 ## 결정
 

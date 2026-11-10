@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public interface CheckoutPaymentService {
     CheckoutResponse submit(UUID checkoutId);
+    CheckoutResponse completeApproval(UUID checkoutId, String providerOrderId);
     CheckoutResponse reconcile(UUID checkoutId, String idempotencyKey);
     CheckoutResponse cancel(UUID checkoutId, String idempotencyKey);
     CheckoutResponse find(UUID checkoutId);

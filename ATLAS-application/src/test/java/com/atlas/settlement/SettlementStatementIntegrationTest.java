@@ -29,6 +29,7 @@ import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.service.SettlementService;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.math.BigInteger;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,7 +51,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest
-class SettlementStatementIntegrationTest {
+class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
     private static final Instant PERIOD_FROM = Instant.parse("2020-01-01T00:00:00Z");
     private static final Instant PERIOD_TO = Instant.parse("2100-01-01T00:00:00Z");
 
@@ -82,6 +83,11 @@ class SettlementStatementIntegrationTest {
     @Autowired private SellerService sellers;
     @Autowired private SettlementService settlement;
 
+    private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
+        CheckoutResponse pending = checkoutPayments.submit(checkoutId);
+        return checkoutPayments.completeApproval(checkoutId, approvalToken(pending.paymentApprovalUrl()));
+    }
+
     @Test
     void statementUsesSellerAllocationsAndRefundMovementsAcrossStablePages() throws Exception {
         UUID firstSellerId = sellers.createSeller().sellerId();
@@ -93,7 +99,7 @@ class SettlementStatementIntegrationTest {
         carts.setItemQuantity(secondSellerId, buyerRef, secondSkuId, 3);
 
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "statement-checkout-" + UUID.randomUUID());
-        CheckoutResponse paidCheckout = checkoutPayments.submit(checkout.checkoutId());
+        CheckoutResponse paidCheckout = completePayPalCheckout(checkout.checkoutId());
         assertThat(paidCheckout.orders()).hasSize(2);
         assertThat(paidCheckout.orders()).allSatisfy(order -> assertThat(order.state()).isEqualTo(OrderState.PAID));
 
@@ -124,7 +130,9 @@ class SettlementStatementIntegrationTest {
         var ticket = admission.join(new JoinQueueRequest(
                 campaign.campaignId(), campaignSkuId, campaignBuyer, "statement-ticket-" + UUID.randomUUID()));
         OrderResponse reservedCampaignOrder = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        OrderResponse paidCampaignOrder = orders.submitPayment(reservedCampaignOrder.orderId());
+        OrderResponse campaignPending = orders.submitPayment(reservedCampaignOrder.orderId());
+        OrderResponse paidCampaignOrder = orders.completePaymentApproval(reservedCampaignOrder.orderId(),
+                approvalToken(campaignPending.paymentApprovalUrl()));
         assertThat(paidCampaignOrder.state()).isEqualTo(OrderState.PAID);
 
         UUID campaignOrderItemId = jdbc.queryForObject(
@@ -256,14 +264,14 @@ class SettlementStatementIntegrationTest {
         carts.setItemQuantity(sellerId, maxBuyerRef, maxSkuId, 1);
         CheckoutResponse maxCheckout = checkouts.checkout(
                 maxBuyerRef, "statement-max-checkout-" + UUID.randomUUID());
-        CheckoutResponse maxPaid = checkoutPayments.submit(maxCheckout.checkoutId());
+        CheckoutResponse maxPaid = completePayPalCheckout(maxCheckout.checkoutId());
         assertThat(maxPaid.orders()).singleElement().satisfies(order ->
                 assertThat(order.state()).isEqualTo(OrderState.PAID));
 
         carts.setItemQuantity(sellerId, oneBuyerRef, oneSkuId, 1);
         CheckoutResponse oneCheckout = checkouts.checkout(
                 oneBuyerRef, "statement-one-checkout-" + UUID.randomUUID());
-        CheckoutResponse onePaid = checkoutPayments.submit(oneCheckout.checkoutId());
+        CheckoutResponse onePaid = completePayPalCheckout(oneCheckout.checkoutId());
         assertThat(onePaid.orders()).singleElement().satisfies(order ->
                 assertThat(order.state()).isEqualTo(OrderState.PAID));
 

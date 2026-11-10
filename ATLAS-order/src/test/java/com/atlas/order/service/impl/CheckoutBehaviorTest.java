@@ -207,7 +207,7 @@ class CheckoutBehaviorTest {
                 orders, items, inventory, fulfillment, payments, settlement, mock(SellerCouponService.class),
                 fixedClock());
         AtomicReference<BuyerCheckoutState> cancellationState = new AtomicReference<>();
-        when(payments.submitCheckout(checkoutId)).thenAnswer(invocation -> {
+        when(payments.submitCheckout(eq(checkoutId), any())).thenAnswer(invocation -> {
             cancellationState.set(service.cancel(checkoutId, "cancel-racing-submit").state());
             return new PaymentResponse(null, checkoutId, attemptId, PaymentState.CAPTURED, false);
         });

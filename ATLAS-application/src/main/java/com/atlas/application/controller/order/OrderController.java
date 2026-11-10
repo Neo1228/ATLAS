@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RequiredArgsConstructor
@@ -59,6 +60,19 @@ public class OrderController {
     public OrderResponse cancel(@PathVariable UUID orderId,
                                 @RequestHeader("Idempotency-Key") String idempotencyKey) {
         return orders.cancel(orderId, idempotencyKey);
+    }
+
+    @GetMapping("/orders/{orderId}/payment/return")
+    public OrderResponse paymentReturn(@PathVariable UUID orderId,
+            @RequestParam("token") String providerOrderId) {
+        return orders.completePaymentApproval(orderId, providerOrderId);
+    }
+
+    @GetMapping("/orders/{orderId}/payment/cancel")
+    public OrderResponse paymentCancel(@PathVariable UUID orderId,
+            @RequestParam(value = "token", required = false) String providerOrderId) {
+        return orders.cancel(orderId, "paypal-cancel:" + orderId
+                + (providerOrderId == null ? "" : ":" + providerOrderId));
     }
 
 

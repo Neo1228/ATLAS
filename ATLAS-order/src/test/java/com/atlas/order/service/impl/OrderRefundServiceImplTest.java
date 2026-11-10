@@ -13,6 +13,7 @@ import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.projection.RefundItem;
 import com.atlas.order.persistence.projection.RefundRecord;
 import com.atlas.order.persistence.state.OrderRefundStatus;
+import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
 import com.atlas.order.persistence.state.OrderReturnInspectionResult;
 import com.atlas.order.repository.OrderFulfillmentRepository;
 import com.atlas.order.repository.OrderItemRepository;
@@ -29,6 +30,7 @@ import com.atlas.order.persistence.state.OrderReturnStatus;
 import com.atlas.order.persistence.state.OrderState;
 
 import com.atlas.settlement.service.SettlementService;
+import com.atlas.payment.service.PaymentService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -51,15 +53,26 @@ class OrderRefundServiceImplTest {
         String idempotencyKey = "refund-replay-key";
         OrderRefundRepository refunds = mock(OrderRefundRepository.class);
         PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+        OrderRepository orders = mock(OrderRepository.class);
+        PurchaseOrder order = mock(PurchaseOrder.class);
+        when(order.sellerId()).thenReturn(sellerId);
+        when(order.state()).thenReturn(OrderState.PAID);
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
+        when(orders.findById(orderId)).thenReturn(Optional.of(order));
+        OrderFulfillmentRepository fulfillments = mock(OrderFulfillmentRepository.class);
+        OrderFulfillment fulfillment = mock(OrderFulfillment.class);
+        when(fulfillment.status()).thenReturn(FulfillmentStatus.UNFULFILLED);
+        when(fulfillments.findById(orderId)).thenReturn(Optional.of(fulfillment));
         when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         when(refunds.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(new RefundRecord(
                 refundId, orderId, sellerId, idempotencyKey, 200, OrderRefundStatus.PARTIALLY_RECORDED,
                 Instant.parse("2026-01-01T00:00:00Z"), List.of(new RefundItem(javaSecond, 1),
                 new RefundItem(javaFirst, 1)))));
-        OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, mock(OrderRepository.class),
-                mock(OrderItemRepository.class), mock(OrderFulfillmentRepository.class), refunds,
+        when(refunds.paymentStatus(refundId)).thenReturn(OrderRefundPaymentStatus.NOT_APPLICABLE);
+        OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders,
+                mock(OrderItemRepository.class), fulfillments, refunds,
                 mock(OrderReturnRepository.class), mock(InventoryService.class), mock(SettlementService.class),
-                Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC));
+                mock(PaymentService.class), Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC));
 
         OrderRefundResponse response = service.refund(new OrderRefundRequest(sellerId, orderId, idempotencyKey,
                 List.of(new OrderRefundRequest.Item(javaSecond, 1), new OrderRefundRequest.Item(javaFirst, 1))));
@@ -73,7 +86,7 @@ class OrderRefundServiceImplTest {
                 mock(PlatformTransactionManager.class), mock(OrderRepository.class), mock(OrderItemRepository.class),
                 mock(OrderFulfillmentRepository.class), mock(OrderRefundRepository.class),
                 mock(OrderReturnRepository.class), mock(InventoryService.class),
-                mock(SettlementService.class), Clock.systemUTC());
+                mock(SettlementService.class), mock(PaymentService.class), Clock.systemUTC());
 
         OrderException exception = assertThrows(OrderException.class, () -> service.refund(null));
 
@@ -120,8 +133,9 @@ class OrderRefundServiceImplTest {
             when(refunds.findByIdempotencyKey(any())).thenReturn(Optional.empty());
             when(returns.findAllByOrderId(orderId)).thenReturn(List.of(openReturn));
 
-            OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders, items, fulfillments,
-                    refunds, returns, mock(InventoryService.class), mock(SettlementService.class), Clock.systemUTC());
+        OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders, items, fulfillments,
+                refunds, returns, mock(InventoryService.class), mock(SettlementService.class),
+                mock(PaymentService.class), Clock.systemUTC());
             OrderException exception = assertThrows(OrderException.class, () -> service.refund(
                     new OrderRefundRequest(sellerId, orderId, "direct-refund-" + returnStatus,
                             List.of(new OrderRefundRequest.Item(orderItemId, 2)))));

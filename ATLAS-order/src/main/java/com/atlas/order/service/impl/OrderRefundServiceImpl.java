@@ -9,6 +9,7 @@ import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.OrderReturn;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
 import com.atlas.order.persistence.state.OrderRefundStatus;
 import com.atlas.order.persistence.state.OrderReturnInspectionResult;
 import com.atlas.order.persistence.state.OrderReturnStatus;
@@ -21,6 +22,10 @@ import com.atlas.order.repository.OrderReturnRepository;
 import com.atlas.order.persistence.projection.RefundRecord;
 import com.atlas.order.persistence.projection.RefundSummary;
 import com.atlas.order.service.OrderRefundService;
+import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.exception.PaymentException;
+import com.atlas.payment.persistence.state.PaymentRefundState;
+import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.dto.request.RefundPostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
@@ -46,6 +51,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     private final OrderRefundRepository refunds;
     private final InventoryService inventory;
     private final SettlementService settlement;
+    private final PaymentService payments;
     private final OrderReturnRepository returns;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -53,7 +59,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     public OrderRefundServiceImpl(PlatformTransactionManager transactionManager, OrderRepository orders,
                                   OrderItemRepository items, OrderFulfillmentRepository fulfillments,
                                   OrderRefundRepository refunds, OrderReturnRepository returns, InventoryService inventory,
-                                  SettlementService settlement, Clock clock) {
+                                  SettlementService settlement, PaymentService payments, Clock clock) {
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.orders = Objects.requireNonNull(orders);
         this.items = Objects.requireNonNull(items);
@@ -62,6 +68,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         this.returns = Objects.requireNonNull(returns);
         this.inventory = Objects.requireNonNull(inventory);
         this.settlement = Objects.requireNonNull(settlement);
+        this.payments = Objects.requireNonNull(payments);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -84,6 +91,31 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     }
 
     private OrderRefundResponse refund(OrderRefundRequest request, UUID returnId) {
+        if (request == null) throw invalidRequest("Refund request is required");
+        RefundRecord reserved = reserveRefund(request, returnId);
+        OrderRefundPaymentStatus currentStatus = refunds.paymentStatus(reserved.refundId());
+        if (currentStatus == OrderRefundPaymentStatus.NOT_APPLICABLE) {
+            return response(reserved, currentStatus, null);
+        }
+
+        PurchaseOrder order = requireOrder(reserved.orderId());
+        PaymentRefundResponse payment;
+        try {
+            payment = order.checkoutId() == null
+                    ? payments.refundOrder(order.orderId(), reserved.idempotencyKey(), reserved.recordedAmountWon())
+                    : payments.refundCheckout(order.checkoutId(), reserved.idempotencyKey(),
+                            reserved.recordedAmountWon());
+        } catch (PaymentException exception) {
+            transactions.execute(status -> {
+                refunds.updatePaymentStatus(reserved.refundId(), OrderRefundPaymentStatus.FAILED);
+                return null;
+            });
+            throw exception;
+        }
+        return finalizeRefund(reserved, payment);
+    }
+
+    private RefundRecord reserveRefund(OrderRefundRequest request, UUID returnId) {
         if (request == null) throw invalidRequest("Refund request is required");
         UUID sellerId = request.sellerId();
         UUID orderId = request.orderId();
@@ -121,7 +153,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         || !priorItems.equals(requestItems)) {
                     throw conflict("Idempotency key was used for different refund facts");
                 }
-                return response(prior);
+                return prior;
             }
 
             PurchaseOrder order = lockOrder(orderId);
@@ -163,7 +195,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             Map<UUID, Integer> claimedByOpenReturns = new HashMap<>();
             Map<UUID, Integer> requestedQuantities = new HashMap<>();
             long recordedAmountWon = 0;
-            Map<String, Integer> quantitiesBySku = new TreeMap<>();
+
             try {
                 if (returnId == null) {
                     for (OrderReturn returnRecord : returns.findAllByOrderId(orderId)) {
@@ -189,7 +221,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                     requestedQuantities.put(item.orderItemId(), line.quantity());
                     recordedAmountWon = Math.addExact(recordedAmountWon,
                             item.refundAmountWon(line.quantity(), previouslyRefunded));
-                    quantitiesBySku.merge(item.skuId(), line.quantity(), Math::addExact);
+
                 }
             } catch (ArithmeticException overflow) {
                 throw invalidRequest("Refund amount or quantity is too large");
@@ -199,29 +231,94 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                             + requestedQuantities.getOrDefault(item.orderItemId(), 0) == item.quantity());
             OrderRefundStatus resultStatus = fullyRefunded
                     ? OrderRefundStatus.FULLY_RECORDED : OrderRefundStatus.PARTIALLY_RECORDED;
-            long previouslyRecordedAmountWon = refunds.findSummary(orderId)
-                    .map(RefundSummary::recordedAmountWon).orElse(0L);
-            long totalRecordedAmountWon;
-            try {
-                totalRecordedAmountWon = Math.addExact(previouslyRecordedAmountWon, recordedAmountWon);
-            } catch (ArithmeticException overflow) {
-                throw invalidRequest("Refund amount is too large");
-            }
-
             var createdAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
             UUID refundId = refunds.insertRequest(orderId, sellerId, idempotencyKey, recordedAmountWon,
                     resultStatus, createdAt);
             for (OrderRefundRequest.Item line : requestItems) {
                 refunds.insertRequestItem(refundId, line.orderItemId(), line.quantity());
             }
-            for (Map.Entry<String, Integer> quantity : quantitiesBySku.entrySet()) {
-                inventory.restoreClaimed(orderId, sellerId, quantity.getKey(), quantity.getValue());
-            }
-            settlement.recordRefund(new RefundPostingRequest(orderId, refundId, sellerId, recordedAmountWon));
-            refunds.upsertSummary(orderId, sellerId, totalRecordedAmountWon, resultStatus, createdAt);
-            return new OrderRefundResponse(refundId, orderId, recordedAmountWon, resultStatus,
-                    "LOCAL_LEDGER_ONLY", createdAt);
+            return refunds.findByIdempotencyKey(idempotencyKey)
+                    .orElseThrow(() -> new IllegalStateException("Refund request was not persisted"));
         }));
+    }
+
+    @Override
+    public OrderRefundResponse reconcilePayPalRefund(UUID paymentOperationId) {
+        if (paymentOperationId == null) throw invalidRequest("Payment refund operation id is required");
+        RefundRecord reserved = Objects.requireNonNull(transactions.execute(transaction ->
+                refunds.findByPaymentOperationId(paymentOperationId)
+                        .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND,
+                                "Order refund request not found"))));
+        return finalizeRefund(reserved, payments.findRefundOperation(paymentOperationId));
+    }
+
+    private OrderRefundResponse finalizeRefund(RefundRecord reserved, PaymentRefundResponse payment) {
+        if (payment == null || payment.refundOperationId() == null
+                || payment.amountWon() != reserved.recordedAmountWon()
+                || !"KRW".equals(payment.currency())) {
+            throw conflict("PayPal refund facts do not match the order refund request");
+        }
+        OrderRefundPaymentStatus nextStatus = refundStatus(payment.status());
+        return Objects.requireNonNull(transactions.execute(transaction -> {
+            refunds.linkPaymentOperation(reserved.refundId(), payment.refundOperationId());
+            boolean changed = refunds.updatePaymentStatus(reserved.refundId(), nextStatus);
+            OrderRefundPaymentStatus currentStatus = refunds.paymentStatus(reserved.refundId());
+            RefundRecord current = refunds.findByIdempotencyKey(reserved.idempotencyKey())
+                    .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND,
+                            "Order refund request not found"));
+            if (changed && currentStatus == OrderRefundPaymentStatus.COMPLETED) {
+                applyConfirmedRefund(current);
+            }
+            RefundRecord updated = refunds.findByIdempotencyKey(reserved.idempotencyKey()).orElse(current);
+            return response(updated, currentStatus, payment.providerRefundId());
+        }));
+    }
+
+    private void applyConfirmedRefund(RefundRecord refund) {
+        PurchaseOrder order = lockOrder(refund.orderId());
+        Map<UUID, OrderItem> orderItemsById = new HashMap<>();
+        for (OrderItem item : items.findByOrderOrderIdOrderBySkuIdAsc(refund.orderId())) {
+            if (!refund.sellerId().equals(item.sellerId())) {
+                throw conflict("Order contains an item owned by another seller");
+            }
+            orderItemsById.put(item.orderItemId(), item);
+        }
+        Map<String, Integer> quantitiesBySku = new TreeMap<>();
+        for (var line : refund.items()) {
+            OrderItem item = orderItemsById.get(line.orderItemId());
+            if (item == null) throw conflict("Refund item does not belong to order");
+            quantitiesBySku.merge(item.skuId(), line.quantity(), Math::addExact);
+        }
+        for (Map.Entry<String, Integer> quantity : quantitiesBySku.entrySet()) {
+            inventory.restoreClaimed(order.orderId(), refund.sellerId(), quantity.getKey(), quantity.getValue());
+        }
+        settlement.recordRefund(new RefundPostingRequest(
+                order.orderId(), refund.refundId(), refund.sellerId(), refund.recordedAmountWon()));
+
+        Map<UUID, Integer> completed = refunds.completedRefundedQuantitiesByOrder(order.orderId());
+        boolean fullyRefunded = orderItemsById.values().stream()
+                .allMatch(item -> completed.getOrDefault(item.orderItemId(), 0) >= item.quantity());
+        OrderRefundStatus status = fullyRefunded
+                ? OrderRefundStatus.FULLY_RECORDED : OrderRefundStatus.PARTIALLY_RECORDED;
+        refunds.updateRefundStatus(refund.refundId(), status);
+
+        long totalRecordedAmountWon;
+        try {
+            totalRecordedAmountWon = Math.addExact(refunds.findSummary(order.orderId())
+                    .map(RefundSummary::recordedAmountWon).orElse(0L), refund.recordedAmountWon());
+        } catch (ArithmeticException overflow) {
+            throw invalidRequest("Refund amount is too large");
+        }
+        refunds.upsertSummary(order.orderId(), refund.sellerId(), totalRecordedAmountWon, status, clock.instant());
+    }
+
+    private static OrderRefundPaymentStatus refundStatus(PaymentRefundState state) {
+        return switch (state) {
+            case COMPLETED -> OrderRefundPaymentStatus.COMPLETED;
+            case PENDING -> OrderRefundPaymentStatus.PENDING;
+            case UNKNOWN -> OrderRefundPaymentStatus.UNKNOWN;
+            case FAILED -> OrderRefundPaymentStatus.FAILED;
+        };
     }
 
     @Override
@@ -233,10 +330,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .map(summary -> {
                     if (!summary.sellerId().equals(sellerId)) throw conflict("Refund summary seller does not match order");
                     return new OrderRefundSummaryResponse(orderId, summary.status(), summary.recordedAmountWon(),
-                            "LOCAL_LEDGER_ONLY", summary.updatedAt());
+                            summary.updatedAt());
                 })
-                .orElseGet(() -> new OrderRefundSummaryResponse(orderId, OrderRefundStatus.NONE, 0,
-                        "LOCAL_LEDGER_ONLY", null));
+                .orElseGet(() -> new OrderRefundSummaryResponse(orderId, OrderRefundStatus.NONE, 0, null));
     }
 
     private PurchaseOrder requireOrder(UUID orderId) {
@@ -273,9 +369,10 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         }
     }
 
-    private static OrderRefundResponse response(RefundRecord refund) {
+    private static OrderRefundResponse response(RefundRecord refund, OrderRefundPaymentStatus paymentStatus,
+                                                String providerRefundId) {
         return new OrderRefundResponse(refund.refundId(), refund.orderId(), refund.recordedAmountWon(),
-                refund.status(), "LOCAL_LEDGER_ONLY", refund.createdAt());
+                refund.status(), paymentStatus, providerRefundId, refund.createdAt());
     }
 
     private static OrderException conflict(String message) {

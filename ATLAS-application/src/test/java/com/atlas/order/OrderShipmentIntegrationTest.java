@@ -28,6 +28,7 @@ import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderShipmentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
@@ -50,7 +51,7 @@ import tools.jackson.databind.ObjectMapper;
 @Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest
-class OrderShipmentIntegrationTest {
+class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 
@@ -284,7 +285,7 @@ class OrderShipmentIntegrationTest {
         OrderResponse reserved = checkout.orders().getFirst();
         UUID orderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, reserved.orderId());
-        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().getFirst();
+        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
         assertThat(paid.state().name()).isEqualTo("PAID");
         return new Fixture(sellerId, paid.orderId(), orderItemId);
     }
@@ -307,7 +308,7 @@ class OrderShipmentIntegrationTest {
         UUID secondItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
                 UUID.class, reserved.orderId(), secondSku);
-        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().getFirst();
+        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
         assertThat(paid.state().name()).isEqualTo("PAID");
         return new MultiItemFixture(sellerId, paid.orderId(), buyerRef, firstItemId, secondItemId);
     }
@@ -323,7 +324,7 @@ class OrderShipmentIntegrationTest {
         OrderResponse reserved = checkout.orders().getFirst();
         UUID orderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, reserved.orderId());
-        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().getFirst();
+        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
         assertThat(paid.state().name()).isEqualTo("PAID");
         return new Fixture(sellerId, paid.orderId(), orderItemId);
     }
@@ -332,6 +333,10 @@ class OrderShipmentIntegrationTest {
             UUID firstOrderItemId, UUID secondOrderItemId) {
     }
 
+    private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
+        CheckoutResponse pending = checkoutPayments.submit(checkoutId);
+        return checkoutPayments.completeApproval(checkoutId, approvalToken(pending.paymentApprovalUrl()));
+    }
     private record Fixture(UUID sellerId, UUID orderId, UUID orderItemId) {
     }
 }

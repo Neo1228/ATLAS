@@ -25,10 +25,12 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
+import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -170,12 +172,41 @@ public final class OrderServiceImpl implements OrderService {
             return requireOrder(orderId);
         });
         if (prepared.state() != OrderState.PAYMENT_SUBMITTED) return find(orderId);
-        // 외부 PSP 호출은 DB 트랜잭션 밖에서 수행한다.
-        PaymentResponse payment = payments.submitInitial(orderId);
+        // PayPal HTTP 호출은 업무 DB transaction 밖에서 수행.
+        PaymentResponse payment;
+        try {
+            payment = payments.submitInitial(orderId, BigDecimal.valueOf(paymentAmountWon(orderId)));
+        } catch (PaymentException exception) {
+            if (exception.code() == PaymentException.Code.PAYMENT_PROVIDER_DISABLED) {
+                PaymentResponse attempt = payments.find(orderId);
+                if (attempt == null || attempt.state() == PaymentState.NOT_STARTED) {
+                    transactions.execute(status -> {
+                        PurchaseOrder current = lockOrder(orderId);
+                        if (current.state() == OrderState.PAYMENT_SUBMITTED) {
+                            current.updateState(OrderState.RESERVED, current.paymentAttemptId(), clock.instant());
+                        }
+                        return null;
+                    });
+                }
+            }
+            throw exception;
+        }
         if (payment.state() == PaymentState.DECLINED && payment.authorizationActive()) {
             payment = payments.voidAuthorization(orderId, "submit-void:" + orderId);
         }
         return applyPayment(orderId, payment);
+    }
+
+    @Override
+    public OrderResponse completePaymentApproval(UUID orderId, String providerOrderId) {
+        PaymentResponse payment = payments.completeApproval(orderId, providerOrderId);
+        if (payment.state() == PaymentState.AUTHORIZATION_PENDING
+                || payment.state() == PaymentState.CAPTURE_PENDING
+                || payment.state() == PaymentState.UNKNOWN
+                || payment.state() == PaymentState.VOID_PENDING) {
+            return applyPayment(orderId, payment);
+        }
+        return reconcilePayment(orderId, "paypal-approval:" + providerOrderId);
     }
 
     @Override
@@ -198,6 +229,7 @@ public final class OrderServiceImpl implements OrderService {
         if (payment == null || payment.state() == PaymentState.UNKNOWN
                 || payment.state() == PaymentState.AUTHORIZATION_PENDING
                 || payment.state() == PaymentState.CAPTURE_PENDING
+                || payment.state() == PaymentState.AUTHORIZED
                 || payment.state() == PaymentState.VOID_PENDING) {
             payment = order.state() == OrderState.CANCEL_PENDING || order.state() == OrderState.PAYMENT_VOID_PENDING
                     ? payments.reconcileForCancellation(orderId, "reconcile-cancel:" + idempotencyKey)
@@ -400,7 +432,8 @@ public final class OrderServiceImpl implements OrderService {
         return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), paymentAttemptId,
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState,
                 ticket == null ? null : ticket.status(), order.source(), order.fulfillmentLocationId(),
-                itemResponses, totalPriceWon, order.sellerCouponCode(), order.couponDiscountWon());
+                itemResponses, totalPriceWon, order.sellerCouponCode(), order.couponDiscountWon(),
+                payment == null ? null : payment.approvalUrl());
     }
 
     private static boolean invalidIdempotencyKey(String idempotencyKey) {
@@ -421,5 +454,14 @@ public final class OrderServiceImpl implements OrderService {
         for (int index = 0; index < locks.length; index++) locks[index] = new Object();
         return locks;
     }
+    private long paymentAmountWon(UUID orderId) {
+        long total = 0;
+        for (OrderItem item : items.findByOrderOrderIdOrderBySkuIdAsc(orderId)) {
+            total = Math.addExact(total, item.lineTotalWon());
+        }
+        if (total <= 0) throw new OrderException(OrderException.Code.INVALID_REQUEST, "Order has no payable amount");
+        return total;
+    }
+
     private record CheckoutStartOutcome(OrderResponse response, CatalogException failure) { }
 }

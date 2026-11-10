@@ -24,6 +24,7 @@ import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.dto.request.OrderShipmentRequest;
 import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.persistence.state.OrderRefundStatus;
+import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.persistence.state.OrderReturnStatus;
 import com.atlas.order.service.CartCheckoutService;
@@ -36,6 +37,7 @@ import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderService;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -61,7 +63,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest
-class OrderRefundLifecycleIntegrationTest {
+class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
             .withDatabaseName("atlas")
@@ -286,10 +288,19 @@ class OrderRefundLifecycleIntegrationTest {
         OrderRefundRequest oneUnit = request(fixture.sellerId(), fixture.orderId(), "refund-partial-key",
                 itemId, 1);
 
+        queueRefundStatus("PENDING");
+        OrderRefundResponse pendingRefund = refunds.refund(oneUnit);
+        assertThat(pendingRefund.paymentStatus())
+                .isEqualTo(OrderRefundPaymentStatus.PENDING);
+        assertStock(fixture, 3, 2);
+        assertThat(journalCountForRefund(pendingRefund.refundId())).isZero();
+
         OrderRefundResponse partial = refunds.refund(oneUnit);
+        assertThat(partial.paymentStatus())
+                .isEqualTo(OrderRefundPaymentStatus.COMPLETED);
 
         assertThat(partial.refundId().version()).isEqualTo(7);
-        assertThat(partial.recordedAmountWon()).isEqualTo(125);
+        assertThat(partial.refundAmountWon()).isEqualTo(125);
         assertThat(partial.status()).isEqualTo(OrderRefundStatus.PARTIALLY_RECORDED);
         assertThat(orders.find(fixture.orderId()).state()).isEqualTo(OrderState.PAID);
         assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status())
@@ -319,7 +330,7 @@ class OrderRefundLifecycleIntegrationTest {
         OrderRefundResponse full = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
                 "refund-final-key", itemId, 1));
 
-        assertThat(full.recordedAmountWon()).isEqualTo(125);
+        assertThat(full.refundAmountWon()).isEqualTo(125);
         assertThat(full.status()).isEqualTo(OrderRefundStatus.FULLY_RECORDED);
         assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status())
                 .isEqualTo(OrderRefundStatus.FULLY_RECORDED);
@@ -334,6 +345,28 @@ class OrderRefundLifecycleIntegrationTest {
                 .satisfies(error -> assertThat(((OrderException) error).code())
                         .isEqualTo(OrderException.Code.CONFLICT));
         assertThat(journalCountForRefund(full.refundId())).isEqualTo(1);
+    }
+
+    @Test
+    void unknownRefundRetainsQuantityUntilProviderGetConfirmsCompletion() {
+        Fixture fixture = paidOrder(1, 2, 125);
+        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(), "refund-unknown-key",
+                fixture.orderItemId(), 1);
+
+        queueRefundStatus("UNKNOWN");
+        OrderRefundResponse unknown = refunds.refund(request);
+        assertThat(unknown.paymentStatus())
+                .isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
+        assertStock(fixture, 1, 1);
+        assertThat(journalCountForRefund(unknown.refundId())).isZero();
+
+        OrderRefundResponse completed = refunds.refund(request);
+        assertThat(completed.paymentStatus())
+                .isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+        assertStock(fixture, 2, 0);
+        assertThat(journalCountForRefund(completed.refundId())).isEqualTo(1);
+        assertThat(refunds.refund(request)).isEqualTo(completed);
+        assertStock(fixture, 2, 0);
     }
 
     @Test
@@ -600,8 +633,8 @@ class OrderRefundLifecycleIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(refundBody))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.recordedAmountWon").value(200))
-                .andExpect(jsonPath("$.executionMode").value("LOCAL_LEDGER_ONLY"))
+                .andExpect(jsonPath("$.refundAmountWon").value(200))
+                .andExpect(jsonPath("$.paymentStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.status").value("PARTIALLY_RECORDED"))
                 .andReturn()
                 .getResponse()
@@ -642,8 +675,7 @@ class OrderRefundLifecycleIntegrationTest {
                         fixture.sellerId(), fixture.orderId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PARTIALLY_RECORDED"))
-                .andExpect(jsonPath("$.totalRecordedAmountWon").value(200))
-                .andExpect(jsonPath("$.executionMode").value("LOCAL_LEDGER_ONLY"));
+                .andExpect(jsonPath("$.totalRecordedAmountWon").value(200));
     }
 
     @Test
@@ -676,7 +708,10 @@ class OrderRefundLifecycleIntegrationTest {
 
         assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status()).isEqualTo(OrderRefundStatus.NONE);
         assertStock(fixture, 4, 1);
-        assertThat(refundRequestCount(fixture.orderId())).isZero();
+        assertThat(refundRequestCount(fixture.orderId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT payment_refund_status FROM order_refund_request WHERE idempotency_key = ?",
+                String.class, request.idempotencyKey())).isEqualTo("PENDING");
         assertThat(journalCountForOrder(fixture.orderId())).isZero();
 
         OrderRefundResponse recovered = refunds.refund(request);
@@ -758,7 +793,7 @@ class OrderRefundLifecycleIntegrationTest {
         UUID secondItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
                 UUID.class, reserved.orderId(), secondSkuId);
-        OrderResponse paid = checkoutPayments.submit(checkout.checkoutId()).orders().get(0);
+        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().get(0);
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         return new MultiItemFixture(sellerId, paid.orderId(), firstItemId, firstSkuId, secondItemId, secondSkuId,
                 paid.paymentAttemptId());
@@ -775,10 +810,15 @@ class OrderRefundLifecycleIntegrationTest {
 
     private Fixture paidOrder(int quantity, int initialStock, long unitPriceWon) {
         Fixture fixture = createOrder(quantity, initialStock, unitPriceWon);
-        OrderResponse paid = checkoutPayments.submit(fixture.checkoutId()).orders().get(0);
+        OrderResponse paid = completePayPalCheckout(fixture.checkoutId()).orders().get(0);
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         return new Fixture(fixture.sellerId(), fixture.orderId(), fixture.orderItemId(), fixture.skuId(),
                 fixture.checkoutId(), paid.paymentAttemptId());
+    }
+
+    private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
+        CheckoutResponse pending = checkoutPayments.submit(checkoutId);
+        return checkoutPayments.completeApproval(checkoutId, approvalToken(pending.paymentApprovalUrl()));
     }
 
     private Fixture unpaidOrder(int quantity, int initialStock, long unitPriceWon) {

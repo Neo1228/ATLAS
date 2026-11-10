@@ -7,7 +7,9 @@ public final class PaymentException extends RuntimeException {
 
     public enum Code {
         ATTEMPT_NOT_FOUND,
-        INVALID_REQUEST
+        INVALID_REQUEST,
+        PAYMENT_PROVIDER_DISABLED,
+        PAYMENT_PROVIDER_UNAVAILABLE
     }
 
     private final Code code;
