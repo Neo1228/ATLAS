@@ -19,8 +19,8 @@ class JdbcCapacityAdjustmentRepositoryTest {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         List<String> lockKeys = new ArrayList<>();
         doAnswer(invocation -> {
-            Object[] parameters = invocation.getArgument(2);
-            lockKeys.add((String) parameters[0]);
+            String lockKey = invocation.getArgument(2);
+            lockKeys.add(lockKey);
             return null;
         }).when(jdbc).query(
                 eq("SELECT pg_advisory_xact_lock(hashtextextended(?,0))"),
