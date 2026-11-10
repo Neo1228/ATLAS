@@ -319,6 +319,43 @@ class SellerCouponRedemptionIntegrationTest {
         assertThat(inventory.find(firstSeller, firstSku.skuId()).reserved()).isZero();
     }
 
+    @Test
+    void couponRedemptionTerminalTransitionsAreIdempotent() {
+        UUID sellerId = sellers.createSeller().sellerId();
+        SkuFixture sku = createSku(sellerId, 1_000, 2);
+        String code = createCoupon(sellerId, 100, 2);
+        UUID couponId = coupons.find(sellerId, code).couponId();
+        Instant recordedAt = Instant.now();
+        UUID releasedOrderId = checkout("terminal-release-" + UUID.randomUUID(), sku, code)
+                .orders().getFirst().orderId();
+        UUID redeemedOrderId = checkout("terminal-redeem-" + UUID.randomUUID(), sku, code)
+                .orders().getFirst().orderId();
+
+        coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt);
+        coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt);
+        assertThat(coupons.find(sellerId, code).reservedCount()).isEqualTo(2L);
+        coupons.releaseRedemption(sellerId, couponId, releasedOrderId, recordedAt);
+        coupons.releaseRedemption(sellerId, couponId, releasedOrderId, recordedAt);
+        assertThat(coupons.find(sellerId, code).reservedCount()).isEqualTo(1L);
+        assertThatThrownBy(() -> coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt))
+                .isInstanceOf(CatalogException.class)
+                .satisfies(error -> assertThat(((CatalogException) error).code())
+                        .isEqualTo(CatalogException.Code.CONFLICT));
+
+        coupons.reserveRedemption(sellerId, couponId, redeemedOrderId, recordedAt);
+        coupons.redeemRedemption(sellerId, couponId, redeemedOrderId, recordedAt);
+        coupons.redeemRedemption(sellerId, couponId, redeemedOrderId, recordedAt);
+        assertThatThrownBy(() -> coupons.releaseRedemption(sellerId, couponId, redeemedOrderId, recordedAt))
+                .isInstanceOf(CatalogException.class)
+                .satisfies(error -> assertThat(((CatalogException) error).code())
+                        .isEqualTo(CatalogException.Code.CONFLICT));
+
+        var coupon = coupons.find(sellerId, code);
+        assertThat(coupon.reservedCount()).isZero();
+        assertThat(coupon.redeemedCount()).isEqualTo(1L);
+        assertThat(coupon.remainingCount()).isEqualTo(1L);
+    }
+
     private CheckoutResponse checkout(String buyer, SkuFixture sku, String code) {
         carts.setItemQuantity(sku.sellerId(), buyer, sku.skuId(), 1);
         return checkouts.checkout(buyer, "coupon-cap-key-" + UUID.randomUUID(),
