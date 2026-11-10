@@ -112,17 +112,14 @@ public class GlobalExceptionHandler {
     ResponseEntity<ProblemDetail> handleUnexpected(Exception exception) {
         if (exception instanceof ErrorResponse errorResponse) {
             HttpStatusCode status = errorResponse.getStatusCode();
-            if (status.is5xxServerError()) return internalError(exception);
-            String detail = status.value() == HttpStatus.BAD_REQUEST.value()
-                    ? "Request validation failed" : errorResponse.getBody().getDetail();
-            return response(status, codeFor(status), detail == null ? status.toString() : detail);
+            String code = codeFor(status);
+            return response(status, code, null);
         }
         return internalError(exception);
     }
 
     private ResponseEntity<ProblemDetail> internalError(Exception exception) {
-        LOGGER.error("처리되지 않은 HTTP 예외 (requestId={})", MDC.get("requestId"), exception);
-        return response(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected server error");
+        return response(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", null);
     }
 
     private static String codeFor(HttpStatusCode status) {
@@ -134,11 +131,31 @@ public class GlobalExceptionHandler {
         };
     }
 
-    private static ResponseEntity<ProblemDetail> response(HttpStatusCode status, String code, String detail) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+    private static ResponseEntity<ProblemDetail> response(
+            HttpStatusCode status, String code, String ignoredInternalDetail) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, koreanDetail(status, code));
         problem.setProperty("code", code);
         String requestId = MDC.get("requestId");
         if (requestId != null) problem.setProperty("requestId", requestId);
         return ResponseEntity.status(status).body(problem);
+    }
+
+    private static String koreanDetail(HttpStatusCode status, String code) {
+        return switch (code) {
+            case "PAYMENT_PROVIDER_DISABLED" -> "현재 결제 서비스가 활성화되어 있지 않습니다.";
+            case "PAYMENT_PROVIDER_UNAVAILABLE" -> "결제 서비스에 일시적으로 연결할 수 없습니다. 결제 상태를 확인한 뒤 같은 요청으로 다시 시도해 주세요.";
+            case "INSUFFICIENT_STOCK" -> "요청한 수량의 재고를 확보할 수 없습니다.";
+            case "PRODUCT_NOT_ORDERABLE" -> "현재 주문할 수 없는 상품입니다.";
+            case "INTERNAL_ERROR" -> "서버에서 요청을 처리하지 못했습니다. 요청 ID를 고객 지원에 전달해 주세요.";
+            default -> switch (status.value()) {
+                case 400 -> "요청 정보를 확인해 주세요.";
+                case 401 -> "인증이 필요합니다.";
+                case 403 -> "요청을 수행할 권한이 없습니다.";
+                case 404 -> "요청한 정보를 찾을 수 없습니다.";
+                case 409 -> "현재 상태에서는 요청을 처리할 수 없습니다.";
+                case 503 -> "서비스를 일시적으로 사용할 수 없습니다.";
+                default -> "요청을 처리할 수 없습니다.";
+            };
+        };
     }
 }
