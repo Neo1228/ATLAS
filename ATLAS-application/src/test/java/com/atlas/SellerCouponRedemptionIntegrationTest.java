@@ -322,11 +322,14 @@ class SellerCouponRedemptionIntegrationTest {
     @Test
     void couponRedemptionTerminalTransitionsAreIdempotent() {
         UUID sellerId = sellers.createSeller().sellerId();
+        SkuFixture sku = createSku(sellerId, 1_000, 2);
         String code = createCoupon(sellerId, 100, 2);
         UUID couponId = coupons.find(sellerId, code).couponId();
         Instant recordedAt = Instant.now();
-        UUID releasedOrderId = UUID.randomUUID();
-        UUID redeemedOrderId = UUID.randomUUID();
+        UUID releasedOrderId = checkout("terminal-release-" + UUID.randomUUID(), sku, code)
+                .orders().getFirst().orderId();
+        UUID redeemedOrderId = checkout("terminal-redeem-" + UUID.randomUUID(), sku, code)
+                .orders().getFirst().orderId();
 
         coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt);
         coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt);
