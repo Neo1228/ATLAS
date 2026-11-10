@@ -37,7 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
-    private static final Object[] OWNER_LOCKS = createOwnerLocks();
+    private static final OwnerLockRegistry OWNER_LOCKS = new OwnerLockRegistry();
 
     private final PaymentAttemptRepository repository;
     private final PaymentRefundRepository refunds;
@@ -608,15 +608,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private <T> T withOwnerLock(UUID ownerId, Supplier<T> action) {
-        synchronized (OWNER_LOCKS[Math.floorMod(ownerId.hashCode(), OWNER_LOCKS.length)]) {
-            return action.get();
-        }
-    }
-
-    private static Object[] createOwnerLocks() {
-        Object[] locks = new Object[256];
-        for (int i = 0; i < locks.length; i++) locks[i] = new Object();
-        return locks;
+        return OWNER_LOCKS.withLock(ownerId, action);
     }
 
     private PaymentAttempt requireOrder(UUID orderId) {

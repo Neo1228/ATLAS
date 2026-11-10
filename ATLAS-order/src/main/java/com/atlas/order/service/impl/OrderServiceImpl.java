@@ -48,7 +48,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public final class OrderServiceImpl implements OrderService {
     private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 221;
 
-    private static final Object[] ORDER_LOCKS = createOrderLocks();
+    private static final OwnerLockRegistry ORDER_LOCKS = new OwnerLockRegistry();
 
     private final OrderRepository repository;
     private final OrderItemRepository items;
@@ -452,14 +452,9 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     private <T> T withOrderLock(UUID orderId, Supplier<T> work) {
-        synchronized (ORDER_LOCKS[Math.floorMod(orderId.hashCode(), ORDER_LOCKS.length)]) { return work.get(); }
+        return ORDER_LOCKS.withLock(orderId, work);
     }
 
-    private static Object[] createOrderLocks() {
-        Object[] locks = new Object[256];
-        for (int index = 0; index < locks.length; index++) locks[index] = new Object();
-        return locks;
-    }
     private long paymentAmountWon(UUID orderId) {
         long total = 0;
         for (OrderItem item : items.findByOrderOrderIdOrderBySkuIdAsc(orderId)) {
