@@ -10,6 +10,7 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.settlement.exception.SettlementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
@@ -120,7 +121,7 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ProblemDetail> internalError(Exception exception) {
-        LOGGER.error("처리되지 않은 HTTP 예외", exception);
+        LOGGER.error("처리되지 않은 HTTP 예외 (requestId={})", MDC.get("requestId"), exception);
         return response(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected server error");
     }
 
@@ -136,6 +137,8 @@ public class GlobalExceptionHandler {
     private static ResponseEntity<ProblemDetail> response(HttpStatusCode status, String code, String detail) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setProperty("code", code);
+        String requestId = MDC.get("requestId");
+        if (requestId != null) problem.setProperty("requestId", requestId);
         return ResponseEntity.status(status).body(problem);
     }
 }
