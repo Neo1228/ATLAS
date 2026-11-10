@@ -62,6 +62,32 @@ class SellerSkuServiceImplTest {
         verify(products).findAllByProductIdIn(List.of(firstProductId, secondProductId));
     }
     @Test
+    void orderableSellerSkusReuseBatchedProductLookupForSharedProduct() {
+        UUID productId = UUID.randomUUID();
+        List<String> skuIds = List.of("TEA-1", "TEA-2");
+        SellerSku firstSku = new SellerSku(sellerId, productId, "TEA-1", 1200, Instant.EPOCH);
+        SellerSku secondSku = new SellerSku(sellerId, productId, "TEA-2", 1500, Instant.EPOCH);
+        Product product = mock(Product.class);
+        when(product.getProductId()).thenReturn(productId);
+        when(product.getName()).thenReturn("Green tea");
+        when(sellerSkus.findAllBySellerIdAndSkuIdIn(sellerId, skuIds))
+                .thenReturn(List.of(firstSku, secondSku));
+        when(products.findAllByProductIdIn(List.of(productId))).thenReturn(List.of(product));
+        when(products.findOrderableProductIds(List.of(productId), ProductSalesChannel.ONLINE_STORE.name()))
+                .thenReturn(List.of(productId));
+
+        List<SellerSkuResponse> responses = service.findOrderableSellerSkus(
+                sellerId, skuIds, ProductSalesChannel.ONLINE_STORE, Instant.EPOCH);
+
+        assertEquals(List.of("TEA-1", "TEA-2"),
+                responses.stream().map(SellerSkuResponse::skuId).toList());
+        assertEquals(List.of("Green tea", "Green tea"),
+                responses.stream().map(SellerSkuResponse::productName).toList());
+        verify(products).findAllByProductIdIn(List.of(productId));
+        verify(products).findOrderableProductIds(List.of(productId), ProductSalesChannel.ONLINE_STORE.name());
+    }
+
+    @Test
     void orderableSkuUsesSalePriceOnlyInsideHalfOpenWindow() {
         UUID productId = UUID.randomUUID();
         String skuId = "SALE-1";

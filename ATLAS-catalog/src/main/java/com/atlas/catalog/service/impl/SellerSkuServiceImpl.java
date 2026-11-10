@@ -73,11 +73,11 @@ public class SellerSkuServiceImpl implements SellerSkuService {
         if (sellerId == null || skuIds == null || skuIds.isEmpty() || channel == null || asOf == null) return List.of();
         List<String> ids = normalize(skuIds);
         if (ids.isEmpty()) return List.of();
-        List<SellerSku> skus = sellerSkus.findAllBySellerIdAndSkuIdIn(sellerId, ids);
+        SellerSkuProducts loaded = loadSellerSkuProducts(sellerId, ids);
+        List<SellerSku> skus = loaded.skus();
         if (skus.isEmpty()) return List.of();
-        List<UUID> productIds = skus.stream().map(SellerSku::getProductId).distinct().toList();
-        Map<UUID, Product> productById = products.findAllByProductIdIn(productIds).stream()
-                .collect(Collectors.toMap(Product::getProductId, Function.identity()));
+        List<UUID> productIds = loaded.productIds();
+        Map<UUID, Product> productById = loaded.productById();
         List<UUID> orderableIds = products.findOrderableProductIds(productIds, channel.name());
         for (SellerSku sku : skus) {
             Product product = productById.get(sku.getProductId());
@@ -96,11 +96,11 @@ public class SellerSkuServiceImpl implements SellerSkuService {
         if (sellerId == null || skuIds == null || skuIds.isEmpty()) return List.of();
         List<String> ids = normalize(skuIds);
         if (ids.isEmpty()) return List.of();
-        List<SellerSku> skus = sellerSkus.findAllBySellerIdAndSkuIdIn(sellerId, ids);
+        SellerSkuProducts loaded = loadSellerSkuProducts(sellerId, ids);
+        List<SellerSku> skus = loaded.skus();
         if (skus.isEmpty()) return List.of();
-        List<UUID> productIds = skus.stream().map(SellerSku::getProductId).distinct().toList();
-        Map<UUID, Product> productById = products.findAllByProductIdIn(productIds).stream()
-                .collect(Collectors.toMap(Product::getProductId, Function.identity()));
+        List<UUID> productIds = loaded.productIds();
+        Map<UUID, Product> productById = loaded.productById();
         return skus.stream().map(sku -> {
             Product product = productById.get(sku.getProductId());
             return product == null ? null : toResponse(product, sku, asOf);
@@ -108,6 +108,19 @@ public class SellerSkuServiceImpl implements SellerSkuService {
     }
 
     private static List<String> normalize(List<String> skuIds) {
+    private SellerSkuProducts loadSellerSkuProducts(UUID sellerId, List<String> skuIds) {
+        List<SellerSku> skus = sellerSkus.findAllBySellerIdAndSkuIdIn(sellerId, skuIds);
+        if (skus.isEmpty()) return new SellerSkuProducts(List.of(), List.of(), Map.of());
+        List<UUID> productIds = skus.stream().map(SellerSku::getProductId).distinct().toList();
+        Map<UUID, Product> productById = products.findAllByProductIdIn(productIds).stream()
+                .collect(Collectors.toMap(Product::getProductId, Function.identity()));
+        return new SellerSkuProducts(skus, productIds, productById);
+    }
+
+    private record SellerSkuProducts(
+            List<SellerSku> skus, List<UUID> productIds, Map<UUID, Product> productById) {
+    }
+
         return skuIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
     }
 
