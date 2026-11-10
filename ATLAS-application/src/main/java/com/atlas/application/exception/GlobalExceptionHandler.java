@@ -112,6 +112,7 @@ public class GlobalExceptionHandler {
     ResponseEntity<ProblemDetail> handleUnexpected(Exception exception) {
         if (exception instanceof ErrorResponse errorResponse) {
             HttpStatusCode status = errorResponse.getStatusCode();
+            if (status.is5xxServerError()) return internalError(exception);
             String code = codeFor(status);
             return response(status, code, null);
         }
@@ -119,6 +120,7 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ProblemDetail> internalError(Exception exception) {
+        LOGGER.error("처리되지 않은 HTTP 예외 (requestId={})", MDC.get("requestId"), exception);
         return response(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", null);
     }
 
