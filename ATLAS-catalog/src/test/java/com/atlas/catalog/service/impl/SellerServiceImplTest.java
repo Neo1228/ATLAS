@@ -22,7 +22,7 @@ class SellerServiceImplTest {
     void createsUncategorizedCategoryWithNewSeller() {
         UUID sellerId = UUID.randomUUID();
         Seller seller = mock(Seller.class);
-        when(sellers.save(any(Seller.class))).thenReturn(seller);
+        when(sellers.saveAndFlush(any(Seller.class))).thenReturn(seller);
         when(seller.getSellerId()).thenReturn(sellerId);
 
         service.createSeller();

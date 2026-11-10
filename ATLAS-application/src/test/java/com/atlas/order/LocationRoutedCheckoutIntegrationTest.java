@@ -48,7 +48,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
 @Testcontainers
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @SpringBootTest
 class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport {
     @Container

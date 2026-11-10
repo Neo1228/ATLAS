@@ -3,7 +3,7 @@
 ## 프로젝트 개요
 
 - ATLAS는 전체 이커머스 플랫폼의 구매·판매 흐름, 거래 정합성, 장애 복구를 단계적으로 검증하는 로컬 학습 프로젝트.
-- 현재 기능: 상품·Seller-SKU, 장바구니, 한정판매 대기열, 재고 예약·location routing, 주문·Fake PSP, 부분 출고·배송 기록, 내부 정산·환불·반품.
+- 현재 기능: 계정 인증, 상품·Seller-SKU, 장바구니, 한정판매 대기열, 재고 예약·location routing, 주문·PayPal Sandbox 결제, 부분 출고·배송 기록, 내부 정산·환불·반품.
 - 실제 사용자, 개인정보, 실결제·송금, 운송사 연동, 클라우드 운영은 범위 밖.
 - 검증된 사실, 소유자 결정, 합성 입력, 실측 결과를 구분. 시험 입력을 실제 수요나 운영 용량으로 표현하지 않음.
 - 현재 기능과 실행 방법: [README](README.md). 기능 요구사항·미결정 정책: [요구사항 인덱스](docs/01-requirements/requirements-index.md). 지속 보존할 결정: [결정 로그](docs/00-governance/decision-log.md).
@@ -16,6 +16,7 @@
 
 | 모듈 | 책임 |
 |---|---|
+| `account-module` | Buyer 계정·Seller profile 연결, 인증 및 refresh-token 관리 |
 | `catalog-module` | Seller, Product/ProductCategory, Seller-SKU, 현재 가격·seller-scoped Catalog listing |
 | `cart-module` | Buyer당 Cart 1개, `(sellerId, skuId)`별 CartItem |
 | `campaign-module` | Campaign과 판매 자격 |
@@ -34,7 +35,7 @@
 - 한정판매: Campaign 개방 → queue 자격 확인 → FIFO 순번·checkout slot 발급 → Campaign Order 생성 → 재고 예약 → 같은 Order 결제 흐름.
 - 결제 상태가 `PENDING`/`UNKNOWN`이면 같은 attempt와 재고 hold 유지. 결과 대조 전에 새 결제 attempt 생성 금지. 주문 이행·환불 기록은 `OrderState`와 별도 관리.
 - 재고 불변조건: `available + reserved + claimed = initial_capacity`; 각 값은 음수가 아님. 확인된 비결제와 필요한 void 뒤에만 hold 해제.
-- PSP 결과 기록과 DB transaction은 별개 경계. 실제 외부 요청을 긴 DB transaction 안에서 실행하지 않음. Fake PSP는 로컬 시뮬레이션이며 재시작 뒤 상태 보존은 별도 구현·검증 대상.
+- PSP 요청은 DB transaction 외부에서 실행. PayPal Sandbox 결과 확인 후 내부 상태 반영; 실제 자금 이체·Seller payout은 범위 밖.
 - `sellerId`와 `buyerRef`는 합성 식별자일 뿐 인증·인가·tenant 격리 수단이 아님.
 
 ## 주요 디렉터리
@@ -43,7 +44,7 @@
 |---|---|
 | `ATLAS-application/` | Spring Boot 실행, HTTP, 설정, Flyway 마이그레이션 |
 | `ATLAS-catalog/`, `ATLAS-cart/`, `ATLAS-campaign/`, `ATLAS-admission/` | 상품, 장바구니, Campaign, 대기열 |
-| `ATLAS-inventory/`, `ATLAS-order/`, `ATLAS-payment/`, `ATLAS-settlement/` | 재고, 주문, Fake PSP, 내부 원장 |
+| `ATLAS-inventory/`, `ATLAS-order/`, `ATLAS-payment/`, `ATLAS-settlement/` | 재고, 주문, PayPal Sandbox 연동, 내부 원장 |
 | `docs/00-governance/` | 결정 로그와 참고자료 레지스트리 |
 | `docs/01-requirements/` | 기능 요구사항, 불변조건, 미결정 사항 |
 | `docs/02-decisions/adr/` | 승인된 Architecture Decision Record |
@@ -87,6 +88,8 @@ docker compose up -d --wait postgres
 - GET 조회는 상태 변경 금지. PayPal return/cancel redirect는 provider protocol callback 예외이며, 저장된 order ID·금액·통화 확인과 idempotency 필수 ([ADR-0026](docs/02-decisions/adr/ADR-0026-paypal-sandbox-payments.md)). 그 외 상태 변경은 POST 또는 scheduler에서 처리.
 - API·Actuator 기본 bind는 `127.0.0.1`. `ATLAS_SERVER_ADDRESS`·`MANAGEMENT_SERVER_ADDRESS=0.0.0.0`은 격리된 local Docker 테스트에서만 허용; host/public 노출 금지.
 - PayPal OAuth2 Client는 outbound 인증 전용. `ApiSecurityConfiguration`은 loopback-only API의 `permitAll`·CSRF 비활성 정책; inbound 인증은 비범위.
+- `buyerRef`·`sellerId`·resource UUID는 authenticated ownership 검증 전까지 authorization 증거가 아님. JWT 도입 시 default-deny, Buyer/Seller principal-to-resource ownership check 필수.
+- JWT는 Spring Security/Nimbus 검증 경로 사용. Custom signature/password crypto 금지. Refresh token은 opaque·hash-only·single-use rotation; replay 및 logout revocation을 integration test로 검증.
 - Transaction 경계는 도메인 불변조건 기준. PostgreSQL 잠금/SQL 경합은 실제 DB로 검증. `@Transactional` proxy 대상 class/method에 `final` 사용 금지.
 - CQRS, CommandBus, handler/mediator, 사전 `common` module, 범용 base/mapper/framework 금지. 실제 요구 없이 모듈·라이브러리·인프라 추가 금지.
 - 신규 라이브러리가 직접 구현보다 적합하면 기능·호환성·보안·유지보수·라이선스·실행/테스트/빌드 범위와 대안을 Issue/PR에 기록.
@@ -121,6 +124,8 @@ docker compose up -d --wait postgres
 
 - 단위 테스트는 각 `ATLAS-*/src/test`, Spring/PostgreSQL 통합·아키텍처 테스트는 `ATLAS-application/src/test`.
 - 주요 테스트: `ModuleBoundaryTest`, `CatalogIntegrationTest`, `ProductCategoryMigrationIntegrationTest`, `ProductOrderabilityMigrationIntegrationTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `SettlementStatementIntegrationTest`, `OrderShipmentIntegrationTest`, `OrderShipmentMigrationIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `SellerSkuGlobalFifoMigrationIntegrationTest`.
+- 인증 테스트: `AccountServiceTest`, `AccountSecurityConfigurationTest`, `AccountJwtConfigurationTest`, `AccountOwnershipInterceptorTest`, `ApiSecurityConfigurationTest`.
+- 도메인 통합 테스트의 `@AutoConfigureMockMvc(addFilters = false)`는 인증 대신 business flow를 검증하기 위한 범위 제한. 인증 기본 거부·공개 경로는 `ApiSecurityConfigurationTest`에서 실제 filter chain으로 검증; 해당 테스트에 filter 비활성화 금지.
 - Controller slice test는 Service-owned validation의 typed exception을 stub하고 HTTP mapping을 확인. Mock을 통과시키려고 domain policy를 Controller로 옮기지 않음.
 - Direct SQL fixture는 대상 schema와 일치시킴: 현재 schema의 `NOT NULL`·FK 필수 값을 채우고, migration upgrade fixture는 predecessor Flyway version을 고정.
 - PostgreSQL 전용 SQL, 잠금, migration, 동시성, transaction rollback은 Testcontainers의 실제 PostgreSQL에서 검증. Docker 접근 필요; CI는 `docker info` 확인.

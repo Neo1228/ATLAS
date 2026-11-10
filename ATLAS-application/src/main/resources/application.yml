@@ -30,6 +30,11 @@ spring:
 
 
 atlas:
+  security:
+    jwt:
+      signing-secret: ${ATLAS_JWT_SIGNING_SECRET:}
+      issuer: ${ATLAS_JWT_ISSUER:http://127.0.0.1:8080}
+      audience: ${ATLAS_JWT_AUDIENCE:atlas-api}
   checkout-window: PT10M
   admission:
     expiry-poll-interval: PT1S

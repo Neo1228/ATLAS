@@ -298,6 +298,12 @@ public final class OrderServiceImpl implements OrderService {
         return transactions.execute(status -> toResponse(requireOrder(orderId)));
     }
 
+    @Override
+    public boolean isOwnedByBuyer(UUID orderId, String buyerRef) {
+        if (orderId == null || buyerRef == null || buyerRef.isBlank()) return false;
+        return repository.existsByOrderIdAndBuyerRef(orderId, buyerRef);
+    }
+
     private PurchaseOrder findOrder(UUID orderId) {
         return transactions.execute(status -> requireOrder(orderId));
     }

@@ -9,6 +9,7 @@ include 'inventory-module'
 include 'order-module'
 include 'payment-module'
 include 'settlement-module'
+include 'account-module'
 
 project(':application-module').projectDir = file('ATLAS-application')
 project(':catalog-module').projectDir = file('ATLAS-catalog')
@@ -19,3 +20,4 @@ project(':inventory-module').projectDir = file('ATLAS-inventory')
 project(':order-module').projectDir = file('ATLAS-order')
 project(':payment-module').projectDir = file('ATLAS-payment')
 project(':settlement-module').projectDir = file('ATLAS-settlement')
+project(':account-module').projectDir = file('ATLAS-account')

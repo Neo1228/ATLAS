@@ -14,7 +14,7 @@ class ModuleBoundaryTest {
     void dependenciesRespectLayeredModulePackages() {
         JavaClasses source = productionClasses();
 
-        String[] javaAndFramework = {"java..", "jakarta..", "org.springframework..", "org.slf4j.."};
+        String[] javaAndFramework = {"java..", "javax..", "jakarta..", "org.springframework..", "org.slf4j.."};
         String[] javaAndPersistence = append(javaAndFramework, "org.hibernate.annotations..", "org.hibernate.id.uuid..");
         String[] applicationDependencies = {
                 "com.atlas.application..", "com.atlas",
@@ -35,7 +35,10 @@ class ModuleBoundaryTest {
                 "com.atlas.catalog.dto.response", "com.atlas.catalog.exception",
                 "com.atlas.cart.service", "com.atlas.cart.dto.request",
                 "com.atlas.cart.dto.response", "com.atlas.cart.exception",
-                "java..", "jakarta..", "org.springframework..", "org.slf4j.."
+                "com.atlas.account.service", "com.atlas.account.dto.request",
+                "com.atlas.account.dto.response", "com.atlas.account.domain",
+                "com.nimbusds..",
+                "java..", "javax..", "jakarta..", "org.springframework..", "org.slf4j.."
         };
         enforceAllowedDependencies(source, "com.atlas.application..", applicationDependencies);
         enforceAllowedDependencies(source, "com.atlas", applicationDependencies);
@@ -73,6 +76,8 @@ class ModuleBoundaryTest {
                 append(javaAndPersistence, "com.atlas.payment..", "tools.jackson.."));
         enforceAllowedDependencies(source, "com.atlas.settlement..",
                 append(javaAndPersistence, "com.atlas.settlement.."));
+        enforceAllowedDependencies(source, "com.atlas.account..",
+                append(javaAndPersistence, "com.atlas.account.."));
         noClasses().that().resideInAPackage("com.atlas..")
                 .and().resideOutsideOfPackage("..persistence.entity..")
                 .should().dependOnClassesThat()

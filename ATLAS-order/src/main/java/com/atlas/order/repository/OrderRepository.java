@@ -17,6 +17,7 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
             OrderState.PAYMENT_UNKNOWN, OrderState.PAYMENT_VOID_PENDING, OrderState.CANCEL_PENDING);
 
     Optional<PurchaseOrder> findByTicketId(UUID ticketId);
+    boolean existsByOrderIdAndBuyerRef(UUID orderId, String buyerRef);
 
     Optional<PurchaseOrder> findBySellerIdAndBuyerRefAndCheckoutKey(UUID sellerId, String buyerRef,
                                                                     String checkoutKey);
