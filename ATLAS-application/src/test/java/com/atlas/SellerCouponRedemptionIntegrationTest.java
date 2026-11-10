@@ -333,9 +333,10 @@ class SellerCouponRedemptionIntegrationTest {
 
         coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt);
         coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt);
+        assertThat(coupons.find(sellerId, code).reservedCount()).isEqualTo(2L);
+        coupons.releaseRedemption(sellerId, couponId, releasedOrderId, recordedAt);
+        coupons.releaseRedemption(sellerId, couponId, releasedOrderId, recordedAt);
         assertThat(coupons.find(sellerId, code).reservedCount()).isEqualTo(1L);
-        coupons.releaseRedemption(sellerId, couponId, releasedOrderId, recordedAt);
-        coupons.releaseRedemption(sellerId, couponId, releasedOrderId, recordedAt);
         assertThatThrownBy(() -> coupons.reserveRedemption(sellerId, couponId, releasedOrderId, recordedAt))
                 .isInstanceOf(CatalogException.class)
                 .satisfies(error -> assertThat(((CatalogException) error).code())
