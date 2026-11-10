@@ -482,12 +482,6 @@ assertUuidV7(paymentOrderId);
         try (var executor = Executors.newFixedThreadPool(2);
                 var lockConnection = Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
             lockConnection.setAutoCommit(false);
-            int blockerPid;
-            try (var statement = lockConnection.createStatement();
-                    var result = statement.executeQuery("SELECT pg_backend_pid()")) {
-                result.next();
-                blockerPid = result.getInt(1);
-            }
             try (var statement = lockConnection.prepareStatement(
                     "SELECT last_sequence FROM admission_counter WHERE seller_id = ? AND sku_id = ? FOR UPDATE")) {
                 statement.setObject(1, campaign.sellerId());
@@ -511,8 +505,9 @@ assertUuidV7(paymentOrderId);
             while (System.nanoTime() < deadline) {
                 blockedJoinCount = jdbc.queryForObject("""
                         SELECT count(*) FROM pg_stat_activity
-                        WHERE ? = ANY(pg_blocking_pids(pid))
-                        """, Integer.class, blockerPid);
+                        WHERE wait_event_type = 'Lock'
+                          AND position('admission_counter' in query) > 0
+                        """, Integer.class);
                 if (blockedJoinCount == 2) {
                     break;
                 }
