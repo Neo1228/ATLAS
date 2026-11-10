@@ -3,12 +3,14 @@ package com.atlas.application.exception;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.application.filter.RequestCorrelationFilter;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.mock.web.MockFilterChain;
 
 class RequestCorrelationFilterTest {
     @Test
@@ -19,7 +21,7 @@ class RequestCorrelationFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain() {
             @Override
-            public void doFilter(jakarta.servlet.ServletRequest request, jakarta.servlet.ServletResponse response) {
+            public void doFilter(ServletRequest request, ServletResponse response) {
                 assertThat(MDC.get(RequestCorrelationFilter.REQUEST_ID_MDC_KEY)).isNotEqualTo("caller-controlled");
                 assertThat(MDC.get(RequestCorrelationFilter.REQUEST_ID_MDC_KEY)).isNotBlank();
             }
