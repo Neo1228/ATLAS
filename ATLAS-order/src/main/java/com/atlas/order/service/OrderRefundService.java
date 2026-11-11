@@ -8,6 +8,7 @@ import java.util.UUID;
 public interface OrderRefundService {
     OrderRefundResponse refund(OrderRefundRequest request);
     OrderRefundResponse recordInspectedReturnRefund(UUID returnId);
+    OrderRefundResponse prepareInspectedReturnRefund(UUID returnId);
     OrderRefundResponse reconcilePayPalRefund(UUID paymentOperationId);
     OrderRefundSummaryResponse find(UUID sellerId, UUID orderId);
 }

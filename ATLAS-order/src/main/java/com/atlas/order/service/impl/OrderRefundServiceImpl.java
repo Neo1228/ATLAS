@@ -40,6 +40,8 @@ import java.util.TreeMap;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 
@@ -79,6 +81,19 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
     @Override
     public OrderRefundResponse recordInspectedReturnRefund(UUID returnId) {
+        return refund(inspectedReturnRequest(returnId), returnId);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public OrderRefundResponse prepareInspectedReturnRefund(UUID returnId) {
+        OrderRefundRequest request = inspectedReturnRequest(returnId);
+        RefundRecord reserved = reserveRefund(request, returnId);
+        OrderRefundPaymentStatus status = refunds.paymentStatus(reserved.refundId());
+        return response(reserved, status, null);
+    }
+
+    private OrderRefundRequest inspectedReturnRequest(UUID returnId) {
         if (returnId == null) throw invalidRequest("Return id required");
         OrderReturn row = returns.findWithItemsByReturnId(returnId)
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Return not found"));
@@ -87,7 +102,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
                 .sorted((left, right) -> left.orderItemId().compareTo(right.orderItemId())).toList();
         if (passed.isEmpty()) throw conflict("Return has no passed inspection lines");
-        return refund(new OrderRefundRequest(row.sellerId(), row.orderId(), "return-" + returnId, passed), returnId);
+        return new OrderRefundRequest(row.sellerId(), row.orderId(), "return-" + returnId, passed);
     }
 
     private OrderRefundResponse refund(OrderRefundRequest request, UUID returnId) {

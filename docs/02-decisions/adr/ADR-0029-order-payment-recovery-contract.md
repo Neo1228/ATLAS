@@ -35,6 +35,10 @@
 - 새 `saga`, `outbox`, queue, 분산 lock은 도입하지 않습니다.
   현재 DB transaction, row lock, unique constraint, durable operation row, provider retry ID를 사용합니다.
   추가 운영 인프라는 장애·지연 근거가 생길 때 별도 결정합니다.
+- 반품 검수와 PSP 환불 사이에 provider 작업을 두고, 앞뒤에 각각 짧은 DB transaction을 둔다. 첫 transaction은 order/return을 잠그고 검사 결과, 환불 금액 snapshot, durable한 `return-{returnId}` 환불 요청을 원자적으로 저장한다. provider 처리 결과가 반환되기 전까지 반품 상태는 `RECEIVED`로 유지한다. 첫 transaction commit 뒤 PSP를 호출하고, 마지막 transaction에서 검수 상태를 확정한다. provider 지연 중 order/return lock과 DB connection을 점유하지 않고, 로컬 최종 반영 실패 뒤에도 안정적인 환불 식별자를 보존한다.
+  준비 메서드는 `MANDATORY`로 선언해 검수 transaction 밖의 호출을 거부하고, 검수 facts와 환불 요청이 별도로 commit되지 않게 한다.
+  `V15__order_returns.sql`의 `order_return_item_refund` CHECK는 `refund_id`와 `refund_amount_won`을 함께 비우거나, 양수 금액과 ID를 함께 기록하도록 강제한다. 첫 flush에는 검수 결과만 저장하고, 준비된 refund ID를 받은 뒤 금액과 ID를 같은 transaction에서 함께 저장한다.
+  반품 상태가 `RECEIVED`인 동안 동일한 검수 요청을 재시도하면 저장된 검수 결과와 환불 요청을 재사용한다. 확인된 `PENDING`/`UNKNOWN`은 환불 완료로 간주하거나 새 식별자로 재호출하지 않고 기존 결제 대사 및 webhook 경로에서 처리한다. 아직 PSP 요청 전인 준비된 환불은 동일 검수 요청을 다시 보내야 복구된다. 운영 근거 없이 자동 worker/outbox를 추가하지 않는다.
 
 ## trade-off와 후속 도입 기준
 

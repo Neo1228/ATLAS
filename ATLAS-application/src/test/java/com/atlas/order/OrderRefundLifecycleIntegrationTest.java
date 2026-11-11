@@ -26,6 +26,7 @@ import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.persistence.state.OrderRefundStatus;
 import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
 import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.persistence.state.OrderReturnInspectionResult;
 import com.atlas.order.persistence.state.OrderReturnStatus;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
@@ -243,7 +244,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 new OrderReturnRequest.Item(fixture.orderItemId(), 1)))).isInstanceOf(OrderException.class);
     }
     @Test
-    void settlementFailureDuringReturnInspectionRollsBackAndRetrySucceeds() {
+    void settlementFailureRollsBackRefundFinalizationAndRetainsPreparedInspectionForRetry() {
         Fixture fixture = paidOrder(1, 1, 125);
         deliver(fixture);
         String buyerRef = buyerRef(fixture.orderId());
@@ -273,14 +274,19 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         jdbc.execute("DROP FUNCTION IF EXISTS fail_return_settlement()");
         OrderReturnResponse unchanged = returns.find(buyerRef, fixture.orderId(), created.returnId());
         assertThat(unchanged.status()).isEqualTo(OrderReturnStatus.RECEIVED);
-        assertThat(unchanged.items().get(0).inspectionResult()).isNull();
-        assertThat(refundRequestCount(fixture.orderId())).isZero();
+        assertThat(unchanged.items().get(0).inspectionResult()).isEqualTo(OrderReturnInspectionResult.PASSED);
+        assertThat(unchanged.items().get(0).refundId()).isNotNull();
+        assertThat(unchanged.items().get(0).refundAmountWon()).isEqualTo(125L);
+        assertThat(refundRequestCount(fixture.orderId())).isEqualTo(1);
         assertThat(journalCountForOrder(fixture.orderId())).isZero();
         assertStock(fixture, 0, 1);
         OrderReturnResponse retried = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(), passed);
         assertThat(retried.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
+        assertThat(retried.items().get(0).refundId()).isEqualTo(unchanged.items().get(0).refundId());
+        assertThat(retried.items().get(0).refundAmountWon()).isEqualTo(unchanged.items().get(0).refundAmountWon());
         assertThat(refundRequestCount(fixture.orderId())).isEqualTo(1);
     }
+
     @Test
     void partialAndFullRefundsReplayAndRestoreOnlyRequestedUnitsWithoutChangingPaidState() {
         Fixture fixture = paidOrder(2, 5, 125);
