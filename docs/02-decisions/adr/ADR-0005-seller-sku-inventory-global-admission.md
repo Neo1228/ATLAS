@@ -9,7 +9,7 @@
 > 기존 데이터 전환 방식은 [D-055](../../00-governance/decision-log.md)·[ADR-0006](ADR-0006-v6-clean-start.md)에서 대체했습니다. Seller-SKU 소유권, 공유 재고, 전역 FIFO/K, Campaign 호환성 결정은 계속 유효합니다.
 > Catalog·Cart·Order 확장에 따라 모듈 책임, Seller-SKU 등록 경로, K policy 소유는 [D-061](../../00-governance/decision-log.md)·[ADR-0008](ADR-0008-catalog-cart-order-boundaries.md)에서 대체했습니다. 아래 내용은 D-049 당시 결정을 보존하며 현재 구현의 모듈 구조를 설명하지 않습니다.
 
-## 배경과 문제
+## 배경
 
 초기에는 Campaign마다 같은 SKU의 inventory pool과 admission queue를 따로 만들었습니다. Seller 식별자가 없어 Campaign 간 재고 공유와 전역 FIFO를 표현하지 못했습니다. 소유자는 Seller=Tenant, Seller 소유 SKU, Seller-SKU 단위 공유 재고와 전역 FIFO를 선택했습니다.
 
@@ -21,7 +21,7 @@
 - 추가 Gradle module·framework·authentication은 현재 필요하지 않음.
 - 기존 Campaign data migration은 별도 [D-055](../../00-governance/decision-log.md) 결정에 따름. 이 ADR의 당시 migration 금지·보존 방향은 대체됨.
 
-## 검토한 대안
+## 근거와 대안
 
 ### A. Campaign별 stock과 queue 유지
 
@@ -50,7 +50,10 @@ Oversell은 막을 수 있으나 Owner가 선택한 Campaign 간 global FIFO를 
 - **동시성:** Admission join transaction은 ticket 발급이 끝날 때까지 Campaign row의 `PESSIMISTIC_READ`를 유지합니다.
   open/close는 같은 row에 `PESSIMISTIC_WRITE`를 사용해 close commit과 발급을 선형화합니다.
   이 row-local barrier는 Seller-SKU counter lock을 대체하거나 다른 Campaign까지 직렬화하지 않습니다.
-- **기존 데이터:** V6는 새로 시작하는 방식만 지원합니다. V1–V5 application table에 행이 있으면 DDL 전에 실패하며 data/schema를 변경하지 않습니다. 비어 있을 때만 이전 schema를 제거하고 현재 Seller-SKU schema를 만듭니다. mapping·aggregate·backfill·기존 data 보존은 하지 않습니다. 필요한 local data는 앱 밖에서 보관·초기화해야 하며 앱은 조용히 삭제하지 않습니다 ([D-055](../../00-governance/decision-log.md), [ADR-0006](ADR-0006-v6-clean-start.md)). D-049의 공유 재고·전역 FIFO/K는 유지합니다.
+- **Existing data:** V6 starts from a new database. If V1–V5 application tables contain rows, migration fails before DDL and leaves data/schema unchanged.
+- For an empty database, the migration replaces the prior schema with the current Seller-SKU schema. It does not map, aggregate, backfill, or preserve existing data.
+- Users must save or reset local data outside the application; the application does not silently delete it ([D-055](../../00-governance/decision-log.md), [ADR-0006](ADR-0006-v6-clean-start.md)).
+- D-049's shared stock and global FIFO/K remain unchanged.
 
 ## 흐름 도식
 
@@ -69,17 +72,16 @@ flowchart LR
     OrderB[Order B] --> Stock
 ```
 
-## 결과·영향
+## 결과와 한계
 
 - Campaign 간 동시 주문은 하나의 Seller-SKU 재고 잔량을 사용하며 conditional stock update로 oversell을 방지합니다.
 - Admission counter/sequence/hold slot 수/만료/승격의 기준을 Seller-SKU로 통일합니다. Slot release 시 다음 전역 FIFO ticket을 승격합니다.
 - Campaign별 FIFO보다 transaction lock 범위가 넓어져 같은 Seller-SKU 진입이 직렬화됩니다. 이는 correctness test 대상이며 처리량·용량 주장이 아닙니다.
 - 동일 idempotency key의 중복 진입은 counter row lock 뒤에도 재조회합니다. 잠금 전 조회와 잠금 획득 사이에 같은 요청이 들어올 수 있어, 재조회 없이는 유니크 제약 위반이 정상 재생 응답 대신 발생할 수 있습니다. 기존 Seller-SKU counter 잠금을 재사용하며 새 잠금이나 트랜잭션 기법을 추가하지 않습니다. 동시 요청은 하나의 ticket/sequence를 반환해야 합니다.
-- `Campaign.inventoryCapacity`와 Campaign `maxActiveCheckouts`를 제거합니다. Seller-SKU 등록 API가 `initialStock`과 K를 소유합니다.
-- `sellerId`는 인증 주체가 아닙니다. bind address를 외부로 바꾸거나 인증 없이 외부 network에 노출하는 것은 승인 범위 밖입니다.
+- 당시 D-049에서는 Campaign.inventoryCapacity와 Campaign maxActiveCheckouts를 제거하고 Seller-SKU 등록에 initialStock·K를 연결. 현재 K policy 소유는 D-061/ADR-0008에서 Admission으로 조정.
 - 기존 mapping template은 사용하지 않습니다. V6는 기존 데이터를 변환·보존하지 않으며 새로 시작하는 조건은 [ADR-0006](ADR-0006-v6-clean-start.md)에 따릅니다.
 
-## 검증·완료 기준
+## 검증
 
 - PostgreSQL/Testcontainers에서 두 Campaign의 동시 진입이 전역 순번/K/FIFO를 공유하는지 확인.
 - Campaign 간 reserve/claim/release 뒤에도 재고 보존식이 유지되는지 확인.

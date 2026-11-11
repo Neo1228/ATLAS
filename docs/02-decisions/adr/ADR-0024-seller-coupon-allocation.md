@@ -21,7 +21,7 @@ ADR-0023은 SKU별 sale price와 주문 단가 snapshot을 도입했지만 order
 - Partial refund는 주문 당시 line 배분액과 기존 환불 수량으로 계산. 할인 잔여 원은 주문 수량 중 앞선 단위부터 배정. 각 단위 환불액은 0원보다 커야 하며, 이를 만족하지 못하는 coupon allocation은 거절. 이후 Catalog/Coupon 상태를 재조회하지 않음.
 - 같은 idempotency key는 기존 주문 snapshot을 반환. 다른 coupon 선택은 conflict.
 
-## 고려한 대안
+## 대안 검토
 
 | 안 | 장점 | 단점 | 결정 |
 |---|---|---|---|
@@ -30,7 +30,7 @@ ADR-0023은 SKU별 sale price와 주문 단가 snapshot을 도입했지만 order
 | 사용 횟수·동시 redemption 관리 | 한정 수량 coupon 지원 | 예약·결제 실패 해제·동시성 제어 상태 추가 | 후속 검증 전 보류 |
 | SellerOrder별 정액 coupon, 순액 line snapshot | Seller 귀속과 환불 금액을 주문 시 확정 | proportion allocation 로직과 snapshot 컬럼 필요 | 채택 |
 
-## 근거와 절충
+## 근거와 대안
 
 - Taobao 주문 금액 문서는 상품별 할인과 주문별 할인 금액을 구분합니다. 할인 유형을 구분하고 SellerOrder 경계를 지키는 기준으로 참고했습니다.
 - Shopify의 할인 조합 규칙은 product/order/shipping discount를 독립 정책으로 다룹니다. 조합 정책을 명시하지 않은 채 stacking하지 않는 근거입니다.
@@ -39,7 +39,7 @@ ADR-0023은 SKU별 sale price와 주문 단가 snapshot을 도입했지만 order
 - [SettlementServiceImpl](../../../ATLAS-settlement/src/main/java/com/atlas/settlement/service/impl/SettlementServiceImpl.java)는 환불 posting 0원을 거절. Coupon allocation은 무료 item unit을 만들지 않음.
 - V1은 사용 횟수 제한 없이 재사용 가능. Finite global cap은 [ADR-0025](ADR-0025-limited-coupon-redemption.md)에서 별도 redemption state machine과 함께 추가.
 
-## 검증 기준
+## 검증
 
 - 시간 경계, Seller ownership, 중복 code, coupon 금액 한도, stacking 거절.
 - multi-seller 격리, 비례 배분 합계, tie-break 결정성, line별 순액 양수.
@@ -47,7 +47,7 @@ ADR-0023은 SKU별 sale price와 주문 단가 snapshot을 도입했지만 order
 - Seller settlement capture와 reversal 합계 일치.
 - 로컬 PostgreSQL/Testcontainers 전체 테스트 통과. 측정 전 성능 개선 주장은 하지 않음.
 
-## 참고자료
+## 참고 자료
 
 - [Taobao Open Platform: Order amount definitions](https://developer.alibaba.com/docs/doc.htm?articleId=108471&docType=1&treeId=796)
 - [Shopify Help: Discount combinations](https://help.shopify.com/en/manual/discounts/discount-combinations)

@@ -8,7 +8,7 @@
 
 ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/Checkout, Payment 경계와 단일 배포형 modular monolith를 따른다. 기존 코드는 하나의 Gradle project에 모여 build에서 의존 경계를 보장하지 않았고, 네 도메인 service가 SQL·row mapping까지 담당했다. 사용자는 도메인별 `-module`, 명시적 계층, CQRS와 `internal` package 금지를 요구했다.
 
-## 선택지
+## 근거와 대안
 
 | 선택 | 절충 |
 |---|---|
@@ -18,25 +18,26 @@ ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/C
 
 ## 결정
 
-기존 business capability를 각각 Gradle subproject로 두고 `application-module`에서 조립한다. 후속 결정은 Catalog, Cart, Fulfillment, Settlement 경계를 확장했으며 모듈 추가나 독립 배포를 뜻하지 않는다.
+ATLAS는 Spring Boot modular monolith. `:application-module`이 다른 Gradle project를 조립·실행하며, 후속 결정은 Catalog·Cart·Fulfillment·Settlement와 Account 경계를 확장. Gradle project 추가가 독립 서비스 분리를 뜻하지 않음.
 
-| 모듈 | 소유 책임 | Gradle 의존 |
-|---|---|---|
-| `application-module` | Spring Boot 실행, HTTP controllers, 공통 오류 처리·설정, Flyway migration | 도메인 모듈 |
-| `catalog-module` | Seller·Product·Seller-SKU·현재 가격 | `inventory-module` |
-| `cart-module` | Seller별 Buyer Cart·CartItem | `catalog-module` |
-| `campaign-module` | Campaign과 판매 자격 | `catalog-module`, `inventory-module` |
-| `admission-module` | Queue ticket·순번·idempotency·checkout slot·만료 | `campaign-module`, `catalog-module` |
-| `inventory-module` | 공유 재고 pool·reservation·수량 보존 | 없음 |
-| `order-module` | Checkout·주문·OrderItem·fulfillment lifecycle·결제 조정 | `admission-module`, `cart-module`, `catalog-module`, `inventory-module`, `payment-module`, `settlement-module` |
-| `payment-module` | Payment attempt·상태·Fake PSP 결과 | 없음 |
-| `settlement-module` | 확인된 gross capture의 내부 이중기입 원장 | 없음 |
+| Gradle project path | 소유 책임 |
+|---|---|
+| `:application-module` | Spring Boot 실행, HTTP/controller, 보안·오류 설정, Flyway |
+| `:account-module` | Account, Buyer/Seller identity 연결, JWT·refresh session |
+| `:catalog-module` | Seller, Product/category/SKU, 가격과 판매 channel |
+| `:cart-module` | Buyer-wide Cart와 CartItem |
+| `:campaign-module` | Campaign과 판매 자격 |
+| `:admission-module` | FIFO queue, ticket, idempotency, checkout slot |
+| `:inventory-module` | Stock pool, reservation, fulfillment location, adjustment·transfer |
+| `:order-module` | BuyerCheckout, SellerOrder/OrderItem, shipment, refund·return |
+| `:payment-module` | PayPal provider operation, PaymentAttempt, webhook·recovery |
+| `:settlement-module` | Confirmed capture/refund ledger, Seller allocation과 statement |
 
-현재 모듈 수와 디렉터리 목록은 역사적 기록이 아닌 [README](../../../README.md#모듈-구조)를 기준으로 합니다. Gradle 의존 그래프는 해당 모듈의 `build.gradle`에서 확인합니다.
+Gradle dependency graph는 각 디렉터리의 `build.gradle`이 기준. `ModuleBoundaryTest`가 허용 경계를 검증하며, 모듈 간 호출은 public `.service`와 DTO 계약 사용. [README의 모듈 개요](../../../README.md#현재-기능과-모듈) 참고.
 
 ### 물리 디렉터리 구성
 
-여섯 Gradle subproject의 물리 디렉터리는 저장소 최상위의 `ATLAS-<이름>` 형식입니다: `ATLAS-application`, `ATLAS-campaign`, `ATLAS-admission`, `ATLAS-inventory`, `ATLAS-order`, `ATLAS-payment`. `settings.gradle`의 `projectDir` mapping으로 Gradle project path (`:application-module` 등)는 유지합니다. Java package와 모듈 의존성은 바뀌지 않습니다.
+10개 Gradle module의 물리 디렉터리는 `ATLAS-<이름>` 형식. `settings.gradle`이 Gradle project name과 directory를 매핑하며, Java package와 dependency boundary는 module 내부 계약을 따릅니다.
 
 | 선택지 | 절충 |
 |---|---|
@@ -64,15 +65,12 @@ Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·
 - **금지 pattern:** CQRS, CommandBus, handler/mediator, `internal`, `package-info.java` marker 금지. 새 pattern은 구체 요구와 ADR 승인 필요.
 - **Test:** consumer-visible behavior, module boundary, state transition, error contract, concurrency 검증에 한정. PostgreSQL 전용 동작은 PostgreSQL로 검증; wiring/중복 위험 테스트 금지 ([REF-099](../../00-governance/reference-register.md)).
 
-## 결과와 재검토
+## 결과와 한계
 
-- `application-module`만 실행·배포한다. Gradle dependency graph와 ArchUnit package 규칙이 모듈 방향·공개 계약을 검사한다. 소유권은 이 ADR과 [README](../../../README.md#모듈-구조)에 설명한다.
-- 다섯 기능 모듈과 Buyer 흐름을 유지한다. `application-module`은 실행·HTTP·migration을 조립하고, 도메인 모듈은 JPA CRUD와 필요한 DB 특화 repository를 소유한다.
-- Payment phase는 `PaymentPhase`로 명명한다. 기존 V4 migration checksum을 바꾸지 않고 V5에서 `operation` column/constraint를 `payment_phase`로 rename한다.
-- 다섯 capability 경계는 ADR-0001의 승인 범위 그대로다. 독립 team/release/data ownership 또는 측정된 운영·성능 요구가 생길 때만 module 수를 재검토한다.
+- `application-module`은 Spring Boot application을 조립·실행. Gradle dependency graph와 ArchUnit test가 module 방향·public contract를 검사. 현재 module 책임은 [README](../../../README.md#현재-기능과-모듈) 기준.
 - JPA와 PostgreSQL SQL의 범위·절충은 ADR-0004에 기록한다. 독립 서비스 추출·추가 persistence framework는 근거와 사용자 승인 없이 진행하지 않는다.
 
-## 근거
+## 판단 근거
 
 - Google Cloud, [Promote modular design](https://docs.cloud.google.com/architecture/framework/performance-optimization/promote-modular-design): 명확한 경계와 모듈화 비용의 균형 (REF-087).
 - Gradle 9.8.2, [Multi-Project Builds](https://docs.gradle.org/9.8.2/userguide/multi_project_builds.html): subproject 의존과 이름 규칙 (REF-092).

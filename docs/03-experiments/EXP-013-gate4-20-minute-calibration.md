@@ -1,12 +1,13 @@
 # EXP-013 — Gate 4 20분 로컬 보정
 
-**상태:** 완료(보고서 전용). **추적:** [이슈 #81](https://github.com/Neo1228/ATLAS/issues/81). 운영 용량이나 SLO를 주장하지 않습니다.
+**상태:** 완료(보고서 전용). **추적:** [이슈 #81](https://github.com/Neo1228/ATLAS/issues/81).
 
-## 질문과 범위
+## 목적과 범위
 
-미리 선택한 1× 균일 도착률에서 현재 Buyer 흐름이 HTTP 실패, 재고 불변식 위반, 반복 실행 누락 없이 로컬에서 완료되는지 확인합니다. 10분 프로필 두 가지를 실행했습니다. 제약 없는 기준 구성과 재고 10%/K=1 대기열 밀림 구성입니다. 7시간 행렬, 일일 기준 실행, 2×/4× 부하 시험, 클라우드, 실제 PSP 부하는 제외했습니다. Fake PSP `PENDING`/`UNKNOWN` 복구 근거는 기존 결정론적 통합 검사로 한정됩니다.
+- 1× 균일 arrival rate의 10분 run 두 개에서 Buyer flow 오류와 inventory invariant 비교: 제약 없는 baseline, inventory 10%·K=1 queue saturation.
+- PayPal integration 이전의 local workflow 실험. Provider network latency는 포함하지 않음. 현재 payment contract는 [D-081](../00-governance/decision-log.md), [ADR-0026](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md) 참고.
 
-## 환경과 재현 방법
+## 환경·데이터·workload
 
 - Windows 10 호스트, Docker Desktop Linux 엔진 `29.7.2`, CPU 4개, 메모리 `4,109,647,872`바이트. `compose.yaml`의 PostgreSQL `18.6`; 애플리케이션과 생성기는 로컬 Compose 네트워크에서 실행했습니다. 격리 벤치마크가 아닌 공유 자원 진단입니다.
 - 애플리케이션: `eclipse-temurin:25-jre`에서 빌드한 `application-module.jar` (`sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0`). 호스트 포트는 공개하지 않았습니다.
@@ -15,7 +16,7 @@
 - 스크립트: [`load-tests/gate4.js`](../../load-tests/gate4.js). 캠페인을 만들고 연 뒤 대기열 참가 1회, 결제 시도 1회를 수행하며 재고를 예약한 경우에만 결제합니다. 폴링, 재시도, 대기 시간, 인위적인 PSP 지연은 없습니다.
 - 실행 ID: `gate4-pilot-20261103`, `gate4-baseline-20261103`, `gate4-queue-backlog-20261103`. 도착률: `10,000 sessions / 60m = 2.7778 sessions/s`, 균일 분포. 두 부하 프로필은 총 20분이며, 별도 1-VU 사전 검증은 60초입니다. 각 부하 프로필은 10분간 실행했습니다(예정 세션 약 1,667개). 기준 구성 재고/K=`1,667/1,667`; 대기열 구성 재고/K=`167/1`; 티켓 TTL=`7,200s`.
 - 별도 1-VU 60초 전체 흐름 사전 실행에서 세션 p95 `97.56ms`를 측정했습니다. 고정 `preAllocatedVUs = ceil(2.7778 × 0.09756) = 1`, `maxVUs=1`로 설정했습니다. VU/자원 자동 확장은 없습니다.
-## 재현 명령
+## 재현 방법
 
 Windows의 Git Bash에서 실행:
 
@@ -107,4 +108,4 @@ docker compose exec -T postgres dropdb -U atlas atlas_gate4
 
 선택한 1× 속도에서는 세션 도착 간격이 약 `360ms`이며, 측정한 세션 p95는 `57–100ms`였습니다. 고정 VU 하나로 세션은 대개 다음 도착 전에 끝났으므로 K=1 대기열 프로필은 동시 대기열 경합을 시험하지 않았습니다. 낮은 도착률에서 재고가 소진되는 상황과 재고 보존을 확인했습니다. 실제 경합 프로필에는 별도로 정한 더 높은 도착률이나 더 긴 checkout 슬롯 점유가 필요합니다. 여기서는 어느 쪽도 추론하거나 추가하지 않았습니다.
 
-기준 실행의 `dropped_iterations` 6건은 원인을 분리하지 못했습니다. Fake PSP의 기본 성공 응답은 즉시 반환되며 실제 제공자를 모사하지 않습니다. 일일 기준, 2×/4× 행렬, 대기열 사용자 대기/폴링 동작, 운영 용량 산정, 머신 간 비교는 측정하지 않았습니다. 결과는 이 Windows/Docker 환경에만 적용됩니다.
+Baseline의 `dropped_iterations` 6건은 원인을 분리하지 못함. test provider adapter가 success를 즉시 반환하므로 network latency와 provider unknown result는 workload에 포함되지 않음. Daily run, 2×/4× matrix, queue polling delay, cross-machine comparison은 실행하지 않음. 결과는 Windows/Docker 조건에 한정.

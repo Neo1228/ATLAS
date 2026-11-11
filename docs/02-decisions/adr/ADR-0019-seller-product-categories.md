@@ -6,11 +6,11 @@
 - 요구사항: [FR-012 / BR-012 / INV-009 / Q-010](../../01-requirements/requirements-index.md)
 - 관련 결정: [D-061 / D-067](../../00-governance/decision-log.md), [ADR-0008](ADR-0008-catalog-cart-order-boundaries.md), [ADR-0012](ADR-0012-catalog-listing-order.md)
 
-## 맥락
+## 배경
 
 Catalog는 Seller·Product·Seller-SKU를 소유합니다. Product listing은 상품명 substring 검색과 Seller filter, UUID keyset pagination을 지원하지만 카테고리 분류는 없습니다.
 
-D-067/ADR-0012는 당시 category filter를 범위 밖으로 두고 기존 결과 순서만 고정했습니다. 이번 결정은 그 과거 범위를 수정하지 않고 Seller 전용 category filter를 추가합니다. 플랫폼 공통 taxonomy를 정할 기준과 데이터는 아직 없습니다.
+D-067/ADR-0012는 목록 정렬만 규정. 이 ADR은 Seller-owned category filter를 추가하며, Product·Category 관계는 Catalog 소유. Global taxonomy와 multi-category 연결은 Q-010에서 정책 결정.
 
 ## 결정
 
@@ -24,7 +24,7 @@ D-067/ADR-0012는 당시 category filter를 범위 밖으로 두고 기존 결�
 - Category list는 Seller별 code 오름차순. Category의 hard delete, archive, hierarchy, tag, multiple assignment는 후속 결정.
 - Inventory availability는 Catalog Category query의 조건이 아니며, 읽기 요청에서 Inventory 상태를 조회하거나 변경하지 않음.
 
-## 이유와 대안
+## 근거와 대안
 
 | 선택 | 대안 | 이유·절충 |
 |---|---|---|
@@ -42,7 +42,7 @@ D-067/ADR-0012는 당시 category filter를 범위 밖으로 두고 기존 결�
 - Global taxonomy, category lifecycle/archive, 여러 Category 할당, 재고/가격 filter, ranking, Search engine·ML은 미정 또는 제외.
 - PostgreSQL correctness 검증만 수행. 외부 scale, 사용자 수, 처리용량 또는 production SLO를 추정하지 않음.
 
-## 외부 참고자료
+## 참고 자료
 
 - [REF-119](../../00-governance/reference-register.md): Meituan 사례는 판매자별 상품명 편차와 분류 granularity 문제를 보여 줌. NLP/CV standardization pipeline은 도입하지 않음.
 - [REF-120](../../00-governance/reference-register.md): Shopify 사례는 중앙 hierarchical taxonomy와 VLM 기반 분류의 발전을 보여 줌. global taxonomy·ML·규모를 ATLAS에 일반화하지 않음.

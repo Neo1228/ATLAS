@@ -1,15 +1,11 @@
----
-id: DOC-006
-title: 외부 참고자료 레지스트리
-status: Current
-owner: 프로젝트 책임자
-updated: 2026-11-07
-links:
-  requirements: []
-  adr: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0014, ADR-0015, ADR-0016, ADR-0017, ADR-0018, ADR-0019, ADR-0020]
-  experiments: [EXP-014]
----
 # 외부 참고자료 레지스트리
+
+> [!NOTE]
+> 이 목록에는 ATLAS 설계에서 실제로 참고한 자료만 수록합니다. 외부 권고는 근거 후보이며, 프로젝트 결정과 측정 결과를 대신하지 않습니다.
+
+| 문서 ID | 정리일 |
+|---|---|
+| DOC-006 | 2026-11-11 |
 
 - REF-009~013: GitHub 협업 문서.
 - REF-014~029: 설계·요구 탐색 자료.
@@ -149,10 +145,10 @@ PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 �
 - [ADR-0010](../02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md): REF-112는 결제 후 주문 여정, REF-113은 vendor-specific fulfillment 수명주기 사례. 단일 PAID Order당 fulfillment는 D-065 프로젝트 결정.
 - [ADR-0011](../02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md): D-066은 gross capture 이중기입의 owner decision. REF-027은 PostgreSQL 재시도·멱등 패턴 참고이며 회계 모델 근거는 아님.
 - [ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md): REF-114는 다중 업무 유형별 상품 relevance ranking 사례이며, ATLAS 목록의 ID 정렬을 정당화하는 일반 규칙은 아님. D-067은 기존 query 응답의 재현성만 규정.
-- [ADR-0013](../02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md): D-068는 배송 전 local refund record, 원장 reversal, claimed inventory 복원을 정한 소유자 정책. 외부 PSP 동작·자금 이동은 범위 밖.
+- [ADR-0013](../02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md): D-068은 OrderItem 환불 eligibility, snapshot 금액, 재고 복원과 ledger reversal을 결정. PayPal provider call과 결과 확인은 [D-081](decision-log.md), [ADR-0026](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md) 기준.
 - [ADR-0012](../02-decisions/adr/ADR-0012-catalog-listing-order.md): REF-115는 `limit=10` 기본값과 `100` 상한의 API 계약 사례일 뿐, ATLAS의 성능·용량 수치 근거가 아님.
 - [ADR-0014](../02-decisions/adr/ADR-0014-seller-inventory-capacity-adjustment.md): D-069은 재고 capacity 조정, audit, idempotency를 정한 소유자 정책.
-- [ADR-0015](../02-decisions/adr/ADR-0015-durable-fake-psp-progression.md): D-070은 Fake PSP progression·결과 저장, same-key replay, manual recovery의 local-only 경계를 정한 소유자 결정.
+- [ADR-0015 초기 결제 progression](../02-decisions/adr/ADR-0015-initial-payment-progression.md): D-070은 초기 provider operation state·idempotency 기록. 현재 provider contract는 [D-081](decision-log.md), [ADR-0026](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md)에서 대체.
 - [ADR-0016](../02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md): REF-116은 business boundary 비교, REF-117은 modular monolith 비교. 기술·규모는 복사하지 않음.
 - [ADR-0018](../02-decisions/adr/ADR-0018-seller-order-shipments.md): REF-112의 Meituan 주문 여정과 REF-118의 전체·분할 출고 contract만 비교. Shipment·refund 경계는 소유자 결정이며 외부 사례의 업무·규모·성능을 일반화하지 않음.
 - [ADR-0019](../02-decisions/adr/ADR-0019-seller-product-categories.md): REF-119/120는 상품명 편차·분류 taxonomy evolution 사례를 제공. Seller-owned category·flat scope·PostgreSQL filtering은 D-074 소유자 결정이며 외부 pipeline/scale을 복사하지 않음.

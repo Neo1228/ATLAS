@@ -7,7 +7,7 @@
 - 관련 결정: [D-061 / D-074](../../00-governance/decision-log.md)
 - 관련 ADR: [ADR-0008](ADR-0008-catalog-cart-order-boundaries.md), [ADR-0019](ADR-0019-seller-product-categories.md)
 
-## 맥락
+## 배경
 
 Catalog에는 Product와 Seller-SKU가 있지만, 전체 상품 판매 중단과 특정 구매 경로의 판매 제한을 표현하는 상태가 없음. Category는 탐색 분류이며 판매 가능 여부와 별개. Inventory는 수량 예약·보존을 담당하므로 판매 노출 정책을 소유하지 않음.
 
@@ -27,7 +27,7 @@ Catalog에는 Product와 Seller-SKU가 있지만, 전체 상품 판매 중단과
 - 새 목록 cursor는 v3로 공개 조회와 Seller 관리 범위를 바인딩. 기존 v1/v2는 scope 미포함 legacy cursor로 수용; 신규 v3의 scope 간 재사용은 `INVALID_REQUEST`.
 - 신규 검색·cache·broker·index는 추가하지 않음. 공개 목록 query 계획과 대표 데이터에서 필요성이 확인될 때 index 검토.
 
-## 이유와 대안
+## 근거와 대안
 
 | 선택 | 대안 | 이유·절충 |
 |---|---|---|
@@ -61,6 +61,6 @@ flowchart LR
 - 사용자 수, traffic, RPS/TPS, 운영 용량·SLO에 대한 주장은 하지 않음. 이 변경은 부하 시험 대상이 아님.
 - 검증 환경: macOS 27.2 arm64, JDK 25.0.5, Colima·PostgreSQL 18.6 Testcontainers. `./gradlew --no-daemon --rerun-tasks check :application-module:bootJar` 통과; 38 suites, 196 tests, 실패·오류·skip 0, `bootJar` 성공.
 
-## 외부 참고자료
+## 참고 자료
 
 - [REF-122](../../00-governance/reference-register.md): Shopify 문서는 Product status와 sales-channel availability를 별도 개념으로 설명. Shopify 고유 상태·정책을 ATLAS에 복사하지 않고 구분 방식만 비교.

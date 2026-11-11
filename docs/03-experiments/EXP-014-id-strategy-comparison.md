@@ -2,15 +2,20 @@
 
 **상태:** 실측 완료(2026-11-03). 소유자 결정에 따라 UUIDv7을 기본 ID로 채택했습니다. JPA/Testcontainers 통합 검사에서 Seller/Campaign/Ticket/Order 생성 ID와 PaymentAttempt.order_id가 UUID version 7임을 확인했습니다. 로컬 DB·인덱스 비교이며 운영 부하·처리 용량 측정은 아닙니다.
 
-## 질문과 통제된 작업 부하
+## 목적과 범위
 
 (A) UUIDv4 기본/공개 ID, (B) UUIDv7 기본/공개 ID, (C) BIGINT identity 기본 키와 고유 UUIDv7 공개 ID를 비교합니다. PostgreSQL 18의 UUID 생성기를 사용합니다. 각 설계에 동일한 부모 레코드 100,000개(256-byte payload)와 자식 레코드 200,000개(64-byte payload), 동일한 결정론적 자식 참조 분포를 적용합니다. 각 설계의 자식 `parent_id` 인덱스는 같으며, 자식 외래 키는 설계별 기본 키를 참조합니다.
 
 UUIDv4 값, UUIDv7 값, payload, BIGINT 키 값은 측정 삽입 전에 공유 seed 테이블에서 한 번 준비합니다. BIGINT 값은 `seed.ord` (1..100,000)를 사용해 `OVERRIDING SYSTEM VALUE`로 `GENERATED ALWAYS AS IDENTITY` 열에 삽입합니다. 따라서 UUID 및 identity sequence 생성 비용은 측정 범위에서 제외하며, 기본 키 저장/인덱스 작업과 C의 UUIDv7 공개 ID 고유 인덱스 기록은 포함합니다. 세 논리 데이터셋은 seed 순서 번호로 정렬을 맞춥니다.
 
-하네스는 전략별 삽입 5회 모두를 무작위 순서로 실행해 부모·자식 삽입 시간(ms)과 계산된 초당 행 수를 기록합니다. 원시 실행값을 보존하면서 전략별 부모 삽입 ms, 자식 삽입 ms, 합산 초당 행 수의 중앙값을 출력합니다. 공개 ID 2,000개와 연결 자식 행을 조회하는 집합 기반 쿼리도 무작위 순서로 5회 측정하고, 원시 경과 시간/반환 행 수/속도를 보존하며 쿼리 ms와 초당 행 수의 중앙값을 출력합니다. 2,000개 순서 번호는 `ord % 50 = 3`을 만족하며, 한 번 섞어 공용 샘플 테이블에 넣고 세 변형 모두에서 재사용합니다. `EXPLAIN (ANALYZE, BUFFERS, TIMING)`은 동일한 집합 기반 공개 ID 조회 계획과 자식 외래 키 조인 계획을 보고합니다. 마지막 삽입 반복 후 여섯 부모·자식 테이블 각각에 `ANALYZE`를 실행하고 해당 테이블의 heap/index/전체 크기(바이트)를 보고합니다. 외래 키 인덱스/테이블 설정, seed 생성, `ANALYZE`는 삽입 시간에서 제외하고, 인덱스 유지 관리와 외래 키 검사는 측정된 INSERT 문에 포함합니다.
+- 삽입: 전략별 5회, 무작위 순서. 부모·자식 INSERT 시간(ms)과 rows/s 기록. 원시 값과 전략별 중앙값 보존.
+- 조회: 공개 ID 2,000개와 연결 자식 행을 집합 기반 query로 조회, 무작위 순서로 5회. 경과 시간·반환 행 수·속도와 중앙값 보존.
+- 공통 sample: `ord % 50 = 3`인 ID 2,000개를 한 번 섞어 만들고 세 변형에서 재사용.
+- Query plan: 공개 ID 조회와 child foreign-key join에 `EXPLAIN (ANALYZE, BUFFERS, TIMING)` 실행.
+- 크기: 마지막 삽입 뒤 여섯 부모·자식 테이블에 `ANALYZE`; heap/index/전체 크기(바이트) 기록.
+- 측정 경계: seed 생성, foreign-key index/table 설정, `ANALYZE`는 삽입 시간에서 제외. Index 유지와 foreign-key 검사는 INSERT 측정에 포함.
 
-## 실행 환경 기록
+## 환경·데이터·workload
 
 - OS/호스트: macOS 27.2, arm64, 하드웨어 CPU 11개, RAM 18 GiB.
 - Docker Engine 29.5.2: CPU 4개, 9.69 GiB. PostgreSQL 컨테이너에는 별도 자원 한도를 설정하지 않았습니다. 다른 `data-lake-lab` 컨테이너도 실행 중이었으나 활동을 확인하지 않아 CPU/IO 경합 여부는 미확정입니다.
@@ -20,6 +25,11 @@ UUIDv4 값, UUIDv7 값, payload, BIGINT 키 값은 측정 삽입 전에 공유 s
 
 로컬 PostgreSQL 18 인스턴스를 사용합니다. 다음 명령은 별도 데이터베이스를 만들며 `atlas`에 연결하거나 삭제·수정하지 않습니다. `createdb`에서 이름이 이미 있다고 나오면 중단하고 일회용 실험 데이터베이스인지 확인합니다. 중요한 데이터가 있는 데이터베이스를 재사용하지 마세요. 저장소 루트에서 실행합니다.
 
+## 재현 방법
+
+> [!WARNING]
+> Run from repository root. The SQL script checks `current_database() == 'atlas_id_bench'` and resets only schema `exp014_id_strategy`; confirm the database name before cleanup.
+
 ```sh
 createdb --template=template0 --encoding=UTF8 atlas_id_bench
 psql -X -v ON_ERROR_STOP=1 -d atlas_id_bench \
@@ -28,7 +38,7 @@ psql -X -v ON_ERROR_STOP=1 -d atlas_id_bench \
 
 SQL은 `current_database()`가 정확히 `atlas_id_bench`가 아니면 즉시 실패합니다. 해당 DB의 `exp014_id_strategy` 스키마만 삭제 후 다시 만듭니다. 실행 후에도 스키마는 확인할 수 있도록 유지합니다. 정리할 때는 DB 이름을 다시 확인한 뒤 해당 스키마만 삭제합니다. SQL 출력과 함께 CPU, RAM, OS, 저장 장치, PostgreSQL 실행 설정, 동일 호스트에서 다른 부하가 실행 중이었는지를 기록합니다.
 
-## 결과 — 실제 측정값
+## 결과
 
 ### INSERT 측정
 

@@ -13,12 +13,11 @@
 
 ## 판단 기준
 
-- 승인 범위: 단일 SKU Buyer 흐름, blocking JDBC, PostgreSQL, Spring Boot 배포 단위 1개, Fake PSP.
-- 사용자 선택과 적용 시점의 지원·호환성을 구분. 측정하지 않은 처리량, build 속도, cloud 비용을 추정하지 않음.
-- 기존 library와 API도 비교. 요구 기능·호환성·운영·보안·라이선스 비용에 맞는 성숙한 library가 있으면 직접 재구현보다 우선.
-- 운영 JDK vendor/license, 배포, workload/SLO, 실제 PSP는 별도 결정 대상.
+- 검토 범위: JDK, runtime framework, database, Gradle/build, persistence interface. 현재 선택 버전은 [D-040](../../00-governance/decision-log.md)·[Q-009](../../01-requirements/requirements-index.md)에 기록.
+- 호환성과 지원 기간은 기술 선택의 근거이지 성능 우위의 증거가 아님. 직접 측정하지 않은 처리량·build 시간은 주장하지 않음.
+- 기존 library·API도 비교. 요구 기능·호환성·보안·라이선스에 맞는 성숙한 library가 있으면 직접 구현보다 우선.
 
-## 기술 대안 비교
+## 근거와 대안
 
 | 선택 | 검토한 대안과 판단 | 근거·한계 |
 |---|---|---|
@@ -40,7 +39,7 @@
 - **공유 package:** root에는 공통 예외 처리와 Clock 설정만 둠. 공통 domain utility나 여러 구현체가 없어 `common` module 생성은 보류.
 - **보안·운영:** Authentication/Tenant 격리, metrics/tracing/alerts, 운영 backup/deployment/PSP 복구 미승인·미정. “보통 필요”하다는 이유만으로 runtime dependency 추가 금지; 승인된 기능과 운영 경계 필요.
 
-## 결정과 재검토 조건
+## 결정
 
 - D-040의 Java 25 + Spring Boot 4.1.2/MVC + PostgreSQL 18.6 + Gradle 9.8.2 유지. Runtime language/framework/database 전환 없음. CRUD persistence 범위는 ADR-0004에서 JPA로 결정.
 - 이 재검토는 비교 근거를 보완할 뿐, 운영 처리 용량이나 framework 성능을 주장하지 않음.

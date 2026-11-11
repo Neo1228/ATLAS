@@ -4,7 +4,7 @@ title: "[버그]: "
 body:
   - type: markdown
     attributes:
-      value: "민감 정보, 실제 결제 정보, 토큰, 개인정보를 입력하지 마세요."
+      value: "비밀번호, API secret/token, 카드·계좌 정보, 개인정보를 입력하지 마세요."
   - type: textarea
     id: summary
     attributes:

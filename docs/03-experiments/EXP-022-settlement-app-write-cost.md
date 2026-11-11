@@ -2,7 +2,7 @@
 
 **상태:** 측정 완료 · production index 미채택
 
-## 질문과 결론
+## 목적과 범위
 
 `settlement_journal(recorded_at, journal_id)` 후보 index가 기존 checkout capture 쓰기 경로의 latency, WAL, 저장 공간에 미치는 영향 비교.
 
@@ -29,7 +29,7 @@ flowchart LR
   E --> F[baseline/candidate paired 비교]
 ```
 
-## 환경과 안전성
+## 환경·데이터·workload
 
 - macOS 27.2 arm64 · Docker Engine 29.5.2 · Linux Ubuntu 24.04.4 · 4 CPU · memory 10,405,494,784 bytes
 - PostgreSQL 18.6 `sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81`
@@ -66,13 +66,13 @@ flowchart LR
 ## 해석과 한계
 
 - EXP-020의 좁은 기간 조회 개선과 별개로, 이번 실험은 정산 write path 비용만 평가
-- 판매자 1곳·SKU 1개 · 1 VU · 합성 100회. 실제 사용자 수요, 동시 처리량, TPS/RPS, SLO, capacity를 뜻하지 않음
+- 측정 표본: Seller 1곳·SKU 1개·1 VU·합성 checkout 100회. 이 결과로 동시 처리량·TPS/RPS·SLO·capacity를 추정하지 않음.
 - App latency는 Cart/Order/Inventory/payment 전체 경로. Settlement 또는 commit 전용 시간이 아님
 - Seed setup은 WAL 기준선 전에 실행. SQL snapshot은 누적 LSN과 크기이며 peak/rate가 아님
-- Production migration/index/config/runtime 변경 없음
+- 실험에서 migration, index, configuration, runtime 설정은 변경하지 않음.
 - Prometheus/Grafana/Tempo/Alloy/Toxiproxy 미사용: 동시 부하·network fault·distributed trace 가설이 없는 직렬 비교. K6 latency와 PostgreSQL WAL/크기/ledger snapshot만 사용
 
-## 재현 명령 (arm/repeat 1회)
+## 재현 방법
 
 아래를 새 run ID로 반복. 각 DB/container/network는 arm·회차별로 신규 생성. `docker` volume·host port 미사용.
 
@@ -143,7 +143,7 @@ docker exec "$PG" psql -X -A -t -F '|' -v ON_ERROR_STOP=1 -U atlas -d "$DB" \
 - 스키마/entry-side 근거: [V10 settlement ledger migration](../../ATLAS-application/src/main/resources/db/migration/V10__gross_capture_settlement_ledger.sql)
 - [EXP-020 정산 read/index 기준 실험](EXP-020-settlement-index-selectivity-cost.md)
 
-## 참고자료
+## 참고 자료
 
 - [GitLab — Database layout and access patterns](https://docs.gitlab.com/development/database/layout_and_access_patterns/): hot-row 경합, transaction 대기, index write/WAL 비용에 대한 질적 참고. 수치 목표를 ATLAS의 기준치로 일반화하지 않음
 - [Datadog — Debugging PostgreSQL performance](https://www.datadoghq.com/blog/engineering/debugging-postgres-performance/): no-op `ON CONFLICT DO UPDATE`의 row lock/WAL 관측 사례. ATLAS와 동일 쿼리·workload로 간주하지 않음

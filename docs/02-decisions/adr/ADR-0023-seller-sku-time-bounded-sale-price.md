@@ -43,7 +43,7 @@ sequenceDiagram
     O-->>B: 주문 결과
 ```
 
-## 대안과 절충
+## 근거와 대안
 
 - Coupon/stacking engine: 상품·주문·배송 간 결합과 부분 환불 allocation 제공 가능. 할인 우선순위·동일 주문 분배·쿠폰 재사용/반환 정책이 추가로 필요하므로 후속 범위.
 - Channel별 promotion: 판매 채널별 가격 제어 가능. 동일 SKU의 buyer 가격과 seller 관리 복잡도가 증가하므로 보류.
@@ -54,10 +54,10 @@ sequenceDiagram
 - Catalog가 정가와 sale window의 단일 소유자. Order·Settlement는 effective price 계산을 복제하지 않고 snapshot만 사용.
 - Base price 변경으로 기존 sale price가 정가 이상이 되는 경우 해당 변경을 거부. Seller가 sale window를 먼저 취소·수정해야 함.
 - 시간 경계, 다중 line 일관 가격, cart 조회와 checkout 재가격, 기존 주문 refund/settlement 보존을 PostgreSQL 통합 테스트로 검증.
-- 실제 사용자별 쿠폰, platform subsidy, 외부 promotion provider, 판매 채널별 rule engine, 가격 이력은 미지원.
-- local PostgreSQL만 사용. Cache, scheduler, cloud service, 새 dependency 도입 없음.
+- Buyer별 coupon eligibility, platform-funded discount, external promotion 연동, channel별 가격 정책과 price history는 별도 결정 필요. Coupon allocation은 [ADR-0024](ADR-0024-seller-coupon-allocation.md) 기준.
+- Catalog는 PostgreSQL에 price window를 저장. Checkout에서 적용 가격을 OrderItem snapshot으로 보존.
 
-## 참고자료
+## 참고 자료
 
 - [Taobao Open Platform — 주문 금액 구성](https://developer.alibaba.com/docs/doc.htm?articleId=108471&docType=1&treeId=796): 상품별 할인과 주문 단위 할인/주문 금액 구분. V1을 SKU 단위 할인으로 제한하는 비교 기준.
 - [Shopify — Discount combinations](https://help.shopify.com/en/manual/discounts/discount-combinations): 상품·주문·배송 할인 조합 및 제한. Stacking 제외 근거.

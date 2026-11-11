@@ -13,7 +13,7 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 
 기존 `Order`는 Campaign/Ticket을 필수로 저장하고, Inventory reservation은 주문당 한 SKU·수량 1개였습니다. 일반 구매를 route만 추가해서는 기존 모델을 재사용할 수 없습니다.
 
-## 선택지
+## 근거와 대안
 
 | 선택 | 장점 | 비용·위험 |
 |---|---|---|
@@ -42,7 +42,7 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 - Cart의 가격은 안내용. Checkout에서 Catalog의 현재 가격을 다시 확인하고 OrderItem에 상품명·SKU·unit price(KRW)·quantity snapshot 저장.
 - Checkout은 Cart row를 lock하고 모든 SKU의 재고를 일관된 순서로 확인·예약. 하나라도 부족하면 Order·reservation·Cart 변경 전체 rollback.
 - 당시 idempotency replay는 단일 Seller Order 반환. 현재 replay 대상은 BuyerCheckout과 그 SellerOrder 집합 ([D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)).
-- 확인된 hold에서 첫 AUTHORIZE 제출까지 10분은 로컬 synthetic test window. 운영 TTL·SLO·수요 가정 아님. Fake PSP만 사용; 외부 호출은 DB transaction 밖.
+- Confirmed inventory hold부터 첫 AUTHORIZE 제출까지 10분; 연장 없음 (Q-004). 현재 provider는 PayPal Sandbox (D-081/ADR-0026). Provider call은 DB transaction 밖에서 실행.
 - V7 migration은 V6 fresh-start schema에 신규 구조를 추가. 예상치 못한 기존 row를 자동 reset·mapping하지 않음.
 - Reorder는 terminal `CART` Order만 허용. Campaign·진행 중 Order는 제외. 원본 Order 변경 없음.
 - 취소·만료 후 Cart 자동 복원 없음. Buyer가 `POST /api/orders/{orderId}/reorder`를 명시적으로 호출.
@@ -50,23 +50,23 @@ ATLAS의 목표는 전체 이커머스 플랫폼. 기존 Buyer 경로는 Campaig
 - 기존 Cart가 비어 있지 않으면 merge confirmation 필수. 같은 SKU quantity 합산, 다른 SKU 유지. Current Catalog 가격·상품명 사용. `(sellerId, buyerRef, idempotencyKey)` 재시도는 같은 source Order에 한 번만 적용; 다른 source Order로 재사용하면 conflict.
 - V8은 Order 소유의 Reorder idempotency 기록만 추가. Cleanup/retention 정책은 [Q-012](../../01-requirements/requirements-index.md#assumptions-and-open-questions)에서 미정.
 
-## 결과
+## 결과와 한계
 
 - Product·Cart·Order·Inventory multi-line 계약과 migration은 하나의 Buyer journey로 구현·검증.
-- 기존 Campaign/FIFO/K/Fake PSP 경로 유지. Seller-SKU 등록은 Catalog가 소유하며 queue policy는 Admission API에서 별도 설정.
-- `buyerRef`는 synthetic identifier. 인증·인가·tenant isolation은 제공하지 않음.
-- 이 ADR의 초기 구현에서는 fulfillment·정산·환불을 제외. Fulfillment는 [D-065/ADR-0010](ADR-0010-order-fulfillment-lifecycle.md), capture/refund recording은 D-066/D-068 및 [ADR-0011](ADR-0011-gross-capture-settlement-ledger.md)/[ADR-0013](ADR-0013-pre-shipment-refund-recording.md), Buyer-wide checkout과 delivered return 규칙은 [D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)에서 후속 확정.
+- Campaign/FIFO/K 정책은 D-049/ADR-0005, PayPal Sandbox operation은 D-081/ADR-0026 기준. Seller-SKU 등록은 Catalog, queue K policy는 Admission 소유 (D-061).
+- `buyerRef`는 Buyer resource ID이지 인증 증거가 아님. Protected operation은 Account principal ownership을 확인 (D-082/ADR-0027).
+- Fulfillment·partial shipment·return·refund·settlement 계약은 D-065/D-068/D-071/D-073과 ADR-0010/0013/0016/0018/0020에서 확장.
 - Redis, broker, distributed lock, microservice 추가 없음. PostgreSQL baseline에서 재현 가능한 병목이 확인된 뒤에만 고도화 검토.
 - terminal Cart Order를 명시적으로 재주문하는 사용자 흐름 추가. Existing Cart merge·current price·available stock 확인, idempotent retry, all-or-nothing 실패를 같은 PostgreSQL transaction에서 검증.
 
-## 근거와 한계
+## 판단 근거
 
 - PostgreSQL 18, [Explicit Locking](https://www.postgresql.org/docs/18/explicit-locking.html): row lock 수명과 deadlock 위험. SQL semantics 설명이며 Cart/Order 구현을 대신하지 않음 ([REF-056](../../00-governance/reference-register.md)).
 - Shopify Engineering, [Inventory reservations with MySQL](https://shopify.engineering/scaling-inventory-reservations): transaction 중심 reservation 사례. MySQL·Shopify 부하이며 ATLAS 용량이나 PostgreSQL 실행 계획의 근거가 아님 ([REF-070](../../00-governance/reference-register.md)).
 - Meituan, [Order database sharding](https://tech.meituan.com/2016/11/18/dianping-order-db-sharding.html): 측정된 DB 한계 이후의 분할 절충. Architecture type은 원문에 명시되지 않아 비-MSA 근거로 분류하지 않음. MySQL 사례와 운영 수치는 복제하지 않음 ([REF-108](../../00-governance/reference-register.md)).
 - Ordering.co의 Reorder 자료는 원본 주문 재현을 보장하지 않고 Cart 충돌에 사용자 선택을 요구. Optimizely는 saved-order restore를 별도 동작으로 제공. Shopify cancellation에서 inventory restock 옵션은 Cart 복원과 별도. 사례마다 다르며 Reorder 정책은 [D-063](../../00-governance/decision-log.md) 프로젝트 결정 ([REF-109~REF-111](../../00-governance/reference-register.md)).
 
-## 재검토 기준
+## 재검토 조건
 
 - 실제 buyer/product variant 요구가 합성 범위를 넘어설 때 product attributes·multi-currency 검토.
 - k6/Toxiproxy scenario에서 DB lock·connection occupancy·reservation lag 병목이 반복 재현될 때만 인프라·추가 기술 대안 비교.

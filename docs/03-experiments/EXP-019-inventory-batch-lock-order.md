@@ -1,8 +1,11 @@
 # EXP-019 — Inventory batch lock order 검증
 
-**상태:** 검증 완료 · production 변경 없음 · local-only
+**상태:** PostgreSQL Testcontainers 검증 기록
 
-## 시나리오
+## 목적과 범위
+
+서로 다른 Order가 두 Seller-SKU를 반대 입력 순서로 동시에 예약할 때 deadlock 없이 atomic reservation과 inventory conservation을 유지하는지 검증.
+## 환경·데이터·workload
 
 - Testcontainers PostgreSQL 18.6
 - Seller 2명, Seller별 SKU 1개, pool capacity 각 1
@@ -22,7 +25,7 @@
 | Deadlock/timeout | 미발생 |
 | 전체 Gradle `check` + `bootJar` | 성공 · 40 suites · 202 tests · 0 failure/error/skip · 53 actionable tasks |
 
-## 실행 명령
+## 재현 방법
 
 ```sh
 export JAVA_HOME="$(brew --prefix openjdk@25)/libexec/openjdk.jdk/Contents/Home"
@@ -39,7 +42,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 - Test XML: 40 suites · 202 tests · 0 failure · 0 error · 0 skipped
 - `bootJar`: 성공
 
-## 한계
+## 해석과 한계
 
 - Barrier는 요청 시작만 동기화. DB 내부 interleaving 보장 아님
 - 한정된 Testcontainers 시나리오. Universal deadlock freedom, multi-process coordination, 운영 capacity 증명 아님

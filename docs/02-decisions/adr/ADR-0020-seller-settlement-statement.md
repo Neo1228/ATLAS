@@ -7,7 +7,7 @@
 - 관련 결정: [D-066 / D-068 / D-071](../../00-governance/decision-log.md)
 - 관련 ADR: [ADR-0011](ADR-0011-gross-capture-settlement-ledger.md), [ADR-0013](ADR-0013-pre-shipment-refund-recording.md), [ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)
 
-## 맥락
+## 배경
 
 `settlement-module`은 capture journal, BuyerCheckout의 Seller별 allocation, 배송 전 local refund reversal을 기록하지만 Seller 명세를 조회하는 경로는 없음. Multi-Seller checkout의 gross를 Seller별로 중복 계산하지 않으며, 보존된 posting fact를 읽는 경로가 필요.
 
@@ -29,7 +29,7 @@ ATLAS는 local ledger simulation. PSP evidence 대조, Seller 지급, 실제 자
 - Seller 존재 여부를 Catalog에 질의하지 않음. 해당 기간 row가 없는 synthetic sellerId는 빈 page와 0 totals. `sellerId`는 인증·인가·tenant isolation이 아님.
 - 현재 schema에 신규 index/migration 추가 없음. Query plan과 representative local data가 필요성을 보일 때만 query index를 검토. 성능·용량 주장은 하지 않음.
 
-## 이유와 대안
+## 근거와 대안
 
 | 선택 | 대안 | 이유·절충 |
 |---|---|---|
@@ -48,6 +48,6 @@ ATLAS는 local ledger simulation. PSP evidence 대조, Seller 지급, 실제 자
 - Seller 인증/tenant isolation, payout, external PSP/bank reconciliation, fee/reserve, tax, accounting correction은 미정 또는 제외.
 - PostgreSQL integration tests verify capture, Seller allocation, refund reversal, period boundary, cursor paging/scope, aggregate beyond one row's long range, and read-only behavior. 성능 실측·부하 시험은 수행하지 않음.
 
-## 외부 참고자료
+## 참고 자료
 
 - [REF-121](../../00-governance/reference-register.md): Meituan 여행 정산 플랫폼의 명세·대사 흐름만 비교. 해당 시스템의 규모, broker, 분산 아키텍처는 ATLAS에 적용하지 않음.

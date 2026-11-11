@@ -12,7 +12,7 @@ ATLAS는 Seller-SKU 구매 흐름을 결제 성공까지 구현했습니다. 다
 
 현재 `OrderState.PAID`는 terminal 상태이며 Reorder 적격성에도 사용됩니다. 주문·결제 lifecycle에 배송 상태까지 합치면 결제 완료 의미와 배송 진행 의미가 섞입니다.
 
-## 선택지
+## 근거와 대안
 
 | 선택 | 장점 | 비용·위험 |
 |---|---|---|
@@ -56,15 +56,19 @@ sequenceDiagram
     API-->>Buyer: 상태·전이 시각 반환
 ```
 
-## 범위 밖
+## 현재 적용 범위와 연관 결정
 
-- 운송사·택배 API, tracking number, 배송 주소, 알림·proof of delivery
-- 부분 배송, 여러 위치, 여러 shipment, 배송비 계산
-- 결제 완료 뒤 주문 취소, 반품·환불 및 재고 restock 정책
-- 사용자·Seller 인증, 권한 부여, tenant 격리
-- 실제 거래·실제 사용자를 대상으로 한 SLA·처리 용량 주장
+> [!NOTE]
+> 이 ADR은 Fulfillment 상태와 Order/Payment 상태 분리의 초기 기준. Shipment·location·return·identity는 후속 결정으로 확장.
 
-## 결과와 검증
+| 흐름 | 현재 기준 |
+|---|---|
+| Shipment·부분 출고 | SellerOrder별 여러 Shipment와 OrderItem 수량 분할: [D-073](../../00-governance/decision-log.md), [ADR-0018](ADR-0018-seller-order-shipments.md) |
+| Inventory location | SellerOrder마다 모든 line을 처리할 active location 하나 선택: [D-072](../../00-governance/decision-log.md), [ADR-0017](ADR-0017-seller-fulfillment-locations.md) |
+| Return·refund | Delivered 이후 Seller receipt와 OrderItem inspection 기준: [D-071](../../00-governance/decision-log.md), [ADR-0013](ADR-0013-pre-shipment-refund-recording.md), [ADR-0026](ADR-0026-paypal-sandbox-payments.md) |
+| Identity·ownership | Buyer/Seller resource 권한은 authenticated account로 검증: [D-082](../../00-governance/decision-log.md), [ADR-0027](ADR-0027-account-jwt-authentication.md) |
+
+## 검증
 
 - fulfillment 상태가 주문·결제 상태를 변경하지 않음.
 - `order_fulfillment.order_id` PK/FK로 주문당 하나의 fulfillment를 강제.
@@ -72,11 +76,12 @@ sequenceDiagram
 - Testcontainers PostgreSQL에서 PAID transaction 초기화, 기존 PAID order backfill, 순차·중복·역행 전이, Seller 소유 일치, Buyer 조회를 검증.
 - 사용자·업무 경계의 자동화는 synthetic API 시나리오. 실제 carrier·인증 구현으로 해석하지 않음.
 
-## 근거와 한계
+## 판단 근거
 - 美团技术团队, [美团外卖订单中心的演进](https://tech.meituan.com/2016/09/09/mt-waimai-order-evolution.html): 결제→판매자 처리→배송→수령→사후 처리로 이어지는 주문 여정을 설명합니다. 결제 뒤 이행을 별도 상태로 관리하는 업무 순서만 참고합니다. 2016년 대규모 음식 배달 사례이므로 아키텍처·SLO·용량 수치는 ATLAS에 적용하지 않습니다.
-- Shopify Help Center, [Fulfilling your own orders individually](https://help.shopify.com/en/manual/fulfillment/fulfilling-orders/single-fulfillment): 수동 `In progress`/`Fulfilled` 상태와 carrier tracking에 따른 `Delivered` 제한, 여러 fulfillment로 나뉠 수 있는 사례를 설명합니다. ATLAS는 같은 상태 재요청을 멱등 처리하되 주문당 한 건·수동 local delivery만 채택하며, Shopify의 shipment·carrier 정책은 도입하지 않습니다.
+- Shopify Help Center, [Fulfilling your own orders individually](https://help.shopify.com/en/manual/fulfillment/fulfilling-orders/single-fulfillment): manual `In progress`/`Fulfilled` states, carrier tracking constraints for `Delivered`, and multiple fulfillment examples.
+- ATLAS accepts idempotent retries of the same state, one shipment per order, and manual local delivery. Shopify shipment/carrier policies are not adopted.
 
-## 재검토 기준
+## 재검토 조건
 
 - 한 Order에 여러 위치·분할 수량이 필요한 구매 시나리오가 승인될 때 partial fulfillment 검토.
 - 실제 carrier 연동이나 인증은 별도 요구·위협 모델·업무 정책 승인 이후 검토.
