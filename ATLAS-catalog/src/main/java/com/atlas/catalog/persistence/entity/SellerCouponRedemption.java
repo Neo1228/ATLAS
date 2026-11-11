@@ -1,5 +1,6 @@
 package com.atlas.catalog.persistence.entity;
 
+import com.atlas.catalog.persistence.state.SellerCouponRedemptionState;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -14,7 +15,6 @@ import org.hibernate.annotations.UuidGenerator;
 @Entity
 @Table(name = "seller_coupon_redemption")
 public class SellerCouponRedemption {
-    public enum State { RESERVED, REDEEMED, RELEASED }
 
     @Id
     @Column(name = "redemption_id", nullable = false)
@@ -33,7 +33,7 @@ public class SellerCouponRedemption {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "state", nullable = false, length = 16)
-    private State state;
+    private SellerCouponRedemptionState state;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -50,21 +50,21 @@ public class SellerCouponRedemption {
         this.sellerId = sellerId;
         this.couponId = couponId;
         this.orderId = orderId;
-        this.state = State.RESERVED;
+        this.state = SellerCouponRedemptionState.RESERVED;
         this.createdAt = createdAt;
         this.updatedAt = createdAt;
     }
 
     public void redeem(Instant at) {
-        transition(State.REDEEMED, at);
+        transition(SellerCouponRedemptionState.REDEEMED, at);
     }
 
     public void release(Instant at) {
-        transition(State.RELEASED, at);
+        transition(SellerCouponRedemptionState.RELEASED, at);
     }
 
-    private void transition(State next, Instant at) {
-        if (state != State.RESERVED || at == null) {
+    private void transition(SellerCouponRedemptionState next, Instant at) {
+        if (state != SellerCouponRedemptionState.RESERVED || at == null) {
             throw new IllegalStateException("Only a reserved coupon redemption can transition");
         }
         state = next;
@@ -74,5 +74,5 @@ public class SellerCouponRedemption {
     public UUID sellerId() { return sellerId; }
     public UUID couponId() { return couponId; }
     public UUID orderId() { return orderId; }
-    public State state() { return state; }
+    public SellerCouponRedemptionState state() { return state; }
 }
