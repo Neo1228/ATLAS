@@ -52,7 +52,7 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 ./gradlew clean check
 ./gradlew :application-module:bootRun
 ./gradlew :application-module:bootJar
-npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md" "!docs/plans/**" "!docs/working-plans/**"
+git ls-files -z -- '*.md' | xargs -0 npx --yes markdownlint-cli2@0.24.0
 ```
 
 PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환경·Sandbox 환경 변수와 `.env.local` 처리 기준은 README 참고. 애플리케이션은 `.env.local`을 자동 로드하지 않음.
@@ -60,7 +60,7 @@ PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환�
 
 - 애플리케이션은 JDK 25와 Gradle Wrapper 사용. Node.js는 application runtime이 아님.
 - PostgreSQL integration test와 local database는 Docker Compose 사용. k6는 `load-tests/` 시나리오 실행에만 사용.
-- Markdown lint에는 `npx` 사용. `.env.local`은 ignored file이며 Spring이 자동으로 읽지 않음.
+- [.env.example](.env.example)을 환경 변수 예시로 사용. `.env.local`이 없을 때만 복사해 기존 자격 증명을 보존하고, 실행 shell에 export. 비밀값은 commit/log 금지. 절차는 [README](README.md#로컬-개발) 참고.
 
 ## 코드 규칙과 공통 패턴
 

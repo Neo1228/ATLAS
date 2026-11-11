@@ -43,22 +43,28 @@ PayPal API 호출은 DB transaction 밖에서 수행합니다. 확인된 응답�
 
 ## 로컬 개발
 
-필요 도구: JDK 25, Docker Compose. PostgreSQL 18.6은 `compose.yaml`에 정의.
+필요 도구: JDK 25와 Docker Compose. PostgreSQL 18.6은 `compose.yaml`로 실행. 환경 변수 예시는 [.env.example](.env.example). 저장소 root에서 다음 순서로 준비:
 
 ```sh
 export JAVA_HOME="<JDK 25 home>"
 export PATH="$JAVA_HOME/bin:$PATH"
+if [ ! -f .env.local ]; then cp .env.example .env.local; fi
+chmod 600 .env.local
+# .env.local에 PayPal Sandbox 자격 증명을 입력한 뒤 현재 shell에 로드
+set -a
+. ./.env.local
+set +a
 docker compose up -d --wait postgres
 ./gradlew :application-module:bootRun
 ```
 
-기본 API 주소: `http://127.0.0.1:8080`. Gradle project path는 [`settings.gradle`](settings.gradle)에 지정되어 있으며 `:application-module`은 `ATLAS-application/` 디렉터리를 가리킵니다. PayPal Sandbox 변수는 OS 환경 변수로 전달하세요. `.env.local`은 자동 로드되지 않습니다. 세부 규칙은 [저장소 작업 지침](AGENTS.md) 참고.
+기본 API 주소: `http://127.0.0.1:8080`. `.env.local`은 Spring이 자동으로 읽지 않으므로 위처럼 shell 환경 변수로 전달합니다. Gradle project path는 [`settings.gradle`](settings.gradle)에 지정되어 있으며 `:application-module`은 `ATLAS-application/`을 가리킵니다. 운영 규칙은 [저장소 작업 지침](AGENTS.md) 참고.
 
 ### 검증
 
 ```sh
 ./gradlew --no-daemon check :application-module:bootJar
-npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md" "!docs/plans/**" "!docs/working-plans/**"
+git ls-files -z -- '*.md' | xargs -0 npx --yes markdownlint-cli2@0.24.0
 ```
 
 PostgreSQL integration test에는 Docker 접근 필요. Colima에서는 현재 Docker context에서 `DOCKER_HOST`를 설정하고 `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` 사용. 기기별 socket path를 고정하지 않음.

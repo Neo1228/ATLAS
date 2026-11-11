@@ -1,7 +1,7 @@
 # ADR-0029: 주문 결제·재고 복구 계약
 
-- 상태: Accepted
-- 날짜: 2026-11-10
+- 상태: ✓ 확정
+- 결정일: 2026-11-10
 
 ## 배경
 
@@ -99,3 +99,5 @@ sequenceDiagram
 - PayPal [idempotency 안내](https://developer.paypal.com/reference/guidelines/idempotency)는 중복 제거가 provider의 ID 보유 기간에 한정되며 endpoint별 보존 기간을 해당 API 문서에서 확인해야 한다고 설명. Create/authorize/capture/void의 정확한 보존 기간은 아직 확인되지 않음.
 - `PayPalRestClient`는 order/refund 조회는 제공하지만 authorization/capture 상태 조회는 제공하지 않음. Create-order 응답 유실 전에 `providerOrderId`가 저장되지 않았다면 resource ID 조회 불가. 오래된 capture/void `UNKNOWN`도 authorization 상태 확인 필요. 무기한 자동 retry는 안전하다고 주장하지 않음.
 - JVM 내부 owner lock은 최적화일 뿐. 구버전은 DB phase arbitration을 지원하지 않으므로 첫 전환 때 기존 결제 인스턴스와 진행 중 owner 작업을 drain. 모든 활성 인스턴스가 새 상태 전이를 지원한 뒤 다중 인스턴스 traffic 허용.
+- 구현: [PaymentServiceImpl](../../../ATLAS-payment/src/main/java/com/atlas/payment/service/impl/PaymentServiceImpl.java) · [PaymentAttemptRepository](../../../ATLAS-payment/src/main/java/com/atlas/payment/repository/PaymentAttemptRepository.java)
+- 동시 capture/void 검증: [PaymentLifecycleIntegrationTest](../../../ATLAS-application/src/test/java/com/atlas/payment/PaymentLifecycleIntegrationTest.java)

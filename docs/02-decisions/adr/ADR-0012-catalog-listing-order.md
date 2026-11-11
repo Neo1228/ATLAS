@@ -1,21 +1,10 @@
----
-id: ADR-0012
-title: Catalog 목록의 결정적 순서
-status: Accepted
-owner: Project Owner
-date: 2026-11-04
-links:
-  decisions: [D-067]
-  issues: [120]
-  requirements: [FR-005, Q-010]
-  references: [REF-114]
----
 # ADR-0012: Catalog 목록의 결정적 순서
 
 - 상태: ✓ 확정
-- 날짜: 2026-11-04
+- 결정일: 2026-11-04
 - 결정 ID: D-067
 - 관련 요구사항: FR-005, Q-010
+- 관련 Issue: [Issue #120](https://github.com/Neo1228/ATLAS/issues/120)
 
 ## 배경
 

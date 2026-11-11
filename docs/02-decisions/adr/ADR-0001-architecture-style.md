@@ -1,6 +1,6 @@
 # ADR-0001: 초기 아키텍처 방향
 - 상태: ✓ 구조·기술 방향 승인. 구현·배포는 별도 승인 대상.
-- 승인일: 2026-11-02
+- 결정일: 2026-11-02
 - 담당: 프로젝트 책임자
 - 관련 요구사항: [FR-001~003](../../01-requirements/requirements-index.md), [NFR-001~002](../../01-requirements/requirements-index.md)
 

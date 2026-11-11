@@ -1,7 +1,7 @@
 # ADR-0010: 주문 이행·배송 상태 관리
 
 - 상태: ✓ 확정
-- 날짜: 2026-11-04
+- 결정일: 2026-11-04
 - 담당자: Project Owner
 - 관련 결정: [D-065/D-071](../../00-governance/decision-log.md)
 - 관련 Issue: [Issue #117](https://github.com/Neo1228/ATLAS/issues/117)
