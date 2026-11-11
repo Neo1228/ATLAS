@@ -50,4 +50,12 @@ Outbox/worker 또는 durable saga는 다음 증거가 생길 때 별도 ADR로 �
 
 ## 검증과 한계
 
-현재 CI의 PostgreSQL integration tests는 로컬 DB/transaction/idempotency 경계를 검증한다. PayPal fixture test는 provider sandbox의 실 delivery를 대체하지 않는다. Live payment는 ADR-0026에 따라 범위 밖이다. 이 문서는 현재 구현을 설명하는 계약 요약이며, 실제 provider sandbox delivery, timeout ambiguity 및 concurrent cross-instance behavior가 검증되지 않은 곳은 완료됐다고 주장하지 않는다.
+현재 CI의 PostgreSQL integration tests는 로컬 DB/transaction/idempotency 경계와 서로 다른 service 인스턴스의 capture-vs-void phase arbitration을 검증한다. PayPal fixture test는 provider sandbox의 실제 delivery, 동시 같은 request ID 동작 또는 endpoint별 retention을 대체하지 않는다. Live payment는 ADR-0026에 따라 범위 밖이다. 이 문서는 검증된 DB 계약과 명시된 provider 한계를 구분하며, provider-side 동작을 완료됐다고 주장하지 않는다.
+
+## 다중 인스턴스 payment phase 중재
+
+- `PaymentAttempt` 행의 `PESSIMISTIC_WRITE` lock은 짧은 상태 전이 트랜잭션에서 capture와 void 중 먼저 선택된 phase를 기록하는 데만 사용한다. `AUTHORIZED`에서 capture가 먼저 확정되면 `CAPTURE_PENDING`/`CAPTURE`; void가 먼저 확정되면 `VOID_PENDING`/`VOID`를 commit한다. 반대 phase는 기존 pending 상태를 따르고 PSP에 상충 요청을 보내지 않는다.
+- PSP 호출은 commit 후 수행하며 DB row lock과 connection을 외부 HTTP 동안 유지하지 않는다. 완료 결과는 새 짧은 transaction에서 최신 row를 lock/reload하고 phase와 stable request ID를 비교한 뒤 적용한다. 이미 terminal/advanced 상태가 있으면 늦은 결과로 덮어쓰지 않는다. AUTHORIZATION에는 create-order와 approval-authorize라는 서로 다른 request ID가 있으므로 둘을 구분한다.
+- 기존 pending state + phase + deterministic request ID가 durable retry identity다. 새 reservation column/table, lease, distributed lock 또는 outbox를 추가하지 않는다. 재시작 뒤 같은 phase retry는 같은 request ID를 쓴다. 같은 ID의 동시 PayPal 요청은 두 번째가 실패할 수 있으므로 결과는 ambiguity로 처리하며 finalizer가 더 앞선 성공 상태를 보존한다.
+- PayPal [일반 idempotency 안내](https://developer.paypal.com/reference/guidelines/idempotency)는 중복 제거가 provider가 해당 ID를 보유하는 동안만 보장되고 endpoint별 보존 기간을 해당 API reference에서 확인해야 한다고 명시한다. 이 저장소에서 create/authorize/capture/void endpoint의 정확한 보존 기간은 아직 입증되지 않았다. `PayPalRestClient`에는 order 조회(`getOrder`)와 refund 조회(`getRefund`)가 있지만 authorization/capture 조회는 없다. 응답 유실로 create-order의 `providerOrderId`가 저장되지 않은 경우 resource ID 조회가 불가능하고, capture/void의 오래된 `UNKNOWN`에는 authorization 상태 조회가 필요하다. 따라서 오래된 요청의 무기한 자동 재시도를 안전하다고 주장하지 않는다.
+- 기존 프로세스 내부 owner lock은 최적화일 뿐이다. 이전 release는 DB phase 중재에 참여하지 않으므로 최초 전환에서는 구버전 결제 처리 인스턴스와 진행 중인 결제 owner 작업을 drain한 다음 새 버전으로 traffic을 전환해야 한다. 모든 활성 인스턴스가 이 DB 상태 전이를 지원한 뒤에만 동시 다중 인스턴스 트래픽을 허용한다. (#236)
