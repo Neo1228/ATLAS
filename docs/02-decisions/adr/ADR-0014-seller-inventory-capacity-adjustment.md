@@ -39,6 +39,7 @@ Seller가 재고 수량을 정정할 때 `reserved`와 `claimed` 재고를 보�
 - 위치 API는 location code 확인을 위해 read를 한 번 추가합니다. 위치별 잠금을 보존하면서
   DEFAULT 생성 경합을 막기 위한 의도된 비용입니다.
 - PostgreSQL advisory lock과 unique constraint로 동시 동일 key 처리를 보호합니다.
+- 호환 전환 release는 legacy delimiter key를 먼저, length-prefixed tuple key를 다음에 잠급니다. 이 순서는 rolling deployment 중 구버전과 같은 작업을 조정합니다. 1단계에서는 delimiter alias 경합이 남습니다. 모든 구버전 인스턴스가 drain된 것을 배포 과정에서 확인한 뒤 후속 release에서만 legacy lock을 제거합니다. PostgreSQL hash의 확률적 충돌 가능성은 기존과 같습니다.
 - 검증: replay, key 재사용 conflict, available 초과 감소, overflow rollback, 동시 동일 key,
   재고 보존식 및 DEFAULT sentinel/non-default UUID 잠금 test.
 

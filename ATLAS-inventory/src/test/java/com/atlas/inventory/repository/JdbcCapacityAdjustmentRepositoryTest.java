@@ -54,10 +54,19 @@ class JdbcCapacityAdjustmentRepositoryTest {
         assertThat(repository.lock(sellerId, secondLocationId, skuId, idempotencyKey)).isTrue();
         assertThat(repository.lock(sellerId, missingLocationId, skuId, idempotencyKey)).isFalse();
 
-        String defaultLockKey = sellerId + ":DEFAULT:" + skuId + ":" + idempotencyKey;
-        String firstLocationLockKey = sellerId + ":" + firstLocationId + ":" + skuId + ":" + idempotencyKey;
-        String secondLocationLockKey = sellerId + ":" + secondLocationId + ":" + skuId + ":" + idempotencyKey;
+        String defaultLegacyKey = sellerId + ":DEFAULT:" + skuId + ":" + idempotencyKey;
+        String defaultLockKey = InventoryAdvisoryLockKey.encode(
+                sellerId.toString(), "DEFAULT", skuId, idempotencyKey);
+        String firstLocationLegacyKey = sellerId + ":" + firstLocationId + ":" + skuId + ":" + idempotencyKey;
+        String firstLocationLockKey = InventoryAdvisoryLockKey.encode(
+                sellerId.toString(), firstLocationId.toString(), skuId, idempotencyKey);
+        String secondLocationLegacyKey = sellerId + ":" + secondLocationId + ":" + skuId + ":" + idempotencyKey;
+        String secondLocationLockKey = InventoryAdvisoryLockKey.encode(
+                sellerId.toString(), secondLocationId.toString(), skuId, idempotencyKey);
         assertThat(lockKeys).containsExactly(
-                defaultLockKey, defaultLockKey, firstLocationLockKey, secondLocationLockKey);
+                defaultLegacyKey, defaultLockKey,
+                defaultLegacyKey, defaultLockKey,
+                firstLocationLegacyKey, firstLocationLockKey,
+                secondLocationLegacyKey, secondLocationLockKey);
     }
 }
