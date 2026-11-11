@@ -130,7 +130,7 @@ public class JdbcLocationRepository {
     public InventoryTransferResult transfer(
             UUID sellerId, String skuId, UUID sourceLocationId, UUID destinationLocationId,
             int quantity, String idempotencyKey, String reason) {
-        String lockKey = sellerId + ":" + skuId + ":" + idempotencyKey;
+        String lockKey = InventoryAdvisoryLockKey.encode(sellerId.toString(), skuId, idempotencyKey);
         jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", result -> { }, lockKey);
         List<InventoryTransferRecord> prior = jdbc.query("""
                 SELECT transfer_id, seller_id, sku_id, source_location_id, destination_location_id,

@@ -40,7 +40,7 @@ public class JdbcCapacityAdjustmentRepository {
         jdbc.query(
                 "SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
                 resultSet -> { },
-                seller + ":" + locationScope + ":" + sku + ":" + key);
+                InventoryAdvisoryLockKey.encode(seller.toString(), locationScope, sku, key));
     }
 
     public Optional<CapacityAdjustmentRecord> find(UUID seller, String sku, String key) {

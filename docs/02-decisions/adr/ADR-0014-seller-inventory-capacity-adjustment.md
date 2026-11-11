@@ -39,6 +39,7 @@ Seller가 재고 수량을 정정할 때 `reserved`와 `claimed` 재고를 보�
 - 위치 API는 location code 확인을 위해 read를 한 번 추가합니다. 위치별 잠금을 보존하면서
   DEFAULT 생성 경합을 막기 위한 의도된 비용입니다.
 - PostgreSQL advisory lock과 unique constraint로 동시 동일 key 처리를 보호합니다.
+- Advisory lock key는 seller/location/SKU/idempotency key 각 field를 길이 접두 인코딩합니다. `:`가 허용된 SKU/key도 서로 다른 tuple이 같은 lock 문자열을 만들지 않으며, PostgreSQL hash 충돌 가능성 자체는 기존과 같습니다.
 - 검증: replay, key 재사용 conflict, available 초과 감소, overflow rollback, 동시 동일 key,
   재고 보존식 및 DEFAULT sentinel/non-default UUID 잠금 test.
 

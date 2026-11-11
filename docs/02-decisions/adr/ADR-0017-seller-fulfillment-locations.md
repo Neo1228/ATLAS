@@ -16,6 +16,7 @@ Seller SKU 재고와 예약이 이미 존재한다. Seller별 fulfillment locati
 - V16은 기존 Seller 재고를 Seller별 DEFAULT location으로 매핑한다. 과거 위치 이력이 없으므로 분할하거나 위치를 추정하지 않는다. 기존 location 없는 pool·reservation·adjustment·order도 DEFAULT에 귀속한다. 새 SKU 초기 재고는 DEFAULT에 들어간다.
 - 선택 location은 reservation과 PurchaseOrder에 저장한다. 결제 claim, release, 만료·취소, return restock은 저장된 위치를 사용하며 다시 선택하지 않는다.
 - 같은 Seller/SKU 사이 transfer는 available 수량만 이동하며 두 location의 capacity/available을 원자적으로 변경하고 보존식을 지킨다. Append-only audit와 변경은 한 transaction이다. 동일 idempotency key/facts는 replay, 다른 facts는 conflict.
+- Transfer advisory lock scope is a length-prefixed encoding of seller/SKU/idempotency tuple fields, so allowed `:` characters cannot make distinct operations share a lock key before PostgreSQL hashing.
 - location별 pool counter는 기존 `integer` 범위 유지. Seller-SKU 합산 조회는 location 간 overflow 방지를 위해 64-bit로 표현. location별 capacity 상한을 높이는 결정은 아님.
 - Inventory가 location·pool·reservation·transfer를 소유하고 Order가 PurchaseOrder를 소유한다. 모듈은 공개 API로만 연동하고 PostgreSQL transaction/locking이 무결성을 책임진다.
 
