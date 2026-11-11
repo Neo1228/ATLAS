@@ -1,62 +1,72 @@
----
-id: ADR-0013
-title: 배송 전 로컬 환불 기록
-status: Accepted
-owner: Project Owner
-date: 2026-11-04
-links:
-  decisions: [D-068, D-071]
-  requirements: [FR-008, Q-002, Q-006]
----
-# ADR-0013: 배송 전 로컬 환불 기록
+# ADR-0013 — 배송 전 OrderItem 환불 정책
 
-- 상태: ✓ 확정
-- 결정일: 2026-11-04
-- 결정 ID: [D-068, D-071](../../00-governance/decision-log.md)
-- 관련 요구사항: [FR-008/BR-008](../../01-requirements/requirements-index.md), [Q-002/Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
-- 관련 Issue: [Issue #122](https://github.com/Neo1228/ATLAS/issues/122)
+| 항목 | 내용 |
+|---|---|
+| 상태 | 확정·구현 |
+| 결정 ID | [D-068](../../00-governance/decision-log.md) |
+| 관련 요구사항 | [FR-008 / BR-008 / Q-002 / Q-006](../../01-requirements/requirements-index.md) |
+| 연결 결정 | [ADR-0011 capture ledger](ADR-0011-gross-capture-settlement-ledger.md), [ADR-0026 PayPal Sandbox](ADR-0026-paypal-sandbox-payments.md), [ADR-0029 payment recovery](ADR-0029-order-payment-recovery-contract.md) |
 
 ## 배경
 
-현재 capture 원장은 확인된 결제 총액을 내부적으로 기록하지만 실제 PSP 정산이나 판매자 송금을 증명하지 않습니다. 결제 완료 뒤 취소·환불 및 claim 재고 처리 정책은 미정이었습니다. 이 구현도 Fake PSP의 refund operation을 호출하지 않으며 외부 자금 이동을 수행하지 않습니다.
-- 후속 결정: 환불 적격성·금액 snapshot·원장 reversal은 유지. 실제 PayPal refund 호출과 provider-confirmed 처리 경계는 [ADR-0026](ADR-0026-paypal-sandbox-payments.md)에서 추가.
+Buyer가 주문한 일부 수량을 환불할 때 금액 계산과 재고 복원량을 OrderItem 단위로 일치시켜야 합니다. PayPal refund 결과와 내부 refund record·ledger·inventory 상태도 분리된 transaction 경계에서 일관되게 반영해야 합니다.
+
+초기 D-068은 내부 환불 기록과 reversal journal을 정의했습니다. PayPal provider 호출과 확인된 결과의 반영은 [D-081](../../00-governance/decision-log.md) 및 [ADR-0026](ADR-0026-paypal-sandbox-payments.md)로 확장.
 
 ## 결정
 
-- 단일 Seller `PAID` Order의 부분·전체 환불 기록을 OrderItem 수량 단위로 허용. 금액은 주문 시 저장한 KRW unit-price snapshot × 환불 수량으로 계산.
-- 같은 OrderItem의 누적 기록 수량은 주문 수량 이하. 요청은 `Idempotency-Key`로 보호; 같은 key·facts 재요청은 기존 기록 반환, 다른 facts 재사용은 conflict.
-- Fulfillment가 `UNFULFILLED` 또는 `IN_PROGRESS`인 경우만 허용. `SHIPPED` 이후는 거절.
-- 각 refund record에 대해 원본 capture journal을 변경하지 않고 별도 reversal journal 생성: `SELLER_PAYABLE` debit, `PSP_CLEARING` credit. 두 entry는 동일한 환불 gross 금액.
-- 해당 claimed reservation 수량만 available stock으로 복원. 환불 기록·inventory 복원·reversal journal·aggregate 상태는 하나의 PostgreSQL transaction.
-- `OrderState.PAID`는 terminal 상태로 유지. 별도 refund-record status를 사용하며 수량 전체가 기록된 Order는 추가 fulfillment 전이 거절.
-- API 응답은 `executionMode: LOCAL_LEDGER_ONLY`로 한정. 이는 내부 원장 기록이며 고객에게 돈이 반환됐다는 뜻이 아님.
+- `UNFULFILLED` 또는 `IN_PROGRESS` SellerOrder만 배송 전 환불 허용. `SHIPPED` 이후 요청은 반품·검수 흐름 사용.
+- Refund amount는 구매 시 저장한 OrderItem unit-price snapshot × 환불 수량으로 계산. 각 OrderItem의 누적 환불 수량은 주문 수량 이하.
+- 요청은 `Idempotency-Key`로 식별. 동일 key·동일 facts는 기존 결과 반환; 다른 facts 재사용은 conflict.
+- PayPal refund request는 Order 업무 transaction 밖에서 실행. Provider 응답이 `PENDING`·`UNKNOWN`이면 완료로 처리하지 않고 동일 refund operation으로 재조정.
+- PayPal refund가 확인된 뒤 refund record·ledger reversal·inventory restoration을 하나의 PostgreSQL transaction에서 commit.
+- 원 capture journal은 수정하지 않음. Refund journal은 `SELLER_PAYABLE` debit과 `PSP_CLEARING` credit으로 기록.
+- `OrderState.PAID` 유지. Refund record는 별도 상태로 관리. 전 수량이 refund된 SellerOrder는 추가 fulfillment 거부.
+- Delivered return은 Seller receipt·OrderItem inspection을 선행하는 별도 흐름 ([D-071](../../00-governance/decision-log.md), [ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)).
 
-- 이 ADR은 shipment 전 local refund-record 경로에 한정. `DELIVERED` 후 반품은 Seller 수령·검수를 거치는 별도 흐름 ([D-071/ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)); 기존 pre-shipment eligibility를 확장하지 않음.
-## 비범위
+## 환불 처리 흐름
 
-- 실제 PSP refund 호출·거래 증빙 대조·현금 이동
-- `SHIPPED` 이후 반품 접수·검수·재입고
-- 세금·배송비 배분, 다중 통화, 다중 Seller 주문
-- 회계 정정 및 capture 원장 재작성
+```mermaid
+sequenceDiagram
+    actor Seller
+    participant Order as Order refund service
+    participant DB as PostgreSQL
+    participant PayPal as PayPal Sandbox
+    Seller->>Order: Refund request + Idempotency-Key
+    Order->>DB: Validate items and reserve refund record
+    DB-->>Order: Reserved refund operation
+    Order->>PayPal: Refund request (outside Order transaction)
+    alt Refund confirmed
+        PayPal-->>Order: Completed provider result
+        Order->>DB: Commit refund record, ledger reversal and stock restore
+        DB-->>Seller: Confirmed refund response
+    else Result pending or unknown
+        PayPal-->>Order: Pending / unknown
+        Order-->>Seller: Existing operation remains reconcilable
+    end
+```
 
-## 선택 이유와 절충
+## 근거와 대안
 
-- 수량 단위 요청은 금액만 받는 방식보다 환불 금액과 재고 복원 수량을 직접 연결.
-- shipment 이후 환불을 미루면 물리적 반품·검수 없이 재판매 재고를 늘리지 않음.
-- append-only reversal은 capture 근거를 보존하고 수정·재기록 이력을 남김.
-- 실제 PSP와의 연결을 흉내내지 않고 내부 기록 범위를 명확히 제한. `LOCAL_LEDGER_ONLY` 응답은 실제 자금 반환 완료로 오인할 수 없도록 표현.
+- Quantity-based request ties refundable money directly to the purchase-time price snapshot and stock quantity.
+- Provider call inside the Order transaction would hold database locks during network latency and permit provider/local state divergence on rollback; confirmed provider outcome is applied in a later local transaction.
+- Append-only reversal preserves the original capture evidence and refund history.
+- Refund operation idempotency and provider-resource reconciliation prevent duplicate provider effects and local postings.
 
-## 검증 기준
+## 결과와 한계
 
-- 환불 금액은 OrderItem snapshot을 기준으로 정확히 계산; 누적 환불 수량 초과 거절.
-- same-key replay는 refund·journal·inventory 증감을 중복 생성하지 않으며, 다른 facts는 conflict.
-- `UNFULFILLED`/`IN_PROGRESS`에서만 가능; `SHIPPED` 이후 거절.
-- refund 원장 entry는 동일 금액의 `SELLER_PAYABLE` debit과 `PSP_CLEARING` credit이며 원 capture entries는 불변.
-- 처리 중 실패하면 refund record·reversal·stock restore가 모두 rollback.
-- 완전 기록 후 fulfillment 진행을 차단하고 `OrderState.PAID` 유지.
-- API가 `LOCAL_LEDGER_ONLY`를 반환하며 외부 결제 효과를 주장하지 않음.
+- Repeated same-facts request reuses its operation; changed facts with the same key are rejected.
+- Provider result unconfirmed: do not restore stock or post the refund reversal until reconciliation confirms the refund.
+- Delivered return continues to use receipt and inspection; refund window, write-off and reinspection remain open in [Q-010](../../01-requirements/requirements-index.md).
+- Provider execution, webhook and recovery behavior: [ADR-0026](ADR-0026-paypal-sandbox-payments.md), [ADR-0029](ADR-0029-order-payment-recovery-contract.md).
 
-## 근거
+## 검증
 
-- [D-068](../../00-governance/decision-log.md), [FR-008/BR-008/Q-002/Q-006](../../01-requirements/requirements-index.md), [ADR-0011](ADR-0011-gross-capture-settlement-ledger.md)
-- 정책은 소유자 결정. 외부 PSP 동작·반품 정책을 근거로 일반화하지 않음.
+- PostgreSQL tests cover partial/full quantity limits, captured-order eligibility, idempotent replay, concurrent refund requests, rollback and stock conservation.
+- PayPal integration tests cover refund request, duplicate operation, pending/unknown reconciliation and confirmed-result handling.
+
+## 참고 자료
+
+- [D-068 / D-081](../../00-governance/decision-log.md)
+- [FR-008 / BR-008 / INV-014 / Q-002 / Q-006](../../01-requirements/requirements-index.md)
+- [Issue #122](https://github.com/Neo1228/ATLAS/issues/122), [Issue #191](https://github.com/Neo1228/ATLAS/issues/191)

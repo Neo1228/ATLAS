@@ -23,8 +23,9 @@
 - PostgreSQL 전용 동시성 SQL은 database-specific하다. Transaction/lock 경계를 바꾸는 batch 최적화는 측정 근거와 별도 결정 전에는 추가하지 않는다.
 - PostgreSQL/Testcontainers 통합 테스트에서 `ddl-auto=validate` 및 현재 JPA mapping 검증을 통과했다. 이는 local schema 검증이며 production database, isolation, operation/performance 보장은 아니다.
 
-## 근거
+## 판단 근거
 
 - Spring Data JPA, [Defining Repository Interfaces](https://docs.spring.io/spring-data/jpa/reference/repositories/definition.html): typed repository가 CRUD 기능을 제공하는 공식 계약 (REF-097).
-- Spring Framework, [JDBC access styles](https://docs.spring.io/spring-framework/reference/data-access/jdbc/choose-style.html), PostgreSQL [locking](https://www.postgresql.org/docs/18/explicit-locking.html)·[isolation](https://www.postgresql.org/docs/18/transaction-iso.html): 특화 SQL·transaction semantics 근거 (REF-056/057/073).
+- Spring Framework, [JDBC access styles](https://docs.spring.io/spring-framework/reference/data-access/jdbc/choose-style.html): select JDBC APIs by query complexity.
+- PostgreSQL [locking](https://www.postgresql.org/docs/18/explicit-locking.html) and [isolation](https://www.postgresql.org/docs/18/transaction-iso.html): source for locking and transaction semantics (REF-056/057/073).
 - 少个分号, [Architecture tests](https://shaogefenhao.com/posts/architecture/arch-unit.html): 계층과 business module 경계를 구분하는 개인 경험. 모든 package 층 도입 근거로 일반화하지 않음 (REF-095).

@@ -12,7 +12,7 @@ ATLAS의 목표는 한정판매 기능에 한정되지 않는 이커머스 플�
 
 Seller별 재고·주문 이후 처리는 독립적으로 유지하면서 Buyer 관점의 checkout과 결제 결과는 하나로 다룰 필요.
 
-## 검토한 대안
+## 근거와 대안
 
 | 대안 | 장점 | 비용·한계 |
 |---|---|---|
@@ -32,17 +32,17 @@ Seller별 재고·주문 이후 처리는 독립적으로 유지하면서 Buyer 
   - 모든 Seller/SKU reservation과 Cart 비우기를 하나의 PostgreSQL transaction으로 처리
   - 한 line이라도 재고 부족 시 Checkout·하위 Order·reservation·Cart 변경 전체 rollback
 - **결제와 settlement**
-  - Fake PSP attempt 1건과 capture 1회 per BuyerCheckout
-  - `PENDING`/`UNKNOWN`은 같은 attempt로 reconcile; 결과 확정 전 모든 reservation 유지
-  - capture journal에는 checkout gross 1건 기록. Seller payable은 하위 Order별 allocation으로 배분하며 allocation 합계는 checkout total과 일치
-  - 실제 PSP, 자금 이동, Seller 송금은 제외
-- If cancellation races with an already captured payment, capture wins: settlement, inventory claim, and `PAID` states commit. Checkout-level post-capture compensation is not modeled; Seller-order pre-shipment refunds remain a separate flow.
+  - BuyerCheckout당 PayPal payment attempt 하나와 capture lifecycle 하나
+  - `PENDING`/`UNKNOWN`은 같은 attempt로 재조정하며 결과 확정 전 reservation 유지
+  - Capture journal에는 checkout gross 1건 기록. Seller payable은 하위 Order별 allocation으로 배분하며 합계는 checkout total과 일치
+  - PayPal HTTP call은 DB transaction 밖에서 수행. 확인된 provider 결과만 내부 상태에 반영 ([D-081](../../00-governance/decision-log.md), [ADR-0026](ADR-0026-paypal-sandbox-payments.md))
+  - Cancellation과 confirmed capture가 경합하면 capture가 우선하며 settlement·inventory claim·`PAID` 반영. Checkout-level compensation 없음; SellerOrder 환불은 별도 흐름
 - **Fulfillment와 return**
   - fulfillment는 Seller별 하위 Order당 1건
   - Return 접수는 해당 Order의 `DELIVERED` 이후에만 허용
   - Seller는 반품을 수령한 뒤 각 OrderItem의 검수 결과(`PASSED`/`FAILED`)를 한 번에 기록.
-  - 검수 통과한 수량만 local refund와 inventory 복원을 atomic 처리. 실패 수량은 refund/restock 없이 claimed 상태 유지; 재검수 금지.
-  - 부분 배송, write-off, 재검수, 숫자로 임의 설정한 return window는 이번 범위에서 제외
+  - `PASSED` 수량만 PayPal refund 확인 후 재고 복원과 ledger reversal. `FAILED` 수량은 refund/restock 없이 claimed 유지; 재검수 불가.
+  - Partial shipment는 [D-073](../../00-governance/decision-log.md)·[ADR-0018](ADR-0018-seller-order-shipments.md) 기준. Write-off, reinspection, return window는 Q-010에서 결정.
 
 ## 책임과 실패 경계
 
@@ -53,7 +53,7 @@ flowchart TD
     X -->|one PostgreSQL transaction| R[Seller별 reservation]
     X --> O1[Seller A PurchaseOrder]
     X --> O2[Seller B PurchaseOrder]
-    X --> P[Fake PSP attempt 1건]
+    X --> P[PayPal Sandbox attempt 1건]
     P -->|CAPTURED| S[Gross journal + Seller allocations]
     S --> O1
     S --> O2
@@ -78,7 +78,7 @@ flowchart TD
 - 검수 결과는 OrderItem 단위. Return 기간은 숫자로 정하지 않으며, failed item의 write-off·재검수는 비범위.
 - 운영 트래픽·SLO·capacity를 의미하지 않음
 
-## 근거와 적용 한계
+## 판단 근거
 
 - [Meituan: Trade System Design Practice](https://tech.meituan.com/2024/05/09/DDD-Practice-Trading-System.html) — 거래 lifecycle과 업무 경계 비교에 한정. 구현·구조·규모를 복제하지 않음.
 - [Shopify Engineering: Deconstructing the Monolith](https://shopify.engineering/shopify-monolith) — 모듈화된 단일 시스템 운영 사례. Shopify의 규모·팀 구조·기술 구성을 ATLAS의 용량 근거로 사용하지 않음

@@ -1,12 +1,15 @@
 # EXP-016: Buyer checkout 판매자 분할 비교
 
-**상태:** local controlled A/B pilot 완료, metrics/제한 기록. 성능 결과는 synthetic comparison이며 운영 capacity/SLO 주장 아님.
+**상태:** benchmark 기록 · JWT enforcement 이전 실행
 
-## 질문과 범위
+> [!WARNING]
+> 현재 Seller API는 JWT를 요구합니다. 이 k6 setup은 Bearer token을 보내지 않으므로 account/Seller onboarding을 현재 인증 계약에 맞춘 뒤 재실행해야 합니다. 기존 결과는 당시 구현 기준으로 보존.
 
-동일한 두 Cart 라인이 한 판매자의 child PurchaseOrder 하나로 묶이는 경우(A)와 서로 다른 두 판매자의 child PurchaseOrder 두 개로 나뉘는 경우(B)를 비교한다. HTTP 요청 처리율, 완료된 checkout-session 처리율/지연, JVM 및 PostgreSQL 신호를 관찰한다. 로컬 합성 실험이며 사용자 수요, SLO, production capacity를 뜻하지 않는다. Q-008 `2.78 sessions/s`는 synthetic arrival input일 뿐 사용자 수요나 capacity 주장이 아니다.
+## 목적과 범위
 
-## 로컬 환경 및 네트워크 경로
+동일한 두 Cart line이 한 SellerOrder로 합쳐지는 경로(A)와 서로 다른 SellerOrder 두 개로 분리되는 경로(B)를 비교. HTTP request RPS, 완료된 checkout session TPS/latency, JVM과 PostgreSQL 지표를 수집. Q-008의 `2.78 sessions/s`는 합성 arrival input이며 운영 traffic 수요나 capacity로 해석하지 않음.
+
+## 환경·데이터·workload
 
 앱과 k6 모두 선택적 Compose 프로파일로 실행한다. 먼저 앱 JAR를 만들고 서비스를 시작한다:
 
@@ -15,16 +18,26 @@
 docker compose --profile observability up --build -d application postgres-exporter prometheus grafana
 ```
 
-앱 이미지는 `ATLAS-application/Dockerfile`과 `ATLAS-application/build/libs/application-module.jar`만 build context로 사용한다. API와 management 포트는 host에 publish하지 않고, Compose 내부에서 k6·Prometheus가 `application:8080/8081`로 접근한다. PostgreSQL `5432`, exporter `9187`, Prometheus `9090`, Grafana `3000`은 host loopback에만 publish된다. Host `bootRun` 시 API와 management listener는 profile 기본값 `127.0.0.1`에 bind.
+- App image build context는 `ATLAS-application/Dockerfile`과 `ATLAS-application/build/libs/application-module.jar`.
+- API·management port는 host에 publish하지 않음. Compose 내부에서 k6·Prometheus가 `application:8080/8081`에 접근.
+- PostgreSQL `5432`, exporter `9187`, Prometheus `9090`, Grafana `3000`은 host loopback에만 publish.
+- Host `bootRun`의 API·management listener는 기본 `127.0.0.1` bind.
 
-k6에는 published port가 없으며 Compose 네트워크에서 `http://application:8080`으로 직접 요청하므로 host port-forward를 거치지 않는다. k6 `setup()`은 timed scenario 전에 동일 app API로 synthetic seller/product/SKU를 생성한다. 호스트에서 별도로 `bootRun`할 때는 profile의 API 및 management listener가 기본 `127.0.0.1`에 묶이고, Prometheus container scrape 경로로 사용하지 않는다. Compose는 앱 컨테이너 내부에서만 listener 주소를 `0.0.0.0`으로 override한다.
+- k6는 published port 없이 Compose network에서 `http://application:8080`에 직접 요청.
+- k6 `setup()`은 timed scenario 전에 같은 API로 synthetic Seller/Product/SKU를 생성.
+- Host `bootRun`은 listener를 `127.0.0.1`에 bind하므로 Prometheus container scrape 경로로 사용할 수 없음. Compose에서는 앱 container 안에서만 `0.0.0.0`으로 override.
 k6 Compose service는 `loadtest` 프로파일에만 속하므로 `observability` metrics stack의 기본 `up` 실행에서 시작하지 않는다. 일회성 실행은 `--profile observability --profile loadtest run --rm k6 ...`로 두 프로파일을 선택한다.
 
-Prometheus는 TSDB volume/retention override 없이 기본 ephemeral 컨테이너 저장소를 사용하므로 컨테이너 제거 시 time series는 버려진다. 보존할 query 결과는 coordinator가 별도 export한다. Grafana도 persistent volume 없이 dashboard provisioning으로 복원된다. k6 script의 structured summary는 writable bind mount `docs/03-experiments/results/exp-016:/results`에 `SUMMARY_FILE=/results/<run-id>.json`로 저장한다. 이 export는 테스트 결과 파일이며 raw Prometheus TSDB를 보존하지 않는다. Dashboard의 HTTP 처리율·p95, JVM heap/process CPU, PostgreSQL active connections·commit/deadlock만으로 DB wait 원인을 확정할 수 없다. Metrics로 원인을 분리할 수 없을 때만 Tempo/Alloy tracing을 후속 검토하며 이번 실험에는 tracing/OTel/custom instrumentation이 없다.
+- Prometheus는 TSDB volume/retention override 없이 실행. Container 제거 시 time series 삭제; 필요한 query 결과는 coordinator가 별도 export.
+- Grafana는 persistent volume 없이 dashboard provisioning으로 복원.
+- k6 structured summary는 `docs/03-experiments/results/exp-016:/results` bind mount에 `SUMMARY_FILE=/results/<run-id>.json`으로 저장. 이는 테스트 summary이며 raw Prometheus TSDB가 아님.
+- Dashboard는 HTTP 처리율/p95, JVM heap/process CPU, PostgreSQL active connections·commit·deadlock을 수집. 이 지표만으로 DB wait 원인을 확정할 수 없음.
+- 이번 run은 tracing/OTel/custom instrumentation 없이 수행. Metrics로 원인 분리가 안 되는 경우에만 Tempo/Alloy tracing을 후속 검토.
 HTTP p95 dashboard panel이 필요로 하는 bucket series를 내보내기 위해 `application-observability.yml`에서만 `management.metrics.distribution.percentiles-histogram.http.server.requests=true`를 활성화한다. 이는 관측용 histogram이며 SLO나 latency threshold를 정의하지 않는다.
-Prometheus scrape interval은 5초로 둔다. 120초 pilot에서 프로파일당 24회 scrape가 있어 짧게 지속되는 신호 변화를 관찰할 수 있도록 한 실험 전용 간격이며 production 권고가 아니다. 수집기 오버헤드는 pilot의 같은 로컬 자원에 포함되어 비교에 영향을 줄 수 있고 별도 분리 측정하지 않는다; 실제 부하는 120초 pilot으로 제한한다.
+- Prometheus scrape interval은 5초. 120초 pilot에서 24회 scrape로 짧은 신호 변화를 관찰하기 위한 설정.
+- Collector overhead는 pilot 자원 사용량에 포함되며 별도 분리 측정하지 않음. 실제 부하는 120초 pilot으로 제한.
 
-## k6 환경 변수 및 정확한 명령
+## 재현 방법
 
 `load-tests/buyer-checkout.js` 환경 계약:
 
@@ -44,7 +57,10 @@ All script inputs must be passed to k6 using CLI `-e KEY=value` options after `k
 
 ### 1-VU calibration 및 고정 concurrency
 
-각 프로파일마다 먼저 60초, 1 VU calibration을 수행한다. k6 `summaryTrendStats`는 `med`, `p(95)`, `p(99)`를 포함하며 `med`는 p50 중앙값이다. Script JSON의 `checkoutSessionLatencyMs.p50`, `.p95`, `.p99` 필드가 각각 p50/p95/p99를 기록하고 VU 산정에는 `.p95`를 쓴다. 2.78 sessions/s input에서 pilot 고정 VU 수는 `ceil(2.78 sessions/s × observed p95 session duration in seconds)`로 프로파일별 산출한다. p95가 0.8초인 예시라면 `ceil(2.78 × 0.8)=3` VUs다. 이 예시는 산정식만 설명하며 측정값이나 capacity 주장이 아니다. p95 표본이 없으면 임의 VU 값으로 진행하지 말고 setup/checkout을 조사하거나 calibration을 다시 한다.
+- Profile별 60초·1-VU calibration부터 수행. `summaryTrendStats`는 `med`, `p(95)`, `p(99)` 기록; `med`는 p50.
+- Script JSON의 `checkoutSessionLatencyMs.p50`, `.p95`, `.p99`에 각각 기록. VU 산정에는 `.p95` 사용.
+- 고정 VU 공식: `ceil(2.78 sessions/s × observed p95 session duration in seconds)`. p95가 0.8초면 `ceil(2.78 × 0.8) = 3 VUs`.
+- 0.8초는 산식 예시이지 측정값이 아님. p95 표본이 없으면 임의 VU로 진행하지 않고 setup/checkout을 조사하거나 calibration 재실행.
 실측 calibration p95: one-seller `61.2ms`, two-seller `39ms`. 산식에 따라 두 프로파일 모두 fixed VU `1`을 사용. 원본: [one-seller](results/exp-016/exp016-cal-a.json), [two-seller](results/exp-016/exp016-cal-b.json).
 
 ```sh
@@ -88,13 +104,19 @@ docker compose --profile observability --profile loadtest run --rm k6 run \
 
 세션 오류와 dropped iterations는 summary에 기록한다. fixed pool이 target arrival rate를 유지하지 못하면 이를 비교의 제한으로 보고하며 처리 용량 결과로 해석하지 않는다. variability/sample/telemetry가 부족할 때만 새 RUN_ID로 각 profile을 3회 × 120초까지 확장하고 사유를 기록한다.
 
-## 자동 seed, workload 및 reset
+### Seed·workload·reset
 
-k6 `setup()`은 timed arrival scenario 전에 public local API로 seller/product/SKU를 만든다: `POST /api/sellers`, `POST /api/sellers/{sellerId}/products`, `POST /api/sellers/{sellerId}/products/{productId}/skus`. 인증/실사용자 계정/외부 네트워크 service는 없다. A에서는 seller 한 명 아래 product/SKU 두 개를, B에서는 seller 두 명 아래 각각 product/SKU 하나씩 만든다. Product name/SKU ID는 RUN_ID/profile/line에서 결정되고 seller/product UUID는 API가 만든다. Setup 요청은 `phase=setup` tag를 가지며 별도의 `measured_http_requests` counter에 포함되지 않는다. Setup 오류는 측정 시작 전에 실행을 중단한다.
+- k6 `setup()`은 timed workload 전에 Seller/Product/SKU를 API로 생성. Setup 오류는 run 시작 전에 중단.
+- Script는 JWT enforcement 이전 작성되어 현재 보호된 Seller API에 token을 보내지 않음. 재사용 전 현재 auth contract에 맞게 account onboarding을 갱신해야 함.
+- Profile A는 Seller 1명·SKU 2개, B는 Seller 2명·각 SKU 1개. Product/SKU ID는 RUN_ID/profile/line 조합, Seller/Product UUID는 API 발급.
+- Setup 요청은 `phase=setup` tag로 측정 counter에서 제외.
 
-두 SKU는 같은 `UNIT_PRICE_WON`, 세션당 각각 quantity 1이다. 각 SKU의 `initialStock`은 도착률 × 실행 duration에서 정확히 계산하며 임의 headroom은 없다: `ceil((SESSION_RATE_NUMERATOR / SESSION_RATE_TIME_UNIT 초) × DURATION 초)` 단위/SKU. 기본 120초 pilot은 `ceil((278 / 100) × 120) = 334`개/SKU; 60초 calibration은 167개/SKU다. 매 세션이 각 SKU 하나씩 소비한다. Checkout 총액은 `2 × UNIT_PRICE_WON`이다.
+- 두 SKU 가격은 동일한 `UNIT_PRICE_WON`; 세션당 각 SKU quantity 1.
+- SKU별 `initialStock`은 arrival rate와 duration으로 계산하며 추가 headroom은 없음: `ceil((SESSION_RATE_NUMERATOR / SESSION_RATE_TIME_UNIT 초) × DURATION 초)`.
+- 기본 120초 pilot: `ceil((278 / 100) × 120) = 334`개/SKU. 60초 calibration: 167개/SKU.
+- 각 session은 SKU별 1개씩 소비. Checkout 총액은 `2 × UNIT_PRICE_WON`.
 
-Timed workload는 다음 4 HTTP 요청 순서다: Cart 라인 추가 2회, `POST /api/buyers/{buyerRef}/cart/checkout`, 응답 checkoutId에 대한 `POST /api/checkouts/{checkoutId}/payment`. 각 iteration은 고유 buyerRef/idempotency key를 쓴다. A는 child order 1개, B는 2개인지 검사하고 Fake PSP payment `paymentState=CAPTURED`만 완료로 센다.
+Timed workload는 4 HTTP request: Cart line 추가 2회, `POST /api/buyers/{buyerRef}/cart/checkout`, 응답의 checkoutId로 `POST /api/checkouts/{checkoutId}/payment`. 각 iteration은 고유 buyerRef/idempotency key 사용. A는 child order 1개, B는 2개 생성 확인. 당시 deterministic payment test adapter의 `paymentState=CAPTURED`만 완료로 계산.
 
 Seeded rows는 DB에 지속되고 API 삭제 endpoint가 없다. 각 controlled run 사이에는 해당 EXP-016 Compose project만 제거하고 `--volumes`로 PostgreSQL state를 초기화한 뒤 migrations를 다시 적용한다. 매 run은 새 RUN_ID와 동일한 fresh schema/seed policy를 사용한다.
 ### 초기 sweep 폐기 근거
@@ -102,7 +124,7 @@ Seeded rows는 DB에 지속되고 API 삭제 endpoint가 없다. 각 controlled 
 - 초기 exploratory sweep은 같은 DB를 초기화하지 않고 이어 실행해 transaction row 수가 누적됨. Seller별 결과 차이와 table-growth 효과를 분리할 수 없어 비교 결과에서 제외.
 - 초기 k6 summary는 `results/exp-016/exploratory/`에 보관. 최종 표는 profile/run마다 fresh DB를 적용한 결과만 사용.
 
-## 수집 지표
+## 결과
 
 - **HTTP RPS:** timed request 직후 증가하는 k6 `measured_http_requests` counter rate; setup 호출은 제외한다. 정상 세션당 4 요청이며 조기 오류가 있으면 요청 수가 줄 수 있다.
 - **완료 세션 TPS:** cart 설정, checkout, payment capture/검증 모두 성공한 `completed_checkout_sessions` rate. 요청 RPS와 별개다.
@@ -157,6 +179,9 @@ Process CPU/JVM heap maxima도 [one-seller](results/exp-016/observability-clean-
 - DB reset이 없던 첫 sweep은 transaction row 누적 영향이 섞여 exploratory 폴더에 보관; controlled 결과 표에서는 제외.
 - 추가 성능 변경 전에는 새로운 병목 가설과 workload 근거를 먼저 정함.
 
-## 해석 한계 및 참고 사례
+## 해석과 한계
 
-Meituan trade-system 사례(REF-116)는 거래 lifecycle과 transaction 경계 비교, Shopify inventory-reservation 사례(REF-070)는 읽기·DB 경합 측정 항목 참고용. 사례의 환경·성능 수치·구조를 ATLAS에 복사하지 않는다. Controlled run은 fresh local PostgreSQL schema, synthetic data와 Fake PSP 사용. 결과는 단일 JVM/DB·짧은 합성 workload에 한정되며 real PSP/사용자, 장기 안정성, 운영 SLO·capacity로 일반화하지 않는다.
+- 참고 사례: Meituan trade-system [REF-116](../00-governance/reference-register.md), Shopify inventory reservation [REF-070](../00-governance/reference-register.md). 각각 transaction boundary와 read/DB contention 지표를 참고.
+- 사례의 환경·수치·구현을 그대로 가져오지 않음.
+- Controlled run은 fresh PostgreSQL schema, synthetic data, deterministic test payment adapter 사용.
+- 결과는 단일 JVM/DB의 짧은 workload에 한정. PayPal network latency나 long-run stability 근거로 해석하지 않음.

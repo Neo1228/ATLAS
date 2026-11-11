@@ -5,7 +5,7 @@
 - 추적: [Issue #159](https://github.com/Neo1228/ATLAS/issues/159), [PR #160](https://github.com/Neo1228/ATLAS/pull/160), [FR-007 / BR-006 / BR-008 / Q-010](../../01-requirements/requirements-index.md)
 - 전제: [D-071](../../00-governance/decision-log.md), [D-072](../../00-governance/decision-log.md), [ADR-0017](ADR-0017-seller-fulfillment-locations.md)
 
-## 맥락
+## 배경
 
 현재 `PurchaseOrder`당 `OrderFulfillment` 한 건과 주문 단위 상태만 보유. Package, tracking reference, OrderItem별 출고 수량은 없음. 여러 package로 나눠 출고할 때 초과 출고·환불 경합·return eligibility를 표현할 수 없음.
 
@@ -23,7 +23,7 @@ Pre-shipment direct refund는 `UNFULFILLED`/`IN_PROGRESS` 상태에서 허용. R
 - Shipment carrier code와 tracking number는 둘 다 없거나 둘 다 기록하는 선택 metadata. 외부 carrier API·webhook·polling·배송비·ETA 계산은 제외.
 - 새 Migration V17은 기존 `UNFULFILLED`/`IN_PROGRESS` 상태를 유지. 과거 `SHIPPED`/`DELIVERED`는 기존 OrderItem 수량에서 direct pre-shipment refund를 뺀 한 Shipment로 보존. 과거 데이터에 없는 idempotency key·carrier·tracking은 `NULL`; 기존 migration은 수정하지 않음.
 
-## 이유와 대안
+## 근거와 대안
 
 | 대안 | 결정 | 이유 |
 |---|---|---|

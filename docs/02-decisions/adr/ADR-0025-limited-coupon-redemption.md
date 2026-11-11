@@ -36,7 +36,7 @@ ADR-0024의 Seller coupon은 제한 없이 재사용됩니다. Seller가 총 사
 - Refund는 redemption을 반환하지 않음. Cap은 성공한 capture 횟수로 정의.
 - Redis, distributed lock, broker, shard counter, 새 dependency 도입 없음. Primary-key row lock/conditional update가 먼저. Hot-row 한계는 local k6 및 PostgreSQL 지표로 측정한 뒤 판단.
 
-## 대안과 절충
+## 근거와 대안
 
 | 안 | 이점 | 위험/비용 | 결정 |
 |---|---|---|---|
@@ -46,7 +46,7 @@ ADR-0024의 Seller coupon은 제한 없이 재사용됩니다. Seller가 총 사
 | Per-customer limit | 개인별 반복 사용 제어 | 현재 buyer 식별자는 인증 identity가 아님 | 보류 |
 | Redis/distributed lock | 여러 DB shard/worker에 확장 가능 | 현재 단일 local PostgreSQL 범위에 불필요한 consistency plane 추가 | 기각 |
 
-## 근거와 영향
+## 판단 근거
 
 - [Meituan: InnoDB locks and transaction isolation](https://tech.meituan.com/2014/08/20/innodb-lock.html)은 indexed 조건과 lock footprint의 관계를 설명합니다. PostgreSQL 구현에서는 Coupon primary key에만 조건부 update를 적용합니다.
 - [PostgreSQL transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html)은 concurrent update의 row-lock 대기와 READ COMMITTED predicate 재평가를 설명합니다. Counter는 read-then-write가 아닌 단일 conditional update로 보호.
@@ -55,7 +55,7 @@ ADR-0024의 Seller coupon은 제한 없이 재사용됩니다. Seller가 총 사
 - Limited code 하나는 counter row 하나를 직렬화하므로 인기 code가 hot row가 될 수 있습니다. k6와 기존 Prometheus/Grafana/Postgres exporter로 같은 local profile의 unlimited/capped 경로를 비교. Threshold는 측정 전 설정하지 않음.
 - No Tempo/Alloy/Toxiproxy: 단일 application→PostgreSQL lock-contention 가설에 trace pipeline이나 network fault proxy가 필요하지 않음.
 
-## 검증 기준
+## 검증
 
 - Concurrent checkout은 cap보다 많은 reservation을 허용하지 않음; counter와 ledger row 수 일치.
 - Multi-seller checkout의 한 coupon이 거절되면 주문·cart clear·inventory·다른 coupon counter 모두 rollback.

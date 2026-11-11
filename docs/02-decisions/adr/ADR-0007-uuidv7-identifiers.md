@@ -15,7 +15,7 @@ links:
 - 날짜: 2026-11-03
 - 결정 ID: D-056
 
-## 맥락
+## 배경
 
 EXP-014는 격리된 로컬 PostgreSQL 18.6에서 전략별 부모 100,000개와 자식 200,000개로 삽입 및 집합 기반 조회를 각각 5회 측정했습니다.
 - UUIDv7 부모 PK 인덱스는 UUIDv4보다 27.9% 작았습니다(3,178,496 대 4,407,296 bytes).
@@ -26,9 +26,11 @@ EXP-014는 격리된 로컬 PostgreSQL 18.6에서 전략별 부모 100,000개와
 
 ## 결정
 
-Seller, Campaign, Admission Ticket, PurchaseOrder의 primary key는 Hibernate UUIDv7로 생성한다. PaymentAttempt의 primary key는 `order_id`이며 UUIDv7 Order ID를 그대로 참조한다. 별도 unique non-PK `attempt_id`는 기존 UUIDv4 provider identifier로 유지한다. UUID 컬럼/API/FK 형식과 `attempt_id` contract를 유지하며 BIGINT 내부 ID·별도 public ID·외부 generator dependency·handwritten generator는 추가하지 않는다.
+- Seller, Campaign, Admission Ticket, and PurchaseOrder primary keys use Hibernate UUIDv7.
+- PaymentAttempt primary key is `order_id`, referencing the UUIDv7 Order ID. A separate unique non-PK `attempt_id` remains the provider identifier.
+- UUID column/API/FK formats and the `attempt_id` contract stay unchanged. No BIGINT internal ID, separate public ID, external generator dependency, or custom generator is added.
 
-## 근거
+## 판단 근거
 
 선택은 로컬 측정에서 확인된 UUIDv7 PK index 크기 이점, 거의 동일한 insert 결과, BIGINT hybrid의 유의미한 측정상 이점 부재를 함께 고려한 소유자 결정이다. 이는 production 성능 우위의 증명이 아니다.
 
@@ -40,7 +42,7 @@ Hibernate 7.4.13.Final의 UUID `VERSION_7` generation style은 `@Incubating`이�
 - 동시 부하, 큰 working set, WAL/checkpoint 지속 부하 및 실제 application ID-generation 비용은 측정하지 않았다.
 - 별도 검증 전까지 production 성능·용량 주장을 하지 않는다.
 
-## 관련 기록
+## 관련 자료
 
 - 결정 및 실험: [D-056](../../00-governance/decision-log.md), [EXP-014](../../03-experiments/EXP-014-id-strategy-comparison.md)
 - 참고: [REF-104~107](../../00-governance/reference-register.md)

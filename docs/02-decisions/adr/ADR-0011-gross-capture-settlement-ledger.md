@@ -18,8 +18,8 @@ links:
 
 ## 배경
 
-ADR 작성 당시 `PaymentService.reconcile`은 `PaymentAttempt`의 AUTHORIZE/CAPTURE/VOID 상태를 Fake PSP와 재조정했습니다. PSP 거래 내역이나 Seller별 외부 송금은 처리하지 않았습니다. Q-006은 원장·수수료·보류금·지급·회계 정정을 별도 정책으로 남겼습니다.
-- 현행 provider 연동과 확정 capture/refund 원장 기록은 [ADR-0026](ADR-0026-paypal-sandbox-payments.md) 참조. 내부 원장은 판매자 송금을 의미하지 않음.
+초기 원장 설계는 `PaymentAttempt`의 AUTHORIZE/CAPTURE/VOID operation 결과를 재조정하는 방식. 현재 provider 연동은 PayPal Sandbox이며 [ADR-0026](ADR-0026-paypal-sandbox-payments.md)에 정의.
+Internal ledger는 확인된 capture/refund를 기록. Provider/bank statement reconciliation, fee/reserve와 회계 정정 정책은 [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)에서 관리.
 
 ## 결정
 
@@ -30,7 +30,7 @@ ADR 작성 당시 `PaymentService.reconcile`은 `PaymentAttempt`의 AUTHORIZE/CA
 - Campaign Order 또는 Cart의 모든 Seller Order를 `PAID`로 전환하고 inventory를 claim하는 transaction에 journal·entries·allocations를 포함. PaymentAttempt의 `CAPTURED`는 PSP 호출 뒤 먼저 commit. 후속 실패 시 order·inventory·ledger rollback 후 같은 attempt로 reconciliation 재시도.
 - `settlement-module`이 원장 계약·테이블을 소유하고 `order-module`이 확인된 capture facts를 전달합니다. 역방향 모듈 의존은 만들지 않습니다. Flyway migration은 `application-module`이 소유합니다.
 
-## 비범위
+## 현재 경계와 미결 정책
 
 이 원장은 내부 capture receivable/payable 기록이지 PSP의 실제 정산 완료 증명은 아닙니다. 아래 항목은 별도 결정 전까지 구현하지 않습니다.
 
@@ -39,13 +39,13 @@ ADR 작성 당시 `PaymentService.reconcile`은 `PaymentAttempt`의 AUTHORIZE/CA
 - provider refund 실행, 회계 정정·reversal, claim 이후 재고 영향
 - 여러 통화·Seller를 한 Order에 합치는 정책
 
-## 선택 이유와 대안
+## 근거와 대안
 
 - 내부 capture 상태와 현재 `OrderItem` snapshot만 사용하면 외부 PSP 계약을 가장하지 않고 Q-006의 원장 영역을 독립적으로 검증할 수 있습니다.
 - 단순 capture-event log는 계정 잔액을 표현하지 못하므로 owner가 선택한 이중기입 계약에 맞지 않아 제외했습니다.
 - 수수료·보류·지급·환불까지 함께 계산하는 모델은 Q-006에서 정하지 않은 정책을 필요로 해 다음 단계로 미룹니다.
 
-## 결과와 검증 기준
+## 검증
 
 - `attemptId` unique constraint와 transaction 단위의 두 entry 기록으로 재시도를 멱등하게 처리합니다.
 - confirmed capture 하나에는 같은 gross 금액의 `PSP_CLEARING` debit과 `SELLER_PAYABLE` credit이 각각 하나 있어야 합니다.
@@ -53,7 +53,7 @@ ADR 작성 당시 `PaymentService.reconcile`은 `PaymentAttempt`의 AUTHORIZE/CA
 - ledger insert 실패 시 order PAID transition과 inventory claim이 함께 rollback되고, 동일 attempt 재조정으로 다시 적용할 수 있어야 합니다.
 - 기존 payment attempt의 상태 의미, provider call 수, inventory conservation은 바꾸지 않습니다.
 
-## 근거
+## 판단 근거
 
 - [D-066](../../00-governance/decision-log.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions), [Issue #115](https://github.com/Neo1228/ATLAS/issues/115)
 - [ADR-0008: Catalog·Cart·Order 경계](ADR-0008-catalog-cart-order-boundaries.md)

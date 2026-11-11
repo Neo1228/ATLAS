@@ -1,54 +1,56 @@
-<!-- 체크박스 전체 완료. N/A에는 해당 항목의 구체적 사유 작성. -->
-# Pull Request
-<!-- 제목 형식: <type>(<scope>): <한국어 요약> -->
+# 변경 요청 (Pull Request)
+
+> [!IMPORTANT]
+> PR 제목 형식: `<type>(<scope>): <한국어 요약>`. 아래 검토 체크리스트의 모든 항목을 완료하고, N/A에는 구체적인 사유를 적으세요.
 
 ## 목적
-- 문제:
-- 필요한 이유:
+- 해결할 문제:
+- 변경이 필요한 이유:
 
-## 범위
+## 변경 범위
 - 포함:
 - 제외:
 
-## 근거와 영향
-<!-- 복잡한 변경은 배경·사실/가정·선택 이유·대안·영향·검증을 본문에 작성. 링크만으로 대체하지 않음. 표준 backend 용어는 English 가능; 불필요한 전문 용어·병기 금지. -->
-- 결정·근거:
+## 근거와 설계
+<!-- 복잡한 도메인·상태·알고리즘 변경은 확인된 사실, 가정, 대안, 절충과 영향을 본문에 작성. 문서 링크만으로 대체하지 않음. -->
+- 확인된 사실·가정:
+- 결정과 이유:
 - 대안·trade-off:
-- 영향 상태/불변조건:
-- 추가·제거 dependency/plugin 및 scope (runtime/test/build); 기존 library 대비 직접 구현 trade-off:
-- 검증 근거:
+- 데이터·API·상태 영향:
+- dependency/plugin 및 runtime/test/build scope:
+- 검증 근거와 한계:
 
 ## 시각화
-<!-- 복잡한 흐름·상태에만 Mermaid 사용. 기존 도식은 핵심 설명과 링크. -->
-- 도식 또는 N/A 사유:
+<!-- 여러 계층·상태 전이를 설명할 때 GitHub Mermaid를 사용. 단순 변경은 N/A와 이유를 작성. -->
+- Diagram 또는 N/A 사유:
 
 ## 추적
 - Issues: Closes #N — [Issue #N](https://github.com/OWNER/REPO/issues/N)
-  <!-- 완료: Closes #N — [Issue #N](https://github.com/OWNER/REPO/issues/N) -->
   <!-- 일부 반영: Refs #N — [Issue #N](https://github.com/OWNER/REPO/issues/N) -->
   <!-- Closes/Refs와 #N은 plain text. Markdown link로 감싸지 않음. -->
-- 요구사항·결정·규칙 ID: [관련 ID](https://github.com/OWNER/REPO/blob/main/docs/01-requirements/requirements-index.md) <!-- 실제 ID·기준 문서로 교체. 해당 없으면 N/A와 구체적 사유. -->
-- 기준 문서·근거 자료: <!-- 문서·외부 자료 링크. 본문에 근거·영향 설명 유지. -->
+- 요구사항·결정·규칙 ID: [관련 ID와 canonical 문서 링크](https://github.com/OWNER/REPO/blob/main/docs/01-requirements/requirements-index.md)
+  <!-- 적용 대상이 없으면 N/A와 구체적 사유를 작성. -->
+- 기준 문서·외부 참고자료:
 - Commit links:
 
 ## 변경 요약
-- [ ] 범위:
+- [ ] 변경:
 
 ## 검증
-- [ ] 명령·결과:
+- [ ] 실행한 명령과 결과:
 - [ ] 관련 문서·기록 갱신:
 
 ## 위험·후속 작업
-- 위험·한계:
+- 알려진 위험·한계:
 - 후속 작업:
 
 ## 검토 체크리스트
-- [ ] 범위가 단일 목적에 맞음.
+- [ ] 변경 범위가 하나의 목적과 검토 가능한 경계에 맞음.
 - [ ] 실행하지 않은 검증·성과를 주장하지 않음.
-- [ ] 데이터·보안·금전 상태·복구 영향 검토; 영향 없음이면 구체적인 N/A 사유 작성.
-- [ ] 관련 Issue 연결, `Closes`/`Refs` plain-text 형식과 link 일치.
-- [ ] 복잡한 변경의 근거·영향 설명; 링크만으로 대체하지 않음.
-- [ ] PR이 독립 검토 가능한 경계.
-- [ ] HTTP/API 변경 시 error/status contract와 GET/read side effect 확인; 영향 없으면 구체적 사유 작성.
-- [ ] Java 주석/Javadoc과 애플리케이션 소유 로그 설명은 한국어로 작성하고, 기술 식별자와 공개 API·오류 문구는 의도적으로 변경 범위에 포함하지 않는 한 유지한다.
-- [ ] 모든 항목 완료; N/A 사유 명시.
+- [ ] 데이터·보안·금전 상태·복구 영향을 검토함; 영향 없음은 구체적인 N/A 사유로 설명.
+- [ ] Issue 번호·링크가 일치하며 `Closes #N` 또는 `Refs #N` 형식이 plain text임.
+- [ ] 복잡한 변경의 사실·가정·근거·영향을 본문에서 설명함; 링크만으로 대체하지 않음.
+- [ ] API 변경 시 오류/status contract와 GET의 side effect를 확인함; 무관하면 구체적인 이유 작성.
+- [ ] 필요한 경우 Mermaid diagram으로 계층·상태 흐름을 설명함.
+- [ ] Java 주석은 한국어; API 식별자와 오류 코드는 임의로 바꾸지 않음.
+- [ ] 체크리스트 전체 완료; N/A 항목은 구체적인 사유를 포함함.

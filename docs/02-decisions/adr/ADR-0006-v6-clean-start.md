@@ -19,7 +19,7 @@ ADR-0005의 초기 데이터 전환안은 V1–V5 Campaign 데이터를 Seller-S
 - 기존 local data가 필요하면 애플리케이션 밖에서 명시적으로 보관·초기화한 뒤 빈 DB에서 시작합니다. 앱은 기존 데이터를 자동 삭제하거나 조용히 초기화하지 않습니다.
 - Seller-SKU 소유권, Campaign 간 공유 재고, 전역 FIFO/K, Campaign별 TTL·idempotency 범위 등 D-049의 도메인 결정은 유지합니다.
 
-## 결과
+## 결과와 한계
 
 기존 데이터가 든 DB에서는 사람이 별도로 archival/reset하지 않으면 V6 적용이 차단된다. 빈 V1–V5 DB만 fresh schema로 전환할 수 있다. 기존 데이터의 변환·복구는 이 migration 범위가 아니다.
 

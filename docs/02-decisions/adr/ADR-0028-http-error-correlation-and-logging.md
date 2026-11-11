@@ -3,7 +3,7 @@
 - 상태: Accepted
 - 날짜: 2026-11-10
 
-## 맥락
+## 배경
 
 애플리케이션은 `GlobalExceptionHandler`에서 모듈 예외를 공통 `ProblemDetail` 응답으로 변환하고, 예상하지 못한 예외만 오류 로그로 남긴다. 이 구조는 유지하되, 클라이언트 응답과 서버 로그 사이에 공유되는 요청 식별자가 없어 운영자가 보고된 5xx를 로그와 연결하기 어렵다. 호출자가 보낸 ID를 그대로 신뢰하면 로그 간 위조·충돌을 허용할 수 있다.
 
@@ -20,7 +20,7 @@ Servlet filter와 SLF4J MDC는 이미 사용 중인 Spring MVC/SLF4J 기반을 �
 
 MDC 범위는 동기 HTTP 요청이다. 별도 비동기 executor나 provider 작업으로 context 전파가 필요해지는 경우, 그 필요성을 실측·검증한 뒤 전파 방식을 별도로 결정한다. 현재는 분산 tracing/새 logging framework가 도입되지 않았으므로 이 변경을 해당 기능으로 주장하지 않는다.
 
-## 검증 기준
+## 검증
 
 - 같은 요청 ID가 response header와 `ProblemDetail` body에 나타난다.
 - 외부에서 보낸 임의 request ID가 사용되지 않는다.

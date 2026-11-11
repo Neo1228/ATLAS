@@ -1,148 +1,92 @@
-# Repository Guidelines
+# 저장소 작업 지침
 
 ## 프로젝트 개요
 
-- ATLAS는 전체 이커머스 플랫폼의 구매·판매 흐름, 거래 정합성, 장애 복구를 단계적으로 검증하는 로컬 학습 프로젝트.
-- 현재 기능: 계정 인증, 상품·Seller-SKU, 장바구니, 한정판매 대기열, 재고 예약·location routing, 주문·PayPal Sandbox 결제, 부분 출고·배송 기록, 내부 정산·환불·반품.
-- 실제 사용자, 개인정보, 실결제·송금, 운송사 연동, 클라우드 운영은 범위 밖.
-- 검증된 사실, 소유자 결정, 합성 입력, 실측 결과를 구분. 시험 입력을 실제 수요나 운영 용량으로 표현하지 않음.
-- 현재 기능과 실행 방법: [README](README.md). 기능 요구사항·미결정 정책: [요구사항 인덱스](docs/01-requirements/requirements-index.md). 지속 보존할 결정: [결정 로그](docs/00-governance/decision-log.md).
+ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫폼. 상품 탐색부터 장바구니, 결제, 주문 이행과 정산까지 전체 거래 흐름을 다루며 한정 판매에만 범위를 한정하지 않음. 기능의 정본은 [요구사항 인덱스](docs/01-requirements/requirements-index.md), 실행 가능한 기능 요약과 흐름은 [README](README.md) 참고.
 
-## 아키텍처 및 데이터 흐름
+## 아키텍처와 데이터 흐름
 
-- 하나의 Spring Boot 모듈형 단일 애플리케이션(modular monolith). Gradle 모듈은 독립 배포 서비스가 아님.
-- `application-module`: HTTP 계층, 설정, 공통 오류 처리, Flyway 마이그레이션.
-- 도메인 소유권:
+- Spring Boot 기반 **modular monolith**. `ATLAS-*` 디렉터리별로 도메인 책임을 나누며 애플리케이션은 하나로 실행.
+- 실제 디렉터리명은 `ATLAS-*`; Gradle project path는 [`settings.gradle`](settings.gradle)에 선언. 현재 task 이름은 `:application-module:...` 등 설정된 project path 사용.
+- 주요 흐름: Buyer cart/checkout → admission·inventory 예약 → PayPal authorization/capture → Seller별 order → shipment/return/refund → settlement ledger. Campaign 참여는 선택 경로. 세부 흐름은 README의 Mermaid diagram 참고.
 
-| 모듈 | 책임 |
+| 모듈 디렉터리 | 주 책임 |
 |---|---|
-| `account-module` | Buyer 계정·Seller profile 연결, 인증 및 refresh-token 관리 |
-| `catalog-module` | Seller, Product/ProductCategory, Seller-SKU, 현재 가격·seller-scoped Catalog listing |
-| `cart-module` | Buyer당 Cart 1개, `(sellerId, skuId)`별 CartItem |
-| `campaign-module` | Campaign과 판매 자격 |
-| `admission-module` | FIFO 대기열, ticket, checkout slot, queue policy |
-| `inventory-module` | 공유 재고 pool, reservation, 수량 보존 |
-| `order-module` | BuyerCheckout, Seller별 PurchaseOrder/OrderItem·location snapshot, Shipment·fulfillment·refund·return |
-| `payment-module` | PaymentAttempt, PayPal provider operation·resource state; Sandbox payment integration (credentials absent이면 disabled) |
-| `settlement-module` | 내부 gross-capture 원장, Seller allocation, local refund reversal, read-only Seller statement; 실제 payout 없음 |
+| `ATLAS-application/` | Spring Boot 진입점, HTTP API, 보안·공통 오류, scheduler 설정과 migration |
+| `ATLAS-account/` | 계정과 인증 세션 |
+| `ATLAS-catalog/` | Seller, Product, category, SKU, 가격·판매 가능성 |
+| `ATLAS-cart/` | Buyer cart와 item |
+| `ATLAS-campaign/` | Campaign과 구매 자격 |
+| `ATLAS-admission/` | FIFO queue, ticket, checkout slot |
+| `ATLAS-inventory/` | 재고 pool·reservation·location·transfer |
+| `ATLAS-order/` | Buyer checkout, Seller order, shipment, return/refund |
+| `ATLAS-payment/` | PayPal Sandbox authorization/capture/refund, webhook |
+| `ATLAS-settlement/` | 내부 capture/refund ledger와 Seller statement |
 
-- Current Cart·checkout cardinality and return policy: [ADR-0016](docs/02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md).
-- 모듈 간 호출은 공개 `.service`/DTO 계약으로 제한. 다른 모듈의 entity/repository 직접 참조 금지.
-- 일반 Cart 구매: Buyer-wide Cart `(sellerId, skuId)` → BuyerCheckout와 Seller별 PurchaseOrder → OrderItem snapshot → 전체 재고 atomic reservation → PayPal order·구매자 승인·authorization/capture → 확인된 capture의 Seller별 allocation·fulfillment. Provider disabled 시 payment request는 명시적으로 실패. Delivered return은 Seller 수령 후 OrderItem 검수; PASSED만 local refund/restock, FAILED는 claimed 유지.
-- Catalog discovery: Seller-owned flat ProductCategory와 Product의 same-Seller ownership은 Catalog 소유. `categoryId` filter는 Seller scope에서만 허용; Inventory availability는 query 조건이 아님 ([D-074](docs/00-governance/decision-log.md), [ADR-0019](docs/02-decisions/adr/ADR-0019-seller-product-categories.md)).
-- Shipment는 실제 dispatch 시점에 기록. SellerOrder마다 여러 package와 OrderItem 수량 분할 가능; `shipped + direct pre-shipment refunded <= ordered`. 모든 net shippable quantity delivery 전 Return 거부. Carrier 연동 없이 local simulation ([D-073](docs/00-governance/decision-log.md), [ADR-0018](docs/02-decisions/adr/ADR-0018-seller-order-shipments.md)).
-- Location-aware 재고: Inventory가 SellerOrder의 모든 line을 충족하는 active location 하나를 priority ASC·UUID ASC로 선택. 주문 분할 금지. Reservation/PurchaseOrder에 선택 위치를 저장하고 claim·release·return-restock에 재사용. 기존 pool은 V16에서 `DEFAULT`로 보존 매핑 ([D-072](docs/00-governance/decision-log.md), [ADR-0017](docs/02-decisions/adr/ADR-0017-seller-fulfillment-locations.md)).
-- 한정판매: Campaign 개방 → queue 자격 확인 → FIFO 순번·checkout slot 발급 → Campaign Order 생성 → 재고 예약 → 같은 Order 결제 흐름.
-- 결제 상태가 `PENDING`/`UNKNOWN`이면 같은 attempt와 재고 hold 유지. 결과 대조 전에 새 결제 attempt 생성 금지. 주문 이행·환불 기록은 `OrderState`와 별도 관리.
-- 재고 불변조건: `available + reserved + claimed = initial_capacity`; 각 값은 음수가 아님. 확인된 비결제와 필요한 void 뒤에만 hold 해제.
-- PSP 요청은 DB transaction 외부에서 실행. PayPal Sandbox 결과 확인 후 내부 상태 반영; 실제 자금 이체·Seller payout은 범위 밖.
-- `sellerId`와 `buyerRef`는 합성 식별자일 뿐 인증·인가·tenant 격리 수단이 아님.
+| 계층 | 책임 | 두지 않을 책임 |
+|---|---|---|
+| Controller | HTTP binding, validation, response mapping | business logic, persistence |
+| Service | use-case orchestration, transaction | HTTP 처리 |
+| Repository | persistence | service logic, API response DTO |
 
-## 주요 디렉터리
+계층 간 전달 DTO는 `*Request`/`*Response`로 구분. Persistence record/entity는 API에 노출하지 않으며, 의존성은 constructor DI와 모듈 소유 계약으로 연결.
+
+## 주요 디렉터리와 파일
 
 | 경로 | 용도 |
 |---|---|
-| `ATLAS-application/` | Spring Boot 실행, HTTP, 설정, Flyway 마이그레이션 |
-| `ATLAS-catalog/`, `ATLAS-cart/`, `ATLAS-campaign/`, `ATLAS-admission/` | 상품, 장바구니, Campaign, 대기열 |
-| `ATLAS-inventory/`, `ATLAS-order/`, `ATLAS-payment/`, `ATLAS-settlement/` | 재고, 주문, PayPal Sandbox 연동, 내부 원장 |
-| `docs/00-governance/` | 결정 로그와 참고자료 레지스트리 |
-| `docs/01-requirements/` | 기능 요구사항, 불변조건, 미결정 사항 |
-| `docs/02-decisions/adr/` | 승인된 Architecture Decision Record |
-| `docs/03-experiments/` | 재현 가능한 실험과 측정 한계 |
-| `load-tests/` | 승인된 HTTP 부하 구성에 한해 사용하는 k6 script |
-| `.github/workflows/`, `.github/ISSUE_TEMPLATE/` | CI, 문서 검사, Issue/PR 양식 |
-| `config/checkstyle/`, `gradle/` | Checkstyle과 Gradle Wrapper 설정 |
+| `ATLAS-*/src/main/java/` | 각 모듈의 Java 구현 |
+| `ATLAS-application/src/main/java/com/atlas/AtlasApplication.java` | Spring Boot 진입점 |
+| `ATLAS-*/src/test/java/` | JUnit 단위·통합 테스트 |
+| `ATLAS-application/src/main/resources/` | `application.yml`, 관측 설정, Flyway migration |
+| `config/checkstyle/checkstyle.xml` | Java Checkstyle 규칙 |
+| `compose.yaml`, `observability/` | PostgreSQL·실험 관측 환경 |
+| `load-tests/` | 시나리오별 k6 스크립트 |
+| `docs/00-governance/`, `docs/01-requirements/`, `docs/02-decisions/`, `docs/03-experiments/` | 결정·요구사항·ADR·검증 근거의 정본 |
+| `.github/` | Issue/PR 템플릿과 CI workflow |
+| `settings.gradle`, `build.gradle`, `gradlew` | 모듈 mapping, 공통 빌드 설정, Gradle Wrapper |
 
 ## 개발 명령
 
-- 필요 도구: JDK 25, Docker Compose. 로컬 PostgreSQL 컨테이너 버전: 18.6.
-- JDK 설정과 로컬 DB 시작:
-
 ```sh
-export JAVA_HOME="<JDK 25 home>"
-export PATH="$JAVA_HOME/bin:$PATH"
-docker compose up -d --wait postgres
+./gradlew clean check
+./gradlew :application-module:bootRun
+./gradlew :application-module:bootJar
+npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md" "!docs/plans/**" "!docs/working-plans/**"
 ```
 
-- 애플리케이션 실행: `./gradlew :application-module:bootRun`
-- 전체 컴파일·Checkstyle·단위/통합 테스트·실행 archive 검사: `./gradlew --no-daemon check :application-module:bootJar`
-- Markdown 검사: `npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"`
-- 기본 API 주소: `127.0.0.1:8080`.
-- Colima/Testcontainers: `export DOCKER_HOST="$(docker context inspect --format '{{ .Endpoints.docker.Host }}')"` 및 `export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. 기기별 socket 경로 하드코딩 금지.
-- 사용자가 금지한 `view` command 실행 금지. 파일 확인은 정적 read/search 도구 사용.
+PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환경·Sandbox 환경 변수와 `.env.local` 처리 기준은 README 참고. 애플리케이션은 `.env.local`을 자동 로드하지 않음.
+## Runtime과 도구
 
-## 코드 규칙 및 공통 패턴
+- 애플리케이션은 JDK 25와 Gradle Wrapper 사용. Node.js는 application runtime이 아님.
+- PostgreSQL integration test와 local database는 Docker Compose 사용. k6는 `load-tests/` 시나리오 실행에만 사용.
+- Markdown lint에는 `npx` 사용. `.env.local`은 ignored file이며 Spring이 자동으로 읽지 않음.
 
-- Java 코드에 FQCN 대신 import 사용. Checkstyle은 Gradle `check`에서 실행.
-- 책임을 모듈 안에 응집: 공개 `.service`, `.dto.request`, `.dto.response`, `.exception`; 내부 JPA `.persistence.entity`, lifecycle `.persistence.state`, 소유 모듈 `.repository`, workflow `.service.impl`.
-- 공개 DTO는 `.dto.request`의 `*Request`, `.dto.response`의 `*Response`로 명명. HTTP 전용 DTO는 application controller 안에 둠.
-- Service는 응집된 use case 조정 책임. 실제로 분리된 업무 책임이 없으면 wrapper class/helper 계층을 추가하지 않음.
-- 생성자 주입 우선. Lombok 1.18.48은 `@Getter`, 단순 생성자용 `@RequiredArgsConstructor`에 한정. `@Data`, 일괄 `@Setter`, builder, entity equality 생성 금지.
-- 일반 CRUD는 JPA. PostgreSQL 전용 동시성·원자성 SQL은 해당 모듈 `.repository`에서 처리하고, 소유 모듈 테이블에만 기록.
-- 계층 경계: Controller는 HTTP binding·status·transport token 변환과 Service 호출만 담당. Use-case policy·transaction·repository 접근 금지.
-- Service는 유스케이스·정책 검증·transaction 경계와 비즈니스 오류 변환 담당. Repository는 SQL/JPA와 persistence 결과만 담당하며 HTTP DTO·HTTP 예외에 의존 금지. 조회 projection record는 `.persistence.projection`에 배치.
-- 생성자 DI로 필요한 공개 Service만 연결. 모듈 간 entity/repository 직접 참조 및 계층 우회 금지.
-- Product 판매 상태와 채널 가용성은 Catalog 소유. 주문·대기열은 Catalog 공개 Service로 판정; 공개 목록은 판매 가능한 상품만 노출하고 Seller 관리 목록은 비활성 상태도 보존.
-- Schema는 Flyway가 관리하고 Hibernate는 `ddl-auto: validate`만 수행. 병렬 작업의 migration version은 coordinator가 배정.
-- 모듈별 오류는 타입이 지정된 예외와 `Code`로 표현. `GlobalExceptionHandler`는 RFC 9457 `ProblemDetail`과 고정 `code` 반환. 예기치 않은 500 응답에 내부 상세를 노출하지 않음.
-- GET 조회는 상태 변경 금지. PayPal return/cancel redirect는 provider protocol callback 예외이며, 저장된 order ID·금액·통화 확인과 idempotency 필수 ([ADR-0026](docs/02-decisions/adr/ADR-0026-paypal-sandbox-payments.md)). 그 외 상태 변경은 POST 또는 scheduler에서 처리.
-- API·Actuator 기본 bind는 `127.0.0.1`. `ATLAS_SERVER_ADDRESS`·`MANAGEMENT_SERVER_ADDRESS=0.0.0.0`은 격리된 local Docker 테스트에서만 허용; host/public 노출 금지.
-- PayPal OAuth2 Client는 outbound 인증 전용. `ApiSecurityConfiguration`은 loopback-only API의 `permitAll`·CSRF 비활성 정책; inbound 인증은 비범위.
-- `buyerRef`·`sellerId`·resource UUID는 authenticated ownership 검증 전까지 authorization 증거가 아님. JWT 도입 시 default-deny, Buyer/Seller principal-to-resource ownership check 필수.
-- JWT는 Spring Security/Nimbus 검증 경로 사용. Custom signature/password crypto 금지. Refresh token은 opaque·hash-only·single-use rotation; replay 및 logout revocation을 integration test로 검증.
-- Transaction 경계는 도메인 불변조건 기준. PostgreSQL 잠금/SQL 경합은 실제 DB로 검증. `@Transactional` proxy 대상 class/method에 `final` 사용 금지.
-- CQRS, CommandBus, handler/mediator, 사전 `common` module, 범용 base/mapper/framework 금지. 실제 요구 없이 모듈·라이브러리·인프라 추가 금지.
-- 신규 라이브러리가 직접 구현보다 적합하면 기능·호환성·보안·유지보수·라이선스·실행/테스트/빌드 범위와 대안을 Issue/PR에 기록.
-- 주요 식별자는 UUIDv7 결정(D-056)과 현재 migration을 확인. Hibernate ID 생성 API와 버전은 Spring Boot BOM 기준 검증.
+## 코드 규칙과 공통 패턴
 
-- 외부 결제: provider HTTP 호출은 업무 DB transaction 밖에서 수행. provider operation ID와 결과를 저장하고, endpoint별 idempotency 지원을 확인. timeout/unknown은 상태 조회 후 재조정; 무조건 재시도 금지.
-- 내부 settlement ledger는 provider에서 확인된 capture/refund만 반영. 원장 기록을 실제 판매자 지급으로 표현하지 않음.
-- 비밀값은 코드·문서·fixture·로그·Issue/PR 본문에 기록 금지. 개발용 Sandbox credential은 소유자 승인 후 GitHub Actions Secrets 또는 ignore된 `.env.local`에서만 사용. GitHub Actions Secrets는 로컬로 자동 전달되지 않음.
-## 중요 파일
+- JDK 25와 저장소의 Gradle Wrapper·Checkstyle 설정을 유지. 새 runtime, plugin, dependency는 필요성과 대안을 확인하고 변경 이유를 기록.
+- Java FQCN 직접 표기 금지. 필요한 타입은 import하고 단순 이름 사용. 클래스·메서드명은 책임 중심으로 짧고 실무에서 통용되는 용어 사용.
+- Controller에는 business logic, Repository에는 service logic·API DTO를 두지 않음. 계층 간 전달 DTO는 `*Request`/`*Response`로 구분하고 persistence record/entity를 API에 노출하지 않음. 작은 클래스·단독 패키지를 형식적으로 추가하지 말고 실제 책임 경계가 생길 때 분리.
+- 기존 오류 응답·error code·validation·logging contract를 재사용. 민감값과 credential은 코드·로그·Issue·PR에 기록하지 않음.
+- DB transaction은 원자성이 필요한 작업 범위에 한정. PayPal network call은 DB transaction 밖에서 실행하고, 확인된 provider result만 내부 상태에 반영.
+- HTTP 요청은 현재 동기 흐름을 기본으로 유지. 비동기 처리·thread pool은 처리 순서, 재시도, 상태 추적의 구체적 요구와 검증 근거가 있을 때만 도입; 테스트의 동시 실행 코드를 production pattern으로 복사하지 않음.
+- 업무 상태는 소유 모듈의 영속화 및 명시적 상태 전이로 관리. 숨은 mutable singleton state를 추가하지 않음.
+- 락은 보호할 invariant와 재현 가능한 경쟁 조건이 있을 때만 추가. lock scope/order, transaction boundary, retry 및 failure recovery를 PostgreSQL 통합 테스트로 검증.
+- DDD, CQRS, hexagonal architecture 등 패턴을 전제하지 않음. 기존 계층 구조를 유지하고, 구조 변경은 구체적인 문제·근거가 있을 때만 수행.
 
-- `settings.gradle`: Gradle project와 `ATLAS-*` 디렉터리 연결.
-- `build.gradle`, `gradle/wrapper/gradle-wrapper.properties`: Java toolchain, 의존성 관리, Checkstyle, Gradle Wrapper.
-- `ATLAS-application/src/main/java/com/atlas/AtlasApplication.java`: Spring Boot 시작점과 scheduling.
-- `ATLAS-application/src/main/resources/application.yml`, `compose.yaml`: 로컬 실행과 PostgreSQL 기본값. Credential은 로컬 전용.
-- `ATLAS-application/src/main/resources/db/migration/`: versioned schema 변경. 이미 적용한 migration 수정 금지.
-- `ATLAS-application/src/main/java/com/atlas/application/controller/`: HTTP adapter. 전송 field/validation이 다를 때만 HTTP DTO 별도 작성.
-- `.github/workflows/backend-ci.yml`, `.github/workflows/docs-lint.yml`: 필수 CI 명령과 검사 이름.
-- `.github/PULL_REQUEST_TEMPLATE.md`, `.github/ISSUE_TEMPLATE/`: 필수 Issue/PR 양식과 확인 항목.
-- `docs/03-experiments/EXP-013-*`은 V1–V5/Campaign 중심 과거 실험이며 현행 V6+ 흐름을 검증하지 않음. EXP-014 수치는 한정된 로컬 UUID 비교이지 일반 성능 보장이 아님.
+## 테스트와 품질 확인
 
-## 런타임 및 도구
+- JUnit Platform과 Spring Boot Test 사용. 단순 로직은 unit test, SQL·transaction·locking 동작은 PostgreSQL integration test로 확인.
+- `ModuleBoundaryTest`는 ArchUnit으로 계층·모듈 의존 규칙 검증. PostgreSQL integration test는 Testcontainers, PayPal HTTP test는 MockWebServer 사용.
+- 동작 변경은 정상·경계·실패 조건을 검증하고, 버그 수정에는 재현 회귀 테스트 추가. 커버리지 비율 gate는 설정돼 있지 않으므로 임의 기준을 주장하지 않음.
+- 동작 변경은 정상·경계·실패 조건을 검증하고, 버그 수정에는 재현 회귀 테스트 추가. 커버리지 비율 gate는 설정돼 있지 않으므로 임의 기준을 주장하지 않음.
+- 성능 변경은 workload·dataset·자원·측정 지표·반복 횟수·제한을 기록. 요청 경로 또는 시스템 부하를 측정하는 실험은 필요한 관측 지표와 결과 산출물을 함께 보관.
+- 실행하지 않은 테스트·성능 결과는 통과한 것처럼 작성하지 말고, 실행 명령·결과·제한을 Issue/PR에 기록.
 
-- 저장소에서 고정한 버전: Java 25, Gradle Wrapper 9.8.2, Spring Boot 4.1.2, PostgreSQL 18.6.
-- 전역 Gradle 대신 저장소 Wrapper 사용. 일반 의존성은 `implementation`, PostgreSQL/Flyway는 실행 시, Lombok은 `compileOnly`+`annotationProcessor`, 테스트 도구는 테스트 전용.
-- 테스트 도구: JUnit Platform, Spring Boot Test, Testcontainers PostgreSQL 18.6, ArchUnit 1.5.1. Backend CI는 Java 25와 Docker 확인 뒤 Gradle check 실행.
-- PayPal HTTP 계약은 test-only MockWebServer로 검증. Runtime FakePsp·가짜 성공 fallback 금지; CI는 Sandbox 결제 호출 금지.
-- 문서 검사는 Node 22와 markdownlint-cli2 0.24.0 사용. `package.json` 또는 별도 JavaScript package-manager workflow는 없음.
-- Cloud 배포, live 결제·환불, seller payout은 비범위. PayPal Sandbox 결제·환불 연동은 ADR-0026에서 승인; 자격 증명 없이는 비활성. Sandbox 결과를 운영 근거로 해석하지 않음.
-- Cache, broker, search service, worker, 외부 library를 선제 도입하지 않음. PostgreSQL 기본 구현의 병목·기능 공백을 재현한 뒤 비용과 대안을 비교.
+## 문서와 Git 작업 흐름
 
-## 테스트와 품질 점검
-
-- 단위 테스트는 각 `ATLAS-*/src/test`, Spring/PostgreSQL 통합·아키텍처 테스트는 `ATLAS-application/src/test`.
-- 주요 테스트: `ModuleBoundaryTest`, `CatalogIntegrationTest`, `ProductCategoryMigrationIntegrationTest`, `ProductOrderabilityMigrationIntegrationTest`, `BuyerFlowIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `PaymentLifecycleIntegrationTest`, `SettlementLedgerIntegrationTest`, `SettlementStatementIntegrationTest`, `OrderShipmentIntegrationTest`, `OrderShipmentMigrationIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `SellerSkuGlobalFifoMigrationIntegrationTest`.
-- 인증 테스트: `AccountServiceTest`, `AccountSecurityConfigurationTest`, `AccountJwtConfigurationTest`, `AccountOwnershipInterceptorTest`, `ApiSecurityConfigurationTest`.
-- 도메인 통합 테스트의 `@AutoConfigureMockMvc(addFilters = false)`는 인증 대신 business flow를 검증하기 위한 범위 제한. 인증 기본 거부·공개 경로는 `ApiSecurityConfigurationTest`에서 실제 filter chain으로 검증; 해당 테스트에 filter 비활성화 금지.
-- Controller slice test는 Service-owned validation의 typed exception을 stub하고 HTTP mapping을 확인. Mock을 통과시키려고 domain policy를 Controller로 옮기지 않음.
-- Direct SQL fixture는 대상 schema와 일치시킴: 현재 schema의 `NOT NULL`·FK 필수 값을 채우고, migration upgrade fixture는 predecessor Flyway version을 고정.
-- PostgreSQL 전용 SQL, 잠금, migration, 동시성, transaction rollback은 Testcontainers의 실제 PostgreSQL에서 검증. Docker 접근 필요; CI는 `docker info` 확인.
-- 구체적인 계약·실패 경계 검증. 단순 전달·mapping·default 값과 중복 assertion은 테스트하지 않음. Mock은 PostgreSQL 의미 검증의 대체 수단이 아님.
-- 수동 SQL/마이그레이션 시험은 전용 임시 DB/schema만 사용. 기존 `atlas` DB를 초기화·삭제하는 테스트 금지. Clean-start migration guard 준수.
-- 변경 작업 완료 후 실제 영향 경로와 전체 check 실행. 실패·미실행 검사는 성공으로 기록하지 말고 명령·환경·실패 시나리오·남은 한계 기록.
-- 성능·처리용량 주장에는 workload·data shape·환경·반복 측정·출처 한계 명시. Q-008/EXP 수치는 합성·보고 전용 범위에 한정. k6는 승인된 HTTP workload, Toxiproxy는 구체적인 network failure 가설에만 사용.
-- `EXP-` 식별자는 저장소 전체에서 고유하게 사용. Issue comment에만 남긴 실측은 정식 EXP report가 아니면 `[Issue #N 측정 메모]`로 표기. 새 EXP 작성 전 README·문서·Issue 참조를 검색해 중복 ID와 오래된 실험 링크를 확인.
-- 수치 목표는 직접 측정 또는 출처가 있을 때만 사용. 합성 입력을 사용자 수요/SLO/capacity로 해석하지 않음.
-
-## Git 및 병렬 작업
-
-- 하나의 목적·완료 기준·독립 검토 경계에는 Issue/PR 하나. 파일·클래스·엔드포인트별 분할 금지. 관련 코드·테스트·migration·문서를 묶고 원격 Issue/PR은 로컬 작업 완료 후 갱신.
-- 브랜치 이름: `<type>/<issue>-<short-topic>`. PR·commit 제목: `<type>(<scope>): <한국어 요약>`; 짧은 명령형 요약. Squash merge 시 PR 제목이 main commit subject.
-- `main` 직접 push 금지. PR 확인 항목을 모두 완료하고 필수 CI 통과 후 squash merge.
-- 변경 전 `git status --short --branch`; stage 전에 `git diff`, `git diff --cached` 확인. 관련 파일만 stage. 승인 없는 reset/clean/shared history rewrite 금지.
-- 병렬 세션마다 하나의 plan/worktree와 명시적 허용 파일 목록 사용. 공통 요구사항·결정·README·참고자료·migration·build 파일은 통합 담당자 한 명만 수정. 충돌이 있는 rebase와 migration version은 먼저 조정하고 검사 재실행.
-- 소유자가 plan을 참고용으로만 지정하면 배정된 local worktree에 미커밋 상태로 유지. 게시하거나 별도 Issue/PR 만들지 않음.
-- 복잡한 Issue/PR은 배경, 선택 이유·대안, 상태/금전/재고 영향, 한계, 검증을 설명하고 요구사항·결정 기록을 직접 링크. 출처 없는 ID 나열이나 실행하지 않은 테스트를 성공으로 주장하지 않음.
-- PR의 `Issues:` 필드는 `Closes #N — [Issue #N](https://github.com/OWNER/REPO/issues/N)` 또는 `Refs #N — [Issue #N](https://github.com/OWNER/REPO/issues/N)`을 같은 줄에 작성. `요구사항·결정·규칙 ID`도 같은 줄에 직접 링크하거나 `N/A: 구체적 사유` 표기. `.github/workflows/docs-lint.yml`이 두 필드를 검사.
+- 문서는 한국어로 작성; 코드 식별자와 일반적으로 통용되는 기술 용어는 원문 유지. GitHub Flavored Markdown, 상대 링크, 간결한 표·목록·Mermaid 사용.
+- 복잡한 도메인·상태 전이는 Issue/PR 본문에서 사실·가정·대안·영향을 설명. 문서 링크나 ID만으로 설명을 대체하지 않음.
+- PR·commit 제목은 `<type>(<scope>): <한국어 요약>` 형식. Issue 제목은 해당 Issue template의 한국어 분류를 사용. PR checklist와 Issue/추적 ID 표기는 템플릿 및 `.github/workflows/docs-lint.yml`의 parser 계약을 따름.
+- 관련 Issue와 commit을 하나의 목적에 맞는 PR로 묶음. 독립 목적·위험·검증 기준일 때만 분리. 필수 CI와 추적 링크 확인.
+- 작업 전 `git status`와 대상 파일을 확인하고 기존 사용자 변경을 보존. `main`에 직접 push하지 않음.

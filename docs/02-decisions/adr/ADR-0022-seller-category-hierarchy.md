@@ -20,7 +20,7 @@ D-074의 flat category는 Seller별 분류와 상품 필터를 제공하지만, 
 - Seller-scoped category filter는 선택 Category와 모든 descendant의 상품을 포함. Recursive CTE 사용; 기존 Seller scope, UUID keyset order, public/management visibility 유지.
 - 새 listing cursor는 v4. Category filter 없는 legacy v1/v2/v3는 계속 허용; flat exact-match 의미의 기존 category-filtered cursor는 subtree pagination과 호환되지 않아 거절.
 
-## 대안과 절충
+## 근거와 대안
 
 | 대안 | 판단 |
 |---|---|
@@ -45,6 +45,6 @@ D-074의 flat category는 Seller별 분류와 상품 필터를 제공하지만, 
 - 결합 검증: `./gradlew --no-daemon --rerun-tasks check :application-module:bootJar`
 - 결과: 40 suites, 200 tests, 0 failures/errors/skips; `bootJar` 성공. 동시성 correctness 확인이며 부하·성능 benchmark는 아님.
 
-## 참고자료
+## 참고 자료
 
 - [REF-119 / REF-120](../../00-governance/reference-register.md): Meituan·Shopify 분류 사례. 문제 맥락만 참고; global taxonomy·NLP/CV/VLM·외부 규모를 ATLAS 설계 근거로 일반화하지 않음.

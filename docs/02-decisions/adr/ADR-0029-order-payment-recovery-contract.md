@@ -3,11 +3,11 @@
 - 상태: Accepted
 - 날짜: 2026-11-10
 
-## 맥락
+## 배경
 
 주문, payment provider, inventory, refund, settlement는 서로 다른 상태를 소유한다. 특히 외부 provider timeout은 결제 미실행을 뜻하지 않으며, 여러 모듈의 상태를 하나의 `success/failure` 값으로 축약하면 중복 청구 또는 재고 조기 해제 위험이 있다. 이 문서는 기존 구현과 선행 ADR의 계약을 한곳에서 연결해 설명한다. 현재 구현을 넘어서는 분산 workflow 인프라를 새로 결정하지 않는다.
 
-## 기존 구현으로 확정되는 계약
+## 현재 계약
 
 | 대상 | 상태/권한 계약 | 근거 |
 |---|---|---|
@@ -20,7 +20,7 @@
 | Checkout expiry | Unsubmitted `RESERVED` checkout만 expiry sweep 대상이다. 이미 provider 작업이 submitted/pending/unknown이면 단순 TTL만으로 inventory를 해제하지 않는다. Fulfillment/shipment state는 payment/order state를 대체하지 않는다. | `OrderServiceImpl`, `CheckoutPaymentServiceImpl`, ADR-0010/ADR-0016; INV-004 |
 | Webhook | Signature verification은 sender authenticity만 보장한다. 이벤트는 local provider operation ID와 stored financial facts에 대조한다. 일시적 resource 미매칭은 retryable이며, local operation과 연결된 영구 facts mismatch는 FAILED로 기록하고 acknowledgement한다. Duplicate event ID는 한 번만 처리한다. | `PayPalWebhookService`, `PaymentServiceImpl`, `PaymentWebhookEventRepository`; ADR-0026 |
 
-## 결정과 운영 원칙
+## 결정
 
 - 각 모듈은 위 표의 자기 상태를 소유한다. 한 모듈의 성공 응답만으로 다른 모듈의 상태가 완료됐다고 해석하지 않는다.
 - Request/correlation ID는 진단용이며 idempotency key가 아니다. Idempotency key는 업무 작업의 재전송 식별자이고 provider request ID와 같은 범위의 키가 아니다.
@@ -29,33 +29,73 @@
   기존 256개 hash stripe는 다른 owner까지 같은 monitor로 묶어 provider 응답을 기다리게 했습니다.
   이제 holder/waiter 참조 수를 추적하는 UUID별 registry를 쓰고 마지막 사용 뒤 항목을 회수합니다.
   같은 owner의 직렬화는 유지합니다.
-- 이 registry는 JVM 내부 전용이며 여러 instance를 조정하지 않습니다.
-  Provider request ID는 같은 operation 재전송을 보호하지만 capture/void처럼 서로 다른 operation의 우선순위는 정하지 않습니다.
-  다중 instance 동시성은 별도 DB 상태 전이 설계와 검증 전까지 보장하지 않습니다.
+- 이 registry는 JVM 내부 owner lock으로, 같은 프로세스의 중복 owner 작업만 직렬화합니다. 여러 instance 간 조정은 하지 않습니다.
+- Cross-instance capture/void arbitration은 아래의 PaymentAttempt row lock과 DB 상태 전이를 사용합니다. Provider request ID는 같은 operation의 재전송 식별자이며 서로 다른 phase의 우선순위를 정하지 않습니다.
 - 새 `saga`, `outbox`, queue, 분산 lock은 도입하지 않습니다.
   현재 DB transaction, row lock, unique constraint, durable operation row, provider retry ID를 사용합니다.
   추가 운영 인프라는 장애·지연 근거가 생길 때 별도 결정합니다.
-- 반품 검수와 PSP 환불 사이에 provider 작업을 두고, 앞뒤에 각각 짧은 DB transaction을 둔다. 첫 transaction은 order/return을 잠그고 검사 결과, 환불 금액 snapshot, durable한 `return-{returnId}` 환불 요청을 원자적으로 저장한다. provider 처리 결과가 반환되기 전까지 반품 상태는 `RECEIVED`로 유지한다. 첫 transaction commit 뒤 PSP를 호출하고, 마지막 transaction에서 검수 상태를 확정한다. provider 지연 중 order/return lock과 DB connection을 점유하지 않고, 로컬 최종 반영 실패 뒤에도 안정적인 환불 식별자를 보존한다.
-  준비 메서드는 `MANDATORY`로 선언해 검수 transaction 밖의 호출을 거부하고, 검수 facts와 환불 요청이 별도로 commit되지 않게 한다.
-  `V15__order_returns.sql`의 `order_return_item_refund` CHECK는 `refund_id`와 `refund_amount_won`을 함께 비우거나, 양수 금액과 ID를 함께 기록하도록 강제한다. 첫 flush에는 검수 결과만 저장하고, 준비된 refund ID를 받은 뒤 금액과 ID를 같은 transaction에서 함께 저장한다.
-  반품 상태가 `RECEIVED`인 동안 동일한 검수 요청을 재시도하면 저장된 검수 결과와 환불 요청을 재사용한다. 확인된 `PENDING`/`UNKNOWN`은 환불 완료로 간주하거나 새 식별자로 재호출하지 않고 기존 결제 대사 및 webhook 경로에서 처리한다. 아직 PSP 요청 전인 준비된 환불은 동일 검수 요청을 다시 보내야 복구된다. 운영 근거 없이 자동 worker/outbox를 추가하지 않는다.
+### 반품 검수와 PayPal 환불
 
-- `OrderReturnStatus.REFUND_RECORDED`/`PARTIALLY_RECORDED`는 로컬 환불 요청과 검수 결과 기록을 뜻하며 PSP 자금 이동 완료를 뜻하지 않는다. 반품 응답은 payment 상태를 별도 `paymentStatus`로 반환한다. 환불 전은 `NOT_APPLICABLE`; 이후 `PENDING`/`UNKNOWN`/`COMPLETED`/`FAILED`는 durable refund record의 최신 상태다. 클라이언트는 return inspection 상태와 payment 실행 결과를 혼동하지 않는다.
+```mermaid
+sequenceDiagram
+    participant API as Order API
+    participant DB as PostgreSQL
+    participant PSP as PayPal
+    API->>DB: TX1 — Order/Return 잠금·검수 결과·금액 snapshot·환불 ID 저장
+    DB-->>API: Commit
+    API->>PSP: 안정적인 return-{returnId}로 refund 요청
+    PSP-->>API: Provider 결과
+    API->>DB: TX2 — 검수 상태 확정
+    DB-->>API: Commit
+```
 
-## trade-off와 후속 도입 기준
+- TX1은 order/return row를 잠그고 검수 결과와 durable refund request를 함께 저장. Provider 응답 전까지 반품 상태는 `RECEIVED`.
+- PayPal 호출은 TX1 commit 후 실행. Provider 지연 중 DB lock과 connection을 점유하지 않으며, 후속 DB 실패에도 refund ID 보존.
+- 준비 메서드는 `MANDATORY`; 검수 transaction 밖의 호출을 거부해 검수 사실과 refund request의 분리 commit 방지.
+- `V15__order_returns.sql`의 `order_return_item_refund` CHECK는 `refund_id`와 `refund_amount_won`을 모두 비우거나 양수 금액과 ID를 함께 저장하도록 강제.
+- 첫 flush는 검수 결과만 저장. 준비된 refund ID를 받은 뒤 금액과 ID를 같은 transaction에서 기록.
+- `RECEIVED` 상태의 동일 검수 재시도는 저장된 검수 결과와 refund request 재사용. `PENDING`/`UNKNOWN`은 완료로 처리하거나 새 ID로 재호출하지 않고 기존 결제 대사·webhook 경로에서 처리.
+- Provider 호출 전 준비된 refund는 같은 검수 요청을 다시 보내 복구. 근거 없이 자동 worker/outbox를 추가하지 않음.
+- `REFUND_RECORDED`/`PARTIALLY_RECORDED`는 로컬 refund request와 검수 결과 기록이며 provider 자금 이동 완료를 뜻하지 않음. 별도 `paymentStatus`는 durable refund record의 최신 상태를 반환: 환불 전 `NOT_APPLICABLE`, 이후 `PENDING`/`UNKNOWN`/`COMPLETED`/`FAILED`. Return 상태와 payment 실행 결과를 혼동하지 않음.
+
+## 근거와 대안
+
+### 절충과 후속 도입 기준
 
 동기 DB 처리와 provider retry는 운영 인프라가 단순하고 현재 단일 서비스 배포 모델에 맞는다. 그 대가로 request latency가 provider/API/DB 처리 시간에 좌우되고, webhook 처리 실패는 provider retry에 의존한다. 이는 별도의 dispatcher와 queue 운영 부담보다 현재 증거상 낮은 비용으로 선택됐다.
 
 Outbox/worker 또는 durable saga는 다음 증거가 생길 때 별도 ADR로 재평가한다: webhook/provider retry만으로 unresolved operation age/SLO를 만족하지 못함, reconciliation 작업이 지속 누락됨, burst/latency 측정에서 동기 처리 한계가 확인됨, 여러 독립 배포/DB 경계가 생겨 현재 transaction이 원자성을 보장하지 못함. 그때 지표·장애모드·복구 운영과 migration plan을 함께 제출한다.
 
-## 검증과 한계
+## 검증
 
-현재 CI의 PostgreSQL integration tests는 로컬 DB/transaction/idempotency 경계와 서로 다른 service 인스턴스의 capture-vs-void phase arbitration을 검증한다. PayPal fixture test는 provider sandbox의 실제 delivery, 동시 같은 request ID 동작 또는 endpoint별 retention을 대체하지 않는다. Live payment는 ADR-0026에 따라 범위 밖이다. 이 문서는 검증된 DB 계약과 명시된 provider 한계를 구분하며, provider-side 동작을 완료됐다고 주장하지 않는다.
+- CI PostgreSQL integration tests cover DB transaction/idempotency and capture-vs-void phase arbitration across service instances.
+- PayPal contract tests use an HTTP stub. They do not verify provider sandbox delivery, simultaneous requests with the same request ID, or endpoint-specific retention periods.
+- This ADR separates the database contract verified by tests from provider behavior that remains unverified; do not claim the latter as established.
 
-## 다중 인스턴스 payment phase 중재
+## 다중 인스턴스 결제 단계 중재
 
-- `PaymentAttempt` 행의 `PESSIMISTIC_WRITE` lock은 짧은 상태 전이 트랜잭션에서 capture와 void 중 먼저 선택된 phase를 기록하는 데만 사용한다. `AUTHORIZED`에서 capture가 먼저 확정되면 `CAPTURE_PENDING`/`CAPTURE`; void가 먼저 확정되면 `VOID_PENDING`/`VOID`를 commit한다. 반대 phase는 기존 pending 상태를 따르고 PSP에 상충 요청을 보내지 않는다.
-- PSP 호출은 commit 후 수행하며 DB row lock과 connection을 외부 HTTP 동안 유지하지 않는다. 완료 결과는 새 짧은 transaction에서 최신 row를 lock/reload하고 phase와 stable request ID를 비교한 뒤 적용한다. 이미 terminal/advanced 상태가 있으면 늦은 결과로 덮어쓰지 않는다. AUTHORIZATION에는 create-order와 approval-authorize라는 서로 다른 request ID가 있으므로 둘을 구분한다.
-- 기존 pending state + phase + deterministic request ID가 durable retry identity다. 새 reservation column/table, lease, distributed lock 또는 outbox를 추가하지 않는다. 재시작 뒤 같은 phase retry는 같은 request ID를 쓴다. 같은 ID의 동시 PayPal 요청은 두 번째가 실패할 수 있으므로 결과는 ambiguity로 처리하며 finalizer가 더 앞선 성공 상태를 보존한다.
-- PayPal [일반 idempotency 안내](https://developer.paypal.com/reference/guidelines/idempotency)는 중복 제거가 provider가 해당 ID를 보유하는 동안만 보장되고 endpoint별 보존 기간을 해당 API reference에서 확인해야 한다고 명시한다. 이 저장소에서 create/authorize/capture/void endpoint의 정확한 보존 기간은 아직 입증되지 않았다. `PayPalRestClient`에는 order 조회(`getOrder`)와 refund 조회(`getRefund`)가 있지만 authorization/capture 조회는 없다. 응답 유실로 create-order의 `providerOrderId`가 저장되지 않은 경우 resource ID 조회가 불가능하고, capture/void의 오래된 `UNKNOWN`에는 authorization 상태 조회가 필요하다. 따라서 오래된 요청의 무기한 자동 재시도를 안전하다고 주장하지 않는다.
-- 기존 프로세스 내부 owner lock은 최적화일 뿐이다. 이전 release는 DB phase 중재에 참여하지 않으므로 최초 전환에서는 구버전 결제 처리 인스턴스와 진행 중인 결제 owner 작업을 drain한 다음 새 버전으로 traffic을 전환해야 한다. 모든 활성 인스턴스가 이 DB 상태 전이를 지원한 뒤에만 동시 다중 인스턴스 트래픽을 허용한다. (#236)
+```mermaid
+sequenceDiagram
+    participant API as Payment API
+    participant DB as PaymentAttempt row
+    participant PSP as PayPal
+    API->>DB: 짧은 TX에서 PESSIMISTIC_WRITE lock
+    alt capture phase wins
+        DB-->>API: CAPTURE_PENDING commit
+        API->>PSP: capture with stable request ID
+    else void phase wins
+        DB-->>API: VOID_PENDING commit
+        API->>PSP: void with stable request ID
+    end
+    PSP-->>API: provider result
+    API->>DB: 새 TX에서 row 재잠금·phase/request ID 확인
+    DB-->>API: 현재 phase와 일치할 때만 결과 반영
+```
+
+- Capture/void는 `AUTHORIZED` row에서 짧은 transaction과 `PESSIMISTIC_WRITE` lock으로 먼저 선택된 phase를 기록. 반대 phase 요청은 기존 pending 상태를 따르고 상충 PSP 요청을 보내지 않음.
+- PSP 호출은 commit 후 실행해 외부 HTTP 동안 DB lock/connection을 점유하지 않음. 결과 반영은 새 transaction에서 row를 reload하고 phase와 stable request ID를 확인. 더 앞선 terminal/advanced state는 늦은 응답으로 덮어쓰지 않음.
+- Authorization에는 create-order와 approval-authorize에 서로 다른 request ID가 있으므로 두 operation을 구분.
+- Durable retry identity는 기존 pending state, phase, deterministic request ID의 조합. 재시작 후 같은 phase는 같은 ID 사용. 같은 ID의 동시 요청은 provider에서 거부될 수 있으므로 결과를 ambiguity로 처리하고 finalizer는 확인된 선행 성공 상태를 보존.
+- PayPal [idempotency 안내](https://developer.paypal.com/reference/guidelines/idempotency)는 중복 제거가 provider의 ID 보유 기간에 한정되며 endpoint별 보존 기간을 해당 API 문서에서 확인해야 한다고 설명. Create/authorize/capture/void의 정확한 보존 기간은 아직 확인되지 않음.
+- `PayPalRestClient`는 order/refund 조회는 제공하지만 authorization/capture 상태 조회는 제공하지 않음. Create-order 응답 유실 전에 `providerOrderId`가 저장되지 않았다면 resource ID 조회 불가. 오래된 capture/void `UNKNOWN`도 authorization 상태 확인 필요. 무기한 자동 retry는 안전하다고 주장하지 않음.
+- JVM 내부 owner lock은 최적화일 뿐. 구버전은 DB phase arbitration을 지원하지 않으므로 첫 전환 때 기존 결제 인스턴스와 진행 중 owner 작업을 drain. 모든 활성 인스턴스가 새 상태 전이를 지원한 뒤 다중 인스턴스 traffic 허용.

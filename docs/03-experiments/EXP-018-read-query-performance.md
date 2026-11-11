@@ -1,12 +1,12 @@
-# EXP-018 — Catalog·Settlement query-plan baseline
+# EXP-018 — 상품·정산 조회 계획 기준선
 
-**상태:** local-only · current-main PostgreSQL 18.6 `EXPLAIN ANALYZE` 측정 · 운영 성능/SLO/capacity 주장 아님
+**상태:** PostgreSQL 18.6 격리 DB에서 합성 10k·100k row dataset의 `EXPLAIN ANALYZE` 완료
 
-## 질문과 범위
+## 목적과 범위
 
-Current main `f0dca97874079461aa5d4ebfe5e5b0289acbc4ad`의 Catalog listing/subtree SQL과 Settlement statement totals/page SQL을 disposable PostgreSQL에서 확인. Query plan, actual row, shared buffer, 실행시간 기록. HTTP RPS/TPS, API 지연, 동시부하·운영 capacity는 측정하지 않음.
+현재 main commit `f0dca97874079461aa5d4ebfe5e5b0289acbc4ad`의 상품 목록·하위 분류 조회와 정산 명세 집계·페이지 SQL을 격리된 PostgreSQL에서 실행. Query plan, actual row, shared buffer와 실행시간 기록; HTTP API latency·RPS/TPS·동시부하는 측정하지 않음.
 
-## 실험 환경과 데이터
+## 환경·데이터·workload
 
 - macOS 27.2 arm64 · Colima Docker context: 4 CPU, 10,405,494,784 bytes memory
 - PostgreSQL 18.6 image `postgres:18.6`, digest `sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81`
@@ -34,14 +34,14 @@ Current main `f0dca97874079461aa5d4ebfe5e5b0289acbc4ad`의 Catalog listing/subtr
 
 100k Settlement narrow 10-second period (10 rows of Seller1's 1,000): totals 18.450 ms [17.397–34.476], page 17.148 ms [16.473–17.272]; page returned 10 rows.
 
-## Query plan 관찰
+### Query plan 결과
 
 - Catalog global/keyword: Product와 `product_channel_availability` Seq Scan, then sort/keyset. 100k plan estimated 50k Product vs actual 100k; `broad` estimate 1,667 vs actual 10,000; `needle` estimate 1,667 vs actual 1,000. Buffer reads 0 in warm-cache runs.
 - Seller subtree: `product_seller_idx`와 Seller/category index 사용. Root subtree는 100k dataset에서 1,000 matches; child는 100. Page limit 101이므로 root 응답은 101 rows.
 - Settlement totals/page: 100k journal/allocation fixture에서 Seller1 결과는 1,000 rows. Plan에는 `settlement_journal`/`settlement_seller_allocation` sequential scans 포함. 10초 period는 10 rows만 매치했지만 execution median은 full-period보다 비례해 줄지 않음.
 - Baseline만으로는 새로운 index나 SQL rewrite의 이득을 입증할 수 없음. Disposable DB에서만 후보 index A/B 측정 추가.
 
-## Disposable index 후보 A/B
+### 인덱스 후보 비교
 
 Candidate-index A/B: PostgreSQL 18.6 image defaults, 동일한 100k checkout-only fixture, serial warm-cache query 3회. 실제 API·동시성·cold-cache 비교는 아님.
 
@@ -57,17 +57,17 @@ Candidate-index A/B: PostgreSQL 18.6 image defaults, 동일한 100k checkout-onl
 
 **결론:** `recorded_at` index는 짧은 기간 조회의 후보 가설. 운영 migration 근거로 확정하지 않음. 추가 data size·window selectivity·index write cost와 실제 API path 비교 후 결정.
 
-## 한계와 해석
+## 해석과 한계
 
-- `EXPLAIN ANALYZE` 직접 실행; Spring HTTP 경로·JVM mapping·RPS/TPS·Hikari wait는 측정하지 않음. HTTP/host sampling이 없는 SQL-plan 시나리오라 Prometheus/Grafana/exporter profile은 시작하지 않음; direct plan output이 질문에 필요한 actual rows/time/buffers를 제공.
+- SQL을 `EXPLAIN ANALYZE`로 직접 실행. Spring HTTP/JVM mapping, RPS/TPS, Hikari wait는 측정하지 않음. Query plan output에서 actual rows·execution time·buffers를 읽는 시나리오라 application observability profile은 시작하지 않음.
 - Flyway 적용 뒤 Spring Boot는 대기 상태. HTTP 요청 없음. Hikari idle connection은 남아 있을 수 있으므로 환경상 한계로 기록; 측정값은 psql plan 실행시간이며 API latency가 아님.
-- 모든 query는 serial, fresh disposable container 안 warm cache. Cold cache, concurrent load, lock contention, production shape는 미측정.
+- 모든 query는 serial 상태에서 fresh disposable container의 warm cache로 실행. Cold cache, concurrent load, lock contention은 이 실험에서 측정하지 않음.
 - Settlement fixture는 checkout allocation만 생성. Direct Campaign capture/refund rows 없음; 해당 branch는 query plan만 확인.
 - 각 size/profile 3회. 100k global first run 변동이 큼 (`9.9ms` 수준의 처음 값 대비 200ms대). 중앙값과 범위를 기록했으며, 10× data가 성능에 미친 원인을 확정하지 않음.
-- 10k/100k는 prior EXP-015의 synthetic comparison sizes. 사용자 수요, operating scale, SLO, capacity와 무관.
-- No production source/schema/index/config/dependency changed.
+- 10k/100k row counts는 synthetic test size이며 더 큰 dataset의 결과를 추정하지 않음.
+- 실험에서 application source, schema, index, configuration, dependency는 변경하지 않음.
 
-## 재현 산출물
+## 재현 방법
 
 - [`EXP-018-read-query-performance.sql`](EXP-018-read-query-performance.sql): 허용 dataset size 10,000/100,000; DB가 `atlas_query_evidence`가 아니거나 기존 experiment rows가 있으면 중단.
 - [`EXP-018-read-query-performance-explain.sql`](EXP-018-read-query-performance-explain.sql): actual Catalog subtree 및 Settlement totals/page query plans.
