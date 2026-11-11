@@ -37,10 +37,12 @@ public class JdbcCapacityAdjustmentRepository {
     }
 
     private void lockAdjustmentKey(UUID seller, String locationScope, String sku, String key) {
-        jdbc.query(
-                "SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
-                resultSet -> { },
-                InventoryAdvisoryLockKey.encode(seller.toString(), locationScope, sku, key));
+        String legacyLockKey = InventoryAdvisoryLockKey.legacyDelimited(
+                seller.toString(), locationScope, sku, key);
+        String encodedLockKey = InventoryAdvisoryLockKey.encode(seller.toString(), locationScope, sku, key);
+        String lockSql = "SELECT pg_advisory_xact_lock(hashtextextended(?,0))";
+        jdbc.query(lockSql, resultSet -> { }, legacyLockKey);
+        jdbc.query(lockSql, resultSet -> { }, encodedLockKey);
     }
 
     public Optional<CapacityAdjustmentRecord> find(UUID seller, String sku, String key) {

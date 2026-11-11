@@ -13,6 +13,9 @@ class InventoryAdvisoryLockKeyTest {
         String first = InventoryAdvisoryLockKey.encode(seller, "a:b", "c");
         String second = InventoryAdvisoryLockKey.encode(seller, "a", "b:c");
 
+        String legacy = InventoryAdvisoryLockKey.legacyDelimited(seller, "a:b", "c");
+        assertEquals(seller + ":a:b:c", legacy);
+        assertNotEquals(first, legacy);
         assertNotEquals(first, second);
         assertEquals(first, InventoryAdvisoryLockKey.encode(seller, "a:b", "c"));
     }

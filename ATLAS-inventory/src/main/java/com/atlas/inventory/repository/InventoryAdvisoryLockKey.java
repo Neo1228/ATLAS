@@ -13,4 +13,8 @@ final class InventoryAdvisoryLockKey {
         }
         return key.toString();
     }
+
+    static String legacyDelimited(String... parts) {
+        return String.join(":", parts);
+    }
 }
