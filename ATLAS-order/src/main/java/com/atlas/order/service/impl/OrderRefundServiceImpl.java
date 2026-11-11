@@ -80,7 +80,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     }
 
     @Override
-    public OrderRefundResponse recordInspectedReturnRefund(UUID returnId) {
+    public OrderRefundResponse processInspectedReturnRefund(UUID returnId) {
         return refund(inspectedReturnRequest(returnId), returnId);
     }
 

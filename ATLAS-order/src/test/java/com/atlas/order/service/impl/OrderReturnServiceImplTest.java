@@ -99,7 +99,7 @@ class OrderReturnServiceImplTest {
             return new OrderRefundResponse(refundId, orderId, 100, OrderRefundStatus.FULLY_RECORDED,
                     OrderRefundPaymentStatus.PENDING, null, now);
         });
-        when(refunds.recordInspectedReturnRefund(returnId)).thenAnswer(invocation -> {
+        when(refunds.processInspectedReturnRefund(returnId)).thenAnswer(invocation -> {
             assertFalse(active.get(), "Refund processing must run outside the inspection transaction");
             if (processingAttempts.getAndIncrement() == 0) {
                 throw new IllegalStateException("transient provider failure");
@@ -126,6 +126,6 @@ class OrderReturnServiceImplTest {
         assertEquals(OrderRefundPaymentStatus.COMPLETED, response.paymentStatus());
         assertFalse(active.get());
         verify(refunds, times(2)).prepareInspectedReturnRefund(returnId);
-        verify(refunds, times(2)).recordInspectedReturnRefund(returnId);
+        verify(refunds, times(2)).processInspectedReturnRefund(returnId);
     }
 }

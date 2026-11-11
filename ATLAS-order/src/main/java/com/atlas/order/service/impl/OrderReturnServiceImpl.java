@@ -200,7 +200,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         }));
         if (preparation.completedResponse() != null) return preparation.completedResponse();
 
-        OrderRefundResponse refund = refunds.recordInspectedReturnRefund(returnId);
+        OrderRefundResponse refund = refunds.processInspectedReturnRefund(returnId);
         if (!preparation.refundId().equals(refund.refundId())) {
             throw conflict("환불 처리 중 준비된 환불 식별자가 변경되었습니다.");
         }
