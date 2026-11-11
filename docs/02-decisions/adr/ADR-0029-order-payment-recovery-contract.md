@@ -40,6 +40,8 @@
   `V15__order_returns.sql`의 `order_return_item_refund` CHECK는 `refund_id`와 `refund_amount_won`을 함께 비우거나, 양수 금액과 ID를 함께 기록하도록 강제한다. 첫 flush에는 검수 결과만 저장하고, 준비된 refund ID를 받은 뒤 금액과 ID를 같은 transaction에서 함께 저장한다.
   반품 상태가 `RECEIVED`인 동안 동일한 검수 요청을 재시도하면 저장된 검수 결과와 환불 요청을 재사용한다. 확인된 `PENDING`/`UNKNOWN`은 환불 완료로 간주하거나 새 식별자로 재호출하지 않고 기존 결제 대사 및 webhook 경로에서 처리한다. 아직 PSP 요청 전인 준비된 환불은 동일 검수 요청을 다시 보내야 복구된다. 운영 근거 없이 자동 worker/outbox를 추가하지 않는다.
 
+- `OrderReturnStatus.REFUND_RECORDED`/`PARTIALLY_RECORDED`는 로컬 환불 요청과 검수 결과 기록을 뜻하며 PSP 자금 이동 완료를 뜻하지 않는다. 반품 응답은 payment 상태를 별도 `paymentStatus`로 반환한다. 환불 전은 `NOT_APPLICABLE`; 이후 `PENDING`/`UNKNOWN`/`COMPLETED`/`FAILED`는 durable refund record의 최신 상태다. 클라이언트는 return inspection 상태와 payment 실행 결과를 혼동하지 않는다.
+
 ## trade-off와 후속 도입 기준
 
 동기 DB 처리와 provider retry는 운영 인프라가 단순하고 현재 단일 서비스 배포 모델에 맞는다. 그 대가로 request latency가 provider/API/DB 처리 시간에 좌우되고, webhook 처리 실패는 provider retry에 의존한다. 이는 별도의 dispatcher와 queue 운영 부담보다 현재 증거상 낮은 비용으로 선택됐다.

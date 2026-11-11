@@ -10,6 +10,7 @@ import com.atlas.order.persistence.entity.OrderReturn;
 import com.atlas.order.persistence.entity.OrderReturnItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
 import com.atlas.order.persistence.state.OrderReturnInspectionResult;
 import com.atlas.order.persistence.state.OrderReturnStatus;
 import com.atlas.order.persistence.state.OrderState;
@@ -199,7 +200,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         }));
         if (preparation.completedResponse() != null) return preparation.completedResponse();
 
-        OrderRefundResponse refund = refunds.recordInspectedReturnRefund(returnId);
+        OrderRefundResponse refund = refunds.processInspectedReturnRefund(returnId);
         if (!preparation.refundId().equals(refund.refundId())) {
             throw conflict("환불 처리 중 준비된 환불 식별자가 변경되었습니다.");
         }
@@ -268,9 +269,12 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         return input.size() == row.items().size() && row.items().stream().allMatch(i -> i.inspectionResult() != null
                 && i.inspectionResult() == input.get(i.orderItemId()));
     }
-    private static OrderReturnResponse response(OrderReturn row) {
+    private OrderReturnResponse response(OrderReturn row) {
+        OrderRefundPaymentStatus paymentStatus = row.items().stream().map(OrderReturnItem::refundId)
+                .filter(Objects::nonNull).findFirst().map(refundRecords::paymentStatus)
+                .orElse(OrderRefundPaymentStatus.NOT_APPLICABLE);
         return new OrderReturnResponse(row.returnId(), row.orderId(), row.sellerId(), row.buyerRef(), row.status(),
-                row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream().map(i ->
+                paymentStatus, row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream().map(i ->
                 new OrderReturnResponse.Item(i.orderItemId(), i.quantity(), i.inspectionResult(), i.refundId(),
                         i.refundAmountWon(), i.inspectedAt())).toList());
     }

@@ -147,12 +147,14 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                                 """.formatted(fixture.orderItemId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REQUESTED"))
+                .andExpect(jsonPath("$.paymentStatus").value("NOT_APPLICABLE"))
                 .andReturn().getResponse().getContentAsString();
         UUID returnId = objectMapper.readValue(response, OrderReturnResponse.class).returnId();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt",
                         fixture.sellerId(), fixture.orderId(), returnId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RECEIVED"));
+                .andExpect(jsonPath("$.status").value("RECEIVED"))
+                .andExpect(jsonPath("$.paymentStatus").value("NOT_APPLICABLE"));
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/inspection",
                         fixture.sellerId(), fixture.orderId(), returnId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -168,6 +170,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                                 """.formatted(fixture.orderItemId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REFUND_RECORDED"))
+                .andExpect(jsonPath("$.paymentStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.items[0].refundId").exists());
     }
 
@@ -373,6 +376,34 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(journalCountForRefund(completed.refundId())).isEqualTo(1);
         assertThat(refunds.refund(request)).isEqualTo(completed);
         assertStock(fixture, 2, 0);
+    }
+
+    @Test
+    void inspectedReturnResponseExposesUnknownAndReconciledProviderRefundStatus() {
+        Fixture fixture = paidOrder(1, 1, 125);
+        deliver(fixture);
+        String buyerRef = buyerRef(fixture.orderId());
+        OrderReturnResponse created = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-status-key",
+                new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+        returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
+        OrderReturnInspectionRequest inspection = new OrderReturnInspectionRequest(List.of(
+                new OrderReturnInspectionRequest.Item(fixture.orderItemId(), OrderReturnInspectionRequest.Result.PASSED)));
+
+        queueRefundStatus("UNKNOWN");
+        OrderReturnResponse unknown = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(),
+                inspection);
+        assertThat(unknown.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
+        assertThat(unknown.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
+        assertThat(unknown.items().get(0).refundId()).isNotNull();
+
+        OrderRefundResponse completed = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
+                "return-" + created.returnId(), fixture.orderItemId(), 1));
+        OrderReturnResponse refreshed = returns.find(buyerRef, fixture.orderId(), created.returnId());
+        assertThat(completed.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+        assertThat(refreshed.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
+        assertThat(refreshed.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+        assertThat(refreshed.items().get(0).refundId()).isEqualTo(unknown.items().get(0).refundId());
+        assertThat(journalCountForRefund(completed.refundId())).isEqualTo(1);
     }
 
     @Test
