@@ -37,7 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
-    private static final OwnerLockRegistry OWNER_LOCKS = new OwnerLockRegistry();
+    private final OwnerLockRegistry ownerLocks = new OwnerLockRegistry();
 
     private final PaymentAttemptRepository repository;
     private final PaymentRefundRepository refunds;
@@ -114,29 +114,33 @@ public class PaymentServiceImpl implements PaymentService {
                 || providerOrderId.isBlank()) throw invalidRequest("A provider order ID is required");
         UUID ownerId = orderId == null ? checkoutId : orderId;
         return withOwnerLock(ownerId, () -> {
-            PaymentAttempt attempt = transactions.execute(status ->
-                    orderId == null ? requireCheckout(checkoutId) : requireOrder(orderId));
-            if (!Objects.equals(attempt.getProviderOrderId(), providerOrderId)) {
-                throw invalidRequest("PayPal approval does not match the payment attempt");
-            }
-            if (attempt.getPaymentPhase() != PaymentPhase.AUTHORIZATION
-                    || attempt.getState() != PaymentState.AUTHORIZATION_PENDING) {
-                return toResponse(attempt);
-            }
+            PhaseStart start = transactions.execute(status -> {
+                PaymentAttempt current = orderId == null
+                        ? repository.findWithLockByCheckoutId(checkoutId)
+                                .orElseThrow(() -> notFound("No payment attempt for checkout: " + checkoutId))
+                        : repository.findWithLockByOrderId(orderId)
+                                .orElseThrow(() -> notFound("No payment attempt for order: " + orderId));
+                if (!Objects.equals(current.getProviderOrderId(), providerOrderId)) {
+                    throw invalidRequest("PayPal approval does not match the payment attempt");
+                }
+                if (current.getPaymentPhase() != PaymentPhase.AUTHORIZATION
+                        || current.getState() != PaymentState.AUTHORIZATION_PENDING) {
+                    return new PhaseStart(current, null, PaymentPhase.AUTHORIZATION, null);
+                }
+                PaymentRequest request = providerRequest(current, PaymentPhase.AUTHORIZATION);
+                repository.save(current);
+                return new PhaseStart(current, request, PaymentPhase.AUTHORIZATION,
+                        phaseRequestId(current, PaymentPhase.AUTHORIZATION));
+            });
+            if (start.request() == null) return toResponse(start.attempt());
             PaymentProviderResult result;
             try {
-                result = psp.completeApproval(
-                        providerRequest(attempt, PaymentPhase.AUTHORIZATION), providerOrderId);
+                result = psp.completeApproval(start.request(), providerOrderId);
             } catch (PaymentException exception) {
                 if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
-                authorizationResult(attempt, PaymentProviderResult.Outcome.UNKNOWN);
-                save(attempt);
-                return toResponse(attempt);
+                return toResponse(finalizePhase(start, null, PaymentProviderResult.Outcome.UNKNOWN));
             }
-            applyProviderResult(attempt, result);
-            authorizationResult(attempt, result.outcome());
-            save(attempt);
-            return toResponse(attempt);
+            return toResponse(finalizePhase(start, result, result.outcome()));
         });
     }
     @Override
@@ -186,38 +190,39 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentResponse voidAuthorization(UUID orderId, String idempotencyKey) {
         validateOwnerAndKey(orderId, idempotencyKey, "orderId");
-        return withOwnerLock(orderId, () -> {
-            PaymentAttempt attempt = transactions.execute(status -> requireOrder(orderId));
-            if (!attempt.isAuthorizationActive() || attempt.getState() == PaymentState.VOIDED
-                    || (attempt.getState() != PaymentState.DECLINED
-                    && attempt.getState() != PaymentState.AUTHORIZED)) {
-                return toResponse(attempt);
-            }
-            attempt.setState(PaymentState.VOID_PENDING);
-            attempt.setPaymentPhase(PaymentPhase.VOID);
-            attempt.setAuthorizationActive(true);
-            save(attempt);
-            return performPhase(attempt, idempotencyKey);
-        });
+        return withOwnerLock(orderId, () -> voidAuthorizationForOwner(orderId, null, idempotencyKey));
     }
 
     @Override
-
     public PaymentResponse voidCheckoutAuthorization(UUID checkoutId, String idempotencyKey) {
         validateOwnerAndKey(checkoutId, idempotencyKey, "checkoutId");
-        return withOwnerLock(checkoutId, () -> {
-            PaymentAttempt attempt = transactions.execute(status -> requireCheckout(checkoutId));
-            if (!attempt.isAuthorizationActive() || attempt.getState() == PaymentState.VOIDED
-                    || (attempt.getState() != PaymentState.DECLINED
-                    && attempt.getState() != PaymentState.AUTHORIZED)) {
-                return toResponse(attempt);
+        return withOwnerLock(checkoutId, () -> voidAuthorizationForOwner(null, checkoutId, idempotencyKey));
+    }
+
+    private PaymentResponse voidAuthorizationForOwner(UUID orderId, UUID checkoutId, String idempotencyKey) {
+        PaymentAttempt attempt = transactions.execute(status -> {
+            PaymentAttempt current = orderId == null
+                    ? repository.findWithLockByCheckoutId(checkoutId)
+                            .orElseThrow(() -> notFound("No payment attempt for checkout: " + checkoutId))
+                    : repository.findWithLockByOrderId(orderId)
+                            .orElseThrow(() -> notFound("No payment attempt for order: " + orderId));
+            if (!current.isAuthorizationActive() || current.getState() == PaymentState.VOIDED) {
+                return current;
             }
-            attempt.setState(PaymentState.VOID_PENDING);
-            attempt.setPaymentPhase(PaymentPhase.VOID);
-            attempt.setAuthorizationActive(true);
-            save(attempt);
-            return performPhase(attempt, idempotencyKey);
+            if (current.getState() == PaymentState.AUTHORIZED || current.getState() == PaymentState.DECLINED) {
+                current.setState(PaymentState.VOID_PENDING);
+                current.setPaymentPhase(PaymentPhase.VOID);
+                current.setAuthorizationActive(true);
+                repository.save(current);
+            }
+            return current;
         });
+        if (attempt.getPaymentPhase() != PaymentPhase.VOID
+                || (attempt.getState() != PaymentState.VOID_PENDING
+                && attempt.getState() != PaymentState.UNKNOWN)) {
+            return toResponse(attempt);
+        }
+        return performPhase(attempt, idempotencyKey);
     }
     @Override
 
@@ -436,42 +441,104 @@ public class PaymentServiceImpl implements PaymentService {
         return new PaymentRefundResponse(operation.refundOperationId(), operation.attemptId(), operation.captureId(),
                 operation.amountWon(), operation.currency(), providerRefundId, state, updatedAt);
     }
+
+    private record PhaseStart(PaymentAttempt attempt, PaymentRequest request,
+            PaymentPhase phase, String requestId) {}
+
+    private PhaseStart reservePhase(UUID attemptId, PaymentPhase phase, boolean continueCapture) {
+        return transactions.execute(status -> {
+            PaymentAttempt current = repository.findWithLockByAttemptId(attemptId)
+                    .orElseThrow(() -> notFound("No payment attempt: " + attemptId));
+            if (current.getPaymentPhase() != phase || terminal(current.getState())
+                    || (!continueCapture && phase == PaymentPhase.CAPTURE
+                    && current.getState() == PaymentState.AUTHORIZED)
+                    || !canExecutePhase(current, phase)) {
+                return new PhaseStart(current, null, phase, null);
+            }
+            switch (phase) {
+                case AUTHORIZATION -> {
+                    if (current.getState() == PaymentState.NOT_STARTED) {
+                        current.setState(PaymentState.AUTHORIZATION_PENDING);
+                    }
+                    current.setAuthorizationActive(true);
+                }
+                case CAPTURE -> {
+                    current.setState(PaymentState.CAPTURE_PENDING);
+                    current.setAuthorizationActive(true);
+                }
+                case VOID -> {
+                    current.setState(PaymentState.VOID_PENDING);
+                    current.setAuthorizationActive(true);
+                }
+            }
+            PaymentRequest request = providerRequest(current, phase);
+            String requestId = phaseRequestId(current, phase);
+            repository.save(current);
+            return new PhaseStart(current, request, phase, requestId);
+        });
+    }
+
+    private static boolean canExecutePhase(PaymentAttempt attempt, PaymentPhase phase) {
+        if (attempt.getPaymentPhase() != phase) return false;
+        return switch (phase) {
+            case AUTHORIZATION -> attempt.getState() == PaymentState.NOT_STARTED
+                    || attempt.getState() == PaymentState.AUTHORIZATION_PENDING
+                    || attempt.getState() == PaymentState.UNKNOWN;
+            case CAPTURE -> attempt.getState() == PaymentState.AUTHORIZED
+                    || attempt.getState() == PaymentState.CAPTURE_PENDING
+                    || attempt.getState() == PaymentState.UNKNOWN;
+            case VOID -> attempt.getState() == PaymentState.VOID_PENDING
+                    || attempt.getState() == PaymentState.UNKNOWN;
+        };
+    }
+
+    private PaymentAttempt finalizePhase(PhaseStart start, PaymentProviderResult result,
+            PaymentProviderResult.Outcome outcome) {
+        return transactions.execute(status -> {
+            PaymentAttempt current = repository.findWithLockByAttemptId(start.attempt().getAttemptId())
+                    .orElseThrow(() -> notFound("No payment attempt: " + start.attempt().getAttemptId()));
+            if (terminal(current.getState()) || current.getPaymentPhase() != start.phase()
+                    || !Objects.equals(start.requestId(), phaseRequestId(current, start.phase()))) {
+                return current;
+            }
+            if (result != null) applyProviderResult(current, result);
+            switch (start.phase()) {
+                case AUTHORIZATION -> authorizationResult(current, outcome);
+                case CAPTURE -> captureResult(current, outcome);
+                case VOID -> voidResult(current, outcome);
+            }
+            repository.save(current);
+            return current;
+        });
+    }
+
+    private static String phaseRequestId(PaymentAttempt attempt, PaymentPhase phase) {
+        return switch (phase) {
+            case AUTHORIZATION -> attempt.getProviderOrderId() == null
+                    ? attempt.getCreateOrderRequestId() : attempt.getAuthorizationRequestId();
+            case CAPTURE -> attempt.getCaptureRequestId();
+            case VOID -> attempt.getVoidRequestId();
+        };
+    }
     private PaymentResponse performPhase(PaymentAttempt attempt, String idempotencyKey) {
         return performPhase(attempt, idempotencyKey, true);
     }
     private PaymentResponse performPhase(PaymentAttempt attempt, String idempotencyKey, boolean continueCapture) {
-        PaymentPhase phase = attempt.getPaymentPhase();
-        if (!continueCapture && phase == PaymentPhase.CAPTURE
-                && attempt.getState() == PaymentState.AUTHORIZED) {
-            return toResponse(attempt);
-        }
-        PaymentRequest request = providerRequest(attempt, phase);
+        PhaseStart start = reservePhase(attempt.getAttemptId(), attempt.getPaymentPhase(), continueCapture);
+        if (start.request() == null) return toResponse(start.attempt());
         PaymentProviderResult result;
         try {
-            result = psp.perform(request);
+            result = psp.perform(start.request());
         } catch (PaymentException exception) {
             if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
-            switch (phase) {
-                case AUTHORIZATION -> authorizationResult(attempt, PaymentProviderResult.Outcome.UNKNOWN);
-                case CAPTURE -> captureResult(attempt, PaymentProviderResult.Outcome.UNKNOWN);
-                case VOID -> voidResult(attempt, PaymentProviderResult.Outcome.UNKNOWN);
-            }
-            save(attempt);
-            return toResponse(attempt);
+            return toResponse(finalizePhase(start, null, PaymentProviderResult.Outcome.UNKNOWN));
         }
-        applyProviderResult(attempt, result);
-        switch (phase) {
-            case AUTHORIZATION -> authorizationResult(attempt, result.outcome());
-            case CAPTURE -> captureResult(attempt, result.outcome());
-            case VOID -> voidResult(attempt, result.outcome());
+        PaymentAttempt current = finalizePhase(start, result, result.outcome());
+        if (continueCapture && current.getPaymentPhase() == PaymentPhase.CAPTURE
+                && current.getState() == PaymentState.AUTHORIZED) {
+            return performPhase(current, idempotencyKey, true);
         }
-        save(attempt);
-        if (continueCapture && attempt.getPaymentPhase() == PaymentPhase.CAPTURE
-                && attempt.getState() == PaymentState.AUTHORIZED) {
-            attempt.setState(PaymentState.CAPTURE_PENDING);
-            return performPhase(attempt, idempotencyKey, true);
-        }
-        return toResponse(attempt);
+        return toResponse(current);
     }
     private void authorizationResult(PaymentAttempt attempt, PaymentProviderResult.Outcome result) {
         switch (result) {
@@ -592,9 +659,6 @@ public class PaymentServiceImpl implements PaymentService {
         if (result.captureId() != null) attempt.setProviderCaptureId(result.captureId());
         if (result.approvalUrl() != null) attempt.setApprovalUrl(result.approvalUrl());
     }
-    private void save(PaymentAttempt attempt) {
-        transactions.executeWithoutResult(status -> repository.save(attempt));
-    }
 
     private static long amountWon(BigDecimal amount) {
         if (amount == null || amount.signum() <= 0) {
@@ -608,7 +672,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private <T> T withOwnerLock(UUID ownerId, Supplier<T> action) {
-        return OWNER_LOCKS.withLock(ownerId, action);
+        return ownerLocks.withLock(ownerId, action);
     }
 
     private PaymentAttempt requireOrder(UUID orderId) {

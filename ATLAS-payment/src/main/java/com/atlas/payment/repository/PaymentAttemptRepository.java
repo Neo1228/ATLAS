@@ -37,6 +37,15 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
 
     Optional<PaymentAttempt> findByOrderId(UUID orderId);
     Optional<PaymentAttempt> findByCheckoutId(UUID checkoutId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select attempt from PaymentAttempt attempt where attempt.orderId = :orderId")
+    Optional<PaymentAttempt> findWithLockByOrderId(@Param("orderId") UUID orderId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select attempt from PaymentAttempt attempt where attempt.checkoutId = :checkoutId")
+    Optional<PaymentAttempt> findWithLockByCheckoutId(@Param("checkoutId") UUID checkoutId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select attempt from PaymentAttempt attempt where attempt.attemptId = :attemptId")
+    Optional<PaymentAttempt> findWithLockByAttemptId(@Param("attemptId") UUID attemptId);
     Optional<PaymentAttempt> findByProviderOrderId(String providerOrderId);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select attempt from PaymentAttempt attempt where attempt.providerOrderId = :providerOrderId")

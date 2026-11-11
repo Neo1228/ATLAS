@@ -12,10 +12,28 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.payment.persistence.entity.PaymentAttempt;
+import com.atlas.payment.provider.PaymentOperation;
+import com.atlas.payment.provider.PaymentProvider;
+import com.atlas.payment.provider.PaymentProviderResult;
+import com.atlas.payment.provider.PaymentRefundProviderResult;
+import com.atlas.payment.provider.PaymentRefundRequest;
+import com.atlas.payment.provider.PaymentRequest;
+import com.atlas.payment.repository.PaymentAttemptRepository;
+import com.atlas.payment.repository.PaymentRefundRepository;
+import com.atlas.payment.repository.PaymentWebhookEventRepository;
+import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.application.service.PayPalWebhookService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +43,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import okhttp3.mockwebserver.RecordedRequest;
 
 @Testcontainers
@@ -49,6 +69,17 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private PayPalWebhookService webhookService;
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private PaymentAttemptRepository paymentAttempts;
+    @Autowired
+    private PaymentRefundRepository paymentRefunds;
+    @Autowired
+    private PaymentWebhookEventRepository paymentWebhookEvents;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+    @Autowired
+    private PaymentProvider paymentProvider;
 
     @Test
     void paypalAuthorizationCaptureAndReplayUseTheLocalProvider() throws Exception {
@@ -268,6 +299,50 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
     }
 
+
+    @Test
+    void captureReservationArbitratesAcrossServiceInstancesAndProtectsSuccessFromStaleRetry() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        BigDecimal amountWon = BigDecimal.valueOf(12900);
+        BarrierPaymentProvider barrier = new BarrierPaymentProvider(paymentProvider);
+        PaymentServiceImpl first = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
+                paymentWebhookEvents, transactionManager, barrier);
+        PaymentServiceImpl second = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
+                paymentWebhookEvents, transactionManager, barrier);
+        ExecutorService executor = Executors.newFixedThreadPool(3);
+        try {
+            PaymentResponse pending = first.submitInitial(orderId, amountWon);
+            PaymentResponse authorized = first.completeApproval(orderId, pending.providerOrderId());
+            assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
+
+            Future<PaymentResponse> capture = executor.submit(
+                    () -> first.reconcile(orderId, "capture-first-" + orderId));
+            assertThat(barrier.firstCaptureStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            PaymentResponse voidAttempt = second.voidAuthorization(orderId, "void-race-" + orderId);
+            assertThat(voidAttempt.state()).isEqualTo(PaymentState.CAPTURE_PENDING);
+            assertThat(barrier.voidCalls.get()).isZero();
+
+            Future<PaymentResponse> samePhaseRetry = executor.submit(
+                    () -> second.reconcile(orderId, "capture-retry-" + orderId));
+            assertThat(barrier.bothCaptureCallsStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<PaymentState> observed = executor.submit(() -> new TransactionTemplate(transactionManager)
+                    .execute(status -> paymentAttempts.findWithLockByOrderId(orderId).orElseThrow()).getState());
+            assertThat(observed.get(5, TimeUnit.SECONDS)).isEqualTo(PaymentState.CAPTURE_PENDING);
+
+            barrier.releaseFirstCapture.countDown();
+            assertThat(capture.get(10, TimeUnit.SECONDS).state()).isEqualTo(PaymentState.CAPTURED);
+            barrier.releaseSecondCapture.countDown();
+            assertThat(samePhaseRetry.get(10, TimeUnit.SECONDS).state()).isEqualTo(PaymentState.CAPTURED);
+            assertThat(barrier.captureRequestIds).hasSize(2).allMatch(barrier.captureRequestIds.get(0)::equals);
+            assertThat(barrier.voidCalls.get()).isZero();
+        } finally {
+            barrier.releaseFirstCapture.countDown();
+            barrier.releaseSecondCapture.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
     private static String captureWebhook(String eventId, String providerOrderId, String captureId,
             String amount, String currency) {
         return "{\"id\":\"" + eventId
@@ -293,5 +368,71 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             }
         }
         return null;
+    }
+
+    private static final class BarrierPaymentProvider implements PaymentProvider {
+        private final PaymentProvider delegate;
+        private final CountDownLatch firstCaptureStarted = new CountDownLatch(1);
+        private final CountDownLatch bothCaptureCallsStarted = new CountDownLatch(2);
+        private final CountDownLatch releaseFirstCapture = new CountDownLatch(1);
+        private final CountDownLatch releaseSecondCapture = new CountDownLatch(1);
+        private final AtomicInteger captureCalls = new AtomicInteger();
+        private final AtomicInteger voidCalls = new AtomicInteger();
+        private final List<String> captureRequestIds = new CopyOnWriteArrayList<>();
+
+        private BarrierPaymentProvider(PaymentProvider delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public PaymentProviderResult perform(PaymentRequest request) {
+            if (request.operation() == PaymentOperation.CAPTURE) {
+                int call = captureCalls.incrementAndGet();
+                captureRequestIds.add(request.captureRequestId());
+                bothCaptureCallsStarted.countDown();
+                if (call == 1) {
+                    firstCaptureStarted.countDown();
+                    await(releaseFirstCapture);
+                } else if (call == 2) {
+                    await(releaseSecondCapture);
+                    throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
+                            "Simulated stale capture retry failure");
+                }
+            } else if (request.operation() == PaymentOperation.VOID) {
+                voidCalls.incrementAndGet();
+            }
+            return delegate.perform(request);
+        }
+
+        @Override
+        public PaymentProviderResult completeApproval(PaymentRequest request, String returnedProviderOrderId) {
+            return delegate.completeApproval(request, returnedProviderOrderId);
+        }
+
+        @Override
+        public PaymentRefundProviderResult refund(PaymentRefundRequest request) {
+            return delegate.refund(request);
+        }
+
+        @Override
+        public PaymentRefundProviderResult getRefund(String refundId) {
+            return delegate.getRefund(refundId);
+        }
+
+        @Override
+        public PaymentWebhookEvent verifyWebhook(PaymentWebhookSignature signature, String rawBody) {
+            return delegate.verifyWebhook(signature, rawBody);
+        }
+
+        private static void await(CountDownLatch latch) {
+            try {
+                if (!latch.await(15, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out while provider request was held");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while provider request was held", exception);
+            }
+        }
     }
 }
