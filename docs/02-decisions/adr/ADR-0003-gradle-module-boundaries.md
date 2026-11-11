@@ -51,7 +51,9 @@ Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·
 
 - **공개 API:** `.service`, `.dto.request`, `.dto.response`, `.exception`. 업무 오류는 모듈별 typed exception 하나와 `Code` enum으로 표현.
 - **공유 상태:** lifecycle enum은 `.persistence.state`에 두고 필요한 cross-module contract에서만 공유.
-- Persisted status/phase enums belong in `.persistence.state`, even when service contracts expose them. Keep request/response records in `.dto.request`/`.dto.response`; a workflow enum should not live under `.service` solely because a service consumes it.
+- DB에 저장하는 상태·단계 enum은 service 계약에서 사용되더라도 `.persistence.state`에 둡니다.
+  Request/response record는 `.dto.request`/`.dto.response`에 두며,
+  service가 소비한다는 이유만으로 workflow enum을 `.service`에 두지 않습니다.
 - **저장소 계층:** JPA entity는 `.persistence.entity`, repository는 모듈 내부 `.repository`. 다른 모듈의 entity/repository 직접 접근 금지; 연관 관계에는 scalar ID 사용.
 - **구현 계층:** workflow와 scheduled expiry는 `.service.impl`, provider 구현은 `.provider.*`. Entity 이름에 중복 `Entity` 접미사 금지.
 - **도메인 명칭:** 책임이 드러나는 용어 사용. Inventory의 일반명 `Pool`은 `InventoryPool`로 구체화. Java 타입/ID/repository/DTO/service operation만 변경; DB schema와 API 응답 필드는 유지 ([D-053](../../00-governance/decision-log.md)).
