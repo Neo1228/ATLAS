@@ -84,6 +84,7 @@ class OrderReturnServiceImplTest {
         when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(orderItem));
         OrderRefundRepository refundRecords = mock(OrderRefundRepository.class);
         when(refundRecords.refundedQuantitiesByOrder(orderId)).thenReturn(Map.of());
+        when(refundRecords.paymentStatus(refundId)).thenReturn(OrderRefundPaymentStatus.COMPLETED);
 
         OrderRefundService refunds = mock(OrderRefundService.class);
         when(refunds.prepareInspectedReturnRefund(returnId)).thenAnswer(invocation -> {
@@ -122,6 +123,7 @@ class OrderReturnServiceImplTest {
         OrderReturnResponse response = service.inspect(sellerId, orderId, returnId, request);
 
         assertEquals(OrderReturnStatus.REFUND_RECORDED, response.status());
+        assertEquals(OrderRefundPaymentStatus.COMPLETED, response.paymentStatus());
         assertFalse(active.get());
         verify(refunds, times(2)).prepareInspectedReturnRefund(returnId);
         verify(refunds, times(2)).recordInspectedReturnRefund(returnId);
