@@ -7,7 +7,7 @@ import com.atlas.campaign.persistence.entity.Campaign;
 import com.atlas.campaign.repository.CampaignRepository;
 import com.atlas.campaign.persistence.state.CampaignStatus;
 import com.atlas.campaign.service.CampaignService;
-import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import java.time.Clock;
 import java.time.Duration;

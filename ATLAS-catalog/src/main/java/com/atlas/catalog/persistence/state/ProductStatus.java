@@ -1,4 +1,4 @@
-package com.atlas.catalog.service;
+package com.atlas.catalog.persistence.state;
 
 public enum ProductStatus {
     ACTIVE,

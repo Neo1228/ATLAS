@@ -13,7 +13,7 @@ import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
-import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;

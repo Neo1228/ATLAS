@@ -14,7 +14,7 @@ import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.service.ProductCategoryService;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.catalog.service.ProductStatus;
+import com.atlas.catalog.persistence.state.ProductStatus;
 import com.atlas.catalog.service.SellerService;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

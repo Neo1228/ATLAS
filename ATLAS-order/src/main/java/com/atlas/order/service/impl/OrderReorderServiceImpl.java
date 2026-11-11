@@ -4,7 +4,7 @@ import com.atlas.cart.dto.request.ReorderCartRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.cart.service.CartService;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
-import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
 import com.atlas.inventory.exception.InventoryException;
