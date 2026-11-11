@@ -1,7 +1,7 @@
 package com.atlas.catalog.persistence.entity;
 
-import com.atlas.catalog.service.ProductSalesChannel;
-import com.atlas.catalog.service.ProductStatus;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductStatus;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;

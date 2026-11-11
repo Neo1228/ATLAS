@@ -26,7 +26,7 @@ import com.atlas.campaign.persistence.state.CampaignStatus;
 import com.atlas.campaign.service.CampaignService;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
-import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;

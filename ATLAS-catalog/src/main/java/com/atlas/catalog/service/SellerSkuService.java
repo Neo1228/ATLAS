@@ -1,6 +1,7 @@
 package com.atlas.catalog.service;
 
 import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;

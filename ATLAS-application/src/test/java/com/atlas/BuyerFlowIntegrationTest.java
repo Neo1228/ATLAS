@@ -1,7 +1,7 @@
 package com.atlas;
 import com.atlas.catalog.exception.CatalogException;
-import com.atlas.catalog.service.ProductSalesChannel;
-import com.atlas.catalog.service.ProductStatus;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductStatus;
 import com.atlas.inventory.exception.InventoryException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;

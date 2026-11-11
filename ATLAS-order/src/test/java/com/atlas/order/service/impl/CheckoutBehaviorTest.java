@@ -15,7 +15,7 @@ import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
-import com.atlas.catalog.service.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.inventory.service.InventoryService;

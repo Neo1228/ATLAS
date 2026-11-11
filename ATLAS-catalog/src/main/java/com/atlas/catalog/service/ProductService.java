@@ -6,6 +6,8 @@ import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.dto.response.ProductListingResponse;
 import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductStatus;
 import java.time.Instant;
 import java.util.UUID;
 
