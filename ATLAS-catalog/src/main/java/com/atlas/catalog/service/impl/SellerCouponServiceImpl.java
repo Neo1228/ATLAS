@@ -5,7 +5,7 @@ import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.SellerCoupon;
 import com.atlas.catalog.persistence.entity.SellerCouponRedemption;
-import com.atlas.catalog.persistence.entity.SellerCouponRedemption.State;
+import com.atlas.catalog.persistence.state.SellerCouponRedemptionState;
 import com.atlas.catalog.repository.SellerCouponRedemptionRepository;
 import com.atlas.catalog.repository.SellerCouponRepository;
 import com.atlas.catalog.repository.SellerRepository;
@@ -91,8 +91,8 @@ public class SellerCouponServiceImpl implements SellerCouponService {
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Seller coupon not found"));
         var existing = redemptions.findBySellerIdAndCouponIdAndOrderId(sellerId, couponId, orderId);
         if (existing.isPresent()) {
-            State state = existing.get().state();
-            if (state == State.RESERVED || state == State.REDEEMED) return;
+            SellerCouponRedemptionState state = existing.get().state();
+            if (state == SellerCouponRedemptionState.RESERVED || state == SellerCouponRedemptionState.REDEEMED) return;
             throw conflict("Released coupon redemption cannot be reserved again");
         }
         if (coupons.reserveIfCapacity(sellerId, couponId, at) != 1) {
@@ -105,16 +105,17 @@ public class SellerCouponServiceImpl implements SellerCouponService {
     @Override
     @Transactional
     public void redeemRedemption(UUID sellerId, UUID couponId, UUID orderId, Instant at) {
-        transitionRedemption(sellerId, couponId, orderId, at, State.REDEEMED);
+        transitionRedemption(sellerId, couponId, orderId, at, SellerCouponRedemptionState.REDEEMED);
     }
 
     @Override
     @Transactional
     public void releaseRedemption(UUID sellerId, UUID couponId, UUID orderId, Instant at) {
-        transitionRedemption(sellerId, couponId, orderId, at, State.RELEASED);
+        transitionRedemption(sellerId, couponId, orderId, at, SellerCouponRedemptionState.RELEASED);
     }
 
-    private void transitionRedemption(UUID sellerId, UUID couponId, UUID orderId, Instant at, State target) {
+    private void transitionRedemption(UUID sellerId, UUID couponId, UUID orderId, Instant at,
+            SellerCouponRedemptionState target) {
         if (sellerId == null || couponId == null || orderId == null || at == null) {
             throw invalidRequest("Coupon redemption facts are required");
         }
@@ -125,15 +126,15 @@ public class SellerCouponServiceImpl implements SellerCouponService {
                 .findWithLockBySellerIdAndCouponIdAndOrderId(sellerId, couponId, orderId)
                 .orElseThrow(() -> conflict("Limited coupon redemption reservation not found"));
         if (redemption.state() == target) return;
-        if (redemption.state() != State.RESERVED) {
+        if (redemption.state() != SellerCouponRedemptionState.RESERVED) {
             throw conflict("Coupon redemption is already in a terminal state");
         }
-        int updated = target == State.REDEEMED
+        int updated = target == SellerCouponRedemptionState.REDEEMED
                 ? coupons.redeemReserved(sellerId, couponId)
                 : coupons.releaseReserved(sellerId, couponId);
         if (updated != 1) throw conflict("Coupon redemption counters are inconsistent");
         Instant recordedAt = at.truncatedTo(ChronoUnit.MICROS);
-        if (target == State.REDEEMED) redemption.redeem(recordedAt);
+        if (target == SellerCouponRedemptionState.REDEEMED) redemption.redeem(recordedAt);
         else redemption.release(recordedAt);
     }
 
