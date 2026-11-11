@@ -39,6 +39,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.PlatformTransactionManager;
 
 class AdmissionServiceTest {
     private final TicketRepository tickets = mock(TicketRepository.class);
@@ -47,7 +48,8 @@ class AdmissionServiceTest {
     private final SellerSkuService sellerSkus = mock(SellerSkuService.class);
     private final AdmissionPolicyRepository policies = mock(AdmissionPolicyRepository.class);
     private final AdmissionServiceImpl admission = new AdmissionServiceImpl(
-            tickets, queueRepository, campaigns, policies, sellerSkus, Clock.systemUTC());
+            tickets, queueRepository, campaigns, policies, sellerSkus, Clock.systemUTC(),
+            mock(PlatformTransactionManager.class));
     private final UUID sellerId = UUID.randomUUID();
     private final String skuId = "sku-1";
 

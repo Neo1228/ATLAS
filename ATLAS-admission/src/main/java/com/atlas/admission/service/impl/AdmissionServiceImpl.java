@@ -28,6 +28,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @RequiredArgsConstructor
 @Service
@@ -38,6 +41,7 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final AdmissionPolicyRepository policies;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
     @Transactional
@@ -184,15 +188,18 @@ public class AdmissionServiceImpl implements AdmissionService {
     }
 
     @Scheduled(fixedDelayString = "${atlas.admission.expiry-poll-interval:PT1S}")
-    @Transactional
     public int expireDueTickets() {
         Instant now = clock.instant();
         List<UUID> sellers = tickets.findDueSellerIds(List.of(TicketStatus.WAITING, TicketStatus.CHECKOUT_ACTIVE), now);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         int expired = 0;
         for (UUID sellerId : sellers) {
             for (String skuId : tickets.findDueSkuIds(sellerId, List.of(TicketStatus.WAITING, TicketStatus.CHECKOUT_ACTIVE), now)) {
-                if (!lockCounter(sellerId, skuId)) throw new IllegalStateException("Admission counter is missing for expired tickets");
-                expired += expireDueTicketsForSellerSku(sellerId, skuId, now);
+                expired += transactionTemplate.execute(status -> {
+                    if (!lockCounter(sellerId, skuId)) throw new IllegalStateException("Admission counter is missing for expired tickets");
+                    return expireDueTicketsForSellerSku(sellerId, skuId, now);
+                });
             }
         }
         return expired;
