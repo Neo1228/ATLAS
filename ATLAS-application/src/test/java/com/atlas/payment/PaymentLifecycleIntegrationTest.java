@@ -136,6 +136,70 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     @Test
+    void reconcileVoidedOrderStatusIsTerminal() {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(12900));
+        assertThat(pending.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+
+        queueOrderStatus("VOIDED");
+        PaymentResponse voided = payments.reconcile(orderId, "reconcile-voided-order");
+
+        assertThat(voided.state()).isEqualTo(PaymentState.VOIDED);
+        assertThat(voided.authorizationActive()).isFalse();
+    }
+
+    @Test
+    void reconcileCompletedOrderUsesNestedCaptureStatus() {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(12900));
+        assertThat(pending.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+
+        queueOrderStatus("COMPLETED");
+        queueOrderCaptureStatus("COMPLETED");
+        PaymentResponse captured = payments.reconcile(orderId, "reconcile-completed-order");
+
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(captured.providerCaptureId()).isNotBlank();
+        assertThat(captured.authorizationActive()).isFalse();
+    }
+
+    @Test
+    void completedOrderWithoutPaymentResourceRemainsUnknown() {
+        UUID orderId = UUID.randomUUID();
+        payments.submitInitial(orderId, BigDecimal.valueOf(12900));
+
+        queueOrderStatus("COMPLETED");
+        queueOrderCaptureStatus("NONE");
+        PaymentResponse unknown = payments.reconcile(orderId, "reconcile-unknown-completed-order");
+
+        assertThat(unknown.state()).isEqualTo(PaymentState.UNKNOWN);
+        assertThat(unknown.authorizationActive()).isTrue();
+    }
+
+    @Test
+    void payerActionRequiredOrderUsesPayerActionLink() {
+        UUID orderId = UUID.randomUUID();
+        queueOrderCreateStatus("PAYER_ACTION_REQUIRED");
+        queueOrderApprovalLinkRelation("payer-action");
+
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(12900));
+
+        assertThat(pending.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        assertThat(pending.approvalUrl()).contains("/approve/");
+    }
+
+    @Test
+    void createApprovalStatusIsVerifiedAgainstCurrentOrderBeforeAuthorization() {
+        UUID orderId = UUID.randomUUID();
+        queueOrderCreateStatus("APPROVED");
+        queueOrderStatus("PAYER_ACTION_REQUIRED");
+
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(12900));
+
+        assertThat(pending.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+    }
+
+    @Test
     void lostCaptureResponseRetriesWithTheSameProviderRequestId() throws Exception {
         UUID orderId = UUID.randomUUID();
         PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
