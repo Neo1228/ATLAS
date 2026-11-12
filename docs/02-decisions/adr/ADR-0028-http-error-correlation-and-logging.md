@@ -1,7 +1,9 @@
 # ADR-0028: HTTP 오류 상관관계 ID와 공통 로그
 
-- 상태: Accepted
-- 날짜: 2026-11-10
+- 상태: ✓ 확정
+- 결정일: 2026-11-10
+- 결정 ID: [D-046](../../00-governance/decision-log.md#detailed-decision-records)
+- 관련 Issue: [Issue #78](https://github.com/Neo1228/ATLAS/issues/78)
 
 ## 배경
 
@@ -27,3 +29,5 @@ MDC 범위는 동기 HTTP 요청이다. 별도 비동기 executor나 provider �
 - 예외 이후 MDC 값이 thread에 남지 않는다.
 - 기존 domain exception status/code 계약은 변하지 않는다.
 - 예상하지 못한 오류는 응답에 내부 상세를 노출하지 않고 server-side stack trace와 request ID를 한 번 기록한다.
+- 구현: [RequestCorrelationFilter](../../../ATLAS-application/src/main/java/com/atlas/application/filter/RequestCorrelationFilter.java) · [GlobalExceptionHandler](../../../ATLAS-application/src/main/java/com/atlas/application/exception/GlobalExceptionHandler.java)
+- 검증 코드: [RequestCorrelationFilterTest](../../../ATLAS-application/src/test/java/com/atlas/application/exception/RequestCorrelationFilterTest.java) · [GlobalExceptionHandlerTest](../../../ATLAS-application/src/test/java/com/atlas/application/exception/GlobalExceptionHandlerTest.java)

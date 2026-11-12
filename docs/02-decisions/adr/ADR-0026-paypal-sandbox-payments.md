@@ -1,20 +1,9 @@
----
-id: ADR-0026
-title: PayPal Sandbox 결제와 내부 정산 원장 연동
-status: Accepted
-owner: Project Owner
-date: 2026-11-09
-links:
-  decisions: [D-081]
-  requirements: [FR-017, BR-017, INV-014, Q-006]
-  issues: [191]
----
 # ADR-0026: PayPal Sandbox 결제와 내부 정산 원장 연동
 
 - 상태: ✓ 확정
 - 결정일: 2026-11-09
 - 결정 ID: [D-081](../../00-governance/decision-log.md)
-- 관련 요구사항: [FR-017/BR-017/INV-014](../../01-requirements/requirements-index.md)
+- 관련 요구사항: [FR-017/BR-017/INV-014](../../01-requirements/requirements-index.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
 - 관련 Issue: [Issue #191](https://github.com/Neo1228/ATLAS/issues/191)
 - 선행 결정: [ADR-0011 원장](ADR-0011-gross-capture-settlement-ledger.md), [ADR-0013 환불](ADR-0013-pre-shipment-refund-recording.md), [ADR-0015 초기 payment progression (대체된 결정)](ADR-0015-initial-payment-progression.md).
 

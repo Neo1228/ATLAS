@@ -1,7 +1,7 @@
 # ADR-0030: 애플리케이션 스케줄러 동시성 상한
 
-- 상태: Accepted
-- 날짜: 2026-11-11
+- 상태: ✓ 확정
+- 결정일: 2026-11-11
 
 ## 배경
 
@@ -19,6 +19,9 @@
 ## 검증
 
 추가한 latch 기반 단위 테스트는 한 스케줄 작업을 대기시킨 상태에서 다른 작업이 시작되는지 확인합니다. 이는 서로 다른 작업의 동시 실행이 가능함을 검증하며, 처리량 benchmark는 아닙니다.
+
+- 구현: [SchedulingConfiguration](../../../ATLAS-application/src/main/java/com/atlas/application/config/SchedulingConfiguration.java) · [AdmissionServiceImpl](../../../ATLAS-admission/src/main/java/com/atlas/admission/service/impl/AdmissionServiceImpl.java)
+- 테스트: [SchedulingConfigurationTest](../../../ATLAS-application/src/test/java/com/atlas/application/config/SchedulingConfigurationTest.java)
 
 ## 결과와 한계
 

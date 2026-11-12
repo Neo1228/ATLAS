@@ -1,7 +1,7 @@
 # ADR-0005: Seller-SKU 공유 재고와 전역 FIFO/K
 
 - 상태: ✓ 확정
-- 날짜: 2026-11-03
+- 결정일: 2026-11-03
 - 담당: 프로젝트 책임자
 - 관련 결정: [D-049](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-001/FR-004](../../01-requirements/requirements-index.md)

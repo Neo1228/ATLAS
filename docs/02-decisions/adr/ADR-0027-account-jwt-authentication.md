@@ -1,17 +1,6 @@
----
-id: ADR-0027
-title: Buyer·Seller 계정 인증과 JWT session
-status: Accepted
-owner: Project Owner
-date: 2026-11-10
-links:
-  decisions: [D-082]
-  requirements: [FR-018, BR-018, INV-015, Q-007]
-  issues: [206]
----
 # ADR-0027: Buyer·Seller 계정 인증과 JWT session
 
-- 상태: ✓ 확정; implementation 대기
+- 상태: ✓ 확정
 - 결정일: 2026-11-10
 - 결정 ID: [D-082](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-018/BR-018/INV-015/Q-007](../../01-requirements/requirements-index.md)
@@ -20,7 +9,10 @@ links:
 
 ## 배경
 
-현재 API는 local `permitAll`; `buyerRef`와 `sellerId`는 요청 값이며 계정·인증 정보와 연결되지 않음. Seller는 UUID만 보유하고 Buyer account, password, login, role, ownership relation은 미구현. JWT 발급만 더하면 path에 다른 사용자의 ID를 넣는 IDOR가 그대로 남음.
+ADR-0027 결정 전 baseline:
+- API route는 `permitAll`; `buyerRef`와 `sellerId`는 Account·인증 정보와 연결되지 않은 요청 값.
+- Seller는 UUID만 보유. Buyer account, password, login, role, ownership relation은 미구현.
+- JWT 발급만 추가해도 요청 경로의 타인 ID를 검증하지 않으면 IDOR가 남음.
 
 ## 결정
 
@@ -74,7 +66,11 @@ sequenceDiagram
 - Ownership: Buyer A→Buyer B cart/order/checkout/return/shipment denial; Seller A→Seller B product/inventory/coupon/order/settlement denial.
 - Security boundary: anonymous protected endpoint denied; explicitly public catalog/login/callback/webhook routes still obey route-specific validation; authenticated role cannot bypass ownership.
 - Testcontainers PostgreSQL for account/session uniqueness, transaction rollback, rotation race, and migration. ArchUnit verifies application/security dependency boundaries.
-- Local-only API remains default bind `127.0.0.1`. Auth does not make the app public-ready; rate limiting, email verification/password recovery, MFA, privacy retention, operational key management, and production deployment review remain future work.
+- 미구현 정책: 이메일 인증, 비밀번호 재설정, MFA. 도입 시 요구사항과 위협 모델 별도 검토.
+- Account workflow: [AccountService](../../../ATLAS-account/src/main/java/com/atlas/account/service/AccountService.java) · [AccountController](../../../ATLAS-application/src/main/java/com/atlas/application/controller/account/AccountController.java)
+- Ownership/schema: [AccountOwnershipInterceptor](../../../ATLAS-application/src/main/java/com/atlas/application/security/AccountOwnershipInterceptor.java) · [V25 account migration](../../../ATLAS-application/src/main/resources/db/migration/V25__account_identity.sql)
+- Unit tests: [AccountServiceTest](../../../ATLAS-account/src/test/java/com/atlas/account/service/AccountServiceTest.java) · [AccountSecurityConfigurationTest](../../../ATLAS-account/src/test/java/com/atlas/account/security/AccountSecurityConfigurationTest.java)
+- Security tests: [AccountJwtConfigurationTest](../../../ATLAS-application/src/test/java/com/atlas/application/AccountJwtConfigurationTest.java) · [AccountOwnershipInterceptorTest](../../../ATLAS-application/src/test/java/com/atlas/application/security/AccountOwnershipInterceptorTest.java)
 
 ## 참고 자료
 

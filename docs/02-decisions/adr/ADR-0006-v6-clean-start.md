@@ -1,7 +1,7 @@
 # ADR-0006: V6 새로 시작 migration
 
 - 상태: ✓ 확정
-- 날짜: 2026-11-03
+- 결정일: 2026-11-03
 - 담당: 프로젝트 책임자
 - 관련 결정: [D-055](../../00-governance/decision-log.md). D-049의 Seller-SKU 소유권·공유 재고·전역 FIFO/K 유지.
 - 관련 요구사항: [FR-004](../../01-requirements/requirements-index.md)

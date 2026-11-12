@@ -1,7 +1,7 @@
 # ADR-0008: Catalog·Cart·Order 경계
 
 - 상태: ✓ 확정
-- 날짜: 2026-11-04
+- 결정일: 2026-11-04
 - 담당자: Project Owner
 - 관련 결정: [D-058~D-063, D-071](../../00-governance/decision-log.md)
 

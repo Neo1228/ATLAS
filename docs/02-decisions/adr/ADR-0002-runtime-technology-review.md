@@ -1,7 +1,7 @@
 # ADR-0002: 기술 선택과 공통 처리 재검토
 
 - 상태: ✓ 사용자 승인 stack 유지. migration·운영 승인은 아님 ([D-040](../../00-governance/decision-log.md)).
-- 날짜: 2026-11-02
+- 결정일: 2026-11-02
 - 담당: 프로젝트 책임자
 - 관련 기준: [FR-001/002/003, NFR-001/002](../../01-requirements/requirements-index.md), [Q-005/Q-007/Q-008/Q-009](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
 - 추적: [Issue #68 stack 승인](https://github.com/Neo1228/ATLAS/issues/68#issuecomment-6566855773), [기술 선택 근거](https://github.com/Neo1228/ATLAS/issues/68#issuecomment-6566950387), [Issue #78 재검토](https://github.com/Neo1228/ATLAS/issues/78)

@@ -1,18 +1,7 @@
----
-id: ADR-0007
-title: UUIDv7 식별자
-status: Accepted
-owner: Project Owner
-date: 2026-11-03
-links:
-  decisions: [D-056]
-  experiments: [EXP-014]
-  references: [REF-104, REF-105, REF-106, REF-107]
----
 # ADR-0007: UUIDv7 식별자
 
 - 상태: ✓ 확정
-- 날짜: 2026-11-03
+- 결정일: 2026-11-03
 - 결정 ID: D-056
 
 ## 배경
