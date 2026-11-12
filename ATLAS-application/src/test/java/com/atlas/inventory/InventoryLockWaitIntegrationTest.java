@@ -2,6 +2,7 @@ package com.atlas.inventory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.PostgresLockWaitProbe;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
@@ -14,8 +15,6 @@ import com.atlas.inventory.service.InventoryService;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
@@ -26,6 +25,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestReporter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,7 +40,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class InventoryLockWaitIntegrationTest {
     private static final Duration WAIT_DEADLINE = Duration.ofSeconds(15);
     private static final Duration CLEANUP_DEADLINE = Duration.ofSeconds(5);
-    private static final long POLL_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(100);
+    private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
     private static final String SELECTOR_QUERY = "SELECT pool.location_id, pool.sku_id ";
 
     @Container
@@ -62,7 +62,7 @@ class InventoryLockWaitIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void observesSelectorWaiterThenReservesBatchAtomically() throws Exception {
+    void observesSelectorWaiterThenReservesBatchAtomically(TestReporter reporter) throws Exception {
         UUID sellerA = sellers.createSeller().sellerId();
         UUID sellerB = sellers.createSeller().sellerId();
         UUID firstSeller = Comparator.<UUID>naturalOrder().compare(sellerA, sellerB) < 0 ? sellerA : sellerB;
@@ -88,7 +88,7 @@ class InventoryLockWaitIntegrationTest {
         try {
             blocker = dataSource.getConnection();
             blocker.setAutoCommit(false);
-            blockerPid = backendPid(blocker);
+            blockerPid = PostgresLockWaitProbe.backendPid(blocker);
             try (PreparedStatement lock = blocker.prepareStatement(
                     "SELECT 1 FROM inventory_pool WHERE seller_id = ? AND location_id = ? AND sku_id = ? FOR UPDATE")) {
                 lock.setObject(1, blockedSeller);
@@ -102,9 +102,17 @@ class InventoryLockWaitIntegrationTest {
             worker = workerExecutor.submit(() -> inventory.reserveAll(
                     new ReserveInventoryBatchRequest(orderId, campaignId, items)));
             try (Connection observer = dataSource.getConnection()) {
-                int observerPid = backendPid(observer);
-                int workerPid = awaitSelectorWaiter(observer, blockerPid, observerPid);
-                assertThat(workerPid).isNotEqualTo(blockerPid).isNotEqualTo(observerPid);
+                int observerPid = PostgresLockWaitProbe.backendPid(observer);
+                PostgresLockWaitProbe.Observation observation = PostgresLockWaitProbe.awaitWaiter(
+                        observer, blockerPid, observerPid, WAIT_DEADLINE, POLL_INTERVAL);
+                assertThat(observation.waiterPid()).isNotEqualTo(blockerPid).isNotEqualTo(observerPid);
+                assertThat(observation.queryElapsedMillis()).isPositive();
+                assertThat(observation.waitEvent()).isNotBlank();
+                reporter.publishEntry("inventory.selector.waitEvent", observation.waitEvent());
+                reporter.publishEntry("inventory.selector.queryElapsedAtObservationMs",
+                        Double.toString(observation.queryElapsedMillis()));
+                reporter.publishEntry("inventory.selector.pollIntervalMs",
+                        Long.toString(POLL_INTERVAL.toMillis()));
                 assertThat(inventory.findReservations(orderId)).isEmpty();
                 for (var item : items) {
                     InventoryPoolResponse pool = inventory.find(item.sellerId(), item.skuId());
@@ -148,43 +156,6 @@ class InventoryLockWaitIntegrationTest {
         }
     }
 
-    private int awaitSelectorWaiter(Connection observer, int blockerPid, int observerPid) throws Exception {
-        long deadline = System.nanoTime() + WAIT_DEADLINE.toNanos();
-        String lastObservation = "no matching backend observed";
-        while (System.nanoTime() < deadline) {
-            try (PreparedStatement query = observer.prepareStatement("""
-                    SELECT pid, wait_event_type, query, pg_blocking_pids(pid)
-                    FROM pg_stat_activity
-                    WHERE pid <> ? AND wait_event_type = 'Lock'
-                      AND query LIKE ?
-                      AND ? = ANY(pg_blocking_pids(pid))
-                    """)) {
-                query.setInt(1, observerPid);
-                query.setString(2, SELECTOR_QUERY + "%FOR UPDATE OF pool%");
-                query.setInt(3, blockerPid);
-                try (ResultSet rows = query.executeQuery()) {
-                    if (rows.next()) {
-                        int pid = rows.getInt("pid");
-                        assertThat(rows.next()).as("exactly one matching selector waiter").isFalse();
-                        return pid;
-                    }
-                }
-            }
-            lastObservation = "no selector Lock waiter blocked by backend " + blockerPid;
-            long remaining = deadline - System.nanoTime();
-            if (remaining > 0) {
-                TimeUnit.NANOSECONDS.sleep(Math.min(POLL_INTERVAL_NANOS, remaining));
-            }
-        }
-        throw new AssertionError("Timed out waiting for PostgreSQL selector waiter: " + lastObservation);
-    }
-
-    private static int backendPid(Connection connection) throws SQLException {
-        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT pg_backend_pid()")) {
-            rows.next();
-            return rows.getInt(1);
-        }
-    }
 
     private void registerSku(UUID sellerId, String sku) {
         var product = products.createProduct(sellerId,

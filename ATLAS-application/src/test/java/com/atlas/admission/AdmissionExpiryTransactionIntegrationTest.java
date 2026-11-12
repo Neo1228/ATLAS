@@ -2,6 +2,7 @@ package com.atlas.admission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.PostgresLockWaitProbe;
 import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
@@ -20,6 +21,7 @@ import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
+import java.sql.Connection;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -31,7 +33,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestReporter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -66,10 +71,11 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
     @Autowired private JdbcQueueRepository queueRepository;
     @Autowired private TicketRepository tickets;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private DataSource dataSource;
     @Autowired private PlatformTransactionManager transactionManager;
 
     @Test
-    void commitsOneSellerSkuExpiryBeforeWaitingOnTheNextCounterLock() throws Exception {
+    void commitsOneSellerSkuExpiryBeforeWaitingOnTheNextCounterLock(TestReporter reporter) throws Exception {
         SellerResponse seller = sellers.createSeller();
         ProductResponse product = products.createProduct(seller.sellerId(),
                 new CreateProductRequest("admission expiry " + UUID.randomUUID(), "description"));
@@ -86,6 +92,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
 
         CountDownLatch counterLocked = new CountDownLatch(1);
         CountDownLatch releaseCounter = new CountDownLatch(1);
+        AtomicInteger blockerPid = new AtomicInteger(-1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             Future<?> lockHolder = executor.submit(() -> new TransactionTemplate(transactionManager)
@@ -93,6 +100,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
                         if (!queueRepository.lockCounter(seller.sellerId(), blocked.skuId())) {
                             throw new IllegalStateException("Admission counter missing for regression fixture");
                         }
+                        blockerPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
                         counterLocked.countDown();
                         awaitLatch(releaseCounter);
                     }));
@@ -103,6 +111,16 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
                     .as("the first seller-SKU expiry commits while the next counter is locked")
                     .isTrue();
 
+            try (Connection observer = dataSource.getConnection()) {
+                int observerPid = PostgresLockWaitProbe.backendPid(observer);
+                PostgresLockWaitProbe.Observation observation = PostgresLockWaitProbe.awaitWaiter(
+                        observer, blockerPid.get(), observerPid, Duration.ofSeconds(10), Duration.ofMillis(100));
+                assertThat(observation.queryElapsedMillis()).isPositive();
+                reporter.publishEntry("admission.expiry.counter.queryElapsedAtObservationMs",
+                        Double.toString(observation.queryElapsedMillis()));
+                reporter.publishEntry("admission.expiry.counter.waitEvent", observation.waitEvent());
+                reporter.publishEntry("admission.expiry.counter.pollIntervalMs", "100");
+            }
             releaseCounter.countDown();
             assertThat(expiry.get(10, TimeUnit.SECONDS)).isEqualTo(2);
             assertThat(lockHolder.get(10, TimeUnit.SECONDS)).isNull();
@@ -114,6 +132,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
             executor.awaitTermination(5, TimeUnit.SECONDS);
         }
     }
+
 
     private DueTicket createDueTicket(UUID sellerId, ProductResponse product, String label) {
         String skuId = "admission-expiry-" + label + "-" + UUID.randomUUID();

@@ -309,7 +309,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Scheduled(fixedDelayString = "${atlas.orders.expiry-poll-interval:PT1S}")
-    public int expireDueCheckouts() {
+    public int expireDueOrders() {
         Instant now = clock.instant();
         List<UUID> dueOrders = repository.findReservedOrdersExpiredBy(now);
         int expired = 0;
