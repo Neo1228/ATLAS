@@ -6,6 +6,7 @@ import com.atlas.application.controller.dto.OrderReturnHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnInspectionHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.order.dto.request.OrderReorderRequest;
+import com.atlas.order.dto.response.OrderHistoryPageResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.OrderRefundResponse;
@@ -98,6 +99,13 @@ public class OrderController {
     @GetMapping("/sellers/{sellerId}/orders/{orderId}/refund-record")
     public OrderRefundSummaryResponse refundSummary(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
         return refunds.find(sellerId, orderId);
+    }
+
+    @GetMapping("/buyers/{buyerRef}/orders")
+    public OrderHistoryPageResponse buyerOrderHistory(@PathVariable String buyerRef,
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam(value = "cursor", required = false) String cursor) {
+        return orders.findBuyerOrderHistory(buyerRef, limit, cursor);
     }
 
     @GetMapping("/orders/{orderId}")

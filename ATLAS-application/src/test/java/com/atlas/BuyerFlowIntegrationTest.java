@@ -38,6 +38,7 @@ import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.OrderFulfillmentResponse;
+import com.atlas.order.dto.response.OrderHistoryPageResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.response.OrderItemResponse;
 import com.atlas.order.dto.response.OrderRefundResponse;
@@ -46,6 +47,7 @@ import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.persistence.state.OrderSource;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
@@ -150,6 +152,27 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
     private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
         return completePayPalCheckout(checkoutLifecycle.submit(checkoutId));
     }
+    private AccountTokenResponse createBuyerAccount(String email) throws Exception {
+        String body = "{\"email\":\"" + email + "\",\"password\":\"long-enough-password\"}";
+        String response = mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readValue(response, AccountTokenResponse.class);
+    }
+
+    private void authenticateBuyer(AccountTokenResponse account) {
+        Instant now = clock.instant();
+        Jwt jwt = Jwt.withTokenValue("order-history-" + account.accountId())
+                .header("alg", "none")
+                .subject(account.accountId().toString())
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(600))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+    }
+
     @BeforeEach
     void resetClock() {
         clock.set(Instant.parse("2026-11-02T00:00:00Z"));
@@ -1460,6 +1483,69 @@ assertUuidV7(paymentOrderId);
         assertThat(allocations.stream().map(row -> ((Number) row.get("amount_won")).longValue()).toList())
                 .containsExactly(sellerOrder.getFirst().equals(firstSeller) ? 100L : 250L,
                         sellerOrder.getLast().equals(firstSeller) ? 100L : 250L);
+    }
+
+    @Test
+    void buyerOrderHistoryPagesCampaignAndMultiSellerOrdersAndEnforcesOwnership() throws Exception {
+        AccountTokenResponse buyer = createBuyerAccount("order-history-" + UUID.randomUUID() + "@example.com");
+        authenticateBuyer(buyer);
+        UUID firstSeller = sellers.createSeller().sellerId();
+        UUID secondSeller = sellers.createSeller().sellerId();
+        ProductResponse firstProduct = products.createProduct(firstSeller,
+                new CreateProductRequest("history-first-" + UUID.randomUUID(), null));
+        ProductResponse secondProduct = products.createProduct(secondSeller,
+                new CreateProductRequest("history-second-" + UUID.randomUUID(), null));
+        String sku = "history-" + UUID.randomUUID();
+        products.registerSku(firstSeller, firstProduct.productId(), new RegisterSellerSkuRequest(sku, 100, 2));
+        products.registerSku(secondSeller, secondProduct.productId(), new RegisterSellerSkuRequest(sku, 250, 2));
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            carts.setItemQuantity(sellerId, buyer.buyerRef(), sku, 1);
+        }
+        CheckoutResponse cartCheckout = cartCheckouts.checkout(
+                buyer.buyerRef(), "history-checkout-" + UUID.randomUUID());
+        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse ticket = join(campaign, buyer.buyerRef(),
+                "history-campaign-ticket-" + UUID.randomUUID());
+        OrderResponse campaignOrder = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+
+        List<OrderHistoryPageResponse.Entry> history = new ArrayList<>();
+        String cursor = null;
+        for (int pageNumber = 0; pageNumber < 3; pageNumber++) {
+            var request = get("/api/buyers/{buyerRef}/orders", buyer.buyerRef()).param("limit", "1");
+            if (cursor != null) request.param("cursor", cursor);
+            String body = mockMvc.perform(request).andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            OrderHistoryPageResponse page = objectMapper.readValue(body, OrderHistoryPageResponse.class);
+            assertThat(page.orders()).hasSize(1);
+            history.add(page.orders().getFirst());
+            cursor = page.nextCursor();
+            if (pageNumber < 2) assertThat(cursor).isNotBlank();
+            else assertThat(cursor).isNull();
+        }
+
+        assertThat(history.stream().map(OrderHistoryPageResponse.Entry::orderId).toList())
+                .containsExactlyInAnyOrder(
+                        cartCheckout.orders().get(0).orderId(), cartCheckout.orders().get(1).orderId(),
+                        campaignOrder.orderId());
+        assertThat(history).extracting(OrderHistoryPageResponse.Entry::createdAt)
+                .containsOnly(clock.instant());
+        for (int index = 1; index < history.size(); index++) {
+            assertThat(history.get(index - 1).orderId()).isGreaterThan(history.get(index).orderId());
+        }
+        assertThat(history.stream().filter(entry -> entry.source() == OrderSource.CART)
+                .map(OrderHistoryPageResponse.Entry::checkoutId).toList())
+                .containsOnly(cartCheckout.checkoutId());
+        OrderHistoryPageResponse.Entry campaignHistory = history.stream()
+                .filter(entry -> entry.source() == OrderSource.CAMPAIGN).findFirst().orElseThrow();
+        assertThat(campaignHistory.checkoutId()).isNull();
+
+        AccountTokenResponse otherBuyer = createBuyerAccount(
+                "order-history-other-" + UUID.randomUUID() + "@example.com");
+        authenticateBuyer(otherBuyer);
+        mockMvc.perform(get("/api/buyers/{buyerRef}/orders", buyer.buyerRef()).param("limit", "1"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/buyers/{buyerRef}/orders", otherBuyer.buyerRef()).param("limit", "101"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

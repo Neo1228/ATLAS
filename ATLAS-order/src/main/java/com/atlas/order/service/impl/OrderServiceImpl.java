@@ -12,6 +12,7 @@ import com.atlas.inventory.dto.request.ReserveInventoryRequest;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
+import com.atlas.order.dto.response.OrderHistoryPageResponse;
 import com.atlas.order.dto.response.OrderItemResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
@@ -31,14 +32,17 @@ import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -47,6 +51,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public final class OrderServiceImpl implements OrderService {
     private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 221;
+    private static final int DEFAULT_HISTORY_PAGE_SIZE = 10;
+    private static final int MAX_HISTORY_PAGE_SIZE = 100;
 
     private static final OwnerLockRegistry ORDER_LOCKS = new OwnerLockRegistry();
 
@@ -299,6 +305,32 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public OrderHistoryPageResponse findBuyerOrderHistory(String buyerRef, Integer requestedLimit,
+            String cursor) {
+        if (buyerRef == null || buyerRef.isBlank()) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Buyer reference is required");
+        }
+        int limit = requestedLimit == null ? DEFAULT_HISTORY_PAGE_SIZE : requestedLimit;
+        if (limit < 1 || limit > MAX_HISTORY_PAGE_SIZE) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Order history limit is out of range");
+        }
+
+        OrderHistoryCursor position = decodeOrderHistoryCursor(cursor);
+        List<PurchaseOrder> fetched = Objects.requireNonNull(transactions.execute(status -> position == null
+                ? repository.findByBuyerRefOrderByCreatedAtDescOrderIdDesc(buyerRef, PageRequest.of(0, limit + 1))
+                : repository.findBuyerOrdersBefore(buyerRef, position.createdAt(), position.orderId(),
+                        PageRequest.of(0, limit + 1))));
+        boolean hasNext = fetched.size() > limit;
+        List<PurchaseOrder> page = hasNext ? fetched.subList(0, limit) : fetched;
+        List<OrderHistoryPageResponse.Entry> orders = page.stream()
+                .map(order -> new OrderHistoryPageResponse.Entry(order.orderId(), order.checkoutId(),
+                        order.sellerId(), order.source(), order.state(), order.createdAt()))
+                .toList();
+        String nextCursor = hasNext ? encodeOrderHistoryCursor(page.get(page.size() - 1)) : null;
+        return new OrderHistoryPageResponse(orders, nextCursor);
+    }
+
+    @Override
     public boolean isOwnedByBuyer(UUID orderId, String buyerRef) {
         if (orderId == null || buyerRef == null || buyerRef.isBlank()) return false;
         return repository.existsByOrderIdAndBuyerRef(orderId, buyerRef);
@@ -446,6 +478,26 @@ public final class OrderServiceImpl implements OrderService {
         return idempotencyKey == null || idempotencyKey.isBlank()
                 || idempotencyKey.length() > MAX_IDEMPOTENCY_KEY_LENGTH;
     }
+
+    private static OrderHistoryCursor decodeOrderHistoryCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) return null;
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] parts = decoded.split("\\|", -1);
+            if (parts.length != 3 || !"v1".equals(parts[0])) throw new IllegalArgumentException("Malformed cursor");
+            return new OrderHistoryCursor(Instant.parse(parts[1]), UUID.fromString(parts[2]));
+        } catch (RuntimeException exception) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Invalid order history cursor");
+        }
+    }
+
+    private static String encodeOrderHistoryCursor(PurchaseOrder order) {
+        String value = "v1|" + order.createdAt() + "|" + order.orderId();
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private record OrderHistoryCursor(Instant createdAt, UUID orderId) { }
 
     private static OrderException invalidRequest() {
         return new OrderException(OrderException.Code.INVALID_REQUEST, "orderId is required");
