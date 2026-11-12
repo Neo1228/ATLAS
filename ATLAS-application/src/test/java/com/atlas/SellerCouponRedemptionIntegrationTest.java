@@ -25,6 +25,10 @@ import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.impl.CheckoutPaymentServiceImpl;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.PostgresLockWaitProbe;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,7 +43,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestReporter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -81,6 +87,7 @@ class SellerCouponRedemptionIntegrationTest extends PayPalIntegrationTestSupport
     @Autowired private OrderRefundService refunds;
     @Autowired private InventoryService inventory;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private DataSource dataSource;
 
     private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
         CheckoutResponse pending = checkoutPayments.submit(checkoutId);
@@ -185,6 +192,67 @@ class SellerCouponRedemptionIntegrationTest extends PayPalIntegrationTestSupport
     }
 
     @Test
+    void couponReservationWaitsOnCouponRowAndPreservesCap(TestReporter reporter) throws Exception {
+        SkuFixture sku = createSku(sellers.createSeller().sellerId(), 1_000, 1);
+        String code = createCoupon(sku.sellerId(), 100, 1);
+        UUID couponId = coupons.find(sku.sellerId(), code).couponId();
+        String buyerRef = "coupon-lock-buyer-" + UUID.randomUUID();
+        String idempotencyKey = "coupon-lock-key-" + UUID.randomUUID();
+        carts.setItemQuantity(sku.sellerId(), buyerRef, sku.skuId(), 1);
+
+        ExecutorService workerExecutor = Executors.newSingleThreadExecutor();
+        Connection blocker = null;
+        Future<CheckoutResponse> checkout = null;
+        try {
+            blocker = dataSource.getConnection();
+            blocker.setAutoCommit(false);
+            int blockerPid = PostgresLockWaitProbe.backendPid(blocker);
+            try (PreparedStatement lock = blocker.prepareStatement(
+                    "SELECT coupon_id FROM seller_coupon WHERE seller_id = ? AND coupon_id = ? FOR UPDATE")) {
+                lock.setObject(1, sku.sellerId());
+                lock.setObject(2, couponId);
+                try (ResultSet rows = lock.executeQuery()) {
+                    assertThat(rows.next()).isTrue();
+                }
+            }
+
+            checkout = workerExecutor.submit(() -> checkouts.checkout(
+                    buyerRef, idempotencyKey, List.of(new SellerCouponRequest(sku.sellerId(), code))));
+            try (Connection observer = dataSource.getConnection()) {
+                int observerPid = PostgresLockWaitProbe.backendPid(observer);
+                PostgresLockWaitProbe.Observation observation = PostgresLockWaitProbe.awaitWaiter(
+                        observer, blockerPid, observerPid, Duration.ofSeconds(15), Duration.ofMillis(100));
+                assertThat(observation.waiterPid()).isNotEqualTo(blockerPid).isNotEqualTo(observerPid);
+                assertThat(observation.queryElapsedMillis()).isPositive();
+                assertThat(observation.waitEvent()).isNotBlank();
+                reporter.publishEntry("coupon.reserve.queryElapsedAtObservationMs",
+                        Double.toString(observation.queryElapsedMillis()));
+                reporter.publishEntry("coupon.reserve.waitEvent", observation.waitEvent());
+                reporter.publishEntry("coupon.reserve.pollIntervalMs", "100");
+            }
+            assertThat(checkout.isDone()).isFalse();
+
+            blocker.commit();
+            blocker.close();
+            blocker = null;
+            CheckoutResponse result = checkout.get(30, TimeUnit.SECONDS);
+            assertThat(result.orders()).hasSize(1);
+            assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(1, 0, 1, 0, 0));
+        } finally {
+            if (blocker != null) {
+                try {
+                    blocker.rollback();
+                } finally {
+                    blocker.close();
+                }
+            }
+            if (checkout != null && !checkout.isDone()) {
+                checkout.cancel(true);
+            }
+            workerExecutor.shutdownNow();
+            assertThat(workerExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
     void redemptionCounterAndCheckoutRollbackTogetherWhenLedgerInsertFails() {
         SkuFixture sku = createSku(sellers.createSeller().sellerId(), 1_000, 1);
         String code = createCoupon(sku.sellerId(), 100, 1);
