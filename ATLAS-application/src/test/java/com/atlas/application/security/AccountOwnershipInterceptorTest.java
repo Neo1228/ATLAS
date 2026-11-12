@@ -47,6 +47,7 @@ class AccountOwnershipInterceptorTest {
     @Test
     void permitsSellerResourceOwnedByAuthenticatedAccount() {
         UUID sellerId = UUID.randomUUID();
+        request.setRequestURI("/api/sellers/" + sellerId + "/products");
         request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
                 Map.of("sellerId", sellerId.toString()));
         when(accounts.ownsSeller(ACCOUNT_ID, sellerId)).thenReturn(true);
@@ -57,6 +58,7 @@ class AccountOwnershipInterceptorTest {
     @Test
     void rejectsSellerResourceOwnedByAnotherAccount() {
         UUID sellerId = UUID.randomUUID();
+        request.setRequestURI("/api/sellers/" + sellerId + "/products");
         request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
                 Map.of("sellerId", sellerId.toString()));
         when(accounts.ownsSeller(ACCOUNT_ID, sellerId)).thenReturn(false);
@@ -77,5 +79,18 @@ class AccountOwnershipInterceptorTest {
                 () -> interceptor.preHandle(request, response, new Object()));
 
         assertEquals(AccountException.Code.RESOURCE_NOT_OWNED, error.code());
+    }
+
+    @Test
+    void allowsBuyerToCartAnotherSellersSku() {
+        String buyerRef = UUID.randomUUID().toString();
+        UUID sellerId = UUID.randomUUID();
+        request.setRequestURI("/api/buyers/" + buyerRef + "/cart/items/" + sellerId + "/sku-1");
+        request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
+                Map.of("buyerRef", buyerRef, "sellerId", sellerId.toString(), "skuId", "sku-1"));
+        when(accounts.ownsBuyer(ACCOUNT_ID, buyerRef)).thenReturn(true);
+        when(accounts.ownsSeller(ACCOUNT_ID, sellerId)).thenReturn(false);
+
+        assertTrue(interceptor.preHandle(request, response, new Object()));
     }
 }

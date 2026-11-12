@@ -2,10 +2,12 @@ import http from 'k6/http';
 import { check } from 'k6';
 import encoding from 'k6/encoding';
 import { Trend } from 'k6/metrics';
+import { authHeaders, buyerForVu, createSellerProfile, registerBuyer } from './lib/auth.js';
 
 const BASE_URL = (__ENV.BASE_URL || '').replace(/\/$/, '');
-const SELLER_ID = __ENV.SELLER_ID || '';
-const SUMMARY_FILE = __ENV.SUMMARY_FILE || 'catalog-listing-summary.json';
+const RUN_ID = __ENV.RUN_ID || '';
+const UNIT_PRICE_WON = Number(__ENV.UNIT_PRICE_WON || '100');
+const SUMMARY_FILE = __ENV.SUMMARY_FILE || '';
 const PAGE_LIMIT = 100;
 const QUERIES = ['broad', 'needle'];
 
@@ -17,11 +19,12 @@ const SCENARIO_LATENCY = {
 };
 
 if (!BASE_URL) throw new Error('BASE_URL is required (local API URL only)');
-if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(SELLER_ID)) {
-  throw new Error('SELLER_ID must be the seeded seller UUID');
+if (!/^[A-Za-z0-9_-]{1,32}$/.test(RUN_ID)) throw new Error('RUN_ID must match [A-Za-z0-9_-]{1,32}');
+if (!Number.isSafeInteger(UNIT_PRICE_WON) || UNIT_PRICE_WON < 1) {
+  throw new Error('UNIT_PRICE_WON must be a positive integer');
 }
 
-// One VU and one executor avoid concurrent scenarios; each listing shape gets 100 serial iterations.
+// VU 1개가 네 목록 요청 형상을 직렬 실행.
 export const options = {
   scenarios: {
     catalog_listing: {
@@ -36,6 +39,34 @@ export const options = {
   },
 };
 
+function postCreated(path, body, accessToken, operation) {
+  const response = http.post(`${BASE_URL}${path}`, body === null ? null : JSON.stringify(body), {
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    tags: { phase: 'setup', operation },
+  });
+  if (response.status !== 201) throw new Error(`setup ${operation} failed: HTTP ${response.status}`);
+  return response.json();
+}
+
+export function setup() {
+  const sellerAccount = registerBuyer(BASE_URL, RUN_ID, 'seller', 0);
+  const sellerId = createSellerProfile(BASE_URL, sellerAccount);
+  const product = postCreated(`/api/sellers/${sellerId}/products`, {
+    name: `catalog-${RUN_ID}`,
+    description: `Synthetic catalog listing ${RUN_ID}`,
+  }, sellerAccount.accessToken, 'product');
+  const skuIds = [`catalog-${RUN_ID}-a`, `catalog-${RUN_ID}-b`];
+  for (const skuId of skuIds) {
+    postCreated(`/api/sellers/${sellerId}/products/${product.productId}/skus`, {
+      skuId,
+      priceWon: UNIT_PRICE_WON,
+      initialStock: 1,
+    }, sellerAccount.accessToken, 'sku');
+  }
+  console.log(`catalog fixture run=${RUN_ID} seller=${sellerId} product=${product.productId}`);
+  return { sellerId, sellerAccounts: [sellerAccount] };
+}
+
 function uuidSortKey(uuid) {
   const bytes = uuid.replaceAll('-', '').match(/../g).map((part) => Number.parseInt(part, 16));
   bytes[0] &= 0x80;
@@ -48,7 +79,7 @@ function listingCheck(response, label, expectedSeller = null) {
   try {
     payload = response.json();
   } catch (_) {
-    // Failed JSON parsing is reported by the response-shape check.
+    // JSON 파싱 실패는 아래 응답 형태 검사에서 보고.
   }
 
   const shapeValid = payload !== null && Array.isArray(payload.items)
@@ -89,7 +120,7 @@ function listingCheck(response, label, expectedSeller = null) {
   });
 }
 
-export default function () {
+export default function (seed) {
   const iteration = __ITER % 4;
   let label;
   let url;
@@ -99,22 +130,28 @@ export default function () {
     url = `${BASE_URL}/api/products?limit=${PAGE_LIMIT}`;
   } else if (iteration === 1) {
     label = 'seller';
-    url = `${BASE_URL}/api/sellers/${SELLER_ID}/products?limit=${PAGE_LIMIT}`;
-    expectedSeller = SELLER_ID;
+    url = `${BASE_URL}/api/sellers/${seed.sellerId}/products?limit=${PAGE_LIMIT}`;
+    expectedSeller = seed.sellerId;
   } else {
     const query = QUERIES[iteration - 2];
     label = `search_${query}`;
     url = `${BASE_URL}/api/products?query=${query}&limit=${PAGE_LIMIT}`;
   }
 
+  const headers = label === 'seller'
+    ? authHeaders(buyerForVu(BASE_URL, seed.sellerAccounts, __VU).accessToken, { Accept: 'application/json' })
+    : { Accept: 'application/json' };
   const response = http.get(url, {
-    headers: { Accept: 'application/json' },
-    tags: { name: `catalog_listing_${label}`, listing_scenario: label },
+    headers,
+    tags: { name: `catalog_listing_${label}`, listing_scenario: label, phase: 'measure' },
   });
   listingCheck(response, label, expectedSeller);
   SCENARIO_LATENCY[label].add(response.timings.duration);
 }
 
 export function handleSummary(data) {
-  return { [SUMMARY_FILE]: JSON.stringify(data, null, 2) };
+  const output = JSON.stringify(data, null, 2);
+  const destinations = { stdout: `${output}\n` };
+  if (SUMMARY_FILE) destinations[SUMMARY_FILE] = `${output}\n`;
+  return destinations;
 }
