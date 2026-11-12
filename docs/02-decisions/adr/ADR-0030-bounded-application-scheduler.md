@@ -18,7 +18,7 @@
 
 ## 검증
 
-추가한 latch 기반 단위 테스트는 한 스케줄 작업을 대기시킨 상태에서 다른 작업이 시작되는지 확인합니다. 이는 서로 다른 작업의 동시 실행이 가능함을 검증하며, 처리량 benchmark는 아닙니다.
+[`SchedulingConcurrencyTest`](../../../ATLAS-application/src/test/java/com/atlas/application/config/SchedulingConcurrencyTest.java): 설정 pool 3과 테스트용 pool 1/3의 latch 실행 비교. 동시 실행·대기 동작만 검증하며 처리량 benchmark는 아님. 500 ms는 동기화 대기 구간이지 SLO가 아님.
 
 - 구현: [SchedulingConfiguration](../../../ATLAS-application/src/main/java/com/atlas/application/config/SchedulingConfiguration.java) · [AdmissionServiceImpl](../../../ATLAS-admission/src/main/java/com/atlas/admission/service/impl/AdmissionServiceImpl.java)
 - 테스트: [SchedulingConfigurationTest](../../../ATLAS-application/src/test/java/com/atlas/application/config/SchedulingConfigurationTest.java)
@@ -30,3 +30,4 @@
 - 한 만료 작업 내부의 병렬 처리나 만료 처리량을 높이지 않으며 DB 트랜잭션과 잠금 동작도 바꾸지 않습니다. 같은 fixed-delay 작업은 이전 실행이 끝난 뒤 다음 실행을 예약합니다.
 - Scheduler는 프로세스 단위입니다. 여러 애플리케이션 인스턴스는 각자 만료 작업을 실행할 수 있으며, 이 변경은 분산 리더 선출이나 인스턴스 간 조정을 추가하지 않습니다.
 - 예약 작업의 동시 실행 수가 늘면 DB 경합이 증가할 수 있습니다. pool 크기는 JDBC connection 용량을 설정하거나 보장하지 않습니다.
+- 후속 PostgreSQL 측정은 [EXP-026](../../03-experiments/EXP-026-scheduler-expiry-multi-instance.md) 참고. 두 Spring context 경합은 Admission 만료만 검증; Order·BuyerCheckout의 multi-instance 실행은 측정 범위 밖.
