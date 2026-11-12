@@ -16,9 +16,11 @@ ATLAS는 **PayPal AI Hackathon 참가를 위해 개발하는 이커머스 플랫
 | `ATLAS-campaign/` | Campaign과 구매 자격 |
 | `ATLAS-admission/` | FIFO queue, ticket, checkout slot과 queue policy |
 | `ATLAS-inventory/` | Stock pool, reservation, fulfillment location, capacity 조정과 transfer |
-| `ATLAS-order/` | BuyerCheckout, Seller별 order/item, shipment, return/refund |
+| `ATLAS-order/` | Seller별 주문·항목, Buyer 주문 내역(cursor), 배송·반품·환불 |
 | `ATLAS-payment/` | PayPal Sandbox authorization/capture/refund, webhook과 payment recovery |
 | `ATLAS-settlement/` | Capture/refund 내부 ledger, Seller별 allocation과 statement |
+
+Buyer 주문 내역: `GET /api/buyers/{buyerRef}/orders`는 인증된 Buyer의 Campaign·cart 주문 요약을 keyset cursor로 조회. 기본 limit 10, 최대 100; 상세는 `GET /api/orders/{orderId}`.
 
 ## 구매 흐름과 아키텍처
 
