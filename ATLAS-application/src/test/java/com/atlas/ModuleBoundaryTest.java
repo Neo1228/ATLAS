@@ -37,6 +37,7 @@ class ModuleBoundaryTest {
                 "com.atlas.cart.dto.response", "com.atlas.cart.exception",
                 "com.atlas.account.service", "com.atlas.account.dto.request",
                 "com.atlas.account.dto.response", "com.atlas.account.domain",
+                "net.ttddyy.dsproxy..",
                 "com.nimbusds..",
                 "java..", "javax..", "jakarta..", "org.springframework..", "org.slf4j.."
         };

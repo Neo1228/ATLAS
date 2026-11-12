@@ -58,6 +58,11 @@ docker compose up -d --wait postgres
 ./gradlew :application-module:bootRun
 ```
 
+느린 SQL 감지는 Java `DataSource` decorator로 선택 활성화.
+- `ATLAS_DB_SLOW_QUERY_THRESHOLD_MS`: 측정 근거가 있는 양의 임계값(ms). 미설정 시 감지기 비활성화.
+- 기록 항목: 경과 시간·성공 여부·SQL template. Bind value는 제외하나 SQL literal은 남을 수 있음.
+- 세부 조건·한계: [EXP-025](docs/03-experiments/EXP-025-slow-query-detection.md)
+
 기본 API 주소: `http://127.0.0.1:8080`. `.env.local`은 Spring이 자동으로 읽지 않으므로 위처럼 shell 환경 변수로 전달합니다. Gradle project path는 [`settings.gradle`](settings.gradle)에 지정되어 있으며 `:application-module`은 `ATLAS-application/`을 가리킵니다. 운영 규칙은 [저장소 작업 지침](AGENTS.md) 참고.
 
 ### 검증
