@@ -52,7 +52,7 @@ sequenceDiagram
     U->>A: Protected request (Bearer JWT)
     A->>A: Validate token and principal/resource ownership
     U->>A: Refresh with current refresh token
-    A->>DB: Consume old hash; persist replacement hash
+    A->>DB: Consume old hash and persist replacement hash
     A-->>U: New access JWT + rotated refresh token
     U->>A: Replay consumed refresh token
     A->>DB: Revoke refresh token family

@@ -17,7 +17,7 @@
 - 결정과 이유:
 - 대안·trade-off:
 - 데이터·API·상태 영향:
-- dependency/plugin 및 runtime/test/build scope:
+- 영향 범위 (dependency·plugin·runtime·test·build):
 - 검증 근거와 한계:
 
 ## 시각화
@@ -25,13 +25,12 @@
 - Diagram 또는 N/A 사유:
 
 ## 추적
-- Issues: Closes #N — [Issue #N](https://github.com/OWNER/REPO/issues/N)
-  <!-- 일부 반영: Refs #N — [Issue #N](https://github.com/OWNER/REPO/issues/N) -->
-  <!-- Closes/Refs와 #N은 plain text. Markdown link로 감싸지 않음. -->
-- 요구사항·결정·규칙 ID: [관련 ID와 canonical 문서 링크](https://github.com/OWNER/REPO/blob/main/docs/01-requirements/requirements-index.md)
+- Issues: Refs #N — [Issue #N](https://github.com/Neo1228/ATLAS/issues/N)
+  <!-- Issue를 완전히 해결할 때는 Refs를 Closes로 변경. N은 실제 번호로 바꾸고 plain-text 번호와 링크 번호를 일치. -->
+- 요구사항·결정·규칙 ID: [관련 ID와 기준 문서](https://github.com/Neo1228/ATLAS/blob/main/docs/01-requirements/requirements-index.md)
   <!-- 적용 대상이 없으면 N/A와 구체적 사유를 작성. -->
 - 기준 문서·외부 참고자료:
-- Commit links:
+- 커밋 링크:
 
 ## 변경 요약
 - [ ] 변경:
