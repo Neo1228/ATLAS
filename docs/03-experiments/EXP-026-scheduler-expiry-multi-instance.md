@@ -1,6 +1,6 @@
 # EXP-026 — 만료 작업 scheduler·다중 context 경합
 
-- 상태: Testcontainers에서 3회 반복 · runtime scheduler 설정 변경 없음
+- 상태: Testcontainers에서 4회 반복 · runtime scheduler 설정 변경 없음
 - 관련 작업: [Issue #247](https://github.com/Neo1228/ATLAS/issues/247), [ADR-0030](../02-decisions/adr/ADR-0030-bounded-application-scheduler.md), [Issue #95](https://github.com/Neo1228/ATLAS/issues/95), [EXP-024](EXP-024-postgres-contention-observation.md)
 
 ## 질문과 범위
@@ -8,8 +8,10 @@
 - 현재 pool 3이 독립 scheduler task를 동시에 시작하는지, pool 1에서 queued task가 대기하는지 검증.
 - 두 Spring application context의 독립 Hikari pool이 같은 PostgreSQL Seller-SKU counter에서 동시에 만료를 수행할 때 duplicate state change가 없는지 확인.
 - Multi-context 경합은 Admission의 per-Seller-SKU counter 경로만 측정. Standalone Order와 grouped BuyerCheckout은 기존 단일 context 상태 전이 테스트 범위.
-
-`OrderServiceImpl.expireDueCheckouts`는 `checkout_id IS NULL` standalone Order만 조회하는 method이므로 `expireDueOrders`로 rename. `CheckoutPaymentServiceImpl.expireDueCheckouts`는 `checkout_id IS NOT NULL` BuyerCheckout 처리. 두 SQL 대상은 서로 겹치지 않음.
+- Scheduler pool control: [`SchedulingConcurrencyTest`](../../ATLAS-application/src/test/java/com/atlas/application/config/SchedulingConcurrencyTest.java).
+- Multi-context scenario: [`ScheduledExpiryMultiInstanceIntegrationTest`](../../ATLAS-application/src/test/java/com/atlas/ScheduledExpiryMultiInstanceIntegrationTest.java).
+- [OrderServiceImpl.expireDueOrders](../../ATLAS-order/src/main/java/com/atlas/order/service/impl/OrderServiceImpl.java): `checkout_id IS NULL` standalone Order만 처리; misleading method name 교정.
+- [CheckoutPaymentServiceImpl.expireDueCheckouts](../../ATLAS-order/src/main/java/com/atlas/order/service/impl/CheckoutPaymentServiceImpl.java): `checkout_id IS NOT NULL` BuyerCheckout 처리. 두 SQL 대상은 서로 겹치지 않음.
 
 ## 환경과 workload
 
