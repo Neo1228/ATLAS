@@ -54,8 +54,14 @@ public class PayPalRestClient {
     public OrderStatus getOrder(String orderId) {
         Map<String, Object> response = api().get().uri("/v2/checkout/orders/{id}", orderId)
                 .retrieve().body(mapType());
+        Map<String, Object> authorization = firstResource(response, "authorization");
+        Map<String, Object> capture = firstResource(response, "capture");
         return new OrderStatus(text(response, "id"), text(response, "status"),
-                orderAmount(response), orderCurrency(response));
+                orderAmount(response), orderCurrency(response),
+                authorization == null ? null : text(authorization, "id"),
+                authorization == null ? null : text(authorization, "status"),
+                capture == null ? null : text(capture, "id"),
+                capture == null ? null : text(capture, "status"));
     }
 
     public AuthorizationResult authorizeOrder(String orderId, String requestId) {
@@ -199,7 +205,8 @@ public class PayPalRestClient {
         Object links = response == null ? null : response.get("links");
         if (links instanceof List<?> values) {
             for (Object value : values) {
-                if (value instanceof Map<?, ?> link && "approve".equals(link.get("rel"))) {
+                if (value instanceof Map<?, ?> link
+                        && ("approve".equals(link.get("rel")) || "payer-action".equals(link.get("rel")))) {
                     Object href = link.get("href");
                     return href instanceof String text ? text : null;
                 }
@@ -286,7 +293,9 @@ public class PayPalRestClient {
     }
 
     public record OrderResult(String id, String status, String approvalUrl) { }
-    public record OrderStatus(String id, String status, BigDecimal amount, String currency) { }
+    public record OrderStatus(String id, String status, BigDecimal amount, String currency,
+                              String authorizationId, String authorizationStatus,
+                              String captureId, String captureStatus) { }
     public record AuthorizationResult(String id, String status) { }
     public record CaptureResult(String id, String status) { }
     public record RefundResult(String id, String status) { }

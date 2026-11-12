@@ -45,13 +45,8 @@ public class PayPalPaymentProvider implements PaymentProvider {
                         "PayPal order does not belong to this payment attempt");
             }
             PayPalRestClient.OrderStatus order = client.getOrder(returnedOrderId);
-        if (order.amount() == null
-                || order.amount().compareTo(BigDecimal.valueOf(request.amountMinor())) != 0
-                || !"KRW".equals(order.currency()) || !"KRW".equals(request.currency())) {
-            throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
-                    "PayPal approval amount or currency does not match the payment attempt");
-        }
-            return "APPROVED".equals(order.status()) ? authorizeApproved(request) : pending(request);
+            validateOrderAmount(request, order);
+            return orderStatusResult(request, order);
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
             throw unavailable();
         }
@@ -109,17 +104,78 @@ public class PayPalPaymentProvider implements PaymentProvider {
             PayPalRestClient.OrderResult order = client.createOrder(request.ownerId().toString(),
                     BigDecimal.valueOf(request.amountMinor()), request.currency(), request.returnUrl(),
                     request.cancelUrl(), request.createOrderRequestId());
-            if (order.id() == null || order.approvalUrl() == null) return unknown(request);
+            if (order.id() == null) return unknown(request);
             PaymentRequest withOrder = withOrder(request, order.id());
-            if ("APPROVED".equals(order.status())) {
-                PaymentProviderResult authorized = authorizeApproved(withOrder);
-                return result(authorized.outcome(), order.id(), authorized.authorizationId(),
-                        authorized.captureId(), order.approvalUrl());
+            String status = order.status() == null ? "" : order.status();
+            if ("APPROVED".equals(status) || "COMPLETED".equals(status)) {
+                PayPalRestClient.OrderStatus current = client.getOrder(order.id());
+                validateOrderAmount(withOrder, current);
+                return orderStatusResult(withOrder, current);
             }
-            return result(PaymentProviderResult.Outcome.PENDING, order.id(), null, null, order.approvalUrl());
+            if ("VOIDED".equals(status)) {
+                return result(PaymentProviderResult.Outcome.VOIDED, order.id(), null, null, null);
+            }
+            if (isAwaitingPayer(status)) {
+                return order.approvalUrl() == null ? unknown(withOrder)
+                        : result(PaymentProviderResult.Outcome.PENDING, order.id(), null, null, order.approvalUrl());
+            }
+            return unknown(withOrder);
         }
+
         PayPalRestClient.OrderStatus order = client.getOrder(request.providerOrderId());
-        return "APPROVED".equals(order.status()) ? authorizeApproved(request) : pending(request);
+        validateOrderAmount(request, order);
+        return orderStatusResult(request, order);
+    }
+
+    private PaymentProviderResult orderStatusResult(PaymentRequest request, PayPalRestClient.OrderStatus order) {
+        if (order.id() == null || !order.id().equals(request.providerOrderId())) return unknown(request);
+        String status = order.status() == null ? "" : order.status();
+        return switch (status) {
+            case "APPROVED" -> authorizeApproved(request);
+            case "CREATED", "SAVED", "PAYER_ACTION_REQUIRED" -> pending(request);
+            case "VOIDED" -> result(PaymentProviderResult.Outcome.VOIDED, order.id(),
+                    order.authorizationId(), order.captureId(), null);
+            case "COMPLETED" -> completedOrderResult(request, order);
+            default -> unknown(request);
+        };
+    }
+
+    private static PaymentProviderResult completedOrderResult(
+            PaymentRequest request, PayPalRestClient.OrderStatus order) {
+        if (order.captureId() != null) {
+            return switch (order.captureStatus() == null ? "" : order.captureStatus()) {
+                case "COMPLETED" -> result(PaymentProviderResult.Outcome.CAPTURED, order.id(),
+                        order.authorizationId(), order.captureId(), null);
+                case "DECLINED", "FAILED", "DENIED" -> result(PaymentProviderResult.Outcome.DECLINED,
+                        order.id(), order.authorizationId(), order.captureId(), null);
+                default -> unknown(request);
+            };
+        }
+        if (order.authorizationId() == null) return unknown(request);
+        return switch (order.authorizationStatus() == null ? "" : order.authorizationStatus()) {
+            case "CREATED" -> result(PaymentProviderResult.Outcome.AUTHORIZED, order.id(),
+                    order.authorizationId(), null, null);
+            case "PENDING" -> result(PaymentProviderResult.Outcome.PENDING, order.id(),
+                    order.authorizationId(), null, null);
+            case "DENIED" -> result(PaymentProviderResult.Outcome.DECLINED, order.id(),
+                    order.authorizationId(), null, null);
+            case "VOIDED" -> result(PaymentProviderResult.Outcome.VOIDED, order.id(),
+                    order.authorizationId(), null, null);
+            default -> unknown(request);
+        };
+    }
+
+    private static boolean isAwaitingPayer(String status) {
+        return "CREATED".equals(status) || "SAVED".equals(status) || "PAYER_ACTION_REQUIRED".equals(status);
+    }
+
+    private static void validateOrderAmount(PaymentRequest request, PayPalRestClient.OrderStatus order) {
+        if (order == null || order.amount() == null
+                || order.amount().compareTo(BigDecimal.valueOf(request.amountMinor())) != 0
+                || !request.currency().equals(order.currency())) {
+            throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
+                    "PayPal order amount or currency does not match the payment attempt");
+        }
     }
 
     private PaymentProviderResult authorizeApproved(PaymentRequest request) {
@@ -131,7 +187,8 @@ public class PayPalPaymentProvider implements PaymentProvider {
             case "PENDING" -> PaymentProviderResult.Outcome.PENDING;
             case "DENIED" -> PaymentProviderResult.Outcome.DECLINED;
             case "VOIDED" -> PaymentProviderResult.Outcome.VOIDED;
-            case "CAPTURED", "PARTIALLY_CAPTURED" -> PaymentProviderResult.Outcome.CAPTURED;
+            // Authorization 응답만으로 capture ID를 확정할 수 없어 order GET으로 후속 확인.
+            case "CAPTURED", "PARTIALLY_CAPTURED" -> PaymentProviderResult.Outcome.UNKNOWN;
             default -> PaymentProviderResult.Outcome.UNKNOWN;
         };
         return result(outcome, request.providerOrderId(), authorization.id(), null, null);

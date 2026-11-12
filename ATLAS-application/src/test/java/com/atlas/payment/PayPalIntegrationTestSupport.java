@@ -29,6 +29,11 @@ public abstract class PayPalIntegrationTestSupport {
     private static final Map<String, String> REFUNDS_BY_REQUEST_ID = new ConcurrentHashMap<>();
     private static final Map<String, String> CAPTURE_IDS_BY_REQUEST_ID = new ConcurrentHashMap<>();
     private static final Queue<String> AUTHORIZATION_STATUSES = new ConcurrentLinkedQueue<>();
+    private static final Queue<String> ORDER_STATUSES = new ConcurrentLinkedQueue<>();
+    private static final Queue<String> ORDER_CREATE_STATUSES = new ConcurrentLinkedQueue<>();
+    private static final Queue<String> ORDER_APPROVAL_LINK_RELATIONS = new ConcurrentLinkedQueue<>();
+    private static final Queue<String> ORDER_AUTHORIZATION_STATUSES = new ConcurrentLinkedQueue<>();
+    private static final Queue<String> ORDER_CAPTURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> CAPTURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> VOID_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> REFUND_STATUSES = new ConcurrentLinkedQueue<>();
@@ -37,6 +42,13 @@ public abstract class PayPalIntegrationTestSupport {
     private static final AtomicBoolean DISCONNECT_NEXT_AUTHORIZATION = new AtomicBoolean();
     private static final AtomicInteger CAPTURE_REQUEST_COUNT = new AtomicInteger();
     protected static void queueAuthorizationStatus(String status) { AUTHORIZATION_STATUSES.add(status); }
+    protected static void queueOrderStatus(String status) { ORDER_STATUSES.add(status); }
+    protected static void queueOrderCreateStatus(String status) { ORDER_CREATE_STATUSES.add(status); }
+    protected static void queueOrderApprovalLinkRelation(String relation) {
+        ORDER_APPROVAL_LINK_RELATIONS.add(relation);
+    }
+    protected static void queueOrderAuthorizationStatus(String status) { ORDER_AUTHORIZATION_STATUSES.add(status); }
+    protected static void queueOrderCaptureStatus(String status) { ORDER_CAPTURE_STATUSES.add(status); }
     protected static void queueCaptureStatus(String status) { CAPTURE_STATUSES.add(status); }
     protected static void queueVoidStatus(String status) { VOID_STATUSES.add(status); }
     protected static void queueRefundStatus(String status) { REFUND_STATUSES.add(status); }
@@ -53,6 +65,11 @@ public abstract class PayPalIntegrationTestSupport {
         REFUNDS_BY_REQUEST_ID.clear();
         CAPTURE_IDS_BY_REQUEST_ID.clear();
         AUTHORIZATION_STATUSES.clear();
+        ORDER_STATUSES.clear();
+        ORDER_CREATE_STATUSES.clear();
+        ORDER_APPROVAL_LINK_RELATIONS.clear();
+        ORDER_AUTHORIZATION_STATUSES.clear();
+        ORDER_CAPTURE_STATUSES.clear();
         CAPTURE_STATUSES.clear();
         VOID_STATUSES.clear();
         REFUND_STATUSES.clear();
@@ -97,7 +114,11 @@ public abstract class PayPalIntegrationTestSupport {
                     String id = "ORDER-" + UUID.randomUUID();
                     Amount amount = Amount.from(body);
                     ORDERS.put(id, amount);
-                    return json("{\"id\":\"" + id + "\",\"status\":\"CREATED\",\"links\":[{\"rel\":\"approve\",\"href\":\"http://localhost/approve/" + id + "\",\"method\":\"GET\"}]}");
+                    String status = nextStatus(ORDER_CREATE_STATUSES, "CREATED");
+                    String approvalRelation = nextStatus(ORDER_APPROVAL_LINK_RELATIONS,
+                            "PAYER_ACTION_REQUIRED".equals(status) ? "payer-action" : "approve");
+                    return json("{\"id\":\"" + id + "\",\"status\":\"" + status + "\",\"links\":[{\"rel\":\""
+                            + approvalRelation + "\",\"href\":\"http://localhost/approve/" + id + "\",\"method\":\"GET\"}]}");
                 }
                 if (path.matches("/v2/checkout/orders/[^/]+/authorize") && "POST".equals(method)) {
                     String orderId = lastSegment(path.substring(0, path.lastIndexOf('/')));
@@ -123,7 +144,26 @@ public abstract class PayPalIntegrationTestSupport {
                 if (path.matches("/v2/checkout/orders/[^/]+") && "GET".equals(method)) {
                     String orderId = lastSegment(path);
                     Amount amount = ORDERS.getOrDefault(orderId, Amount.from(body));
-                    return json("{\"id\":\"" + orderId + "\",\"status\":\"APPROVED\",\"purchase_units\":[{\"amount\":{\"currency_code\":\"" + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]}");
+                    String orderStatus = nextStatus(ORDER_STATUSES, "APPROVED");
+                    String authorizationStatus = nextStatus(ORDER_AUTHORIZATION_STATUSES, null);
+                    String captureStatus = nextStatus(ORDER_CAPTURE_STATUSES,
+                            "COMPLETED".equals(orderStatus) ? "COMPLETED" : null);
+                    String resources = "";
+                    if (authorizationStatus != null && !"NONE".equals(authorizationStatus)) {
+                        resources = "\"authorizations\":[{\"id\":\"AUTH-" + orderId
+                                + "\",\"status\":\"" + authorizationStatus + "\"}]";
+                    }
+                    if (captureStatus != null && !"NONE".equals(captureStatus)) {
+                        String capture = "\"captures\":[{\"id\":\"CAPTURE-" + orderId
+                                + "\",\"status\":\"" + captureStatus + "\"}]";
+                        resources = resources.isEmpty() ? capture : resources + "," + capture;
+                    }
+                    String payments = resources.isEmpty() ? ""
+                            : ",\"payments\":{" + resources + "}";
+                    String unit = "{\"amount\":{\"currency_code\":\"" + amount.currency
+                            + "\",\"value\":\"" + amount.value + "\"}" + payments + "}";
+                    return json("{\"id\":\"" + orderId + "\",\"status\":\"" + orderStatus
+                            + "\",\"purchase_units\":[" + unit + "]}");
                 }
                 if (path.matches("/v2/payments/authorizations/[^/]+/capture") && "POST".equals(method)) {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));

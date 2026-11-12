@@ -708,6 +708,37 @@ assertUuidV7(paymentOrderId);
     }
 
     @Test
+    void pendingCancellationRetainsReservationUntilLateAuthorizationIsVoided() {
+        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        QueueTicketResponse ticket = join(campaign, "buyer-pending-cancel", "pending-cancel-key");
+        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderResponse pending = orders.submitPayment(order.orderId());
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+
+        queueOrderStatus("CREATED");
+        OrderResponse cancelPending = orders.cancel(order.orderId(), "cancel-pending-" + order.orderId());
+
+        assertThat(cancelPending.state()).isEqualTo(OrderState.CANCEL_PENDING);
+        assertThat(cancelPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        InventoryPoolResponse held = inventory.find(campaign.sellerId(), campaign.skuId());
+        assertThat(held.reserved()).isEqualTo(1);
+        assertThat(held.claimed()).isZero();
+        assertConserved(held);
+
+        queueOrderStatus("APPROVED");
+        queueAuthorizationStatus("CREATED");
+        OrderResponse cancelled = orders.cancel(order.orderId(), "cancel-reconcile-" + order.orderId());
+
+        assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
+        assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
+        InventoryPoolResponse released = inventory.find(campaign.sellerId(), campaign.skuId());
+        assertThat(released.available()).isEqualTo(1);
+        assertThat(released.reserved()).isZero();
+        assertThat(released.claimed()).isZero();
+        assertConserved(released);
+    }
+
+    @Test
     void reconciliationEndpointExposesRecoveredPaymentAndInventoryState() throws Exception {
         CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
         QueueTicketResponse ticket = join(campaign, "buyer-api-recovery", "api-recovery-key");
@@ -1515,6 +1546,71 @@ assertUuidV7(paymentOrderId);
                     Integer.class, order.orderId())).isEqualTo(1);
         }
     }
+    @Test
+    void pendingCheckoutCancellationRetainsReservationsUntilAuthorizationIsVoided() throws Exception {
+        UUID firstSeller = sellers.createSeller().sellerId();
+        UUID secondSeller = sellers.createSeller().sellerId();
+        ProductResponse firstProduct = products.createProduct(firstSeller,
+                new CreateProductRequest("cancel-pending-a", null));
+        ProductResponse secondProduct = products.createProduct(secondSeller,
+                new CreateProductRequest("cancel-pending-b", null));
+        String sku = "cancel-pending-" + UUID.randomUUID();
+        products.registerSku(firstSeller, firstProduct.productId(),
+                new RegisterSellerSkuRequest(sku, 100, 2));
+        products.registerSku(secondSeller, secondProduct.productId(),
+                new RegisterSellerSkuRequest(sku, 250, 3));
+        String buyerRef = "cancel-pending-buyer-" + UUID.randomUUID();
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                    buyerRef, sellerId, sku)
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                    .andExpect(status().isOk());
+        }
+        CheckoutResponse checkout = objectMapper.readValue(mockMvc.perform(
+                post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "cancel-pending-" + UUID.randomUUID()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
+                CheckoutResponse.class);
+        int capturesBefore = captureRequestCount();
+        CheckoutResponse pending = checkoutLifecycle.submit(checkout.checkoutId());
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+
+        queueOrderStatus("CREATED");
+        CheckoutResponse cancelPending = checkoutLifecycle.cancel(
+                checkout.checkoutId(), "cancel-pending-" + checkout.checkoutId());
+
+        assertThat(cancelPending.state()).isEqualTo(BuyerCheckoutState.CANCEL_PENDING);
+        assertThat(cancelPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        assertThat(cancelPending.orders()).allSatisfy(order -> {
+            assertThat(order.state()).isEqualTo(OrderState.CANCEL_PENDING);
+            assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+        });
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            InventoryPoolResponse held = inventory.find(sellerId, sku);
+            assertThat(held.reserved()).isEqualTo(1);
+            assertThat(held.claimed()).isZero();
+            assertConserved(held);
+        }
+
+        queueOrderStatus("APPROVED");
+        queueAuthorizationStatus("CREATED");
+        CheckoutResponse cancelled = checkoutLifecycle.cancel(
+                checkout.checkoutId(), "cancel-reconcile-" + checkout.checkoutId());
+
+        assertThat(cancelled.state()).isEqualTo(BuyerCheckoutState.CANCELLED);
+        assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
+        assertThat(cancelled.orders()).allSatisfy(order ->
+                assertThat(order.state()).isEqualTo(OrderState.CANCELLED));
+        assertThat(captureRequestCount()).isEqualTo(capturesBefore);
+        for (UUID sellerId : List.of(firstSeller, secondSeller)) {
+            InventoryPoolResponse released = inventory.find(sellerId, sku);
+            assertThat(released.available()).isEqualTo(sellerId.equals(firstSeller) ? 2 : 3);
+            assertThat(released.reserved()).isZero();
+            assertThat(released.claimed()).isZero();
+            assertConserved(released);
+        }
+    }
+
     @Test
     void concurrentSameKeyCartCheckoutCreatesOneCheckoutAndReservation() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();

@@ -552,6 +552,16 @@ public class PaymentServiceImpl implements PaymentService {
                 attempt.setPaymentPhase(PaymentPhase.AUTHORIZATION);
                 attempt.setAuthorizationActive(false);
             }
+            case CAPTURED -> {
+                attempt.setState(PaymentState.CAPTURED);
+                attempt.setPaymentPhase(PaymentPhase.CAPTURE);
+                attempt.setAuthorizationActive(false);
+            }
+            case VOIDED -> {
+                attempt.setState(PaymentState.VOIDED);
+                attempt.setPaymentPhase(PaymentPhase.VOID);
+                attempt.setAuthorizationActive(false);
+            }
             case PENDING -> {
                 attempt.setState(PaymentState.AUTHORIZATION_PENDING);
                 attempt.setPaymentPhase(PaymentPhase.AUTHORIZATION);
