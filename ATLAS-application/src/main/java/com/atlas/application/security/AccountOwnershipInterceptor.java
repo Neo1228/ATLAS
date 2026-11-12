@@ -55,7 +55,9 @@ public class AccountOwnershipInterceptor implements HandlerInterceptor {
         String sellerValue = variables.get("sellerId");
         UUID sellerId = sellerValue == null ? null : parseUuid(sellerValue);
         if (buyerRef != null && !accounts.ownsBuyer(accountId, buyerRef)) throw notOwned();
-        if (sellerId != null && !accounts.ownsSeller(accountId, sellerId)) throw notOwned();
+        // Buyer cart의 sellerId는 구매 대상이므로 Seller ownership으로 제한하지 않는다.
+        if (sellerId != null && request.getRequestURI().startsWith("/api/sellers/")
+                && !accounts.ownsSeller(accountId, sellerId)) throw notOwned();
 
         String checkoutValue = variables.get("checkoutId");
         if (checkoutValue != null) {

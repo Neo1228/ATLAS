@@ -2,6 +2,7 @@ import http from 'k6/http';
 import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import exec from 'k6/execution';
+import { authHeaders, buyerForVu, createSellerProfile, registerBuyer } from './lib/auth.js';
 
 const BASE_URL = (__ENV.BASE_URL || '').replace(/\/$/, '');
 const RUN_ID = __ENV.RUN_ID || '';
@@ -12,6 +13,7 @@ const ATTEMPTS = VUS * ITERATIONS_PER_VU;
 const UNIT_PRICE_WON = Number(__ENV.UNIT_PRICE_WON || '');
 const DISCOUNT_WON = Number(__ENV.DISCOUNT_WON || '');
 const MAX_REDEMPTIONS = Number(__ENV.MAX_REDEMPTIONS || '');
+const PAYMENT_MODE = __ENV.PAYMENT_MODE || 'checkout-only';
 const EXPECTED_WINNERS = MODE === 'limited' ? MAX_REDEMPTIONS : ATTEMPTS;
 const EXPECTED_CONFLICTS = MODE === 'limited' ? ATTEMPTS - MAX_REDEMPTIONS : 0;
 
@@ -25,6 +27,7 @@ requireValue(MODE, 'MODE (unlimited or limited)');
 requireValue(__ENV.VUS, 'VUS');
 if (!/^[A-Za-z0-9_-]{1,31}$/.test(RUN_ID)) throw new Error('RUN_ID must match [A-Za-z0-9_-]{1,31}');
 if (MODE !== 'unlimited' && MODE !== 'limited') throw new Error('MODE must be unlimited or limited');
+if (PAYMENT_MODE !== 'checkout-only') throw new Error('coupon-redemption measures checkout reservation only');
 if (!Number.isSafeInteger(VUS) || VUS < 1) throw new Error('VUS must be a positive integer');
 if (!Number.isSafeInteger(ITERATIONS_PER_VU) || ITERATIONS_PER_VU < 1) {
   throw new Error('ITERATIONS_PER_VU must be a positive integer');
@@ -43,7 +46,6 @@ const attempts = new Counter('coupon_checkout_attempts');
 const measuredHttpRequests = new Counter('coupon_measured_http_requests');
 const winners = new Counter('coupon_checkout_winners');
 const conflicts = new Counter('coupon_capacity_conflicts');
-const captures = new Counter('coupon_checkout_captures');
 const unexpectedErrors = new Counter('coupon_test_unexpected_errors');
 const checkoutHttpLatency = new Trend('coupon_checkout_http_latency', true);
 const acceptedCheckoutLatency = new Trend('coupon_accepted_checkout_latency', true);
@@ -66,14 +68,13 @@ export const options = {
     coupon_checkout_attempts: [`count==${ATTEMPTS}`],
     coupon_checkout_winners: [`count==${EXPECTED_WINNERS}`],
     coupon_capacity_conflicts: [`count==${EXPECTED_CONFLICTS}`],
-    coupon_checkout_captures: [`count==${EXPECTED_WINNERS}`],
     coupon_test_unexpected_errors: ['count==0'],
   },
 };
 
-function postCreated(path, body, operation) {
+function postCreated(path, body, operation, accessToken) {
   const response = http.post(`${BASE_URL}${path}`, body === null ? null : JSON.stringify(body), {
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
     tags: { phase: 'setup', operation, workload: 'coupon-redemption', mode: MODE },
   });
   if (response.status !== 201) throw new Error(`setup ${operation} failed: HTTP ${response.status}`);
@@ -81,17 +82,18 @@ function postCreated(path, body, operation) {
 }
 
 export function setup() {
-  const seller = postCreated('/api/sellers', null, 'seed-seller');
+  const sellerAccount = registerBuyer(BASE_URL, RUN_ID, 'coupon-seller', 0);
+  const sellerId = createSellerProfile(BASE_URL, sellerAccount);
   const skuId = `cap-${RUN_ID}`;
-  const product = postCreated(`/api/sellers/${seller.sellerId}/products`, {
+  const product = postCreated(`/api/sellers/${sellerId}/products`, {
     name: `Coupon capacity ${RUN_ID}`,
     description: `Synthetic local redemption workload ${RUN_ID}`,
-  }, 'seed-product');
-  postCreated(`/api/sellers/${seller.sellerId}/products/${product.productId}/skus`, {
+  }, 'seed-product', sellerAccount.accessToken);
+  postCreated(`/api/sellers/${sellerId}/products/${product.productId}/skus`, {
     skuId,
     priceWon: UNIT_PRICE_WON,
     initialStock: ATTEMPTS,
-  }, 'seed-sku');
+  }, 'seed-sku', sellerAccount.accessToken);
 
   const couponCode = `C${RUN_ID}`.slice(0, 32).toUpperCase();
   const now = Date.now();
@@ -102,21 +104,23 @@ export function setup() {
     endsAt: new Date(now + 3_600_000).toISOString(),
   };
   if (MODE === 'limited') coupon.maxRedemptions = MAX_REDEMPTIONS;
-  postCreated(`/api/sellers/${seller.sellerId}/coupons`, coupon, 'seed-coupon');
-  return { sellerId: seller.sellerId, skuId, couponCode };
+  postCreated(`/api/sellers/${sellerId}/coupons`, coupon, 'seed-coupon', sellerAccount.accessToken);
+  const buyers = Array.from({ length: VUS }, (_, index) =>
+    registerBuyer(BASE_URL, RUN_ID, 'coupon-buyer', index));
+  return { sellerId, skuId, couponCode, buyers };
 }
 
 export function couponCheckout(seed) {
   const iteration = exec.scenario.iterationInTest;
-  const buyerRef = `${RUN_ID}-buyer-${iteration}`;
-  const idempotencyKey = `${RUN_ID}-checkout-${iteration}`;
-  const headers = { 'Content-Type': 'application/json' };
+  const account = buyerForVu(BASE_URL, seed.buyers, __VU);
+  const buyerRef = encodeURIComponent(account.buyerRef);
+  const idempotencyKey = `${RUN_ID}-coupon-${__VU}-${iteration}`;
   attempts.add(1, { mode: MODE });
 
-  const cart = http.put(`${BASE_URL}/api/buyers/${encodeURIComponent(buyerRef)}/cart/items/`
+  const cart = http.put(`${BASE_URL}/api/buyers/${buyerRef}/cart/items/`
       + `${seed.sellerId}/${encodeURIComponent(seed.skuId)}`,
   JSON.stringify({ quantity: 1 }), {
-    headers,
+    headers: authHeaders(account.accessToken, { 'Content-Type': 'application/json' }),
     tags: { phase: 'measure', operation: 'cart-item', mode: MODE },
   });
   measuredHttpRequests.add(1, { mode: MODE, operation: 'cart-item' });
@@ -127,9 +131,9 @@ export function couponCheckout(seed) {
   }
 
   const started = Date.now();
-  const checkout = http.post(`${BASE_URL}/api/buyers/${encodeURIComponent(buyerRef)}/cart/checkout`,
+  const checkout = http.post(`${BASE_URL}/api/buyers/${buyerRef}/cart/checkout`,
     JSON.stringify({ sellerCoupons: [{ sellerId: seed.sellerId, code: seed.couponCode }] }), {
-      headers: { ...headers, 'Idempotency-Key': idempotencyKey },
+      headers: authHeaders(account.accessToken, { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }),
       tags: { phase: 'measure', operation: 'checkout', mode: MODE },
     });
   measuredHttpRequests.add(1, { mode: MODE, operation: 'checkout' });
@@ -160,17 +164,6 @@ export function couponCheckout(seed) {
     return;
   }
 
-  const payment = http.post(`${BASE_URL}/api/checkouts/${body.checkoutId}/payment`, null, {
-    tags: { phase: 'measure', operation: 'payment', mode: MODE },
-  });
-  measuredHttpRequests.add(1, { mode: MODE, operation: 'payment' });
-  if (payment.status === 200 && payment.json().paymentState === 'CAPTURED') {
-    captures.add(1, { mode: MODE });
-  } else {
-    unexpectedErrors.add(1, { operation: 'payment', status: String(payment.status) });
-    check(payment, { 'winning checkout captured': (response) => response.status === 200
-      && response.json().paymentState === 'CAPTURED' });
-  }
   acceptedSessionLatency.add(Date.now() - started, { mode: MODE });
 }
 
@@ -181,13 +174,13 @@ export function handleSummary(data) {
     vus: VUS,
     iterationsPerVu: ITERATIONS_PER_VU,
     mode: MODE,
+    paymentMode: PAYMENT_MODE,
     attempts: value('coupon_checkout_attempts', 'count'),
     attemptsPerSecond: value('coupon_checkout_attempts', 'rate'),
     measuredHttpRequests: value('coupon_measured_http_requests', 'count'),
     measuredHttpRps: value('coupon_measured_http_requests', 'rate'),
     winners: value('coupon_checkout_winners', 'count'),
     capConflicts: value('coupon_capacity_conflicts', 'count'),
-    captures: value('coupon_checkout_captures', 'count'),
     unexpectedErrors: value('coupon_test_unexpected_errors', 'count'),
     checkoutHttpP95Ms: value('coupon_checkout_http_latency', 'p(95)'),
     acceptedCheckoutP95Ms: value('coupon_accepted_checkout_latency', 'p(95)'),

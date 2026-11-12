@@ -1,6 +1,6 @@
 # EXP-022 — 정산 애플리케이션 쓰기 비용 A/B
 
-**상태:** 측정 완료 · production index 미채택
+**상태:** 역사적 측정 완료 · production index 미채택 · 현재 PayPal order flow와 비교 불가
 
 ## 목적과 범위
 
@@ -74,70 +74,19 @@ flowchart LR
 
 ## 재현 방법
 
-아래를 새 run ID로 반복. 각 DB/container/network는 arm·회차별로 신규 생성. `docker` volume·host port 미사용.
+> [!NOTE]
+> 이 결과는 이전 checkout/capture 경로의 기록. PayPal provider `PENDING`은 API `AUTHORIZATION_PENDING`으로 매핑되고 checkout은 `PAYMENT_PENDING` 반환. Capture는 Buyer approval 이후; 기존 100-capture workload와 현재 Sandbox order smoke는 직접 비교 불가.
 
-```sh
-RUN_ID=exp173-b1-a1b2c3d4
-ARM=baseline # candidate arm은 candidate
-DB="atlas_app_write_evidence_${RUN_ID}"
-NET="exp022-${RUN_ID}"
-PG="exp022-pg-${RUN_ID}"
-APP="exp022-app-${RUN_ID}"
-PW="local-${RUN_ID}"
-POSTGRES_IMAGE="postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81"
-JAVA_IMAGE="sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0"
-K6_IMAGE="grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8"
-JAR="$PWD/ATLAS-application/build/libs/application-module.jar"
-SQL_FILE="$PWD/docs/03-experiments/EXP-022-settlement-app-write-cost.sql"
-K6_SCRIPT="$PWD/load-tests/settlement-write-path.js"
-set -euo pipefail
-mkdir -p "$PWD/docs/03-experiments/results/exp-022"
-cleanup() {
-  docker rm -f "$APP" "$PG" >/dev/null 2>&1 || true
-  docker network rm "$NET" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
+현재 order-submission smoke:
 
+- [buyer-checkout.js](../../load-tests/buyer-checkout.js)·[gate4.js](../../load-tests/gate4.js)은 `AUTHORIZATION_PENDING`·`PAYMENT_PENDING`·approval URL 확인
+- Buyer approval·capture·settlement write 미수행. 최신 K6 근거는 [EXP-027](EXP-027-k6-current-auth-and-paypal-order-smoke.md)
 
-docker network create --internal "$NET"
-docker run -d --name "$PG" --network "$NET" --network-alias postgres \
-  -e "POSTGRES_DB=$DB" -e POSTGRES_USER=atlas -e "POSTGRES_PASSWORD=$PW" \
-  --mount "type=bind,source=$SQL_FILE,target=/exp022.sql,readonly" "$POSTGRES_IMAGE"
-# Wait for pg_isready, then start the app on the same network; publish no host ports.
-docker run -d --name "$APP" --network "$NET" --network-alias app \
-  --mount "type=bind,source=$JAR,target=/application.jar,readonly" --tmpfs /tmp \
-  -e ATLAS_SERVER_ADDRESS=0.0.0.0 -e ATLAS_SERVER_PORT=8080 \
-  -e "ATLAS_DB_URL=jdbc:postgresql://postgres:5432/$DB" \
-  -e ATLAS_DB_USER=atlas -e "ATLAS_DB_PASSWORD=$PW" \
-  -e SPRING_PROFILES_ACTIVE=observability "$JAVA_IMAGE" java -jar /application.jar
-
-# Seed creates only Seller/Product/SKU. Save sellerId and skuId from EXP022_FIXTURE.
-docker run --rm --network "$NET" \
-  --mount "type=bind,source=$K6_SCRIPT,target=/scripts/settlement-write-path.js,readonly" \
-  -e BASE_URL=http://app:8080 -e "RUN_ID=$RUN_ID" -e PHASE=seed \
-  -e WRITE_COUNT=100 -e UNIT_PRICE_WON=100 \
-  "$K6_IMAGE" run /scripts/settlement-write-path.js
-
-# SQL prepare creates the candidate index only for candidate arm and captures WAL baseline.
-docker exec "$PG" psql -X -A -t -F '|' -v ON_ERROR_STOP=1 -U atlas -d "$DB" \
-  -v "expected_arm=$ARM" -v expected_phase=prepare -v "expected_database=$DB" -f /exp022.sql
-
-# Set SELLER_ID/SKU_ID from the seed output. One VU, 100 fresh checkout captures.
-docker run --rm --network "$NET" \
-  --mount "type=bind,source=$K6_SCRIPT,target=/scripts/settlement-write-path.js,readonly" \
-  --mount "type=bind,source=$PWD/docs/03-experiments/results/exp-022,target=/results" \
-  -e BASE_URL=http://app:8080 -e "RUN_ID=$RUN_ID" -e PHASE=measure \
-  -e SELLER_ID="$SELLER_ID" -e SKU_ID="$SKU_ID" -e WRITE_COUNT=100 -e UNIT_PRICE_WON=100 \
-  "$K6_IMAGE" run --summary-export="/results/${RUN_ID}-measure.json" /scripts/settlement-write-path.js
-
-docker exec "$PG" psql -X -A -t -F '|' -v ON_ERROR_STOP=1 -U atlas -d "$DB" \
-  -v "expected_arm=$ARM" -v expected_phase=snapshot -v "expected_database=$DB" -f /exp022.sql
-# Evidence is saved before the EXIT trap removes only these run-owned resources.
-```
+아래 원자료는 과거 결과 보존용이며 현재 PayPal 흐름의 재현 가능한 baseline이 아님.
 
 ## 재현 산출물
 
-- [K6 harness](../../load-tests/settlement-write-path.js) · [SQL snapshot/index guard](EXP-022-settlement-app-write-cost.sql)
+- 과거 K6 harness는 retired. 현재 smoke는 기존 100-capture workload를 재현하지 않음
 - [요약 JSON](results/exp-022/exp022-summary.json)
 - Per-run SQL/K6 원자료: 요약 JSON의 `rawResultFile`, `rawK6SummaryFile` 경로
 - 스키마/entry-side 근거: [V10 settlement ledger migration](../../ATLAS-application/src/main/resources/db/migration/V10__gross_capture_settlement_ledger.sql)

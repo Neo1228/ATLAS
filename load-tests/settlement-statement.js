@@ -1,11 +1,13 @@
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
 import { Trend } from 'k6/metrics';
+import { authHeaders, loginBuyer } from './lib/auth.js';
 
 const BASE_URL = (__ENV.BASE_URL || '').replace(/\/$/, '');
+const RUN_ID = __ENV.RUN_ID || '';
 const SELLER_ID = __ENV.SELLER_ID || '';
 const WINDOW = __ENV.WINDOW || '';
-const SUMMARY_FILE = __ENV.SUMMARY_FILE || 'settlement-statement-summary.json';
+const SUMMARY_FILE = __ENV.SUMMARY_FILE || '';
 
 const windows = {
   '10s': { from: '2026-01-01T00:00:01Z', to: '2026-01-01T00:00:11Z', count: 10, captured: 1000, reversal: 0, net: 1000, cursor: false },
@@ -15,6 +17,7 @@ const windows = {
 };
 
 if (!BASE_URL) throw new Error('BASE_URL is required');
+if (!/^[A-Za-z0-9_-]{1,32}$/.test(RUN_ID)) throw new Error('RUN_ID must match [A-Za-z0-9_-]{1,32}');
 if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(SELLER_ID)) {
   throw new Error('SELLER_ID must be the seeded Seller UUID');
 }
@@ -39,10 +42,21 @@ export const options = {
   },
 };
 
-export default function () {
+export function setup() {
+  const seller = loginBuyer(BASE_URL, RUN_ID, 'seller', 0);
+  if (!seller.sellerIds.some((sellerId) => sellerId.toLowerCase() === SELLER_ID.toLowerCase())) {
+    throw new Error('The authenticated account does not own SELLER_ID');
+  }
+  return { sellerAccessToken: seller.accessToken };
+}
+
+export default function (seed) {
   const url = `${BASE_URL}/api/sellers/${SELLER_ID}/settlement-statement`
     + `?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}&limit=100`;
-  const response = http.get(url, { tags: { window: WINDOW } });
+  const response = http.get(url, {
+    headers: authHeaders(seed.sellerAccessToken, { Accept: 'application/json' }),
+    tags: { window: WINDOW, phase: 'measure', operation: 'settlement-statement' },
+  });
   let body;
   try {
     body = response.json();
@@ -90,5 +104,8 @@ export function handleSummary(data) {
     vus: 1,
     note: '20 serial observations; descriptive only, no latency threshold or capacity claim.',
   };
-  return { [SUMMARY_FILE]: JSON.stringify(summary, null, 2) };
+  const output = JSON.stringify(summary, null, 2);
+  const destinations = { stdout: `${output}\n` };
+  if (SUMMARY_FILE) destinations[SUMMARY_FILE] = `${output}\n`;
+  return destinations;
 }

@@ -17,7 +17,7 @@ services:
     build:
       context: ./ATLAS-application
       dockerfile: Dockerfile
-    profiles: ["observability"]
+    profiles: ["observability", "loadtest"]
     environment:
       SPRING_PROFILES_ACTIVE: observability
       ATLAS_SERVER_ADDRESS: 0.0.0.0
@@ -25,9 +25,17 @@ services:
       ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas
       ATLAS_DB_USER: atlas
       ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
+      ATLAS_PUBLIC_BASE_URL: ${ATLAS_PUBLIC_BASE_URL:-http://127.0.0.1:18080}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:${ATLAS_PAYMENT_RETURN_PORT:-18080}:8080"
     expose:
       - "8080"
       - "8081"
@@ -79,8 +87,12 @@ services:
   k6:
     image: grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
     profiles: ["loadtest"]
+    environment:
+      BASE_URL: ${K6_BASE_URL:-http://application:8080}
+      ATLAS_BASE_URL: ${K6_BASE_URL:-http://application:8080}
+      K6_TEST_ACCOUNT_PASSWORD: ${K6_TEST_ACCOUNT_PASSWORD:-}
     volumes:
       - ./load-tests:/scripts:ro
-      - ./docs/03-experiments/results/exp-016:/results
+      - ./ATLAS-application/build/k6-results:/results
     depends_on:
       - application

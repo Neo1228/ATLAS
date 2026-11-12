@@ -77,6 +77,76 @@ PostgreSQL integration test에는 Docker 접근 필요. Colima에서는 현재 D
 > [!WARNING]
 > V6 migration은 빈 데이터베이스에서 시작하는 경우만 지원. 기존 application table에 행이 있으면 DDL 전에 중단되며, 자동 변환·backfill은 수행하지 않습니다. 상세 기준은 [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md) 참고.
 
+## 부하·성능 검증
+
+- k6 시나리오: [`load-tests/`](load-tests/)
+- 기본 동작: 실제 API로 checkout 예약·도메인 상태 검증, 외부 payment provider 호출 없음
+- PayPal Sandbox: [buyer-checkout](load-tests/buyer-checkout.js)의 `paypal-sandbox-order-smoke`는 order 1회 생성, `paypal-sandbox-verify`는 수동 Buyer approval 뒤 `CAPTURED`·`PAID` 확인. Gate4 smoke도 1회만 허용; 기본 부하에는 PSP 호출 없음
+- Coupon redemption: coupon cap 경합 검증만 수행. 결제 부하와 분리
+- 요약은 기본 stdout 출력. 파일 저장 시 `SUMMARY_FILE`을 지정하고 `ATLAS-application/build/k6-results/` 사용
+- 테스트 계정 비밀번호·PayPal credential은 무시 파일 `.env.local`에 보관. 코드·명령 인자·결과 파일에 기록 금지
+- Buyer checkout 진단: `K6_DEBUG_ERRORS=true`는 stage·HTTP status·error code만 출력. Response body·token 미출력
+
+`ATLAS_PAYMENT_PROVIDER` 기본값은 `disabled`. Compose의 OAuth client ID/secret 기본값도 `disabled`이며, PayPal API 호출을 선택하지 않음. 실행마다 고유한 `RUN_ID` 사용.
+
+K6 Compose app 준비 (처음 실행·Java 변경 후):
+
+```sh
+./gradlew --no-daemon :application-module:bootJar
+docker compose --env-file .env.local --profile loadtest up -d --build application
+```
+
+`Started AtlasApplication` 로그 확인 후 K6 시나리오 실행.
+
+로컬 5초 checkout pilot:
+
+```sh
+docker compose --env-file .env.local --profile loadtest run --rm \
+  -e RUN_ID=local-pilot-001 \
+  -e PROFILE=one-seller \
+  -e UNIT_PRICE_WON=1000 \
+  -e SESSION_RATE_NUMERATOR=1 \
+  -e SESSION_RATE_TIME_UNIT=1s \
+  -e DURATION=5s \
+  -e FIXED_VUS=1 \
+  -e PAYMENT_MODE=checkout-only \
+  k6 run /scripts/buyer-checkout.js
+```
+
+PayPal Sandbox smoke에는 Business app credentials와 별도 Sandbox Buyer 계정 필요. `.env.local`에서 `ATLAS_PAYMENT_PROVIDER=paypal`, Sandbox `PAYPAL_BASE_URL`, `ATLAS_PUBLIC_BASE_URL=http://127.0.0.1:18080`, `ATLAS_PAYMENT_RETURN_PORT=18080` 설정 후 앞의 Compose app 준비 명령 실행.
+
+`paypal-sandbox-order-smoke`는 order를 1회 생성. approval URL은 `PAYPAL_SHOW_APPROVAL_URL=true`일 때만 출력되며, 한 번만 사용하는 민감 링크. 로컬 외부 로그·PR에 복사 금지.
+
+1. 출력된 approval URL을 브라우저에서 열고 Sandbox Buyer로 승인. PayPal return은 loopback `127.0.0.1:18080`의 ATLAS app으로 돌아오며, 실제 Sandbox authorization/capture 진행
+2. 출력된 checkout ID를 사용해 capture 결과 확인
+
+PayPal Sandbox order 생성:
+
+```sh
+docker compose --env-file .env.local --profile loadtest run --rm \
+  -e RUN_ID=paypal-smoke-001 \
+  -e PROFILE=one-seller \
+  -e UNIT_PRICE_WON=1000 \
+  -e FIXED_VUS=1 \
+  -e PAYMENT_MODE=paypal-sandbox-order-smoke \
+  -e PAYPAL_SHOW_APPROVAL_URL=true \
+  k6 run /scripts/buyer-checkout.js
+```
+
+Capture·inventory·settlement 확인:
+
+```sh
+docker compose --env-file .env.local --profile loadtest run --rm \
+  -e RUN_ID=paypal-smoke-001 \
+  -e PROFILE=one-seller \
+  -e UNIT_PRICE_WON=1000 \
+  -e FIXED_VUS=1 \
+  -e PAYMENT_MODE=paypal-sandbox-verify \
+  -e PAYPAL_CHECKOUT_ID=CHECKOUT_ID_FROM_OUTPUT \
+  k6 run /scripts/buyer-checkout.js
+```
+
+Sandbox Buyer approval/capture는 이번 구현에서 아직 실행하지 않음. 현재 local process에 Buyer account가 없어 실제 승인 결과는 검증 근거로 주장하지 않음.
 ## 문서 지도
 
 | 확인할 내용 | 정본 |
