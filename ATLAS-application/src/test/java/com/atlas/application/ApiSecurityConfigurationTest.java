@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.application.security.AccountOwnershipInterceptor;
@@ -39,7 +40,8 @@ class ApiSecurityConfigurationTest {
     @Test
     void protectedRoutesRejectAnonymousRequests() throws Exception {
         mockMvc.perform(get("/api/private"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().exists("X-Request-ID"));
     }
 
     @Test

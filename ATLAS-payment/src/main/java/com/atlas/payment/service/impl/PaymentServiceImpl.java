@@ -390,6 +390,26 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    public <T> T withPayPalWebhookOwnerLock(PaymentWebhookEvent event, Supplier<T> action) {
+        Objects.requireNonNull(event);
+        Objects.requireNonNull(action);
+        if (!"PAYMENT.CAPTURE.COMPLETED".equals(event.eventType())) {
+            return action.get();
+        }
+        Optional<PaymentAttempt> mappedAttempt = event.providerOrderId() == null
+                ? Optional.empty() : repository.findByProviderOrderId(event.providerOrderId());
+        if (mappedAttempt.isEmpty() && event.resourceId() != null) {
+            mappedAttempt = repository.findByProviderCaptureId(event.resourceId());
+        }
+        if (mappedAttempt.isEmpty()) {
+            return action.get();
+        }
+        PaymentAttempt attempt = mappedAttempt.get();
+        UUID ownerId = attempt.getOrderId() == null ? attempt.getCheckoutId() : attempt.getOrderId();
+        return withOwnerLock(ownerId, action);
+    }
+
+    @Override
     public PaymentWebhookResult processVerifiedPayPalWebhook(PaymentWebhookEvent event) {
         if (event == null) throw invalidRequest("Verified PayPal webhook event is required");
         Instant now = Instant.now();
@@ -418,7 +438,8 @@ public class PaymentServiceImpl implements PaymentService {
                     return rejectedWebhook(event, now);
                 }
                 if (!webhookEvents.insertReceived(event, now)) {
-                    return new PaymentWebhookResult(true, true, null, null, null, false);
+                    // A committed capture may still need downstream order reconciliation after a prior failure.
+                    return new PaymentWebhookResult(true, true, null, null, current.getAttemptId(), true);
                 }
                 current.setProviderCaptureId(event.resourceId());
                 current.setState(PaymentState.CAPTURED);

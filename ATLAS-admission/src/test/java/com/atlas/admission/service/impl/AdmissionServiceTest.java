@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,8 +37,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -62,7 +65,12 @@ class AdmissionServiceTest {
 
     @Test
     void configureCreatesPolicyAfterVerifyingCatalogSku() {
-        when(policies.findBySellerIdAndSkuId(sellerId, skuId)).thenReturn(Optional.empty());
+        AdmissionPolicy policyForPromotion = new AdmissionPolicy(sellerId, skuId, 4);
+        AtomicInteger policyLookup = new AtomicInteger();
+        when(policies.findBySellerIdAndSkuId(sellerId, skuId))
+                .thenAnswer(invocation -> policyLookup.getAndIncrement() == 0
+                        ? Optional.empty() : Optional.of(policyForPromotion));
+        when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
 
         admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 4));
 
@@ -76,11 +84,31 @@ class AdmissionServiceTest {
     void configureUpdatesExistingPolicy() {
         AdmissionPolicy existing = new AdmissionPolicy(sellerId, skuId, 2);
         when(policies.findBySellerIdAndSkuId(sellerId, skuId)).thenReturn(Optional.of(existing));
+        when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
 
         admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 5));
 
         assertEquals(5, existing.getMaxActiveCheckouts());
         verify(policies).save(existing);
+    }
+
+    @Test
+    void configurePromotesOldestWaitingTicketAfterIncreasingCapacity() {
+        AdmissionPolicy existing = new AdmissionPolicy(sellerId, skuId, 1);
+        UUID oldestWaitingTicket = UUID.randomUUID();
+        when(policies.findBySellerIdAndSkuId(sellerId, skuId)).thenReturn(Optional.of(existing));
+        when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
+        when(tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(sellerId, skuId)).thenReturn(1L);
+        when(tickets.findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING),
+                any(Instant.class), eq(PageRequest.of(0, 1))))
+                .thenReturn(List.of(oldestWaitingTicket));
+
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 2));
+
+        verify(queueRepository).lockCounter(sellerId, skuId);
+        verify(tickets).findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING),
+                any(Instant.class), eq(PageRequest.of(0, 1)));
+        verify(queueRepository).activateWaitingTicket(eq(oldestWaitingTicket), any(Instant.class));
     }
 
     @Test
@@ -118,6 +146,42 @@ class AdmissionServiceTest {
 
         verify(tickets).findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING), any(Instant.class), eq(PageRequest.of(0, 2)));
         verify(queueRepository).activateWaitingTicket(eq(firstWaitingTicket), any(Instant.class));
+    }
+
+
+    @Test
+    void joinLocksSellerSkuCounterBeforeReadingPolicy() {
+        UUID campaignId = UUID.randomUUID();
+        String buyerRef = "buyer";
+        String idempotencyKey = "join-key";
+        UUID ticketId = UUID.randomUUID();
+        when(campaigns.findOpenForAdmission(campaignId, skuId)).thenReturn(Optional.of(
+                new CampaignResponse(campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5))));
+        when(policies.findBySellerIdAndSkuId(sellerId, skuId))
+                .thenReturn(Optional.of(new AdmissionPolicy(sellerId, skuId, 1)));
+        when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
+        when(queueRepository.incrementSequence(sellerId, skuId)).thenReturn(1L);
+        when(tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(sellerId, skuId)).thenReturn(0L);
+        when(tickets.findByCampaignIdAndIdempotencyKey(campaignId, idempotencyKey)).thenReturn(Optional.empty());
+        QueueTicket savedTicket = mock(QueueTicket.class);
+        when(savedTicket.getTicketId()).thenReturn(ticketId);
+        when(savedTicket.getCampaignId()).thenReturn(campaignId);
+        when(savedTicket.getSellerId()).thenReturn(sellerId);
+        when(savedTicket.getSkuId()).thenReturn(skuId);
+        when(savedTicket.getBuyerRef()).thenReturn(buyerRef);
+        when(savedTicket.getSequence()).thenReturn(1L);
+        when(savedTicket.getStatus()).thenReturn(TicketStatus.CHECKOUT_ACTIVE);
+        when(savedTicket.getExpiresAt()).thenReturn(Instant.now().plusSeconds(60));
+        when(savedTicket.isCheckoutSlotHeld()).thenReturn(true);
+        when(tickets.save(any(QueueTicket.class))).thenReturn(savedTicket);
+        when(tickets.findByCampaignIdAndTicketId(campaignId, ticketId)).thenReturn(Optional.of(savedTicket));
+
+        admission.join(new JoinQueueRequest(campaignId, skuId, buyerRef, idempotencyKey));
+
+        InOrder interactions = inOrder(queueRepository, policies);
+        interactions.verify(queueRepository).createCounterIfAbsent(sellerId, skuId);
+        interactions.verify(queueRepository).lockCounter(sellerId, skuId);
+        interactions.verify(policies).findBySellerIdAndSkuId(sellerId, skuId);
     }
 
 
