@@ -12,29 +12,32 @@
 ADR-0027 결정 전 baseline:
 - API route는 `permitAll`; `buyerRef`와 `sellerId`는 Account·인증 정보와 연결되지 않은 요청 값.
 - Seller는 UUID만 보유. Buyer account, password, login, role, ownership relation은 미구현.
-- JWT 발급만 추가해도 요청 경로의 타인 ID를 검증하지 않으면 IDOR가 남음.
+- JWT 발급만 추가해도 요청 경로의 타인 ID 미검증 시 IDOR 잔존.
 
 ## 결정
 
 - Buyer·Seller를 하나의 Account에 연결하는 first-party identity model. Account는 immutable UUID, normalized unique email, password hash, status를 소유.
 - Buyer registration은 account와 Buyer identity를 atomic하게 생성. Account당 Buyer identity 1개. Authenticated account는 Seller onboarding으로 Seller profile을 추가할 수 있으며 account-to-seller relation은 명시적으로 보유; Account당 Seller profile은 여러 개 허용.
-- Existing synthetic `buyerRef`·Seller rows는 account에 자동 연결하지 않음. 신규 Buyer/Seller onboarding만 인증 접근 가능. 기존 Cart/Order/Seller data는 owner claim 경로가 없어 인증 사용자에게 공개하지 않으며, local data cleanup은 별도 수동 작업.
+- Existing synthetic `buyerRef`·Seller rows의 account 자동 연결 미지원. 신규 Buyer/Seller onboarding만 인증 접근 가능. 기존 Cart/Order/Seller data는 owner claim 경로가 없어 인증 사용자에게 공개하지 않으며, local data cleanup은 별도 수동 작업.
 - Login uses email/password. Password hashing uses Spring Security `DelegatingPasswordEncoder` with PBKDF2 v5.8 defaults and supports the 128-character input contract.
 - The stored algorithm ID supports a future encoder migration. Unknown email uses a process-generated dummy hash to reduce account-enumeration timing differences.
 - Custom cryptography is prohibited. Passwords and tokens must not appear in responses, logs, or errors; login failure uses a generic error.
 - Spring Security OAuth2 Resource Server/Nimbus JWT support 사용. Access token은 서명 검증, 고정 algorithm allow-list, `iss`, `aud`, `sub`, `iat`, `exp` 검증. Initial access lifetime 10분; amount는 운영 SLA가 아닌 보수적인 초기 개발 선택. Private signing key는 환경별 ignored local secret file/env로 주입, Git·docs·Actions 일반 log에 기록 금지.
 - Refresh token은 고엔트로피 opaque random value. DB에는 token hash·family/session ID·account ID·expiry·consumed/revoked state만 저장. Refresh token은 7일, family absolute expiry는 30일. Refresh 성공 시 매번 rotate. 이전 token 재사용 시 family revoke. Logout은 현재 family revoke.
-- 모든 protected controller operation에서 authenticated account와 Buyer/Seller resource owner 일치 검증. Client가 보낸 `buyerRef`·`sellerId`를 principal 증거로 인정하지 않음.
+- 모든 protected controller operation에서 authenticated account와 Buyer/Seller resource owner 일치 검증. Client가 보낸 `buyerRef`·`sellerId`는 principal 증거에서 제외.
+- Ownership interceptor의 Seller·Campaign 관리 route 분류 기준은 Spring MVC가 매칭한 route pattern(`HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE`). 원시 request URI 문자열 비교는 servlet context path와 percent-encoded literal segment(예: `/api/%73ellers/...`)로 우회 가능하므로 제외.
 - Default deny. 공개 route는 login/register/refresh 및 명시적으로 검토된 catalog browse만. PayPal return/cancel callback과 서명 검증 webhook은 필요한 경로만 anonymous로 허용; provider callback은 내부 persisted state와 signature/provider token 검증을 계속 요구.
+- Checkout PayPal cancel URL에 PaymentAttempt의 create-order 요청 ID를 `state` query로 포함. Anonymous cancel callback은 `state`가 저장값과 일치할 때만 checkout 취소 실행. 누락·불일치는 400 `INVALID_REQUEST`이며 checkout·order·reservation·payment 상태 변경 0건. `state`는 attempt ID 기반 결정적 값이므로 checkoutId와 attemptId를 함께 아는 주체의 재계산 가능; 무작위 nonce·HMAC 전환은 후속 범위.
+- 배포 전 생성된 checkout attempt의 cancel URL에는 `state` 부재. 해당 PayPal 취소 redirect는 400이며, reservation은 인증된 `POST /api/checkouts/{checkoutId}/cancel`·reconcile, 승인 완료, 서명 검증 webhook 등 확정 결과 반영 시점까지 유지.
 - API는 refresh token을 refresh/logout request body와 token response body로 전달; URL·query·log 금지. Client는 secure storage 사용. Browser storage integration은 미구현; browser cookie 도입 시 HttpOnly/Secure/SameSite와 CSRF 방어를 별도 구현.
-- Core authentication/authorization behavior는 stateless access JWT + stateful refresh session. 별도 IdP/social login/MFA는 추가하지 않음.
+- Core authentication/authorization behavior는 stateless access JWT + stateful refresh session. 별도 IdP/social login/MFA는 범위 외.
 
 ## 근거와 대안
 
 - `permitAll` 유지: 다른 사용자 데이터에 대한 임의 ID 접근이 가능해 제외.
 - Access JWT만: logout·강제 revoke가 `exp`까지 지연되어 계정 정지·token 탈취 대응에 부적합.
 - Long-lived JWT / refresh token rotation 없음: 탈취된 bearer credential replay window가 길어 제외.
-- Cookie session만: 단일 monolith에서는 간결하고 즉시 revoke 가능. 현재 요구는 JWT를 명시하므로 access API에는 JWT를 사용하되 refresh session을 DB에 두어 revoke와 replay detection을 확보. 이 설계는 JWT의 완전 무상태성을 선택하지 않음.
+- Cookie session만: 단일 monolith에서는 간결하고 즉시 revoke 가능. 현재 요구는 JWT를 명시하므로 access API에는 JWT를 사용하되 refresh session을 DB에 두어 revoke와 replay detection을 확보. JWT의 완전 무상태성은 비선택.
 - Home-grown JWT, password hashing, Spring Security filter: 검증이 불완전해지기 쉬워 제외. Spring Security Resource Server, Nimbus, `PasswordEncoder`, JDK `SecureRandom` 사용.
 - BCrypt 기본 72-byte input 한계가 128자 입력 계약과 충돌. 추가 runtime dependency 없이 Spring Security PBKDF2 encoder를 사용해 입력 잘림·요청 실패 방지. Cost 증가는 실제 local workload 측정 후 검토.
 - Buyer persona는 account당 1개, Seller profile은 account당 여러 개 허용. Multi-buyer personas, staff roles, permissions matrix는 후속 범위.

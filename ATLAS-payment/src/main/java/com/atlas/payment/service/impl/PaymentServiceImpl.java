@@ -251,6 +251,14 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    public boolean matchesCheckoutCancelState(UUID checkoutId, String state) {
+        if (checkoutId == null || state == null || state.isBlank()) return false;
+        return repository.findByCheckoutId(checkoutId)
+                .map(attempt -> state.equals(attempt.getCreateOrderRequestId()))
+                .orElse(false);
+    }
+
+    @Override
     public PaymentResponse findByAttemptId(UUID attemptId) {
         if (attemptId == null) throw invalidRequest("attemptId required");
         PaymentAttempt attempt = repository.findById(attemptId).orElse(null);
@@ -748,9 +756,13 @@ public class PaymentServiceImpl implements PaymentService {
             case CAPTURE -> captureId;
             case VOID -> voidId;
         };
+        String cancelUrl = base + cancelPath;
+        if (attempt.getCheckoutId() != null) {
+            cancelUrl += (cancelUrl.contains("?") ? "&" : "?") + "state=" + createId;
+        }
         return new PaymentRequest(operation, owner, attempt.getAttemptId(), amount, providerCurrency,
                 attempt.getProviderOrderId(), attempt.getProviderAuthorizationId(),
-                operationId, authorizeId, captureId, voidId, base + returnPath, base + cancelPath);
+                operationId, authorizeId, captureId, voidId, base + returnPath, cancelUrl);
     }
 
     private static String stableRequestId(PaymentAttempt attempt, String operation) {

@@ -50,13 +50,16 @@ public class AccountOwnershipInterceptor implements HandlerInterceptor {
         Map<String, String> variables = (Map<String, String>) request.getAttribute(
                 HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
         if (variables == null) return true;
+        // 원시 URI 대신 decode·context path와 무관한 매칭 route pattern으로 경로를 분류한다.
+        Object matchedPattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        String routePattern = matchedPattern == null ? "" : matchedPattern.toString();
 
         String buyerRef = variables.get("buyerRef");
         String sellerValue = variables.get("sellerId");
         UUID sellerId = sellerValue == null ? null : parseUuid(sellerValue);
         if (buyerRef != null && !accounts.ownsBuyer(accountId, buyerRef)) throw notOwned();
         // Buyer cart의 sellerId는 구매 대상이므로 Seller ownership으로 제한하지 않는다.
-        if (sellerId != null && request.getRequestURI().startsWith("/api/sellers/")
+        if (sellerId != null && routePattern.startsWith("/api/sellers/")
                 && !accounts.ownsSeller(accountId, sellerId)) throw notOwned();
 
         String checkoutValue = variables.get("checkoutId");
@@ -83,19 +86,15 @@ public class AccountOwnershipInterceptor implements HandlerInterceptor {
         if (ticketValue != null && campaignValue != null) {
             QueueTicketResponse ticket = admission.find(parseUuid(campaignValue), parseUuid(ticketValue));
             if (!accounts.ownsBuyer(accountId, ticket.buyerRef())) throw notOwned();
-        } else if (campaignValue != null && isCampaignManagement(request)) {
+        } else if (campaignValue != null && isCampaignManagement(request, routePattern)) {
             CampaignResponse campaign = campaigns.find(parseUuid(campaignValue));
             if (!accounts.ownsSeller(accountId, campaign.sellerId())) throw notOwned();
         }
         return true;
     }
 
-    private static boolean isPublicCampaignRead(HttpServletRequest request) {
-        return "GET".equals(request.getMethod()) && request.getRequestURI().matches("/api/campaigns/[^/]+");
-    }
-
-    private static boolean isCampaignManagement(HttpServletRequest request) {
-        return "POST".equals(request.getMethod()) && request.getRequestURI().matches("/api/campaigns/[^/]+/open");
+    private static boolean isCampaignManagement(HttpServletRequest request, String routePattern) {
+        return "POST".equals(request.getMethod()) && "/api/campaigns/{campaignId}/open".equals(routePattern);
     }
 
     private static UUID parseUuid(String value) {

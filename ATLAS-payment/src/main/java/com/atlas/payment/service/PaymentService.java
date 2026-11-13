@@ -27,6 +27,8 @@ public interface PaymentService {
 
     /** checkout의 결제 시도를 반환한다. 결제 시도가 없으면 {@code null}을 반환한다. */
     PaymentResponse findCheckout(UUID checkoutId);
+    /** PayPal checkout 취소 callback의 {@code state}가 저장된 create-order 요청 ID와 일치하는지 확인한다. */
+    boolean matchesCheckoutCancelState(UUID checkoutId, String state);
     PaymentResponse findByAttemptId(UUID attemptId);
     PaymentRefundResponse refundOrder(UUID orderId, String idempotencyKey, long amountWon);
     PaymentRefundResponse refundCheckout(UUID checkoutId, String idempotencyKey, long amountWon);
