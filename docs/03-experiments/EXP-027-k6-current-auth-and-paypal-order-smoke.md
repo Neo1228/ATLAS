@@ -1,6 +1,6 @@
 # EXP-027 — K6 인증·PayPal order smoke 검증
 
-**상태:** 측정 완료 · PayPal Sandbox order 요청 미실행
+**상태:** 측정 완료 · 본 실험의 PayPal Sandbox order 요청 미실행
 
 **연결:** [Issue #248](https://github.com/Neo1228/ATLAS/issues/248)
 
@@ -39,7 +39,7 @@
 | PayPal 요청 | 0 |
 
 > [!NOTE]
-> 1초 correctness smoke 결과. 지속 부하, 용량, RPS/TPS 성능 비교 또는 SLO 근거가 아님. `completed checkout / 설정 window`는 이 실행의 단순 비율이며 안정 처리량으로 해석 금지.
+> 1초 correctness smoke 결과. 지속 부하·용량·RPS/TPS 성능 비교 또는 SLO 근거로 해석 금지. `completed checkout / 설정 window`는 이 실행의 단순 비율이며 안정 처리량으로 해석 금지.
 
 ### 관찰 및 수정
 
@@ -53,7 +53,7 @@
 1. **K6 종료 경계 iteration**
    - `1 session/s × 1s`, 재고 1에서 두 번째 iteration이 시작돼 `INSUFFICIENT_STOCK` 발생
    - Synthetic fixture 재고에 1개 guard 추가
-   - Guard는 해당 pilot의 false stock exhaustion 방지용. 트래픽 용량 가정이 아님
+   - Guard는 해당 pilot의 false stock exhaustion 방지용. 트래픽 용량 가정으로 해석 금지
 
 1. **Container build 순서**
    - [`ATLAS-application/Dockerfile`](../../ATLAS-application/Dockerfile)은 기존 `application-module.jar` 복사
@@ -71,9 +71,10 @@
 
 ## 제한 및 이력
 
-- PayPal Sandbox order 생성은 이번 실행에서 호출하지 않음
-- Local Sandbox Buyer approval·capture e2e는 [Issue #254](https://github.com/Neo1228/ATLAS/issues/254)에서 검증 예정
+- 본 실험 실행에서는 PayPal Sandbox order 생성 미실행
+- 후속 Sandbox E2E (2026-11-13): KRW 2,000 → PayPal USD 1.50 (BOK 기준환율 1,332.4 KRW/USD, 기준일 2026-11-13), Buyer 승인·capture, unknown capture의 PayPal order GET 복구, `CAPTURED`·`PAID`·`CLAIMED`, settlement journal 차변·대변 각 KRW 2,000 확인. 상세: [README PayPal Sandbox](../../README.md#paypal-sandbox)
+- 후속 E2E는 본 실험 pilot과 별도 실행이며 1초 checkout pilot의 성능·용량 근거에 미포함
 - PayPal provider result `PENDING`은 API `AUTHORIZATION_PENDING`으로 매핑. Buyer approval 이후 authorization·capture 진행
-- 현재 expiry sweep는 `RESERVED`만 처리. `PAYMENT_PENDING` reservation은 `checkoutExpiresAt` 이후에도 남을 수 있음. 후속: [Issue #254](https://github.com/Neo1228/ATLAS/issues/254)
+- 현재 expiry sweep는 `RESERVED`만 처리. `PAYMENT_PENDING` reservation은 `checkoutExpiresAt` 이후에도 잔존 가능. 후속: [Issue #254](https://github.com/Neo1228/ATLAS/issues/254)
 - Buyer approval·capture 자동화 없이 settlement write path를 측정한 것으로 주장 금지
 - [EXP-022](EXP-022-settlement-app-write-cost.md)는 과거 checkout/capture 결과 보존. 현재 PayPal 흐름과 직접 비교 불가
