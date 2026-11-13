@@ -257,7 +257,8 @@ class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
     void statementTotalsStayExactWhenValidCheckoutAllocationsExceedTheLongRange() {
         UUID sellerId = sellers.createSeller().sellerId();
         String maxSkuId = registerSku(sellerId, Long.MAX_VALUE, 1);
-        String oneSkuId = registerSku(sellerId, 1, 1);
+        // The local BOK rate is 1,332.4 KRW/USD; 14 KRW rounds to PayPal's USD 0.01 minimum.
+        String oneSkuId = registerSku(sellerId, 14, 1);
         String maxBuyerRef = "statement-max-buyer-" + UUID.randomUUID();
         String oneBuyerRef = "statement-one-buyer-" + UUID.randomUUID();
 
@@ -277,13 +278,13 @@ class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
 
         var statement = settlement.getSellerStatement(statementRequest(
                 sellerId, PERIOD_FROM, PERIOD_TO, 10, null));
-        BigInteger expected = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE);
+        BigInteger expected = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.valueOf(14));
 
         assertThat(statement.totals().capturedAmountWon()).isEqualTo(expected);
         assertThat(statement.totals().refundReversalAmountWon()).isEqualTo(BigInteger.ZERO);
         assertThat(statement.totals().netLedgerChangeWon()).isEqualTo(expected);
         assertThat(statement.items()).extracting(SellerSettlementStatementResponse.Entry::signedAmountWon)
-                .containsExactlyInAnyOrder(Long.MAX_VALUE, 1L);
+                .containsExactlyInAnyOrder(Long.MAX_VALUE, 14L);
     }
 
     private String registerSku(UUID sellerId, long priceWon, int initialStock) {

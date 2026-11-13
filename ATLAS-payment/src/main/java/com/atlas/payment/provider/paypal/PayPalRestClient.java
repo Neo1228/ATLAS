@@ -61,7 +61,8 @@ public class PayPalRestClient {
                 authorization == null ? null : text(authorization, "id"),
                 authorization == null ? null : text(authorization, "status"),
                 capture == null ? null : text(capture, "id"),
-                capture == null ? null : text(capture, "status"));
+                capture == null ? null : text(capture, "status"),
+                resourceAmount(response, "capture"), resourceCurrency(response, "capture"));
     }
 
     public AuthorizationResult authorizeOrder(String orderId, String requestId) {
@@ -77,7 +78,8 @@ public class PayPalRestClient {
                 "value", amount.toPlainString()), "final_capture", true);
         Map<String, Object> response = post("/v2/payments/authorizations/{id}/capture".replace("{id}", authorizationId),
                 body, requestId);
-        return new CaptureResult(resourceId(response, "capture"), resourceStatus(response, "capture"));
+        return new CaptureResult(resourceId(response, "capture"), resourceStatus(response, "capture"),
+                resourceAmount(response, "capture"), resourceCurrency(response, "capture"));
     }
 
     public void voidAuthorization(String authorizationId, String requestId) {
@@ -91,14 +93,16 @@ public class PayPalRestClient {
                 : Map.of("amount", Map.of("value", amount.toPlainString(), "currency_code", currency));
         Map<String, Object> response = post("/v2/payments/captures/{id}/refund".replace("{id}", captureId),
                 body, requestId);
-        return new RefundResult(text(response, "id"), text(response, "status"));
+        return new RefundResult(text(response, "id"), text(response, "status"),
+                resourceAmount(response, "refund"), resourceCurrency(response, "refund"));
     }
 
     public RefundResult getRefund(String refundId) {
         try {
             Map<String, Object> response = api().get().uri("/v2/payments/refunds/{id}", refundId)
                     .retrieve().body(mapType());
-            return new RefundResult(text(response, "id"), text(response, "status"));
+            return new RefundResult(text(response, "id"), text(response, "status"),
+                    resourceAmount(response, "refund"), resourceCurrency(response, "refund"));
         } catch (RestClientException exception) {
             throw new PayPalUnavailableException("PayPal refund lookup failed", exception);
         }
@@ -242,7 +246,7 @@ public class PayPalRestClient {
 
     private static String resourceId(Map<String, Object> response, String resource) {
         Map<String, Object> item = firstResource(response, resource);
-        return item == null ? null : text(item, "id");
+        return item == null ? text(response, "id") : text(item, "id");
     }
 
     private static String resourceStatus(Map<String, Object> response, String resource) {
@@ -250,6 +254,28 @@ public class PayPalRestClient {
         return item == null ? text(response, "status") : text(item, "status");
     }
 
+    private static BigDecimal resourceAmount(Map<String, Object> response, String resource) {
+        Map<String, Object> amount = resourceAmountObject(response, resource);
+        String value = amount == null ? null : text(amount, "value");
+        if (value == null) return null;
+        try {
+            return new BigDecimal(value);
+        } catch (NumberFormatException invalid) {
+            return null;
+        }
+    }
+
+    private static String resourceCurrency(Map<String, Object> response, String resource) {
+        Map<String, Object> amount = resourceAmountObject(response, resource);
+        return amount == null ? null : text(amount, "currency_code");
+    }
+
+    private static Map<String, Object> resourceAmountObject(Map<String, Object> response, String resource) {
+        Map<String, Object> item = firstResource(response, resource);
+        Object value = item == null ? null : item.get("amount");
+        if (!(value instanceof Map<?, ?>)) value = response == null ? null : response.get("amount");
+        return value instanceof Map<?, ?> amount ? castMap(amount) : null;
+    }
     private static Map<String, Object> firstResource(Map<String, Object> response, String resource) {
         Object units = response == null ? null : response.get("purchase_units");
         if (!(units instanceof List<?> values) || values.isEmpty()
@@ -295,10 +321,11 @@ public class PayPalRestClient {
     public record OrderResult(String id, String status, String approvalUrl) { }
     public record OrderStatus(String id, String status, BigDecimal amount, String currency,
                               String authorizationId, String authorizationStatus,
-                              String captureId, String captureStatus) { }
+                              String captureId, String captureStatus, BigDecimal captureAmount,
+                              String captureCurrency) { }
     public record AuthorizationResult(String id, String status) { }
-    public record CaptureResult(String id, String status) { }
-    public record RefundResult(String id, String status) { }
+    public record CaptureResult(String id, String status, BigDecimal amount, String currency) { }
+    public record RefundResult(String id, String status, BigDecimal amount, String currency) { }
     public record WebhookVerificationResult(boolean verified) { }
 
     public static class PayPalUnavailableException extends RuntimeException {

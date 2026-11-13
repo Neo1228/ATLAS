@@ -47,5 +47,3 @@ atlas:
       client-id: ${PAYPAL_CLIENT_ID:}
       client-secret: ${PAYPAL_CLIENT_SECRET:}
       webhook-id: ${PAYPAL_WEBHOOK_ID:}
-      return-url: ${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}/api/checkouts/{checkoutId}/payment/return
-      cancel-url: ${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}/api/checkouts/{checkoutId}/payment/cancel

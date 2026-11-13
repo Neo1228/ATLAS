@@ -68,7 +68,8 @@ PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환�
 - Java FQCN 직접 표기 금지. 필요한 타입은 import하고 단순 이름 사용. 클래스·메서드명은 책임 중심으로 짧고 실무에서 통용되는 용어 사용.
 - Controller에는 business logic, Repository에는 service logic·API DTO를 두지 않음. 계층 간 전달 DTO는 `*Request`/`*Response`로 구분하고 persistence record/entity를 API에 노출하지 않음. 작은 클래스·단독 패키지를 형식적으로 추가하지 말고 실제 책임 경계가 생길 때 분리.
 - 기존 오류 응답·error code·validation·logging contract를 재사용. 민감값과 credential은 코드·로그·Issue·PR에 기록하지 않음.
-- DB transaction은 원자성이 필요한 작업 범위에 한정. PayPal network call은 DB transaction 밖에서 실행하고, 확인된 provider result만 내부 상태에 반영.
+- PayPal 통화·환율 스냅샷·callback URL·UNKNOWN capture 복구의 기준: [ADR-0030](docs/02-decisions/adr/ADR-0030-paypal-currency-boundary.md).
+- DB transaction은 필요한 원자성 범위에 한정. Provider network call은 transaction 밖에서 실행. 저장된 provider amount/currency와 FX 스냅샷이 일치할 때만 내부 상태 반영.
 - HTTP 요청은 현재 동기 흐름을 기본으로 유지. 비동기 처리·thread pool은 처리 순서, 재시도, 상태 추적의 구체적 요구와 검증 근거가 있을 때만 도입; 테스트의 동시 실행 코드를 production pattern으로 복사하지 않음.
 - 업무 상태는 소유 모듈의 영속화 및 명시적 상태 전이로 관리. 숨은 mutable singleton state를 추가하지 않음.
 - 락은 보호할 invariant와 재현 가능한 경쟁 조건이 있을 때만 추가. lock scope/order, transaction boundary, retry 및 failure recovery를 PostgreSQL 통합 테스트로 검증.
@@ -78,7 +79,6 @@ PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환�
 
 - JUnit Platform과 Spring Boot Test 사용. 단순 로직은 unit test, SQL·transaction·locking 동작은 PostgreSQL integration test로 확인.
 - `ModuleBoundaryTest`는 ArchUnit으로 계층·모듈 의존 규칙 검증. PostgreSQL integration test는 Testcontainers, PayPal HTTP test는 MockWebServer 사용.
-- 동작 변경은 정상·경계·실패 조건을 검증하고, 버그 수정에는 재현 회귀 테스트 추가. 커버리지 비율 gate는 설정돼 있지 않으므로 임의 기준을 주장하지 않음.
 - 동작 변경은 정상·경계·실패 조건을 검증하고, 버그 수정에는 재현 회귀 테스트 추가. 커버리지 비율 gate는 설정돼 있지 않으므로 임의 기준을 주장하지 않음.
 - 성능 변경은 workload·dataset·자원·측정 지표·반복 횟수·제한을 기록. 요청 경로 또는 시스템 부하를 측정하는 실험은 필요한 관측 지표와 결과 산출물을 함께 보관.
 - 실행하지 않은 테스트·성능 결과는 통과한 것처럼 작성하지 말고, 실행 명령·결과·제한을 Issue/PR에 기록.

@@ -11,6 +11,8 @@ public record PaymentRefundOperation(
         String idempotencyKey,
         long amountWon,
         String currency,
+        Long providerAmountMinor,
+        String providerCurrency,
         UUID providerRequestId,
         String providerRefundId,
         String providerStatus,

@@ -22,6 +22,8 @@ public class PaymentRefundRepository {
                     resultSet.getString("idempotency_key"),
                     resultSet.getLong("amount_won"),
                     resultSet.getString("currency"),
+                    resultSet.getObject("provider_amount_minor", Long.class),
+                    resultSet.getString("provider_currency"),
                     resultSet.getObject("provider_request_id", UUID.class),
                     resultSet.getString("provider_refund_id"),
                     resultSet.getString("provider_status"),
@@ -40,15 +42,17 @@ public class PaymentRefundRepository {
                 (RowCallbackHandler) resultSet -> { }, attemptId.toString());
     }
     public PaymentRefundOperation reserve(UUID operationId, UUID attemptId, String captureId,
-            String idempotencyKey, long amountWon, UUID providerRequestId, Instant now) {
+            String idempotencyKey, long amountWon, long providerAmountMinor, String providerCurrency,
+            UUID providerRequestId, Instant now) {
         jdbc.update("""
                 INSERT INTO payment_refund_operation
                     (refund_operation_id, attempt_id, capture_id, idempotency_key, amount_won, currency,
-                     provider_request_id, refund_state, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'KRW', ?, 'PENDING', ?, ?)
+                     provider_amount_minor, provider_currency, provider_request_id, refund_state,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'KRW', ?, ?, ?, 'PENDING', ?, ?)
                 ON CONFLICT (attempt_id, idempotency_key) DO NOTHING
                 """, operationId, attemptId, captureId, idempotencyKey, amountWon,
-                providerRequestId, Timestamp.from(now), Timestamp.from(now));
+                providerAmountMinor, providerCurrency, providerRequestId, Timestamp.from(now), Timestamp.from(now));
         return findByAttemptIdAndIdempotencyKeyForUpdate(attemptId, idempotencyKey)
                 .orElseThrow(() -> new IllegalStateException("Refund operation reservation was not persisted"));
     }
@@ -106,6 +110,24 @@ public class PaymentRefundRepository {
                 WHERE attempt_id = ? AND refund_state <> 'FAILED'
                 """, Long.class, attemptId);
         return amount == null ? 0L : amount;
+    }
+    public long refundedProviderAmountForAttempt(UUID attemptId) {
+        Long amount = jdbc.queryForObject("""
+                SELECT COALESCE(SUM(provider_amount_minor), 0)
+                FROM payment_refund_operation
+                WHERE attempt_id = ? AND refund_state <> 'FAILED'
+                """, Long.class, attemptId);
+        return amount == null ? 0L : amount;
+    }
+
+    public boolean hasUnpricedNonFailedRefunds(UUID attemptId) {
+        Boolean exists = jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM payment_refund_operation
+                    WHERE attempt_id = ? AND refund_state <> 'FAILED' AND provider_amount_minor IS NULL
+                )
+                """, Boolean.class, attemptId);
+        return Boolean.TRUE.equals(exists);
     }
     private Optional<PaymentRefundOperation> queryOne(String sql, Object... parameters) {
         return jdbc.query(sql, ROW_MAPPER, parameters).stream().findFirst();

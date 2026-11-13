@@ -1,6 +1,9 @@
 package com.atlas.payment;
 
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,11 +26,15 @@ import org.springframework.test.context.DynamicPropertySource;
 /** 통합 테스트가 샌드박스나 실제 자격 증명에 접근하지 않도록 로컬 PayPal API를 대체한다. */
 public abstract class PayPalIntegrationTestSupport {
     protected static final MockWebServer PAYPAL = new MockWebServer();
+    protected static final MockWebServer ECOS = new MockWebServer();
     private static final Map<String, Amount> ORDERS = new ConcurrentHashMap<>();
     private static final Map<String, Amount> AUTHORIZATIONS = new ConcurrentHashMap<>();
     private static final Map<String, Amount> CAPTURES = new ConcurrentHashMap<>();
     private static final Map<String, String> REFUNDS_BY_REQUEST_ID = new ConcurrentHashMap<>();
+    private static final Map<String, Amount> REFUND_AMOUNTS = new ConcurrentHashMap<>();
     private static final Map<String, String> CAPTURE_IDS_BY_REQUEST_ID = new ConcurrentHashMap<>();
+    private static final Map<String, String> CAPTURE_IDS_BY_ORDER_ID = new ConcurrentHashMap<>();
+    private static final Map<String, String> AUTHORIZATION_ORDER_IDS = new ConcurrentHashMap<>();
     private static final Queue<String> AUTHORIZATION_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> ORDER_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> ORDER_CREATE_STATUSES = new ConcurrentLinkedQueue<>();
@@ -63,7 +70,10 @@ public abstract class PayPalIntegrationTestSupport {
         AUTHORIZATIONS.clear();
         CAPTURES.clear();
         REFUNDS_BY_REQUEST_ID.clear();
+        REFUND_AMOUNTS.clear();
         CAPTURE_IDS_BY_REQUEST_ID.clear();
+        CAPTURE_IDS_BY_ORDER_ID.clear();
+        AUTHORIZATION_ORDER_IDS.clear();
         AUTHORIZATION_STATUSES.clear();
         ORDER_STATUSES.clear();
         ORDER_CREATE_STATUSES.clear();
@@ -80,6 +90,9 @@ public abstract class PayPalIntegrationTestSupport {
         while (PAYPAL.takeRequest(0, TimeUnit.MILLISECONDS) != null) {
             // 이전 테스트의 미소비 요청을 제거한다.
         }
+        while (ECOS.takeRequest(0, TimeUnit.MILLISECONDS) != null) {
+            // 이전 테스트의 ECOS 요청을 제거한다.
+        }
     }
     private static volatile boolean started;
     static {
@@ -91,6 +104,11 @@ public abstract class PayPalIntegrationTestSupport {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 PAYPAL.shutdown();
+            } catch (IOException ignored) {
+                // JVM 종료 중인 test server 정리 실패는 후속 동작에 영향 없음.
+            }
+            try {
+                ECOS.shutdown();
             } catch (IOException ignored) {
                 // JVM 종료 중인 test server 정리 실패는 후속 동작에 영향 없음.
             }
@@ -125,6 +143,7 @@ public abstract class PayPalIntegrationTestSupport {
                     Amount amount = ORDERS.getOrDefault(orderId, Amount.from(body));
                     String authId = "AUTH-" + UUID.randomUUID();
                     AUTHORIZATIONS.put(authId, amount);
+                    AUTHORIZATION_ORDER_IDS.put(authId, orderId);
                     if (DISCONNECT_NEXT_AUTHORIZATION.compareAndSet(true, false)) {
                         return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
                     }
@@ -135,6 +154,7 @@ public abstract class PayPalIntegrationTestSupport {
                     Amount amount = ORDERS.getOrDefault(orderId, Amount.from(body));
                     String captureId = captureId(request);
                     CAPTURES.put(captureId, amount);
+                    CAPTURE_IDS_BY_ORDER_ID.put(orderId, captureId);
                     CAPTURE_REQUEST_COUNT.incrementAndGet();
                     if (DISCONNECT_NEXT_CAPTURE.compareAndSet(true, false)) {
                         return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
@@ -144,6 +164,10 @@ public abstract class PayPalIntegrationTestSupport {
                 if (path.matches("/v2/checkout/orders/[^/]+") && "GET".equals(method)) {
                     String orderId = lastSegment(path);
                     Amount amount = ORDERS.getOrDefault(orderId, Amount.from(body));
+                    String capturedId = CAPTURE_IDS_BY_ORDER_ID.get(orderId);
+                    if (capturedId != null) {
+                        return captured(orderId, capturedId, CAPTURES.getOrDefault(capturedId, amount), "COMPLETED");
+                    }
                     String orderStatus = nextStatus(ORDER_STATUSES, "APPROVED");
                     String authorizationStatus = nextStatus(ORDER_AUTHORIZATION_STATUSES, null);
                     String captureStatus = nextStatus(ORDER_CAPTURE_STATUSES,
@@ -155,7 +179,8 @@ public abstract class PayPalIntegrationTestSupport {
                     }
                     if (captureStatus != null && !"NONE".equals(captureStatus)) {
                         String capture = "\"captures\":[{\"id\":\"CAPTURE-" + orderId
-                                + "\",\"status\":\"" + captureStatus + "\"}]";
+                                + "\",\"status\":\"" + captureStatus + "\",\"amount\":{\"currency_code\":\""
+                                + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]";
                         resources = resources.isEmpty() ? capture : resources + "," + capture;
                     }
                     String payments = resources.isEmpty() ? ""
@@ -169,12 +194,14 @@ public abstract class PayPalIntegrationTestSupport {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));
                     Amount amount = AUTHORIZATIONS.getOrDefault(authId, Amount.from(body));
                     String captureId = captureId(request);
+                    String orderId = AUTHORIZATION_ORDER_IDS.get(authId);
+                    if (orderId != null) CAPTURE_IDS_BY_ORDER_ID.put(orderId, captureId);
                     CAPTURES.put(captureId, amount);
                     CAPTURE_REQUEST_COUNT.incrementAndGet();
                     if (DISCONNECT_NEXT_CAPTURE.compareAndSet(true, false)) {
                         return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
                     }
-                    return captured(authId, captureId, amount, nextStatus(CAPTURE_STATUSES, "COMPLETED"));
+                    return captureResource(captureId, amount, nextStatus(CAPTURE_STATUSES, "COMPLETED"));
                 }
                 if (path.matches("/v2/payments/authorizations/[^/]+/void") && "POST".equals(method)) {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));
@@ -187,11 +214,18 @@ public abstract class PayPalIntegrationTestSupport {
                     String replayKey = requestId == null ? UUID.randomUUID().toString() : requestId;
                     String refundId = REFUNDS_BY_REQUEST_ID.computeIfAbsent(replayKey,
                             ignored -> "REFUND-" + UUID.randomUUID());
+                    REFUND_AMOUNTS.put(refundId, amount);
                     String refundStatus = nextStatus(REFUND_STATUSES, "COMPLETED");
                     return json("{\"id\":\"" + refundId + "\",\"status\":\"" + refundStatus + "\",\"amount\":{\"currency_code\":\"" + amount.currency + "\",\"value\":\"" + amount.value + "\"}}");
                 }
                 if (path.matches("/v2/payments/refunds/[^/]+") && "GET".equals(method)) {
-                    return json("{\"id\":\"" + lastSegment(path) + "\",\"status\":\"COMPLETED\"}");
+                    String refundId = lastSegment(path);
+                    Amount amount = REFUND_AMOUNTS.get(refundId);
+                    if (amount == null) {
+                        return json("{\"id\":\"" + refundId + "\",\"status\":\"COMPLETED\"}");
+                    }
+                    return json("{\"id\":\"" + refundId + "\",\"status\":\"COMPLETED\",\"amount\":{\"currency_code\":\""
+                            + amount.currency + "\",\"value\":\"" + amount.value + "\"}}");
                 }
                 if (path.equals("/v1/notifications/verify-webhook-signature") && "POST".equals(method)) {
                     return json("{\"verification_status\":\""
@@ -201,13 +235,25 @@ public abstract class PayPalIntegrationTestSupport {
             }
         });
         PAYPAL.start();
+        ECOS.setDispatcher(new Dispatcher() {
+            @Override
+            public MockResponse dispatch(RecordedRequest request) {
+                String date = LocalDate.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.BASIC_ISO_DATE);
+                return json("{\"StatisticSearch\":{\"row\":[{\"TIME\":\"" + date
+                        + "\",\"DATA_VALUE\":\"1332.4\"}]}}");
+            }
+        });
+        ECOS.start();
         started = true;
     }
 
     @DynamicPropertySource
     protected static void paypalTestProperties(DynamicPropertyRegistry registry) {
         registry.add("atlas.payment.provider", () -> "paypal");
+        registry.add("ATLAS_PUBLIC_BASE_URL", () -> "http://127.0.0.1:18080");
         registry.add("atlas.payment.paypal.base-url", () -> PAYPAL.url("/").toString());
+        registry.add("atlas.payment.bok-ecos.base-url", () -> ECOS.url("/").toString());
+        registry.add("BOK_ECOS_API_KEY", () -> "local-test-key");
         registry.add("atlas.payment.paypal.client-id", () -> "local-test-client");
         registry.add("atlas.payment.paypal.client-secret", () -> "local-test-secret");
         registry.add("atlas.payment.paypal.webhook-id", () -> "local-test-webhook");
@@ -236,7 +282,17 @@ public abstract class PayPalIntegrationTestSupport {
     }
 
     private static MockResponse captured(String order, String capture, Amount amount, String status) {
-        return json("{\"id\":\"" + order + "\",\"status\":\"COMPLETED\",\"purchase_units\":[{\"payments\":{\"captures\":[{\"id\":\"" + capture + "\",\"status\":\"" + status + "\",\"amount\":{\"currency_code\":\"" + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]}}]}");
+        return json("{\"id\":\"" + order
+                + "\",\"status\":\"COMPLETED\",\"purchase_units\":[{\"amount\":{\"currency_code\":\""
+                + amount.currency + "\",\"value\":\"" + amount.value
+                + "\"},\"payments\":{\"captures\":[{\"id\":\"" + capture
+                + "\",\"status\":\"" + status + "\",\"amount\":{\"currency_code\":\""
+                + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]}}]}");
+    }
+    private static MockResponse captureResource(String capture, Amount amount, String status) {
+        return json("{\"id\":\"" + capture + "\",\"status\":\"" + status
+                + "\",\"amount\":{\"currency_code\":\"" + amount.currency
+                + "\",\"value\":\"" + amount.value + "\"}}");
     }
 
     private static String captureId(RecordedRequest request) {
@@ -255,7 +311,7 @@ public abstract class PayPalIntegrationTestSupport {
     }
 
     private record Amount(String currency, String value) {
-        private static final Amount ZERO = new Amount("KRW", "0");
+        private static final Amount ZERO = new Amount("USD", "0.00");
         private static final Pattern CURRENCY = Pattern.compile("\\\"currency_code\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
         private static final Pattern VALUE = Pattern.compile("\\\"value\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
 

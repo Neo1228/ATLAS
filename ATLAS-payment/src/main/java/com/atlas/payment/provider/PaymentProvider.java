@@ -7,5 +7,7 @@ public interface PaymentProvider {
 
     PaymentRefundProviderResult refund(PaymentRefundRequest request);
     PaymentRefundProviderResult getRefund(String refundId);
+    default String providerCurrency() { return "KRW"; }
+    default boolean requiresFxSnapshot() { return false; }
     PaymentWebhookEvent verifyWebhook(PaymentWebhookSignature signature, String rawBody);
 }

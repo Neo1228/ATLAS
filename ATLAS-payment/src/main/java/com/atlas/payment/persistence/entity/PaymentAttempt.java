@@ -8,6 +8,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 import lombok.Getter;
 
@@ -31,6 +33,16 @@ public class PaymentAttempt {
     @Getter private boolean authorizationActive;
     @Column(name = "total_won")
     @Getter private Long totalWon;
+    @Column(name = "provider_amount_minor")
+    @Getter private Long providerAmountMinor;
+    @Column(name = "provider_currency", length = 3)
+    @Getter private String providerCurrency;
+    @Column(name = "fx_rate_won_per_usd", precision = 20, scale = 10)
+    @Getter private BigDecimal fxRateWonPerUsd;
+    @Column(name = "fx_rate_source", length = 64)
+    @Getter private String fxRateSource;
+    @Column(name = "fx_rate_as_of")
+    @Getter private LocalDate fxRateAsOf;
     @Column(name = "provider_order_id", unique = true, length = 64)
     @Getter private String providerOrderId;
     @Column(name = "provider_authorization_id", unique = true, length = 64)
@@ -83,4 +95,33 @@ public class PaymentAttempt {
     public void setAuthorizationRequestId(String value) { this.authorizationRequestId = value; }
     public void setCaptureRequestId(String value) { this.captureRequestId = value; }
     public void setVoidRequestId(String value) { this.voidRequestId = value; }
+    public boolean hasFxSnapshot() {
+        return providerAmountMinor != null && providerAmountMinor > 0
+                && "USD".equals(providerCurrency) && fxRateWonPerUsd != null
+                && fxRateWonPerUsd.signum() > 0 && fxRateSource != null && fxRateAsOf != null;
+    }
+
+    public void setFxSnapshot(BigDecimal rate, String source, LocalDate asOfDate,
+            long providerAmountMinor, String providerCurrency) {
+        boolean partialSnapshot = this.providerAmountMinor != null || this.providerCurrency != null
+                || this.fxRateWonPerUsd != null || this.fxRateSource != null || this.fxRateAsOf != null;
+        if (providerAmountMinor <= 0 || rate == null || rate.signum() <= 0
+                || source == null || source.isBlank() || asOfDate == null || !"USD".equals(providerCurrency)) {
+            throw new IllegalArgumentException("A valid USD exchange-rate snapshot is required");
+        }
+        if (partialSnapshot) {
+            if (!hasFxSnapshot() || this.providerAmountMinor != providerAmountMinor
+                    || !this.providerCurrency.equals(providerCurrency)
+                    || this.fxRateWonPerUsd.compareTo(rate) != 0
+                    || !this.fxRateSource.equals(source) || !this.fxRateAsOf.equals(asOfDate)) {
+                throw new IllegalStateException("Payment FX snapshot is immutable");
+            }
+            return;
+        }
+        this.providerAmountMinor = providerAmountMinor;
+        this.providerCurrency = providerCurrency;
+        this.fxRateWonPerUsd = rate;
+        this.fxRateSource = source;
+        this.fxRateAsOf = asOfDate;
+    }
 }

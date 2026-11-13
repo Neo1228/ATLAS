@@ -31,6 +31,7 @@ services:
       PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
       PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
       PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
