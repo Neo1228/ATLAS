@@ -4,6 +4,7 @@
 - 결정일: 2026-11-09
 - 결정 ID: [D-081](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-017/BR-017/INV-014](../../01-requirements/requirements-index.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
+- 통화 경계: [ADR-0030](ADR-0030-paypal-currency-boundary.md)
 - 관련 Issue: [Issue #191](https://github.com/Neo1228/ATLAS/issues/191)
 - 선행 결정: [ADR-0011 원장](ADR-0011-gross-capture-settlement-ledger.md), [ADR-0013 환불](ADR-0013-pre-shipment-refund-recording.md), [ADR-0015 초기 payment progression (대체된 결정)](ADR-0015-initial-payment-progression.md).
 
@@ -14,7 +15,7 @@ PayPal AI Hackathon 결제 흐름에서 PayPal Orders API Sandbox를 사용. Pro
 ## 결정
 
 - PayPal Orders API Sandbox를 결제 provider로 연결. 구매자 승인 후 authorization, capture, void 및 capture refund 지원.
-- 결제 금액·통화는 저장된 주문 snapshot 기준. Client 요청값으로 금액을 결정하지 않음.
+- Order·Settlement 원장은 KRW 유지. PayPal 요청은 [ADR-0030](ADR-0030-paypal-currency-boundary.md)의 PaymentAttempt 고정 FX 스냅샷에 저장된 USD 금액·통화 사용. Client 입력 금액은 결제 근거에서 제외.
 - Provider order/authorization/capture/refund ID와 operation 결과를 저장. HTTP provider 호출은 업무 DB transaction 밖에서 수행.
 - PayPal `PayPal-Request-Id`는 각 endpoint의 공식 지원이 확인된 경우에만 사용. 지원하지 않거나 응답이 불명확한 operation은 내부 operation ID와 PayPal resource 상태 조회로 복구. 무조건 재시도 금지.
 - Webhook은 PayPal 서명 확인 후 event ID 중복을 제거. Provider 결과 확인 뒤 checkout, coupon, inventory 및 원장 변경 적용.
@@ -25,7 +26,7 @@ PayPal AI Hackathon 결제 흐름에서 PayPal Orders API Sandbox를 사용. Pro
   - `application-module`: HTTP 경로, 설정, Flyway migration
 - PayPal credentials가 없으면 payment request는 `PROVIDER_UNAVAILABLE`로 실패. 비결제 기능은 계속 사용할 수 있음.
 - Settlement ledger에는 PayPal에서 확인된 capture/refund만 기록. Ledger entry는 provider-confirmed event에 대응하는 내부 회계 기록.
-- `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`는 비밀 저장소나 환경 변수로만 전달. Sandbox URL은 `PAYPAL_BASE_URL`로 구성. GitHub Actions Secret은 로컬 컴퓨터로 자동 전달되지 않음.
+- `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `BOK_ECOS_API_KEY`는 비밀 저장소나 환경 변수로만 전달. Sandbox URL은 `PAYPAL_BASE_URL`로 구성. GitHub Actions Secret의 로컬 자동 전달 미지원.
 
 ## 근거와 대안
 
