@@ -24,6 +24,10 @@ import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
 import com.atlas.inventory.service.InventoryService;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -169,6 +173,87 @@ class InventoryLocationIntegrationTest {
                 .satisfies(stock -> assertThat(stock.available()).isEqualTo(5));
         assertThat(inventory.findLocationInventory(sellerId, north.locationId())).singleElement()
                 .satisfies(stock -> assertThat(stock.available()).isEqualTo(3));
+    }
+
+    @Test
+    void concurrentTransferReplayMovesStockOnlyOnce() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String sku = createSku(sellerId, 8);
+        InventoryLocationResponse north = inventory.createLocation(
+                new CreateFulfillmentLocationRequest(sellerId, "CONCURRENT-" + UUID.randomUUID(), "North", 1));
+        String transferKey = "concurrent-transfer-" + UUID.randomUUID();
+        TransferInventoryRequest request = new TransferInventoryRequest(sellerId, sku,
+                defaultLocation(sellerId), north.locationId(), 3, transferKey, "concurrent replay");
+        CyclicBarrier start = new CyclicBarrier(2);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return inventory.transfer(request);
+            });
+            var second = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return inventory.transfer(request);
+            });
+
+            assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(second.get(20, TimeUnit.SECONDS));
+        }
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inventory_transfer WHERE seller_id=? AND sku_id=? AND idempotency_key=?",
+                Integer.class, sellerId, sku, transferKey)).isEqualTo(1);
+        assertThat(inventory.findLocationInventory(sellerId, defaultLocation(sellerId))).singleElement()
+                .satisfies(stock -> assertThat(stock.available()).isEqualTo(5));
+        assertThat(inventory.findLocationInventory(sellerId, north.locationId())).singleElement()
+                .satisfies(stock -> assertThat(stock.available()).isEqualTo(3));
+    }
+
+    @Test
+    void concurrentDifferentTransferFactsWithSameKeyCommitOnlyOneMovement() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String sku = createSku(sellerId, 8);
+        InventoryLocationResponse north = inventory.createLocation(
+                new CreateFulfillmentLocationRequest(sellerId, "CONFLICT-" + UUID.randomUUID(), "North", 1));
+        String transferKey = "conflicting-transfer-" + UUID.randomUUID();
+        UUID sourceLocationId = defaultLocation(sellerId);
+        TransferInventoryRequest firstRequest = new TransferInventoryRequest(sellerId, sku,
+                sourceLocationId, north.locationId(), 3, transferKey, "first payload");
+        TransferInventoryRequest secondRequest = new TransferInventoryRequest(sellerId, sku,
+                sourceLocationId, north.locationId(), 2, transferKey, "different payload");
+        CyclicBarrier start = new CyclicBarrier(2);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return inventory.transfer(firstRequest);
+            });
+            var second = executor.submit(() -> {
+                start.await(10, TimeUnit.SECONDS);
+                return inventory.transfer(secondRequest);
+            });
+
+            int successfulTransfers = 0;
+            for (var result : List.of(first, second)) {
+                try {
+                    result.get(20, TimeUnit.SECONDS);
+                    successfulTransfers++;
+                } catch (ExecutionException exception) {
+                    assertThat(exception.getCause()).isInstanceOf(InventoryException.class);
+                    assertThat(((InventoryException) exception.getCause()).code())
+                            .isEqualTo(InventoryException.Code.CONFLICT);
+                }
+            }
+            assertThat(successfulTransfers).isEqualTo(1);
+        }
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inventory_transfer WHERE seller_id=? AND sku_id=? AND idempotency_key=?",
+                Integer.class, sellerId, sku, transferKey)).isEqualTo(1);
+        int sourceAvailable = inventory.findLocationInventory(sellerId, sourceLocationId).getFirst().available();
+        int destinationAvailable = inventory.findLocationInventory(sellerId, north.locationId()).getFirst().available();
+        assertThat(sourceAvailable + destinationAvailable).isEqualTo(8);
+        assertThat(sourceAvailable).isIn(5, 6);
+        assertThat(destinationAvailable).isIn(2, 3);
     }
 
     @Test

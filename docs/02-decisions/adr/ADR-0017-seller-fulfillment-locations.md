@@ -2,7 +2,7 @@
 
 - 상태: 승인
 - 결정: D-072
-- 추적: [Issue #157](https://github.com/Neo1228/ATLAS/issues/157), [요구사항 FR-011](../../01-requirements/requirements-index.md)
+- 추적: [Issue #157](https://github.com/Neo1228/ATLAS/issues/157), [PR #158](https://github.com/Neo1228/ATLAS/pull/158), [요구사항 FR-011](../../01-requirements/requirements-index.md)
 
 ## 배경
 
@@ -37,4 +37,4 @@ Seller SKU 재고와 예약이 이미 존재한다. Seller별 fulfillment locati
 - 모든 order line을 충족하는 location을 선택. Aggregate Seller-SKU 재고만으로 Reorder 가능성을 판정하지 않음.
 - Global seller lock과 location 분할은 추가하지 않음.
 - Address·geography·carrier·channel inventory와 자동 최적화 정책은 Q-002에서 미결.
-- PostgreSQL 통합 검증은 구현 단계에서 수행. 이 ADR은 테스트 통과를 주장하지 않음.
+- PostgreSQL Testcontainers 통합 테스트에서 concurrent same-key/same-facts replay의 단일 이동·동일 결과, changed-facts 경합의 단일 이동·conflict, capacity 보존 확인.
