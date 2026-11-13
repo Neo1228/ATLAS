@@ -1,12 +1,17 @@
 package com.atlas.application.config;
 
-import java.util.stream.Collectors;
+import com.atlas.application.filter.RequestCorrelationFilter;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import javax.sql.DataSource;
 import net.ttddyy.dsproxy.QueryInfo;
 import net.ttddyy.dsproxy.support.ProxyDataSource;
 import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +26,7 @@ public class SlowQueryDataSourceConfiguration {
     static BeanPostProcessor slowQueryDataSourcePostProcessor(Environment environment) {
         String configuredThreshold = environment.getProperty(THRESHOLD_ENV);
         if (configuredThreshold == null || configuredThreshold.isBlank()) {
+            LOGGER.info("slow_sql_detection enabled=false threshold_env={}", THRESHOLD_ENV);
             return new BeanPostProcessor() { };
         }
 
@@ -33,6 +39,7 @@ public class SlowQueryDataSourceConfiguration {
         if (thresholdMs <= 0) {
             throw new IllegalStateException(THRESHOLD_ENV + " must be greater than zero");
         }
+        LOGGER.info("slow_sql_detection enabled=true threshold_ms={}", thresholdMs);
 
         return new BeanPostProcessor() {
             @Override
@@ -46,14 +53,26 @@ public class SlowQueryDataSourceConfiguration {
                             if (executionInfo.getElapsedTime() < thresholdMs) {
                                 return;
                             }
-                            String statements = queryInfoList.stream()
-                                    .map(QueryInfo::getQuery)
-                                    .collect(Collectors.joining(" | "));
-                            LOGGER.warn("slow_sql datasource={} elapsed_ms={} success={} statement={}",
-                                    beanName, executionInfo.getElapsedTime(), executionInfo.isSuccess(), statements);
+                            LOGGER.warn("slow_sql requestId={} datasource={} elapsed_ms={} success={} "
+                                            + "statement_count={} statement_fingerprint={}",
+                                    MDC.get(RequestCorrelationFilter.REQUEST_ID_MDC_KEY), beanName,
+                                    executionInfo.getElapsedTime(), executionInfo.isSuccess(), queryInfoList.size(), fingerprint(queryInfoList));
                         })
                         .build();
             }
         };
+    }
+
+    private static String fingerprint(Iterable<QueryInfo> queryInfoList) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (QueryInfo queryInfo : queryInfoList) {
+                digest.update(queryInfo.getQuery().getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 }

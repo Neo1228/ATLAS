@@ -379,6 +379,32 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     @Test
+    void lostRefundResponseStaysUnknownAndSameKeyReplayReusesProviderRequestId() {
+        Fixture fixture = paidOrder(1, 2, 125);
+        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(), "refund-lost-response-key",
+                fixture.orderItemId(), 1);
+
+        disconnectNextRefundResponse();
+        OrderRefundResponse unknown = refunds.refund(request);
+        assertThat(unknown.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
+        assertStock(fixture, 1, 1);
+        assertThat(journalCountForRefund(unknown.refundId())).isZero();
+        assertThat(refundRequestIds()).hasSize(1);
+
+        OrderRefundResponse completed = refunds.refund(request);
+        assertThat(completed.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+        assertThat(completed.refundId()).isEqualTo(unknown.refundId());
+        assertThat(refundRequestIds()).hasSize(2).containsOnly(refundRequestIds().getFirst());
+        assertStock(fixture, 2, 0);
+        assertThat(journalCountForRefund(completed.refundId())).isEqualTo(1);
+
+        assertThat(refunds.refund(request)).isEqualTo(completed);
+        assertThat(refundRequestIds()).hasSize(2);
+        assertStock(fixture, 2, 0);
+        assertThat(journalCountForRefund(completed.refundId())).isEqualTo(1);
+    }
+
+    @Test
     void inspectedReturnResponseExposesUnknownAndReconciledProviderRefundStatus() {
         Fixture fixture = paidOrder(1, 1, 125);
         deliver(fixture);

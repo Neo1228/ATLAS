@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,7 +48,9 @@ public abstract class PayPalIntegrationTestSupport {
     private static final Queue<String> WEBHOOK_SIGNATURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final AtomicBoolean DISCONNECT_NEXT_CAPTURE = new AtomicBoolean();
     private static final AtomicBoolean DISCONNECT_NEXT_AUTHORIZATION = new AtomicBoolean();
+    private static final AtomicBoolean DISCONNECT_NEXT_REFUND = new AtomicBoolean();
     private static final AtomicInteger CAPTURE_REQUEST_COUNT = new AtomicInteger();
+    private static final Queue<String> REFUND_REQUEST_IDS = new ConcurrentLinkedQueue<>();
     protected static void queueAuthorizationStatus(String status) { AUTHORIZATION_STATUSES.add(status); }
     protected static void queueOrderStatus(String status) { ORDER_STATUSES.add(status); }
     protected static void queueOrderCreateStatus(String status) { ORDER_CREATE_STATUSES.add(status); }
@@ -62,7 +65,10 @@ public abstract class PayPalIntegrationTestSupport {
     protected static void queueWebhookVerificationStatus(String status) { WEBHOOK_SIGNATURE_STATUSES.add(status); }
     protected static void disconnectNextCaptureResponse() { DISCONNECT_NEXT_CAPTURE.set(true); }
     protected static void disconnectNextAuthorizationResponse() { DISCONNECT_NEXT_AUTHORIZATION.set(true); }
+    /** 다음 refund POST를 stub에 기록한 뒤 응답 없이 연결을 끊는다. */
+    protected static void disconnectNextRefundResponse() { DISCONNECT_NEXT_REFUND.set(true); }
     protected static int captureRequestCount() { return CAPTURE_REQUEST_COUNT.get(); }
+    protected static List<String> refundRequestIds() { return List.copyOf(REFUND_REQUEST_IDS); }
 
     @BeforeEach
     protected void resetPayPalStubState() throws InterruptedException {
@@ -86,7 +92,9 @@ public abstract class PayPalIntegrationTestSupport {
         WEBHOOK_SIGNATURE_STATUSES.clear();
         DISCONNECT_NEXT_CAPTURE.set(false);
         DISCONNECT_NEXT_AUTHORIZATION.set(false);
+        DISCONNECT_NEXT_REFUND.set(false);
         CAPTURE_REQUEST_COUNT.set(0);
+        REFUND_REQUEST_IDS.clear();
         while (PAYPAL.takeRequest(0, TimeUnit.MILLISECONDS) != null) {
             // 이전 테스트의 미소비 요청을 제거한다.
         }
@@ -212,9 +220,13 @@ public abstract class PayPalIntegrationTestSupport {
                     Amount amount = Amount.from(body, CAPTURES.getOrDefault(captureId, Amount.ZERO));
                     String requestId = request.getHeader("PayPal-Request-Id");
                     String replayKey = requestId == null ? UUID.randomUUID().toString() : requestId;
+                    REFUND_REQUEST_IDS.add(replayKey);
                     String refundId = REFUNDS_BY_REQUEST_ID.computeIfAbsent(replayKey,
                             ignored -> "REFUND-" + UUID.randomUUID());
                     REFUND_AMOUNTS.put(refundId, amount);
+                    if (DISCONNECT_NEXT_REFUND.compareAndSet(true, false)) {
+                        return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
+                    }
                     String refundStatus = nextStatus(REFUND_STATUSES, "COMPLETED");
                     return json("{\"id\":\"" + refundId + "\",\"status\":\"" + refundStatus + "\",\"amount\":{\"currency_code\":\"" + amount.currency + "\",\"value\":\"" + amount.value + "\"}}");
                 }

@@ -8,5 +8,6 @@ public interface CheckoutPaymentService {
     CheckoutResponse completeApproval(UUID checkoutId, String providerOrderId);
     CheckoutResponse reconcile(UUID checkoutId, String idempotencyKey);
     CheckoutResponse cancel(UUID checkoutId, String idempotencyKey);
+    CheckoutResponse cancelFromProvider(UUID checkoutId, String state);
     CheckoutResponse find(UUID checkoutId);
 }

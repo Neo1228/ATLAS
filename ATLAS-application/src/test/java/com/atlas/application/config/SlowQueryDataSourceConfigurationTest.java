@@ -16,6 +16,7 @@ import javax.sql.DataSource;
 import net.ttddyy.dsproxy.support.ProxyDataSource;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -61,7 +62,7 @@ class SlowQueryDataSourceConfigurationTest extends PayPalIntegrationTestSupport 
     }
 
     @Test
-    void logsSlowPreparedStatementWithoutBindValuesAndKeepsHikariUnwrapping() throws Exception {
+    void logsSlowPreparedStatementWithRequestIdWithoutBindValuesAndKeepsHikariUnwrapping() throws Exception {
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         LOGGER.addAppender(appender);
@@ -80,18 +81,25 @@ class SlowQueryDataSourceConfigurationTest extends PayPalIntegrationTestSupport 
                 connection.createStatement().execute("SELECT 1");
                 try (PreparedStatement statement = connection.prepareStatement("SELECT pg_sleep(?)")) {
                     statement.setDouble(1, 0.4);
-                    statement.execute();
+                    MDC.put("requestId", "slow-query-request-123");
+                    try {
+                        statement.execute();
+                    } finally {
+                        MDC.remove("requestId");
+                    }
                 }
             }
 
             List<String> slowMessages = appender.list.stream()
                     .map(ILoggingEvent::getFormattedMessage)
-                    .filter(message -> message.contains("slow_sql"))
+                    .filter(message -> message.startsWith("slow_sql requestId="))
                     .toList();
             assertThat(slowMessages).hasSize(1);
             assertThat(slowMessages.get(0))
-                    .contains("datasource=dataSource", "elapsed_ms=", "success=true", "SELECT pg_sleep(?)")
-                    .doesNotContain("0.4");
+                    .contains("requestId=slow-query-request-123", "datasource=dataSource", "elapsed_ms=",
+                            "success=true", "statement_count=1")
+                    .containsPattern("statement_fingerprint=[0-9a-f]{64}")
+                    .doesNotContain("SELECT pg_sleep", "0.4");
         } finally {
             hikari.close();
             LOGGER.detachAppender(appender);
@@ -101,13 +109,20 @@ class SlowQueryDataSourceConfigurationTest extends PayPalIntegrationTestSupport 
 
     @Test
     void leavesDataSourceUnwrappedWhenThresholdIsNotConfigured() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        LOGGER.addAppender(appender);
         HikariDataSource hikari = new HikariDataSource();
         try {
             BeanPostProcessor postProcessor = SlowQueryDataSourceConfiguration.slowQueryDataSourcePostProcessor(
                     new MockEnvironment());
             assertThat(postProcessor.postProcessAfterInitialization(hikari, "dataSource")).isSameAs(hikari);
+            assertThat(appender.list).extracting(ILoggingEvent::getFormattedMessage)
+                    .contains("slow_sql_detection enabled=false threshold_env=" + THRESHOLD_ENV);
         } finally {
             hikari.close();
+            LOGGER.detachAppender(appender);
+            appender.stop();
         }
     }
 

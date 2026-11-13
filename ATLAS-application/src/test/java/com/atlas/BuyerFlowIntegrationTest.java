@@ -61,6 +61,7 @@ import com.atlas.payment.provider.PaymentWebhookSignature;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.state.PaymentState;
 import tools.jackson.databind.ObjectMapper;
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -91,6 +92,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -1873,6 +1875,118 @@ assertUuidV7(paymentOrderId);
         assertThat(orders.find(order.orderId()).state()).isEqualTo(OrderState.CANCELLED);
         assertInventoryRestored(sellerId, firstSku, 4);
         assertInventoryRestored(sellerId, secondSku, 3);
+    }
+
+    @Test
+    void percentEncodedRouteLiteralsStillRequireSellerOwnership() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "encoded-owner-" + UUID.randomUUID();
+        registerProductSku(sellerId, skuId, 100, 1);
+        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, skuId, Duration.ofMinutes(5)));
+        authenticateBuyer(createBuyerAccount("encoded-owner-" + UUID.randomUUID() + "@example.com"));
+
+        mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(URI.create("/api/%73ellers/" + sellerId + "/products")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(URI.create("/api/campaigns/" + campaign.campaignId() + "/%6Fpen")))
+                .andExpect(status().isForbidden());
+        assertThat(campaigns.find(campaign.campaignId()).status()).isEqualTo(campaign.status());
+    }
+
+    @Test
+    void anonymousPayPalCancellationRequiresMatchingPersistedState() throws Exception {
+        UUID sellerId = sellers.createSeller().sellerId();
+        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("cancel-callback", null));
+        String sku = "cancel-callback-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 100, 2));
+        String buyerRef = "cancel-callback-buyer-" + UUID.randomUUID();
+        mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, sku)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
+                .andExpect(status().isOk());
+
+        CheckoutResponse checkout = objectMapper.readValue(mockMvc.perform(
+                post("/api/buyers/{buyerRef}/cart/checkout", buyerRef)
+                        .header("Idempotency-Key", "cancel-callback-" + UUID.randomUUID()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        assertThat(checkout.state()).isEqualTo(BuyerCheckoutState.RESERVED);
+        OrderResponse order = checkout.orders().getFirst();
+        assertThat(inventory.find(sellerId, sku).reserved()).isEqualTo(1);
+
+        CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
+                post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        String callbackState = paypalCheckoutCancelStateFromCreateOrderRequest();
+        PaymentResponse persistedPayment = payments.findCheckout(checkout.checkoutId());
+        assertThat(persistedPayment.providerOrderId()).isNotBlank();
+        assertThat(persistedPayment.checkoutId()).isEqualTo(checkout.checkoutId());
+        assertThat(pending.state()).isEqualTo(BuyerCheckoutState.PAYMENT_PENDING);
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+
+        mockMvc.perform(get("/api/checkouts/{checkoutId}/payment/cancel", checkout.checkoutId())
+                        .param("state", callbackState + "-mismatch"))
+                .andExpect(status().isBadRequest());
+        assertCancellationCallbackDidNotChangeState(checkout.checkoutId(), pending, order, sellerId, sku,
+                persistedPayment);
+
+        mockMvc.perform(get("/api/checkouts/{checkoutId}/payment/cancel", checkout.checkoutId()))
+                .andExpect(status().isBadRequest());
+        assertCancellationCallbackDidNotChangeState(checkout.checkoutId(), pending, order, sellerId, sku,
+                persistedPayment);
+
+        CheckoutResponse cancelled = objectMapper.readValue(mockMvc.perform(
+                get("/api/checkouts/{checkoutId}/payment/cancel", checkout.checkoutId())
+                        .param("state", callbackState))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        assertThat(cancelled.state()).isEqualTo(BuyerCheckoutState.CANCELLED);
+        assertThat(cancelled.paymentAttemptId()).isEqualTo(pending.paymentAttemptId());
+        assertThat(inventory.findReservations(order.orderId()))
+                .extracting(ReservationResponse::status).containsOnly(ReservationStatus.RELEASED);
+        assertThat(inventory.find(sellerId, sku).reserved()).isZero();
+
+        CheckoutResponse replay = objectMapper.readValue(mockMvc.perform(
+                get("/api/checkouts/{checkoutId}/payment/cancel", checkout.checkoutId())
+                        .param("state", callbackState))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
+        assertThat(replay.state()).isEqualTo(BuyerCheckoutState.CANCELLED);
+        assertThat(inventory.find(sellerId, sku).reserved()).isZero();
+    }
+
+    private String paypalCheckoutCancelStateFromCreateOrderRequest() throws Exception {
+        String createOrderRequestBody = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            var request = takePayPalRequest();
+            assertThat(request).isNotNull();
+            if ("/v2/checkout/orders".equals(request.getPath())) {
+                createOrderRequestBody = request.getBody().readUtf8();
+                break;
+            }
+        }
+        assertThat(createOrderRequestBody).isNotNull();
+        String cancelUrl = objectMapper.readTree(createOrderRequestBody)
+                .path("payment_source").path("paypal").path("experience_context").path("cancel_url").asString();
+        String state = UriComponentsBuilder.fromUriString(cancelUrl).build()
+                .getQueryParams().getFirst("state");
+        assertThat(state).isNotBlank();
+        return state;
+    }
+
+    private void assertCancellationCallbackDidNotChangeState(UUID checkoutId, CheckoutResponse pending,
+            OrderResponse order, UUID sellerId, String sku, PaymentResponse persistedPayment) {
+        CheckoutResponse unchanged = checkoutLifecycle.find(checkoutId);
+        assertThat(unchanged.state()).isEqualTo(BuyerCheckoutState.PAYMENT_PENDING);
+        assertThat(unchanged.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        assertThat(unchanged.paymentAttemptId()).isEqualTo(pending.paymentAttemptId());
+        assertThat(unchanged.orders()).extracting(OrderResponse::state).containsOnly(OrderState.PAYMENT_PENDING);
+        assertThat(unchanged.orders()).extracting(OrderResponse::inventoryState)
+                .containsOnly(ReservationStatus.RESERVED);
+        assertThat(inventory.findReservations(order.orderId()))
+                .extracting(ReservationResponse::status).containsOnly(ReservationStatus.RESERVED);
+        assertThat(inventory.find(sellerId, sku).reserved()).isEqualTo(1);
+        PaymentResponse currentPayment = payments.findCheckout(checkoutId);
+        assertThat(currentPayment.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        assertThat(currentPayment.attemptId()).isEqualTo(persistedPayment.attemptId());
+        assertThat(currentPayment.providerOrderId()).isEqualTo(persistedPayment.providerOrderId());
     }
 
     @Test

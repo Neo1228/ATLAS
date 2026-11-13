@@ -9,18 +9,18 @@
 
 ## 배경
 
-Buyer가 주문한 일부 수량을 환불할 때 금액 계산과 재고 복원량을 OrderItem 단위로 일치시켜야 합니다. PayPal refund 결과와 내부 refund record·ledger·inventory 상태도 분리된 transaction 경계에서 일관되게 반영해야 합니다.
+Buyer 부분 수량 환불 시 금액 계산과 재고 복원량의 OrderItem 단위 정합 필요. PayPal refund 결과와 내부 refund record·ledger·inventory 상태의 분리 transaction 경계 간 정합 필요.
 
-초기 D-068은 내부 환불 기록과 reversal journal을 정의했습니다. PayPal provider 호출과 확인된 결과의 반영은 [D-081](../../00-governance/decision-log.md) 및 [ADR-0026](ADR-0026-paypal-sandbox-payments.md)로 확장.
+초기 D-068 범위: 내부 환불 기록과 reversal journal. PayPal provider 호출과 확인된 결과 반영은 [D-081](../../00-governance/decision-log.md) 및 [ADR-0026](ADR-0026-paypal-sandbox-payments.md)로 확장.
 
 ## 결정
 
 - `UNFULFILLED` 또는 `IN_PROGRESS` SellerOrder만 배송 전 환불 허용. `SHIPPED` 이후 요청은 반품·검수 흐름 사용.
-- Refund amount는 구매 시 저장한 OrderItem unit-price snapshot × 환불 수량으로 계산. 각 OrderItem의 누적 환불 수량은 주문 수량 이하.
+- Refund amount는 구매 당시 OrderItem unit-price snapshot × 환불 수량에서 coupon allocation snapshot을 차감해 산출. Coupon 잔여 할인액은 [ADR-0024](ADR-0024-seller-coupon-allocation.md)에 따라 앞선 수량부터 배정. 각 OrderItem의 누적 환불 수량은 주문 수량 이하.
 - 요청은 `Idempotency-Key`로 식별. 동일 key·동일 facts는 기존 결과 반환; 다른 facts 재사용은 conflict.
 - PayPal refund request는 Order 업무 transaction 밖에서 실행. Provider 응답이 `PENDING`·`UNKNOWN`이면 완료로 처리하지 않고 동일 refund operation으로 재조정.
 - PayPal refund가 확인된 뒤 refund record·ledger reversal·inventory restoration을 하나의 PostgreSQL transaction에서 commit.
-- 원 capture journal은 수정하지 않음. Refund journal은 `SELLER_PAYABLE` debit과 `PSP_CLEARING` credit으로 기록.
+- 원 capture journal 수정 0건. Refund journal은 `SELLER_PAYABLE` debit과 `PSP_CLEARING` credit으로 기록.
 - `OrderState.PAID` 유지. Refund record는 별도 상태로 관리. 전 수량이 refund된 SellerOrder는 추가 fulfillment 거부.
 - Delivered return은 Seller receipt·OrderItem inspection을 선행하는 별도 흐름 ([D-071](../../00-governance/decision-log.md), [ADR-0016](ADR-0016-buyer-wide-cart-multi-seller-checkout.md)).
 
