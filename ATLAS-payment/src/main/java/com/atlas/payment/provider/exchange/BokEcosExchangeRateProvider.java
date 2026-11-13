@@ -11,6 +11,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.stream.StreamSupport;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -51,7 +52,7 @@ public class BokEcosExchangeRateProvider implements ExchangeRateProvider {
                     .body(JsonNode.class);
             JsonNode rows = response == null ? null : response.path("StatisticSearch").path("row");
             if (rows == null || !rows.isArray()) throw unavailable();
-            ExchangeRateQuote latest = java.util.stream.StreamSupport.stream(rows.spliterator(), false)
+            ExchangeRateQuote latest = StreamSupport.stream(rows.spliterator(), false)
                     .map(BokEcosExchangeRateProvider::quote)
                     .filter(Objects::nonNull)
                     .filter(rate -> !rate.asOfDate().isAfter(today))
