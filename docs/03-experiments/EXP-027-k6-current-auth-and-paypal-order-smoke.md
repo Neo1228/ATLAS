@@ -1,6 +1,6 @@
 # EXP-027 — K6 인증·PayPal order smoke 검증
 
-**상태:** 측정 완료 · 본 실험의 PayPal Sandbox order 요청 미실행
+**상태:** checkout-only pilot 측정 완료 · EXP-027 실행에서 PayPal Sandbox order 미호출 · 별도 Sandbox E2E는 Issue #254/PR #262에서 완료
 
 **연결:** [Issue #248](https://github.com/Neo1228/ATLAS/issues/248)
 
@@ -39,7 +39,7 @@
 | PayPal 요청 | 0 |
 
 > [!NOTE]
-> 1초 correctness smoke 결과. 지속 부하·용량·RPS/TPS 성능 비교 또는 SLO 근거로 해석 금지. `completed checkout / 설정 window`는 이 실행의 단순 비율이며 안정 처리량으로 해석 금지.
+> 1초 correctness smoke 결과. 지속 부하·용량·RPS/TPS 성능 비교 또는 SLO 근거 미해당. `completed checkout / 설정 window`는 이 실행의 단순 비율이며 안정 처리량으로 해석 금지. Issue #254/PR #262의 Sandbox E2E는 별도 실행 근거.
 
 ### 관찰 및 수정
 
@@ -71,10 +71,9 @@
 
 ## 제한 및 이력
 
-- 본 실험 실행에서는 PayPal Sandbox order 생성 미실행
-- 후속 Sandbox E2E (2026-11-13): KRW 2,000 → PayPal USD 1.50 (BOK 기준환율 1,332.4 KRW/USD, 기준일 2026-11-13), Buyer 승인·capture, unknown capture의 PayPal order GET 복구, `CAPTURED`·`PAID`·`CLAIMED`, settlement journal 차변·대변 각 KRW 2,000 확인. 상세: [README PayPal Sandbox](../../README.md#paypal-sandbox)
-- 후속 E2E는 본 실험 pilot과 별도 실행이며 1초 checkout pilot의 성능·용량 근거에 미포함
+- EXP-027 checkout-only pilot에서는 PayPal Sandbox order 미호출. 별도 Sandbox E2E (2026-11-13): KRW 2,000 → USD 1.50 (BOK 1,332.4 KRW/USD, 기준일 2026-11-13, provider amount 150 cents), Buyer approval·capture 성공, PayPal order `COMPLETED`, UNKNOWN capture 응답의 order GET 복구, K6 verification 1/1 `CAPTURED`·`PAID`·`CLAIMED`, KRW settlement journal 균형 확인 (PSP_CLEARING debit 2,000 / SELLER_PAYABLE credit 2,000). 근거: [Issue #254](https://github.com/Neo1228/ATLAS/issues/254) · [PR #262](https://github.com/Neo1228/ATLAS/pull/262) · [README PayPal Sandbox](../../README.md#paypal-sandbox)
+- 별도 E2E는 성공 capture·정산 경로의 근거이며 EXP-027 1초 pilot의 처리량·부하 결과와 무관. Expiry/approval 경합 검증 근거로도 사용 금지.
 - PayPal provider result `PENDING`은 API `AUTHORIZATION_PENDING`으로 매핑. Buyer approval 이후 authorization·capture 진행
-- 현재 expiry sweep는 `RESERVED`만 처리. `PAYMENT_PENDING` reservation은 `checkoutExpiresAt` 이후에도 잔존 가능. 후속: [Issue #254](https://github.com/Neo1228/ATLAS/issues/254)
-- Buyer approval·capture 자동화 없이 settlement write path를 측정한 것으로 주장 금지
+- 현재 expiry sweep는 `RESERVED`만 조회. `PAYMENT_PENDING` reservation은 provider 결과 확인·reconciliation 전까지 `checkoutExpiresAt` 뒤에도 유지. 단순 TTL로 inventory를 해제하지 않는 안전 우선 계약: [ADR-0029](../02-decisions/adr/ADR-0029-order-payment-recovery-contract.md)
+- EXP-027 pilot의 settlement write path 측정 0건. 별도 E2E의 균형 원장은 correctness 근거이며 write throughput 측정 근거 미해당.
 - [EXP-022](EXP-022-settlement-app-write-cost.md)는 과거 checkout/capture 결과 보존. 현재 PayPal 흐름과 직접 비교 불가
