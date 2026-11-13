@@ -438,7 +438,7 @@ public class PaymentServiceImpl implements PaymentService {
                     return rejectedWebhook(event, now);
                 }
                 if (!webhookEvents.insertReceived(event, now)) {
-                    // A committed capture may still need downstream order reconciliation after a prior failure.
+                    // 캡처 이벤트가 이미 commit된 경우에도 이전 주문 조정 실패 후 재시도 필요
                     return new PaymentWebhookResult(true, true, null, null, current.getAttemptId(), true);
                 }
                 current.setProviderCaptureId(event.resourceId());
