@@ -22,6 +22,11 @@ public class PayPalPaymentProvider implements PaymentProvider {
     public PayPalPaymentProvider(PayPalRestClient client) {
         this.client = Objects.requireNonNull(client);
     }
+    @Override
+    public String providerCurrency() { return "USD"; }
+
+    @Override
+    public boolean requiresFxSnapshot() { return true; }
 
     @Override
     public PaymentProviderResult perform(PaymentRequest request) {
@@ -57,8 +62,9 @@ public class PayPalPaymentProvider implements PaymentProvider {
     public PaymentRefundProviderResult refund(PaymentRefundRequest request) {
         try {
             PayPalRestClient.RefundResult refund = client.refundCapture(request.captureId(),
-                    BigDecimal.valueOf(request.amountMinor()), request.currency(), request.requestId());
-            return refundResult(refund.id(), refund.status());
+                    BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
+                    request.requestId());
+            return refundResult(refund.id(), refund.status(), refund.amount(), refund.currency());
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
             throw unavailable();
         }
@@ -68,7 +74,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
     public PaymentRefundProviderResult getRefund(String refundId) {
         try {
             PayPalRestClient.RefundResult refund = client.getRefund(refundId);
-            return refundResult(refund.id(), refund.status());
+            return refundResult(refund.id(), refund.status(), refund.amount(), refund.currency());
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
             throw unavailable();
         }
@@ -87,7 +93,8 @@ public class PayPalPaymentProvider implements PaymentProvider {
         }
     }
 
-    private static PaymentRefundProviderResult refundResult(String refundId, String status) {
+    private static PaymentRefundProviderResult refundResult(
+            String refundId, String status, BigDecimal amount, String currency) {
         PaymentRefundProviderResult.Outcome outcome = switch (status == null ? "" : status) {
             case "COMPLETED" -> PaymentRefundProviderResult.Outcome.COMPLETED;
             case "PENDING", "CREATED" -> PaymentRefundProviderResult.Outcome.PENDING;
@@ -97,12 +104,13 @@ public class PayPalPaymentProvider implements PaymentProvider {
         if (refundId == null && outcome != PaymentRefundProviderResult.Outcome.FAILED) {
             outcome = PaymentRefundProviderResult.Outcome.UNKNOWN;
         }
-        return new PaymentRefundProviderResult(outcome, refundId, status);
+        return new PaymentRefundProviderResult(outcome, refundId, status, amount, currency);
     }
     private PaymentProviderResult createOrAuthorize(PaymentRequest request) {
         if (request.providerOrderId() == null) {
             PayPalRestClient.OrderResult order = client.createOrder(request.ownerId().toString(),
-                    BigDecimal.valueOf(request.amountMinor()), request.currency(), request.returnUrl(),
+                    BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
+                    request.returnUrl(),
                     request.cancelUrl(), request.createOrderRequestId());
             if (order.id() == null) return unknown(request);
             PaymentRequest withOrder = withOrder(request, order.id());
@@ -144,8 +152,10 @@ public class PayPalPaymentProvider implements PaymentProvider {
             PaymentRequest request, PayPalRestClient.OrderStatus order) {
         if (order.captureId() != null) {
             return switch (order.captureStatus() == null ? "" : order.captureStatus()) {
-                case "COMPLETED" -> result(PaymentProviderResult.Outcome.CAPTURED, order.id(),
-                        order.authorizationId(), order.captureId(), null);
+                case "COMPLETED" -> providerAmountMatches(request, order.captureAmount(), order.captureCurrency())
+                        ? result(PaymentProviderResult.Outcome.CAPTURED, order.id(),
+                                order.authorizationId(), order.captureId(), null)
+                        : unknown(request);
                 case "DECLINED", "FAILED", "DENIED" -> result(PaymentProviderResult.Outcome.DECLINED,
                         order.id(), order.authorizationId(), order.captureId(), null);
                 default -> unknown(request);
@@ -169,10 +179,17 @@ public class PayPalPaymentProvider implements PaymentProvider {
         return "CREATED".equals(status) || "SAVED".equals(status) || "PAYER_ACTION_REQUIRED".equals(status);
     }
 
+    private static boolean providerAmountMatches(
+            PaymentRequest request, BigDecimal amount, String currency) {
+        return amount != null
+                && amount.compareTo(BigDecimal.valueOf(request.providerAmountMinor(), 2)) == 0
+                && request.providerCurrency().equalsIgnoreCase(currency);
+    }
+
     private static void validateOrderAmount(PaymentRequest request, PayPalRestClient.OrderStatus order) {
         if (order == null || order.amount() == null
-                || order.amount().compareTo(BigDecimal.valueOf(request.amountMinor())) != 0
-                || !request.currency().equals(order.currency())) {
+                || order.amount().compareTo(BigDecimal.valueOf(request.providerAmountMinor(), 2)) != 0
+                || !request.providerCurrency().equals(order.currency())) {
             throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
                     "PayPal order amount or currency does not match the payment attempt");
         }
@@ -197,7 +214,9 @@ public class PayPalPaymentProvider implements PaymentProvider {
     private PaymentProviderResult capture(PaymentRequest request) {
         if (request.providerAuthorizationId() == null) return unknown(request);
         PayPalRestClient.CaptureResult capture = client.captureAuthorization(request.providerAuthorizationId(),
-                BigDecimal.valueOf(request.amountMinor()), request.currency(), request.captureRequestId());
+                BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
+                request.captureRequestId());
+        if (!providerAmountMatches(request, capture.amount(), capture.currency())) return unknown(request);
         PaymentProviderResult.Outcome outcome = "COMPLETED".equals(capture.status())
                 ? PaymentProviderResult.Outcome.CAPTURED
                 : "PENDING".equals(capture.status()) ? PaymentProviderResult.Outcome.PENDING
@@ -215,8 +234,9 @@ public class PayPalPaymentProvider implements PaymentProvider {
     }
 
     private static PaymentRequest withOrder(PaymentRequest request, String orderId) {
-        return new PaymentRequest(request.operation(), request.ownerId(), request.attemptId(), request.amountMinor(),
-                request.currency(), orderId, request.providerAuthorizationId(), request.createOrderRequestId(),
+        return new PaymentRequest(request.operation(), request.ownerId(), request.attemptId(),
+                request.providerAmountMinor(), request.providerCurrency(), orderId,
+                request.providerAuthorizationId(), request.createOrderRequestId(),
                 request.authorizationRequestId(), request.captureRequestId(), request.voidRequestId(),
                 request.returnUrl(), request.cancelUrl());
     }

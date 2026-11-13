@@ -12,8 +12,6 @@ public class PayPalProperties {
     private String clientId;
     private String clientSecret;
     private String webhookId;
-    private String returnUrl;
-    private String cancelUrl;
 
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
@@ -23,10 +21,6 @@ public class PayPalProperties {
     public void setClientSecret(String clientSecret) { this.clientSecret = clientSecret; }
     public String getWebhookId() { return webhookId; }
     public void setWebhookId(String webhookId) { this.webhookId = webhookId; }
-    public String getReturnUrl() { return returnUrl; }
-    public void setReturnUrl(String returnUrl) { this.returnUrl = returnUrl; }
-    public String getCancelUrl() { return cancelUrl; }
-    public void setCancelUrl(String cancelUrl) { this.cancelUrl = cancelUrl; }
     public void validateBaseUrl() {
         if (!StringUtils.hasText(baseUrl)) throw new IllegalStateException("PayPal base URL is required");
         URI endpoint;

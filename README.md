@@ -52,7 +52,7 @@ export JAVA_HOME="<JDK 25 home>"
 export PATH="$JAVA_HOME/bin:$PATH"
 if [ ! -f .env.local ]; then cp .env.example .env.local; fi
 chmod 600 .env.local
-# .env.local에 PayPal Sandbox 자격 증명을 입력한 뒤 현재 shell에 로드
+# .env.local에 PayPal Sandbox Business 자격 증명과 BOK_ECOS_API_KEY를 입력한 뒤 현재 shell에 로드
 set -a
 . ./.env.local
 set +a
@@ -115,7 +115,13 @@ docker compose --env-file .env.local --profile loadtest run --rm \
   k6 run /scripts/buyer-checkout.js
 ```
 
-PayPal Sandbox smoke에는 Business app credentials와 별도 Sandbox Buyer 계정 필요. `.env.local`에서 `ATLAS_PAYMENT_PROVIDER=paypal`, Sandbox `PAYPAL_BASE_URL`, `ATLAS_PUBLIC_BASE_URL=http://127.0.0.1:18080`, `ATLAS_PAYMENT_RETURN_PORT=18080` 설정 후 앞의 Compose app 준비 명령 실행.
+### PayPal Sandbox
+
+사전 조건:
+- Business app credentials, `BOK_ECOS_API_KEY`, Sandbox Buyer 계정.
+- `.env.local`: `ATLAS_PAYMENT_PROVIDER=paypal`, Sandbox `PAYPAL_BASE_URL`, `ATLAS_PUBLIC_BASE_URL=http://127.0.0.1:18080`, `ATLAS_PAYMENT_RETURN_PORT=18080`.
+- 승인 callback 준비: `docker compose --env-file .env.local up -d --build --wait application` (host `18080` → container `8080`).
+- `bootRun` 사용 시 `ATLAS_PUBLIC_BASE_URL`을 실제로 열어 둔 app port와 일치.
 
 `paypal-sandbox-order-smoke`는 order를 1회 생성. approval URL은 `PAYPAL_SHOW_APPROVAL_URL=true`일 때만 출력되며, 한 번만 사용하는 민감 링크. 로컬 외부 로그·PR에 복사 금지.
 
@@ -148,7 +154,12 @@ docker compose --env-file .env.local --profile loadtest run --rm \
   k6 run /scripts/buyer-checkout.js
 ```
 
-Sandbox Buyer approval/capture는 이번 구현에서 아직 실행하지 않음. 현재 local process에 Buyer account가 없어 실제 승인 결과는 검증 근거로 주장하지 않음.
+#### 검증 기록 (2026-11-13)
+
+- KRW 2,000 → PayPal USD 1.50 (BOK 기준환율 1,332.4 KRW/USD, 기준일 2026-11-13).
+- Sandbox Buyer 승인·capture 완료. Unknown capture는 PayPal order GET으로 복구; K6 결과 `CAPTURED` · `PAID` · `CLAIMED`.
+- Settlement journal: `PSP_CLEARING` debit / `SELLER_PAYABLE` credit, 각각 KRW 2,000. [Issue #254](https://github.com/Neo1228/ATLAS/issues/254).
+
 ## 문서 지도
 
 | 확인할 내용 | 정본 |
@@ -156,6 +167,7 @@ Sandbox Buyer approval/capture는 이번 구현에서 아직 실행하지 않음
 | 기능 요구사항·불변조건·미결정 정책 | [요구사항 인덱스](docs/01-requirements/requirements-index.md) |
 | 승인된 결정과 현재 상태 | [결정 로그](docs/00-governance/decision-log.md) |
 | 설계 결정과 근거 | [설계 결정 기록(ADR)](docs/02-decisions/adr/) |
+| PayPal 결제 통화·FX 스냅샷 | [ADR-0030](docs/02-decisions/adr/ADR-0030-paypal-currency-boundary.md) |
 | 성능·장애 가설, workload와 측정 결과 | [실험 기록](docs/03-experiments/) |
 | 코드 규칙·테스트·GitHub Markdown 작성법 | [저장소 작업 지침](AGENTS.md) |
 | 외부 참고자료와 적용 한계 | [참고 자료 목록](docs/00-governance/reference-register.md) |

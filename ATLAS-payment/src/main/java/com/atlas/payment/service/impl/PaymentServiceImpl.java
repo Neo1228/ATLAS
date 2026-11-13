@@ -10,6 +10,7 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.PaymentProvider;
+import com.atlas.payment.service.FxConversionService;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResult;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -44,26 +46,34 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentWebhookEventRepository webhookEvents;
     private final TransactionTemplate transactions;
     private final PaymentProvider psp;
+    private final FxConversionService fxConversionService;
+    private final String publicBaseUrl;
     private final Supplier<UUID> ids;
 
     @Autowired
     public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
             PaymentWebhookEventRepository webhookEvents, PlatformTransactionManager transactionManager,
-            PaymentProvider psp) {
-        this(repository, refunds, webhookEvents, transactionManager, psp, UUID::randomUUID);
+            PaymentProvider psp, FxConversionService fxConversionService,
+            @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}") String publicBaseUrl) {
+        this(repository, refunds, webhookEvents, transactionManager, psp, fxConversionService,
+                publicBaseUrl, UUID::randomUUID);
     }
 
     PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
             PaymentWebhookEventRepository webhookEvents, PlatformTransactionManager transactionManager,
-            PaymentProvider psp, Supplier<UUID> ids) {
+            PaymentProvider psp, FxConversionService fxConversionService,
+            String publicBaseUrl, Supplier<UUID> ids) {
         this.repository = Objects.requireNonNull(repository);
         this.refunds = Objects.requireNonNull(refunds);
         this.webhookEvents = Objects.requireNonNull(webhookEvents);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.psp = Objects.requireNonNull(psp);
+        this.fxConversionService = Objects.requireNonNull(fxConversionService);
+        String baseUrl = Objects.requireNonNull(publicBaseUrl).trim();
+        if (baseUrl.isBlank()) throw new IllegalStateException("ATLAS_PUBLIC_BASE_URL is required");
+        this.publicBaseUrl = baseUrl.replaceAll("/+$", "");
         this.ids = Objects.requireNonNull(ids);
     }
-
     @Override
     public PaymentResponse submitInitial(UUID orderId, BigDecimal amount) {
         if (orderId == null) throw invalidRequest("orderId required");
@@ -266,7 +276,8 @@ public class PaymentServiceImpl implements PaymentService {
             PaymentAttempt attempt = Objects.requireNonNull(transactions.execute(status ->
                     orderId == null ? requireCheckout(checkoutId) : requireOrder(orderId)));
             if (attempt.getState() != PaymentState.CAPTURED || attempt.getProviderCaptureId() == null
-                    || attempt.getTotalWon() == null) {
+                    || attempt.getTotalWon() == null
+                    || (psp.requiresFxSnapshot() && !attempt.hasFxSnapshot())) {
                 throw invalidRequest("Only a captured PayPal payment can be refunded");
             }
             Instant now = Instant.now();
@@ -274,11 +285,17 @@ public class PaymentServiceImpl implements PaymentService {
                 refunds.lockAttempt(attempt.getAttemptId());
                 var existing = refunds.findByAttemptIdAndIdempotencyKeyForUpdate(
                         attempt.getAttemptId(), idempotencyKey);
+                String providerCurrency = psp.requiresFxSnapshot()
+                        ? attempt.getProviderCurrency() : psp.providerCurrency();
+                if (providerCurrency == null || providerCurrency.isBlank()) {
+                    throw invalidRequest("Provider currency is unavailable for this refund");
+                }
                 if (existing.isPresent()) {
                     PaymentRefundOperation prior = existing.get();
                     if (prior.amountWon() != amountWon
-                            || !prior.captureId().equals(attempt.getProviderCaptureId())
-                            || !prior.currency().equals("KRW")) {
+                            || !Objects.equals(prior.captureId(), attempt.getProviderCaptureId())
+                            || !"KRW".equals(prior.currency()) || prior.providerAmountMinor() == null
+                            || !providerCurrency.equals(prior.providerCurrency())) {
                         throw invalidRequest("Idempotency key was used for different refund facts");
                     }
                     return prior;
@@ -292,8 +309,25 @@ public class PaymentServiceImpl implements PaymentService {
                 if (totalAfterRefund > attempt.getTotalWon()) {
                     throw invalidRequest("Refund exceeds the captured payment amount");
                 }
+                if (refunds.hasUnpricedNonFailedRefunds(attempt.getAttemptId())) {
+                    throw invalidRequest("An existing refund must be reconciled before another refund");
+                }
+                long providerRefundAmount = amountWon;
+                if (psp.requiresFxSnapshot()) {
+                    long remainingProviderAmount = attempt.getProviderAmountMinor()
+                            - refunds.refundedProviderAmountForAttempt(attempt.getAttemptId());
+                    if (remainingProviderAmount <= 0) {
+                        throw invalidRequest("Refund exceeds the remaining PayPal capture amount");
+                    }
+                    providerRefundAmount = Math.min(
+                            FxConversionService.krwToUsdCents(amountWon, attempt.getFxRateWonPerUsd()),
+                            remainingProviderAmount);
+                    if (providerRefundAmount <= 0) {
+                        throw invalidRequest("Refund amount is below the PayPal minimum");
+                    }
+                }
                 return refunds.reserve(ids.get(), attempt.getAttemptId(), attempt.getProviderCaptureId(),
-                        idempotencyKey, amountWon, ids.get(), now);
+                        idempotencyKey, amountWon, providerRefundAmount, providerCurrency, ids.get(), now);
             }));
             if (operation.state() == PaymentRefundState.COMPLETED || operation.state() == PaymentRefundState.FAILED) {
                 return refundResponse(operation, operation.state(), operation.providerRefundId(), operation.updatedAt());
@@ -302,13 +336,20 @@ public class PaymentServiceImpl implements PaymentService {
             PaymentRefundProviderResult result;
             try {
                 result = operation.providerRefundId() == null
-                        ? psp.refund(new PaymentRefundRequest(operation.captureId(), operation.amountWon(),
-                                operation.currency(), operation.providerRequestId().toString()))
+                        ? psp.refund(new PaymentRefundRequest(operation.captureId(), operation.providerAmountMinor(),
+                                operation.providerCurrency(), operation.providerRequestId().toString()))
                         : psp.getRefund(operation.providerRefundId());
             } catch (PaymentException exception) {
                 if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
                 result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
                         operation.providerRefundId(), operation.providerStatus());
+            }
+            if (result.outcome() != PaymentRefundProviderResult.Outcome.FAILED
+                    && (result.amount() == null
+                    || result.amount().compareTo(BigDecimal.valueOf(operation.providerAmountMinor(), 2)) != 0
+                    || !operation.providerCurrency().equalsIgnoreCase(result.currency()))) {
+                result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
+                        result.refundId(), result.providerStatus(), result.amount(), result.currency());
             }
             PaymentRefundState state = switch (result.outcome()) {
                 case COMPLETED -> PaymentRefundState.COMPLETED;
@@ -357,8 +398,10 @@ public class PaymentServiceImpl implements PaymentService {
                 PaymentAttempt current = attempt.get();
                 if (!"COMPLETED".equalsIgnoreCase(event.resourceStatus())
                         || event.resourceAmount() == null || current.getTotalWon() == null
-                        || event.resourceAmount().compareTo(BigDecimal.valueOf(current.getTotalWon())) != 0
-                        || !"KRW".equalsIgnoreCase(event.resourceCurrency())
+                        || !current.hasFxSnapshot()
+                        || event.resourceAmount().compareTo(
+                                BigDecimal.valueOf(current.getProviderAmountMinor(), 2)) != 0
+                        || !current.getProviderCurrency().equalsIgnoreCase(event.resourceCurrency())
                         || event.resourceId() == null
                         || (event.providerOrderId() != null
                         && !event.providerOrderId().equals(current.getProviderOrderId()))
@@ -393,9 +436,11 @@ public class PaymentServiceImpl implements PaymentService {
                     case PENDING, UNKNOWN -> "PENDING";
                     case FAILED -> "FAILED";
                 };
-                if (event.resourceAmount() == null
-                        || event.resourceAmount().compareTo(BigDecimal.valueOf(current.amountWon())) != 0
-                        || !current.currency().equalsIgnoreCase(event.resourceCurrency())
+                if (event.resourceAmount() == null || current.providerAmountMinor() == null
+                        || event.resourceAmount().compareTo(
+                                BigDecimal.valueOf(current.providerAmountMinor(), 2)) != 0
+                        || current.providerCurrency() == null
+                        || !current.providerCurrency().equalsIgnoreCase(event.resourceCurrency())
                         || !expectedStatus.equalsIgnoreCase(event.resourceStatus())
                         || (event.relatedCaptureId() != null
                         && !current.captureId().equals(event.relatedCaptureId()))) {
@@ -441,6 +486,40 @@ public class PaymentServiceImpl implements PaymentService {
         return new PaymentRefundResponse(operation.refundOperationId(), operation.attemptId(), operation.captureId(),
                 operation.amountWon(), operation.currency(), providerRefundId, state, updatedAt);
     }
+
+    private void ensureFxSnapshot(UUID attemptId) {
+        if (!psp.requiresFxSnapshot()) return;
+        PaymentAttempt attempt = Objects.requireNonNull(transactions.execute(status ->
+                repository.findById(attemptId).orElseThrow(() -> notFound("No payment attempt: " + attemptId))));
+        if (attempt.hasFxSnapshot()) return;
+        if (attempt.getPaymentPhase() != PaymentPhase.AUTHORIZATION || attempt.getProviderOrderId() != null
+                || attempt.getTotalWon() == null || attempt.getTotalWon() <= 0) {
+            throw invalidRequest("A saved FX snapshot is required for this PayPal operation");
+        }
+
+        FxConversionService.Conversion conversion;
+        try {
+            conversion = fxConversionService.convertKrwToUsdCents(attempt.getTotalWon());
+        } catch (IllegalArgumentException | ArithmeticException invalidAmount) {
+            throw invalidRequest("PayPal 결제 금액이 허용 범위를 벗어났습니다");
+        }
+        long providerAmount = conversion.usdCents();
+        if (providerAmount <= 0) throw invalidRequest("Payment amount is below the PayPal minimum");
+        transactions.execute(status -> {
+            PaymentAttempt current = repository.findWithLockByAttemptId(attemptId)
+                    .orElseThrow(() -> notFound("No payment attempt: " + attemptId));
+            if (!current.hasFxSnapshot()) {
+                if (!Objects.equals(current.getTotalWon(), attempt.getTotalWon())) {
+                    throw invalidRequest("Payment amount changed while preparing the FX snapshot");
+                }
+                current.setFxSnapshot(conversion.quote().wonPerUsd(), conversion.quote().source(),
+                        conversion.quote().asOfDate(), providerAmount, "USD");
+                repository.save(current);
+            }
+            return null;
+        });
+    }
+
 
     private record PhaseStart(PaymentAttempt attempt, PaymentRequest request,
             PaymentPhase phase, String requestId) {}
@@ -524,11 +603,23 @@ public class PaymentServiceImpl implements PaymentService {
         return performPhase(attempt, idempotencyKey, true);
     }
     private PaymentResponse performPhase(PaymentAttempt attempt, String idempotencyKey, boolean continueCapture) {
+        if (attempt.getPaymentPhase() == PaymentPhase.AUTHORIZATION && attempt.getProviderOrderId() == null) {
+            ensureFxSnapshot(attempt.getAttemptId());
+        }
         PhaseStart start = reservePhase(attempt.getAttemptId(), attempt.getPaymentPhase(), continueCapture);
         if (start.request() == null) return toResponse(start.attempt());
+        boolean reconcileUnknownCapture = attempt.getPaymentPhase() == PaymentPhase.CAPTURE
+                && attempt.getState() == PaymentState.UNKNOWN && psp.requiresFxSnapshot();
         PaymentProviderResult result;
         try {
-            result = psp.perform(start.request());
+            if (reconcileUnknownCapture) {
+                result = psp.completeApproval(start.request(), start.request().providerOrderId());
+                if (result.outcome() == PaymentProviderResult.Outcome.AUTHORIZED) {
+                    result = psp.perform(start.request());
+                }
+            } else {
+                result = psp.perform(start.request());
+            }
         } catch (PaymentException exception) {
             if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
             return toResponse(finalizePhase(start, null, PaymentProviderResult.Outcome.UNKNOWN));
@@ -624,8 +715,12 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private PaymentRequest providerRequest(PaymentAttempt attempt, PaymentPhase phase) {
-        Long amount = attempt.getTotalWon();
-        if (amount == null || amount <= 0) {
+        if (psp.requiresFxSnapshot() && !attempt.hasFxSnapshot()) {
+            throw invalidRequest("A saved FX snapshot is required for this PayPal operation");
+        }
+        Long amount = psp.requiresFxSnapshot() ? attempt.getProviderAmountMinor() : attempt.getTotalWon();
+        String providerCurrency = psp.requiresFxSnapshot() ? attempt.getProviderCurrency() : psp.providerCurrency();
+        if (amount == null || amount <= 0 || providerCurrency == null || providerCurrency.isBlank()) {
             throw invalidRequest("저장된 결제 금액이 없어 결제를 진행할 수 없습니다");
         }
         String createId = stableRequestId(attempt, "create-order");
@@ -638,7 +733,7 @@ public class PaymentServiceImpl implements PaymentService {
         attempt.setVoidRequestId(voidId);
         UUID owner = attempt.getCheckoutId() == null ? attempt.getOrderId() : attempt.getCheckoutId();
         String ownerText = owner.toString();
-        String base = "http://127.0.0.1:8080";
+        String base = publicBaseUrl;
         String returnPath = attempt.getCheckoutId() == null ? "/api/orders/" + ownerText + "/payment/return"
                 : "/api/checkouts/" + ownerText + "/payment/return";
         String cancelPath = attempt.getCheckoutId() == null ? "/api/orders/" + ownerText + "/payment/cancel"
@@ -653,7 +748,7 @@ public class PaymentServiceImpl implements PaymentService {
             case CAPTURE -> captureId;
             case VOID -> voidId;
         };
-        return new PaymentRequest(operation, owner, attempt.getAttemptId(), amount, "KRW",
+        return new PaymentRequest(operation, owner, attempt.getAttemptId(), amount, providerCurrency,
                 attempt.getProviderOrderId(), attempt.getProviderAuthorizationId(),
                 operationId, authorizeId, captureId, voidId, base + returnPath, base + cancelPath);
     }

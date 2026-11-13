@@ -15,6 +15,7 @@ import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.provider.PaymentProvider;
+import com.atlas.payment.service.FxConversionService;
 import com.atlas.payment.provider.PaymentProviderResult;
 import com.atlas.payment.provider.PaymentRefundProviderResult;
 import com.atlas.payment.provider.PaymentRefundRequest;
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -80,6 +82,10 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private PlatformTransactionManager transactionManager;
     @Autowired
     private PaymentProvider paymentProvider;
+    @Autowired
+    private FxConversionService fxConversionService;
+    @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}")
+    private String publicBaseUrl;
 
     @Test
     void paypalAuthorizationCaptureAndReplayUseTheLocalProvider() throws Exception {
@@ -103,8 +109,20 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(createOrder.getHeader("PayPal-Request-Id")).isNotBlank();
         assertThat(createOrder.getBody().readUtf8())
                 .contains("\"intent\":\"AUTHORIZE\"")
-                .contains("\"currency_code\":\"KRW\"")
-                .contains("\"value\":\"12900\"");
+                .contains("\"currency_code\":\"USD\"")
+                .contains("\"value\":\"9.68\"")
+                .contains("\"return_url\":\"http://127.0.0.1:18080/api/orders/" + orderId + "/payment/return\"")
+                .contains("\"cancel_url\":\"http://127.0.0.1:18080/api/orders/" + orderId + "/payment/cancel\"");
+        RecordedRequest rateRequest = ECOS.takeRequest(2, TimeUnit.SECONDS);
+        assertThat(rateRequest).isNotNull();
+        assertThat(rateRequest.getPath()).contains("/json/kr/1/10/731Y001/D/");
+        PaymentAttempt attempt = paymentAttempts.findById(pending.attemptId()).orElseThrow();
+        assertThat(attempt.getTotalWon()).isEqualTo(12900L);
+        assertThat(attempt.getProviderAmountMinor()).isEqualTo(968L);
+        assertThat(attempt.getProviderCurrency()).isEqualTo("USD");
+        assertThat(attempt.getFxRateWonPerUsd()).isEqualByComparingTo("1332.4");
+        assertThat(attempt.getFxRateSource()).isEqualTo("BOK_ECOS_731Y001_0000001");
+        assertThat(attempt.getFxRateAsOf()).isNotNull();
 
         PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
         assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
@@ -123,8 +141,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(capture.getPath()).contains("/capture");
         assertThat(capture.getHeader("PayPal-Request-Id")).isNotBlank().hasSizeLessThanOrEqualTo(38);
         assertThat(capture.getBody().readUtf8())
-                .contains("\"currency_code\":\"KRW\"")
-                .contains("\"value\":\"12900\"")
+                .contains("\"currency_code\":\"USD\"")
+                .contains("\"value\":\"9.68\"")
                 .contains("\"final_capture\":true");
 
         PaymentResponse approvalReplay = payments.completeApproval(orderId, pending.providerOrderId());
@@ -133,6 +151,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(replay.attemptId()).isEqualTo(captured.attemptId());
         assertThat(replay.state()).isEqualTo(PaymentState.CAPTURED);
         assertThat(PAYPAL.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
+        assertThat(ECOS.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
     }
 
     @Test
@@ -200,7 +219,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     @Test
-    void lostCaptureResponseRetriesWithTheSameProviderRequestId() throws Exception {
+    void lostCaptureResponseIsRecoveredFromThePayPalOrder() throws Exception {
         UUID orderId = UUID.randomUUID();
         PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
         PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
@@ -214,10 +233,10 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
         PaymentResponse recovered = payments.reconcile(orderId, idempotencyKey);
         assertThat(recovered.state()).isEqualTo(PaymentState.CAPTURED);
-        RecordedRequest replayedCapture = nextCaptureRequest();
-        assertThat(firstCapture.getHeader("PayPal-Request-Id"))
-                .isEqualTo(replayedCapture.getHeader("PayPal-Request-Id"));
-        assertThat(captureRequestCount()).isEqualTo(2);
+        RecordedRequest orderStatus = nextPayPalRequestAtPath(
+                "/v2/checkout/orders/" + pending.providerOrderId());
+        assertThat(orderStatus.getMethod()).isEqualTo("GET");
+        assertThat(captureRequestCount()).isEqualTo(1);
     }
 
     @Test
@@ -239,18 +258,23 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     @Test
-    void pendingRefundIsRecoveredByProviderGetAndReplayKeepsProviderRefundId() {
+    void pendingRefundIsRecoveredByProviderGetAndReplayKeepsProviderRefundId() throws Exception {
         UUID orderId = UUID.randomUUID();
         PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
         payments.completeApproval(orderId, pending.providerOrderId());
-        assertThat(payments.reconcile(orderId, "capture-for-refund-" + orderId).state())
-                .isEqualTo(PaymentState.CAPTURED);
+        PaymentResponse captured = payments.reconcile(orderId, "capture-for-refund-" + orderId);
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
 
         String refundKey = "refund-pending-" + orderId;
         queueRefundStatus("PENDING");
         PaymentRefundResponse refundPending = payments.refundOrder(orderId, refundKey, 17200);
         assertThat(refundPending.status()).isEqualTo(PaymentRefundState.PENDING);
         assertThat(refundPending.providerRefundId()).isNotBlank();
+        RecordedRequest refundRequest = nextPayPalRequestAtPath(
+                "/v2/payments/captures/" + captured.providerCaptureId() + "/refund");
+        assertThat(refundRequest.getBody().readUtf8())
+                .contains("\"currency_code\":\"USD\"")
+                .contains("\"value\":\"12.91\"");
 
         PaymentRefundResponse completed = payments.refundOrder(orderId, refundKey, 17200);
         assertThat(completed.status()).isEqualTo(PaymentRefundState.COMPLETED);
@@ -258,6 +282,35 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentRefundResponse replay = payments.refundOrder(orderId, refundKey, 17200);
         assertThat(replay.refundOperationId()).isEqualTo(completed.refundOperationId());
         assertThat(replay.providerRefundId()).isEqualTo(completed.providerRefundId());
+    }
+    @Test
+    void partialRefundsReuseFxSnapshotAndCapRoundingAtCapturedUsdAmount() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(1000));
+        payments.completeApproval(orderId, pending.providerOrderId());
+        PaymentResponse captured = payments.reconcile(orderId, "capture-partial-refund-" + orderId);
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
+
+        PaymentRefundResponse first = payments.refundOrder(orderId, "partial-first-" + orderId, 500);
+        PaymentRefundResponse second = payments.refundOrder(orderId, "partial-second-" + orderId, 500);
+        assertThat(first.status()).isEqualTo(PaymentRefundState.COMPLETED);
+        assertThat(second.status()).isEqualTo(PaymentRefundState.COMPLETED);
+
+        String refundPath = "/v2/payments/captures/" + captured.providerCaptureId() + "/refund";
+        RecordedRequest firstRequest = nextPayPalRequestAtPath(refundPath);
+        RecordedRequest secondRequest = nextPayPalRequestAtPath(refundPath);
+        assertThat(firstRequest.getBody().readUtf8())
+                .contains("\"currency_code\":\"USD\"")
+                .contains("\"value\":\"0.38\"");
+        assertThat(secondRequest.getBody().readUtf8())
+                .contains("\"currency_code\":\"USD\"")
+                .contains("\"value\":\"0.37\"");
+
+        PaymentAttempt attempt = paymentAttempts.findById(captured.attemptId()).orElseThrow();
+        assertThat(attempt.getTotalWon()).isEqualTo(1000L);
+        assertThat(attempt.getProviderAmountMinor()).isEqualTo(75L);
+        assertThat(paymentRefunds.refundedAmountForAttempt(captured.attemptId())).isEqualTo(1000L);
+        assertThat(paymentRefunds.refundedProviderAmountForAttempt(captured.attemptId())).isEqualTo(75L);
     }
     @Test
     void webhookSignatureIsVerifiedAndDuplicateCaptureEventIsIdempotent() throws Exception {
@@ -268,15 +321,15 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
         String eventId = "WH-" + UUID.randomUUID();
         String captureId = captured.providerCaptureId();
-        String rawEvent = captureWebhook(eventId, captured.providerOrderId(), captureId, "17200", "KRW");
+        String rawEvent = captureWebhook(eventId, captured.providerOrderId(), captureId, "12.91", "USD");
         PaymentWebhookSignature signature = new PaymentWebhookSignature(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local", "2026-11-09T00:00:00Z");
         PaymentWebhookEvent event = payments.verifyPayPalWebhook(signature, rawEvent);
         assertThat(event.eventId()).isEqualTo(eventId);
         assertThat(event.providerOrderId()).isEqualTo(captured.providerOrderId());
         assertThat(event.resourceId()).isEqualTo(captureId);
-        assertThat(event.resourceAmount()).isEqualTo(BigDecimal.valueOf(17200));
-        assertThat(event.resourceCurrency()).isEqualTo("KRW");
+        assertThat(event.resourceAmount()).isEqualTo(new BigDecimal("12.91"));
+        assertThat(event.resourceCurrency()).isEqualTo("USD");
         RecordedRequest verificationRequest = nextPayPalRequestAtPath(
                 "/v1/notifications/verify-webhook-signature");
         assertThat(verificationRequest.getMethod()).isEqualTo("POST");
@@ -298,8 +351,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     @Test
     void unmatchedCaptureWebhookRemainsRetryableWhileMappedMismatchIsQuarantined() throws Exception {
-        assertCaptureWebhookMismatchIsQuarantined("17200.01", "KRW");
-        assertCaptureWebhookMismatchIsQuarantined("17200", "USD");
+        assertCaptureWebhookMismatchIsQuarantined("12.92", "USD");
+        assertCaptureWebhookMismatchIsQuarantined("12.91", "KRW");
         assertUnknownCaptureWebhookCanBeRetried();
     }
 
@@ -341,7 +394,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
                 "2026-11-09T00:00:00Z");
         String unmatchedRawBody = captureWebhook(
-                eventId, authorized.providerOrderId() + "-unknown", captureId, "17200", "KRW");
+                eventId, authorized.providerOrderId() + "-unknown", captureId, "12.91", "USD");
         assertThatThrownBy(() -> webhookService.handle(signature, unmatchedRawBody))
                 .isInstanceOf(PaymentException.class)
                 .hasMessageContaining("correlated yet");
@@ -355,7 +408,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(payments.find(orderId)).usingRecursiveComparison().isEqualTo(authorized);
 
         PaymentWebhookEvent corrected = payments.verifyPayPalWebhook(signature,
-                captureWebhook(eventId, authorized.providerOrderId(), captureId, "17200", "KRW"));
+                captureWebhook(eventId, authorized.providerOrderId(), captureId, "12.91", "USD"));
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
         PaymentWebhookResult accepted = payments.processVerifiedPayPalWebhook(corrected);
         assertThat(accepted.accepted()).isTrue();
@@ -370,9 +423,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         BigDecimal amountWon = BigDecimal.valueOf(12900);
         BarrierPaymentProvider barrier = new BarrierPaymentProvider(paymentProvider);
         PaymentServiceImpl first = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, transactionManager, barrier);
+                paymentWebhookEvents, transactionManager, barrier, fxConversionService, publicBaseUrl);
         PaymentServiceImpl second = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, transactionManager, barrier);
+                paymentWebhookEvents, transactionManager, barrier, fxConversionService, publicBaseUrl);
         ExecutorService executor = Executors.newFixedThreadPool(3);
         try {
             PaymentResponse pending = first.submitInitial(orderId, amountWon);
@@ -447,6 +500,11 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         private BarrierPaymentProvider(PaymentProvider delegate) {
             this.delegate = delegate;
         }
+        @Override
+        public String providerCurrency() { return delegate.providerCurrency(); }
+
+        @Override
+        public boolean requiresFxSnapshot() { return delegate.requiresFxSnapshot(); }
 
         @Override
         public PaymentProviderResult perform(PaymentRequest request) {
