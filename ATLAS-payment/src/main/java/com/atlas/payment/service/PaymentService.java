@@ -7,6 +7,7 @@ import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 public interface PaymentService {
     PaymentResponse submitInitial(UUID orderId, BigDecimal amount);
@@ -34,5 +35,6 @@ public interface PaymentService {
     PaymentRefundResponse refundCheckout(UUID checkoutId, String idempotencyKey, long amountWon);
     PaymentRefundResponse findRefundOperation(UUID refundOperationId);
     PaymentWebhookEvent verifyPayPalWebhook(PaymentWebhookSignature signature, String rawBody);
+    <T> T withPayPalWebhookOwnerLock(PaymentWebhookEvent event, Supplier<T> action);
     PaymentWebhookResult processVerifiedPayPalWebhook(PaymentWebhookEvent event);
 }

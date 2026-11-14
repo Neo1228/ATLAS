@@ -2,6 +2,12 @@ package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
@@ -25,8 +31,15 @@ import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.application.service.PayPalWebhookService;
+import com.atlas.order.persistence.entity.BuyerCheckout;
+import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.repository.BuyerCheckoutRepository;
+import com.atlas.order.service.CheckoutPaymentService;
+import com.atlas.order.service.OrderRefundService;
+import com.atlas.order.service.OrderService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -35,11 +48,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
@@ -63,6 +79,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
+        properties.add("spring.datasource.hikari.connection-init-sql", () -> "SET lock_timeout TO '2s'");
     }
 
     @Autowired
@@ -71,6 +88,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private PayPalWebhookService webhookService;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private BuyerCheckoutRepository buyerCheckouts;
 
     @Autowired
     private PaymentAttemptRepository paymentAttempts;
@@ -350,6 +369,151 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     @Test
+    void captureWebhookWaitsForOwnerLockBeforeTakingPaymentRowLock() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        String captureId = "CAPTURE-LOCK-" + UUID.randomUUID();
+        LockOrderPaymentProvider provider = new LockOrderPaymentProvider(paymentProvider, captureId);
+        CountDownLatch webhookLockAttempted = new CountDownLatch(1);
+        AtomicReference<Thread> webhookLockThread = new AtomicReference<>();
+        PaymentServiceImpl payments = new ObservedPaymentService(paymentAttempts, paymentRefunds,
+                paymentWebhookEvents, transactionManager, provider, fxConversionService, publicBaseUrl,
+                webhookLockAttempted, webhookLockThread);
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
+        PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
+        String amount = BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2).toPlainString();
+        String eventId = "WH-" + UUID.randomUUID();
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
+                amount, attempt.getProviderCurrency());
+        CountDownLatch downstreamReconciliationEntered = new CountDownLatch(1);
+        OrderService orders = mock(OrderService.class);
+        doAnswer(invocation -> {
+            downstreamReconciliationEntered.countDown();
+            payments.reconcile(orderId, invocation.getArgument(1, String.class));
+            return null;
+        }).when(orders).reconcilePayment(eq(orderId), anyString());
+        PayPalWebhookService concurrentWebhook = new PayPalWebhookService(transactionManager, payments, orders,
+                mock(CheckoutPaymentService.class), mock(OrderRefundService.class));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<PaymentResponse> capture = executor.submit(
+                    () -> payments.reconcile(orderId, "sync-capture-" + orderId));
+            assertThat(provider.captureStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            Future<?> webhook = executor.submit(() -> concurrentWebhook.handle(signature, rawBody));
+            assertThat(webhookLockAttempted.await(5, TimeUnit.SECONDS)).isTrue();
+            awaitBlocked(webhookLockThread.get());
+            assertThat(paymentAttemptRowLockedNowait(orderId)).isFalse();
+
+            provider.releaseCapture.countDown();
+            assertThat(capture.get(10, TimeUnit.SECONDS).state()).isEqualTo(PaymentState.CAPTURED);
+            webhook.get(10, TimeUnit.SECONDS);
+            assertThat(downstreamReconciliationEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(provider.captureCalls.get()).isEqualTo(1);
+            assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
+            assertThat(jdbc.queryForObject(
+                    "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                    String.class, eventId)).isEqualTo("PROCESSED");
+        } finally {
+            provider.releaseCapture.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void sameCaptureWebhookRedeliveryRetriesOrderReconciliationAfterEventCommit() {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
+        PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
+        PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
+        String eventId = "WH-RECONCILE-RETRY-" + UUID.randomUUID();
+        String captureId = "CAPTURE-RECONCILE-RETRY-" + UUID.randomUUID();
+        String amount = BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2).toPlainString();
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
+                amount, attempt.getProviderCurrency());
+        OrderService orders = mock(OrderService.class);
+        AtomicInteger reconciliationCalls = new AtomicInteger();
+        IllegalStateException firstReconciliationFailure = new IllegalStateException("Order reconciliation failed");
+        doAnswer(invocation -> {
+            if (reconciliationCalls.incrementAndGet() == 1) throw firstReconciliationFailure;
+            return null;
+        }).when(orders).reconcilePayment(eq(orderId), eq(eventId));
+        PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments, orders,
+                mock(CheckoutPaymentService.class), mock(OrderRefundService.class));
+
+        assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("PROCESSED");
+        assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(payments.find(orderId).providerCaptureId()).isEqualTo(captureId);
+
+        webhook.handle(signature, rawBody);
+
+        assertThat(reconciliationCalls).hasValue(2);
+        verify(orders, times(2)).reconcilePayment(orderId, eventId);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("PROCESSED");
+    }
+
+    @Test
+    void sameCaptureWebhookRedeliveryRetriesCheckoutReconciliationAfterEventCommit() {
+        long amountWon = 17200L;
+        Instant createdAt = Instant.now();
+        BuyerCheckout checkout = buyerCheckouts.saveAndFlush(new BuyerCheckout(
+                "buyer-webhook-" + UUID.randomUUID(), "checkout-webhook-" + UUID.randomUUID(),
+                BuyerCheckoutState.PAYMENT_PENDING, amountWon, createdAt, createdAt));
+        UUID checkoutId = checkout.checkoutId();
+        PaymentResponse pending = payments.submitCheckout(checkoutId, BigDecimal.valueOf(amountWon));
+        PaymentResponse authorized = payments.completeCheckoutApproval(checkoutId, pending.providerOrderId());
+        PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
+        String eventId = "WH-CHECKOUT-RECONCILE-RETRY-" + UUID.randomUUID();
+        String captureId = "CAPTURE-" + UUID.randomUUID();
+        String amount = BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2).toPlainString();
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
+                amount, attempt.getProviderCurrency());
+        CheckoutPaymentService checkoutPayments = mock(CheckoutPaymentService.class);
+        AtomicInteger reconciliationCalls = new AtomicInteger();
+        IllegalStateException firstReconciliationFailure = new IllegalStateException(
+                "Checkout reconciliation failed");
+        doAnswer(invocation -> {
+            if (reconciliationCalls.incrementAndGet() == 1) throw firstReconciliationFailure;
+            return null;
+        }).when(checkoutPayments).reconcile(eq(checkoutId), eq(eventId));
+        PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments,
+                mock(OrderService.class), checkoutPayments, mock(OrderRefundService.class));
+
+        assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("PROCESSED");
+        PaymentResponse captured = payments.findCheckout(checkoutId);
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(captured.checkoutId()).isEqualTo(checkoutId);
+        assertThat(captured.providerCaptureId()).isEqualTo(captureId);
+
+        webhook.handle(signature, rawBody);
+
+        assertThat(reconciliationCalls).hasValue(2);
+        verify(checkoutPayments, times(2)).reconcile(checkoutId, eventId);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("PROCESSED");
+        assertThat(payments.findCheckout(checkoutId)).usingRecursiveComparison().isEqualTo(captured);
+    }
+
+    @Test
     void unmatchedCaptureWebhookRemainsRetryableWhileMappedMismatchIsQuarantined() throws Exception {
         assertCaptureWebhookMismatchIsQuarantined("12.92", "USD");
         assertCaptureWebhookMismatchIsQuarantined("12.91", "KRW");
@@ -468,6 +632,26 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 + "\",\"value\":\"" + amount
                 + "\"},\"supplementary_data\":{\"related_ids\":{\"order_id\":\"" + providerOrderId + "\"}}}}";
     }
+
+    private boolean paymentAttemptRowLockedNowait(UUID orderId) {
+        try {
+            jdbc.queryForObject("SELECT TRUE FROM payment_attempt WHERE order_id = ? FOR UPDATE NOWAIT",
+                    Boolean.class, orderId);
+            return false;
+        } catch (CannotAcquireLockException lockUnavailable) {
+            return true;
+        }
+    }
+
+    private static void awaitBlocked(Thread thread) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (thread != null && thread.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+            Thread.sleep(1);
+        }
+        assertThat(thread).isNotNull();
+        assertThat(thread.getState()).isEqualTo(Thread.State.BLOCKED);
+    }
+
     private RecordedRequest nextPayPalRequestAtPath(String path) throws InterruptedException {
         RecordedRequest request;
         while ((request = takePayPalRequest()) != null) {
@@ -555,6 +739,77 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Interrupted while provider request was held", exception);
             }
+        }
+    }
+
+    private static final class LockOrderPaymentProvider implements PaymentProvider {
+        private final PaymentProvider delegate;
+        private final String captureId;
+        private final CountDownLatch captureStarted = new CountDownLatch(1);
+        private final CountDownLatch releaseCapture = new CountDownLatch(1);
+        private final AtomicInteger captureCalls = new AtomicInteger();
+
+        private LockOrderPaymentProvider(PaymentProvider delegate, String captureId) {
+            this.delegate = delegate;
+            this.captureId = captureId;
+        }
+
+        @Override
+        public String providerCurrency() { return delegate.providerCurrency(); }
+
+        @Override
+        public boolean requiresFxSnapshot() { return delegate.requiresFxSnapshot(); }
+
+        @Override
+        public PaymentProviderResult perform(PaymentRequest request) {
+            if (request.operation() != PaymentOperation.CAPTURE) return delegate.perform(request);
+            captureCalls.incrementAndGet();
+            captureStarted.countDown();
+            BarrierPaymentProvider.await(releaseCapture);
+            return new PaymentProviderResult(PaymentProviderResult.Outcome.CAPTURED,
+                    request.providerOrderId(), request.providerAuthorizationId(), captureId, null);
+        }
+
+        @Override
+        public PaymentProviderResult completeApproval(PaymentRequest request, String returnedProviderOrderId) {
+            return delegate.completeApproval(request, returnedProviderOrderId);
+        }
+
+        @Override
+        public PaymentRefundProviderResult refund(PaymentRefundRequest request) {
+            return delegate.refund(request);
+        }
+
+        @Override
+        public PaymentRefundProviderResult getRefund(String refundId) {
+            return delegate.getRefund(refundId);
+        }
+
+        @Override
+        public PaymentWebhookEvent verifyWebhook(PaymentWebhookSignature signature, String rawBody) {
+            return delegate.verifyWebhook(signature, rawBody);
+        }
+    }
+
+    private static final class ObservedPaymentService extends PaymentServiceImpl {
+        private final CountDownLatch webhookLockAttempted;
+        private final AtomicReference<Thread> webhookLockThread;
+
+        private ObservedPaymentService(PaymentAttemptRepository attempts, PaymentRefundRepository refunds,
+                PaymentWebhookEventRepository webhookEvents, PlatformTransactionManager transactionManager,
+                PaymentProvider provider, FxConversionService fxConversionService, String publicBaseUrl,
+                CountDownLatch webhookLockAttempted, AtomicReference<Thread> webhookLockThread) {
+            super(attempts, refunds, webhookEvents, transactionManager, provider, fxConversionService,
+                    publicBaseUrl);
+            this.webhookLockAttempted = webhookLockAttempted;
+            this.webhookLockThread = webhookLockThread;
+        }
+
+        @Override
+        public <T> T withPayPalWebhookOwnerLock(PaymentWebhookEvent event, Supplier<T> action) {
+            webhookLockThread.set(Thread.currentThread());
+            webhookLockAttempted.countDown();
+            return super.withPayPalWebhookOwnerLock(event, action);
         }
     }
 }

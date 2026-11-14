@@ -57,10 +57,17 @@ public class AdmissionServiceImpl implements AdmissionService {
         if (sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN) == null) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Unknown Seller-SKU");
         }
+        queueRepository.createCounterIfAbsent(sellerId, skuId);
+        if (!lockCounter(sellerId, skuId)) {
+            throw new IllegalStateException("Admission counter initialization failed");
+        }
         AdmissionPolicy policy = policies.findBySellerIdAndSkuId(sellerId, skuId)
                 .orElseGet(() -> new AdmissionPolicy(sellerId, skuId, maxActiveCheckouts));
         policy.setMaxActiveCheckouts(maxActiveCheckouts);
         policies.save(policy);
+        Instant now = clock.instant();
+        queueRepository.expireDueTicketsForSellerSku(sellerId, skuId, now);
+        promote(sellerId, skuId, now);
     }
 
     @Transactional
@@ -81,12 +88,12 @@ public class AdmissionServiceImpl implements AdmissionService {
                     "Campaign is not open SKU " + request.skuId() + ": " + request.campaignId());
         }
         CampaignResponse campaign = openCampaign.get();
-        AdmissionPolicy policy = requirePolicy(campaign.sellerId(), campaign.skuId());
         requireSellerSku(campaign);
         queueRepository.createCounterIfAbsent(campaign.sellerId(), campaign.skuId());
         if (!lockCounter(campaign.sellerId(), campaign.skuId())) {
             throw new IllegalStateException("Admission counter initialization failed");
         }
+        AdmissionPolicy policy = requirePolicy(campaign.sellerId(), campaign.skuId());
         Instant now = clock.instant();
         expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), now);
         QueueTicketResponse concurrentPrior = findByKey(request.campaignId(), request.idempotencyKey());
@@ -239,10 +246,13 @@ public class AdmissionServiceImpl implements AdmissionService {
     }
 
     private void promote(UUID sellerId, String skuId) {
+        promote(sellerId, skuId, clock.instant());
+    }
+
+    private void promote(UUID sellerId, String skuId, Instant now) {
         long active = tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(sellerId, skuId);
         int slots = requirePolicyForPromotion(sellerId, skuId) - Math.toIntExact(active);
         if (slots <= 0) return;
-        Instant now = clock.instant();
         List<UUID> waiting = tickets.findWaitingForSellerSku(sellerId, skuId, TicketStatus.WAITING, now, PageRequest.of(0, slots));
         for (UUID ticketId : waiting) queueRepository.activateWaitingTicket(ticketId, now);
     }
