@@ -31,11 +31,15 @@ import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.application.service.PayPalWebhookService;
+import com.atlas.order.persistence.entity.BuyerCheckout;
+import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -84,6 +88,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private PayPalWebhookService webhookService;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private BuyerCheckoutRepository buyerCheckouts;
 
     @Autowired
     private PaymentAttemptRepository paymentAttempts;
@@ -456,6 +462,55 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(jdbc.queryForObject(
                 "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
                 String.class, eventId)).isEqualTo("PROCESSED");
+    }
+
+    @Test
+    void sameCaptureWebhookRedeliveryRetriesCheckoutReconciliationAfterEventCommit() {
+        long amountWon = 17200L;
+        Instant createdAt = Instant.now();
+        BuyerCheckout checkout = buyerCheckouts.saveAndFlush(new BuyerCheckout(
+                "buyer-webhook-" + UUID.randomUUID(), "checkout-webhook-" + UUID.randomUUID(),
+                BuyerCheckoutState.PAYMENT_PENDING, amountWon, createdAt, createdAt));
+        UUID checkoutId = checkout.checkoutId();
+        PaymentResponse pending = payments.submitCheckout(checkoutId, BigDecimal.valueOf(amountWon));
+        PaymentResponse authorized = payments.completeCheckoutApproval(checkoutId, pending.providerOrderId());
+        PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
+        String eventId = "WH-CHECKOUT-RECONCILE-RETRY-" + UUID.randomUUID();
+        String captureId = "CAPTURE-" + UUID.randomUUID();
+        String amount = BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2).toPlainString();
+        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+                "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
+                "2026-11-09T00:00:00Z");
+        String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
+                amount, attempt.getProviderCurrency());
+        CheckoutPaymentService checkoutPayments = mock(CheckoutPaymentService.class);
+        AtomicInteger reconciliationCalls = new AtomicInteger();
+        IllegalStateException firstReconciliationFailure = new IllegalStateException(
+                "Checkout reconciliation failed");
+        doAnswer(invocation -> {
+            if (reconciliationCalls.incrementAndGet() == 1) throw firstReconciliationFailure;
+            return null;
+        }).when(checkoutPayments).reconcile(eq(checkoutId), eq(eventId));
+        PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments,
+                mock(OrderService.class), checkoutPayments, mock(OrderRefundService.class));
+
+        assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("PROCESSED");
+        PaymentResponse captured = payments.findCheckout(checkoutId);
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(captured.checkoutId()).isEqualTo(checkoutId);
+        assertThat(captured.providerCaptureId()).isEqualTo(captureId);
+
+        webhook.handle(signature, rawBody);
+
+        assertThat(reconciliationCalls).hasValue(2);
+        verify(checkoutPayments, times(2)).reconcile(checkoutId, eventId);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("PROCESSED");
+        assertThat(payments.findCheckout(checkoutId)).usingRecursiveComparison().isEqualTo(captured);
     }
 
     @Test
