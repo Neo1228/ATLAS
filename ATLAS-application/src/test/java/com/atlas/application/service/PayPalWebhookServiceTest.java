@@ -1,11 +1,13 @@
 package com.atlas.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -94,6 +96,52 @@ class PayPalWebhookServiceTest {
 
         verify(payments).withPayPalWebhookOwnerLock(eq(event), any());
         verify(orders).reconcilePayment(orderId, event.eventId());
+    }
+
+    @Test
+    void checkoutCaptureRedeliveryRetriesReconciliationAfterFailure() {
+        UUID checkoutId = UUID.randomUUID();
+        UUID attemptId = UUID.randomUUID();
+        PaymentWebhookEvent event = captureEvent("event-checkout-retry", "provider-order", "capture-checkout-retry");
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenAnswer(invocation -> new SimpleTransactionStatus());
+
+        PaymentService payments = mock(PaymentService.class);
+        CheckoutPaymentService checkoutPayments = mock(CheckoutPaymentService.class);
+        AtomicBoolean paymentOwnerLockHeld = new AtomicBoolean();
+        when(payments.verifyPayPalWebhook(any(), eq("{}"))).thenReturn(event);
+        doAnswer(invocation -> {
+            paymentOwnerLockHeld.set(true);
+            try {
+                return invocation.<Supplier<?>>getArgument(1).get();
+            } finally {
+                paymentOwnerLockHeld.set(false);
+            }
+        }).when(payments).withPayPalWebhookOwnerLock(eq(event), any());
+        when(payments.processVerifiedPayPalWebhook(event)).thenReturn(
+                new PaymentWebhookResult(false, true, null, null, attemptId, true),
+                new PaymentWebhookResult(true, true, null, null, attemptId, true));
+        when(payments.findByAttemptId(attemptId)).thenReturn(
+                new PaymentResponse(null, checkoutId, attemptId, PaymentState.CAPTURED, false));
+
+        RuntimeException reconciliationFailure = new IllegalStateException("temporary checkout reconciliation failure");
+        AtomicInteger reconciliationCalls = new AtomicInteger();
+        doAnswer(invocation -> {
+            assertThat(paymentOwnerLockHeld).isFalse();
+            if (reconciliationCalls.getAndIncrement() == 0) throw reconciliationFailure;
+            return null;
+        }).when(checkoutPayments).reconcile(checkoutId, event.eventId());
+
+        PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments,
+                mock(OrderService.class), checkoutPayments, mock(OrderRefundService.class));
+
+        assertThatThrownBy(() -> webhookService.handle(signature(), "{}")).isSameAs(reconciliationFailure);
+        webhookService.handle(signature(), "{}");
+
+        verify(payments, times(2)).processVerifiedPayPalWebhook(event);
+        verify(payments, times(2)).findByAttemptId(attemptId);
+        verify(checkoutPayments, times(2)).reconcile(checkoutId, event.eventId());
     }
 
     @Test
