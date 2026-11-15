@@ -36,33 +36,34 @@ public class PayPalWebhookService {
         if (event == null) throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
                 "PayPal webhook verification returned no event");
 
-        transactions.executeWithoutResult(status -> {
-            PaymentWebhookResult result = payments.processVerifiedPayPalWebhook(event);
-            if (result.duplicate()) return;
-            if (!result.accepted()) {
-                if (result.retryable()) {
+        PaymentWebhookResult result = payments.withPayPalWebhookOwnerLock(event, () -> transactions.execute(status -> {
+            PaymentWebhookResult webhookResult = payments.processVerifiedPayPalWebhook(event);
+            if (webhookResult.duplicate()) return webhookResult;
+            if (!webhookResult.accepted()) {
+                if (webhookResult.retryable()) {
                     throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
                             "PayPal webhook could not be correlated yet; retry delivery");
                 }
-                return;
+                return webhookResult;
             }
 
-            if (result.captureConfirmed() && result.paymentAttemptId() != null) {
-                PaymentResponse payment = payments.findByAttemptId(result.paymentAttemptId());
-                if (payment == null) {
-                    throw new PaymentException(PaymentException.Code.ATTEMPT_NOT_FOUND,
-                            "Payment attempt for PayPal webhook was not found");
-                }
-                if (payment.checkoutId() != null) {
-                    checkoutPayments.reconcile(payment.checkoutId(), event.eventId());
-                } else if (payment.orderId() != null) {
-                    orders.reconcilePayment(payment.orderId(), event.eventId());
-                }
+            if (webhookResult.refundOperationId() != null) {
+                refunds.reconcilePayPalRefund(webhookResult.refundOperationId());
             }
+            return webhookResult;
+        }));
 
-            if (result.refundOperationId() != null) {
-                refunds.reconcilePayPalRefund(result.refundOperationId());
+        if (result.captureConfirmed() && result.paymentAttemptId() != null) {
+            PaymentResponse payment = payments.findByAttemptId(result.paymentAttemptId());
+            if (payment == null) {
+                throw new PaymentException(PaymentException.Code.ATTEMPT_NOT_FOUND,
+                        "Payment attempt for PayPal webhook was not found");
             }
-        });
+            if (payment.checkoutId() != null) {
+                checkoutPayments.reconcile(payment.checkoutId(), event.eventId());
+            } else if (payment.orderId() != null) {
+                orders.reconcilePayment(payment.orderId(), event.eventId());
+            }
+        }
     }
 }

@@ -9,6 +9,8 @@ import com.atlas.inventory.exception.InventoryException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.settlement.exception.SettlementException;
+import java.net.URI;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -19,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -117,6 +120,15 @@ public class GlobalExceptionHandler {
             };
         }
         return internalError(exception);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ProblemDetail> invalidArgument(MethodArgumentTypeMismatchException exception) {
+        ResponseEntity<ProblemDetail> error = response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", null);
+        String requestId = MDC.get("requestId");
+        String instanceId = requestId == null ? UUID.randomUUID().toString() : requestId;
+        error.getBody().setInstance(URI.create("urn:atlas:request:" + instanceId));
+        return error;
     }
 
     @ExceptionHandler(Exception.class)

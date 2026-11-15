@@ -1,6 +1,9 @@
 package com.atlas.application.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.cart.exception.CartException;
@@ -9,14 +12,38 @@ import com.atlas.inventory.exception.InventoryException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.settlement.exception.SettlementException;
+import java.util.UUID;
 import org.slf4j.MDC;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+    @Test
+    void malformedUuidPathVariableMapsToSafeClientError() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new UuidPathController())
+                .setControllerAdvice(handler)
+                .build();
+
+        String responseBody = mockMvc.perform(get("/uuid-path/not-a-valid-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.detail").value("요청 정보를 확인해 주세요."))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(responseBody)
+                .doesNotContain("not-a-valid-uuid", "MethodArgumentTypeMismatchException", "UUID");
+    }
 
     @Test
     void errorResponseIncludesRequestIdFromCurrentRequestContext() {
@@ -120,5 +147,14 @@ class GlobalExceptionHandlerTest {
                 SettlementException.Code.CONFLICT, "Capture facts conflict"));
         assertThat(conflict.getStatusCode().value()).isEqualTo(HttpStatus.CONFLICT.value());
         assertThat(conflict.getBody().getProperties()).containsEntry("code", "CONFLICT");
+    }
+
+    @RestController
+    static class UuidPathController {
+
+        @GetMapping("/uuid-path/{id}")
+        public String find(@PathVariable UUID id) {
+            return id.toString();
+        }
     }
 }

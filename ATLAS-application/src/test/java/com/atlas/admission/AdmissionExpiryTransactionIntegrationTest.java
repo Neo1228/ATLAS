@@ -134,6 +134,139 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
     }
 
 
+    @Test
+    void increasingPolicyCapacityImmediatelyPromotesNextWaitingTicketInFifoOrder() {
+        SellerResponse seller = sellers.createSeller();
+        ProductResponse product = products.createProduct(seller.sellerId(),
+                new CreateProductRequest("admission capacity " + UUID.randomUUID(), "description"));
+        String skuId = "admission-capacity-" + UUID.randomUUID();
+        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
+        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+                seller.sellerId(), skuId, Duration.ofMinutes(5)));
+        campaigns.open(campaign.campaignId());
+
+        QueueTicketResponse first = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-1", "capacity-1"));
+        QueueTicketResponse second = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-2", "capacity-2"));
+        QueueTicketResponse third = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-3", "capacity-3"));
+
+        assertThat(first.sequence()).isEqualTo(1);
+        assertThat(second.sequence()).isEqualTo(2);
+        assertThat(third.sequence()).isEqualTo(3);
+        assertThat(first.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(second.status()).isEqualTo(TicketStatus.WAITING);
+        assertThat(third.status()).isEqualTo(TicketStatus.WAITING);
+
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 2));
+
+        assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(admission.find(campaign.campaignId(), third.ticketId()).status())
+                .isEqualTo(TicketStatus.WAITING);
+    }
+
+
+    @Test
+    void joinContendingWithCapacityDecreaseUsesCommittedPolicy() throws Exception {
+        SellerResponse seller = sellers.createSeller();
+        ProductResponse product = products.createProduct(seller.sellerId(),
+                new CreateProductRequest("admission policy race " + UUID.randomUUID(), "description"));
+        String skuId = "admission-policy-race-" + UUID.randomUUID();
+        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 2));
+        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+                seller.sellerId(), skuId, Duration.ofMinutes(5)));
+        campaigns.open(campaign.campaignId());
+        QueueTicketResponse first = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-policy-race-1", "policy-race-1"));
+        assertThat(first.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+
+        CountDownLatch configurationLocked = new CountDownLatch(1);
+        CountDownLatch releaseConfiguration = new CountDownLatch(1);
+        AtomicInteger blockerPid = new AtomicInteger(-1);
+        ExecutorService executor = Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable, "admission-policy-race");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            Future<?> configuration = executor.submit(() -> new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        admission.configureSellerSkuPolicy(
+                                new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
+                        blockerPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        configurationLocked.countDown();
+                        awaitLatch(releaseConfiguration);
+                    }));
+            assertThat(configurationLocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            Future<QueueTicketResponse> join = executor.submit(() -> admission.join(new JoinQueueRequest(
+                    campaign.campaignId(), skuId, "buyer-policy-race-2", "policy-race-2")));
+            try (Connection observer = dataSource.getConnection()) {
+                int observerPid = PostgresLockWaitProbe.backendPid(observer);
+                PostgresLockWaitProbe.Observation observation = PostgresLockWaitProbe.awaitWaiter(
+                        observer, blockerPid.get(), observerPid, Duration.ofSeconds(10), Duration.ofMillis(50));
+                assertThat(observation.queryElapsedMillis()).isPositive();
+            }
+
+            releaseConfiguration.countDown();
+            configuration.get(10, TimeUnit.SECONDS);
+            QueueTicketResponse second = join.get(10, TimeUnit.SECONDS);
+
+            assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
+                    .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+            assertThat(second.status()).isEqualTo(TicketStatus.WAITING);
+            assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
+                    .isEqualTo(TicketStatus.WAITING);
+        } finally {
+            releaseConfiguration.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+
+    @Test
+    void capacityIncreaseExpiresHeldTicketBeforePromotingOldestEligibleWaiters() {
+        SellerResponse seller = sellers.createSeller();
+        ProductResponse product = products.createProduct(seller.sellerId(),
+                new CreateProductRequest("admission expired capacity " + UUID.randomUUID(), "description"));
+        String skuId = "admission-expired-capacity-" + UUID.randomUUID();
+        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
+        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+                seller.sellerId(), skuId, Duration.ofMinutes(5)));
+        campaigns.open(campaign.campaignId());
+
+        QueueTicketResponse expiredActive = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-expired-active", "expired-active"));
+        QueueTicketResponse oldestWaiting = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-oldest-waiting", "oldest-waiting"));
+        QueueTicketResponse nextWaiting = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-next-waiting", "next-waiting"));
+        QueueTicketResponse lastWaiting = admission.join(new JoinQueueRequest(
+                campaign.campaignId(), skuId, "buyer-last-waiting", "last-waiting"));
+        jdbc.update("UPDATE admission_ticket SET expires_at = ? WHERE ticket_id = ?",
+                Timestamp.from(Instant.now().minus(Duration.ofHours(1))), expiredActive.ticketId());
+
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 2));
+
+        assertThat(admission.find(campaign.campaignId(), expiredActive.ticketId()).status())
+                .isEqualTo(TicketStatus.EXPIRED);
+        assertThat(admission.find(campaign.campaignId(), oldestWaiting.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(admission.find(campaign.campaignId(), nextWaiting.ticketId()).status())
+                .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+        assertThat(admission.find(campaign.campaignId(), lastWaiting.ticketId()).status())
+                .isEqualTo(TicketStatus.WAITING);
+    }
+
+
     private DueTicket createDueTicket(UUID sellerId, ProductResponse product, String label) {
         String skuId = "admission-expiry-" + label + "-" + UUID.randomUUID();
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
