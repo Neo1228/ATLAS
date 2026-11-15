@@ -491,8 +491,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         UUID checkoutId = created.checkoutId();
         CheckoutResponse pending = checkoutPayments.submit(checkoutId);
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
-        String providerOrderId = pending.paymentApprovalUrl()
-                .substring(pending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        String providerOrderId = payments.findCheckout(checkoutId).providerOrderId();
         PaymentResponse authorized = payments.completeCheckoutApproval(checkoutId, providerOrderId);
         assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
         PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
