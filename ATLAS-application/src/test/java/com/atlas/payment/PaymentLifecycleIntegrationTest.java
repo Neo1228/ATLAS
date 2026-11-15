@@ -9,6 +9,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.atlas.cart.service.CartService;
+import com.atlas.catalog.dto.request.CreateProductRequest;
+import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.catalog.service.ProductService;
+import com.atlas.catalog.service.SellerService;
+import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -31,15 +38,14 @@ import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.application.service.PayPalWebhookService;
-import com.atlas.order.persistence.entity.BuyerCheckout;
+import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
-import com.atlas.order.repository.BuyerCheckoutRepository;
+import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -89,7 +95,15 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Autowired
     private JdbcTemplate jdbc;
     @Autowired
-    private BuyerCheckoutRepository buyerCheckouts;
+    private CartService carts;
+    @Autowired
+    private SellerService sellers;
+    @Autowired
+    private ProductService products;
+    @Autowired
+    private CartCheckoutService cartCheckouts;
+    @Autowired
+    private CheckoutPaymentService checkoutPayments;
 
     @Autowired
     private PaymentAttemptRepository paymentAttempts;
@@ -467,13 +481,20 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Test
     void sameCaptureWebhookRedeliveryRetriesCheckoutReconciliationAfterEventCommit() {
         long amountWon = 17200L;
-        Instant createdAt = Instant.now();
-        BuyerCheckout checkout = buyerCheckouts.saveAndFlush(new BuyerCheckout(
-                "buyer-webhook-" + UUID.randomUUID(), "checkout-webhook-" + UUID.randomUUID(),
-                BuyerCheckoutState.PAYMENT_PENDING, amountWon, createdAt, createdAt));
-        UUID checkoutId = checkout.checkoutId();
-        PaymentResponse pending = payments.submitCheckout(checkoutId, BigDecimal.valueOf(amountWon));
-        PaymentResponse authorized = payments.completeCheckoutApproval(checkoutId, pending.providerOrderId());
+        UUID sellerId = sellers.createSeller().sellerId();
+        var product = products.createProduct(sellerId, new CreateProductRequest("Webhook retry product", null));
+        String skuId = "webhook-retry-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, amountWon, 2));
+        String buyerRef = "buyer-webhook-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+        CheckoutResponse created = cartCheckouts.checkout(buyerRef, "checkout-webhook-" + UUID.randomUUID());
+        UUID checkoutId = created.checkoutId();
+        CheckoutResponse pending = checkoutPayments.submit(checkoutId);
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        String providerOrderId = pending.paymentApprovalUrl()
+                .substring(pending.paymentApprovalUrl().lastIndexOf('/') + 1);
+        PaymentResponse authorized = payments.completeCheckoutApproval(checkoutId, providerOrderId);
+        assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
         PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
         String eventId = "WH-CHECKOUT-RECONCILE-RETRY-" + UUID.randomUUID();
         String captureId = "CAPTURE-" + UUID.randomUUID();
@@ -483,16 +504,17 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 "2026-11-09T00:00:00Z");
         String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
                 amount, attempt.getProviderCurrency());
-        CheckoutPaymentService checkoutPayments = mock(CheckoutPaymentService.class);
+        CheckoutPaymentService checkoutPaymentsProbe = mock(CheckoutPaymentService.class);
         AtomicInteger reconciliationCalls = new AtomicInteger();
         IllegalStateException firstReconciliationFailure = new IllegalStateException(
                 "Checkout reconciliation failed");
         doAnswer(invocation -> {
             if (reconciliationCalls.incrementAndGet() == 1) throw firstReconciliationFailure;
-            return null;
-        }).when(checkoutPayments).reconcile(eq(checkoutId), eq(eventId));
+            return checkoutPayments.reconcile(invocation.getArgument(0, UUID.class),
+                    invocation.getArgument(1, String.class));
+        }).when(checkoutPaymentsProbe).reconcile(eq(checkoutId), eq(eventId));
         PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments,
-                mock(OrderService.class), checkoutPayments, mock(OrderRefundService.class));
+                mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class));
 
         assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
         assertThat(jdbc.queryForObject(
@@ -502,15 +524,40 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
         assertThat(captured.checkoutId()).isEqualTo(checkoutId);
         assertThat(captured.providerCaptureId()).isEqualTo(captureId);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM settlement_journal WHERE source_attempt_id = ?",
+                Integer.class, captured.attemptId())).isZero();
+        CheckoutResponse awaitingRedelivery = checkoutPayments.find(checkoutId);
+        assertThat(awaitingRedelivery.state()).isEqualTo(BuyerCheckoutState.PAYMENT_PENDING);
+        assertThat(awaitingRedelivery.orders()).hasSize(1);
+        var pendingOrder = awaitingRedelivery.orders().getFirst();
+        assertThat(pendingOrder.state()).isEqualTo(OrderState.PAYMENT_PENDING);
+        assertThat(pendingOrder.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, pendingOrder.orderId())).isZero();
 
         webhook.handle(signature, rawBody);
 
         assertThat(reconciliationCalls).hasValue(2);
-        verify(checkoutPayments, times(2)).reconcile(checkoutId, eventId);
+        verify(checkoutPaymentsProbe, times(2)).reconcile(checkoutId, eventId);
         assertThat(jdbc.queryForObject(
                 "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
                 String.class, eventId)).isEqualTo("PROCESSED");
         assertThat(payments.findCheckout(checkoutId)).usingRecursiveComparison().isEqualTo(captured);
+        CheckoutResponse reconciled = checkoutPayments.find(checkoutId);
+        assertThat(reconciled.state()).isEqualTo(BuyerCheckoutState.PAID);
+        assertThat(reconciled.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(reconciled.orders()).hasSize(1);
+        var paidOrder = reconciled.orders().getFirst();
+        assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
+        assertThat(paidOrder.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(paidOrder.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM settlement_journal WHERE source_attempt_id = ?",
+                Integer.class, captured.attemptId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, paidOrder.orderId())).isEqualTo(1);
+        assertThat(captureRequestCount()).isZero();
     }
 
     @Test
