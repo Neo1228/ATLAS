@@ -164,4 +164,18 @@ class AccountOwnershipInterceptorTest {
 
         assertTrue(interceptor.preHandle(request, response, new Object()));
     }
+    @Test
+    void rejectsWishlistAccessForAnotherBuyer() {
+        String buyerRef = UUID.randomUUID().toString();
+        request.setRequestURI("/api/buyers/" + buyerRef + "/wishlist");
+        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/buyers/{buyerRef}/wishlist");
+        request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, Map.of("buyerRef", buyerRef));
+        when(accounts.ownsBuyer(ACCOUNT_ID, buyerRef)).thenReturn(false);
+
+        AccountException error = assertThrows(AccountException.class,
+                () -> interceptor.preHandle(request, response, new Object()));
+
+        assertEquals(AccountException.Code.RESOURCE_NOT_OWNED, error.code());
+    }
+
 }

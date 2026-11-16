@@ -95,12 +95,14 @@
 | D-089 | ◐ #279 운영자 EXHAUSTED 조회·수동 재시도 구현 | `/api/internal/payment/paypal/webhook-retries`: opt-in `atlas.payment.webhook-retry.operator.enabled`, `.username`, `.password`로 별도 Basic chain/`PAYMENT_WEBHOOK_RETRY_OPERATOR` role 적용. GET은 EXHAUSTED 안전 필드만 반환하며 page는 0부터, 기본 size 20·최대 100, `page*size` 최대 10,000; 음수 page 또는 초과 offset은 400. POST는 `Idempotency-Key`(1–128자)와 비어 있지 않은 사유(최대 500자)를 요구하고 actor/event/reason/time/key/outcome을 append-only 감사 테이블에 기록한다. 전역 unique key는 actor/event/reason에 묶이며 같은 요청 replay는 큐 행 삭제 후에도 기존 202 결과를 반환하고, 다른 요청의 키 재사용은 409. EXHAUSTED 행 잠금·조건부 전이·감사 기록을 한 트랜잭션으로 수행한다. durable audit 기록 기준 이벤트당 최대 3회; PENDING·누락·한도 초과 및 영구 거부 이벤트는 거절. 큐 scheduling 필드 외 payment/refund/provider/attempt 상태는 변경하지 않고 worker만 처리한다. | 소유자 결정, 2026-11-16; [Issue #279](https://github.com/Neo1228/ATLAS/issues/279), [ADR-0032](../02-decisions/adr/ADR-0032-paypal-webhook-retry-queue.md) |
 | D-090 | ◐ #281 시도 이력 및 운영자 read model | 변경·삭제되는 PayPal webhook retry 큐와 독립된 lease당 한 시도 행을 보존한다. 행 삭제 없이 `CLAIMED`에서 종료 결과로의 조건부 갱신을 한 번 허용하며 유일한 lease token으로 재시도 주기를 구분한다. 기존 데이터에서 과거 이력을 추정하지 않는다. D-089의 opt-in 인증·권한 아래 읽기 전용 요약, PENDING 목록과 이벤트별 이력을 제공하며 목록과 이력은 offset 최대 10,000의 제한된 페이지 조회다. 요약은 DB grouped projection으로 현재 상태별 수·최고령 시각, `lease_until IS NOT NULL AND lease_until < CURRENT_TIMESTAMP`인 만료 lease 수 및 DB/서버 시계 기준 최근 24시간 결과별 수를 집계한다. 수동 감사 timeline은 명시적 이벤트 분류와 시각만 노출하며 임의 사유·idempotency key·lease token·예외 원문·정규화 provider ID·payload·인증 정보는 제외한다. 조회는 큐나 결제 상태를 변경하지 않고 D-089 수동 재시도 정책도 바꾸지 않는다. | 소유자 결정, 2026-11-16; [#281](https://github.com/Neo1228/ATLAS/issues/281), [D-089](#d-089), [ADR-0032](../02-decisions/adr/ADR-0032-paypal-webhook-retry-queue.md) |
 | D-091 | ◐ #283 PayPal report-only reconciliation run 구현; PostgreSQL 통합 검증 통과; 실 merchant report 확인 대기 | PayPal Balance Reconciliation report는 업로드 bytes의 SHA-256 unique fingerprint를 키로 불변 run과 run/row 안전한 사실(ID·통화·gross/fee/net·상태·사유)을 저장하고 동일 fingerprint 재업로드는 중복 run을 만들지 않는다. 원본 파일·인증 정보·PII·provider 상세는 저장하지 않으며 payment/order/inventory/FX/ledger를 변경하지 않는다. 예외 행은 Idempotency-Key 기반 append-only disposition(CONFIRMED_EXTERNAL/DEFERRED/NEEDS_REVIEW)으로만 감사하며 operator API는 D-086 기본 비활성 Basic 경계와 전용 역할을 재사용한다. | 소유자 결정, 2026-11-16; [#283](https://github.com/Neo1228/ATLAS/issues/283), [ADR-0033](../02-decisions/adr/ADR-0033-paypal-balance-report-reconciliation-history.md) |
+| D-092 | ✓ #285 buyer wishlist 구현·PostgreSQL 통합 검증 통과 | 공개 조회 가능한 상품 ID와 savedAt만 buyerRef·productId 복합 키로 저장한다. D-086 소유권 확인 아래 멱등 추가·삭제와 bounded/stable-order 페이지 조회를 제공하며 cart·재고 예약·order·payment·settlement에는 영향을 주지 않는다. | [#285](https://github.com/Neo1228/ATLAS/issues/285), [ADR-0034](../02-decisions/adr/ADR-0034-buyer-product-wishlist.md) |
 
 <!-- markdownlint-disable MD033 -->
 
 <a id="d-089"></a>
 <a id="d-090"></a>
 <a id="d-091"></a>
+<a id="d-092"></a>
 
 <a id="detailed-decision-records"></a>
 
