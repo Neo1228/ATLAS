@@ -26,5 +26,7 @@ public interface ProductService {
     ProductListingPageResponse listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer limit, String cursor);
     ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query, Integer limit, String cursor);
+    ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
+            Long minPriceWon, Long maxPriceWon, Integer limit, String cursor);
     ProductListingResponse findProduct(UUID productId);
 }

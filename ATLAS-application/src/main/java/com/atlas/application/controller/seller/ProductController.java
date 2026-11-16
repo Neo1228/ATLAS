@@ -43,8 +43,9 @@ public class ProductController {
     @GetMapping("/products")
     public ProductListingPageResponse listProducts(@RequestParam(required = false) UUID sellerId,
             @RequestParam(required = false) String query, @RequestParam(required = false) UUID categoryId,
+            @RequestParam(required = false) Long minPriceWon, @RequestParam(required = false) Long maxPriceWon,
             @RequestParam(required = false) Integer limit, @RequestParam(required = false) String cursor) {
-        return products.listProductsPage(sellerId, categoryId, query, limit, cursor);
+        return products.listProductsPage(sellerId, categoryId, query, minPriceWon, maxPriceWon, limit, cursor);
     }
 
     @GetMapping("/sellers/{sellerId}/products")

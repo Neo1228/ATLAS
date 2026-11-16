@@ -97,6 +97,7 @@
 | D-091 | ◐ #283 PayPal report-only reconciliation run 구현; PostgreSQL 통합 검증 통과; 실 merchant report 확인 대기 | PayPal Balance Reconciliation report는 업로드 bytes의 SHA-256 unique fingerprint를 키로 불변 run과 run/row 안전한 사실(ID·통화·gross/fee/net·상태·사유)을 저장하고 동일 fingerprint 재업로드는 중복 run을 만들지 않는다. 원본 파일·인증 정보·PII·provider 상세는 저장하지 않으며 payment/order/inventory/FX/ledger를 변경하지 않는다. 예외 행은 Idempotency-Key 기반 append-only disposition(CONFIRMED_EXTERNAL/DEFERRED/NEEDS_REVIEW)으로만 감사하며 operator API는 D-086 기본 비활성 Basic 경계와 전용 역할을 재사용한다. | 소유자 결정, 2026-11-16; [#283](https://github.com/Neo1228/ATLAS/issues/283), [ADR-0033](../02-decisions/adr/ADR-0033-paypal-balance-report-reconciliation-history.md) |
 | D-092 | ✓ #285 buyer wishlist 구현·PostgreSQL 통합 검증 통과 | 공개 조회 가능한 상품 ID와 savedAt만 buyerRef·productId 복합 키로 저장한다. D-086 소유권 확인 아래 멱등 추가·삭제와 bounded/stable-order 페이지 조회를 제공하며 cart·재고 예약·order·payment·settlement에는 영향을 주지 않는다. | [#285](https://github.com/Neo1228/ATLAS/issues/285), [ADR-0034](../02-decisions/adr/ADR-0034-buyer-product-wishlist.md) |
 | D-093 | ✓ #287 배송 완료 구매자 product review 및 PostgreSQL 통합 검증 통과 | 리뷰 작성은 JWT buyerRef 소유권과 OrderService의 delivered shipment item 증거를 확인한다. buyer/product당 1회, rating 1–5·본문 2,000자 제한, source orderItem ID 감사 보존, payment/order/inventory/ledger 비변경. | [#287](https://github.com/Neo1228/ATLAS/issues/287), [ADR-0035](../02-decisions/adr/ADR-0035-verified-buyer-product-reviews.md) |
+| D-094 | ✓ #289 catalog 가격 범위 filter 구현·PostgreSQL 통합 검증 통과 | Public product listing은 요청 단위 asOf로 SKU effectivePrice를 계산하고 inclusive min/max를 pagination 이전에 적용한다. v5 cursor는 seller/category/keyword/price bounds를 결속하며 이전 cursor는 no-price 호출에서만 이어받는다. Campaign price와 inventory stock은 별도 경계로 둔다. | [#289](https://github.com/Neo1228/ATLAS/issues/289), [ADR-0036](../02-decisions/adr/ADR-0036-catalog-product-price-range-filter.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -105,6 +106,7 @@
 <a id="d-091"></a>
 <a id="d-092"></a>
 <a id="d-093"></a>
+<a id="d-094"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -144,3 +146,4 @@
 | [ADR-0033 — PayPal 대사 report 이력과 감사 전용 예외 처리](../02-decisions/adr/ADR-0033-paypal-balance-report-reconciliation-history.md) | #283: report-only 대사 run 지속성과 disposition 감사 | [D-091](#d-091) |
 | [ADR-0034 — 구매자 product wishlist](../02-decisions/adr/ADR-0034-buyer-product-wishlist.md) | #285: buyerRef 소유권, 멱등 저장·삭제, 관심 상품 목록의 bounded/stable pagination | [D-092](#d-092) |
 | [ADR-0035 — 배송 완료 구매자 상품 리뷰](../02-decisions/adr/ADR-0035-verified-buyer-product-reviews.md) | #287: delivered purchase 검증, 구매자 1회 리뷰, public bounded aggregate 조회 | [D-093](#d-093) |
+| [ADR-0036 — Catalog 상품 목록의 SKU 유효 가격 범위 필터](../02-decisions/adr/ADR-0036-catalog-product-price-range-filter.md) | #289: SKU effective price filter, inclusive bounds, pagination/cursor binding | [D-094](#d-094) |
