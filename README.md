@@ -10,7 +10,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 | 모듈 디렉터리 | 책임 |
 |---|---|
 | `ATLAS-application/` | Spring Boot 실행, HTTP API/controller, 보안·공통 오류·scheduler 설정, Flyway migration |
-| `ATLAS-account/` | Buyer account, Seller profile, JWT access token과 rotating refresh session |
+| `ATLAS-account/` | Buyer account, Seller profile, JWT access token과 rotating refresh session, family 기반 즉시 revoke 및 기기별 session 관리 |
 | `ATLAS-catalog/` | Seller, Product·category·SKU, 가격, 판매 상태와 channel별 판매 가능 여부 |
 | `ATLAS-cart/` | Buyer cart와 cart item |
 | `ATLAS-campaign/` | Campaign과 구매 자격 |
@@ -23,6 +23,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 Buyer 주문 내역: `GET /api/buyers/{buyerRef}/orders`는 인증된 Buyer의 Campaign·cart 주문 요약을 keyset cursor로 조회. 기본 limit 10, 최대 100; 상세는 `GET /api/orders/{orderId}`.
 Buyer 관심 상품 목록은 `GET /api/buyers/{buyerRef}/wishlist`로 페이지 조회하고, `POST`/`DELETE /api/buyers/{buyerRef}/wishlist/products/{productId}`로 멱등 저장·삭제. 본인 계정만 접근하며 장바구니·재고 예약과 분리됩니다.
 Verified buyer 상품 리뷰는 배송 완료된 본인 주문 상품만 작성할 수 있습니다: `POST /api/buyers/{buyerRef}/reviews`; 공개 평점·리뷰 페이지는 `GET /api/products/{productId}/reviews`입니다.
+계정 session은 `GET /api/auth/sessions`로 bounded 조회하고 `DELETE /api/auth/sessions/{familyId}`로 본인 family를 종료할 수 있습니다. Logout·비밀번호 재설정 뒤 관련 access JWT는 다음 요청부터 즉시 폐기됩니다.
 Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범위를 필터링하며, 기간 판매가가 활성인 동안에는 effective price 기준으로 cursor 페이지 조회합니다.
 
 ## 구매 흐름과 아키텍처

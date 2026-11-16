@@ -4,6 +4,7 @@ import com.atlas.account.domain.AccountPrincipal;
 import com.atlas.account.domain.AccountActionToken;
 import com.atlas.account.domain.AccountMfaSecret;
 import com.atlas.account.domain.RefreshTokenSession;
+import com.atlas.account.domain.ActiveRefreshFamily;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -312,6 +313,52 @@ public class AccountRepository {
                         UPDATE account_refresh_token SET revoked_at = ?
                         WHERE family_id = ? AND revoked_at IS NULL
                         """, Timestamp.from(revokedAt), familyId);
+    }
+
+    public boolean isRefreshFamilyActive(UUID accountId, UUID familyId, Instant asOf) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM refresh_token_family family
+                    JOIN user_account account ON account.account_id = family.account_id
+                    WHERE family.family_id = ?
+                      AND family.account_id = ?
+                      AND family.revoked_at IS NULL
+                      AND family.expires_at > ?
+                      AND account.status = 'ACTIVE'
+                      AND account.email_verified_at IS NOT NULL
+                )
+                """, Boolean.class, familyId, accountId, Timestamp.from(asOf)));
+    }
+
+    public List<ActiveRefreshFamily> findActiveRefreshFamilies(UUID accountId, Instant asOf,
+            int limit, int offset) {
+        return jdbc.query("""
+                SELECT family.family_id, family.created_at, family.expires_at
+                FROM refresh_token_family family
+                JOIN user_account account ON account.account_id = family.account_id
+                WHERE family.account_id = ? AND family.revoked_at IS NULL AND family.expires_at > ?
+                  AND account.status = 'ACTIVE' AND account.email_verified_at IS NOT NULL
+                ORDER BY family.created_at DESC, family.family_id DESC
+                LIMIT ? OFFSET ?
+                """, (rs, rowNum) -> new ActiveRefreshFamily(
+                rs.getObject("family_id", UUID.class),
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("expires_at").toInstant()), accountId, Timestamp.from(asOf), limit, offset);
+    }
+
+    public boolean revokeRefreshFamily(UUID accountId, UUID familyId, Instant revokedAt) {
+        int updated = jdbc.update("""
+                UPDATE refresh_token_family
+                SET revoked_at = ?
+                WHERE family_id = ? AND account_id = ? AND revoked_at IS NULL
+                """, Timestamp.from(revokedAt), familyId, accountId);
+        if (updated == 0) return false;
+        jdbc.update("""
+                UPDATE account_refresh_token
+                SET revoked_at = ?
+                WHERE family_id = ? AND revoked_at IS NULL
+                """, Timestamp.from(revokedAt), familyId);
+        return true;
     }
 
     public void revokeRefreshToken(UUID accountId, String tokenHash, Instant revokedAt) {

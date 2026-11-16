@@ -98,6 +98,7 @@
 | D-092 | ✓ #285 buyer wishlist 구현·PostgreSQL 통합 검증 통과 | 공개 조회 가능한 상품 ID와 savedAt만 buyerRef·productId 복합 키로 저장한다. D-086 소유권 확인 아래 멱등 추가·삭제와 bounded/stable-order 페이지 조회를 제공하며 cart·재고 예약·order·payment·settlement에는 영향을 주지 않는다. | [#285](https://github.com/Neo1228/ATLAS/issues/285), [ADR-0034](../02-decisions/adr/ADR-0034-buyer-product-wishlist.md) |
 | D-093 | ✓ #287 배송 완료 구매자 product review 및 PostgreSQL 통합 검증 통과 | 리뷰 작성은 JWT buyerRef 소유권과 OrderService의 delivered shipment item 증거를 확인한다. buyer/product당 1회, rating 1–5·본문 2,000자 제한, source orderItem ID 감사 보존, payment/order/inventory/ledger 비변경. | [#287](https://github.com/Neo1228/ATLAS/issues/287), [ADR-0035](../02-decisions/adr/ADR-0035-verified-buyer-product-reviews.md) |
 | D-094 | ✓ #289 catalog 가격 범위 filter 구현·PostgreSQL 통합 검증 통과 | Public product listing은 요청 단위 asOf로 SKU effectivePrice를 계산하고 inclusive min/max를 pagination 이전에 적용한다. v5 cursor는 seller/category/keyword/price bounds를 결속하며 이전 cursor는 no-price 호출에서만 이어받는다. Campaign price와 inventory stock은 별도 경계로 둔다. | [#289](https://github.com/Neo1228/ATLAS/issues/289), [ADR-0036](../02-decisions/adr/ADR-0036-catalog-product-price-range-filter.md) |
+| D-095 | ✓ #291 family-bound JWT·기기별 session 관리·PostgreSQL 통합 검증 통과 | sid claim은 refresh family에 결속되고 protected request마다 account/family active·expiry·revoked 상태를 DB 검증한다. Logout·targeted revoke·password reset·refresh replay는 family 단위로 즉시 차단한다. Session list는 bounded page/index 사용; 2,501 family/account local Testcontainers 200 lookup p50 0.333ms/p95 0.476ms. | [#291](https://github.com/Neo1228/ATLAS/issues/291), [ADR-0037](../02-decisions/adr/ADR-0037-refresh-family-bound-access-token-sessions.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -107,6 +108,7 @@
 <a id="d-092"></a>
 <a id="d-093"></a>
 <a id="d-094"></a>
+<a id="d-095"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -147,3 +149,4 @@
 | [ADR-0034 — 구매자 product wishlist](../02-decisions/adr/ADR-0034-buyer-product-wishlist.md) | #285: buyerRef 소유권, 멱등 저장·삭제, 관심 상품 목록의 bounded/stable pagination | [D-092](#d-092) |
 | [ADR-0035 — 배송 완료 구매자 상품 리뷰](../02-decisions/adr/ADR-0035-verified-buyer-product-reviews.md) | #287: delivered purchase 검증, 구매자 1회 리뷰, public bounded aggregate 조회 | [D-093](#d-093) |
 | [ADR-0036 — Catalog 상품 목록의 SKU 유효 가격 범위 필터](../02-decisions/adr/ADR-0036-catalog-product-price-range-filter.md) | #289: SKU effective price filter, inclusive bounds, pagination/cursor binding | [D-094](#d-094) |
+| [ADR-0037 — Refresh family 기반 access token 폐기와 session 관리](../02-decisions/adr/ADR-0037-refresh-family-bound-access-token-sessions.md) | #291: 즉시 family revoke, 기기별 session inventory와 계정 범위 revoke | [D-095](#d-095) |
