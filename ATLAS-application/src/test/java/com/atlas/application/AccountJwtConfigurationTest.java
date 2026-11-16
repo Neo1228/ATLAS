@@ -3,8 +3,11 @@ package com.atlas.application;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.atlas.account.service.AccessTokenService;
+import com.atlas.account.service.AccountService;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -22,6 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -36,17 +40,25 @@ class AccountJwtConfigurationTest {
     private static final String ISSUER = "https://atlas.local";
     private static final String AUDIENCE = "atlas-api-test";
     private static final UUID ACCOUNT_ID = UUID.fromString("fb9d9240-689a-4e83-82f9-617a54fd02f8");
+    private static final UUID FAMILY_ID = UUID.fromString("38c9e229-7f25-40a8-a96c-0d2bc697a45e");
 
     private final AccountJwtConfiguration configuration = new AccountJwtConfiguration();
     private final SecretKey key = new SecretKeySpec(new byte[32], "HmacSHA256");
     private final JwtEncoder encoder = configuration.accountJwtEncoder(key);
-    private final JwtDecoder decoder = configuration.accountJwtDecoder(key, ISSUER, AUDIENCE);
+    private final AccountService accounts = mock(AccountService.class);
+    private JwtDecoder decoder;
+
+    @BeforeEach
+    void setUp() {
+        when(accounts.isAccessTokenFamilyActive(ACCOUNT_ID, FAMILY_ID)).thenReturn(true);
+        decoder = configuration.accountJwtDecoder(key, ISSUER, AUDIENCE, accounts);
+    }
 
     @Test
     void signedAccessTokenCarriesExpectedIdentityAndClaims() {
         AccessTokenService tokens = new AccessTokenService(encoder, Clock.systemUTC(), ISSUER, AUDIENCE);
 
-        Jwt decoded = decoder.decode(tokens.issue(ACCOUNT_ID));
+        Jwt decoded = decoder.decode(tokens.issue(ACCOUNT_ID, FAMILY_ID));
 
         assertEquals(ACCOUNT_ID.toString(), decoded.getSubject());
         assertEquals(ISSUER, decoded.getIssuer().toString());
@@ -58,7 +70,7 @@ class AccountJwtConfigurationTest {
     @Test
     void decoderRejectsInvalidSignature() {
         AccessTokenService tokens = new AccessTokenService(encoder, Clock.systemUTC(), ISSUER, AUDIENCE);
-        String[] parts = tokens.issue(ACCOUNT_ID).split("\\.");
+        String[] parts = tokens.issue(ACCOUNT_ID, FAMILY_ID).split("\\.");
         String tampered = parts[0] + "." + parts[1] + ".invalid-signature";
 
         assertThrows(JwtException.class, () -> decoder.decode(tampered));
@@ -71,8 +83,8 @@ class AccountJwtConfigurationTest {
         AccessTokenService wrongAudience = new AccessTokenService(encoder, Clock.systemUTC(),
                 ISSUER, "other-api");
 
-        assertThrows(JwtException.class, () -> decoder.decode(wrongIssuer.issue(ACCOUNT_ID)));
-        assertThrows(JwtException.class, () -> decoder.decode(wrongAudience.issue(ACCOUNT_ID)));
+        assertThrows(JwtException.class, () -> decoder.decode(wrongIssuer.issue(ACCOUNT_ID, FAMILY_ID)));
+        assertThrows(JwtException.class, () -> decoder.decode(wrongAudience.issue(ACCOUNT_ID, FAMILY_ID)));
     }
 
     @Test
@@ -96,13 +108,45 @@ class AccountJwtConfigurationTest {
         String missingSubject = encodeWithoutClaim("sub");
         String missingIssuedAt = encodeWithoutClaim("iat");
         String missingExpiresAt = encodeWithoutClaim("exp");
+        String missingFamily = encodeWithoutClaim("sid");
 
         assertMissingClaim(missingSubject, "sub");
         assertMissingClaim(missingIssuedAt, "iat");
         assertMissingClaim(missingExpiresAt, "exp");
+        assertMissingClaim(missingFamily, "sid");
         assertThrows(JwtException.class, () -> decoder.decode(missingSubject));
         assertThrows(JwtException.class, () -> decoder.decode(missingIssuedAt));
         assertThrows(JwtException.class, () -> decoder.decode(missingExpiresAt));
+        assertThrows(JwtException.class, () -> decoder.decode(missingFamily));
+    }
+
+    @Test
+    void revokedRefreshFamilyInvalidatesPreviouslyIssuedAccessToken() {
+        when(accounts.isAccessTokenFamilyActive(ACCOUNT_ID, FAMILY_ID)).thenReturn(false);
+        AccessTokenService tokens = new AccessTokenService(encoder, Clock.systemUTC(), ISSUER, AUDIENCE);
+
+        assertThrows(JwtException.class, () -> decoder.decode(tokens.issue(ACCOUNT_ID, FAMILY_ID)));
+    }
+
+    @Test
+    void decoderRejectsMalformedFamilyAndFailsClosedWhenFamilyLookupIsUnavailable() throws Exception {
+        JwtClaimsSet malformedFamilyClaims = JwtClaimsSet.builder()
+                .issuer(ISSUER)
+                .audience(List.of(AUDIENCE))
+                .subject(ACCOUNT_ID.toString())
+                .claim("sid", "not-a-uuid")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(600))
+                .build();
+        String malformedFamily = encoder.encode(JwtEncoderParameters.from(
+                JwsHeader.with(MacAlgorithm.HS256).build(), malformedFamilyClaims)).getTokenValue();
+        assertThrows(JwtException.class, () -> decoder.decode(malformedFamily));
+
+        AccessTokenService tokens = new AccessTokenService(encoder, Clock.systemUTC(), ISSUER, AUDIENCE);
+        when(accounts.isAccessTokenFamilyActive(ACCOUNT_ID, FAMILY_ID))
+                .thenThrow(new IllegalStateException("session status unavailable"));
+        assertThrows(IllegalStateException.class,
+                () -> decoder.decode(tokens.issue(ACCOUNT_ID, FAMILY_ID)));
     }
 
     private String encode(JwtClaimsSet claims) {
@@ -116,6 +160,7 @@ class AccountJwtConfigurationTest {
         claims.put("iss", ISSUER);
         claims.put("aud", List.of(AUDIENCE));
         claims.put("sub", ACCOUNT_ID.toString());
+        claims.put("sid", FAMILY_ID.toString());
         claims.put("iat", now.getEpochSecond());
         claims.put("exp", now.plusSeconds(600).getEpochSecond());
         claims.remove(omittedClaim);

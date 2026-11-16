@@ -1,5 +1,6 @@
 package com.atlas.application;
 
+import com.atlas.account.service.AccountService;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.OctetSequenceKey;
@@ -11,6 +12,7 @@ import java.security.SecureRandom;
 import java.text.ParseException;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
@@ -67,7 +69,8 @@ public class AccountJwtConfiguration {
     @Bean
     JwtDecoder accountJwtDecoder(SecretKey accountJwtSigningKey,
             @Value("${atlas.security.jwt.issuer:http://127.0.0.1:8080}") String issuer,
-            @Value("${atlas.security.jwt.audience:atlas-api}") String audience) {
+            @Value("${atlas.security.jwt.audience:atlas-api}") String audience,
+            AccountService accounts) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(accountJwtSigningKey)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
@@ -79,19 +82,39 @@ public class AccountJwtConfiguration {
             try {
                 JWTClaimsSet claims = SignedJWT.parse(jwt.getTokenValue()).getJWTClaimsSet();
                 String subject = claims.getSubject();
+                String familyId = claims.getStringClaim("sid");
                 if (subject != null && !subject.isBlank()
-                        && claims.getIssueTime() != null && claims.getExpirationTime() != null) {
+                        && claims.getIssueTime() != null && claims.getExpirationTime() != null
+                        && familyId != null && !familyId.isBlank()) {
+                    UUID.fromString(subject);
+                    UUID.fromString(familyId);
                     return OAuth2TokenValidatorResult.success();
                 }
-            } catch (ParseException exception) {
+            } catch (ParseException | IllegalArgumentException exception) {
                 return OAuth2TokenValidatorResult.failure(new OAuth2Error(
                         "invalid_token", "JWT claims could not be parsed", null));
             }
             return OAuth2TokenValidatorResult.failure(new OAuth2Error(
-                    "invalid_token", "JWT sub, iat, and exp claims are required", null));
+                    "invalid_token", "JWT sub, sid, iat, and exp claims are required", null));
+        };
+        OAuth2TokenValidator<Jwt> activeFamilyValidator = jwt -> {
+            UUID accountId;
+            UUID familyId;
+            try {
+                accountId = UUID.fromString(jwt.getSubject());
+                familyId = UUID.fromString(jwt.getClaimAsString("sid"));
+            } catch (IllegalArgumentException | NullPointerException exception) {
+                return OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "JWT refresh family claim is invalid", null));
+            }
+            if (accounts.isAccessTokenFamilyActive(accountId, familyId)) {
+                return OAuth2TokenValidatorResult.success();
+            }
+            return OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                    "invalid_token", "JWT refresh family is revoked, expired, or inactive", null));
         };
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                issuerValidator, audienceValidator, requiredClaimsValidator));
+                issuerValidator, audienceValidator, requiredClaimsValidator, activeFamilyValidator));
         return decoder;
     }
 }

@@ -32,12 +32,13 @@ public class AccessTokenService {
         this.audience = audience;
     }
 
-    public String issue(UUID accountId) {
+    public String issue(UUID accountId, UUID familyId) {
         Instant now = clock.instant();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .audience(List.of(audience))
                 .subject(accountId.toString())
+                .claim("sid", familyId.toString())
                 .issuedAt(now)
                 .expiresAt(now.plus(ACCESS_TOKEN_LIFETIME))
                 .build();

@@ -76,7 +76,7 @@ class AccountServiceTest {
         verify(accounts).replaceActionToken(eq(ACCOUNT_ID), eq("EMAIL_VERIFICATION"), anyString(), eq(NOW),
                 eq(NOW.plus(Duration.ofHours(24))));
         verify(emailSender).sendVerification(eq("buyer@example.com"), anyString());
-        verify(accessTokens, never()).issue(any());
+        verify(accessTokens, never()).issue(any(), any());
     }
 
     @Test
@@ -188,7 +188,7 @@ class AccountServiceTest {
         when(accounts.lockPasswordHashForLogin("buyer@example.com"))
                 .thenReturn(Optional.of("stored-password-hash"));
         when(passwords.matches("correct-password", "stored-password-hash")).thenReturn(true);
-        when(accessTokens.issue(ACCOUNT_ID)).thenReturn("signed-access-token");
+        when(accessTokens.issue(eq(ACCOUNT_ID), any(UUID.class))).thenReturn("signed-access-token");
 
         AccountLoginResponse result = service.login(new LoginRequest("buyer@example.com", "correct-password"));
 
@@ -208,7 +208,7 @@ class AccountServiceTest {
                 () -> service.login(new LoginRequest("missing@example.com", "incorrect-password")));
 
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
-        verify(accessTokens, never()).issue(any());
+        verify(accessTokens, never()).issue(any(), any());
         verify(passwords).matches(eq("incorrect-password"), eq("dummy-encoded-password"));
         verify(accounts, never()).createRefreshFamily(any(), any(), any(), any());
     }
@@ -223,7 +223,7 @@ class AccountServiceTest {
                 () -> service.login(new LoginRequest("buyer@example.com", "incorrect-password")));
 
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
-        verify(accessTokens, never()).issue(any());
+        verify(accessTokens, never()).issue(any(), any());
     }
 
     @Test
@@ -239,7 +239,7 @@ class AccountServiceTest {
                 () -> service.login(new LoginRequest("buyer@example.com", "old-password")));
 
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
-        verify(accessTokens, never()).issue(any());
+        verify(accessTokens, never()).issue(any(), any());
         verify(accounts, never()).createRefreshFamily(any(), any(), any(), any());
         verify(accounts, never()).createMfaChallenge(anyString(), any(), any(), any());
     }
@@ -282,7 +282,7 @@ class AccountServiceTest {
 
         assertTrue(response.mfaRequired());
         assertNotNull(response.challengeToken());
-        verify(accessTokens, never()).issue(any());
+        verify(accessTokens, never()).issue(any(), any());
         verify(accounts).createMfaChallenge(anyString(), eq(ACCOUNT_ID), eq(NOW), eq(NOW.plus(Duration.ofMinutes(5))));
     }
 
@@ -317,7 +317,7 @@ class AccountServiceTest {
                 .thenReturn(Optional.of(new AccountMfaSecret("encrypted-secret", NOW.minusSeconds(30))));
         when(accounts.consumeMfaRecoveryCode(eq(ACCOUNT_ID), anyString(), eq(NOW))).thenReturn(true);
         when(accounts.consumeMfaChallenge(anyString(), eq(NOW))).thenReturn(true);
-        when(accessTokens.issue(ACCOUNT_ID)).thenReturn("mfa-access-token");
+        when(accessTokens.issue(eq(ACCOUNT_ID), any(UUID.class))).thenReturn("mfa-access-token");
 
         AccountTokenResponse result = service.completeMfaLogin(
                 new MfaChallengeRequest("challenge-token", null, "one-time-recovery-code"));
@@ -338,7 +338,7 @@ class AccountServiceTest {
                         familyExpiry, null, tokenExpiry, null, null)));
         when(accounts.findActiveById(ACCOUNT_ID)).thenReturn(Optional.of(principal()));
         when(accounts.consumeRefreshSession(any(), any(), any())).thenReturn(true);
-        when(accessTokens.issue(ACCOUNT_ID)).thenReturn("rotated-access-token");
+        when(accessTokens.issue(eq(ACCOUNT_ID), any(UUID.class))).thenReturn("rotated-access-token");
 
         AccountTokenResponse result = service.refresh(new RefreshTokenRequest("presented-refresh-token"));
 

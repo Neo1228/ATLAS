@@ -1,10 +1,30 @@
 package com.atlas.account;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.account.dto.request.LoginRequest;
+import com.atlas.account.domain.AccountException;
+import com.atlas.account.dto.request.RefreshTokenRequest;
+import com.atlas.account.dto.response.AccountLoginResponse;
+import com.atlas.account.dto.response.AccountTokenResponse;
 import com.atlas.account.repository.AccountRepository;
+import com.atlas.account.service.AccountEmailSender;
+import com.atlas.account.service.AccountService;
+import com.nimbusds.jwt.SignedJWT;
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -13,17 +33,27 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.UncategorizedSQLException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
+@AutoConfigureMockMvc
 @SpringBootTest
+@Import(AccountAuthenticationIntegrationTest.TestEmailConfiguration.class)
 @Testcontainers
 class AccountAuthenticationIntegrationTest {
     @Container
@@ -46,6 +76,17 @@ class AccountAuthenticationIntegrationTest {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+    @Autowired
+    private AccountService accountService;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private TestAccountEmailSender testEmailSender;
 
     @Test
     void normalizedEmailConflictDoesNotCreateAnotherAccount() {
@@ -122,6 +163,293 @@ class AccountAuthenticationIntegrationTest {
         }
     }
 
+    @Test
+    void logoutRevokesOnlyItsAccessTokenFamilyAndAllFamilyRevocationInvalidatesEveryToken() throws Exception {
+        String email = "jwt-family-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        String buyerRef = accountService.buyerRef(accountId);
+        AccountLoginResponse firstLogin = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse secondLogin = accountService.login(new LoginRequest(email, password));
+        String cartPath = "/api/buyers/" + buyerRef + "/cart";
+
+        assertThat(firstLogin.mfaRequired()).isFalse();
+        assertThat(secondLogin.mfaRequired()).isFalse();
+        mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + firstLogin.tokens().accessToken()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + secondLogin.tokens().accessToken()))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + firstLogin.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + firstLogin.tokens().refreshToken() + "\"}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + firstLogin.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + secondLogin.tokens().accessToken()))
+                .andExpect(status().isNotFound());
+
+        accounts.revokeAllRefreshFamilies(accountId, Instant.now());
+
+        mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + secondLogin.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void refreshRotationKeepsFamilyAndReplayRevokesAllFamilyAccessTokens() throws Exception {
+        String email = "refresh-replay-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        AccountLoginResponse initial = accountService.login(new LoginRequest(email, password));
+        UUID familyId = UUID.fromString(SignedJWT.parse(initial.tokens().accessToken())
+                .getJWTClaimsSet().getStringClaim("sid"));
+
+        AccountTokenResponse rotated = accountService.refresh(new RefreshTokenRequest(initial.tokens().refreshToken()));
+        assertThat(UUID.fromString(SignedJWT.parse(rotated.accessToken())
+                .getJWTClaimsSet().getStringClaim("sid"))).isEqualTo(familyId);
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + initial.tokens().accessToken()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + rotated.accessToken()))
+                .andExpect(status().isOk());
+
+        assertThatThrownBy(() -> accountService.refresh(new RefreshTokenRequest(initial.tokens().refreshToken())))
+                .isInstanceOf(AccountException.class);
+
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + initial.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + rotated.accessToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void measuresIndexedRefreshFamilyRevocationLookupWithRepresentativeAccountCardinality() {
+        String email = "jwt-measure-" + UUID.randomUUID() + "@example.com";
+        UUID accountId = accounts.createAccount(email, "test-password-hash").orElseThrow();
+        accounts.createBuyer(accountId);
+        Instant now = Instant.now();
+        accounts.verifyEmail(accountId, now);
+        UUID targetFamilyId = UUID.randomUUID();
+        accounts.createRefreshFamily(targetFamilyId, accountId, now, now.plusSeconds(3600));
+
+        List<Object[]> families = new ArrayList<>();
+        for (int i = 0; i < 2_500; i++) {
+            families.add(new Object[] {UUID.randomUUID(), accountId,
+                    Timestamp.from(now.minusSeconds(i + 1L)), Timestamp.from(now.plusSeconds(3600))});
+        }
+        jdbc.batchUpdate("""
+                INSERT INTO refresh_token_family (family_id, account_id, created_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                """, families);
+        jdbc.execute("ANALYZE refresh_token_family");
+
+        assertThat(accountService.isAccessTokenFamilyActive(accountId, targetFamilyId)).isTrue();
+        long[] elapsedNanos = new long[200];
+        for (int i = 0; i < elapsedNanos.length; i++) {
+            long startedAt = System.nanoTime();
+            assertThat(accountService.isAccessTokenFamilyActive(accountId, targetFamilyId)).isTrue();
+            elapsedNanos[i] = System.nanoTime() - startedAt;
+        }
+        Arrays.sort(elapsedNanos);
+        double p50Millis = elapsedNanos[elapsedNanos.length / 2] / 1_000_000.0;
+        double p95Millis = elapsedNanos[(elapsedNanos.length * 95) / 100] / 1_000_000.0;
+        List<String> plan = jdbc.query("""
+                EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM refresh_token_family family
+                    JOIN user_account account ON account.account_id = family.account_id
+                    WHERE family.family_id = ?
+                      AND family.account_id = ?
+                      AND family.revoked_at IS NULL
+                      AND family.expires_at > ?
+                      AND account.status = 'ACTIVE'
+                      AND account.email_verified_at IS NOT NULL
+                )
+                """, (rs, rowNum) -> rs.getString(1),
+                targetFamilyId, accountId, Timestamp.from(Instant.now()));
+        String explain = String.join(" | ", plan);
+        assertThat(explain).contains("refresh_token_family_pkey");
+        List<String> sessionPlan = jdbc.query("""
+                EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+                SELECT family_id, created_at, expires_at
+                FROM refresh_token_family
+                WHERE account_id = ? AND revoked_at IS NULL AND expires_at > ?
+                ORDER BY created_at DESC, family_id DESC
+                LIMIT 21 OFFSET 0
+                """, (rs, rowNum) -> rs.getString(1), accountId, Timestamp.from(Instant.now()));
+        String sessionExplain = String.join(" | ", sessionPlan);
+        assertThat(sessionExplain).contains("ix_refresh_family_active_account_created");
+        System.out.printf(Locale.ROOT,
+                "JWT family status p50=%.3fms p95=%.3fms; session page plan=%s%n",
+                p50Millis, p95Millis, sessionExplain);
+    }
+
+    @Test
+    void concurrentFamilyRevocationsAreIdempotentAndDoNotAffectSiblingSessions() throws Exception {
+        String email = "concurrent-revoke-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        AccountLoginResponse first = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse second = accountService.login(new LoginRequest(email, password));
+        UUID firstFamily = UUID.fromString(SignedJWT.parse(first.tokens().accessToken())
+                .getJWTClaimsSet().getStringClaim("sid"));
+        UUID secondFamily = UUID.fromString(SignedJWT.parse(second.tokens().accessToken())
+                .getJWTClaimsSet().getStringClaim("sid"));
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> one = workers.submit(() -> {
+                start.await();
+                accountService.revokeSession(accountId, firstFamily);
+                return null;
+            });
+            Future<?> two = workers.submit(() -> {
+                start.await();
+                accountService.revokeSession(accountId, firstFamily);
+                return null;
+            });
+            start.countDown();
+            one.get(5, TimeUnit.SECONDS);
+            two.get(5, TimeUnit.SECONDS);
+        } finally {
+            workers.shutdownNow();
+        }
+
+        assertThat(jdbc.queryForObject("""
+                SELECT revoked_at IS NOT NULL FROM refresh_token_family WHERE family_id = ?
+                """, Boolean.class, firstFamily)).isTrue();
+        assertThat(jdbc.queryForObject("""
+                SELECT revoked_at IS NULL FROM refresh_token_family WHERE family_id = ?
+                """, Boolean.class, secondFamily)).isTrue();
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + second.tokens().accessToken()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void expiredRefreshFamilyRejectsStillUnexpiredAccessToken() throws Exception {
+        String email = "expired-family-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        AccountLoginResponse login = accountService.login(new LoginRequest(email, password));
+        UUID familyId = UUID.fromString(SignedJWT.parse(login.tokens().accessToken())
+                .getJWTClaimsSet().getStringClaim("sid"));
+        jdbc.update("UPDATE refresh_token_family SET created_at = ?, expires_at = ? WHERE family_id = ?",
+                Timestamp.from(Instant.now().minusSeconds(3600)), Timestamp.from(Instant.now().minusSeconds(1)),
+                familyId);
+
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + login.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void sessionInventoryTargetedRevocationAndPasswordResetAreImmediateAcrossFamilies() throws Exception {
+        String email = "sessions-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        String buyerRef = accountService.buyerRef(accountId);
+        AccountLoginResponse first = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse second = accountService.login(new LoginRequest(email, password));
+        UUID firstFamily = UUID.fromString(SignedJWT.parse(first.tokens().accessToken())
+                .getJWTClaimsSet().getStringClaim("sid"));
+        UUID secondFamily = UUID.fromString(SignedJWT.parse(second.tokens().accessToken())
+                .getJWTClaimsSet().getStringClaim("sid"));
+        String sessionsPath = "/api/auth/sessions";
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + second.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + first.tokens().refreshToken() + "\"}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[?(@.current == true)]").exists());
+        mockMvc.perform(get(sessionsPath).param("limit", "1").param("offset", "0")
+                        .header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.hasMore").value(true));
+        mockMvc.perform(get(sessionsPath).param("limit", "1").param("offset", "1")
+                        .header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.hasMore").value(false));
+        mockMvc.perform(get(sessionsPath).param("limit", "101")
+                        .header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get(sessionsPath).param("offset", "10001")
+                        .header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete(sessionsPath + "/{familyId}", firstFamily)
+                        .header("Authorization", "Bearer " + second.tokens().accessToken()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + second.tokens().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].familyId").value(secondFamily.toString()))
+                .andExpect(jsonPath("$.items[0].current").value(true))
+                .andExpect(jsonPath("$.items[0].refreshToken").doesNotExist())
+                .andExpect(jsonPath("$.items[0].tokenHash").doesNotExist());
+
+        String otherEmail = "foreign-sessions-" + UUID.randomUUID() + "@example.com";
+        UUID otherAccountId = accounts.createAccount(otherEmail, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(otherAccountId);
+        accounts.verifyEmail(otherAccountId, Instant.now());
+        AccountLoginResponse other = accountService.login(new LoginRequest(otherEmail, password));
+        mockMvc.perform(delete(sessionsPath + "/{familyId}", secondFamily)
+                        .header("Authorization", "Bearer " + other.tokens().accessToken()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + second.tokens().accessToken()))
+                .andExpect(status().isOk());
+
+        accountService.requestPasswordReset(email);
+        String resetToken = testEmailSender.passwordResetTokens.poll();
+        assertThat(resetToken).isNotBlank();
+        mockMvc.perform(post("/api/auth/password-reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + resetToken
+                                + "\",\"newPassword\":\"new-long-enough-password-456\"}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + second.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + other.tokens().accessToken()))
+                .andExpect(status().isOk());
+
+        AccountLoginResponse afterReset = accountService.login(
+                new LoginRequest(email, "new-long-enough-password-456"));
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + afterReset.tokens().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1));
+
+        jdbc.update("UPDATE user_account SET status = 'DISABLED' WHERE account_id = ?", accountId);
+        mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + afterReset.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Login test lock timed out");
@@ -130,4 +458,25 @@ class AccountAuthenticationIntegrationTest {
             throw new IllegalStateException("Login test interrupted", exception);
         }
     }
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestEmailConfiguration {
+        @Bean
+        @Primary
+        TestAccountEmailSender testAccountEmailSender() {
+            return new TestAccountEmailSender();
+        }
+    }
+
+    static class TestAccountEmailSender implements AccountEmailSender {
+        private final ConcurrentLinkedQueue<String> passwordResetTokens = new ConcurrentLinkedQueue<>();
+
+        @Override
+        public void sendVerification(String email, String token) { }
+
+        @Override
+        public void sendPasswordReset(String email, String token) {
+            passwordResetTokens.add(token);
+        }
+    }
+
 }

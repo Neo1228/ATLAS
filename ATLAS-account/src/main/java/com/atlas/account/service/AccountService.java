@@ -6,6 +6,7 @@ import com.atlas.account.domain.AccountActionToken;
 import com.atlas.account.domain.AccountMfaSecret;
 import com.atlas.account.domain.AccountPrincipal;
 import com.atlas.account.domain.RefreshTokenSession;
+import com.atlas.account.domain.ActiveRefreshFamily;
 import com.atlas.account.dto.request.LoginRequest;
 import com.atlas.account.dto.request.MfaChallengeRequest;
 import com.atlas.account.dto.request.RefreshTokenRequest;
@@ -15,6 +16,8 @@ import com.atlas.account.dto.response.AccountActionResponse;
 import com.atlas.account.dto.response.AccountLoginResponse;
 import com.atlas.account.dto.response.MfaEnrollmentResponse;
 import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
+import com.atlas.account.dto.response.AccountSessionResponse;
+import com.atlas.account.dto.response.AccountSessionPage;
 import com.atlas.account.repository.AccountRepository;
 import com.bastiaanjansen.otp.SecretGenerator;
 import com.bastiaanjansen.otp.TOTPGenerator;
@@ -251,15 +254,19 @@ public class AccountService {
         }
         accounts.insertRefreshSession(UUID.randomUUID(), previous.familyId(), nextHash, now,
                 minimum(now.plus(REFRESH_TOKEN_LIFETIME), previous.familyExpiresAt()));
-        return tokenResponse(account, nextToken);
+        return tokenResponse(account, nextToken, previous.familyId());
     }
 
     @Transactional(noRollbackFor = AccountException.class)
-    public void logout(UUID accountId, String refreshToken) {
-        if (accountId == null || !StringUtils.hasText(refreshToken)) throw invalidRequest();
+    public void logout(UUID accountId, UUID accessFamilyId, String refreshToken) {
+        if (accountId == null || accessFamilyId == null || !StringUtils.hasText(refreshToken)) {
+            throw invalidRequest();
+        }
         RefreshTokenSession session = accounts.findRefreshSessionForUpdate(hashRefreshToken(refreshToken))
                 .orElseThrow(AccountService::invalidRefreshToken);
-        if (!accountId.equals(session.accountId())) throw invalidRefreshToken();
+        if (!accountId.equals(session.accountId()) || !accessFamilyId.equals(session.familyId())) {
+            throw invalidRefreshToken();
+        }
         accounts.revokeRefreshFamily(session.familyId(), clock.instant());
     }
 
@@ -291,6 +298,33 @@ public class AccountService {
                 new AccountException(Code.RESOURCE_NOT_OWNED, "Buyer identity is unavailable"));
     }
 
+    public boolean isAccessTokenFamilyActive(UUID accountId, UUID familyId) {
+        return accountId != null && familyId != null
+                && accounts.isRefreshFamilyActive(accountId, familyId, clock.instant());
+    }
+    @Transactional(readOnly = true)
+    public AccountSessionPage listSessions(
+            UUID accountId, UUID currentFamilyId, int requestedLimit, int offset) {
+        if (accountId == null || currentFamilyId == null) throw invalidRequest();
+        int limit = requestedLimit == 0 ? 20 : requestedLimit;
+        if (limit < 1 || limit > 100 || offset < 0 || offset > 10_000) throw invalidRequest();
+        List<ActiveRefreshFamily> fetched = accounts.findActiveRefreshFamilies(
+                accountId, clock.instant(), limit + 1, offset);
+        boolean hasMore = fetched.size() > limit;
+        List<AccountSessionResponse> items = fetched.stream().limit(limit)
+                .map(family -> new AccountSessionResponse(family.familyId(), family.createdAt(),
+                        family.expiresAt(), family.familyId().equals(currentFamilyId)))
+                .toList();
+        return new AccountSessionPage(items, limit, offset, hasMore);
+    }
+
+    @Transactional
+    public void revokeSession(UUID accountId, UUID familyId) {
+        if (accountId == null || familyId == null) throw invalidRequest();
+        accounts.revokeRefreshFamily(accountId, familyId, clock.instant());
+    }
+
+
     private AccountTokenResponse issueTokens(AccountPrincipal account) {
         Instant now = clock.instant();
         UUID familyId = UUID.randomUUID();
@@ -299,7 +333,7 @@ public class AccountService {
         accounts.createRefreshFamily(familyId, account.accountId(), now, familyExpiresAt);
         accounts.insertRefreshSession(UUID.randomUUID(), familyId, hashRefreshToken(refreshToken), now,
                 minimum(now.plus(REFRESH_TOKEN_LIFETIME), familyExpiresAt));
-        return tokenResponse(account, refreshToken);
+        return tokenResponse(account, refreshToken, familyId);
     }
 
     private String newActionToken(UUID accountId, String purpose, Duration lifetime) {
@@ -359,8 +393,8 @@ public class AccountService {
         }
     }
 
-    private AccountTokenResponse tokenResponse(AccountPrincipal account, String refreshToken) {
-        return new AccountTokenResponse(accessTokens.issue(account.accountId()), refreshToken, "Bearer",
+    private AccountTokenResponse tokenResponse(AccountPrincipal account, String refreshToken, UUID familyId) {
+        return new AccountTokenResponse(accessTokens.issue(account.accountId(), familyId), refreshToken, "Bearer",
                 AccessTokenService.ACCESS_TOKEN_LIFETIME_SECONDS, account.accountId(), account.buyerRef(),
                 account.sellerIds());
     }
