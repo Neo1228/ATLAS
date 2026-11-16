@@ -7,6 +7,7 @@ import com.atlas.settlement.service.PayPalBalanceReportRow;
 import com.atlas.settlement.service.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -29,7 +30,7 @@ public class PayPalBalanceReportRunIngestionService {
 
     public PayPalBalanceReportReconciliationResponse reconcile(byte[] reportContent) {
         PayPalBalanceReportReconciliationResponse calculated = reconciliationService.reconcile(reportContent);
-        Instant uploadedAt = Instant.now();
+        Instant uploadedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
         UUID runId = UUID.randomUUID();
         PayPalBalanceReportRun run = toRun(runId, uploadedAt, calculated);
         List<PayPalBalanceReportRow> rows = calculated.rows().stream()

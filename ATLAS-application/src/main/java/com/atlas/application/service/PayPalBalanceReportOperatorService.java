@@ -10,6 +10,7 @@ import com.atlas.settlement.service.PayPalBalanceReportDisposition;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -198,7 +199,7 @@ public class PayPalBalanceReportOperatorService {
         }
 
         PayPalBalanceReportDisposition candidate = new PayPalBalanceReportDisposition(UUID.randomUUID(), runId,
-                rowNumber, disposition, actor, cleanReason, idempotencyKey, Instant.now());
+                rowNumber, disposition, actor, cleanReason, idempotencyKey, Instant.now().truncatedTo(ChronoUnit.MICROS));
         if (store.insertDispositionIfAbsent(candidate).isPresent()) {
             return toResponse(candidate);
         }
