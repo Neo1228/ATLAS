@@ -26,6 +26,7 @@ import com.atlas.catalog.persistence.state.ProductStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -206,7 +207,7 @@ public class ProductServiceImpl implements ProductService {
                 || minPriceWon != null && maxPriceWon != null && minPriceWon > maxPriceWon) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product price range");
         }
-        Instant asOf = clock.instant();
+        Instant asOf = clock.instant().truncatedTo(ChronoUnit.MICROS);
         String keyword = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (categoryId != null && sellerId == null) {
             throw new CatalogException(Code.INVALID_REQUEST, "Category filter requires seller scope");
