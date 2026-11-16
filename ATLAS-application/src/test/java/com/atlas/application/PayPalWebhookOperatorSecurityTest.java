@@ -1,5 +1,6 @@
 package com.atlas.application;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -15,15 +16,17 @@ import com.atlas.application.controller.PayPalWebhookOperatorController;
 import com.atlas.application.dto.response.PayPalWebhookExhaustedRetryPage;
 import com.atlas.application.dto.response.PayPalWebhookExhaustedRetryPage.Item;
 import com.atlas.application.dto.response.PayPalWebhookRequeueResponse;
+import com.atlas.application.security.AccountOwnershipInterceptor;
 import com.atlas.application.service.PayPalWebhookOperatorService;
 import java.time.Instant;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -52,6 +55,14 @@ class PayPalWebhookOperatorSecurityTest {
 
     @MockitoBean
     PayPalWebhookOperatorService service;
+
+    @MockitoBean
+    AccountOwnershipInterceptor ownership;
+
+    @BeforeEach
+    void allowRequestsPastAccountOwnershipInterceptor() throws Exception {
+        when(ownership.preHandle(any(), any(), any())).thenReturn(true);
+    }
 
     @Test
     void unauthenticatedAndWrongOperatorCannotReadOrRequeue() throws Exception {

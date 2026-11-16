@@ -1,11 +1,15 @@
 package com.atlas.application;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.account.security.AccountSecurityConfiguration;
 import com.atlas.application.controller.PayPalWebhookOperatorController;
+import com.atlas.application.security.AccountOwnershipInterceptor;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -24,6 +28,14 @@ class PayPalWebhookOperatorDisabledSecurityTest {
 
     @MockitoBean
     JwtDecoder jwtDecoder;
+
+    @MockitoBean
+    AccountOwnershipInterceptor ownership;
+
+    @BeforeEach
+    void allowRequestsPastAccountOwnershipInterceptor() throws Exception {
+        when(ownership.preHandle(any(), any(), any())).thenReturn(true);
+    }
 
     @Test
     void validJwtCannotReachDisabledOperatorEndpoint() throws Exception {
