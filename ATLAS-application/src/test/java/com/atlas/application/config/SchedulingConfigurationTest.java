@@ -1,5 +1,6 @@
 package com.atlas.application.config;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -17,6 +18,7 @@ class SchedulingConfigurationTest {
         CountDownLatch secondTaskStarted = new CountDownLatch(1);
         try {
             scheduler.initialize();
+            assertEquals(4, scheduler.getScheduledThreadPoolExecutor().getCorePoolSize());
             scheduler.schedule(() -> {
                 firstTaskStarted.countDown();
                 try {

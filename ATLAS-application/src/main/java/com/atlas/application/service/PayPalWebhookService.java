@@ -20,50 +20,47 @@ public class PayPalWebhookService {
     private final OrderService orders;
     private final CheckoutPaymentService checkoutPayments;
     private final OrderRefundService refunds;
+    private final PayPalWebhookRetryRepository retries;
     private final TransactionTemplate transactions;
 
     public PayPalWebhookService(PlatformTransactionManager transactionManager, PaymentService payments,
-            OrderService orders, CheckoutPaymentService checkoutPayments, OrderRefundService refunds) {
+            OrderService orders, CheckoutPaymentService checkoutPayments, OrderRefundService refunds,
+            PayPalWebhookRetryRepository retries) {
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.payments = Objects.requireNonNull(payments);
         this.orders = Objects.requireNonNull(orders);
         this.checkoutPayments = Objects.requireNonNull(checkoutPayments);
         this.refunds = Objects.requireNonNull(refunds);
+        this.retries = Objects.requireNonNull(retries);
     }
 
     public void handle(PaymentWebhookSignature signature, String rawBody) {
         PaymentWebhookEvent event = payments.verifyPayPalWebhook(signature, rawBody);
         if (event == null) throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
                 "PayPal webhook verification returned no event");
+        PaymentWebhookResult result = processVerified(event);
+        if (result.retryable()) {
+            // 最小限の再試行レコードをcommitした後にのみ成功応答する。
+            retries.enqueue(event);
+        }
+    }
 
-        PaymentWebhookResult result = payments.withPayPalWebhookOwnerLock(event, () -> transactions.execute(status -> {
-            PaymentWebhookResult webhookResult = payments.processVerifiedPayPalWebhook(event);
-            if (webhookResult.duplicate()) return webhookResult;
-            if (!webhookResult.accepted()) {
-                if (webhookResult.retryable()) {
-                    throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
-                            "PayPal webhook could not be correlated yet; retry delivery");
-                }
-                return webhookResult;
-            }
-
-            if (webhookResult.refundOperationId() != null) {
-                refunds.reconcilePayPalRefund(webhookResult.refundOperationId());
-            }
-            return webhookResult;
-        }));
-
+    PaymentWebhookResult processVerified(PaymentWebhookEvent event) {
+        PaymentWebhookResult result = payments.withPayPalWebhookOwnerLock(event,
+                () -> transactions.execute(status -> {
+                    PaymentWebhookResult webhookResult = payments.processVerifiedPayPalWebhook(event);
+                    if (webhookResult.duplicate() || !webhookResult.accepted()) return webhookResult;
+                    if (webhookResult.refundOperationId() != null)
+                        refunds.reconcilePayPalRefund(webhookResult.refundOperationId());
+                    return webhookResult;
+                }));
         if (result.captureConfirmed() && result.paymentAttemptId() != null) {
             PaymentResponse payment = payments.findByAttemptId(result.paymentAttemptId());
-            if (payment == null) {
-                throw new PaymentException(PaymentException.Code.ATTEMPT_NOT_FOUND,
-                        "Payment attempt for PayPal webhook was not found");
-            }
-            if (payment.checkoutId() != null) {
-                checkoutPayments.reconcile(payment.checkoutId(), event.eventId());
-            } else if (payment.orderId() != null) {
-                orders.reconcilePayment(payment.orderId(), event.eventId());
-            }
+            if (payment == null) throw new PaymentException(PaymentException.Code.ATTEMPT_NOT_FOUND,
+                    "Payment attempt for PayPal webhook was not found");
+            if (payment.checkoutId() != null) checkoutPayments.reconcile(payment.checkoutId(), event.eventId());
+            if (payment.orderId() != null) orders.reconcilePayment(payment.orderId(), event.eventId());
         }
+        return result;
     }
 }

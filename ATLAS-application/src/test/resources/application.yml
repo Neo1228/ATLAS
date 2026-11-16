@@ -1,3 +1,7 @@
 spring:
   mail:
     host: localhost
+
+atlas:
+  paypal:
+    webhook-retry-poll-interval: PT24H

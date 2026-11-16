@@ -6,7 +6,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 @Configuration
 public class SchedulingConfiguration {
-    private static final int SCHEDULER_POOL_SIZE = 3;
+    // Issue #277: webhook再試行の独立ジョブを加え、同時実行枠を4つにする。
+    private static final int SCHEDULER_POOL_SIZE = 4;
 
     @Bean(name = "taskScheduler")
     ThreadPoolTaskScheduler taskScheduler() {
