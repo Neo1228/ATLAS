@@ -883,11 +883,10 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         CountDownLatch start = new CountDownLatch(1);
         try {
             Callable<List<PayPalWebhookRetryRepository.ClaimedRetry>> claim = () -> {
-                    claim = () -> {
-                        ready.countDown();
-                        start.await();
-                        return retryRepository.claimDue();
-                    };
+                ready.countDown();
+                start.await();
+                return retryRepository.claimDue();
+            };
             Future<?> first = pool.submit(claim);
             Future<?> second = pool.submit(claim);
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
