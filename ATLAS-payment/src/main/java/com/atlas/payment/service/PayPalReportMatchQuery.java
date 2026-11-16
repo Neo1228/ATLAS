@@ -3,7 +3,7 @@ package com.atlas.payment.service;
 import java.util.Collection;
 import java.util.List;
 
-/** Read-only provider transaction facts used to reconcile PayPal reports. */
+/** PayPal report 대사를 위한 조회 전용 provider 거래 사실. */
 public interface PayPalReportMatchQuery {
     List<Candidate> findByRecordIds(Collection<String> recordIds);
 

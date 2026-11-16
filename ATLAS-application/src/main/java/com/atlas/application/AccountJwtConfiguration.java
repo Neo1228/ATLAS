@@ -74,7 +74,7 @@ public class AccountJwtConfiguration {
         OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(issuer);
         OAuth2TokenValidator<Jwt> audienceValidator = new JwtClaimValidator<List<String>>(
                 "aud", values -> values != null && values.contains(audience));
-        // Inspect the signed claims because decoder mapping can normalize missing timestamp claims.
+        // JWT decoder가 누락된 timestamp claim을 정규화할 수 있어 서명된 원본 claim 직접 확인.
         OAuth2TokenValidator<Jwt> requiredClaimsValidator = jwt -> {
             try {
                 JWTClaimsSet claims = SignedJWT.parse(jwt.getTokenValue()).getJWTClaimsSet();
