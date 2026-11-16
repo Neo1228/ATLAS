@@ -38,6 +38,8 @@ import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.application.service.PayPalWebhookService;
+import com.atlas.application.service.PayPalWebhookRetryRepository;
+import com.atlas.application.service.PayPalWebhookRetryWorker;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
 import com.atlas.order.service.CartCheckoutService;
@@ -50,6 +52,7 @@ import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -85,6 +88,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
+        properties.add("atlas.paypal.webhook-retry-poll-interval", () -> "PT24H");
         properties.add("spring.datasource.hikari.connection-init-sql", () -> "SET lock_timeout TO '2s'");
     }
 
@@ -409,8 +413,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             payments.reconcile(orderId, invocation.getArgument(1, String.class));
             return null;
         }).when(orders).reconcilePayment(eq(orderId), anyString());
-        PayPalWebhookService concurrentWebhook = new PayPalWebhookService(transactionManager, payments, orders,
-                mock(CheckoutPaymentService.class), mock(OrderRefundService.class));
+        PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
+                mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
+                new PayPalWebhookRetryRepository(jdbc));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             Future<PaymentResponse> capture = executor.submit(
@@ -460,7 +465,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             return null;
         }).when(orders).reconcilePayment(eq(orderId), eq(eventId));
         PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments, orders,
-                mock(CheckoutPaymentService.class), mock(OrderRefundService.class));
+                mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
+                new PayPalWebhookRetryRepository(jdbc));
 
         assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
         assertThat(jdbc.queryForObject(
@@ -513,7 +519,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                     invocation.getArgument(1, String.class));
         }).when(checkoutPaymentsProbe).reconcile(eq(checkoutId), eq(eventId));
         PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments,
-                mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class));
+                mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class),
+                new PayPalWebhookRetryRepository(jdbc));
 
         assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
         assertThat(jdbc.queryForObject(
@@ -605,9 +612,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 "2026-11-09T00:00:00Z");
         String unmatchedRawBody = captureWebhook(
                 eventId, authorized.providerOrderId() + "-unknown", captureId, "12.91", "USD");
-        assertThatThrownBy(() -> webhookService.handle(signature, unmatchedRawBody))
-                .isInstanceOf(PaymentException.class)
-                .hasMessageContaining("correlated yet");
+        webhookService.handle(signature, unmatchedRawBody);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?", Integer.class, eventId)).isEqualTo(1);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
         PaymentWebhookEvent unmatched = payments.verifyPayPalWebhook(signature, unmatchedRawBody);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
@@ -617,13 +624,16 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(retryable.duplicate()).isFalse();
         assertThat(payments.find(orderId)).usingRecursiveComparison().isEqualTo(authorized);
 
-        PaymentWebhookEvent corrected = payments.verifyPayPalWebhook(signature,
-                captureWebhook(eventId, authorized.providerOrderId(), captureId, "12.91", "USD"));
-        assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
-        PaymentWebhookResult accepted = payments.processVerifiedPayPalWebhook(corrected);
-        assertThat(accepted.accepted()).isTrue();
-        assertThat(accepted.duplicate()).isFalse();
+        jdbc.update("UPDATE payment_attempt SET provider_order_id = ? WHERE attempt_id = ?",
+                authorized.providerOrderId() + "-unknown", authorized.attemptId());
+        PayPalWebhookService retryWebhookService = new PayPalWebhookService(transactionManager, payments,
+                mock(OrderService.class), mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
+                new PayPalWebhookRetryRepository(jdbc));
+        new PayPalWebhookRetryWorker(
+                new PayPalWebhookRetryRepository(jdbc), retryWebhookService).retryDueEvents();
         assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?", Integer.class, eventId)).isZero();
     }
 
 
@@ -858,4 +868,83 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             return super.withPayPalWebhookOwnerLock(event, action);
         }
     }
+    @Test
+    void paypalWebhookRetryQueueClaimsAcrossInstancesAndRetainsExhaustion() throws Exception {
+        PayPalWebhookRetryRepository retryRepository =
+                new PayPalWebhookRetryRepository(jdbc);
+        String eventId = "retry-integration-" + UUID.randomUUID();
+        PaymentWebhookEvent event = new PaymentWebhookEvent(eventId, "PAYMENT.CAPTURE.COMPLETED",
+                "capture-" + UUID.randomUUID(), "COMPLETED", "unmatched-order", null,
+                new BigDecimal("12.91"), "USD");
+        retryRepository.enqueue(event);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Callable<List<PayPalWebhookRetryRepository.ClaimedRetry>> claim = () -> {
+                    claim = () -> {
+                        ready.countDown();
+                        start.await();
+                        return retryRepository.claimDue();
+                    };
+            Future<?> first = pool.submit(claim);
+            Future<?> second = pool.submit(claim);
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            int claims = ((List<?>) first.get()).size() + ((List<?>) second.get()).size();
+            assertThat(claims).isEqualTo(1);
+
+            PayPalWebhookRetryRepository.ClaimedRetry claimed =
+                    retryRepository.claimDue().stream().findFirst().orElse(null);
+            assertThat(claimed).isNull();
+            String leaseOwner = jdbc.queryForObject(
+                    "SELECT lease_owner FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId);
+            retryRepository.reschedule(eventId, 1, leaseOwner, "Still unmatched");
+            assertThat(jdbc.queryForObject(
+                    "SELECT next_attempt_at > CURRENT_TIMESTAMP FROM paypal_webhook_retry WHERE event_id = ?",
+                    Boolean.class, eventId)).isTrue();
+            jdbc.update("UPDATE paypal_webhook_retry SET next_attempt_at = CURRENT_TIMESTAMP WHERE event_id = ?",
+                    eventId);
+            claimed = retryRepository.claimDue().get(0);
+            assertThat(claimed.attempt()).isEqualTo(2);
+            jdbc.update("""
+                    UPDATE paypal_webhook_retry
+                    SET attempt_count = 7, next_attempt_at = CURRENT_TIMESTAMP,
+                        lease_owner = NULL, lease_until = NULL
+                    WHERE event_id = ?
+                    """, eventId);
+            claimed = retryRepository.claimDue().get(0);
+            assertThat(claimed.attempt()).isEqualTo(8);
+            retryRepository.reschedule(eventId, claimed.attempt(), claimed.leaseOwner(), "Attempt limit reached");
+            assertThat(jdbc.queryForObject(
+                    "SELECT state FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId))
+                    .isEqualTo("EXHAUSTED");
+            assertThat(jdbc.queryForObject(
+                    "SELECT last_error FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId))
+                    .isEqualTo("Attempt limit reached");
+            assertThat(retryRepository.claimDue()).isEmpty();
+            String crashedEventId = "retry-crashed-" + UUID.randomUUID();
+            retryRepository.enqueue(new PaymentWebhookEvent(crashedEventId, "PAYMENT.CAPTURE.COMPLETED",
+                    "capture-" + UUID.randomUUID(), "COMPLETED", "unmatched-order", null,
+                    new BigDecimal("12.91"), "USD"));
+            jdbc.update("""
+                    UPDATE paypal_webhook_retry
+                    SET attempt_count = 8, next_attempt_at = CURRENT_TIMESTAMP,
+                        lease_owner = 'crashed-worker',
+                        lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second'
+                    WHERE event_id = ?
+                    """, crashedEventId);
+            assertThat(retryRepository.claimDue()).isEmpty();
+            assertThat(jdbc.queryForObject(
+                    "SELECT state FROM paypal_webhook_retry WHERE event_id = ?", String.class, crashedEventId))
+                    .isEqualTo("EXHAUSTED");
+            assertThat(jdbc.queryForObject(
+                    "SELECT finished_at IS NOT NULL FROM paypal_webhook_retry WHERE event_id = ?",
+                    Boolean.class, crashedEventId)).isTrue();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
 }

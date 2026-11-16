@@ -91,7 +91,8 @@ class PayPalWebhookServiceTest {
         }).when(orders).reconcilePayment(orderId, event.eventId());
 
         PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
-                mock(CheckoutPaymentService.class), mock(OrderRefundService.class));
+                mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
+                mock(PayPalWebhookRetryRepository.class));
         webhookService.handle(signature(), "{}");
 
         verify(payments).withPayPalWebhookOwnerLock(eq(event), any());
@@ -134,7 +135,8 @@ class PayPalWebhookServiceTest {
         }).when(checkoutPayments).reconcile(checkoutId, event.eventId());
 
         PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments,
-                mock(OrderService.class), checkoutPayments, mock(OrderRefundService.class));
+                mock(OrderService.class), checkoutPayments, mock(OrderRefundService.class),
+                mock(PayPalWebhookRetryRepository.class));
 
         assertThatThrownBy(() -> webhookService.handle(signature(), "{}")).isSameAs(reconciliationFailure);
         webhookService.handle(signature(), "{}");
@@ -180,7 +182,8 @@ class PayPalWebhookServiceTest {
         }).when(orders).reconcilePayment(orderId, event.eventId());
 
         PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
-                mock(CheckoutPaymentService.class), mock(OrderRefundService.class));
+                mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
+                mock(PayPalWebhookRetryRepository.class));
 
         assertThatThrownBy(() -> webhookService.handle(signature(), "{}")).isSameAs(reconciliationFailure);
         webhookService.handle(signature(), "{}");
@@ -269,7 +272,8 @@ class PayPalWebhookServiceTest {
                 payments, mock(SellerSkuService.class), mock(SettlementService.class), Clock.systemUTC(),
                 Duration.ofMinutes(10));
         PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
-                mock(CheckoutPaymentService.class), mock(OrderRefundService.class));
+                mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
+                mock(PayPalWebhookRetryRepository.class));
         ExecutorService executor = Executors.newFixedThreadPool(2, task -> {
             Thread thread = new Thread(task, "paypal-webhook-lock-regression");
             thread.setDaemon(true);

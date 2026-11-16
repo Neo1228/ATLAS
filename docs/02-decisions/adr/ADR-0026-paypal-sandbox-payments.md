@@ -72,11 +72,11 @@ sequenceDiagram
 
 | Webhook 조건 | 처리 | 결과 |
 |---|---|---|
-| Provider resource가 아직 local operation에 연결되지 않음 | Payment state와 event ID를 저장하지 않아 provider retry 후 연결 가능 | `503` |
+| Provider resource가 아직 local operation에 연결되지 않음 | 검증된 event의 최소 정규화 필드를 retry queue에 저장하고 제한된 backoff로 재시도. Queue 저장 실패 시 provider redelivery에 의존. | 저장 성공 `204`, 저장 실패 `5xx` |
 | 연결된 resource의 amount·currency·status·order·capture ID가 다름 | Order와 ledger를 변경하지 않고 event를 `FAILED`로 기록해 재시도 중단 | `204` |
 | 이미 처리된 event ID | Unique event ID와 row lock으로 중복 effect 방지 | 중복으로 판정 |
 
-- Correlation state와 event ID는 같은 transaction에서 기록. `FAILED`는 정상 처리와 구분. Reconciliation은 동기식으로 수행하며 queue/worker/retry layer를 추가하지 않음. 새 external side effect가 생기면 outbox를 재검토.
+- correlation을 아직 확인할 수 없는 검증된 webhook 이벤트는 최소 정규화 필드만 queue에 저장하고 유한 횟수 재시도한다([ADR-0032](ADR-0032-paypal-webhook-retry-queue.md), [#277](https://github.com/Neo1228/ATLAS/issues/277)). raw payload와 signature는 저장하지 않으며, 영구적인 amount·currency·order·capture 불일치와 서명 실패는 재시도하지 않는다.
 - `PAYPAL_BASE_URL`은 공식 Sandbox hostname과 loopback test host만 허용. 다른 host는 SSRF와 잘못된 provider 설정 방지를 위해 거절.
 
 ## D-085 — Balance report matching without payout proof
@@ -113,3 +113,7 @@ sequenceDiagram
 - [PayPal Transaction Detail Report](https://developer.paypal.com/reports/transaction-detail/)
 - [PayPal Disbursement Reconciliation Report](https://developer.paypal.com/platforms/reports/partner-merchant-reconciliation/disbursement-reconciliation-report/)
 - [Spring Security OAuth2 Client](https://docs.spring.io/spring-security/reference/servlet/oauth2/client/core.html)
+
+## Issue #277: transient webhook correlation
+
+서명 검증된 PayPal 웹훅이 일시적으로 상관관계를 만들 수 없는 경우, 정규화한 최소 재시도 레코드를 영속화한 뒤에만 성공 응답한다. 원본 payload나 signature는 저장하지 않는다. 영구 amount, currency, status, provider identifier 불일치는 terminal로 처리하고 queue에 넣지 않는다. 재시도 및 lease 상태 머신은 [ADR-0032](ADR-0032-paypal-webhook-retry-queue.md)에 기록한다. Issue [#277](https://github.com/Neo1228/ATLAS/issues/277).

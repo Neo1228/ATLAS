@@ -13,7 +13,7 @@ import org.junit.jupiter.api.TestReporter;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 class SchedulingConcurrencyTest {
-    private static final int JOB_COUNT = 3;
+    private static final int JOB_COUNT = 4; // Issue #277: expiry 3개와 webhook 재시도 1개.
     private static final long SERIAL_OBSERVATION_MILLIS = 500;
 
     @Test
@@ -21,7 +21,7 @@ class SchedulingConcurrencyTest {
         ThreadPoolTaskScheduler scheduler = new SchedulingConfiguration().taskScheduler();
         scheduler.initialize();
         try {
-            assertThat(scheduler.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(3);
+            assertThat(scheduler.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(4);
         } finally {
             scheduler.shutdown();
         }

@@ -127,3 +127,4 @@
 | [ADR-0025 — 한도형 coupon capacity와 redemption lifecycle](../02-decisions/adr/ADR-0025-limited-coupon-redemption.md) | Global use cap, checkout reservation, capture finalization, terminal release, unknown payment hold, DB concurrency evidence | D-080 |
 | [ADR-0026 — PayPal Sandbox 결제와 내부 원장 연동](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md) | PayPal approval·payment recovery, KRW 원장·USD 요청 통화 경계, 확인된 provider 결과의 ledger 반영 | D-081, D-085, D-087 |
 | [ADR-0027 — Buyer·Seller 계정 인증과 JWT session](../02-decisions/adr/ADR-0027-account-jwt-authentication.md) | Buyer·Seller account linkage, short-lived JWT access, rotating refresh, token-family revocation, ownership enforcement, verified email, optional TOTP MFA | D-082, D-084 |
+| [ADR-0032 — PayPal 웹훅 재시도 큐](../02-decisions/adr/ADR-0032-paypal-webhook-retry-queue.md) | #277: 정규화된 영속 재시도, PostgreSQL claim/lease, 제한된 시도 및 소진 상태 보존 | D-088 |

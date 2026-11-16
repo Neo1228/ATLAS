@@ -31,3 +31,7 @@
 - Scheduler는 프로세스 단위입니다. 여러 애플리케이션 인스턴스는 각자 만료 작업을 실행할 수 있으며, 이 변경은 분산 리더 선출이나 인스턴스 간 조정을 추가하지 않습니다.
 - 예약 작업의 동시 실행 수가 늘면 DB 경합이 증가할 수 있습니다. pool 크기는 JDBC connection 용량을 설정하거나 보장하지 않습니다.
 - 후속 PostgreSQL 측정은 [EXP-026](../../03-experiments/EXP-026-scheduler-expiry-multi-instance.md) 참고. 두 Spring context 경합은 Admission 만료만 검증; Order·BuyerCheckout의 multi-instance 실행은 측정 범위 밖.
+
+## Issue #277: scheduler capacity
+
+Issue [#277](https://github.com/Neo1228/ATLAS/issues/277)로 독립 fixed-delay PayPal webhook 재시도 작업을 추가한다. 기존 expiry 작업 3개와 재시도 작업을 동시에 실행할 수 있도록 제한된 scheduler pool을 4개로 확장한다. 이는 DB 연결 수나 처리량 보장이 아니며 여러 인스턴스의 실제 조정은 DB claim/lease가 담당한다.
