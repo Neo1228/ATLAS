@@ -1,9 +1,10 @@
 package com.atlas.application.controller.order;
 
-import com.atlas.application.controller.dto.ReorderHttpRequest;
 import com.atlas.application.controller.dto.OrderRefundHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnInspectionHttpRequest;
+import com.atlas.application.controller.dto.PaymentRecoveryStatusResponse;
+import com.atlas.application.controller.dto.ReorderHttpRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.dto.response.OrderHistoryPageResponse;
@@ -19,6 +20,7 @@ import com.atlas.order.service.OrderService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
 import jakarta.validation.Valid;
+import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,6 +42,7 @@ public class OrderController {
     private final OrderReorderService reorders;
     private final OrderRefundService refunds;
     private final OrderReturnService returns;
+    private final Clock clock;
 
     @PostMapping("/campaigns/{campaignId}/tickets/{ticketId}/checkout")
     public OrderResponse startCheckout(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
@@ -49,6 +52,13 @@ public class OrderController {
     @PostMapping("/orders/{orderId}/payment")
     public OrderResponse submitPayment(@PathVariable UUID orderId) {
         return orders.submitPayment(orderId);
+    }
+
+    @GetMapping("/orders/{orderId}/payment/status")
+    public PaymentRecoveryStatusResponse paymentStatus(@PathVariable UUID orderId) {
+        OrderResponse order = orders.find(orderId);
+        return PaymentRecoveryStatusResponse.from(
+                orderId, order.state(), order.paymentState(), order.checkoutExpiresAt(), clock.instant());
     }
 
     @PostMapping("/orders/{orderId}/reconcile")
