@@ -101,3 +101,14 @@ sequenceDiagram
 - JVM 내부 owner lock은 최적화일 뿐. 구버전은 DB phase arbitration을 지원하지 않으므로 첫 전환 때 기존 결제 인스턴스와 진행 중 owner 작업을 drain. 모든 활성 인스턴스가 새 상태 전이를 지원한 뒤 다중 인스턴스 traffic 허용.
 - 구현: [PaymentServiceImpl](../../../ATLAS-payment/src/main/java/com/atlas/payment/service/impl/PaymentServiceImpl.java) · [PaymentAttemptRepository](../../../ATLAS-payment/src/main/java/com/atlas/payment/repository/PaymentAttemptRepository.java)
 - 동시 capture/void 검증: [PaymentLifecycleIntegrationTest](../../../ATLAS-application/src/test/java/com/atlas/payment/PaymentLifecycleIntegrationTest.java)
+
+## 구매자 결제 상태 조회
+
+`GET /api/orders/{orderId}/payment/status`는 소유한 주문의 결제 상태와 안전한 다음 동작만 반환합니다. 이 GET은 결제 시도 생성, provider 호출, reconcile, capture, void를 수행하지 않으며 PayPal ID·payload·credential을 노출하지 않습니다.
+
+- `UNKNOWN`, `AUTHORIZATION_PENDING`, `CAPTURE_PENDING`, `VOID_PENDING`: `WAIT`
+- `CAPTURED`, `VOIDED`: `NO_ACTION`
+- 주문이 `RESERVED`이고 결제가 `NOT_STARTED` 또는 아직 없으며 checkout 만료 시각 전일 때만 `RETRY_PAYMENT`
+- 그 밖의 상태: 자동 재시도를 권하지 않고 `CONTACT_SUPPORT`
+
+주문 ownership은 기존 `/api/orders/{orderId}` 경계에서 검사합니다. 상태 판정은 보수적으로 유지하여 ambiguous provider 결과를 실패나 재시도 가능으로 단정하지 않습니다. [Issue #273](https://github.com/Neo1228/ATLAS/issues/273).
