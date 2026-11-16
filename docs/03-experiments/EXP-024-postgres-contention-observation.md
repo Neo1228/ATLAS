@@ -1,7 +1,7 @@
 # EXP-024 — PostgreSQL 경합 관측
 
 - 상태: 4회 반복 관측 완료 · 성능 튜닝 근거로는 불충분
-- 관련 작업: [Issue #246](https://github.com/Neo1228/ATLAS/issues/246), [ADR-0005](../02-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [ADR-0025](../02-decisions/adr/ADR-0025-limited-coupon-redemption.md), [ADR-0030](../02-decisions/adr/ADR-0030-bounded-application-scheduler.md)
+- 관련 작업: [Issue #246](https://github.com/Neo1228/ATLAS/issues/246), [ADR-0005](../02-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [ADR-0025](../02-decisions/adr/ADR-0025-limited-coupon-redemption.md), [ADR-0031](../02-decisions/adr/ADR-0031-bounded-application-scheduler.md)
 
 ## 질문과 범위
 
@@ -52,3 +52,7 @@ Admission expiry, inventory batch reservation, coupon reservation에서 의도�
 
 - `pg_blocking_pids`는 blocker backend를 확인하는 데 사용. [PostgreSQL — System Information Functions](https://www.postgresql.org/docs/current/functions-info.html)
 - 이전 inventory lock-wait 시나리오: [EXP-021](EXP-021-inventory-lock-wait.md)
+
+## Security and ownership follow-up
+
+HMAC signatures must be compared with `MessageDigest.isEqual` to avoid timing-sensitive comparisons. Omission of `/api/sellers/{sellerId}` from a purchase target must fail closed; never infer or accept an implicit seller.

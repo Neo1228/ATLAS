@@ -49,7 +49,7 @@ public class AccountOwnershipInterceptor implements HandlerInterceptor {
         @SuppressWarnings("unchecked")
         Map<String, String> variables = (Map<String, String>) request.getAttribute(
                 HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
-        if (variables == null) return true;
+        if (variables == null) variables = Map.of();
         // 원시 URI 대신 decode·context path와 무관한 매칭 route pattern으로 경로를 분류한다.
         Object matchedPattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         String routePattern = matchedPattern == null ? "" : matchedPattern.toString();
@@ -59,8 +59,9 @@ public class AccountOwnershipInterceptor implements HandlerInterceptor {
         UUID sellerId = sellerValue == null ? null : parseUuid(sellerValue);
         if (buyerRef != null && !accounts.ownsBuyer(accountId, buyerRef)) throw notOwned();
         // Buyer cart의 sellerId는 구매 대상이므로 Seller ownership으로 제한하지 않는다.
-        if (sellerId != null && routePattern.startsWith("/api/sellers/")
-                && !accounts.ownsSeller(accountId, sellerId)) throw notOwned();
+        if (routePattern.startsWith("/api/sellers/")) {
+            if (sellerId == null || !accounts.ownsSeller(accountId, sellerId)) throw notOwned();
+        }
 
         String checkoutValue = variables.get("checkoutId");
         if (checkoutValue != null) {
