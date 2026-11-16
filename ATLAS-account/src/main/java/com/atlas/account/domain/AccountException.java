@@ -5,11 +5,12 @@ public final class AccountException extends RuntimeException {
 
     public enum Code {
         INVALID_CREDENTIALS,
-        EMAIL_ALREADY_USED,
         INVALID_REFRESH_TOKEN,
         REFRESH_TOKEN_REUSED,
         ACCOUNT_DISABLED,
         RESOURCE_NOT_OWNED,
+        INVALID_ACTION_TOKEN,
+        MFA_CONFLICT,
         INVALID_REQUEST
     }
 

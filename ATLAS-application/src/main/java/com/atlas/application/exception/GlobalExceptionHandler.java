@@ -44,7 +44,9 @@ public class GlobalExceptionHandler {
             return switch (account.code()) {
                 case INVALID_CREDENTIALS, INVALID_REFRESH_TOKEN, REFRESH_TOKEN_REUSED, ACCOUNT_DISABLED ->
                         response(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", account.getMessage());
-                case EMAIL_ALREADY_USED -> response(HttpStatus.CONFLICT, "ACCOUNT_CONFLICT", account.getMessage());
+                case INVALID_ACTION_TOKEN ->
+                        response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", account.getMessage());
+                case MFA_CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", account.getMessage());
                 case RESOURCE_NOT_OWNED -> response(HttpStatus.FORBIDDEN, "FORBIDDEN", account.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", account.getMessage());
             };

@@ -5,7 +5,10 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.OctetSequenceKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import java.security.SecureRandom;
+import java.text.ParseException;
 import java.util.Base64;
 import java.util.List;
 import javax.crypto.SecretKey;
@@ -16,7 +19,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
@@ -69,7 +74,24 @@ public class AccountJwtConfiguration {
         OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(issuer);
         OAuth2TokenValidator<Jwt> audienceValidator = new JwtClaimValidator<List<String>>(
                 "aud", values -> values != null && values.contains(audience));
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerValidator, audienceValidator));
+        // Inspect the signed claims because decoder mapping can normalize missing timestamp claims.
+        OAuth2TokenValidator<Jwt> requiredClaimsValidator = jwt -> {
+            try {
+                JWTClaimsSet claims = SignedJWT.parse(jwt.getTokenValue()).getJWTClaimsSet();
+                String subject = claims.getSubject();
+                if (subject != null && !subject.isBlank()
+                        && claims.getIssueTime() != null && claims.getExpirationTime() != null) {
+                    return OAuth2TokenValidatorResult.success();
+                }
+            } catch (ParseException exception) {
+                return OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "JWT claims could not be parsed", null));
+            }
+            return OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                    "invalid_token", "JWT sub, iat, and exp claims are required", null));
+        };
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                issuerValidator, audienceValidator, requiredClaimsValidator));
         return decoder;
     }
 }

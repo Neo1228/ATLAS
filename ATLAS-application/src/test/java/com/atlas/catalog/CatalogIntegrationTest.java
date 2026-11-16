@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.dto.response.ProductListingPageResponse;
+import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.service.ProductService;
@@ -137,9 +138,9 @@ class CatalogIntegrationTest {
                 UUID.class, sellerId, "UNCATEGORIZED");
         UUID negativeLeastSignificantBits = UUID.fromString("00000000-0000-0000-8000-000000000000");
         UUID positiveLeastSignificantBits = UUID.fromString("00000000-0000-0000-7fff-ffffffffffff");
-        jdbc.update("INSERT INTO product (product_id, seller_id, category_id, name, description) VALUES (?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO product (product_id, seller_id, primary_category_id, name, description) VALUES (?, ?, ?, ?, ?)",
                 positiveLeastSignificantBits, sellerId, categoryId, "literal % value", "description");
-        jdbc.update("INSERT INTO product (product_id, seller_id, category_id, name, description) VALUES (?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO product (product_id, seller_id, primary_category_id, name, description) VALUES (?, ?, ?, ?, ?)",
                 negativeLeastSignificantBits, sellerId, categoryId, "literal wildcard", "description");
         jdbc.update("""
                 INSERT INTO product_channel_availability (product_id, sales_channel, available) VALUES
@@ -383,17 +384,24 @@ class CatalogIntegrationTest {
         mockMvc.perform(put("/api/sellers/{sellerId}/product-categories/{categoryId}", sellerId, categoryId)
                         .contentType("application/json").content("{\"name\":\"Tea leaves\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Tea leaves"));
+        String relatedCategoryBody = mockMvc.perform(post("/api/sellers/{sellerId}/product-categories", sellerId)
+.contentType("application/json").content("{\"code\":\"TEA-RELATED\",\"name\":\"Related\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID relatedCategoryId = UUID.fromString(
+                objectMapper.readTree(relatedCategoryBody).get("categoryId").stringValue());
         mockMvc.perform(get("/api/sellers/{sellerId}/product-categories", sellerId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].code").value("TEA"))
-                .andExpect(jsonPath("$[1].code").value("UNCATEGORIZED"));
+                .andExpect(jsonPath("$[1].code").value("TEA-RELATED"))
+                .andExpect(jsonPath("$[2].code").value("UNCATEGORIZED"));
         String productBody = mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
                         .contentType("application/json")
-                        .content("{\"name\":\"Tea one\",\"description\":\"one\",\"categoryId\":\""
-                                + categoryId + "\"}"))
+                        .content("{\"name\":\"Tea one\",\"description\":\"one\",\"categoryIds\":[\""
+                                + categoryId + "\",\"" + relatedCategoryId + "\"]}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.categoryId").value(categoryId.toString()))
                 .andReturn().getResponse().getContentAsString();
+        assertThat(objectMapper.readValue(productBody, ProductResponse.class).categoryIds())
+                .containsExactlyElementsOf(List.of(categoryId, relatedCategoryId).stream().sorted().toList());
         UUID productId = UUID.fromString(objectMapper.readTree(productBody).get("productId").stringValue());
         String skuId = "catalog-category-" + UUID.randomUUID();
         productService.registerSku(sellerId, productId, new RegisterSellerSkuRequest(skuId, 100, 3));
@@ -409,13 +417,13 @@ class CatalogIntegrationTest {
                 .andExpect(status().isConflict());
         mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
                         .contentType("application/json")
-                        .content("{\"name\":\"Tea two\",\"description\":\"two\",\"categoryId\":\""
-                                + categoryId + "\"}"))
+                        .content("{\"name\":\"Tea two\",\"description\":\"two\",\"categoryIds\":[\""
+                                + categoryId + "\"]}"))
                 .andExpect(status().isCreated());
         mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
                         .contentType("application/json")
                         .content("{\"name\":\"Tea default\",\"description\":\"default\"}"))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.categoryId").value(defaultId));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.categoryIds[0]").value(defaultId));
         mockMvc.perform(get("/api/products").param("categoryId", categoryId.toString()))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
         mockMvc.perform(get("/api/sellers/{sellerId}/products", otherSellerId)
@@ -427,14 +435,21 @@ class CatalogIntegrationTest {
         ProductListingPageResponse globalSellerPage =
                 objectMapper.readValue(globalSellerBody, ProductListingPageResponse.class);
         assertThat(globalSellerPage.items()).hasSize(2).allSatisfy(item ->
-                assertThat(item.product().categoryId()).isEqualTo(categoryId));
+                assertThat(item.product().categoryIds()).contains(categoryId));
+        String relatedPageBody = mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
+                        .param("categoryId", relatedCategoryId.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        ProductListingPageResponse relatedPage =
+                objectMapper.readValue(relatedPageBody, ProductListingPageResponse.class);
+        assertThat(relatedPage.items()).hasSize(1);
+        assertThat(relatedPage.items().getFirst().product().productId()).isEqualTo(productId);
         String pageBody = mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
                         .param("categoryId", categoryId.toString()).param("query", "TEA").param("limit", "1"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         ProductListingPageResponse page = objectMapper.readValue(pageBody, ProductListingPageResponse.class);
         assertThat(page.items()).hasSize(1);
         UUID firstPageProductId = page.items().getFirst().product().productId();
-        assertThat(page.items().getFirst().product().categoryId()).isEqualTo(categoryId);
+        assertThat(page.items().getFirst().product().categoryIds()).contains(categoryId);
         assertThat(page.nextCursor()).isNotBlank();
         String nextPageBody = mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
                         .param("categoryId", categoryId.toString()).param("query", "TEA").param("limit", "1")
@@ -445,7 +460,7 @@ class CatalogIntegrationTest {
         UUID secondPageProductId = nextPage.items().getFirst().product().productId();
         assertThat(secondPageProductId).isNotEqualTo(firstPageProductId);
         assertThat(List.of(firstPageProductId, secondPageProductId)).contains(productId);
-        assertThat(nextPage.items().getFirst().product().categoryId()).isEqualTo(categoryId);
+        assertThat(nextPage.items().getFirst().product().categoryIds()).contains(categoryId);
         assertThat(nextPage.nextCursor()).isNull();
         mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
                         .param("categoryId", defaultId).param("limit", "1").param("cursor", page.nextCursor()))
@@ -454,11 +469,15 @@ class CatalogIntegrationTest {
                         .param("categoryId", categoryId.toString()).param("query", "Different").param("limit", "1")
                         .param("cursor", page.nextCursor()))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
-        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/category", sellerId, productId)
-                        .contentType("application/json").content("{\"categoryId\":\"" + defaultId + "\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.categoryId").value(defaultId));
-        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/category", otherSellerId, productId)
-                        .contentType("application/json").content("{\"categoryId\":\"" + defaultId + "\"}"))
+        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/categories", sellerId, productId)
+                        .contentType("application/json").content("{\"categoryIds\":[\"" + defaultId + "\"]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.categoryIds[0]").value(defaultId));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_category_assignment "
+                + "WHERE seller_id=? AND product_id=?", Integer.class, sellerId, productId)).isZero();
+        assertThat(jdbc.queryForObject("SELECT primary_category_id FROM product WHERE product_id=?",
+                UUID.class, productId)).isEqualTo(UUID.fromString(defaultId));
+        mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/categories", otherSellerId, productId)
+                        .contentType("application/json").content("{\"categoryIds\":[\"" + defaultId + "\"]}"))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/sellers/{sellerId}/product-categories", sellerId))
                 .andExpect(status().isOk());

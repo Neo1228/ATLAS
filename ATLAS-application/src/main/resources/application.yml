@@ -5,6 +5,10 @@ server:
 spring:
   application:
     name: atlas
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   datasource:
     url: ${ATLAS_DB_URL:jdbc:postgresql://localhost:5432/atlas}
     username: ${ATLAS_DB_USER:atlas}
@@ -47,3 +51,9 @@ atlas:
       client-id: ${PAYPAL_CLIENT_ID:}
       client-secret: ${PAYPAL_CLIENT_SECRET:}
       webhook-id: ${PAYPAL_WEBHOOK_ID:}
+  settlement:
+    report:
+      operator:
+        enabled: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_ENABLED:false}
+        username: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_USERNAME:}
+        password: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_PASSWORD:}

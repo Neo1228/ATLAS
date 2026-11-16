@@ -1,10 +1,10 @@
 # ADR-0022 — Seller 상품 분류 계층과 하위 탐색
 
-- 상태: 구현 반영·local PostgreSQL Testcontainers/full Gradle check 통과
+- 상태: 계층 결정 유지·Product 단일 Category 연결은 D-083으로 대체
 - 결정: [D-077](../../00-governance/decision-log.md)
 - 추적: [Issue #168](https://github.com/Neo1228/ATLAS/issues/168), [PR #169](https://github.com/Neo1228/ATLAS/pull/169)
 - 요구사항: [FR-012 / BR-012 / INV-009 / Q-010](../../01-requirements/requirements-index.md)
-- 대체 범위: [D-074 / ADR-0019](ADR-0019-seller-product-categories.md)의 flat-only 분류 모델. Seller 소유권·Product 단일 Category 연결·V18 데이터 보존은 유지.
+- 대체 범위: [D-074 / ADR-0019](ADR-0019-seller-product-categories.md)의 flat-only 분류 모델. Seller 소유권·계층·V18 데이터 보존 유지; Product Category cardinality는 [D-083](../../00-governance/decision-log.md)으로 대체.
 
 ## 배경
 
@@ -13,7 +13,7 @@ D-074의 flat category는 Seller별 분류와 상품 필터를 제공하지만, 
 ## 결정
 
 - `ProductCategory`에 nullable `parentCategoryId`를 추가하는 adjacency list 구조. Category는 같은 Seller 안에서 parent를 가짐; root는 parent 없음.
-- `UNCATEGORIZED`는 root로 유지. Product는 기존처럼 같은 Seller Category 하나에만 연결.
+- `UNCATEGORIZED`는 root로 유지. Product 단일 Category 연결은 당시 결정이며 현재 기준은 [D-083](../../00-governance/decision-log.md) 참조.
 - V20은 `(seller_id, parent_category_id)` composite FK와 self-parent CHECK 추가. 기존 Category는 모두 root로 남기며 Product 연결은 수정하지 않음.
 - Parent 변경은 Catalog transaction에서 Seller row를 `PESSIMISTIC_WRITE`로 lock한 뒤 category ownership과 descendant를 확인하고 저장. 같은 Seller의 parent 변경을 직렬화해 동시에 발생하는 multi-node cycle 방지.
 - DB는 same-Seller parent와 self-parent만 제약. Multi-node cycle 검사는 transaction 내 Catalog service의 책임이며, 직접 SQL로 hierarchy를 변경하는 경로는 지원하지 않음.
@@ -36,7 +36,7 @@ D-074의 flat category는 Seller별 분류와 상품 필터를 제공하지만, 
 - Parent 변경은 같은 Seller 단위로 직렬화. DB constraint만으로 다중 노드 cycle을 막지 않으므로 Catalog service transaction 경계를 우회하는 write 금지.
 - Recursive subtree listing은 새 query shape. `(seller_id, parent_category_id)` index는 추가하지 않음; representative data의 `EXPLAIN (ANALYZE, BUFFERS)`와 관측 결과로 필요성을 판단.
 - 성능 향상, 최대 category 수, 사용자 수, RPS/TPS 또는 production SLO는 주장하지 않음.
-- Global taxonomy, multi-category/tag, category delete/archive, ranking/search/ML은 별도 결정.
+- ADR-0022 당시 Global taxonomy, multi-category/tag, category delete/archive, ranking/search/ML은 별도 결정. Product multi-category는 [D-083](../../00-governance/decision-log.md)에서 후속 결정.
 
 ## 검증
 
@@ -48,3 +48,16 @@ D-074의 flat category는 Seller별 분류와 상품 필터를 제공하지만, 
 ## 참고 자료
 
 - [REF-119 / REF-120](../../00-governance/reference-register.md): Meituan·Shopify 분류 사례. 문제 맥락만 참고; global taxonomy·NLP/CV/VLM·외부 규모를 ATLAS 설계 근거로 일반화하지 않음.
+
+## D-083 — 다중 category assignment
+
+- Product는 같은 Seller의 Category 하나 이상에 연결. `UNCATEGORIZED`는 root이자 단독 지정 category.
+- `product.primary_category_id` non-null same-Seller composite FK로 Product별 Category 보장. 추가 연결은 `product_category_assignment`의 `(seller_id, product_id, category_id)` composite PK와 same-Seller FK로 저장.
+- 생성 요청의 `categoryIds` 누락·빈 목록은 Seller의 `UNCATEGORIZED`로 지정. 수정 요청은 비어 있지 않은 `categoryIds` 목록으로 기존 연결 전체 교체.
+- 수정 집합에 현재 primary가 남아 있으면 primary를 유지. 제거되면 UUID 오름차순 첫 Category를 primary로 승격; request 순서나 정렬 결과만으로 기존 primary 변경 금지.
+- Category-set replacement는 seller-scoped Product row에 `PESSIMISTIC_WRITE` lock을 잡고 primary와 additional assignment 전체 교체를 같은 transaction에서 직렬화.
+- Null·중복 ID와 `UNCATEGORIZED` 혼합은 `INVALID_REQUEST`; 다른 Seller의 Category ID는 `NOT_FOUND`.
+- 응답 `categoryIds`는 UUID 오름차순. Category filter는 선택 node와 descendants에 primary·additional 연결이 있는 Product를 중복 없이 반환. Seller scope·visibility·name query·UUID order·cursor v4 유지.
+- API 수정 경로는 `PUT /api/sellers/{sellerId}/products/{productId}/categories`. 이전 singular `categoryId` 계약의 호환 경로 미제공.
+- V29는 기존 `category_id`를 `primary_category_id`로 rename하고 additional assignment table 생성. 기존 Product 연결과 same-Seller FK 보존.
+- `:catalog-module:test`와 `:application-module:compileTestJava` 통과. 신규 PostgreSQL Testcontainers 검증은 Docker provider 초기화 실패로 미완료.

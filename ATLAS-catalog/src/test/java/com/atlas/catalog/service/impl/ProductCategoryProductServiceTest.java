@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,7 @@ import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.ProductCategory;
+import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
 import com.atlas.catalog.repository.ProductCategoryRepository;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
@@ -31,10 +33,12 @@ class ProductCategoryProductServiceTest {
     private final SellerRepository sellers = mock(SellerRepository.class);
     private final ProductRepository products = mock(ProductRepository.class);
     private final ProductCategoryRepository categories = mock(ProductCategoryRepository.class);
+    private final ProductCategoryAssignmentRepository categoryAssignments =
+            mock(ProductCategoryAssignmentRepository.class);
     private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
     private final InventoryService inventory = mock(InventoryService.class);
-    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, categories, sellerSkus,
-            inventory, Clock.systemUTC());
+    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, categories,
+            categoryAssignments, sellerSkus, inventory, Clock.systemUTC());
     private final UUID sellerId = UUID.randomUUID();
     private final UUID categoryId = UUID.randomUUID();
 
@@ -50,33 +54,132 @@ class ProductCategoryProductServiceTest {
 
         var response = service.createProduct(sellerId, new CreateProductRequest("Item", null));
 
-        assertEquals(categoryId, response.categoryId());
+        assertEquals(List.of(categoryId), response.categoryIds());
     }
 
     @Test
     void rejectsCategoryOwnedByDifferentSeller() {
         UUID foreignCategory = UUID.randomUUID();
         when(sellers.existsById(sellerId)).thenReturn(true);
-        when(categories.findByCategoryIdAndSellerId(foreignCategory, sellerId)).thenReturn(Optional.empty());
+        when(categories.findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(sellerId, List.of(foreignCategory)))
+                .thenReturn(List.of());
 
         CatalogException exception = assertThrows(CatalogException.class,
-                () -> service.createProduct(sellerId, new CreateProductRequest("Item", null, foreignCategory)));
+                () -> service.createProduct(sellerId,
+                        new CreateProductRequest("Item", null, List.of(foreignCategory))));
 
         assertEquals(Code.NOT_FOUND, exception.code());
     }
 
     @Test
+    void rejectsDuplicateCategoryIdsBeforeSavingProduct() {
+        when(sellers.existsById(sellerId)).thenReturn(true);
+
+        CatalogException exception = assertThrows(CatalogException.class,
+                () -> service.createProduct(sellerId,
+                        new CreateProductRequest("Item", null, List.of(categoryId, categoryId))));
+
+        assertEquals(Code.INVALID_REQUEST, exception.code());
+        verify(products, never()).save(any(Product.class));
+    }
+
+    @Test
+    void uncategorizedCannotBeCombinedWithAnotherCategory() {
+        UUID otherCategoryId = UUID.randomUUID();
+        ProductCategory uncategorized = mock(ProductCategory.class);
+        ProductCategory otherCategory = mock(ProductCategory.class);
+        List<UUID> requestedIds = List.of(categoryId, otherCategoryId);
+        when(sellers.existsById(sellerId)).thenReturn(true);
+        when(categories.findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(sellerId, requestedIds))
+                .thenReturn(List.of(uncategorized, otherCategory));
+        when(uncategorized.getCategoryId()).thenReturn(categoryId);
+        when(uncategorized.getCode()).thenReturn(ProductCategory.UNCATEGORIZED_CODE);
+        when(otherCategory.getCategoryId()).thenReturn(otherCategoryId);
+        when(otherCategory.getCode()).thenReturn("OTHER");
+
+        CatalogException exception = assertThrows(CatalogException.class,
+                () -> service.createProduct(sellerId, new CreateProductRequest("Item", null, requestedIds)));
+
+        assertEquals(Code.INVALID_REQUEST, exception.code());
+        verify(products, never()).save(any(Product.class));
+    }
+
+    @Test
     void reassignmentRequiresProductAndCategoryToBelongToSeller() {
         UUID productId = UUID.randomUUID();
-        Product product = new Product(sellerId, UUID.randomUUID(), "Item", null);
+        Product product = new Product(sellerId, categoryId, "Item", null);
         ProductCategory category = mock(ProductCategory.class);
-        when(products.findById(productId)).thenReturn(Optional.of(product));
-        when(categories.findByCategoryIdAndSellerId(categoryId, sellerId)).thenReturn(Optional.of(category));
-        when(products.save(product)).thenReturn(product);
+        when(products.findByProductIdAndSellerIdForUpdate(productId, sellerId)).thenReturn(Optional.of(product));
+        when(categories.findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(sellerId, List.of(categoryId)))
+                .thenReturn(List.of(category));
+        when(category.getCategoryId()).thenReturn(categoryId);
 
-        var response = service.updateProductCategory(sellerId, productId, categoryId);
+        var response = service.updateProductCategories(sellerId, productId, List.of(categoryId));
 
-        assertEquals(categoryId, response.categoryId());
+        assertEquals(List.of(categoryId), response.categoryIds());
+    }
+
+    @Test
+    void categoryReplacementPreservesExistingPrimaryWhenItRemainsAssigned() {
+        UUID productId = UUID.randomUUID();
+        UUID existingPrimaryId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        UUID addedCategoryId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        Product product = new Product(sellerId, existingPrimaryId, "Item", null);
+        ProductCategory addedCategory = mock(ProductCategory.class);
+        ProductCategory existingPrimary = mock(ProductCategory.class);
+        when(products.findByProductIdAndSellerIdForUpdate(productId, sellerId)).thenReturn(Optional.of(product));
+        when(categories.findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(
+                sellerId, List.of(existingPrimaryId, addedCategoryId)))
+                .thenReturn(List.of(addedCategory, existingPrimary));
+        when(addedCategory.getCategoryId()).thenReturn(addedCategoryId);
+        when(existingPrimary.getCategoryId()).thenReturn(existingPrimaryId);
+
+        var response = service.updateProductCategories(sellerId, productId,
+                List.of(existingPrimaryId, addedCategoryId));
+
+        assertEquals(existingPrimaryId, product.getPrimaryCategoryId());
+        assertEquals(List.of(addedCategoryId, existingPrimaryId), response.categoryIds());
+    }
+
+    @Test
+    void categoryReplacementReturnsSortedIdsWhenPrimarySortsBeforeAdditionalCategories() {
+        UUID productId = UUID.randomUUID();
+        UUID primaryCategoryId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID additionalCategoryId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        Product product = new Product(sellerId, primaryCategoryId, "Item", null);
+        ProductCategory primaryCategory = mock(ProductCategory.class);
+        ProductCategory additionalCategory = mock(ProductCategory.class);
+        when(products.findByProductIdAndSellerIdForUpdate(productId, sellerId)).thenReturn(Optional.of(product));
+        when(categories.findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(
+                sellerId, List.of(additionalCategoryId, primaryCategoryId)))
+                .thenReturn(List.of(primaryCategory, additionalCategory));
+        when(primaryCategory.getCategoryId()).thenReturn(primaryCategoryId);
+        when(additionalCategory.getCategoryId()).thenReturn(additionalCategoryId);
+
+        var response = service.updateProductCategories(sellerId, productId,
+                List.of(additionalCategoryId, primaryCategoryId));
+
+        assertEquals(primaryCategoryId, product.getPrimaryCategoryId());
+        assertEquals(List.of(primaryCategoryId, additionalCategoryId), response.categoryIds());
+    }
+
+    @Test
+    void categoryReplacementChoosesFirstSortedCategoryWhenRemovingExistingPrimary() {
+        UUID productId = UUID.randomUUID();
+        UUID existingPrimaryId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        UUID replacementCategoryId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        Product product = new Product(sellerId, existingPrimaryId, "Item", null);
+        ProductCategory replacementCategory = mock(ProductCategory.class);
+        when(products.findByProductIdAndSellerIdForUpdate(productId, sellerId)).thenReturn(Optional.of(product));
+        when(categories.findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(
+                sellerId, List.of(replacementCategoryId)))
+                .thenReturn(List.of(replacementCategory));
+        when(replacementCategory.getCategoryId()).thenReturn(replacementCategoryId);
+
+        var response = service.updateProductCategories(sellerId, productId, List.of(replacementCategoryId));
+
+        assertEquals(replacementCategoryId, product.getPrimaryCategoryId());
+        assertEquals(List.of(replacementCategoryId), response.categoryIds());
     }
 
     @Test
@@ -143,7 +246,7 @@ class ProductCategoryProductServiceTest {
         when(product.getProductId()).thenReturn(productId);
         when(product.getSellerId()).thenReturn(sellerId);
         when(product.getName()).thenReturn("Item");
-        when(product.getCategoryId()).thenReturn(categoryId);
+        when(product.getPrimaryCategoryId()).thenReturn(categoryId);
         return product;
     }
 

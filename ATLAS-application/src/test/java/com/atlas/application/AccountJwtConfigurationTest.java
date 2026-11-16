@@ -1,12 +1,24 @@
 package com.atlas.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.atlas.account.service.AccessTokenService;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -77,6 +89,44 @@ class AccountJwtConfigurationTest {
         String token = encoder.encode(JwtEncoderParameters.from(header, expiredClaims)).getTokenValue();
 
         assertThrows(JwtException.class, () -> decoder.decode(token));
+    }
+
+    @Test
+    void decoderRejectsTokensMissingRequiredClaims() throws Exception {
+        String missingSubject = encodeWithoutClaim("sub");
+        String missingIssuedAt = encodeWithoutClaim("iat");
+        String missingExpiresAt = encodeWithoutClaim("exp");
+
+        assertMissingClaim(missingSubject, "sub");
+        assertMissingClaim(missingIssuedAt, "iat");
+        assertMissingClaim(missingExpiresAt, "exp");
+        assertThrows(JwtException.class, () -> decoder.decode(missingSubject));
+        assertThrows(JwtException.class, () -> decoder.decode(missingIssuedAt));
+        assertThrows(JwtException.class, () -> decoder.decode(missingExpiresAt));
+    }
+
+    private String encode(JwtClaimsSet claims) {
+        JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
+        return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+    }
+
+    private String encodeWithoutClaim(String omittedClaim) throws JOSEException, ParseException {
+        Instant now = Instant.now();
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("iss", ISSUER);
+        claims.put("aud", List.of(AUDIENCE));
+        claims.put("sub", ACCOUNT_ID.toString());
+        claims.put("iat", now.getEpochSecond());
+        claims.put("exp", now.plusSeconds(600).getEpochSecond());
+        claims.remove(omittedClaim);
+        SignedJWT token = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), JWTClaimsSet.parse(claims));
+        token.sign(new MACSigner(key.getEncoded()));
+        return token.serialize();
+    }
+
+    private void assertMissingClaim(String token, String claim) {
+        String payload = new String(Base64.getUrlDecoder().decode(token.split("\\.")[1]), StandardCharsets.UTF_8);
+        assertFalse(payload.contains("\"" + claim + "\""));
     }
 
 }

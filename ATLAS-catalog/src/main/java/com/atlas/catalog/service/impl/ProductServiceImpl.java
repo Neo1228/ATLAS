@@ -9,10 +9,12 @@ import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
+import com.atlas.catalog.persistence.entity.ProductCategoryAssignment;
 import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.persistence.projection.ProductChannelAvailability;
 import com.atlas.catalog.repository.ProductCategoryRepository;
+import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
@@ -24,6 +26,7 @@ import com.atlas.catalog.persistence.state.ProductStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -44,6 +47,7 @@ public class ProductServiceImpl implements ProductService {
     private final SellerRepository sellers;
     private final ProductRepository products;
     private final ProductCategoryRepository categories;
+    private final ProductCategoryAssignmentRepository categoryAssignments;
     private final SellerSkuRepository sellerSkus;
     private final InventoryService inventory;
     private final Clock clock;
@@ -55,29 +59,32 @@ public class ProductServiceImpl implements ProductService {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product configuration");
         }
         if (!sellers.existsById(sellerId)) throw new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId);
-        UUID categoryId;
-        if (request.categoryId() == null) {
-            categoryId = categories.findBySellerIdAndCode(sellerId, ProductCategory.UNCATEGORIZED_CODE)
-                    .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Seller default category is missing"))
-                    .getCategoryId();
-        } else {
-            categoryId = requireOwnedCategory(sellerId, request.categoryId()).getCategoryId();
-        }
-        Product product = products.save(new Product(sellerId, categoryId, request.name(), request.description()));
-        return toResponse(product);
+        List<UUID> categoryIds = resolveCategoryIds(sellerId, request.categoryIds(), true);
+        Product product = products.save(new Product(sellerId, categoryIds.getFirst(), request.name(), request.description()));
+        List<UUID> additionalCategoryIds = categoryIds.subList(1, categoryIds.size());
+        categoryAssignments.saveAll(toAssignments(sellerId, product.getProductId(), additionalCategoryIds));
+        return toResponse(product, additionalCategoryIds, product.getChannelAvailability().entrySet().stream()
+                .filter(Map.Entry::getValue).map(Map.Entry::getKey).sorted().toList());
     }
 
     @Override
     @Transactional
-    public ProductResponse updateProductCategory(UUID sellerId, UUID productId, UUID categoryId) {
-        if (sellerId == null || productId == null || categoryId == null) {
+    public ProductResponse updateProductCategories(UUID sellerId, UUID productId, List<UUID> categoryIds) {
+        if (sellerId == null || productId == null) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product category assignment");
         }
-        Product product = products.findById(productId).filter(candidate -> candidate.getSellerId().equals(sellerId))
-                .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller product: " + productId));
-        requireOwnedCategory(sellerId, categoryId);
-        product.assignCategory(categoryId);
-        return toResponse(products.save(product));
+        Product product = requireOwnedProduct(sellerId, productId);
+        List<UUID> resolvedCategoryIds = resolveCategoryIds(sellerId, categoryIds, false);
+        UUID primaryCategoryId = resolvedCategoryIds.contains(product.getPrimaryCategoryId())
+                ? product.getPrimaryCategoryId() : resolvedCategoryIds.getFirst();
+        product.assignPrimaryCategory(primaryCategoryId);
+        products.save(product);
+        List<UUID> additionalCategoryIds = resolvedCategoryIds.stream()
+                .filter(categoryId -> !categoryId.equals(primaryCategoryId)).toList();
+        categoryAssignments.deleteAllBySellerIdAndProductId(sellerId, productId);
+        categoryAssignments.saveAll(toAssignments(sellerId, productId, additionalCategoryIds));
+        return toResponse(product, additionalCategoryIds, product.getChannelAvailability().entrySet().stream()
+                .filter(Map.Entry::getValue).map(Map.Entry::getKey).sorted().toList());
     }
 
     @Override
@@ -221,12 +228,17 @@ public class ProductServiceImpl implements ProductService {
                         ProductChannelAvailability::getProductId,
                         Collectors.mapping(row -> ProductSalesChannel.valueOf(row.getSalesChannel()),
                                 Collectors.toList())));
+        Map<UUID, List<UUID>> categoryIdsByProductId = categoryAssignments
+                .findAllByProductIdInOrderByProductIdAscCategoryIdAsc(productIds).stream()
+                .collect(Collectors.groupingBy(ProductCategoryAssignment::getProductId,
+                        Collectors.mapping(ProductCategoryAssignment::getCategoryId, Collectors.toList())));
         Instant pricingAt = clock.instant();
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
                 .map(sku -> toResponse(productsById.get(sku.getProductId()), sku, pricingAt))
                 .collect(Collectors.groupingBy(SellerSkuResponse::productId));
         List<ProductListingResponse> items = page.stream().map(product -> new ProductListingResponse(
-                toResponse(product, availableChannelsByProductId.getOrDefault(product.getProductId(), List.of())),
+                toResponse(product, categoryIdsByProductId.getOrDefault(product.getProductId(), List.of()),
+                        availableChannelsByProductId.getOrDefault(product.getProductId(), List.of())),
                 variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
                         .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList())).toList();
         String nextCursor = null;
@@ -249,7 +261,7 @@ public class ProductServiceImpl implements ProductService {
 
 
     private Product requireOwnedProduct(UUID sellerId, UUID productId) {
-        return products.findById(productId).filter(candidate -> candidate.getSellerId().equals(sellerId))
+        return products.findByProductIdAndSellerIdForUpdate(productId, sellerId)
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller product: " + productId));
     }
     private SellerSku requireOwnedSku(UUID sellerId, UUID productId, String skuId) {
@@ -262,6 +274,39 @@ public class ProductServiceImpl implements ProductService {
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown seller category: " + categoryId));
     }
 
+    private List<UUID> resolveCategoryIds(UUID sellerId, List<UUID> requestedCategoryIds, boolean defaultWhenEmpty) {
+        if (requestedCategoryIds == null || requestedCategoryIds.isEmpty()) {
+            if (!defaultWhenEmpty) {
+                throw new CatalogException(Code.INVALID_REQUEST, "At least one product category is required");
+            }
+            UUID defaultCategoryId = categories.findBySellerIdAndCode(sellerId, ProductCategory.UNCATEGORIZED_CODE)
+                    .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Seller default category is missing"))
+                    .getCategoryId();
+            return List.of(defaultCategoryId);
+        }
+        if (requestedCategoryIds.stream().anyMatch(Objects::isNull)
+                || requestedCategoryIds.stream().distinct().count() != requestedCategoryIds.size()) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product category assignment");
+        }
+        List<ProductCategory> ownedCategories = categories
+                .findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(sellerId, requestedCategoryIds);
+        if (ownedCategories.size() != requestedCategoryIds.size()) {
+            throw new CatalogException(Code.NOT_FOUND, "Unknown seller category assignment");
+        }
+        boolean includesUncategorized = ownedCategories.stream()
+                .anyMatch(category -> ProductCategory.UNCATEGORIZED_CODE.equals(category.getCode()));
+        if (includesUncategorized && ownedCategories.size() > 1) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Uncategorized cannot be combined with other categories");
+        }
+        return ownedCategories.stream().map(ProductCategory::getCategoryId).sorted().toList();
+    }
+
+    private static List<ProductCategoryAssignment> toAssignments(UUID sellerId, UUID productId,
+            List<UUID> categoryIds) {
+        return categoryIds.stream().map(categoryId ->
+                new ProductCategoryAssignment(sellerId, productId, categoryId)).toList();
+    }
+
     private ProductListingResponse toListing(Product product) {
         Instant pricingAt = clock.instant();
         List<SellerSkuResponse> variants = sellerSkus.findAllByProductId(product.getProductId()).stream()
@@ -270,14 +315,20 @@ public class ProductServiceImpl implements ProductService {
         return new ProductListingResponse(toResponse(product), variants);
     }
 
-    private static ProductResponse toResponse(Product product) {
-        return toResponse(product, product.getChannelAvailability().entrySet().stream()
+    private ProductResponse toResponse(Product product) {
+        List<UUID> categoryIds = categoryAssignments
+                .findAllBySellerIdAndProductIdOrderByCategoryIdAsc(product.getSellerId(), product.getProductId())
+                .stream().map(ProductCategoryAssignment::getCategoryId).toList();
+        return toResponse(product, categoryIds, product.getChannelAvailability().entrySet().stream()
                 .filter(Map.Entry::getValue).map(Map.Entry::getKey).sorted().toList());
     }
 
-    private static ProductResponse toResponse(Product product, List<ProductSalesChannel> availableChannels) {
+    private static ProductResponse toResponse(Product product, List<UUID> categoryIds,
+            List<ProductSalesChannel> availableChannels) {
+        List<UUID> allCategoryIds = new ArrayList<>(categoryIds);
+        allCategoryIds.add(product.getPrimaryCategoryId());
         return new ProductResponse(product.getProductId(), product.getSellerId(), product.getName(),
-                product.getDescription(), product.getCategoryId(), product.getStatus(), availableChannels);
+                product.getDescription(), allCategoryIds, product.getStatus(), availableChannels);
     }
 
     private static SellerSkuResponse toResponse(Product product, SellerSku sku, Instant asOf) {

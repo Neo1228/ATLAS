@@ -1,9 +1,18 @@
 package com.atlas.application.controller.account;
 
 import com.atlas.account.dto.request.LoginRequest;
+import com.atlas.account.dto.request.AccountActionTokenRequest;
+import com.atlas.account.dto.request.PasswordResetConfirmRequest;
+import com.atlas.account.dto.request.PasswordResetRequest;
+import com.atlas.account.dto.request.MfaChallengeRequest;
+import com.atlas.account.dto.request.MfaCodeRequest;
 import com.atlas.account.dto.request.RefreshTokenRequest;
 import com.atlas.account.dto.request.RegisterBuyerRequest;
 import com.atlas.account.dto.response.AccountTokenResponse;
+import com.atlas.account.dto.response.AccountActionResponse;
+import com.atlas.account.dto.response.AccountLoginResponse;
+import com.atlas.account.dto.response.MfaEnrollmentResponse;
+import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
 import com.atlas.account.service.AccountService;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -26,14 +35,58 @@ public class AccountController {
     }
 
     @PostMapping("/signup")
-    @ResponseStatus(HttpStatus.CREATED)
-    public AccountTokenResponse registerBuyer(@Valid @RequestBody RegisterBuyerRequest request) {
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AccountActionResponse registerBuyer(@Valid @RequestBody RegisterBuyerRequest request) {
         return accounts.registerBuyer(request);
     }
 
+    @PostMapping("/verify-email")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void verifyEmail(@Valid @RequestBody AccountActionTokenRequest request) {
+        accounts.verifyEmail(request.token());
+    }
+
+    @PostMapping("/email-verification/request")
+    public AccountActionResponse requestEmailVerification(@Valid @RequestBody PasswordResetRequest request) {
+        return accounts.requestEmailVerification(request.email());
+    }
+
+    @PostMapping("/password-reset/request")
+    public AccountActionResponse requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
+        return accounts.requestPasswordReset(request.email());
+    }
+
+    @PostMapping("/password-reset/confirm")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(@Valid @RequestBody PasswordResetConfirmRequest request) {
+        accounts.resetPassword(request.token(), request.newPassword());
+    }
+
     @PostMapping("/login")
-    public AccountTokenResponse login(@Valid @RequestBody LoginRequest request) {
+    public AccountLoginResponse login(@Valid @RequestBody LoginRequest request) {
         return accounts.login(request);
+    }
+
+    @PostMapping("/mfa/challenge")
+    public AccountTokenResponse completeMfaLogin(@Valid @RequestBody MfaChallengeRequest request) {
+        return accounts.completeMfaLogin(request);
+    }
+
+    @PostMapping("/mfa/enroll")
+    public MfaEnrollmentResponse startMfaEnrollment(@AuthenticationPrincipal Jwt jwt) {
+        return accounts.startMfaEnrollment(UUID.fromString(jwt.getSubject()));
+    }
+
+    @PostMapping("/mfa/enable")
+    public MfaRecoveryCodesResponse confirmMfaEnrollment(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody MfaCodeRequest request) {
+        return accounts.confirmMfaEnrollment(UUID.fromString(jwt.getSubject()), request.code());
+    }
+
+    @PostMapping("/mfa/disable")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void disableMfa(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody MfaCodeRequest request) {
+        accounts.disableMfa(UUID.fromString(jwt.getSubject()), request.code());
     }
 
     @PostMapping("/refresh")

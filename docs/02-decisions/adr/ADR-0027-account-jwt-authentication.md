@@ -1,8 +1,8 @@
 # ADR-0027: Buyer·Seller 계정 인증과 JWT session
 
-- 상태: ✓ 확정
+- 상태: D-082 확정; D-084 후속 결정·구현 및 PostgreSQL/SMTP 통합 검증 대기
 - 결정일: 2026-11-10
-- 결정 ID: [D-082](../../00-governance/decision-log.md)
+- 결정 ID: [D-082](../../00-governance/decision-log.md), [D-084](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-018/BR-018/INV-015/Q-007](../../01-requirements/requirements-index.md)
 - 관련 Issue: [Issue #206](https://github.com/Neo1228/ATLAS/issues/206)
 - 선행 결정: [ADR-0026 PayPal](ADR-0026-paypal-sandbox-payments.md)
@@ -81,3 +81,16 @@ sequenceDiagram
 - [OWASP JSON Web Token Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_Cheat_Sheet.html)
 - [Auth0 Token Best Practices](https://auth0.com/docs/secure/tokens/token-best-practices)
 - [OpenReplay — Choosing an Authentication Strategy for a New Web App](https://blog.openreplay.com/authentication-strategy-web-app)
+
+## D-084 — Email verification·password recovery·선택형 TOTP MFA
+
+- 신규 account는 24시간 유효 email-verification token 소비 전까지 login 불가. Verification·password-reset token 원문은 DB에 저장하지 않으며 SHA-256 hash와 단회 소비 시각만 기록.
+- SMTP 전송은 transaction commit 뒤 수행. Delivery 실패는 인증 비밀을 노출하지 않고 일반 응답 유지; 사용자는 verification/reset 요청 재시도 가능.
+- Password reset token 유효 기간은 30분. 성공한 reset은 password hash 갱신, 전체 refresh family revoke, 미소비 MFA login challenge revoke를 같은 transaction에서 수행.
+- Login은 초기 password 검증 뒤 `user_account`의 현재 hash를 `FOR UPDATE`로 다시 조회·검증한 뒤 access/refresh token 또는 MFA challenge 발급. Concurrent password reset과 로그인 발급을 account row lock으로 직렬화해 stale password에서 새 credential 발급 방지.
+- Buyer·Seller 모든 account에서 TOTP MFA 선택 가능. Enrollment secret은 DB에 AES-GCM ciphertext로 저장하며 32-byte Base64 encryption key는 `ATLAS_ACCOUNT_MFA_ENCRYPTION_KEY` 환경 설정으로 제공.
+- MFA login challenge 유효 기간은 5분. TOTP time step은 account별 단회 소비; drift 허용은 ±1 step. 복구 코드는 10개 발급, hash 저장, 단회 소비.
+- SMTP host·credential과 MFA encryption key는 local environment/deployment secret 관리 대상. Repository, documentation sample, CI log에는 비밀값 미포함.
+- Password encoder, access JWT, refresh token rotation/family expiry, resource ownership, PayPal recovery, FX snapshot, KRW ledger, payment idempotency 계약 유지.
+- Signup·verification request·password-reset request는 account 존재 여부와 무관하게 동일한 HTTP status/body 반환. SMTP action delivery에 따른 response timing 평준화는 제공하지 않으므로 constant-time 비노출 주장 금지.
+- Unit tests는 token replay·expiry·refresh-family/MFA challenge revoke·stale-password login·MFA challenge·recovery-code 소비를 검증. PostgreSQL migration과 실제 transaction 경합 검증은 Testcontainers 통합 테스트 대상.

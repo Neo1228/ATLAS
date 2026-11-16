@@ -5,18 +5,14 @@ import com.atlas.catalog.persistence.state.ProductStatus;
 import java.util.List;
 import java.util.UUID;
 
-public record ProductResponse(UUID productId, UUID sellerId, String name, String description, UUID categoryId,
+public record ProductResponse(UUID productId, UUID sellerId, String name, String description, List<UUID> categoryIds,
         ProductStatus status, List<ProductSalesChannel> availableChannels) {
     public ProductResponse {
+        categoryIds = categoryIds.stream().sorted().toList();
         availableChannels = availableChannels.stream().sorted().toList();
     }
-
-    public ProductResponse(UUID productId, UUID sellerId, String name, String description, UUID categoryId) {
-        this(productId, sellerId, name, description, categoryId, ProductStatus.ACTIVE,
-                List.of(ProductSalesChannel.ONLINE_STORE, ProductSalesChannel.CAMPAIGN));
-    }
     public ProductResponse(UUID productId, UUID sellerId, String name, String description) {
-        this(productId, sellerId, name, description, null, ProductStatus.ACTIVE,
+        this(productId, sellerId, name, description, List.of(), ProductStatus.ACTIVE,
                 List.of(ProductSalesChannel.ONLINE_STORE, ProductSalesChannel.CAMPAIGN));
     }
 }

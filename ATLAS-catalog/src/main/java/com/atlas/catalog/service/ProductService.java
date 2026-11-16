@@ -9,6 +9,7 @@ import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import com.atlas.catalog.persistence.state.ProductStatus;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public interface ProductService {
@@ -18,7 +19,7 @@ public interface ProductService {
     SellerSkuResponse setSkuSalePrice(UUID sellerId, UUID productId, String skuId, long salePriceWon,
             Instant startsAt, Instant endsAt);
     SellerSkuResponse clearSkuSalePrice(UUID sellerId, UUID productId, String skuId);
-    ProductResponse updateProductCategory(UUID sellerId, UUID productId, UUID categoryId);
+    ProductResponse updateProductCategories(UUID sellerId, UUID productId, List<UUID> categoryIds);
     ProductResponse updateStatus(UUID sellerId, UUID productId, ProductStatus status);
     ProductResponse updateChannelAvailability(UUID sellerId, UUID productId, ProductSalesChannel channel,
             boolean available);

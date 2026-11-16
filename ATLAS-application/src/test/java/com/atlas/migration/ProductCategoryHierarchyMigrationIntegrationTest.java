@@ -42,7 +42,7 @@ class ProductCategoryHierarchyMigrationIntegrationTest {
                 UUID.class, sellerB);
         jdbc.update("INSERT INTO product (product_id, seller_id, category_id, name, description) "
                 + "VALUES (?, ?, ?, ?, ?)", productId, sellerA, categoryA, "existing product", "existing");
-        migrate(schema, null);
+        migrate(schema, MigrationVersion.fromVersion("20"));
 
         assertThat(jdbc.queryForObject("SELECT parent_category_id FROM product_category WHERE category_id = ?",
                 UUID.class, categoryA)).isNull();

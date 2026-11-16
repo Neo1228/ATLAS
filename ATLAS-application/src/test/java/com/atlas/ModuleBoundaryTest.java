@@ -39,6 +39,7 @@ class ModuleBoundaryTest {
                 "com.atlas.account.dto.response", "com.atlas.account.domain",
                 "net.ttddyy.dsproxy..",
                 "com.nimbusds..",
+                "org.apache.commons.csv..",
                 "java..", "javax..", "jakarta..", "org.springframework..", "org.slf4j.."
         };
         enforceAllowedDependencies(source, "com.atlas.application..", applicationDependencies);
@@ -82,7 +83,7 @@ class ModuleBoundaryTest {
         enforceAllowedDependencies(source, "com.atlas.settlement..",
                 append(javaAndPersistence, "com.atlas.settlement.."));
         enforceAllowedDependencies(source, "com.atlas.account..",
-                append(javaAndPersistence, "com.atlas.account.."));
+                append(javaAndPersistence, "com.atlas.account..", "com.bastiaanjansen.otp.."));
         noClasses().that().resideInAPackage("com.atlas..")
                 .and().resideOutsideOfPackage("..persistence.entity..")
                 .should().dependOnClassesThat()

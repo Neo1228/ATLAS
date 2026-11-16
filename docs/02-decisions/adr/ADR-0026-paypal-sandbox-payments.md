@@ -2,7 +2,7 @@
 
 - 상태: ✓ 확정
 - 결정일: 2026-11-09
-- 결정 ID: [D-081](../../00-governance/decision-log.md)
+- 결정 ID: [D-081](../../00-governance/decision-log.md), [D-085](../../00-governance/decision-log.md), [D-086](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-017/BR-017/INV-014](../../01-requirements/requirements-index.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
 - 통화 경계: [ADR-0030](ADR-0030-paypal-currency-boundary.md)
 - 관련 Issue: [Issue #191](https://github.com/Neo1228/ATLAS/issues/191)
@@ -79,7 +79,30 @@ sequenceDiagram
 - Correlation state와 event ID는 같은 transaction에서 기록. `FAILED`는 정상 처리와 구분. Reconciliation은 동기식으로 수행하며 queue/worker/retry layer를 추가하지 않음. 새 external side effect가 생기면 outbox를 재검토.
 - `PAYPAL_BASE_URL`은 공식 Sandbox hostname과 loopback test host만 허용. 다른 host는 SSRF와 잘못된 provider 설정 방지를 위해 거절.
 
+## D-085 — Balance report matching without payout proof
+
+- PayPal Balance Reconciliation report 선택. 공식 안내상 merchant portal과 SFTP에서 CSV report 제공, `RH`·`RD`·`RF` row type, column-header 기반 parsing, single/multi-file footer, transaction·fee·withdrawal 활동 포함. 구현은 수동 단일 CSV 업로드만 지원하며 10 MiB와 10,000 detail 행을 제한. 행 결과는 Record/Related/Original ID, type/subtype, currency, gross, 제공된 fee/net amount, Transfer ID 보존. 자동 SFTP 수집·multi-file merge·원본 보존 미지원.
+- PayPal 문서는 `Record ID`를 transaction unique ID, `Related Record ID`를 prior transaction reference로 정의하지만 Orders API capture ID와의 직접 mapping을 보장하지 않음. Mapping을 독립적으로 검증하기 전 `Sale`·`Refund`는 모두 `UNMATCHED`와 `PROVIDER_ID_MAPPING_UNVERIFIED`로 응답하며 internal attempt/refund ID나 journal amount를 노출하지 않음. `MATCHED`는 mapping 검증 뒤 별도 결정으로만 허용.
+- 현재 처리 가능한 `DUPLICATE`·`MISMATCH`는 Balance report 안에서 같은 Record ID가 반복되거나 보고서 행 사실이 충돌하는 경우에 한정. Gross·제공된 fee/net 금액 차이도 행 사실 충돌로 분류. Payment·Settlement module 조회나 `REPEATABLE_READ` cross-module snapshot 없음. Report를 통한 payment, FX, order, inventory, settlement mutation 금지.
+- `Transfer ID`는 PayPal 문서상 merchant bank statement에 표시되는 transfer identifier이며 별도 bank statement line과의 correlation 후보. PayPal report만으로 은행 계좌의 실제 입금 수령을 증명하지 않으며 응답에 `NOT_VERIFIED_FROM_PAYPAL_REPORT_ALONE` 표시. PayPal Disbursement Reconciliation Report는 embedded integration 범위; Transaction Detail Report 접근·목적도 별도 문서 기준. 내부 KRW journal은 provider 또는 bank receipt evidence가 아님.
+
+## D-086 — Dedicated read-only operator access
+
+- Account-sensitive report 결과 경로는 `ATLAS_SETTLEMENT_REPORT_OPERATOR_ENABLED=true`일 때만 등록. 전용 stateless HTTP Basic user, 32자 이상 비밀번호와 기존 PBKDF2 encoder 사용; 일반 Buyer/Seller JWT role로 접근 불가.
+- 활성화 환경은 external TLS termination, secret vault·rotation, `Authorization` header log redaction을 필수 배포 경계로 관리. 기본 비활성화 상태에서는 operator credential bean과 report route 미등록.
+
+## D-087 — Exact provider-ID report reconciliation
+
+- Sale rows match only when Balance report `Record ID` exactly equals the persisted PayPal capture ID (`provider_capture_id`), the payment attempt is `CAPTURED`, and report currency/gross amount equal the stored provider currency/amount.
+- Refund rows match only when `Record ID` exactly equals the persisted PayPal refund ID (`provider_refund_id`), the refund is `COMPLETED`, `Related Record ID` equals the refund operation’s capture ID and a confirmed persisted capture ID, and currency/negative gross amount equal the stored provider refund facts. Top-level Order ID, fuzzy matching, amount-only matching, and missing parent links never match.
+- The Payment-owned query selects only provider record IDs, capture IDs, amounts, currencies, and confirmation booleans in one read-only query. It does not read FX snapshots, settlement journals, or ledger state and cannot mutate payment, inventory, order, settlement, ledger, or payout state. Internal attempt/refund identifiers are not included in the operator response.
+- Official sources define each field/ID but do not guarantee a universal Balance `Record ID` crosswalk to Orders/Payments IDs. A `MATCHED` result is therefore an exact row-level equality check plus fact validation, not a claim that every merchant report uses that mapping. Merchant-specific entitlement/version and real report verification remain pending. `Transfer ID` and report rows do not prove bank receipt or execute payouts.
+
 ## 참고 자료
+
+- [PayPal Balance Reconciliation report](https://developer.paypal.com/reports/balance) 및 [공개 CSV sample](https://www.paypalobjects.com/ppdevdocs/Sample-Balance%20Report-CCOP.csv): `Record ID`·`Related Record ID`·`Transfer ID`, major-currency amount, negative refund, file/footer contract. 실제 merchant 설정에 따라 sample과 report가 다를 수 있음 ([REF-123/124](../../00-governance/reference-register.md)).
+- [Orders v2 capture example](https://developer.paypal.com/api/orders-v2/track-orders/use/)와 [Payments v2 refund details](https://developer.paypal.com/api/payments/v2/refunds-get): order ID와 capture ID 구분, `refund_id`의 PayPal-generated refund identifier 의미. 두 API ID와 Balance report `Record ID` 간 universal crosswalk은 공식 자료에서 확인되지 않음 ([REF-125/126](../../00-governance/reference-register.md)).
+- [PayPal Transaction Detail Report](https://developer.paypal.com/reports/transaction-detail/)와 [Disbursement Reconciliation Report](https://developer.paypal.com/platforms/reports/partner-merchant-reconciliation/disbursement-reconciliation-report/): report access와 embedded-integration scope 비교.
 
 - [PayPal OAuth 2.0](https://developer.paypal.com/api/rest/authentication/)
 - [PayPal authorization status](https://developer.paypal.com/api/orders/v2/definitions/authorization_status)
@@ -87,4 +110,6 @@ sequenceDiagram
 - [PayPal webhook signature verification](https://developer.paypal.com/api/rest/webhooks/rest)
 - [PayPal Multiparty seller onboarding](https://developer.paypal.com/docs/multiparty/get-started)
 - [PayPal Payouts account setup](https://developer.paypal.com/payouts/use-payouts/set-up)
+- [PayPal Transaction Detail Report](https://developer.paypal.com/reports/transaction-detail/)
+- [PayPal Disbursement Reconciliation Report](https://developer.paypal.com/platforms/reports/partner-merchant-reconciliation/disbursement-reconciliation-report/)
 - [Spring Security OAuth2 Client](https://docs.spring.io/spring-security/reference/servlet/oauth2/client/core.html)

@@ -31,7 +31,10 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/refresh")
+                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/refresh",
+                                "/api/auth/verify-email", "/api/auth/password-reset/request",
+                                "/api/auth/password-reset/confirm", "/api/auth/email-verification/request",
+                                "/api/auth/mfa/challenge")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/webhooks/paypal")
                         .permitAll()

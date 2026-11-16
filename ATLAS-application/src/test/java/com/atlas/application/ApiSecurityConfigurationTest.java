@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -54,6 +55,30 @@ class ApiSecurityConfigurationTest {
     void explicitlyPublicCatalogRouteAllowsAnonymousRequests() throws Exception {
         mockMvc.perform(get("/api/products"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void accountVerificationRecoveryAndMfaChallengeRoutesAllowAnonymousRequests() throws Exception {
+        mockMvc.perform(post("/api/auth/verify-email"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/auth/email-verification/request"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/auth/password-reset/request"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/auth/password-reset/confirm"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/auth/mfa/challenge"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void mfaEnrollmentAndDisableRoutesRemainProtected() throws Exception {
+        mockMvc.perform(post("/api/auth/mfa/enroll"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/mfa/enable"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/mfa/disable"))
+                .andExpect(status().isUnauthorized());
     }
 
 }

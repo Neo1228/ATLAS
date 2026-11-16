@@ -11,6 +11,8 @@ import org.springframework.data.repository.query.Param;
 public interface ProductCategoryRepository extends JpaRepository<ProductCategory, UUID> {
     Optional<ProductCategory> findBySellerIdAndCode(UUID sellerId, String code);
     Optional<ProductCategory> findByCategoryIdAndSellerId(UUID categoryId, UUID sellerId);
+    List<ProductCategory> findAllBySellerIdAndCategoryIdInOrderByCategoryIdAsc(UUID sellerId,
+            List<UUID> categoryIds);
     List<ProductCategory> findAllBySellerIdOrderByCode(UUID sellerId);
     boolean existsBySellerIdAndCode(UUID sellerId, String code);
 
