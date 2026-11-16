@@ -37,7 +37,7 @@ last_error, finished_at을 확인할 수 있다. lease가 만료된 미완료 PE
 - worker 최대 시도 횟수는 8회이며, 최초 웹훅 전달은 worker 시도 횟수에 포함하지 않는다.
 - batch 크기는 1이다. 느린 이벤트 처리 중 뒤의 이벤트 lease가 만료되는 상황을 방지한다.
 - 재시도 간격은 attempt 1부터 1, 2, 4, 8, 16, 32, 64초이며 최대 300초로 제한한다.
-- 기본 poll 간격은 1초, lease는 60초이다.
+- Worker는 기본 활성화되며 `initial delay`와 poll 간격은 각각 1초, lease는 60초이다. 테스트는 `atlas.paypal.webhook-retry.worker.enabled=false`와 `PT24H` 간격을 사용해 background claim을 비활성화한다.
 - 처리가 lease보다 오래 걸리면 다른 인스턴스가 같은 이벤트를 claim할 수 있다. owner lock, idempotent 처리 및 lease token fencing으로 중복 부작용과 오래된 queue 갱신을 방지한다. lease heartbeat는 제공하지 않는다.
 - 영구 amount/status/currency/provider-id mismatch는 재시도하지 않는다. 재시도 가능한 상관관계 결과만 queue에 넣는다.
 - queue에는 정규화한 최소 필드만 보존하며 원본 웹훅 콘텐츠를 보존하지 않는다.

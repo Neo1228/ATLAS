@@ -14,13 +14,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(controllers = PayPalWebhookOperatorController.class)
-@Import(AccountSecurityConfiguration.class)
+@Import({AccountSecurityConfiguration.class, ApiSecurityConfiguration.class})
+@EnableWebSecurity
 @TestPropertySource(properties = "atlas.payment.webhook-retry.operator.enabled=false")
 class PayPalWebhookOperatorDisabledSecurityTest {
     @Autowired
