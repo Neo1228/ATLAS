@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** 永続化済み検証イベントを処理する。provider APIは呼び出さない。Issue #277。 */
+/** 영속화된 검증 이벤트를 처리하며 provider API를 호출하지 않습니다. Issue #277. */
 @Component
 @ConditionalOnProperty(
         name = "atlas.paypal.webhook-retry.worker.enabled", havingValue = "true", matchIfMissing = true)
@@ -27,20 +27,50 @@ public class PayPalWebhookRetryWorker {
     public void retryDueEvents() {
         List<PayPalWebhookRetryRepository.ClaimedRetry> claimed = retries.claimDue();
         for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {
-            try {
-                PaymentWebhookResult result = webhooks.processVerified(retry.event());
-                if (result.retryable()) {
-                    retries.reschedule(retry.event().eventId(), retry.attempt(), retry.leaseOwner(),
-                            "PayPal event is still not correlated");
-                } else {
-                    // 永続的な不一致・成功・重複イベントは終端としてキューから削除する。
-                    retries.complete(retry.event().eventId(), retry.leaseOwner());
+                PaymentWebhookResult result;
+                try {
+                    result = webhooks.processVerified(retry.event());
+                } catch (RuntimeException failure) {
+                    recordTransientFailure(retry, failure);
+                    continue;
                 }
-            } catch (RuntimeException failure) {
-                log.warn("PayPal webhook retry failed for event {} (attempt {})",
-                        retry.event().eventId(), retry.attempt(), failure);
-                retries.reschedule(retry.event().eventId(), retry.attempt(), retry.leaseOwner(), failure.toString());
-            }
+
+                try {
+                    boolean recorded;
+                    if (result.accepted() || result.duplicate()) {
+                        recorded = retries.complete(retry.event().eventId(), retry.leaseOwner());
+                    } else if (result.retryable()) {
+                        recorded = retries.reschedule(retry.event().eventId(), retry.attempt(),
+                                retry.leaseOwner(), PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS,
+                                "Verified event is not correlated yet");
+                    } else {
+                        recorded = retries.reject(retry.event().eventId(), retry.attempt(),
+                                retry.leaseOwner(), "Verified event failed permanent validation");
+                    }
+                    if (!recorded) logStaleClaim(retry);
+                } catch (RuntimeException failure) {
+                    log.error("Unable to record PayPal webhook outcome for event {} (attempt {}, failure type {})",
+                            retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
+                }
         }
+    }
+
+    private void recordTransientFailure(PayPalWebhookRetryRepository.ClaimedRetry retry, RuntimeException failure) {
+        log.warn("PayPal webhook retry failed for event {} (attempt {}, failure type {})",
+                retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
+        try {
+            boolean recorded = retries.reschedule(retry.event().eventId(), retry.attempt(),
+                    retry.leaseOwner(), PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR,
+                    "Transient webhook processing failure");
+            if (!recorded) logStaleClaim(retry);
+        } catch (RuntimeException outcomeFailure) {
+            log.error("Unable to record transient PayPal webhook failure for event {} (attempt {}, failure type {})",
+                    retry.event().eventId(), retry.attempt(), outcomeFailure.getClass().getSimpleName());
+        }
+    }
+
+    private void logStaleClaim(PayPalWebhookRetryRepository.ClaimedRetry retry) {
+        log.warn("PayPal webhook retry claim is no longer current for event {} (attempt {})",
+                retry.event().eventId(), retry.attempt());
     }
 }
