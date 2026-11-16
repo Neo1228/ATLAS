@@ -17,7 +17,7 @@ class SchedulingConcurrencyTest {
     private static final long SERIAL_OBSERVATION_MILLIS = 500;
 
     @Test
-    void applicationSchedulerUsesThreeCoreWorkers() {
+    void applicationSchedulerUsesFourCoreWorkers() {
         ThreadPoolTaskScheduler scheduler = new SchedulingConfiguration().taskScheduler();
         scheduler.initialize();
         try {
@@ -36,8 +36,8 @@ class SchedulingConcurrencyTest {
     }
 
     @Test
-    void threeWorkersStartIndependentJobsWhileAnotherJobIsBlocked(TestReporter reporter) throws Exception {
-        ScenarioResult result = runScenario(3, reporter);
+    void fourWorkersStartIndependentJobsWhileAnotherJobIsBlocked(TestReporter reporter) throws Exception {
+        ScenarioResult result = runScenario(4, reporter);
 
         assertThat(result.startedBeforeRelease()).isEqualTo(JOB_COUNT);
         assertThat(result.maximumConcurrent()).isEqualTo(JOB_COUNT);
