@@ -1005,6 +1005,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                     Integer.class, eventId)).isEqualTo(1);
         } finally {
             pool.shutdownNow();
+                jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
         }
     }
 
@@ -1030,6 +1031,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                     Integer.class, key)).isEqualTo(1);
         } finally {
             pool.shutdownNow();
+                jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
         }
     }
 
