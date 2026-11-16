@@ -11,7 +11,7 @@ import com.atlas.account.security.AccountSecurityConfiguration;
 import com.atlas.application.controller.settlement.PayPalBalanceReportController;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.security.AccountOwnershipInterceptor;
-import com.atlas.application.service.PayPalBalanceReportReconciliationService;
+import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +42,7 @@ class PayPalReportOperatorSecurityTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private PayPalBalanceReportReconciliationService reconciliation;
+    private PayPalBalanceReportRunIngestionService reconciliation;
 
     @MockitoBean
     private AccountOwnershipInterceptor ownership;
