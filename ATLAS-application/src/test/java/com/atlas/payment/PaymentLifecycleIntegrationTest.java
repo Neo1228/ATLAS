@@ -422,7 +422,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                     () -> payments.reconcile(orderId, "sync-capture-" + orderId));
             assertThat(provider.captureStarted.await(5, TimeUnit.SECONDS)).isTrue();
 
-            Future<?> webhook = executor.submit(() -> concurrentWebhook.handle(signature, rawBody));
+            Future<?> webhook = executor.submit(() -> webhookService.handle(signature, rawBody));
             assertThat(webhookLockAttempted.await(5, TimeUnit.SECONDS)).isTrue();
             awaitBlocked(webhookLockThread.get());
             assertThat(paymentAttemptRowLockedNowait(orderId)).isFalse();
