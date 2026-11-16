@@ -8,8 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.application.exception.GlobalExceptionHandler;
+import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -29,7 +31,7 @@ class ProductControllerPaginationTest {
 
     @Test
     void invalidCursorFromGlobalListingMapsToBadRequest() throws Exception {
-        when(service.listProductsPage(null, null, null, null, cursor)).thenThrow(invalidCursor);
+        when(service.listProductsPage(null, null, null, null, null, null, cursor)).thenThrow(invalidCursor);
 
         mockMvc.perform(get("/api/products").param("cursor", cursor))
                 .andExpect(status().isBadRequest())
@@ -49,13 +51,27 @@ class ProductControllerPaginationTest {
 
     @Test
     void categoryFilterWithoutSellerMapsCatalogValidationToBadRequest() throws Exception {
-        when(service.listProductsPage(null, categoryId, null, null, null))
+        when(service.listProductsPage(null, categoryId, null, null, null, null, null))
                 .thenThrow(new CatalogException(CatalogException.Code.INVALID_REQUEST,
                         "Category filter requires seller scope"));
 
         mockMvc.perform(get("/api/products").param("categoryId", categoryId.toString()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
-        verify(service).listProductsPage(null, categoryId, null, null, null);
+        verify(service).listProductsPage(null, categoryId, null, null, null, null, null);
+    }
+
+    @Test
+    void passesInclusivePriceBoundsToCatalogService() throws Exception {
+        when(service.listProductsPage(null, null, null, 10_000L, 50_000L, 20, null))
+                .thenReturn(new ProductListingPageResponse(List.of(), null));
+
+        mockMvc.perform(get("/api/products")
+                        .param("minPriceWon", "10000")
+                        .param("maxPriceWon", "50000")
+                        .param("limit", "20"))
+                .andExpect(status().isOk());
+
+        verify(service).listProductsPage(null, null, null, 10_000L, 50_000L, 20, null);
     }
 }

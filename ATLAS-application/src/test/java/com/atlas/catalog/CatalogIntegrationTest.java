@@ -13,6 +13,7 @@ import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.dto.response.ProductResponse;
+import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.service.ProductService;
@@ -129,6 +130,68 @@ class CatalogIntegrationTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.detail").value("요청 정보를 확인해 주세요."));
         assertThat(products.count()).isEqualTo(countBeforeGet);
+    }
+
+    @Test
+    void publicPriceRangesUseEffectiveSkuPriceBeforeStableCursorPagination() {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        Product activeSaleA = create(sellerId, "active sale A");
+        Product activeSaleB = create(sellerId, "active sale B");
+        Product futureSale = create(sellerId, "future sale");
+        Product expiredSale = create(sellerId, "expired sale");
+        Instant now = Instant.ofEpochSecond(Instant.now().getEpochSecond());
+        Instant activeStart = now.minusSeconds(60);
+        Instant activeEnd = now.plusSeconds(3600);
+
+        productService.registerSku(sellerId, activeSaleA.getProductId(),
+                new RegisterSellerSkuRequest("price-a-" + UUID.randomUUID(), 50_000, 1));
+        productService.setSkuSalePrice(sellerId, activeSaleA.getProductId(),
+                sellerSkuId(activeSaleA), 20_000, activeStart, activeEnd);
+        productService.registerSku(sellerId, activeSaleB.getProductId(),
+                new RegisterSellerSkuRequest("price-b-" + UUID.randomUUID(), 60_000, 1));
+        productService.setSkuSalePrice(sellerId, activeSaleB.getProductId(),
+                sellerSkuId(activeSaleB), 22_000, activeStart, activeEnd);
+        productService.registerSku(sellerId, futureSale.getProductId(),
+                new RegisterSellerSkuRequest("price-future-" + UUID.randomUUID(), 40_000, 1));
+        productService.setSkuSalePrice(sellerId, futureSale.getProductId(),
+                sellerSkuId(futureSale), 10_000, now.plusSeconds(3600), now.plusSeconds(7200));
+        productService.registerSku(sellerId, expiredSale.getProductId(),
+                new RegisterSellerSkuRequest("price-expired-" + UUID.randomUUID(), 50_000, 1));
+        productService.setSkuSalePrice(sellerId, expiredSale.getProductId(),
+                sellerSkuId(expiredSale), 5_000, now.minusSeconds(7200), now.minusSeconds(3600));
+
+        ProductListingPageResponse firstPage = productService.listProductsPage(null, null, null,
+                20_000L, 22_000L, 1, null);
+        ProductListingPageResponse secondPage = productService.listProductsPage(null, null, null,
+                20_000L, 22_000L, 1, firstPage.nextCursor());
+
+        assertThat(firstPage.items()).hasSize(1);
+        assertThat(firstPage.nextCursor()).isNotNull();
+        assertThat(secondPage.items()).hasSize(1);
+        assertThat(List.of(firstPage.items().getFirst().product().productId(),
+                secondPage.items().getFirst().product().productId()))
+                .containsExactlyInAnyOrder(activeSaleA.getProductId(), activeSaleB.getProductId());
+        assertThatThrownBy(() -> productService.listProductsPage(null, null, null,
+                21_000L, 22_000L, 1, firstPage.nextCursor()))
+                .isInstanceOf(CatalogException.class);
+
+        assertThat(productIds(productService.listProductsPage(null, null, null,
+                20_000L, 20_000L, 10, null))).containsExactly(activeSaleA.getProductId());
+        assertThat(productIds(productService.listProductsPage(null, null, null,
+                39_000L, 41_000L, 10, null))).containsExactly(futureSale.getProductId());
+        assertThat(productIds(productService.listProductsPage(null, null, null,
+                49_000L, 51_000L, 10, null))).containsExactly(expiredSale.getProductId());
+        assertThat(products.findListingPage(sellerId, null, "", null, null, 10,
+                20_000L, 20_000L, activeStart))
+                .extracting(Product::getProductId).containsExactly(activeSaleA.getProductId());
+        assertThat(products.findListingPage(sellerId, null, "", null, null, 10,
+                20_000L, 20_000L, activeEnd)).isEmpty();
+        assertThat(productIds(productService.listProductsPage(sellerId, null, null,
+                39_000L, null, 10, null)))
+                .containsExactlyInAnyOrder(futureSale.getProductId(), expiredSale.getProductId());
+        assertThat(productIds(productService.listProductsPage(sellerId, null, null,
+                null, 22_000L, 10, null)))
+                .containsExactlyInAnyOrder(activeSaleA.getProductId(), activeSaleB.getProductId());
     }
 
     @Test
@@ -365,6 +428,15 @@ class CatalogIntegrationTest {
                 .productId();
         return products.findById(productId).orElseThrow();
     }
+    private String sellerSkuId(Product product) {
+        return jdbc.queryForObject("SELECT sku_id FROM seller_sku WHERE product_id = ?", String.class,
+                product.getProductId());
+    }
+
+    private List<UUID> productIds(ProductListingPageResponse page) {
+        return page.items().stream().map(item -> item.product().productId()).toList();
+    }
+
     @Test
     void sellerCategoriesAssignProductsAndFilterWithBoundCursors() throws Exception {
         UUID sellerId = sellerService.createSeller().sellerId();

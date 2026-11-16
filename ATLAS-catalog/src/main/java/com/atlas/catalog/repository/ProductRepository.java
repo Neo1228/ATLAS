@@ -3,6 +3,7 @@ package com.atlas.catalog.repository;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.projection.ProductChannelAvailability;
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,7 +31,14 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     default List<Product> findListingPage(UUID sellerId, UUID categoryId, String keyword, UUID cursorSeller,
             UUID cursorProduct, int limit) {
-        return findListingPageByScope(sellerId, categoryId, keyword, cursorSeller, cursorProduct, limit, false);
+        return findListingPageByScope(sellerId, categoryId, keyword, cursorSeller, cursorProduct, limit,
+                null, null, Instant.EPOCH, false);
+    }
+
+    default List<Product> findListingPage(UUID sellerId, UUID categoryId, String keyword, UUID cursorSeller,
+            UUID cursorProduct, int limit, Long minPriceWon, Long maxPriceWon, Instant asOf) {
+        return findListingPageByScope(sellerId, categoryId, keyword, cursorSeller, cursorProduct, limit,
+                minPriceWon, maxPriceWon, asOf, false);
     }
 
     @Query(value = """
@@ -63,6 +71,14 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                         get_byte(uuid_send(p.product_id), 8) # 128), 'hex') COLLATE "C" AS product_sort_key
                 FROM product p
             ),
+            effective_sku_price AS (
+                SELECT sku.product_id,
+                       CASE WHEN sku.sale_price_won IS NOT NULL
+                                 AND sku.sale_starts_at <= CAST(:asOf AS timestamptz)
+                                 AND CAST(:asOf AS timestamptz) < sku.sale_ends_at
+                            THEN sku.sale_price_won ELSE sku.price_won END AS effective_price
+                FROM seller_sku sku
+            ),
             category_tree(category_id) AS (
                 SELECT CAST(:categoryId AS uuid) WHERE CAST(:categoryId AS uuid) IS NOT NULL
                 UNION
@@ -94,6 +110,16 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                         WHERE assignment.seller_id = p.seller_id AND assignment.product_id = p.product_id
                             AND assignment.category_id IN (SELECT category_id FROM category_tree)))
                 AND (CAST(:keyword AS text) = '' OR position(CAST(:keyword AS text) in lower(p.name)) > 0)
+            AND (CAST(:minPriceWon AS bigint) IS NULL AND CAST(:maxPriceWon AS bigint) IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM effective_sku_price price
+                    WHERE price.product_id = p.product_id
+                      AND (CAST(:minPriceWon AS bigint) IS NULL
+                           OR price.effective_price >= CAST(:minPriceWon AS bigint))
+                      AND (CAST(:maxPriceWon AS bigint) IS NULL
+                           OR price.effective_price <= CAST(:maxPriceWon AS bigint))
+                ))
                 AND (CAST(:cursorSeller AS uuid) IS NULL OR p.seller_sort_key > c.seller_sort_key
                     OR (p.seller_sort_key = c.seller_sort_key AND p.product_sort_key > c.product_sort_key))
             ORDER BY p.seller_sort_key, p.product_sort_key
@@ -102,5 +128,6 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     List<Product> findListingPageByScope(@Param("sellerId") UUID sellerId, @Param("categoryId") UUID categoryId,
             @Param("keyword") String keyword, @Param("cursorSeller") UUID cursorSeller,
             @Param("cursorProduct") UUID cursorProduct, @Param("limit") int limit,
-            @Param("managementScope") boolean managementScope);
+            @Param("minPriceWon") Long minPriceWon, @Param("maxPriceWon") Long maxPriceWon,
+            @Param("asOf") Instant asOf, @Param("managementScope") boolean managementScope);
 }

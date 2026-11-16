@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,6 +25,7 @@ import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.inventory.service.InventoryService;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -187,11 +190,13 @@ class ProductCategoryProductServiceTest {
         when(sellers.existsById(sellerId)).thenReturn(true);
         ProductCategory category = mock(ProductCategory.class);
         when(categories.findByCategoryIdAndSellerId(categoryId, sellerId)).thenReturn(Optional.of(category));
-        when(products.findListingPage(sellerId, categoryId, "item", null, null, 11)).thenReturn(List.of());
+        when(products.findListingPage(eq(sellerId), eq(categoryId), eq("item"), isNull(), isNull(), eq(11),
+                isNull(), isNull(), any(Instant.class))).thenReturn(List.of());
 
         service.listProductsPage(sellerId, categoryId, " Item ", null, null);
 
-        verify(products).findListingPage(sellerId, categoryId, "item", null, null, 11);
+        verify(products).findListingPage(eq(sellerId), eq(categoryId), eq("item"), isNull(), isNull(), eq(11),
+                isNull(), isNull(), any(Instant.class));
     }
 
     @Test
@@ -215,16 +220,18 @@ class ProductCategoryProductServiceTest {
     @Test
     void legacyV1CursorRemainsValidWhenCategoryIsAbsent() {
         when(sellers.existsById(sellerId)).thenReturn(true);
-        when(products.findListingPage(sellerId, null, "item", sellerId, categoryId, 11)).thenReturn(List.of());
+        when(products.findListingPage(eq(sellerId), isNull(), eq("item"), eq(sellerId), eq(categoryId), eq(11),
+                isNull(), isNull(), any(Instant.class))).thenReturn(List.of());
         String v1Cursor = cursor("v1:" + sellerId + ":" + encode("item") + ":" + sellerId + ":" + categoryId);
 
         service.listProductsPage(sellerId, null, "item", null, v1Cursor);
 
-        verify(products).findListingPage(sellerId, null, "item", sellerId, categoryId, 11);
+        verify(products).findListingPage(eq(sellerId), isNull(), eq("item"), eq(sellerId), eq(categoryId), eq(11),
+                isNull(), isNull(), any(Instant.class));
     }
 
     @Test
-    void categoryFilterEmitsV4Cursor() {
+    void categoryFilterEmitsV5Cursor() {
         when(sellers.existsById(sellerId)).thenReturn(true);
         when(categories.findByCategoryIdAndSellerId(categoryId, sellerId))
                 .thenReturn(Optional.of(mock(ProductCategory.class)));
@@ -232,13 +239,14 @@ class ProductCategoryProductServiceTest {
         UUID secondId = UUID.randomUUID();
         Product first = product(firstId);
         Product second = product(secondId);
-        when(products.findListingPage(sellerId, categoryId, "", null, null, 2)).thenReturn(List.of(first, second));
+        when(products.findListingPage(eq(sellerId), eq(categoryId), eq(""), isNull(), isNull(), eq(2),
+                isNull(), isNull(), any(Instant.class))).thenReturn(List.of(first, second));
         when(sellerSkus.findAllByProductIdIn(List.of(firstId))).thenReturn(List.of());
 
         ProductListingPageResponse page = service.listProductsPage(sellerId, categoryId, null, 1, null);
 
         String decoded = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
-        assertTrue(decoded.startsWith("v4:false:"));
+        assertTrue(decoded.startsWith("v5:false:"));
     }
 
     private Product product(UUID productId) {

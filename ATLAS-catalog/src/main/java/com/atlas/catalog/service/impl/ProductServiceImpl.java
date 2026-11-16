@@ -175,7 +175,15 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
-        return listProductsPageInternal(sellerId, categoryId, query, requestedLimit, cursor, false);
+        return listProductsPage(sellerId, categoryId, query, null, null, requestedLimit, cursor);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
+            Long minPriceWon, Long maxPriceWon, Integer requestedLimit, String cursor) {
+        return listProductsPageInternal(
+                sellerId, categoryId, query, minPriceWon, maxPriceWon, requestedLimit, cursor, false);
     }
 
     @Override
@@ -183,15 +191,22 @@ public class ProductServiceImpl implements ProductService {
     public ProductListingPageResponse listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
         if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID required");
-        return listProductsPageInternal(sellerId, categoryId, query, requestedLimit, cursor, true);
+        return listProductsPageInternal(sellerId, categoryId, query, null, null, requestedLimit, cursor, true);
     }
-    private ProductListingPageResponse listProductsPageInternal(UUID sellerId, UUID categoryId, String query,
+
+    private ProductListingPageResponse listProductsPageInternal(
+            UUID sellerId, UUID categoryId, String query, Long minPriceWon, Long maxPriceWon,
             Integer requestedLimit, String cursor, boolean managementScope) {
         ListingCursor position = decodeCursor(cursor);
         int limit = requestedLimit == null ? DEFAULT_PAGE_SIZE : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
             throw new CatalogException(Code.INVALID_REQUEST, "Product page limit is out of range");
         }
+        if (minPriceWon != null && minPriceWon < 0 || maxPriceWon != null && maxPriceWon < 0
+                || minPriceWon != null && maxPriceWon != null && minPriceWon > maxPriceWon) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product price range");
+        }
+        Instant asOf = clock.instant();
         String keyword = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (categoryId != null && sellerId == null) {
             throw new CatalogException(Code.INVALID_REQUEST, "Category filter requires seller scope");
@@ -202,7 +217,9 @@ public class ProductServiceImpl implements ProductService {
         if (position != null && (!Objects.equals(position.filterSellerId(), sellerId)
                 || position.version() >= 3 && position.managementScope() != managementScope
                 || !position.keyword().equals(keyword) || !Objects.equals(position.categoryId(), categoryId)
-                || position.categoryFiltered() != (categoryId != null))) {
+                || position.categoryFiltered() != (categoryId != null)
+                || !Objects.equals(position.minPriceWon(), minPriceWon)
+                || !Objects.equals(position.maxPriceWon(), maxPriceWon))) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product cursor");
         }
         if (sellerId != null && !sellers.existsById(sellerId)) {
@@ -216,8 +233,9 @@ public class ProductServiceImpl implements ProductService {
         }
         List<Product> fetched = managementScope
                 ? products.findListingPageByScope(sellerId, categoryId, keyword,
-                        cursorSeller, cursorProduct, limit + 1, true)
-                : products.findListingPage(sellerId, categoryId, keyword, cursorSeller, cursorProduct, limit + 1);
+                        cursorSeller, cursorProduct, limit + 1, minPriceWon, maxPriceWon, asOf, true)
+                : products.findListingPage(sellerId, categoryId, keyword, cursorSeller, cursorProduct, limit + 1,
+                        minPriceWon, maxPriceWon, asOf);
         boolean hasMore = fetched.size() > limit;
         List<Product> page = fetched.stream().limit(limit).toList();
         List<UUID> productIds = page.stream().map(Product::getProductId).toList();
@@ -232,7 +250,7 @@ public class ProductServiceImpl implements ProductService {
                 .findAllByProductIdInOrderByProductIdAscCategoryIdAsc(productIds).stream()
                 .collect(Collectors.groupingBy(ProductCategoryAssignment::getProductId,
                         Collectors.mapping(ProductCategoryAssignment::getCategoryId, Collectors.toList())));
-        Instant pricingAt = clock.instant();
+        Instant pricingAt = asOf;
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
                 .map(sku -> toResponse(productsById.get(sku.getProductId()), sku, pricingAt))
                 .collect(Collectors.groupingBy(SellerSkuResponse::productId));
@@ -244,8 +262,8 @@ public class ProductServiceImpl implements ProductService {
         String nextCursor = null;
         if (hasMore) {
             Product last = page.getLast();
-            nextCursor = encodeCursor(sellerId, categoryId, keyword, last.getSellerId(), last.getProductId(),
-                    managementScope);
+            nextCursor = encodeCursor(sellerId, categoryId, keyword, minPriceWon, maxPriceWon,
+                    last.getSellerId(), last.getProductId(), managementScope);
         }
         return new ProductListingPageResponse(items, nextCursor);
     }
@@ -345,27 +363,32 @@ public class ProductServiceImpl implements ProductService {
             if (parts.length == 5 && "v1".equals(parts[0])) {
                 UUID filterSellerId = "-".equals(parts[1]) ? null : UUID.fromString(parts[1]);
                 String keyword = new String(Base64.getUrlDecoder().decode(parts[2]), StandardCharsets.UTF_8);
-                return new ListingCursor(1, false, filterSellerId, null, keyword,
+                return new ListingCursor(1, false, filterSellerId, null, keyword, null, null,
                         UUID.fromString(parts[3]), UUID.fromString(parts[4]));
             }
             if (parts.length == 6 && "v2".equals(parts[0])) {
                 UUID filterSellerId = UUID.fromString(parts[1]);
                 UUID categoryId = "-".equals(parts[2]) ? null : UUID.fromString(parts[2]);
                 String keyword = new String(Base64.getUrlDecoder().decode(parts[3]), StandardCharsets.UTF_8);
-                return new ListingCursor(2, false, filterSellerId, categoryId, keyword,
+                return new ListingCursor(2, false, filterSellerId, categoryId, keyword, null, null,
                         UUID.fromString(parts[4]), UUID.fromString(parts[5]));
             }
             if (parts.length == 7 && ("v3".equals(parts[0]) || "v4".equals(parts[0]))) {
-                boolean managementScope = switch (parts[1]) {
-                    case "true" -> true;
-                    case "false" -> false;
-                    default -> throw new IllegalArgumentException("Malformed cursor scope");
-                };
+                boolean managementScope = decodeManagementScope(parts[1]);
                 UUID filterSellerId = "-".equals(parts[2]) ? null : UUID.fromString(parts[2]);
                 UUID categoryId = "-".equals(parts[3]) ? null : UUID.fromString(parts[3]);
                 String keyword = new String(Base64.getUrlDecoder().decode(parts[4]), StandardCharsets.UTF_8);
-                return new ListingCursor("v4".equals(parts[0]) ? 4 : 3, managementScope, filterSellerId, categoryId, keyword,
-                        UUID.fromString(parts[5]), UUID.fromString(parts[6]));
+                return new ListingCursor("v4".equals(parts[0]) ? 4 : 3, managementScope, filterSellerId,
+                        categoryId, keyword, null, null, UUID.fromString(parts[5]), UUID.fromString(parts[6]));
+            }
+            if (parts.length == 9 && "v5".equals(parts[0])) {
+                boolean managementScope = decodeManagementScope(parts[1]);
+                UUID filterSellerId = "-".equals(parts[2]) ? null : UUID.fromString(parts[2]);
+                UUID categoryId = "-".equals(parts[3]) ? null : UUID.fromString(parts[3]);
+                String keyword = new String(Base64.getUrlDecoder().decode(parts[4]), StandardCharsets.UTF_8);
+                return new ListingCursor(5, managementScope, filterSellerId, categoryId, keyword,
+                        decodePriceBound(parts[5]), decodePriceBound(parts[6]),
+                        UUID.fromString(parts[7]), UUID.fromString(parts[8]));
             }
             throw new IllegalArgumentException("Malformed cursor");
         } catch (IllegalArgumentException exception) {
@@ -373,18 +396,34 @@ public class ProductServiceImpl implements ProductService {
         }
     }
 
+    private static boolean decodeManagementScope(String value) {
+        return switch (value) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new IllegalArgumentException("Malformed cursor scope");
+        };
+    }
+
+    private static Long decodePriceBound(String value) {
+        if ("-".equals(value)) return null;
+        long price = Long.parseLong(value);
+        if (price < 0) throw new IllegalArgumentException("Malformed cursor price");
+        return price;
+    }
+
     private static String encodeCursor(UUID filterSellerId, UUID categoryId, String keyword,
-            UUID positionSellerId, UUID productId, boolean managementScope) {
+            Long minPriceWon, Long maxPriceWon, UUID positionSellerId, UUID productId, boolean managementScope) {
         String encodedKeyword = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
-        String value = "v4:" + managementScope + ":" + (filterSellerId == null ? "-" : filterSellerId) + ":"
+        String value = "v5:" + managementScope + ":" + (filterSellerId == null ? "-" : filterSellerId) + ":"
                 + (categoryId == null ? "-" : categoryId) + ":" + encodedKeyword + ":"
+                + (minPriceWon == null ? "-" : minPriceWon) + ":" + (maxPriceWon == null ? "-" : maxPriceWon) + ":"
                 + positionSellerId + ":" + productId;
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private record ListingCursor(int version, boolean managementScope, UUID filterSellerId, UUID categoryId,
-            String keyword, UUID positionSellerId, UUID productId) {
+            String keyword, Long minPriceWon, Long maxPriceWon, UUID positionSellerId, UUID productId) {
         boolean categoryFiltered() { return categoryId != null; }
     }
 }

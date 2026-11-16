@@ -61,7 +61,7 @@ class ProductServiceImplTest {
         Product lookahead = product(sellerId, UUID.randomUUID(), "lookahead");
         UUID cursorProduct = UUID.randomUUID();
         when(sellers.existsById(sellerId)).thenReturn(true);
-        when(products.findListingPage(sellerId, null, "blue", sellerId, cursorProduct, 3))
+        when(products.findListingPage(sellerId, null, "blue", sellerId, cursorProduct, 3, null, null, now))
                 .thenReturn(List.of(first, second, lookahead));
         when(sellerSkus.findAllByProductIdIn(List.of(first.getProductId(), second.getProductId())))
                 .thenReturn(List.of());
@@ -72,20 +72,20 @@ class ProductServiceImplTest {
                 encodeV3Cursor(sellerId, "blue", sellerId, cursorProduct));
 
         assertEquals(2, page.items().size());
-        assertEquals(encodeV4Cursor(sellerId, "blue", sellerId, second.getProductId()), page.nextCursor());
+        assertEquals(encodeV5Cursor(sellerId, "blue", null, null, sellerId, second.getProductId()), page.nextCursor());
         verify(sellerSkus).findAllByProductIdIn(List.of(first.getProductId(), second.getProductId()));
         verify(sellerSkus, never()).findAllByProductIdIn(List.of(lookahead.getProductId()));
     }
 
     @Test
     void listingDefaultsLimitAndNormalizesMissingQuery() {
-        when(products.findListingPage(null, null, "", null, null, 11)).thenReturn(List.of());
+        when(products.findListingPage(null, null, "", null, null, 11, null, null, now)).thenReturn(List.of());
 
         ProductListingPageResponse page = service.listProductsPage(null, null, null, null, null);
 
         assertEquals(List.of(), page.items());
         assertNull(page.nextCursor());
-        verify(products).findListingPage(null, null, "", null, null, 11);
+        verify(products).findListingPage(null, null, "", null, null, 11, null, null, now);
     }
 
     @Test
@@ -118,7 +118,23 @@ class ProductServiceImplTest {
                 () -> service.listProductsPage(sellerId, null, null, 10,
                         encodeV3Cursor(UUID.randomUUID(), "", sellerId, productId)));
         assertEquals(Code.INVALID_REQUEST, mismatchedSellerFilter.code());
-        verify(products, never()).findListingPage(any(), any(), any(), any(), any(), anyInt());
+        verify(products, never()).findListingPage(any(), any(), any(), any(), any(), anyInt(), any(), any(), any());
+    }
+
+    @Test
+    void listingRejectsInvalidPriceBoundsAndCursorsReusedWithDifferentBounds() {
+        CatalogException negative = assertThrows(CatalogException.class,
+                () -> service.listProductsPage(null, null, null, -1L, null, 10, null));
+        assertEquals(Code.INVALID_REQUEST, negative.code());
+        CatalogException reversed = assertThrows(CatalogException.class,
+                () -> service.listProductsPage(null, null, null, 20_000L, 10_000L, 10, null));
+        assertEquals(Code.INVALID_REQUEST, reversed.code());
+
+        String cursor = encodeV5Cursor(null, "", 10_000L, 50_000L, sellerId, productId);
+        CatalogException mismatched = assertThrows(CatalogException.class,
+                () -> service.listProductsPage(null, null, null, 20_000L, 50_000L, 10, cursor));
+        assertEquals(Code.INVALID_REQUEST, mismatched.code());
+        verify(products, never()).findListingPage(any(), any(), any(), any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -127,7 +143,7 @@ class ProductServiceImplTest {
         CatalogException exception = assertThrows(CatalogException.class,
                 () -> service.listProductsPage(sellerId, null, null, 10, null));
         assertEquals(Code.NOT_FOUND, exception.code());
-        verify(products, never()).findListingPage(any(), any(), any(), any(), any(), anyInt());
+        verify(products, never()).findListingPage(any(), any(), any(), any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -261,12 +277,14 @@ class ProductServiceImplTest {
                 + positionSellerId + ":" + productId);
     }
 
-    private static String encodeV4Cursor(UUID filterSellerId, String keyword, UUID positionSellerId, UUID productId) {
+    private static String encodeV5Cursor(UUID filterSellerId, String keyword, Long minPriceWon,
+            Long maxPriceWon, UUID positionSellerId, UUID productId) {
         String sellerScope = filterSellerId == null ? "-" : filterSellerId.toString();
         String encodedKeyword = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(keyword.getBytes(StandardCharsets.UTF_8));
-        return encode("v4:false:" + sellerScope + ":-:" + encodedKeyword + ":"
-                + positionSellerId + ":" + productId);
+        return encode("v5:false:" + sellerScope + ":-:" + encodedKeyword + ":"
+                + (minPriceWon == null ? "-" : minPriceWon) + ":" + (maxPriceWon == null ? "-" : maxPriceWon)
+                + ":" + positionSellerId + ":" + productId);
     }
 
     private static String encode(String value) {
