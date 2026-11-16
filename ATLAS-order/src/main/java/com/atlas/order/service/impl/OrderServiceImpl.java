@@ -38,6 +38,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -328,6 +329,11 @@ public final class OrderServiceImpl implements OrderService {
                 .toList();
         String nextCursor = hasNext ? encodeOrderHistoryCursor(page.get(page.size() - 1)) : null;
         return new OrderHistoryPageResponse(orders, nextCursor);
+    }
+
+    @Override
+    public Optional<UUID> findDeliveredOrderItemId(String buyerRef, UUID productId) {
+        return repository.findDeliveredOrderItemId(buyerRef, productId);
     }
 
     @Override

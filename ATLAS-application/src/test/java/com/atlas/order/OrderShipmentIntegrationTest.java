@@ -28,6 +28,7 @@ import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderShipmentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
+import com.atlas.order.service.OrderService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.util.List;
 import java.util.UUID;
@@ -75,8 +76,31 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
     @Autowired private OrderRefundService refunds;
     @Autowired private OrderFulfillmentService fulfillments;
     @Autowired private OrderShipmentService shipments;
+    @Autowired private OrderService orders;
     @Autowired private OrderReturnService returns;
     @Autowired private ObjectMapper mapper;
+
+    @Test
+    void onlyDeliveredShipmentItemsQualifyAsVerifiedProductPurchases() {
+        Fixture fixture = paidOrder();
+        String buyerRef = jdbc.queryForObject(
+                "SELECT buyer_ref FROM purchase_order WHERE order_id = ?", String.class, fixture.orderId());
+        UUID productId = jdbc.queryForObject(
+                "SELECT product_id FROM order_item WHERE order_item_id = ?", UUID.class, fixture.orderItemId());
+
+        assertThat(orders.findDeliveredOrderItemId(buyerRef, productId)).isEmpty();
+        fulfillments.start(fixture.sellerId(), fixture.orderId());
+        OrderShipmentResponse shipment = shipments.create(new OrderShipmentRequest(
+                fixture.sellerId(), fixture.orderId(), "verified-review-" + UUID.randomUUID(),
+                "TEST", "TRACK-REVIEW", List.of(new OrderShipmentRequest.Item(fixture.orderItemId(), 1))));
+        assertThat(orders.findDeliveredOrderItemId(buyerRef, productId)).isEmpty();
+
+        shipments.deliver(fixture.sellerId(), fixture.orderId(), shipment.shipmentId());
+
+        assertThat(orders.findDeliveredOrderItemId(buyerRef, productId)).contains(fixture.orderItemId());
+        assertThat(orders.findDeliveredOrderItemId("another-buyer", productId)).isEmpty();
+        assertThat(orders.findDeliveredOrderItemId(buyerRef, UUID.randomUUID())).isEmpty();
+    }
 
     @Test
     void fulfillmentStartShipmentReplayListDeliveryAndErrorContract() throws Exception {

@@ -2,6 +2,7 @@ package com.atlas.order.service;
 
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.dto.response.OrderHistoryPageResponse;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface OrderService {
@@ -13,4 +14,5 @@ public interface OrderService {
     OrderResponse find(UUID orderId);
     boolean isOwnedByBuyer(UUID orderId, String buyerRef);
     OrderHistoryPageResponse findBuyerOrderHistory(String buyerRef, Integer limit, String cursor);
+    Optional<UUID> findDeliveredOrderItemId(String buyerRef, UUID productId);
 }
