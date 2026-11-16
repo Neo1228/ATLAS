@@ -38,6 +38,7 @@ import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.application.service.PayPalWebhookService;
+import com.atlas.application.service.PayPalWebhookOperatorService;
 import com.atlas.application.service.PayPalWebhookRetryRepository;
 import com.atlas.application.service.PayPalWebhookRetryWorker;
 import com.atlas.order.persistence.state.OrderState;
@@ -65,6 +66,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DataAccessException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
@@ -89,6 +92,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.paypal.webhook-retry-poll-interval", () -> "PT24H");
+        properties.add("atlas.paypal.webhook-retry-initial-delay", () -> "PT24H");
+        properties.add("atlas.paypal.webhook-retry.worker.enabled", () -> "false");
         properties.add("spring.datasource.hikari.connection-init-sql", () -> "SET lock_timeout TO '2s'");
     }
 
@@ -121,6 +126,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private PaymentProvider paymentProvider;
     @Autowired
     private FxConversionService fxConversionService;
+    @Autowired
+    private PayPalWebhookOperatorService webhookOperator;
     @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}")
     private String publicBaseUrl;
 
@@ -944,6 +951,136 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void webhookOperatorIdempotencyAndAuditSurviveQueueDeletion() {
+        String eventId = "operator-audit-" + UUID.randomUUID();
+        String key = "operator-key-" + UUID.randomUUID();
+        insertExhaustedRetry(eventId);
+
+        assertThat(webhookOperator.requeue(eventId, key, "operator-a", "reviewed delivery").outcome())
+                .isEqualTo("REQUEUED");
+        jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
+        insertExhaustedRetry(eventId);
+        assertThat(webhookOperator.requeue(eventId, key, "operator-a", "reviewed delivery").outcome())
+                .isEqualTo("REQUEUED");
+        assertConflict(() -> webhookOperator.requeue(eventId, key, "operator-b", "reviewed delivery"));
+        assertConflict(() -> webhookOperator.requeue(eventId, key, "operator-a", "different reason"));
+        assertConflict(() -> webhookOperator.requeue("different-event", key, "operator-a", "reviewed delivery"));
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM paypal_webhook_retry_operator_audit WHERE event_id = ?",
+                Integer.class, eventId)).isEqualTo(1);
+
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE paypal_webhook_retry_operator_audit SET reason = 'changed' WHERE idempotency_key = ?", key))
+                .isInstanceOf(DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+                "DELETE FROM paypal_webhook_retry_operator_audit WHERE idempotency_key = ?", key))
+                .isInstanceOf(DataAccessException.class);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM paypal_webhook_retry_operator_audit WHERE idempotency_key = ?",
+                Integer.class, key)).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentDistinctRequeuesSerializeOnExhaustedEvent() throws Exception {
+        String eventId = "operator-race-" + UUID.randomUUID();
+        insertExhaustedRetry(eventId);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<Boolean> first = requeueAfterBarrier(eventId, "race-key-a-" + UUID.randomUUID(), ready, start);
+        Callable<Boolean> second = requeueAfterBarrier(eventId, "race-key-b-" + UUID.randomUUID(), ready, start);
+        try {
+            Future<Boolean> firstResult = pool.submit(first);
+            Future<Boolean> secondResult = pool.submit(second);
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            int successes = (firstResult.get(10, TimeUnit.SECONDS) ? 1 : 0)
+                    + (secondResult.get(10, TimeUnit.SECONDS) ? 1 : 0);
+            assertThat(successes).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM paypal_webhook_retry_operator_audit WHERE event_id = ?",
+                    Integer.class, eventId)).isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+                jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
+        }
+    }
+
+    @Test
+    void concurrentSameKeyReplaysOneDurableOutcome() throws Exception {
+        String eventId = "operator-same-key-" + UUID.randomUUID();
+        String key = "operator-idempotency-" + UUID.randomUUID();
+        insertExhaustedRetry(eventId);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<Boolean> first = requeueAfterBarrier(eventId, key, ready, start);
+        Callable<Boolean> second = requeueAfterBarrier(eventId, key, ready, start);
+        try {
+            Future<Boolean> firstResult = pool.submit(first);
+            Future<Boolean> secondResult = pool.submit(second);
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(firstResult.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(secondResult.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM paypal_webhook_retry_operator_audit WHERE idempotency_key = ?",
+                    Integer.class, key)).isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+                jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
+        }
+    }
+
+    @Test
+    void threeRequeueLimitSurvivesWorkerDeletionAndQueueRecreation() {
+        String eventId = "operator-cap-" + UUID.randomUUID();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            insertExhaustedRetry(eventId);
+            assertThat(webhookOperator.requeue(eventId, "cap-key-" + attempt + "-" + UUID.randomUUID(),
+                    "operator-a", "approved retry " + attempt).outcome()).isEqualTo("REQUEUED");
+            jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
+        }
+        insertExhaustedRetry(eventId);
+        assertConflict(() -> webhookOperator.requeue(eventId, "cap-key-four-" + UUID.randomUUID(),
+                "operator-a", "must be blocked"));
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM paypal_webhook_retry_operator_audit WHERE event_id = ?",
+                Integer.class, eventId)).isEqualTo(3);
+    }
+
+    private Callable<Boolean> requeueAfterBarrier(
+            String eventId, String key, CountDownLatch ready, CountDownLatch start) {
+        return () -> {
+            ready.countDown();
+            start.await();
+            try {
+                webhookOperator.requeue(eventId, key, "race-operator", "concurrent review");
+                return true;
+            } catch (ResponseStatusException conflict) {
+                return false;
+            }
+        };
+    }
+
+    private void insertExhaustedRetry(String eventId) {
+        jdbc.update("""
+                INSERT INTO paypal_webhook_retry
+                    (event_id, event_type, attempt_count, state, created_at, next_attempt_at, finished_at)
+                VALUES (?, 'PAYMENT.CAPTURE.COMPLETED', 8, 'EXHAUSTED',
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, eventId);
+    }
+
+    private void assertConflict(Runnable request) {
+        assertThatThrownBy(request::run)
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(
+                        ((ResponseStatusException) error).getStatusCode().value())
+                        .isEqualTo(409));
     }
 
 }

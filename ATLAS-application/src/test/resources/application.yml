@@ -5,3 +5,7 @@ spring:
 atlas:
   paypal:
     webhook-retry-poll-interval: PT24H
+    webhook-retry-initial-delay: PT24H
+    webhook-retry:
+      worker:
+        enabled: false

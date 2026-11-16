@@ -4,11 +4,14 @@ import com.atlas.payment.dto.response.PaymentWebhookResult;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /** 永続化済み検証イベントを処理する。provider APIは呼び出さない。Issue #277。 */
 @Component
+@ConditionalOnProperty(
+        name = "atlas.paypal.webhook-retry.worker.enabled", havingValue = "true", matchIfMissing = true)
 public class PayPalWebhookRetryWorker {
     private static final Logger log = LoggerFactory.getLogger(PayPalWebhookRetryWorker.class);
     private final PayPalWebhookRetryRepository retries;
@@ -19,7 +22,8 @@ public class PayPalWebhookRetryWorker {
         this.webhooks = webhooks;
     }
 
-    @Scheduled(fixedDelayString = "${atlas.paypal.webhook-retry-poll-interval:PT1S}")
+    @Scheduled(initialDelayString = "${atlas.paypal.webhook-retry-initial-delay:PT1S}",
+            fixedDelayString = "${atlas.paypal.webhook-retry-poll-interval:PT1S}")
     public void retryDueEvents() {
         List<PayPalWebhookRetryRepository.ClaimedRetry> claimed = retries.claimDue();
         for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {

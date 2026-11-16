@@ -37,7 +37,7 @@ last_error, finished_at을 확인할 수 있다. lease가 만료된 미완료 PE
 - worker 최대 시도 횟수는 8회이며, 최초 웹훅 전달은 worker 시도 횟수에 포함하지 않는다.
 - batch 크기는 1이다. 느린 이벤트 처리 중 뒤의 이벤트 lease가 만료되는 상황을 방지한다.
 - 재시도 간격은 attempt 1부터 1, 2, 4, 8, 16, 32, 64초이며 최대 300초로 제한한다.
-- 기본 poll 간격은 1초, lease는 60초이다.
+- Worker는 기본 활성화되며 `initial delay`와 poll 간격은 각각 1초, lease는 60초이다. 테스트는 `atlas.paypal.webhook-retry.worker.enabled=false`와 `PT24H` 간격을 사용해 background claim을 비활성화한다.
 - 처리가 lease보다 오래 걸리면 다른 인스턴스가 같은 이벤트를 claim할 수 있다. owner lock, idempotent 처리 및 lease token fencing으로 중복 부작용과 오래된 queue 갱신을 방지한다. lease heartbeat는 제공하지 않는다.
 - 영구 amount/status/currency/provider-id mismatch는 재시도하지 않는다. 재시도 가능한 상관관계 결과만 queue에 넣는다.
 - queue에는 정규화한 최소 필드만 보존하며 원본 웹훅 콘텐츠를 보존하지 않는다.
@@ -46,3 +46,12 @@ last_error, finished_at을 확인할 수 있다. lease가 만료된 미완료 PE
 ## 결과
 
 스케줄러 pool은 기존 세 개 expiry 작업과 독립된 webhook retry 작업을 위해 3개에서 4개로 증가한다. 여러 인스턴스의 조정은 PostgreSQL이 담당하며 JVM 내 스케줄링만으로 분산 lock을 대체하지 않는다. 재시도 경로는 이미 검증된 이벤트만 처리하며 provider API operation을 시작하지 않는다.
+## 운영자 EXHAUSTED 조회·재시도 (#279, D-089)
+
+EXHAUSTED는 별도 opt-in HTTP Basic chain으로만 노출한다. chain은 `atlas.payment.webhook-retry.operator.enabled`로 제어하며 `atlas.payment.webhook-retry.operator.username`과 `atlas.payment.webhook-retry.operator.password`를 사용한다. 활성화 시 username이 필요하고 password는 최소 32자여야 한다. 일반 JWT 계정 역할을 확장하지 않는다.
+
+`GET /api/internal/payment/paypal/webhook-retries/exhausted?page={page}&size={size}`는 0부터 시작하는 page와 기본값 20, 최대 100인 size로 읽기 전용 페이지를 반환한다. `page * size` offset은 최대 10,000이며 음수 page 또는 그보다 큰 offset은 400으로 거절해 대규모 OFFSET scan을 막는다. 조회는 EXHAUSTED 행만 대상으로 하며 이벤트 식별·유형, attempt count 및 생성/완료 시각처럼 운영에 필요한 안전한 필드만 선택한다. payload, 리소스/provider 식별자, 오류 문자열, 결제·환불 상태나 금액은 조회하지 않는다.
+
+`POST /api/internal/payment/paypal/webhook-retries/{eventId}/requeue`는 EXHAUSTED 행만 재대기시킨다. `Idempotency-Key`와 비어 있지 않은 operator reason이 필수이며 요청자 principal, 사유, 시각, 키를 불변 audit 행에 기록한다. 이벤트당 수동 재시도는 최대 3회다. 같은 키와 같은 요청은 큐 행 삭제 뒤에도 기존 성공을 재사용하고, 같은 키의 다른 actor/event/reason 요청은 409로 거절한다. PENDING, 누락, 제한 초과는 거절하며 영구 거부 이벤트는 큐에 넣지 않는다. EXHAUSTED 행 잠금·전이·전역 키 audit·횟수 증가는 한 트랜잭션이며 durable audit 기준으로 제한한다. 큐 scheduling 필드만 초기화하고 PaymentAttempt/payment/refund/provider 상태에는 쓰지 않는다. 응답은 202이며 webhook worker만 재처리한다.
+
+운영자 인증은 이벤트의 재처리나 외부 provider 호출 권한을 부여하지 않는다. operator action은 검증된 큐 이벤트만 대상으로 하며 처리 책임은 기존 worker에 남는다.
