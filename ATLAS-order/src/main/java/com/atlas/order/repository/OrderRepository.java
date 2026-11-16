@@ -58,4 +58,24 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
             """)
     List<PurchaseOrder> findBuyerOrdersBefore(@Param("buyerRef") String buyerRef,
             @Param("createdAt") Instant createdAt, @Param("orderId") UUID orderId, Pageable pageable);
+    @Query(value = """
+            SELECT item.order_item_id
+            FROM purchase_order buyer_order
+            JOIN order_item item ON item.order_id = buyer_order.order_id
+            JOIN order_shipment_item shipment_item
+              ON shipment_item.order_id = item.order_id
+             AND shipment_item.order_item_id = item.order_item_id
+            JOIN order_shipment shipment
+              ON shipment.shipment_id = shipment_item.shipment_id
+             AND shipment.order_id = shipment_item.order_id
+            WHERE buyer_order.buyer_ref = :buyerRef
+              AND item.product_id = :productId
+              AND shipment.status = 'DELIVERED'
+              AND shipment_item.quantity > 0
+            ORDER BY shipment.delivered_at DESC, shipment.shipment_id DESC
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<UUID> findDeliveredOrderItemId(@Param("buyerRef") String buyerRef,
+            @Param("productId") UUID productId);
+
 }
