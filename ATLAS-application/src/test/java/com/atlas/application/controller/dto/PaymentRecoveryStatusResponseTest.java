@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.payment.persistence.state.PaymentState;
 import java.time.Instant;
-import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -61,7 +61,7 @@ class PaymentRecoveryStatusResponseTest {
 
     @Test
     void responseContainsOnlyBuyerSafeFields() {
-        assertEquals(java.util.List.of("orderId", "paymentState", "nextAction"),
+        assertEquals(List.of("orderId", "paymentState", "nextAction"),
                 Stream.of(PaymentRecoveryStatusResponse.class.getRecordComponents())
                         .map(component -> component.getName()).toList());
     }
