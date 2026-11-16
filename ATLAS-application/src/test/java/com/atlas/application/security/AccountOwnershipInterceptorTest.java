@@ -133,4 +133,35 @@ class AccountOwnershipInterceptorTest {
 
         assertTrue(interceptor.preHandle(request, response, new Object()));
     }
+
+    @Test
+    void rejectsSellerRouteWhenSellerIdVariableIsMissing() {
+        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/sellers/{sellerId}/products");
+        request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, Map.of());
+
+        AccountException error = assertThrows(AccountException.class,
+                () -> interceptor.preHandle(request, response, new Object()));
+
+        assertEquals(AccountException.Code.RESOURCE_NOT_OWNED, error.code());
+    }
+
+    @Test
+    void rejectsSellerRouteWhenTemplateVariablesAreNull() {
+        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/sellers/{sellerId}/products");
+
+        AccountException error = assertThrows(AccountException.class,
+                () -> interceptor.preHandle(request, response, new Object()));
+
+        assertEquals(AccountException.Code.RESOURCE_NOT_OWNED, error.code());
+    }
+
+    @Test
+    void validatesOwnershipForSellerRoute() {
+        UUID sellerId = UUID.randomUUID();
+        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/sellers/{sellerId}/products");
+        request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, Map.of("sellerId", sellerId.toString()));
+        when(accounts.ownsSeller(ACCOUNT_ID, sellerId)).thenReturn(true);
+
+        assertTrue(interceptor.preHandle(request, response, new Object()));
+    }
 }
