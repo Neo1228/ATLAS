@@ -1,7 +1,7 @@
 # EXP-026 — 만료 작업 scheduler·다중 context 경합
 
 - 상태: Testcontainers에서 4회 반복 · runtime scheduler 설정 변경 없음
-- 관련 작업: [Issue #247](https://github.com/Neo1228/ATLAS/issues/247), [ADR-0030](../02-decisions/adr/ADR-0030-bounded-application-scheduler.md), [Issue #95](https://github.com/Neo1228/ATLAS/issues/95), [EXP-024](EXP-024-postgres-contention-observation.md)
+- 관련 작업: [Issue #247](https://github.com/Neo1228/ATLAS/issues/247), [ADR-0031](../02-decisions/adr/ADR-0031-bounded-application-scheduler.md), [Issue #95](https://github.com/Neo1228/ATLAS/issues/95), [EXP-024](EXP-024-postgres-contention-observation.md)
 
 ## 질문과 범위
 
@@ -74,3 +74,7 @@
 
 - [PostgreSQL `pg_blocking_pids`](https://www.postgresql.org/docs/current/functions-info.html): blocker backend 관측.
 - [Issue #95](https://github.com/Neo1228/ATLAS/issues/95): 이전 10/100/300-row report-only measurement와 한계.
+
+## Security and ownership follow-up
+
+HMAC signatures must be compared with `MessageDigest.isEqual` to avoid timing-sensitive comparisons. Omission of `/api/sellers/{sellerId}` from a purchase target must fail closed; never infer or accept an implicit seller.
