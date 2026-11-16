@@ -22,7 +22,7 @@ class ProductCategoryMigrationIntegrationTest {
     void cleanSchemaMigratesThroughV18() {
         String schema = createSchema();
         JdbcTemplate jdbc = jdbcForSchema(schema);
-        flyway(schema, null).migrate();
+        flyway(schema, MigrationVersion.fromVersion("18")).migrate();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_category", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT is_nullable FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='product' AND column_name='category_id'", String.class)).isEqualTo("NO");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version='18' AND success", Integer.class)).isEqualTo(1);
@@ -48,8 +48,8 @@ class ProductCategoryMigrationIntegrationTest {
         UUID firstDefault = defaultCategory(jdbc, firstSeller);
         UUID secondDefault = defaultCategory(jdbc, secondSeller);
         UUID emptySellerDefault = defaultCategory(jdbc, emptySeller);
-        assertThat(jdbc.queryForObject("SELECT category_id FROM product WHERE product_id=?", UUID.class, firstProduct)).isEqualTo(firstDefault);
-        assertThat(jdbc.queryForObject("SELECT category_id FROM product WHERE product_id=?", UUID.class, secondProduct)).isEqualTo(secondDefault);
+        assertThat(jdbc.queryForObject("SELECT primary_category_id FROM product WHERE product_id=?", UUID.class, firstProduct)).isEqualTo(firstDefault);
+        assertThat(jdbc.queryForObject("SELECT primary_category_id FROM product WHERE product_id=?", UUID.class, secondProduct)).isEqualTo(secondDefault);
         assertThat(jdbc.queryForObject("SELECT substring(category_id::text, 15, 1) FROM product_category WHERE category_id=?", String.class, firstDefault)).isEqualTo("7");
         assertThat(jdbc.queryForObject("SELECT seller_id FROM product WHERE product_id=?", UUID.class, firstProduct))
                 .isEqualTo(firstSeller);
@@ -63,9 +63,17 @@ class ProductCategoryMigrationIntegrationTest {
                 String.class, emptySellerDefault)).isEqualTo("7");
         UUID arbitrary = UUID.randomUUID();
         jdbc.update("INSERT INTO product_category(category_id,seller_id,code,name) VALUES (?,?,?,?)", arbitrary, firstSeller, "OTHER", "Other");
-        jdbc.update("UPDATE product SET category_id=? WHERE product_id=?", arbitrary, firstProduct);
-        assertThat(jdbc.queryForObject("SELECT category_id FROM product WHERE product_id=?", UUID.class, firstProduct)).isEqualTo(arbitrary);
-        assertThatThrownBy(() -> jdbc.update("UPDATE product SET category_id=? WHERE product_id=?", arbitrary, secondProduct))
+        jdbc.update("INSERT INTO product_category_assignment(seller_id,product_id,category_id) VALUES (?,?,?)",
+                firstSeller, firstProduct, arbitrary);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_category_assignment WHERE product_id=?",
+                Integer.class, firstProduct)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ("
+                + "SELECT category_id FROM product_category_assignment WHERE product_id=? "
+                + "UNION ALL SELECT primary_category_id FROM product WHERE product_id=?) assigned_categories",
+                Integer.class, firstProduct, firstProduct)).isEqualTo(2);
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO product_category_assignment(seller_id,product_id,category_id) VALUES (?,?,?)",
+                secondSeller, secondProduct, arbitrary))
                 .isInstanceOf(RuntimeException.class);
     }
 

@@ -1,0 +1,29 @@
+package com.atlas.application.controller.settlement;
+
+import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
+import com.atlas.application.service.PayPalBalanceReportReconciliationService;
+import java.io.IOException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+@RestController
+@RequestMapping("/api/internal/settlement/paypal/balance-report")
+@ConditionalOnProperty(name = "atlas.settlement.report.operator.enabled", havingValue = "true")
+public class PayPalBalanceReportController {
+    private final PayPalBalanceReportReconciliationService reconciliation;
+
+    public PayPalBalanceReportController(PayPalBalanceReportReconciliationService reconciliation) {
+        this.reconciliation = reconciliation;
+    }
+
+    @PostMapping(path = "/reconciliation", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public PayPalBalanceReportReconciliationResponse reconcile(@RequestPart("report") MultipartFile report)
+            throws IOException {
+        return reconciliation.reconcile(report.getBytes());
+    }
+}

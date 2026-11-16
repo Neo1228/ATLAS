@@ -32,6 +32,11 @@ import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.account.dto.response.AccountTokenResponse;
+import com.atlas.account.dto.response.AccountLoginResponse;
+import com.atlas.account.service.AccountEmailSender;
+import com.atlas.account.service.AccountService;
+import com.atlas.account.dto.response.MfaEnrollmentResponse;
+import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.persistence.state.ReservationStatus;
@@ -78,6 +83,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Base64;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -100,6 +107,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import com.bastiaanjansen.otp.TOTPGenerator;
 
 @Testcontainers
 @AutoConfigureMockMvc(addFilters = false)
@@ -119,6 +127,8 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
+        properties.add("atlas.account.mfa.encryption-key",
+                () -> Base64.getEncoder().encodeToString(new byte[32]));
     }
 
     @Autowired private OrderServiceImpl orderServiceImpl;
@@ -139,7 +149,9 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
     @Autowired private AdjustableClock clock;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private MockMvc mockMvc;
+    @Autowired private AccountService accountService;
 @Autowired private JdbcTemplate jdbc;
+    private static final TestAccountEmailSender TEST_ACCOUNT_EMAIL_SENDER = new TestAccountEmailSender();
 
     @AfterEach
     void clearSecurityContext() {
@@ -156,12 +168,21 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
     }
     private AccountTokenResponse createBuyerAccount(String email) throws Exception {
         String body = "{\"email\":\"" + email + "\",\"password\":\"long-enough-password\"}";
-        String response = mockMvc.perform(post("/api/auth/signup")
+        mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isCreated())
+                .andExpect(status().isAccepted());
+        String verificationToken = TEST_ACCOUNT_EMAIL_SENDER.verificationTokens.remove();
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("token", verificationToken))))
+                .andExpect(status().isNoContent());
+        String loginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readValue(response, AccountTokenResponse.class);
+        return objectMapper.readValue(loginResponse, AccountLoginResponse.class).tokens();
     }
 
     private void authenticateBuyer(AccountTokenResponse account) {
@@ -2362,14 +2383,7 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void sellerCanRegisterProductAndSkuThroughCatalogApi() throws Exception {
-        String accountJson = mockMvc.perform(post("/api/auth/signup")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"email":"seller-api@example.com","password":"long-enough-password"}
-                                """))
-                .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
-        AccountTokenResponse account = objectMapper.readValue(accountJson, AccountTokenResponse.class);
+        AccountTokenResponse account = createBuyerAccount("seller-api@example.com");
         Instant tokenTime = Instant.now();
         Jwt testJwt = Jwt.withTokenValue("test-token")
                 .header("alg", "none")
@@ -2430,6 +2444,58 @@ assertUuidV7(paymentOrderId);
 
         InventoryPoolResponse stock = inventory.find(sellerId, "seller-api-sku");
         assertThat(stock.initialCapacity()).isEqualTo(5);
+    }
+
+    @Test
+    void passwordResetRevokesExistingRefreshSession() throws Exception {
+        AccountTokenResponse account = createBuyerAccount("reset-api@example.com");
+        String resetRequest = objectMapper.writeValueAsString(Map.of("email", "reset-api@example.com"));
+        mockMvc.perform(post("/api/auth/password-reset/request")
+                        .contentType(MediaType.APPLICATION_JSON).content(resetRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true));
+        String resetToken = TEST_ACCOUNT_EMAIL_SENDER.passwordResetTokens.remove();
+
+        mockMvc.perform(post("/api/auth/password-reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "token", resetToken, "newPassword", "another-long-password"))))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", account.refreshToken()))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"reset-api@example.com\",\"password\":\"another-long-password\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void totpEnrollmentRequiresASecondFactorBeforeIssuingAccessTokens() throws Exception {
+        AccountTokenResponse account = createBuyerAccount("mfa-api@example.com");
+        MfaEnrollmentResponse enrollment = accountService.startMfaEnrollment(account.accountId());
+        String enrollmentCode = new TOTPGenerator.Builder(enrollment.secret()).withClock(clock).build().now();
+        MfaRecoveryCodesResponse recovery = accountService.confirmMfaEnrollment(account.accountId(), enrollmentCode);
+        assertThat(recovery.recoveryCodes()).hasSize(10);
+        clock.advance(Duration.ofSeconds(30));
+
+        String loginJson = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"mfa-api@example.com\",\"password\":\"long-enough-password\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        AccountLoginResponse login = objectMapper.readValue(loginJson, AccountLoginResponse.class);
+        assertThat(login.mfaRequired()).isTrue();
+        assertThat(login.tokens()).isNull();
+        String challengeCode = new TOTPGenerator.Builder(enrollment.secret()).withClock(clock).build().now();
+
+        mockMvc.perform(post("/api/auth/mfa/challenge")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeToken", login.challengeToken(), "code", challengeCode))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
     }
     private CampaignResponse openCampaign(int initialStock, int maxActiveCheckouts, Duration ticketTtl) {
         UUID sellerId = sellers.createSeller().sellerId();
@@ -2502,6 +2568,27 @@ assertUuidV7(paymentOrderId);
         @Primary
         AdjustableClock adjustableClock() {
             return new AdjustableClock();
+        }
+
+        @Bean
+        @Primary
+        AccountEmailSender testAccountEmailSender() {
+            return TEST_ACCOUNT_EMAIL_SENDER;
+        }
+    }
+
+    static final class TestAccountEmailSender implements AccountEmailSender {
+        private final ConcurrentLinkedQueue<String> verificationTokens = new ConcurrentLinkedQueue<>();
+        private final ConcurrentLinkedQueue<String> passwordResetTokens = new ConcurrentLinkedQueue<>();
+
+        @Override
+        public void sendVerification(String email, String token) {
+            verificationTokens.add(token);
+        }
+
+        @Override
+        public void sendPasswordReset(String email, String token) {
+            passwordResetTokens.add(token);
         }
     }
 

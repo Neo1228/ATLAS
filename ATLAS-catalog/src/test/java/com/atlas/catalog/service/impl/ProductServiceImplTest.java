@@ -20,6 +20,7 @@ import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
+import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
 import com.atlas.catalog.repository.ProductCategoryRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
@@ -43,11 +44,13 @@ class ProductServiceImplTest {
     private final SellerRepository sellers = mock(SellerRepository.class);
     private final ProductRepository products = mock(ProductRepository.class);
     private final ProductCategoryRepository categories = mock(ProductCategoryRepository.class);
+    private final ProductCategoryAssignmentRepository categoryAssignments =
+            mock(ProductCategoryAssignmentRepository.class);
     private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
     private final InventoryService inventory = mock(InventoryService.class);
     private final Instant now = Instant.parse("2026-01-01T00:00:00Z");
-    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, categories, sellerSkus, inventory,
-            Clock.fixed(now, ZoneOffset.UTC));
+    private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, categories,
+            categoryAssignments, sellerSkus, inventory, Clock.fixed(now, ZoneOffset.UTC));
     private final UUID sellerId = UUID.randomUUID();
     private final UUID productId = UUID.randomUUID();
 
@@ -169,7 +172,7 @@ class ProductServiceImplTest {
     void updatesOwnedSkuPriceAndReturnsUpdatedResponse() {
         Product product = product(sellerId, productId, "Tea");
         SellerSku sku = new SellerSku(sellerId, productId, "TEA-1", 1200, now);
-        when(products.findById(productId)).thenReturn(Optional.of(product));
+        when(products.findByProductIdAndSellerIdForUpdate(productId, sellerId)).thenReturn(Optional.of(product));
         when(sellerSkus.findBySellerIdAndSkuId(sellerId, "TEA-1")).thenReturn(Optional.of(sku));
         when(sellerSkus.save(sku)).thenReturn(sku);
 
@@ -243,6 +246,7 @@ class ProductServiceImplTest {
         when(product.getSellerId()).thenReturn(sellerId);
         when(product.getProductId()).thenReturn(productId);
         when(product.getName()).thenReturn(name);
+        when(product.getPrimaryCategoryId()).thenReturn(UUID.randomUUID());
         when(product.getStatus()).thenReturn(ProductStatus.ACTIVE);
         when(product.getChannelAvailability()).thenReturn(Map.of(
                 ProductSalesChannel.ONLINE_STORE, true, ProductSalesChannel.CAMPAIGN, true));

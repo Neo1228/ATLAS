@@ -188,7 +188,7 @@ class ProductCategoryHierarchyIntegrationTest {
 
     private UUID createProduct(UUID seller, UUID category) {
         var response = products.createProduct(seller, new CreateProductRequest("tree-" + UUID.randomUUID(), ""));
-        products.updateProductCategory(seller, response.productId(), category);
+        products.updateProductCategories(seller, response.productId(), List.of(category));
         return response.productId();
     }
 

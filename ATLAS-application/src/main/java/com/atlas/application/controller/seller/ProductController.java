@@ -71,10 +71,10 @@ public class ProductController {
  return products.updateChannelAvailability(sellerId, productId, request.channel(), request.available());
  }
 
-    @PutMapping("/sellers/{sellerId}/products/{productId}/category")
-    public ProductResponse updateProductCategory(@PathVariable UUID sellerId, @PathVariable UUID productId,
+    @PutMapping("/sellers/{sellerId}/products/{productId}/categories")
+    public ProductResponse updateProductCategories(@PathVariable UUID sellerId, @PathVariable UUID productId,
             @Valid @RequestBody UpdateProductCategoryAssignmentRequest request) {
-        return products.updateProductCategory(sellerId, productId, request.categoryId());
+        return products.updateProductCategories(sellerId, productId, request.categoryIds());
     }
 
     @PostMapping("/sellers/{sellerId}/products/{productId}/skus")

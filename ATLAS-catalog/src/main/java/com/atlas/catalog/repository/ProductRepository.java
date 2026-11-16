@@ -2,15 +2,21 @@ package com.atlas.catalog.repository;
 
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.projection.ProductChannelAvailability;
-import java.util.Optional;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
     boolean existsByProductIdAndSellerId(UUID productId, UUID sellerId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select product from Product product where product.productId = :productId and product.sellerId = :sellerId")
+    Optional<Product> findByProductIdAndSellerIdForUpdate(@Param("productId") UUID productId,
+            @Param("sellerId") UUID sellerId);
     List<Product> findAllByProductIdIn(List<UUID> productIds);
 
 
@@ -75,14 +81,18 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                         get_byte(uuid_send(CAST(:cursorProduct AS uuid)), 8) # 128), 'hex') COLLATE "C"
                         AS product_sort_key
             )
-            SELECT p.product_id, p.seller_id, p.category_id, p.name, p.description, p.status
+            SELECT p.product_id, p.seller_id, p.primary_category_id, p.name, p.description, p.status
             FROM product_listing p CROSS JOIN cursor_key c
             WHERE (CAST(:sellerId AS uuid) IS NULL OR p.seller_id = CAST(:sellerId AS uuid))
                 AND (CAST(:managementScope AS boolean) OR (p.status = 'ACTIVE'
                     AND EXISTS (SELECT 1 FROM product_channel_availability c
                         WHERE c.product_id = p.product_id AND c.sales_channel = 'ONLINE_STORE'
                             AND c.available = TRUE)))
-                AND (CAST(:categoryId AS uuid) IS NULL OR p.category_id IN (SELECT category_id FROM category_tree))
+                AND (CAST(:categoryId AS uuid) IS NULL OR p.primary_category_id IN
+                    (SELECT category_id FROM category_tree) OR EXISTS (
+                        SELECT 1 FROM product_category_assignment assignment
+                        WHERE assignment.seller_id = p.seller_id AND assignment.product_id = p.product_id
+                            AND assignment.category_id IN (SELECT category_id FROM category_tree)))
                 AND (CAST(:keyword AS text) = '' OR position(CAST(:keyword AS text) in lower(p.name)) > 0)
                 AND (CAST(:cursorSeller AS uuid) IS NULL OR p.seller_sort_key > c.seller_sort_key
                     OR (p.seller_sort_key = c.seller_sort_key AND p.product_sort_key > c.product_sort_key))
