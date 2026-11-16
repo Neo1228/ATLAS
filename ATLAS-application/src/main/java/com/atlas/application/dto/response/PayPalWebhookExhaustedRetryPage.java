@@ -10,5 +10,9 @@ public record PayPalWebhookExhaustedRetryPage(
         long totalElements,
         int totalPages) {
 
+    public PayPalWebhookExhaustedRetryPage {
+        content = List.copyOf(content);
+    }
+
     public record Item(String eventId, String eventType, int attemptCount, Instant createdAt, Instant finishedAt) { }
 }
