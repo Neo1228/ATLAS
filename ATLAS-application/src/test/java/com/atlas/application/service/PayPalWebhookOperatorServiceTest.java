@@ -43,7 +43,7 @@ class PayPalWebhookOperatorServiceTest {
     @Test
     void sameKeyReplaySurvivesQueueRowDeletionAndDoesNotTouchQueueOrProvider() {
         doAnswer(invocation -> List.<String[]>of(new String[] {EVENT, ACTOR, REASON, "REQUEUED"}))
-                .when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
+                .when(jdbc).query(anyString(), anyRowMapper(), any(Object[].class));
 
         assertThat(service.requeue(EVENT, KEY, ACTOR, REASON).outcome()).isEqualTo("REQUEUED");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
@@ -52,7 +52,7 @@ class PayPalWebhookOperatorServiceTest {
     @Test
     void idempotencyKeyCannotBeReusedForDifferentActorEventOrReason() {
         doAnswer(invocation -> List.<String[]>of(new String[] {EVENT, ACTOR, REASON, "REQUEUED"}))
-                .when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
+                .when(jdbc).query(anyString(), anyRowMapper(), any(Object[].class));
 
         assertThatThrownBy(() -> service.requeue(EVENT, KEY, "other-operator", REASON))
                 .isInstanceOf(ResponseStatusException.class)
@@ -68,7 +68,7 @@ class PayPalWebhookOperatorServiceTest {
             if (sql.contains("idempotency_key")) return List.of();
             if (sql.contains("FOR UPDATE")) return List.of(EVENT);
             return List.of();
-        }).when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
+        }).when(jdbc).query(anyString(), anyRowMapper(), any(Object[].class));
         when(jdbc.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(3);
 
         assertThatThrownBy(() -> service.requeue(EVENT, KEY, ACTOR, REASON))
@@ -85,7 +85,7 @@ class PayPalWebhookOperatorServiceTest {
             if (sql.contains("idempotency_key")) return List.of();
             if (sql.contains("FOR UPDATE")) return List.of(EVENT);
             return List.of();
-        }).when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
+        }).when(jdbc).query(anyString(), anyRowMapper(), any(Object[].class));
         when(jdbc.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(0);
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
 
@@ -94,4 +94,8 @@ class PayPalWebhookOperatorServiceTest {
         verify(jdbc).update(contains("INSERT INTO paypal_webhook_retry_operator_audit"), any(Object[].class));
         verify(jdbc, times(2)).update(anyString(), any(Object[].class));
     }
+    private static <T> RowMapper<T> anyRowMapper() {
+        return any();
+    }
+
 }
