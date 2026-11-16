@@ -906,7 +906,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             assertThat(claimed).isNull();
             String leaseOwner = jdbc.queryForObject(
                     "SELECT lease_owner FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId);
-            retryRepository.reschedule(eventId, 1, leaseOwner, "Still unmatched");
+            retryRepository.reschedule(eventId, 1, leaseOwner,
+                    PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS, "Still unmatched");
             assertThat(jdbc.queryForObject(
                     "SELECT next_attempt_at > CURRENT_TIMESTAMP FROM paypal_webhook_retry WHERE event_id = ?",
                     Boolean.class, eventId)).isTrue();
@@ -922,7 +923,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                     """, eventId);
             claimed = retryRepository.claimDue().get(0);
             assertThat(claimed.attempt()).isEqualTo(8);
-            retryRepository.reschedule(eventId, claimed.attempt(), claimed.leaseOwner(), "Attempt limit reached");
+            retryRepository.reschedule(eventId, claimed.attempt(), claimed.leaseOwner(),
+                    PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS, "Attempt limit reached");
             assertThat(jdbc.queryForObject(
                     "SELECT state FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId))
                     .isEqualTo("EXHAUSTED");
