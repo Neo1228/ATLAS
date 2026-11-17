@@ -40,7 +40,7 @@ Disposable PostgreSQL 18.6에서 due backlog가 0인 상태를 만들었다: 200
 - Payment recovery job/lease 상태는 PostgreSQL에 저장되고 worker는 durable due rows를 claim합니다. `PaymentRecoveryWorker`는 `atlas.payment.recovery.duration` timer와 outcome counters를 이미 등록합니다.
 - Admission expiry ticket state도 PostgreSQL source-of-truth입니다. `(expires_at, ticket_id)` progress cursor는 process-local이므로 restart 때 초기화되지만 idempotent expiry가 DB due rows를 다시 scan합니다.
 - Recovery state/lease/결제 상태는 local cache에 두지 않습니다. Cache 후보가 있다면 최종 도메인 전이와 분리된 read-only catalogue projection이어야 합니다.
-- Custom recovery duration/outcome metrics는 payment recovery에 있으나 admission/order expiry backlog age, per-tick progress, timeout counters는 아직 없습니다. Existing Prometheus profile은 이미 있으므로 다음 capacity test 전에는 새 monitoring service보다 이 exporter에서 필요한 signals를 추가하는 것이 우선입니다.
+- Payment recovery duration/outcome metrics already exist. This follow-up adds expiry `duration`, `runs{workflow,outcome}`, and `changed{workflow}` metrics using the current Prometheus registry. Backlog age and per-pair failure/query-timeout detail remain unmeasured; do not introduce a new monitoring service for those signals.
 
 ## Local-cache break-even과 no-go
 

@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface OrderService {
+    int expireDueOrders();
     OrderResponse startCheckout(UUID campaignId, UUID ticketId);
     OrderResponse submitPayment(UUID orderId);
     OrderResponse completePaymentApproval(UUID orderId, String providerOrderId);

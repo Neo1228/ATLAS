@@ -29,9 +29,7 @@ import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -52,7 +50,6 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final PlatformTransactionManager transactionManager;
     private final AdmissionExpirySweepPolicy expirySweepPolicy;
     private JdbcQueueRepository.DueTicketCursor expiryCursor;
-    private long nextCandidateQueryFailureLogNanos;
 
     public AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository,
             CampaignService campaigns, AdmissionPolicyRepository policies, SellerSkuService sellerSkus,
@@ -220,18 +217,13 @@ public class AdmissionServiceImpl implements AdmissionService {
         return requireTicket(campaignId, ticketId);
     }
 
-    @Scheduled(fixedDelayString = "${atlas.admission.expiry-poll-interval:PT1S}")
+    @Override
     public synchronized int expireDueTickets() {
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweepPolicy.timeBudget().toNanos();
         List<JdbcQueueRepository.DueTicketCandidate> candidates;
-        try {
-            candidates = queueRepository.findDueTicketCandidates(
-                    now, expiryCursor, expirySweepPolicy.candidateWindowSize(), expirySweepPolicy.timeBudget());
-        } catch (DataAccessException exception) {
-            logCandidateQueryFailure(exception);
-            return 0;
-        }
+        candidates = queueRepository.findDueTicketCandidates(
+                now, expiryCursor, expirySweepPolicy.candidateWindowSize(), expirySweepPolicy.timeBudget());
         if (candidates.isEmpty()) {
             expiryCursor = null;
             return 0;
@@ -288,14 +280,6 @@ public class AdmissionServiceImpl implements AdmissionService {
                 Math.toIntExact(remainingSeconds)));
     }
 
-    private void logCandidateQueryFailure(DataAccessException exception) {
-        long now = System.nanoTime();
-        if (nextCandidateQueryFailureLogNanos == 0 || now - nextCandidateQueryFailureLogNanos >= 0) {
-            nextCandidateQueryFailureLogNanos = now + Duration.ofMinutes(1).toNanos();
-            LOGGER.warn("Unable to query admission expiry candidates; failureType={}",
-                    exception.getClass().getSimpleName());
-        }
-    }
 
     private static final class MissingAdmissionCounterException extends RuntimeException {
         private static final long serialVersionUID = 1L;

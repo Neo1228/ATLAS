@@ -8,6 +8,7 @@ import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import java.util.UUID;
 
 public interface AdmissionService {
+    int expireDueTickets();
 
     void configureSellerSkuPolicy(ConfigureSellerSkuPolicyRequest request);
     QueueTicketResponse join(JoinQueueRequest request);
