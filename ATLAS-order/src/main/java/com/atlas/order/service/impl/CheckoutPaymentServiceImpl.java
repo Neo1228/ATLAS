@@ -17,6 +17,7 @@ import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutPaymentService;
+import com.atlas.order.service.ExpirySweepPolicy;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.exception.PaymentException;
@@ -27,11 +28,14 @@ import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Limit;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -49,11 +53,14 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private final SellerCouponService sellerCoupons;
     private final TransactionTemplate transactions;
     private final Clock clock;
+    private final ExpirySweepPolicy expirySweep;
 
     public CheckoutPaymentServiceImpl(PlatformTransactionManager transactionManager,
             BuyerCheckoutRepository checkouts, OrderRepository orders, OrderItemRepository items,
             InventoryService inventory, OrderFulfillmentService fulfillment, PaymentService payments,
-            SettlementService settlement, SellerCouponService sellerCoupons, Clock clock) {
+            SettlementService settlement, SellerCouponService sellerCoupons, Clock clock,
+            @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
+            @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget) {
         this.transactions = new TransactionTemplate(transactionManager);
         this.checkouts = Objects.requireNonNull(checkouts);
         this.orders = Objects.requireNonNull(orders);
@@ -64,6 +71,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         this.settlement = Objects.requireNonNull(settlement);
         this.sellerCoupons = Objects.requireNonNull(sellerCoupons);
         this.clock = Objects.requireNonNull(clock);
+        this.expirySweep = new ExpirySweepPolicy(expirySweepBatchSize, expirySweepTimeBudget);
     }
 
     @Override
@@ -330,18 +338,23 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
 
     @Scheduled(fixedDelayString = "${atlas.orders.expiry-poll-interval:PT1S}")
     public int expireDueCheckouts() {
-        List<UUID> due = orders.findExpiredCheckoutIds(OrderState.RESERVED, clock.instant());
+        Instant now = clock.instant();
+        long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();
+        List<UUID> due = orders.findExpiredCheckoutIds(
+                OrderState.RESERVED, now, Limit.of(expirySweep.batchSize()));
         int expired = 0;
         for (UUID checkoutId : due) {
+            if (System.nanoTime() >= deadline) break;
             Integer changed = transactions.execute(status -> {
                 BuyerCheckout checkout = checkouts.findWithLockByCheckoutId(checkoutId)
                         .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found"));
                 if (checkout.state() != BuyerCheckoutState.RESERVED) {
                     return 0;
                 }
+                Instant sweepNow = clock.instant();
                 List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
                 if (children.isEmpty() || children.stream().anyMatch(order -> order.state() != OrderState.RESERVED
-                        || order.checkoutExpiresAt() == null || clock.instant().isBefore(order.checkoutExpiresAt()))) {
+                        || order.checkoutExpiresAt() == null || sweepNow.isBefore(order.checkoutExpiresAt()))) {
                     return 0;
                 }
                 for (PurchaseOrder order : children) {

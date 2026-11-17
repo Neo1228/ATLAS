@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -28,11 +29,13 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
 
     @Query("select po.orderId from PurchaseOrder po where po.checkoutId is null and po.state = :state "
             + "and po.checkoutExpiresAt <= :now order by po.checkoutExpiresAt, po.orderId")
-    List<UUID> findExpiredOrderIds(@Param("state") OrderState state, @Param("now") Instant now);
+    List<UUID> findExpiredOrderIds(@Param("state") OrderState state, @Param("now") Instant now,
+            Limit limit);
 
     @Query("select distinct po.checkoutId from PurchaseOrder po where po.checkoutId is not null "
             + "and po.state = :state and po.checkoutExpiresAt <= :now order by po.checkoutId")
-    List<UUID> findExpiredCheckoutIds(@Param("state") OrderState state, @Param("now") Instant now);
+    List<UUID> findExpiredCheckoutIds(@Param("state") OrderState state, @Param("now") Instant now,
+            Limit limit);
 
 
     default boolean hasOtherUnresolvedPayment(PurchaseOrder order) {
@@ -43,8 +46,8 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
     boolean existsByCampaignIdAndBuyerRefAndOrderIdNotAndStateIn(UUID campaignId, String buyerRef,
                                                                  UUID orderId, List<OrderState> states);
 
-    default List<UUID> findReservedOrdersExpiredBy(Instant now) {
-        return findExpiredOrderIds(OrderState.RESERVED, now);
+    default List<UUID> findReservedOrdersExpiredBy(Instant now, Limit limit) {
+        return findExpiredOrderIds(OrderState.RESERVED, now, limit);
     }
     List<PurchaseOrder> findAllByCheckoutIdOrderBySellerIdAsc(UUID checkoutId);
     List<PurchaseOrder> findByBuyerRefOrderByCreatedAtDescOrderIdDesc(String buyerRef, Pageable pageable);

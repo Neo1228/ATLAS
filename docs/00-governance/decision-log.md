@@ -99,7 +99,8 @@
 | D-093 | ✓ #287 배송 완료 구매자 product review 및 PostgreSQL 통합 검증 통과 | 리뷰 작성은 JWT buyerRef 소유권과 OrderService의 delivered shipment item 증거를 확인한다. buyer/product당 1회, rating 1–5·본문 2,000자 제한, source orderItem ID 감사 보존, payment/order/inventory/ledger 비변경. | [#287](https://github.com/Neo1228/ATLAS/issues/287), [ADR-0035](../02-decisions/adr/ADR-0035-verified-buyer-product-reviews.md) |
 | D-094 | ✓ #289 catalog 가격 범위 filter 구현·PostgreSQL 통합 검증 통과 | Public product listing은 요청 단위 asOf로 SKU effectivePrice를 계산하고 inclusive min/max를 pagination 이전에 적용한다. v5 cursor는 seller/category/keyword/price bounds를 결속하며 이전 cursor는 no-price 호출에서만 이어받는다. Campaign price와 inventory stock은 별도 경계로 둔다. | [#289](https://github.com/Neo1228/ATLAS/issues/289), [ADR-0036](../02-decisions/adr/ADR-0036-catalog-product-price-range-filter.md) |
 | D-095 | ✓ #291 family-bound JWT·기기별 session 관리·PostgreSQL 통합 검증 통과 | sid claim은 refresh family에 결속되고 protected request마다 account/family active·expiry·revoked 상태를 DB 검증한다. Logout·targeted revoke·password reset·refresh replay는 family 단위로 즉시 차단한다. Session list는 bounded page/index 사용; 2,501 family/account local Testcontainers 200 lookup p50 0.333ms/p95 0.476ms. | [#291](https://github.com/Neo1228/ATLAS/issues/291), [ADR-0037](../02-decisions/adr/ADR-0037-refresh-family-bound-access-token-sessions.md) |
-| D-096 | ◐ #293 PostgreSQL lease 기반 payment/refund 복구 workflow 진행 | PaymentAttempt·PaymentRefundOperation의 미확정 provider operation을 같은 DB transaction에서 durable job으로 기록한다. `SKIP LOCKED` lease·동일 request ID·bounded backoff로 다중 인스턴스 at-least-once 복구를 수행하며 buyer approval 대기와 `NEEDS_REVIEW`를 분리한다. | [#293](https://github.com/Neo1228/ATLAS/issues/293), [ADR-0038](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md) |
+| D-096 | ✓ #293 PostgreSQL lease 기반 payment/refund 복구 workflow | PaymentAttempt·PaymentRefundOperation의 미확정 provider operation을 같은 DB transaction에서 durable job으로 기록한다. `SKIP LOCKED` lease·동일 request ID·bounded backoff로 다중 인스턴스 at-least-once 복구를 수행하며 buyer approval 대기와 `NEEDS_REVIEW`를 분리한다. | [#293](https://github.com/Neo1228/ATLAS/issues/293), [ADR-0038](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md) |
+| D-097 | ◐ #295 만료 sweep batch·시간 상한 진행 | 만료 주문·checkout 후보 조회에 `Limit` 상한을 두고, tick을 batch 크기(기본 100)와 시간 예산(기본 2초)으로 제한한다. 후보별 개별 transaction·잠금 순서·상태 전이는 유지한다. | [#295](https://github.com/Neo1228/ATLAS/issues/295), [ADR-0039](../02-decisions/adr/ADR-0039-bounded-expiry-sweep.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -111,6 +112,7 @@
 <a id="d-094"></a>
 <a id="d-095"></a>
 <a id="d-096"></a>
+<a id="d-097"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -153,3 +155,4 @@
 | [ADR-0036 — Catalog 상품 목록의 SKU 유효 가격 범위 필터](../02-decisions/adr/ADR-0036-catalog-product-price-range-filter.md) | #289: SKU effective price filter, inclusive bounds, pagination/cursor binding | [D-094](#d-094) |
 | [ADR-0037 — Refresh family 기반 access token 폐기와 session 관리](../02-decisions/adr/ADR-0037-refresh-family-bound-access-token-sessions.md) | #291: 즉시 family revoke, 기기별 session inventory와 계정 범위 revoke | [D-095](#d-095) |
 | [ADR-0038 — 결제·환불 PostgreSQL 복구 workflow](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md) | #293: 미확정 payment/refund의 durable claim·lease·backoff 및 감사 기반 operator requeue | [D-096](#d-096) |
+| [ADR-0039 — 만료 sweep batch·시간 상한](../02-decisions/adr/ADR-0039-bounded-expiry-sweep.md) | #295: 만료 후보 조회 상한과 tick 작업량 제한 | [D-097](#d-097) |

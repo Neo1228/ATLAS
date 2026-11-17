@@ -270,7 +270,7 @@ class PayPalWebhookServiceTest {
                 orderItems, mock(JdbcBuyerLockRepository.class),
                 mock(OrderFulfillmentService.class), mock(AdmissionService.class), inventory,
                 payments, mock(SellerSkuService.class), mock(SettlementService.class), Clock.systemUTC(),
-                Duration.ofMinutes(10));
+                Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
         PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
                 mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
                 mock(PayPalWebhookRetryRepository.class));
