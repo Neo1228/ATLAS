@@ -7,8 +7,21 @@ compose() {
 
 mode="${LOAD_PROBE_MODE:-readiness}"
 case "$mode" in
-    readiness) scenarios=('278 1') ;;
-    matrix) scenarios=('278 1' '1112 1' '4448 4') ;;
+    readiness)
+        scenarios=('278 1')
+        duration='120s'
+        session_rate_time_unit='100s'
+        ;;
+    smoke)
+        scenarios=('1 1')
+        duration='5s'
+        session_rate_time_unit='1s'
+        ;;
+    matrix)
+        scenarios=('278 1' '1112 1' '4448 4')
+        duration='120s'
+        session_rate_time_unit='100s'
+        ;;
     *) echo "Unsupported LOAD_PROBE_MODE=${mode}" >&2; exit 2 ;;
 esac
 
@@ -25,7 +38,7 @@ for spec in "${scenarios[@]}"; do
     readiness_file="${results_dir}/${run_id}-startup.txt"
     response_file="${results_dir}/${run_id}-readiness.body"
     curl_error_file="${results_dir}/${run_id}-readiness.curl-error"
-    echo "Starting fresh 4-CPU probe mode=${mode} run=${run_id} sessions_per_second=$(awk "BEGIN { printf \"%.2f\", $rate / 100 }") fixed_vus=${fixed_vus}"
+    echo "Starting fresh 4-CPU probe mode=${mode} run=${run_id} rate=${rate}/${session_rate_time_unit} fixed_vus=${fixed_vus} duration=${duration}"
 
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
     if ! compose up -d application postgres-exporter prometheus; then
@@ -62,15 +75,18 @@ for spec in "${scenarios[@]}"; do
         break
     fi
 
+    prometheus_ready=1
     if ! curl --retry 30 --retry-delay 2 --retry-connrefused --retry-all-errors \
             --fail --silent --show-error --output /dev/null "${prometheus_url}/-/ready"; then
         echo "Prometheus did not become ready for ${run_id}; k6 result will still be collected" >&2
+        prometheus_ready=0
         failures=1
     fi
 
     if [[ "$mode" == "readiness" ]]; then
         {
-            printf 'mode=readiness\nrun_id=%s\nreadiness_status=%s\n' "$run_id" "$readiness_status"
+            printf 'mode=%s\nrun_id=%s\nreadiness_status=%s\nprometheus_ready=%s\n' \
+                "$mode" "$run_id" "$readiness_status" "$prometheus_ready"
             compose ps --all 2>&1 || true
             compose logs --tail=80 --no-color application 2>&1 || true
         } > "$readiness_file"
@@ -83,9 +99,9 @@ for spec in "${scenarios[@]}"; do
             -e PROFILE=one-seller \
             -e RUN_ID="${run_id}" \
             -e UNIT_PRICE_WON=100 \
-            -e DURATION=120s \
+            -e DURATION="${duration}" \
             -e SESSION_RATE_NUMERATOR="${rate}" \
-            -e SESSION_RATE_TIME_UNIT=100s \
+            -e SESSION_RATE_TIME_UNIT="${session_rate_time_unit}" \
             -e FIXED_VUS="${fixed_vus}" \
             -e SUMMARY_FILE="${summary}" \
             /scripts/buyer-checkout.js; then

@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Start with readiness diagnostics; choose matrix only after readiness passes
+        description: Run readiness diagnostics, a 5s email-flow smoke, or the full load matrix
         type: choice
         required: true
         default: readiness
         options:
           - readiness
+          - smoke
           - matrix
 
 permissions:
