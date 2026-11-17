@@ -22,6 +22,8 @@ import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
+import com.atlas.payment.repository.PaymentRecoveryRepository;
+import java.time.Duration;
 import java.time.Instant;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -44,28 +46,42 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentAttemptRepository repository;
     private final PaymentRefundRepository refunds;
     private final PaymentWebhookEventRepository webhookEvents;
+    private final PaymentRecoveryRepository recovery;
     private final TransactionTemplate transactions;
     private final PaymentProvider psp;
     private final FxConversionService fxConversionService;
     private final String publicBaseUrl;
+    private final Duration recoveryInitialDelay;
     private final Supplier<UUID> ids;
 
     @Autowired
     public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
-            PaymentWebhookEventRepository webhookEvents, PlatformTransactionManager transactionManager,
-            PaymentProvider psp, FxConversionService fxConversionService,
-            @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}") String publicBaseUrl) {
-        this(repository, refunds, webhookEvents, transactionManager, psp, fxConversionService,
-                publicBaseUrl, UUID::randomUUID);
+            PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
+            PlatformTransactionManager transactionManager, PaymentProvider psp,
+            FxConversionService fxConversionService,
+            @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}") String publicBaseUrl,
+            @Value("${atlas.payment.recovery.initial-delay:PT30S}") Duration recoveryInitialDelay) {
+        this(repository, refunds, webhookEvents, recovery, transactionManager, psp, fxConversionService,
+                publicBaseUrl, recoveryInitialDelay, UUID::randomUUID);
+    }
+
+    public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
+            PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
+            PlatformTransactionManager transactionManager, PaymentProvider psp,
+            FxConversionService fxConversionService, String publicBaseUrl) {
+        this(repository, refunds, webhookEvents, recovery, transactionManager, psp, fxConversionService,
+                publicBaseUrl, Duration.ofSeconds(30), UUID::randomUUID);
     }
 
     PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
-            PaymentWebhookEventRepository webhookEvents, PlatformTransactionManager transactionManager,
-            PaymentProvider psp, FxConversionService fxConversionService,
-            String publicBaseUrl, Supplier<UUID> ids) {
+            PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
+            PlatformTransactionManager transactionManager, PaymentProvider psp,
+            FxConversionService fxConversionService, String publicBaseUrl, Duration recoveryInitialDelay,
+            Supplier<UUID> ids) {
         this.repository = Objects.requireNonNull(repository);
         this.refunds = Objects.requireNonNull(refunds);
         this.webhookEvents = Objects.requireNonNull(webhookEvents);
+        this.recovery = Objects.requireNonNull(recovery);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.psp = Objects.requireNonNull(psp);
         this.fxConversionService = Objects.requireNonNull(fxConversionService);
@@ -73,6 +89,10 @@ public class PaymentServiceImpl implements PaymentService {
         if (baseUrl.isBlank()) throw new IllegalStateException("ATLAS_PUBLIC_BASE_URL is required");
         this.publicBaseUrl = baseUrl.replaceAll("/+$", "");
         this.ids = Objects.requireNonNull(ids);
+        this.recoveryInitialDelay = Objects.requireNonNull(recoveryInitialDelay);
+        if (this.recoveryInitialDelay.isNegative()) {
+            throw new IllegalArgumentException("recoveryInitialDelay must not be negative");
+        }
     }
     @Override
     public PaymentResponse submitInitial(UUID orderId, BigDecimal amount) {
@@ -81,7 +101,11 @@ public class PaymentServiceImpl implements PaymentService {
         return withOwnerLock(orderId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> {
                 repository.insertInitial(orderId, amountWon, ids.get());
-                return requireOrder(orderId);
+                PaymentAttempt initial = requireOrder(orderId);
+                if (!terminal(initial.getState())) {
+                    recovery.enqueueAttempt(initial.getAttemptId(), recoveryInitialDelay);
+                }
+                return initial;
             });
             if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
             if (attempt.getTotalWon() == null || attempt.getTotalWon() != amountWon) {
@@ -98,7 +122,11 @@ public class PaymentServiceImpl implements PaymentService {
         return withOwnerLock(checkoutId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> {
                 repository.insertCheckoutInitial(checkoutId, amountWon, ids.get());
-                return requireCheckout(checkoutId);
+                PaymentAttempt initial = requireCheckout(checkoutId);
+                if (!terminal(initial.getState())) {
+                    recovery.enqueueAttempt(initial.getAttemptId(), recoveryInitialDelay);
+                }
+                return initial;
             });
             if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
             if (attempt.getTotalWon() == null || attempt.getTotalWon() != amountWon) {
@@ -139,6 +167,7 @@ public class PaymentServiceImpl implements PaymentService {
                 }
                 PaymentRequest request = providerRequest(current, PaymentPhase.AUTHORIZATION);
                 repository.save(current);
+                recovery.activateAttemptFromBuyer(current.getAttemptId(), recoveryInitialDelay);
                 return new PhaseStart(current, request, PaymentPhase.AUTHORIZATION,
                         phaseRequestId(current, PaymentPhase.AUTHORIZATION));
             });
@@ -334,8 +363,11 @@ public class PaymentServiceImpl implements PaymentService {
                         throw invalidRequest("Refund amount is below the PayPal minimum");
                     }
                 }
-                return refunds.reserve(ids.get(), attempt.getAttemptId(), attempt.getProviderCaptureId(),
-                        idempotencyKey, amountWon, providerRefundAmount, providerCurrency, ids.get(), now);
+                PaymentRefundOperation created = refunds.reserve(ids.get(), attempt.getAttemptId(),
+                        attempt.getProviderCaptureId(), idempotencyKey, amountWon,
+                        providerRefundAmount, providerCurrency, ids.get(), now);
+                recovery.enqueueRefund(created.refundOperationId(), recoveryInitialDelay);
+                return created;
             }));
             if (operation.state() == PaymentRefundState.COMPLETED || operation.state() == PaymentRefundState.FAILED) {
                 return refundResponse(operation, operation.state(), operation.providerRefundId(), operation.updatedAt());
@@ -367,6 +399,9 @@ public class PaymentServiceImpl implements PaymentService {
             };
             Instant updatedAt = Instant.now();
             refunds.updateResult(operation.refundOperationId(), state, result.refundId(), result.providerStatus(), updatedAt);
+            if (state == PaymentRefundState.COMPLETED || state == PaymentRefundState.FAILED) {
+                recovery.markRefundCompleted(operation.refundOperationId());
+            }
             return refundResponse(operation, state, result.refundId(), updatedAt);
         });
     }
@@ -446,6 +481,7 @@ public class PaymentServiceImpl implements PaymentService {
                 current.setPaymentPhase(PaymentPhase.CAPTURE);
                 current.setAuthorizationActive(false);
                 repository.save(current);
+                recovery.markAttemptCompleted(current.getAttemptId());
                 webhookEvents.markProcessed(event.eventId(), now);
                 return new PaymentWebhookResult(false, true, null, null, current.getAttemptId(), true);
             }
@@ -480,6 +516,9 @@ public class PaymentServiceImpl implements PaymentService {
                 }
                 refunds.updateResult(current.refundOperationId(), refundState, event.resourceId(),
                         event.resourceStatus(), now);
+                if (refundState == PaymentRefundState.COMPLETED || refundState == PaymentRefundState.FAILED) {
+                    recovery.markRefundCompleted(current.refundOperationId());
+                }
                 webhookEvents.markProcessed(event.eventId(), now);
                 return new PaymentWebhookResult(false, true, current.refundOperationId(),
                         refundState, null, false);
@@ -582,6 +621,7 @@ public class PaymentServiceImpl implements PaymentService {
             PaymentRequest request = providerRequest(current, phase);
             String requestId = phaseRequestId(current, phase);
             repository.save(current);
+                recovery.resumeAttempt(current.getAttemptId(), recoveryInitialDelay);
             return new PhaseStart(current, request, phase, requestId);
         });
     }
@@ -616,6 +656,9 @@ public class PaymentServiceImpl implements PaymentService {
                 case VOID -> voidResult(current, outcome);
             }
             repository.save(current);
+            if (terminal(current.getState())) {
+                recovery.markAttemptCompleted(current.getAttemptId());
+            }
             return current;
         });
     }

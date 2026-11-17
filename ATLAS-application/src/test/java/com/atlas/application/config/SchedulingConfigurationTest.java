@@ -37,4 +37,15 @@ class SchedulingConfigurationTest {
             scheduler.shutdown();
         }
     }
+
+    @Test
+    void paymentRecoverySchedulerHasItsOwnBoundedThread() {
+        ThreadPoolTaskScheduler scheduler = new SchedulingConfiguration().paymentRecoveryTaskScheduler();
+        try {
+            scheduler.initialize();
+            assertEquals(1, scheduler.getScheduledThreadPoolExecutor().getCorePoolSize());
+        } finally {
+            scheduler.shutdown();
+        }
+    }
 }

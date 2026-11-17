@@ -14,6 +14,7 @@ import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
+import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.service.FxConversionService;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,7 +48,9 @@ class PaymentServiceImplWebhookLockTest {
             return new SimpleTransactionStatus();
         });
         PaymentServiceImpl payments = new PaymentServiceImpl(attempts, mock(PaymentRefundRepository.class),
-                mock(PaymentWebhookEventRepository.class), transactionManager, mock(PaymentProvider.class),
+                mock(PaymentWebhookEventRepository.class), mock(PaymentRecoveryRepository.class),
+                transactionManager,
+                mock(PaymentProvider.class),
                 mock(FxConversionService.class), "https://example.test");
         PaymentWebhookEvent event = new PaymentWebhookEvent("event-1", "PAYMENT.CAPTURE.COMPLETED",
                 "provider-capture", "COMPLETED", "provider-order", null, null, null);
@@ -102,7 +105,9 @@ class PaymentServiceImplWebhookLockTest {
             return new SimpleTransactionStatus();
         });
         PaymentServiceImpl payments = new PaymentServiceImpl(attempts, mock(PaymentRefundRepository.class),
-                mock(PaymentWebhookEventRepository.class), transactionManager, mock(PaymentProvider.class),
+                mock(PaymentWebhookEventRepository.class), mock(PaymentRecoveryRepository.class),
+                transactionManager,
+                mock(PaymentProvider.class),
                 mock(FxConversionService.class), "https://example.test");
         PaymentWebhookEvent event = new PaymentWebhookEvent("event-1", "PAYMENT.CAPTURE.COMPLETED",
                 "provider-capture", "COMPLETED", null, null, null, null);
@@ -143,6 +148,7 @@ class PaymentServiceImplWebhookLockTest {
     void ownerLockCallbackReturnsResultForUnmappedAndNonCaptureEvents() {
         PaymentServiceImpl payments = new PaymentServiceImpl(mock(PaymentAttemptRepository.class),
                 mock(PaymentRefundRepository.class), mock(PaymentWebhookEventRepository.class),
+                mock(PaymentRecoveryRepository.class),
                 mock(PlatformTransactionManager.class), mock(PaymentProvider.class), mock(FxConversionService.class),
                 "https://example.test");
         PaymentWebhookEvent unmatchedCapture = new PaymentWebhookEvent("event-unmatched",
