@@ -1,0 +1,51 @@
+name: Application capacity probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: application-capacity-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  capacity:
+    name: k6 + PostgreSQL + Prometheus (4-vCPU runner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - name: Verify runner capacity
+        run: docker info
+      - name: Create ephemeral load-test credentials
+        shell: bash
+        run: |
+          echo "ATLAS_JWT_SIGNING_SECRET=$(openssl rand -base64 48 | tr -d '\n')" >> "$GITHUB_ENV"
+          echo "K6_TEST_ACCOUNT_PASSWORD=LoadTest-$(openssl rand -hex 12)" >> "$GITHUB_ENV"
+      - name: Build application JAR and Compose image
+        run: |
+          ./gradlew --no-daemon :application-module:bootJar
+          docker compose --profile observability --profile loadtest build application
+      - name: Run sequential 2.78 / 11.12 / 44.48 sessions-per-second matrix
+        run: bash load-tests/run-exp033-capacity-matrix.sh
+      - name: Upload k6 summaries and Prometheus measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp033-application-capacity-probe
+          path: ATLAS-application/build/k6-results
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Tear down ephemeral Compose stack and volumes
+        if: always()
+        run: docker compose --profile observability --profile loadtest down --volumes --remove-orphans

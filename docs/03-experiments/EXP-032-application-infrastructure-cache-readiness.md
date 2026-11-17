@@ -56,7 +56,7 @@ Disposable PostgreSQL 18.6에서 due backlog가 0인 상태를 만들었다: 200
 
 ## 다음 도입 gate (새 infra 없이 먼저 측정)
 
-1. Existing `observability` profile + existing k6 script (`scripts/buyer-checkout.js`)로 isolated 4-vCPU environment에서 2.78, 5.56, 11.12 synthetic sessions/s, 각 120s steady-state를 수행. Laptop에서 stress test를 반복하지 않는다.
+1. Manual `application-load-probe.yml` invokes existing `buyer-checkout.js` on one isolated 4-vCPU runner with a fresh DB per 120s run: 2.78 / 11.12 / 44.48 synthetic sessions/s (1× / 4× / 16× EXP-016 baseline), fixed VUs 1 / 1 / 4 from existing 61.2ms p95 calibration plus headroom. Capture `dropped_iterations`; no local laptop stress test.
 2. 각 run의 HTTP route/session p50/p95/p99, errors/dropped, Hikari active/idle/pending/max/timeouts, PostgreSQL CPU/active sessions를 기록한다. Cache candidate endpoint(review list/wishlist save)는 별도 workload로 포함해야 checkout-only 결과를 일반화하지 않는다.
 3. Pool 변경 gate: sustained `hikaricp.connections.pending > 0` 또는 acquire timeout과 동시에 DB CPU/`max_connections` 여유가 확인될 때만 Little's Law `required connections ≈ DB arrival rate × connection hold time`으로 sizing한다. Scheduler 최대 5 concurrent workers를 계산에 별도 포함하되 5를 고정 예약값으로 간주하지 않는다.
 4. Local cache gate: 실제 endpoint QPS와 hot-key hit ratio, DB RTT, stale-read 허용 시간을 측정하고 same workload에서 cache on/off A/B를 한다. 채택은 p95/connection pressure 또는 DB CPU의 재현 가능한 개선과 invalidation semantics가 함께 확인될 때만 한다.
