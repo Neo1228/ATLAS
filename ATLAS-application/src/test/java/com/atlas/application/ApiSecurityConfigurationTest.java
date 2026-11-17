@@ -58,6 +58,12 @@ class ApiSecurityConfigurationTest {
     }
 
     @Test
+    void prometheusMetricsDoesNotRequireApplicationJwt() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void accountVerificationRecoveryAndMfaChallengeRoutesAllowAnonymousRequests() throws Exception {
         mockMvc.perform(post("/api/auth/verify-email"))
                 .andExpect(status().isNotFound());

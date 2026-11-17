@@ -14,4 +14,9 @@ public class SecurityProbeController {
     public String publicCatalogRoute() {
         return "public";
     }
+
+    @GetMapping("/actuator/prometheus")
+    public String prometheusRoute() {
+        return "metrics";
+    }
 }
