@@ -49,7 +49,6 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -365,7 +364,7 @@ public final class OrderServiceImpl implements OrderService {
         return transactions.execute(status -> requireOrder(orderId));
     }
 
-    @Scheduled(fixedDelayString = "${atlas.orders.expiry-poll-interval:PT1S}")
+    @Override
     public int expireDueOrders() {
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();

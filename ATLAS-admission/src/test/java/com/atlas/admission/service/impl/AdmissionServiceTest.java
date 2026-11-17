@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -302,6 +303,17 @@ class AdmissionServiceTest {
 
         verify(tickets).releaseSlot(campaignId, ticketId, TicketStatus.CHECKOUT_FAILED);
         verify(queueRepository).activateWaitingTicket(eq(waitingId), any(Instant.class));
+    }
+
+    @Test
+    void propagatesCandidateQueryFailureToSchedulerMetrics() {
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("query failed");
+        when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
+                .thenThrow(failure);
+
+        assertThrows(DataAccessResourceFailureException.class, () -> admission.expireDueTickets());
+
+        verify(queueRepository, never()).tryLockCounter(sellerId, skuId);
     }
 
     @Test

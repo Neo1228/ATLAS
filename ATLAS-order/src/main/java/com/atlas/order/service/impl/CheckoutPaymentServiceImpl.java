@@ -38,7 +38,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Limit;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -338,7 +337,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         return toResponse(updated);
     }
 
-    @Scheduled(fixedDelayString = "${atlas.orders.expiry-poll-interval:PT1S}")
+    @Override
     public int expireDueCheckouts() {
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();
