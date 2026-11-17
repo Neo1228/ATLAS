@@ -44,8 +44,30 @@ EXP-028의 100k product synthetic workload, 단일 PostgreSQL 18.6 session, warm
 - Query still filters keyword candidates by substring and may visit more ordered index entries for selective terms; this is not a full-text index.
 - Measurements are SQL-only, synthetic, cache-warm, single-session; no HTTP latency, concurrent workload, production skew, or write throughput was measured. Results must not be read as production capacity/SLO.
 
+## 후속 수정: seller-scoped 경로 (#307)
+
+V40 적용 직후 seller-scoped listing이 같은 query를 공유한다는 점이 문제가 되었습니다. seller scope에서는 `seller_sort_key`가 상수인데도 `ORDER BY p.seller_sort_key, p.product_sort_key`가 그대로 남아, leading key가 `seller_sort_key`인 V40 index를 `seller_id = ?` equality와 결합할 수 없었습니다.
+
+로컬 합성 측정(100 seller · 100k Product · warm cache · first page):
+
+| seller-scoped first page | plan | time |
+| --- | --- | ---: |
+| V40 이전 | `product_seller_idx` + Sort | 2.469 ms |
+| V40 적용 후 | `product_listing_sort_idx` ordered scan | 21.008 ms |
+| 조건부 `ORDER BY` 적용 | `product_seller_idx` + Sort | 1.929 ms |
+
+수정은 seller scope에서 상수인 seller key를 `ORDER BY`에서 제거하는 것입니다.
+
+```sql
+ORDER BY CASE WHEN CAST(:sellerId AS uuid) IS NOT NULL THEN NULL ELSE p.seller_sort_key END,
+         p.product_sort_key
+```
+
+seller key가 같은 값이므로 정렬 결과는 완전히 동일하고(row-by-row 비교 mismatch 0), global 경로는 계속 V40 index를 사용합니다. 이 수정으로 V40의 이점은 global/cross-seller listing에 한정되며, seller 화면은 기존 access path를 유지합니다.
+
 ## 검증
 
 - V40 migration integration test: 100k products + online availability, `EXPLAIN` first and cursor pages; both use `product_listing_sort_idx` and avoid `Sort`/`Seq Scan on product`.
+- seller-scope plan 회귀 테스트: seller 경로가 `product_listing_sort_idx`/`Seq Scan`을 쓰지 않고, 조건부 `ORDER BY`가 기존 정렬과 동일함을 검증.
 - Existing `CatalogIntegrationTest` and catalog cursor/filter tests verify the returned page order, cursor continuation, price bounds, and channel visibility are unchanged.
 - Reproduction SQL: [EXP-028](../../03-experiments/EXP-028-catalog-global-listing-sort-index.md).

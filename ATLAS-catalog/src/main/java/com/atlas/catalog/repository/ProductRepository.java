@@ -122,7 +122,8 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                 ))
                 AND (CAST(:cursorSeller AS uuid) IS NULL OR p.seller_sort_key > c.seller_sort_key
                     OR (p.seller_sort_key = c.seller_sort_key AND p.product_sort_key > c.product_sort_key))
-            ORDER BY p.seller_sort_key, p.product_sort_key
+            ORDER BY CASE WHEN CAST(:sellerId AS uuid) IS NOT NULL THEN NULL ELSE p.seller_sort_key END,
+                     p.product_sort_key
             LIMIT :limit
             """, nativeQuery = true)
     List<Product> findListingPageByScope(@Param("sellerId") UUID sellerId, @Param("categoryId") UUID categoryId,
