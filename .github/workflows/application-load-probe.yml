@@ -2,6 +2,15 @@ name: Application capacity probe
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Start with readiness diagnostics; choose matrix only after readiness passes
+        type: choice
+        required: true
+        default: readiness
+        options:
+          - readiness
+          - matrix
 
 permissions:
   contents: read
@@ -36,9 +45,11 @@ jobs:
         run: |
           ./gradlew --no-daemon :application-module:bootJar
           docker compose --profile observability --profile loadtest build application
-      - name: Run sequential 2.78 / 11.12 / 44.48 sessions-per-second matrix
+      - name: Run remote capacity probe
+        env:
+          LOAD_PROBE_MODE: ${{ inputs.mode }}
         run: bash load-tests/run-exp033-capacity-matrix.sh
-      - name: Upload k6 summaries and Prometheus measurements
+      - name: Upload k6 summaries and startup diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
