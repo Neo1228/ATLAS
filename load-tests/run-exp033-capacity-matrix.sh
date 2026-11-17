@@ -5,36 +5,76 @@ compose() {
     docker compose --profile observability --profile loadtest "$@"
 }
 
+mode="${LOAD_PROBE_MODE:-readiness}"
+case "$mode" in
+    readiness) scenarios=('278 1') ;;
+    matrix) scenarios=('278 1' '1112 1' '4448 4') ;;
+    *) echo "Unsupported LOAD_PROBE_MODE=${mode}" >&2; exit 2 ;;
+esac
+
 results_dir="ATLAS-application/build/k6-results"
 api_url="http://127.0.0.1:18080"
 prometheus_url="http://127.0.0.1:9090"
 mkdir -p "$results_dir"
 failures=0
 
-# Sessions/s: 2.78 baseline, 11.12 (4x), 44.48 (16x). Fixed VUs are
-# calibration-derived from EXP-016 one-seller p95 (61.2 ms), with headroom.
-for spec in '278 1' '1112 1' '4448 4'; do
+for spec in "${scenarios[@]}"; do
     read -r rate fixed_vus <<< "$spec"
     run_id="exp033-r${rate}"
     summary="/results/${run_id}.json"
-    echo "Starting fresh 4-CPU workload run=${run_id} sessions_per_second=$(awk "BEGIN { printf \"%.2f\", $rate / 100 }") fixed_vus=${fixed_vus}"
+    readiness_file="${results_dir}/${run_id}-startup.txt"
+    response_file="${results_dir}/${run_id}-readiness.body"
+    curl_error_file="${results_dir}/${run_id}-readiness.curl-error"
+    echo "Starting fresh 4-CPU probe mode=${mode} run=${run_id} sessions_per_second=$(awk "BEGIN { printf \"%.2f\", $rate / 100 }") fixed_vus=${fixed_vus}"
 
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
     if ! compose up -d application postgres-exporter prometheus; then
         echo "Failed to start Compose stack for ${run_id}" >&2
         failures=1
-        continue
+        compose ps --all > "$readiness_file" 2>&1 || true
+        compose logs --tail=200 --no-color application >> "$readiness_file" 2>&1 || true
+        break
     fi
-    if ! curl --retry 60 --retry-delay 2 --retry-connrefused --retry-all-errors \
-            --fail --silent --show-error --output /dev/null "${api_url}/api/products?limit=1"; then
-        echo "Application did not become ready for ${run_id}" >&2
+
+    readiness_status="transport-error"
+    for _ in $(seq 1 60); do
+        readiness_status=$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            "${api_url}/api/products?limit=1" 2>"$curl_error_file") || readiness_status="transport-error"
+        if [[ "$readiness_status" == "200" ]]; then
+            break
+        fi
+        sleep 2
+    done
+    if [[ "$readiness_status" != "200" ]]; then
+        {
+            printf 'mode=%s\nrun_id=%s\nreadiness_status=%s\n' "$mode" "$run_id" "$readiness_status"
+            echo '--- curl error ---'
+            cat "$curl_error_file" 2>/dev/null || true
+            echo '--- HTTP response body ---'
+            cat "$response_file" 2>/dev/null || true
+            echo '--- compose state ---'
+            compose ps --all 2>&1 || true
+            echo '--- application startup logs (last 200 lines) ---'
+            compose logs --tail=200 --no-color application 2>&1 || true
+        } > "$readiness_file"
+        echo "Application readiness failed for ${run_id}; diagnostic artifact saved" >&2
         failures=1
-        continue
+        break
     fi
+
     if ! curl --retry 30 --retry-delay 2 --retry-connrefused --retry-all-errors \
             --fail --silent --show-error --output /dev/null "${prometheus_url}/-/ready"; then
-        echo "Prometheus did not become ready for ${run_id}" >&2
+        echo "Prometheus did not become ready for ${run_id}; k6 result will still be collected" >&2
         failures=1
+    fi
+
+    if [[ "$mode" == "readiness" ]]; then
+        {
+            printf 'mode=readiness\nrun_id=%s\nreadiness_status=%s\n' "$run_id" "$readiness_status"
+            compose ps --all 2>&1 || true
+            compose logs --tail=80 --no-color application 2>&1 || true
+        } > "$readiness_file"
+        echo "Readiness succeeded for ${run_id}; no k6 load was generated."
         continue
     fi
 
@@ -75,7 +115,6 @@ for spec in '278 1' '1112 1' '4448 4'; do
             failures=1
         fi
     done
-
 done
 
 compose down --volumes --remove-orphans >/dev/null 2>&1 || true
