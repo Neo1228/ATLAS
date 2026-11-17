@@ -102,6 +102,7 @@
 | D-096 | ✓ #293 PostgreSQL lease 기반 payment/refund 복구 workflow | PaymentAttempt·PaymentRefundOperation의 미확정 provider operation을 같은 DB transaction에서 durable job으로 기록한다. `SKIP LOCKED` lease·동일 request ID·bounded backoff로 다중 인스턴스 at-least-once 복구를 수행하며 buyer approval 대기와 `NEEDS_REVIEW`를 분리한다. | [#293](https://github.com/Neo1228/ATLAS/issues/293), [ADR-0038](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md) |
 | D-097 | ✓ #295 만료 sweep batch·시간 상한 | 만료 주문·checkout 후보 조회에 `Limit` 상한을 두고, tick을 batch 크기(기본 100)와 시간 예산(기본 2초)으로 제한한다. 후보별 개별 transaction·잠금 순서·상태 전이는 유지한다. | [#295](https://github.com/Neo1228/ATLAS/issues/295), [ADR-0039](../02-decisions/adr/ADR-0039-bounded-expiry-sweep.md) |
 | D-098 | ◐ #297 seller 정산 명세 journal index 추가 진행 | `settlement_journal (seller_id, recorded_at, journal_id)` index로 seller 정산 명세 3-branch 조회의 journal 접근이 전체 ledger scan을 피하도록 한다(`settlement_seller_allocation` index는 V28에 이미 존재). 합계 재집계 구조는 유지한다. | [#297](https://github.com/Neo1228/ATLAS/issues/297), [EXP-027](../03-experiments/EXP-027-seller-statement-index.md) |
+| D-099 | ◐ #305 global catalog listing exact-order expression index 검증 진행 | `product_listing_sort_idx`가 seller/product Java UUID ordering expression을 그대로 index해 global first/cursor pages에서 full scan+sort를 줄인다. Order/cursor 계약은 유지하고 V40 plan/EXP-028로 검증한다. | [#305](https://github.com/Neo1228/ATLAS/issues/305), [ADR-0040](../02-decisions/adr/ADR-0040-global-catalog-listing-sort-index.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -115,6 +116,7 @@
 <a id="d-096"></a>
 <a id="d-097"></a>
 <a id="d-098"></a>
+<a id="d-099"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -158,3 +160,4 @@
 | [ADR-0037 — Refresh family 기반 access token 폐기와 session 관리](../02-decisions/adr/ADR-0037-refresh-family-bound-access-token-sessions.md) | #291: 즉시 family revoke, 기기별 session inventory와 계정 범위 revoke | [D-095](#d-095) |
 | [ADR-0038 — 결제·환불 PostgreSQL 복구 workflow](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md) | #293: 미확정 payment/refund의 durable claim·lease·backoff 및 감사 기반 operator requeue | [D-096](#d-096) |
 | [ADR-0039 — 만료 sweep batch·시간 상한](../02-decisions/adr/ADR-0039-bounded-expiry-sweep.md) | #295: 만료 후보 조회 상한과 tick 작업량 제한 | [D-097](#d-097) |
+| [ADR-0040 — Global catalog listing UUID sort-key index](../02-decisions/adr/ADR-0040-global-catalog-listing-sort-index.md) | #305: expression B-tree for global product order/cursor | [D-099](#d-099) |
