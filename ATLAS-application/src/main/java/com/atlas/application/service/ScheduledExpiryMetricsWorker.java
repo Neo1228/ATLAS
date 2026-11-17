@@ -58,9 +58,8 @@ public class ScheduledExpiryMetricsWorker {
         String outcome = "success";
         try {
             int changed = sweep.getAsInt();
-            if (changed > 0) {
-                Counter.builder(CHANGED_METRIC).tag("workflow", workflow).register(meters).increment(changed);
-            }
+            Counter changedCounter = Counter.builder(CHANGED_METRIC).tag("workflow", workflow).register(meters);
+            if (changed > 0) changedCounter.increment(changed);
         } catch (RuntimeException exception) {
             outcome = "failure";
             warnFailure(workflow, exception);

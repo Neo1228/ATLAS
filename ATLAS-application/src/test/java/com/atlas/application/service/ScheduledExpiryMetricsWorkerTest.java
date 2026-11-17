@@ -45,6 +45,16 @@ class ScheduledExpiryMetricsWorkerTest {
     }
 
     @Test
+    void registersZeroChangedCounterForNoOpSweep() {
+        when(admission.expireDueTickets()).thenReturn(0);
+
+        worker.expireAdmissionTickets();
+
+        assertThat(meters.find("atlas.expiry.sweep.changed").tag("workflow", "admission").counter())
+                .isNotNull().extracting(counter -> counter.count()).isEqualTo(0.0);
+    }
+
+    @Test
     void recordsOrderAndCheckoutWorkflowsWithLowCardinalityTags() {
         when(orders.expireDueOrders()).thenReturn(2);
         when(checkouts.expireDueCheckouts()).thenReturn(3);

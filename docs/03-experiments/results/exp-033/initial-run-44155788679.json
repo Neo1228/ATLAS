@@ -1,0 +1,66 @@
+{
+  "runId": 44155788679,
+  "runner": {
+    "label": "ubuntu-latest",
+    "cpus": 4,
+    "memoryGiB": 15.61
+  },
+  "workload": {
+    "profile": "one-seller",
+    "database": "PostgreSQL 18.6",
+    "durationSecondsPerRate": 120,
+    "prometheusScrapeIntervalSeconds": 5,
+    "ratesSessionsPerSecond": [2.78, 11.12, 44.48],
+    "fixedVus": [1, 1, 4]
+  },
+  "results": [
+    {
+      "offeredSessionsPerSecond": 2.78,
+      "httpRequestRps": 8.27,
+      "plannedSessions": 334,
+      "completedSessions": 334,
+      "droppedIterations": 0,
+      "checkoutErrors": 0,
+      "sessionLatencyMs": {"p50": 28, "p95": 55, "p99": 72.01},
+      "hikari": {"sampledMaxActive": 1, "sampledMaxPending": 0, "maxPool": 10, "timeouts": 0},
+      "prometheusApplicationTargetUp": 1,
+      "expirySweepDurationMaxSeconds": {"admission": 0.029958466, "checkouts": 0.120240123, "orders": 0.120699971},
+      "expirySweepRunsIncreaseOver3m": {"admission": 128.821, "checkouts": 128.821, "orders": 128.821},
+      "expiryChangedSeriesPresent": false
+    },
+    {
+      "offeredSessionsPerSecond": 11.12,
+      "httpRequestRps": 33.02,
+      "plannedSessions": 1335,
+      "completedSessions": 1333,
+      "droppedIterations": 2,
+      "checkoutErrors": 0,
+      "sessionLatencyMs": {"p50": 18, "p95": 39, "p99": 61.68},
+      "hikari": {"sampledMaxActive": 1, "sampledMaxPending": 0, "maxPool": 10, "timeouts": 0},
+      "prometheusApplicationTargetUp": 1,
+      "expirySweepDurationMaxSeconds": {"admission": 0.027190221, "checkouts": 0.136314436, "orders": 0.135415396},
+      "expirySweepRunsIncreaseOver3m": {"admission": 129.989, "checkouts": 129.989, "orders": 129.989},
+      "expiryChangedSeriesPresent": false
+    },
+    {
+      "offeredSessionsPerSecond": 44.48,
+      "httpRequestRps": 130.49,
+      "plannedSessions": 5338,
+      "completedSessions": 5307,
+      "droppedIterations": 31,
+      "checkoutErrors": 0,
+      "sessionLatencyMs": {"p50": 13, "p95": 31, "p99": 89},
+      "hikari": {"sampledMaxActive": 2, "sampledMaxPending": 0, "maxPool": 10, "timeouts": 0},
+      "prometheusApplicationTargetUp": 1,
+      "expirySweepDurationMaxSeconds": {"admission": 0.02208756, "checkouts": 0.186215812, "orders": 0.191601068},
+      "expirySweepRunsIncreaseOver3m": {"admission": 130.3, "checkouts": 130.3, "orders": 130.3},
+      "expiryChangedSeriesPresent": false
+    }
+  ],
+  "limitations": [
+    "Initial fixed VUs 1/1/4 left dropped iterations at the two highest offered rates; this is not a clean capacity ceiling.",
+    "Hikari active/pending are sampled gauges at 5-second scrape intervals, not instantaneous peaks.",
+    "The workflow volume mix is checkout-only and does not measure review/wishlist cache hit ratio or staleness.",
+    "Expiry changed counters were absent because zero-change runs did not register the meter in this first instrumentation revision."
+  ]
+}
