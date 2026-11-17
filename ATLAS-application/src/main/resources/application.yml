@@ -42,6 +42,8 @@ atlas:
   checkout-window: PT10M
   admission:
     expiry-poll-interval: PT1S
+    expiry-sweep-batch-size: ${ATLAS_ADMISSION_EXPIRY_SWEEP_BATCH_SIZE:100}
+    expiry-sweep-time-budget: ${ATLAS_ADMISSION_EXPIRY_SWEEP_TIME_BUDGET:PT2S}
   orders:
     expiry-poll-interval: PT1S
     expiry-sweep-batch-size: ${ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE:100}

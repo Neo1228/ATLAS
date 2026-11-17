@@ -18,12 +18,6 @@ public interface TicketRepository extends JpaRepository<QueueTicket, UUID> {
     boolean existsByCampaignIdAndTicketIdAndSkuIdAndBuyerRef(UUID campaignId, UUID ticketId, String skuId, String buyerRef);
     long countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(UUID sellerId, String skuId);
 
-    @Query("select distinct t.sellerId from QueueTicket t where t.status in :statuses and t.expiresAt <= :expiresAt")
-    List<UUID> findDueSellerIds(@Param("statuses") List<TicketStatus> statuses, @Param("expiresAt") Instant expiresAt);
-
-    @Query("select distinct t.skuId from QueueTicket t where t.sellerId = :sellerId and t.status in :statuses and t.expiresAt <= :expiresAt order by t.skuId")
-    List<String> findDueSkuIds(@Param("sellerId") UUID sellerId, @Param("statuses") List<TicketStatus> statuses, @Param("expiresAt") Instant expiresAt);
-
     @Query("select t.ticketId from QueueTicket t where t.sellerId = :sellerId and t.skuId = :skuId and t.status = :status and t.expiresAt > :now order by t.sequence")
     List<UUID> findWaitingForSellerSku(@Param("sellerId") UUID sellerId, @Param("skuId") String skuId,
             @Param("status") TicketStatus status, @Param("now") Instant now, Pageable pageable);

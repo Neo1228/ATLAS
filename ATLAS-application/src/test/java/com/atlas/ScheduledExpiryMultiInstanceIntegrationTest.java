@@ -67,6 +67,8 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("spring.datasource.hikari.maximum-pool-size", () -> "12");
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
+        properties.add("atlas.admission.expiry-sweep-batch-size", () -> "10");
+        properties.add("atlas.admission.expiry-sweep-time-budget", () -> "PT30S");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
     }
 
@@ -80,7 +82,28 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
     @Autowired private DataSource dataSource;
 
     @Test
-    void twoApplicationContextsExpireSellerSkuTicketsExactlyOnce(TestReporter reporter) throws Exception {
+    void admissionExpiryDrainsOnlyTheConfiguredSellerSkuBatchPerTick() {
+        List<DueTicketProfile> profiles = new ArrayList<>();
+        for (int index = 0; index < 25; index++) {
+            profiles.add(createDueTicketProfile(1));
+        }
+
+        assertThat(admissionService.expireDueTickets()).isEqualTo(10);
+        assertThat(expiredProfileCount(profiles)).isEqualTo(10);
+        assertThat(admissionService.expireDueTickets()).isEqualTo(10);
+        assertThat(expiredProfileCount(profiles)).isEqualTo(20);
+        assertThat(admissionService.expireDueTickets()).isEqualTo(5);
+        assertThat(expiredProfileCount(profiles)).isEqualTo(25);
+    }
+
+    private int expiredProfileCount(List<DueTicketProfile> profiles) {
+        return profiles.stream().mapToInt(profile -> jdbc.queryForObject(
+                "SELECT COUNT(*) FROM admission_ticket WHERE campaign_id = ? AND status = 'EXPIRED'",
+                Integer.class, profile.campaignId())).sum();
+    }
+
+    @Test
+    void twoApplicationContextsSkipBusySellerSkuAndALaterTickExpiresIt(TestReporter reporter) throws Exception {
         stopScheduler(taskScheduler);
         try (ConfigurableApplicationContext secondContext = startSecondInstance()) {
             ThreadPoolTaskScheduler secondScheduler = secondContext.getBean(
@@ -157,7 +180,6 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
         CountDownLatch start = new CountDownLatch(1);
         try (Connection blocker = dataSource.getConnection()) {
             blocker.setAutoCommit(false);
-            int blockerPid = PostgresLockWaitProbe.backendPid(blocker);
             try (PreparedStatement lock = blocker.prepareStatement(
                     "SELECT last_sequence FROM admission_counter WHERE seller_id = ? AND sku_id = ? FOR UPDATE")) {
                 lock.setObject(1, profile.sellerId());
@@ -177,21 +199,13 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
             });
             start.countDown();
 
-            PostgresLockWaitProbe.Observation waiter;
-            try (Connection observer = dataSource.getConnection()) {
-                int observerPid = PostgresLockWaitProbe.backendPid(observer);
-                waiter = PostgresLockWaitProbe.awaitWaiter(
-                        observer, blockerPid, observerPid,
-                        Duration.ofSeconds(15), Duration.ofMillis(100));
-            }
-            assertThat(waiter.waitEvent()).isNotBlank();
-            assertThat(firstExpiry.isDone()).isFalse();
-            assertThat(secondExpiry.isDone()).isFalse();
-
+            // Neither scheduler waits on the counter held by another worker.
+            assertThat(firstExpiry.get(10, TimeUnit.SECONDS)).isZero();
+            assertThat(secondExpiry.get(10, TimeUnit.SECONDS)).isZero();
             blocker.commit();
-            int firstChanged = firstExpiry.get(30, TimeUnit.SECONDS);
-            int secondChanged = secondExpiry.get(30, TimeUnit.SECONDS);
-            assertThat(firstChanged + secondChanged).isEqualTo(profile.tickets().size());
+
+            int drained = admissionService.expireDueTickets();
+            assertThat(drained).isEqualTo(profile.tickets().size());
             assertThat(jdbc.queryForObject(
                     "SELECT COUNT(*) FROM admission_ticket WHERE campaign_id = ? AND status = 'EXPIRED'",
                     Integer.class, profile.campaignId())).isEqualTo(profile.tickets().size());
@@ -203,13 +217,8 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
                     Long.class, profile.sellerId(), profile.skuId())).isEqualTo((long) profile.tickets().size());
 
             String prefix = "admission.multiContext.rows." + profile.tickets().size();
-            reporter.publishEntry(prefix + ".changedRows", Integer.toString(firstChanged + secondChanged));
-            reporter.publishEntry(prefix + ".directWaiterCount", "1");
-            reporter.publishEntry(prefix + ".invocationsPendingAtObservation", "2");
-            reporter.publishEntry(prefix + ".waitEvent", waiter.waitEvent());
-            reporter.publishEntry(prefix + ".queryElapsedAtObservationMs",
-                    Double.toString(waiter.queryElapsedMillis()));
-            reporter.publishEntry(prefix + ".pollIntervalMs", "100");
+            reporter.publishEntry(prefix + ".busyWorkersSkipped", "2");
+            reporter.publishEntry(prefix + ".laterTickExpiredRows", Integer.toString(drained));
         } finally {
             start.countDown();
             workers.shutdownNow();

@@ -212,3 +212,7 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 
 - 만료가 지연되면 해당 주문의 재고 reservation이 계속 점유되어 다른 구매자에게 품절로 보일 수 있으므로, backlog가 지속되면 batch를 키우거나 [ADR-0039](docs/02-decisions/adr/ADR-0039-bounded-expiry-sweep.md)의 후속 검토를 따릅니다.
 - 상한 적용 전후 후보 조회 비용은 [EXP-026](docs/03-experiments/EXP-026-expiry-sweep-bound.md)에 기록했습니다(로컬 합성 데이터, 운영 SLA 아님).
+
+### Admission queue 만료
+
+Admission `WAITING`/`CHECKOUT_ACTIVE` ticket은 1초 poll에서 `(expires_at, ticket_id)` keyset으로 due candidate row를 읽습니다. `ATLAS_ADMISSION_EXPIRY_SWEEP_BATCH_SIZE`(기본 100) ticket rows, 2× lookahead, `ATLAS_ADMISSION_EXPIRY_SWEEP_TIME_BUDGET`(기본 `PT2S`)으로 tick을 제한하고 마지막 consumed cursor를 다음 tick에 이어갑니다. Pair는 window 안에서 deduplicate되며 counter가 다른 instance에 잠겨 있으면 `SKIP LOCKED`로 기다리지 않고 cursor를 전진시킵니다. V41 composite expiry index가 first/cursor candidate read를 정렬된 index scan으로 지원합니다. 한 seller-SKU bulk update 하나가 time budget을 초과할 수 있다는 한계와 측정은 [ADR-0041](docs/02-decisions/adr/ADR-0041-bounded-admission-expiry-sweep.md), [EXP-029](docs/03-experiments/EXP-029-admission-expiry-candidates.md)에 기록했습니다.
