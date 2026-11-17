@@ -5,6 +5,7 @@ compose() {
     docker compose --profile observability --profile loadtest "$@"
 }
 
+# Fixed VUs use observed session p99 × arrival rate × 1.5 headroom from EXP-033 run 44155788679.
 mode="${LOAD_PROBE_MODE:-readiness}"
 case "$mode" in
     readiness)
@@ -18,7 +19,7 @@ case "$mode" in
         session_rate_time_unit='1s'
         ;;
     matrix)
-        scenarios=('278 1' '1112 1' '4448 4')
+        scenarios=('278 1' '1112 2' '4448 6')
         duration='120s'
         session_rate_time_unit='100s'
         ;;
