@@ -62,5 +62,20 @@
 
 ## 적용
 
-- `build.gradle`: 모든 `Test` 태스크에 `maxParallelForks = ATLAS_TEST_FORKS(기본 2)`, `forkEvery = 0`.
+- `build.gradle`: 모든 `Test` 태스크에 `maxParallelForks = ATLAS_TEST_FORKS`(로컬 기본 1), `forkEvery = 0`.
 - `backend-ci.yml`: PR에서 이전 run 자동 취소, Gradle cache action, `ATLAS_TEST_FORKS=2`, 실패 시 test report artifact 업로드, `timeout-minutes: 25`.
+
+## PR #312 실제 runner 결과
+
+GitHub Actions runner는 `docker info`에서 **4 CPU / 15.61 GiB**로 확인했습니다. 단일 run은 환경 차이가 있어 원인 attribution으로 사용하지 않습니다.
+
+| Run | 대상 | Gradle step | 관측 |
+| --- | --- | ---: | --- |
+| `44040216748` | 기존 main baseline | 218s | 61-task full check |
+| `44099437861` | forks=2, cache warm-up 전 | 252s | 전체 job 272s; 개선을 보이지 않음 |
+| `44101485246` | forks=2, 코드 변경 PR | 203s | 61 tasks all executed; 전체 job 238s |
+| `44101459322` | 변경 없는 source 재실행 | 13s | 61개 중 50개 FROM-CACHE, `application-module:test`도 캐시 복원 |
+
+**결론:** Local 11-vCPU forks=2의 −34%는 runner 결과로 일반화하지 않습니다. Full execution 한 샘플은 baseline보다 15s 짧았으나, 한 번의 paired run이 아니므로 forks 효과라고 단정하지 않습니다. 13s run은 test output cache-hit이라 fresh test 실행으로 계산하지 않습니다. CI는 사용자가 선택한 2 forks를 유지하고, 로컬 기본 fork는 개발 머신의 발열/메모리 부담을 줄이도록 1로 둡니다.
+
+`gradle/actions/setup-gradle`의 build cache는 입력이 동일한 태스크 출력(테스트 결과 포함)을 복원할 수 있습니다. 따라서 CI 결과에는 **실제 실행**과 **cache restore**를 구분해 보고해야 합니다.
