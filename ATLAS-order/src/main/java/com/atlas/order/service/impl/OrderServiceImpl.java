@@ -38,11 +38,14 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.PageRequest;
@@ -313,6 +316,15 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public List<OrderResponse> findAll(List<UUID> orderIds) {
+        if (orderIds == null) throw invalidRequest();
+        if (orderIds.isEmpty()) return List.of();
+        List<UUID> distinct = orderIds.stream().distinct().toList();
+        distinct.forEach(OrderServiceImpl::requireId);
+        return transactions.execute(status -> assembleResponses(distinct));
+    }
+
+    @Override
     public OrderHistoryPageResponse findBuyerOrderHistory(String buyerRef, Integer requestedLimit,
             String cursor) {
         if (buyerRef == null || buyerRef.isBlank()) {
@@ -466,16 +478,58 @@ public final class OrderServiceImpl implements OrderService {
         requireOrder(orderId).updateState(state, paymentAttemptId, updatedAt);
     }
 
+    private List<OrderResponse> assembleResponses(List<UUID> orderIds) {
+        List<PurchaseOrder> orders = repository.findAllById(orderIds);
+        if (orders.size() != orderIds.size()) {
+            throw new OrderException(OrderException.Code.NOT_FOUND, "Order not found");
+        }
+        Map<UUID, List<ReservationResponse>> reservationsByOrder = inventory.findReservationsByOrderIds(orderIds);
+        Map<UUID, List<OrderItem>> itemsByOrder = items.findAllByOrderIds(orderIds).stream()
+                .collect(Collectors.groupingBy(item -> item.order().orderId()));
+        Map<UUID, PaymentResponse> checkoutPayments = new HashMap<>();
+        Map<UUID, PaymentResponse> orderPayments = new HashMap<>();
+        for (PurchaseOrder order : orders) {
+            if (order.checkoutId() == null) {
+                orderPayments.put(order.orderId(), payments.find(order.orderId()));
+            } else {
+                checkoutPayments.computeIfAbsent(order.checkoutId(), payments::findCheckout);
+            }
+        }
+        Map<UUID, QueueTicketResponse> tickets = new HashMap<>();
+        for (PurchaseOrder order : orders) {
+            if (order.source() == OrderSource.CAMPAIGN) {
+                tickets.computeIfAbsent(order.ticketId(), key -> admission.find(order.campaignId(), key));
+            }
+        }
+        return orders.stream()
+                .map(order -> toResponse(order,
+                        reservationsByOrder.getOrDefault(order.orderId(), List.of()),
+                        itemsByOrder.getOrDefault(order.orderId(), List.of()),
+                        order.checkoutId() == null
+                                ? orderPayments.get(order.orderId()) : checkoutPayments.get(order.checkoutId()),
+                        order.source() == OrderSource.CAMPAIGN ? tickets.get(order.ticketId()) : null))
+                .toList();
+    }
+
+    private static void requireId(UUID orderId) {
+        if (orderId == null) throw invalidRequest();
+    }
+
     private OrderResponse toResponse(PurchaseOrder order) {
         List<ReservationResponse> reservations = inventory.findReservations(order.orderId());
         PaymentResponse payment = order.checkoutId() == null
                 ? payments.find(order.orderId()) : payments.findCheckout(order.checkoutId());
+        QueueTicketResponse ticket = order.source() == OrderSource.CAMPAIGN
+                ? admission.find(order.campaignId(), order.ticketId()) : null;
+        return toResponse(order, reservations,
+                items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId()), payment, ticket);
+    }
+
+    private OrderResponse toResponse(PurchaseOrder order, List<ReservationResponse> reservations,
+            List<OrderItem> orderItems, PaymentResponse payment, QueueTicketResponse ticket) {
         PaymentState paymentState = payment == null ? PaymentState.NOT_STARTED : payment.state();
         UUID paymentAttemptId = order.paymentAttemptId() != null
                 ? order.paymentAttemptId() : payment == null ? null : payment.attemptId();
-        QueueTicketResponse ticket = order.source() == OrderSource.CAMPAIGN
-                ? admission.find(order.campaignId(), order.ticketId()) : null;
-        List<OrderItem> orderItems = items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId());
         List<OrderItemResponse> itemResponses = orderItems.stream().map(item -> new OrderItemResponse(
                 item.productId(), item.sellerId(), item.skuId(), item.productName(), item.quantity(),
                 item.unitPriceWon(), item.couponDiscountWon(), item.lineTotalWon())).toList();
