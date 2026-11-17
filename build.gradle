@@ -42,9 +42,9 @@ subprojects {
 
     tasks.named('test') {
         useJUnitPlatform()
-        // CI 통합 테스트(39 Testcontainers suites)를 두 fork로 나눠 실행한다.
-        // 측정: application-module test 180s -> 123s, whole check 202s -> 133s (local, same runner).
-        maxParallelForks = (System.getenv('ATLAS_TEST_FORKS') ?: '2') as int
+        // 개발자 환경에서는 발열·메모리 부담을 줄이고 CI workflow에서만 2 fork를 명시한다.
+        // CI runner 실측은 로컬 A/B와 달라 EXP-030에 별도로 기록한다.
+        maxParallelForks = (System.getenv('ATLAS_TEST_FORKS') ?: '1') as int
         forkEvery = 0
     }
 }
