@@ -109,6 +109,11 @@ for spec in "${scenarios[@]}"; do
         failures=1
     fi
 
+    if [[ ! -s "${results_dir}/${run_id}.json" ]]; then
+        echo "k6 summary file is missing or empty for ${run_id}" >&2
+        failures=1
+    fi
+
     # Wait for a Prometheus scrape after the load phase, then retain raw query results.
     sleep 6
     queries=(
@@ -120,6 +125,7 @@ for spec in "${scenarios[@]}"; do
         'expiry_duration_max|max_over_time(atlas_expiry_sweep_duration_seconds_max[3m])'
         'expiry_runs|increase(atlas_expiry_sweep_runs_total[3m])'
         'expiry_changed|increase(atlas_expiry_sweep_changed_total[3m])'
+        'application_up|up{job="atlas-application"}'
     )
     for entry in "${queries[@]}"; do
         metric_name="${entry%%|*}"
@@ -131,6 +137,15 @@ for spec in "${scenarios[@]}"; do
             failures=1
         fi
     done
+    curl --fail --silent --show-error --get "${prometheus_url}/api/v1/targets" \
+        --data-urlencode 'state=active' \
+        --output "${results_dir}/${run_id}-prometheus-targets.json" || failures=1
+    if ! jq -e '.data.result | any(.value[1] == "1")' \
+            "${results_dir}/${run_id}-application_up.json" >/dev/null; then
+        echo "Prometheus did not report the application target as up for ${run_id}" >&2
+        failures=1
+    fi
+
 done
 
 compose down --volumes --remove-orphans >/dev/null 2>&1 || true
