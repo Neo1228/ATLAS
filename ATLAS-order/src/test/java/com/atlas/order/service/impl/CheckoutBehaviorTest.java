@@ -349,7 +349,10 @@ class CheckoutBehaviorTest {
                 mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
                 mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
 
-        assertEquals(2, service.findAll(List.of(first.orderId(), second.orderId())).size());
+        List<OrderResponse> responses = service.findAll(List.of(second.orderId(), first.orderId()));
+
+        assertEquals(List.of(second.orderId(), first.orderId()),
+                responses.stream().map(OrderResponse::orderId).toList());
 
         verify(payments, times(1)).findCheckout(checkoutId);
         verify(items, times(1)).findAllByOrderIds(any());

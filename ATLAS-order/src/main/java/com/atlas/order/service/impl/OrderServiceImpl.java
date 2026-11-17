@@ -479,10 +479,12 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     private List<OrderResponse> assembleResponses(List<UUID> orderIds) {
-        List<PurchaseOrder> orders = repository.findAllById(orderIds);
-        if (orders.size() != orderIds.size()) {
+        Map<UUID, PurchaseOrder> ordersById = repository.findAllById(orderIds).stream()
+                .collect(Collectors.toMap(PurchaseOrder::orderId, order -> order));
+        if (ordersById.size() != orderIds.size()) {
             throw new OrderException(OrderException.Code.NOT_FOUND, "Order not found");
         }
+        List<PurchaseOrder> orders = orderIds.stream().map(ordersById::get).toList();
         Map<UUID, List<ReservationResponse>> reservationsByOrder = inventory.findReservationsByOrderIds(orderIds);
         Map<UUID, List<OrderItem>> itemsByOrder = items.findAllByOrderIds(orderIds).stream()
                 .collect(Collectors.groupingBy(item -> item.order().orderId()));
