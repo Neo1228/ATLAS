@@ -52,6 +52,7 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final PlatformTransactionManager transactionManager;
     private final AdmissionExpirySweepPolicy expirySweepPolicy;
     private JdbcQueueRepository.DueTicketCursor expiryCursor;
+    private long nextCandidateQueryFailureLogNanos;
 
     public AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository,
             CampaignService campaigns, AdmissionPolicyRepository policies, SellerSkuService sellerSkus,
@@ -228,8 +229,7 @@ public class AdmissionServiceImpl implements AdmissionService {
             candidates = queueRepository.findDueTicketCandidates(
                     now, expiryCursor, expirySweepPolicy.candidateWindowSize(), expirySweepPolicy.timeBudget());
         } catch (DataAccessException exception) {
-            LOGGER.warn("Unable to query admission expiry candidates; failureType={}",
-                    exception.getClass().getSimpleName());
+            logCandidateQueryFailure(exception);
             return 0;
         }
         if (candidates.isEmpty()) {
@@ -239,19 +239,19 @@ public class AdmissionServiceImpl implements AdmissionService {
 
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        transactionTemplate.setTimeout(Math.max(1, Math.toIntExact(expirySweepPolicy.timeBudget().toSeconds())));
         Set<SellerSkuKey> visitedPairs = new HashSet<>();
         int attemptedPairs = 0;
         int consumedRows = 0;
         int expired = 0;
         JdbcQueueRepository.DueTicketCursor lastConsumed = expiryCursor;
         for (JdbcQueueRepository.DueTicketCandidate candidate : candidates) {
-            if (System.nanoTime() >= deadline) break;
+            if (System.nanoTime() >= deadline && consumedRows > 0) break;
             SellerSkuKey pair = new SellerSkuKey(candidate.sellerId(), candidate.skuId());
             if (visitedPairs.add(pair)) {
                 if (attemptedPairs >= expirySweepPolicy.batchSize()) break;
                 attemptedPairs++;
                 try {
+                    transactionTemplate.setTimeout(timeoutSecondsUntil(deadline));
                     Integer changed = transactionTemplate.execute(status -> {
                         JdbcQueueRepository.CounterLockResult lockResult = queueRepository
                                 .tryLockCounter(pair.sellerId(), pair.skuId());
@@ -278,6 +278,23 @@ public class AdmissionServiceImpl implements AdmissionService {
             expiryCursor = null;
         }
         return expired;
+    }
+
+    private int timeoutSecondsUntil(long deadline) {
+        long remainingNanos = deadline - System.nanoTime();
+        long remainingSeconds = Duration.ofNanos(Math.max(0, remainingNanos)).toSeconds();
+        return Math.max(1, Math.min(
+                Math.toIntExact(expirySweepPolicy.timeBudget().toSeconds()),
+                Math.toIntExact(remainingSeconds)));
+    }
+
+    private void logCandidateQueryFailure(DataAccessException exception) {
+        long now = System.nanoTime();
+        if (nextCandidateQueryFailureLogNanos == 0 || now - nextCandidateQueryFailureLogNanos >= 0) {
+            nextCandidateQueryFailureLogNanos = now + Duration.ofMinutes(1).toNanos();
+            LOGGER.warn("Unable to query admission expiry candidates; failureType={}",
+                    exception.getClass().getSimpleName());
+        }
     }
 
     private static final class MissingAdmissionCounterException extends RuntimeException {

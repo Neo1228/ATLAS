@@ -15,10 +15,14 @@ class AdmissionExpirySweepPolicyTest {
     }
 
     @Test
-    void rejectsNonPositiveTimeBudgets() {
+    void rejectsInvalidTimeBudgets() {
         assertThrows(IllegalArgumentException.class, () -> new AdmissionExpirySweepPolicy(10, Duration.ZERO));
         assertThrows(IllegalArgumentException.class, () -> new AdmissionExpirySweepPolicy(10, Duration.ofSeconds(-1)));
         assertThrows(IllegalArgumentException.class, () -> new AdmissionExpirySweepPolicy(10, null));
+        assertThrows(IllegalArgumentException.class, () -> new AdmissionExpirySweepPolicy(10, Duration.ofMillis(500)));
+        assertThrows(IllegalArgumentException.class, () -> new AdmissionExpirySweepPolicy(10, Duration.ofMillis(1_500)));
+        assertEquals(Duration.ofSeconds(1),
+                new AdmissionExpirySweepPolicy(10, Duration.ofSeconds(1)).timeBudget());
     }
 
     @Test

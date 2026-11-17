@@ -11,8 +11,9 @@ public record AdmissionExpirySweepPolicy(int batchSize, Duration timeBudget) {
         if (batchSize < 1 || batchSize > 1_000) {
             throw new IllegalArgumentException("admission expiry batch size must be between 1 and 1000");
         }
-        if (timeBudget == null || timeBudget.isNegative() || timeBudget.isZero()) {
-            throw new IllegalArgumentException("admission expiry time budget must be positive");
+        if (timeBudget == null || timeBudget.compareTo(Duration.ofSeconds(1)) < 0
+                || timeBudget.getNano() != 0) {
+            throw new IllegalArgumentException("admission expiry time budget must be whole seconds and at least one second");
         }
     }
     public int candidateWindowSize() {

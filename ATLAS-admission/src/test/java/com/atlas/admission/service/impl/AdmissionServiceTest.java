@@ -305,6 +305,29 @@ class AdmissionServiceTest {
     }
 
     @Test
+    void processesFirstCandidateWhenCandidateQueryConsumesBudget() throws InterruptedException {
+        UUID sellerId = UUID.randomUUID();
+        String skuId = "slow-query";
+        JdbcQueueRepository.DueTicketCandidate candidate = new JdbcQueueRepository.DueTicketCandidate(
+                UUID.randomUUID(), sellerId, skuId, Instant.now().minusSeconds(1));
+        when(queueRepository.findDueTicketCandidates(
+                any(Instant.class), any(), anyInt(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    Thread.sleep(2_100);
+                    return List.of(candidate);
+                });
+        when(queueRepository.tryLockCounter(sellerId, skuId))
+                .thenReturn(JdbcQueueRepository.CounterLockResult.ACQUIRED);
+        when(queueRepository.expireDueTicketsForSellerSku(eq(sellerId), eq(skuId), any(Instant.class)))
+                .thenReturn(0);
+
+        assertEquals(0, admission.expireDueTickets());
+
+        verify(queueRepository).tryLockCounter(sellerId, skuId);
+    }
+
+    @Test
+
     void rejectsNullSellerSkuPolicyRequest() {
         AdmissionException exception = assertThrows(AdmissionException.class,
                 () -> admission.configureSellerSkuPolicy(null));
