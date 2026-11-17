@@ -16,4 +16,12 @@ public class SchedulingConfiguration {
         scheduler.setThreadNamePrefix("atlas-scheduler-");
         return scheduler;
     }
+
+    @Bean(name = "paymentRecoveryTaskScheduler")
+    ThreadPoolTaskScheduler paymentRecoveryTaskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("atlas-payment-recovery-");
+        return scheduler;
+    }
 }

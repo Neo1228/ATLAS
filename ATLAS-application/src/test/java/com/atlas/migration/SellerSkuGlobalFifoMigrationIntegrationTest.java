@@ -88,9 +88,57 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "settlement_seller_allocation")).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(56); // 애플리케이션 테이블 55개와 Flyway 이력 테이블
+                Integer.class, schema)).isEqualTo(58); // 애플리케이션 테이블 57개와 Flyway 이력 테이블
     }
 
+
+    @Test
+    void v38BackfillsUnresolvedOperationsWithoutTreatingAnOrphanApprovalAsWaiting() {
+        String recoverySchema = createSchema();
+        JdbcTemplate recoveryJdbc = jdbcForSchema(recoverySchema);
+        flyway(recoverySchema, MigrationVersion.fromVersion("37")).migrate();
+
+        UUID unknownOrderId = UUID.randomUUID();
+        UUID unknownAttemptId = UUID.randomUUID();
+        UUID waitingOrderId = UUID.randomUUID();
+        UUID waitingAttemptId = UUID.randomUUID();
+        UUID refundOperationId = UUID.randomUUID();
+        UUID refundRequestId = UUID.randomUUID();
+        recoveryJdbc.update("""
+                INSERT INTO payment_attempt
+                    (order_id, attempt_id, state, payment_phase, authorization_active, total_won)
+                VALUES (?, ?, 'UNKNOWN', 'CAPTURE', TRUE, 1000)
+                """, unknownOrderId, unknownAttemptId);
+        recoveryJdbc.update("""
+                INSERT INTO payment_attempt
+                    (order_id, attempt_id, state, payment_phase, authorization_active,
+                     total_won, provider_order_id, approval_url)
+                VALUES (?, ?, 'AUTHORIZATION_PENDING', 'AUTHORIZATION', FALSE,
+                    1000, 'paypal-order-awaiting-buyer', 'https://provider.test/approve')
+                """, waitingOrderId, waitingAttemptId);
+        recoveryJdbc.update("""
+                INSERT INTO payment_refund_operation
+                    (refund_operation_id, attempt_id, capture_id, idempotency_key, amount_won,
+                     currency, provider_request_id, refund_state, created_at, updated_at)
+                VALUES (?, ?, 'capture-unknown', 'refund-recovery-test', 100,
+                    'KRW', ?, 'UNKNOWN', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, refundOperationId, unknownAttemptId, refundRequestId);
+
+        flyway(recoverySchema, null).migrate();
+
+        assertThat(recoveryJdbc.queryForObject("""
+                SELECT COUNT(*) FROM payment_recovery_job
+                WHERE status = 'PENDING'
+                """, Integer.class)).isEqualTo(3);
+        assertThat(recoveryJdbc.queryForObject("""
+                SELECT COUNT(*) FROM payment_recovery_job
+                WHERE payment_attempt_id = ? AND status = 'PENDING'
+                """, Integer.class, waitingAttemptId)).isEqualTo(1);
+        assertThat(recoveryJdbc.queryForObject("""
+                SELECT COUNT(*) FROM payment_recovery_job
+                WHERE payment_refund_operation_id = ? AND status = 'PENDING'
+                """, Integer.class, refundOperationId)).isEqualTo(1);
+    }
     @Test
     void v7RefusesExistingV6RowsBeforeChangingTheSchema() {
         String populatedSchema = createSchema();

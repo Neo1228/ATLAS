@@ -46,6 +46,22 @@ atlas:
     expiry-poll-interval: PT1S
   payment:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
+    recovery:
+      initial-delay: ${ATLAS_PAYMENT_RECOVERY_INITIAL_DELAY:PT30S}
+      initial-poll-delay: ${ATLAS_PAYMENT_RECOVERY_INITIAL_POLL_DELAY:PT2S}
+      poll-interval: ${ATLAS_PAYMENT_RECOVERY_POLL_INTERVAL:PT1S}
+      batch-size: ${ATLAS_PAYMENT_RECOVERY_BATCH_SIZE:10}
+      lease-duration: ${ATLAS_PAYMENT_RECOVERY_LEASE_DURATION:PT60S}
+      max-attempts: ${ATLAS_PAYMENT_RECOVERY_MAX_ATTEMPTS:8}
+      max-age: ${ATLAS_PAYMENT_RECOVERY_MAX_AGE:PT24H}
+      base-backoff: ${ATLAS_PAYMENT_RECOVERY_BASE_BACKOFF:PT1S}
+      max-backoff: ${ATLAS_PAYMENT_RECOVERY_MAX_BACKOFF:PT15M}
+      worker:
+        enabled: ${ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED:true}
+      operator:
+        enabled: ${ATLAS_PAYMENT_RECOVERY_OPERATOR_ENABLED:false}
+        username: ${ATLAS_PAYMENT_RECOVERY_OPERATOR_USERNAME:}
+        password: ${ATLAS_PAYMENT_RECOVERY_OPERATOR_PASSWORD:}
     paypal:
       base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
       client-id: ${PAYPAL_CLIENT_ID:}

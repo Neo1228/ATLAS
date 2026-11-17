@@ -36,6 +36,7 @@ import com.atlas.payment.provider.PaymentRequest;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
+import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.application.service.PayPalWebhookOperatorService;
@@ -94,6 +95,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("atlas.paypal.webhook-retry-poll-interval", () -> "PT24H");
         properties.add("atlas.paypal.webhook-retry-initial-delay", () -> "PT24H");
         properties.add("atlas.paypal.webhook-retry.worker.enabled", () -> "false");
+        properties.add("atlas.payment.recovery.worker.enabled", () -> "false");
         properties.add("spring.datasource.hikari.connection-init-sql", () -> "SET lock_timeout TO '2s'");
     }
 
@@ -120,6 +122,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private PaymentRefundRepository paymentRefunds;
     @Autowired
     private PaymentWebhookEventRepository paymentWebhookEvents;
+    @Autowired
+    private PaymentRecoveryRepository paymentRecovery;
     @Autowired
     private PlatformTransactionManager transactionManager;
     @Autowired
@@ -401,7 +405,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         CountDownLatch webhookLockAttempted = new CountDownLatch(1);
         AtomicReference<Thread> webhookLockThread = new AtomicReference<>();
         PaymentServiceImpl payments = new ObservedPaymentService(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, transactionManager, provider, fxConversionService, publicBaseUrl,
+                paymentWebhookEvents, paymentRecovery, transactionManager, provider, fxConversionService, publicBaseUrl,
                 webhookLockAttempted, webhookLockThread);
         PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
         PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
@@ -650,12 +654,15 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         BigDecimal amountWon = BigDecimal.valueOf(12900);
         BarrierPaymentProvider barrier = new BarrierPaymentProvider(paymentProvider);
         PaymentServiceImpl first = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, transactionManager, barrier, fxConversionService, publicBaseUrl);
+                paymentWebhookEvents, paymentRecovery, transactionManager, barrier, fxConversionService, publicBaseUrl);
         PaymentServiceImpl second = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, transactionManager, barrier, fxConversionService, publicBaseUrl);
+                paymentWebhookEvents, paymentRecovery, transactionManager, barrier, fxConversionService, publicBaseUrl);
         ExecutorService executor = Executors.newFixedThreadPool(3);
         try {
             PaymentResponse pending = first.submitInitial(orderId, amountWon);
+            assertThat(jdbc.queryForObject("""
+                    SELECT status FROM payment_recovery_job WHERE payment_attempt_id = ?
+                    """, String.class, pending.attemptId())).isEqualTo("PENDING");
             PaymentResponse authorized = first.completeApproval(orderId, pending.providerOrderId());
             assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
 
@@ -859,10 +866,11 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         private final AtomicReference<Thread> webhookLockThread;
 
         private ObservedPaymentService(PaymentAttemptRepository attempts, PaymentRefundRepository refunds,
-                PaymentWebhookEventRepository webhookEvents, PlatformTransactionManager transactionManager,
-                PaymentProvider provider, FxConversionService fxConversionService, String publicBaseUrl,
+                PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
+                PlatformTransactionManager transactionManager, PaymentProvider provider,
+                FxConversionService fxConversionService, String publicBaseUrl,
                 CountDownLatch webhookLockAttempted, AtomicReference<Thread> webhookLockThread) {
-            super(attempts, refunds, webhookEvents, transactionManager, provider, fxConversionService,
+            super(attempts, refunds, webhookEvents, recovery, transactionManager, provider, fxConversionService,
                     publicBaseUrl);
             this.webhookLockAttempted = webhookLockAttempted;
             this.webhookLockThread = webhookLockThread;

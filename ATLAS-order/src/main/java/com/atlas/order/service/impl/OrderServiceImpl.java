@@ -233,7 +233,8 @@ public final class OrderServiceImpl implements OrderService {
                 && order.state() != OrderState.CANCEL_PENDING && order.state() != OrderState.PAYMENT_VOID_PENDING) {
             return find(orderId);
         }
-        if (payment == null || payment.state() == PaymentState.UNKNOWN
+        if (payment == null || payment.state() == PaymentState.NOT_STARTED
+                || payment.state() == PaymentState.UNKNOWN
                 || payment.state() == PaymentState.AUTHORIZATION_PENDING
                 || payment.state() == PaymentState.CAPTURE_PENDING
                 || payment.state() == PaymentState.AUTHORIZED

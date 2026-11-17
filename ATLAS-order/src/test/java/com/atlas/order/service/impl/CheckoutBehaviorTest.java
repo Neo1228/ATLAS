@@ -176,6 +176,42 @@ class CheckoutBehaviorTest {
         verify(fulfillment).initialize(orderId);
     }
 
+
+    @Test
+    void reconciliationResumesPaymentAttemptPersistedBeforePhaseReservation() {
+        UUID orderId = UUID.randomUUID();
+        UUID attemptId = UUID.randomUUID();
+        PurchaseOrder order = new PurchaseOrder(SELLER, "buyer", "checkout-key",
+                OrderState.PAYMENT_SUBMITTED, NOW.plusSeconds(600), NOW, NOW);
+        setOrderId(order, orderId);
+        OrderItem orderItem = new OrderItem(order, UUID.randomUUID(), SELLER, "SKU-1", "Product", 2, 1_000);
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderItemRepository items = mock(OrderItemRepository.class);
+        InventoryService inventory = mock(InventoryService.class);
+        PaymentService payments = mock(PaymentService.class);
+        when(orders.findById(orderId)).thenReturn(Optional.of(order));
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
+        when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(orderItem));
+        when(inventory.findReservations(orderId)).thenReturn(List.of());
+        when(payments.find(orderId)).thenReturn(
+                new PaymentResponse(orderId, attemptId, PaymentState.NOT_STARTED, false),
+                new PaymentResponse(orderId, attemptId, PaymentState.UNKNOWN, true));
+        when(payments.reconcile(orderId, "crash-recovery-key")).thenReturn(
+                new PaymentResponse(orderId, attemptId, PaymentState.UNKNOWN, true));
+
+        OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
+                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
+                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10));
+
+        OrderResponse response = service.reconcilePayment(orderId, "crash-recovery-key");
+
+        assertEquals(OrderState.PAYMENT_UNKNOWN, response.state());
+        assertEquals(PaymentState.UNKNOWN, response.paymentState());
+        verify(payments).reconcile(orderId, "crash-recovery-key");
+        verify(inventory, never()).claimAll(orderId);
+        verify(inventory, never()).releaseAll(orderId);
+    }
     @Test
     void capturedPaymentWinsCancellationRaceAndIsRecorded() {
         UUID checkoutId = UUID.randomUUID();

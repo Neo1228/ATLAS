@@ -40,6 +40,7 @@ class ModuleBoundaryTest {
                 "net.ttddyy.dsproxy..",
                 "com.nimbusds..",
                 "org.apache.commons.csv..",
+                "io.micrometer..",
                 "java..", "javax..", "jakarta..", "org.springframework..", "org.slf4j.."
         };
         enforceAllowedDependencies(source, "com.atlas.application..", applicationDependencies);

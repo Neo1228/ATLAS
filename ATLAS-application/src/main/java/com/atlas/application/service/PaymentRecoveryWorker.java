@@ -1,0 +1,244 @@
+package com.atlas.application.service;
+
+import com.atlas.order.dto.response.CheckoutResponse;
+import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.service.CheckoutPaymentService;
+import com.atlas.order.service.OrderRefundService;
+import com.atlas.order.service.OrderService;
+import com.atlas.payment.dto.response.PaymentRecoveryJob;
+import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.dto.response.PaymentResponse;
+import com.atlas.payment.exception.PaymentException;
+import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
+import com.atlas.payment.persistence.state.PaymentRecoveryOperationType;
+import com.atlas.payment.persistence.state.PaymentRefundState;
+import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.service.PaymentRecoveryService;
+import com.atlas.payment.service.PaymentService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConditionalOnProperty(name = "atlas.payment.recovery.worker.enabled", havingValue = "true")
+public class PaymentRecoveryWorker {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PaymentRecoveryWorker.class);
+    private static final String TRANSIENT_FAILURE = "TRANSIENT_FAILURE";
+    private final PaymentRecoveryService recovery;
+    private final PaymentService payments;
+    private final OrderService orders;
+    private final CheckoutPaymentService checkouts;
+    private final OrderRefundService refunds;
+    private final MeterRegistry meters;
+    private final int batchSize;
+    private final Duration leaseDuration;
+    private final int maxAttempts;
+    private final Duration maxAge;
+    private final Duration baseBackoff;
+    private final Duration maxBackoff;
+
+    public PaymentRecoveryWorker(
+            PaymentRecoveryService recovery,
+            PaymentService payments,
+            OrderService orders,
+            CheckoutPaymentService checkouts,
+            OrderRefundService refunds,
+            MeterRegistry meters,
+            @Value("${atlas.payment.recovery.batch-size:10}") int batchSize,
+            @Value("${atlas.payment.recovery.lease-duration:PT60S}") Duration leaseDuration,
+            @Value("${atlas.payment.recovery.max-attempts:8}") int maxAttempts,
+            @Value("${atlas.payment.recovery.max-age:PT24H}") Duration maxAge,
+            @Value("${atlas.payment.recovery.base-backoff:PT1S}") Duration baseBackoff,
+            @Value("${atlas.payment.recovery.max-backoff:PT15M}") Duration maxBackoff) {
+        this.recovery = Objects.requireNonNull(recovery);
+        this.payments = Objects.requireNonNull(payments);
+        this.orders = Objects.requireNonNull(orders);
+        this.checkouts = Objects.requireNonNull(checkouts);
+        this.refunds = Objects.requireNonNull(refunds);
+        this.meters = Objects.requireNonNull(meters);
+        if (batchSize < 1 || batchSize > 100 || maxAttempts < 1
+                || leaseDuration.isNegative() || leaseDuration.isZero()
+                || maxAge.isNegative() || maxAge.isZero()
+                || baseBackoff.isNegative() || baseBackoff.isZero()
+                || maxBackoff.compareTo(baseBackoff) < 0) {
+            throw new IllegalArgumentException("Payment recovery worker settings are invalid");
+        }
+        this.batchSize = batchSize;
+        this.leaseDuration = leaseDuration;
+        this.maxAttempts = maxAttempts;
+        this.maxAge = maxAge;
+        this.baseBackoff = baseBackoff;
+        this.maxBackoff = maxBackoff;
+        for (PaymentRecoveryJobStatus status : PaymentRecoveryJobStatus.values()) {
+            Gauge.builder("atlas.payment.recovery.jobs", recovery, repository -> repository.count(status))
+                    .tag("status", status.name())
+                    .register(meters);
+        }
+        Gauge.builder("atlas.payment.recovery.oldest_due_age_seconds",
+                recovery, PaymentRecoveryService::oldestDueAgeSeconds).register(meters);
+    }
+
+    @Scheduled(
+            initialDelayString = "${atlas.payment.recovery.initial-poll-delay:PT2S}",
+            fixedDelayString = "${atlas.payment.recovery.poll-interval:PT1S}",
+            scheduler = "paymentRecoveryTaskScheduler")
+    public void poll() {
+        try {
+            recovery.expireExhausted(maxAttempts, maxAge);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Unable to mark exhausted payment recovery work; failureType={}",
+                    exception.getClass().getSimpleName());
+            return;
+        }
+        for (int index = 0; index < batchSize; index++) {
+            List<PaymentRecoveryJob> claimed;
+            try {
+                claimed = recovery.claimNextDue(1, UUID.randomUUID(), leaseDuration, maxAttempts, maxAge);
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Unable to claim payment recovery work; failureType={}",
+                        exception.getClass().getSimpleName());
+                return;
+            }
+            if (claimed.isEmpty()) return;
+            PaymentRecoveryJob job = claimed.getFirst();
+            counter("claimed", job.operationType()).increment();
+            process(job);
+        }
+    }
+
+    private void process(PaymentRecoveryJob job) {
+        Timer.Sample sample = Timer.start(meters);
+        try {
+            if (job.operationType() == PaymentRecoveryOperationType.PAYMENT_ATTEMPT) {
+                recoverPayment(job);
+            } else {
+                recoverRefund(job);
+            }
+        } catch (RuntimeException exception) {
+            String errorCode = exception instanceof PaymentException paymentException
+                    ? paymentException.code().name() : TRANSIENT_FAILURE;
+            LOGGER.warn("Payment recovery failed jobId={} operationType={} failureType={}",
+                    job.recoveryJobId(), job.operationType(), exception.getClass().getSimpleName());
+            try {
+                if (recovery.reschedule(job, backoff(job.attemptCount()), maxAttempts, maxAge, errorCode)) {
+                    counter("failed", job.operationType()).increment();
+                }
+            } catch (RuntimeException persistenceFailure) {
+                LOGGER.error("Unable to persist payment recovery outcome jobId={} failureType={}",
+                        job.recoveryJobId(), persistenceFailure.getClass().getSimpleName());
+            }
+        } finally {
+            sample.stop(Timer.builder("atlas.payment.recovery.duration")
+                    .tag("operation_type", job.operationType().name()).register(meters));
+        }
+    }
+
+    private void recoverPayment(PaymentRecoveryJob job) {
+        PaymentResponse current = payments.findByAttemptId(job.operationId());
+        if (terminal(current.state())) {
+            recovery.complete(job);
+            counter("completed", job.operationType()).increment();
+            return;
+        }
+        if (awaitingBuyer(current)) {
+            recovery.waitForBuyer(job);
+            return;
+        }
+        String idempotencyKey = "payment-recovery-" + job.operationId();
+        if (current.orderId() != null) {
+            orders.reconcilePayment(current.orderId(), idempotencyKey);
+        } else if (current.checkoutId() != null) {
+            checkouts.reconcile(current.checkoutId(), idempotencyKey);
+        } else {
+            recovery.markNeedsReview(job, "PAYMENT_OWNER_MISSING");
+            counter("needs_review", job.operationType()).increment();
+            return;
+        }
+        PaymentResponse result = payments.findByAttemptId(job.operationId());
+        settle(job, terminal(result.state()), awaitingBuyer(result));
+    }
+
+    private void recoverRefund(PaymentRecoveryJob job) {
+        PaymentRefundResponse current = payments.findRefundOperation(job.operationId());
+        if (terminal(current.status())) {
+            recovery.complete(job);
+            counter("completed", job.operationType()).increment();
+            return;
+        }
+        refunds.reconcilePayPalRefund(job.operationId());
+        PaymentRefundResponse result = payments.findRefundOperation(job.operationId());
+        settle(job, terminal(result.status()), false);
+    }
+
+    private void settle(PaymentRecoveryJob job, boolean terminal, boolean awaitingBuyer) {
+        if (terminal) {
+            recovery.complete(job);
+            counter("completed", job.operationType()).increment();
+        } else if (awaitingBuyer) {
+            recovery.waitForBuyer(job);
+        } else if (recovery.reschedule(job, backoff(job.attemptCount()), maxAttempts, maxAge,
+                "PROVIDER_RESULT_UNRESOLVED")) {
+            counter("rescheduled", job.operationType()).increment();
+        }
+    }
+
+    private Duration backoff(int attempt) {
+        int exponent = Math.min(Math.max(attempt - 1, 0), 20);
+        long baseMillis = baseBackoff.toMillis();
+        long capMillis = maxBackoff.toMillis();
+        long exponential = baseMillis > (capMillis >> exponent)
+                ? capMillis : Math.min(capMillis, baseMillis << exponent);
+        long half = Math.max(1, exponential / 2);
+        long jitter = ThreadLocalRandom.current().nextLong(half);
+        return Duration.ofMillis(Math.min(capMillis, half + jitter));
+    }
+
+    private Counter counter(String outcome, PaymentRecoveryOperationType type) {
+        return Counter.builder("atlas.payment.recovery." + outcome)
+                .tag("operation_type", type.name())
+                .register(meters);
+    }
+
+    private static boolean terminal(PaymentState state) {
+        return state == PaymentState.CAPTURED || state == PaymentState.DECLINED
+                || state == PaymentState.VOIDED;
+    }
+
+    private static boolean terminal(PaymentRefundState state) {
+        return state == PaymentRefundState.COMPLETED || state == PaymentRefundState.FAILED;
+    }
+
+    private boolean awaitingBuyer(PaymentResponse payment) {
+        if (payment.state() != PaymentState.AUTHORIZATION_PENDING
+                || payment.providerOrderId() == null || payment.approvalUrl() == null
+                || payment.approvalUrl().isBlank()) {
+            return false;
+        }
+        if (payment.orderId() != null) {
+            OrderResponse order = orders.find(payment.orderId());
+            return order != null && (order.state() == OrderState.PAYMENT_SUBMITTED
+                    || order.state() == OrderState.PAYMENT_PENDING
+                    || order.state() == OrderState.PAYMENT_UNKNOWN);
+        }
+        if (payment.checkoutId() != null) {
+            CheckoutResponse checkout = checkouts.find(payment.checkoutId());
+            return checkout != null && (checkout.state() == BuyerCheckoutState.PAYMENT_PENDING
+                    || checkout.state() == BuyerCheckoutState.PAYMENT_UNKNOWN);
+        }
+        return false;
+    }
+}
