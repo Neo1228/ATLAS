@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import com.atlas.admission.dto.response.QueueTicketResponse;
@@ -42,6 +43,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -279,6 +281,44 @@ class CheckoutBehaviorTest {
         ArgumentCaptor<Limit> limit = ArgumentCaptor.forClass(Limit.class);
         verify(orders).findReservedOrdersExpiredBy(any(Instant.class), limit.capture());
         assertEquals(25, limit.getValue().max());
+    }
+
+
+    @Test
+    void checkoutResponseReadsChildItemsAndReservationsInOneQueryPerCheckout() {
+        BuyerCheckout checkout = new BuyerCheckout("buyer", "checkout-key", BuyerCheckoutState.RESERVED, 3_000, NOW, NOW);
+        UUID checkoutId = UUID.randomUUID();
+        setCheckoutId(checkout, checkoutId);
+        PurchaseOrder first = new PurchaseOrder(SELLER, "buyer", "key-1", OrderState.RESERVED,
+                NOW.plusSeconds(600), NOW, NOW);
+        PurchaseOrder second = new PurchaseOrder(UUID.randomUUID(), "buyer", "key-2", OrderState.RESERVED,
+                NOW.plusSeconds(600), NOW, NOW);
+        setOrderId(first, UUID.randomUUID());
+        setOrderId(second, UUID.randomUUID());
+        OrderItem firstItem = new OrderItem(first, UUID.randomUUID(), SELLER, "SKU-1", "Product", 1, 1_000);
+        OrderItem secondItem = new OrderItem(second, UUID.randomUUID(), second.sellerId(), "SKU-2", "Product", 2, 1_000);
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderItemRepository items = mock(OrderItemRepository.class);
+        InventoryService inventory = mock(InventoryService.class);
+        PaymentService payments = mock(PaymentService.class);
+        BuyerCheckoutRepository checkouts = mock(BuyerCheckoutRepository.class);
+        when(checkouts.findById(checkoutId)).thenReturn(Optional.of(checkout));
+        when(orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId)).thenReturn(List.of(first, second));
+        when(items.findAllByOrderIds(any())).thenReturn(List.of(firstItem, secondItem));
+        when(inventory.findReservationsByOrderIds(any())).thenReturn(Map.of(
+                first.orderId(), List.of(), second.orderId(), List.of()));
+
+        CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
+                orders, items, inventory, mock(OrderFulfillmentService.class), payments,
+                mock(SettlementService.class), mock(SellerCouponService.class),
+                fixedClock(), 100, Duration.ofSeconds(2));
+
+        service.find(checkoutId);
+
+        verify(items, times(1)).findAllByOrderIds(any());
+        verify(inventory, times(1)).findReservationsByOrderIds(any());
+        verify(items, never()).findByOrderOrderIdOrderBySkuIdAsc(any());
+        verify(inventory, never()).findReservations(any());
     }
 
     private static void setOrderId(PurchaseOrder order, UUID id) {

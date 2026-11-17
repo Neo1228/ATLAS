@@ -25,8 +25,10 @@ import com.atlas.inventory.repository.JdbcStockRepository;
 import com.atlas.inventory.repository.ReservationRepository;
 import com.atlas.inventory.service.InventoryService;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -308,6 +310,17 @@ public class InventoryServiceImpl implements InventoryService {
     }
     @Override public ReservationResponse findReservation(UUID orderId){return first(findReservations(orderId));}
     @Override public List<ReservationResponse> findReservations(UUID orderId){validOrder(orderId);return reservations.findAllByOrderIdOrderBySellerIdAscSkuIdAsc(orderId).stream().map(InventoryServiceImpl::response).toList();}
+    @Override
+    public Map<UUID, List<ReservationResponse>> findReservationsByOrderIds(Collection<UUID> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) return Map.of();
+        orderIds.forEach(InventoryServiceImpl::validOrder);
+        Map<UUID, List<ReservationResponse>> grouped = new LinkedHashMap<>();
+        for (Reservation reservation : reservations.findAllByOrderIdIn(orderIds)) {
+            grouped.computeIfAbsent(reservation.getOrderId(), key -> new ArrayList<>())
+                    .add(response(reservation));
+        }
+        return Map.copyOf(grouped);
+    }
     @Override
     public InventoryPoolResponse find(UUID sellerId, String skuId) {
         validSku(sellerId, skuId);
