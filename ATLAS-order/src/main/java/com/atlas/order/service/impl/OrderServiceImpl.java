@@ -23,6 +23,7 @@ import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.JdbcBuyerLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.service.ExpirySweepPolicy;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
@@ -43,6 +44,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -69,12 +71,15 @@ public final class OrderServiceImpl implements OrderService {
     private final SettlementService settlement;
     private final Clock clock;
     private final Duration checkoutWindow;
+    private final ExpirySweepPolicy expirySweep;
 
     public OrderServiceImpl(PlatformTransactionManager transactionManager, OrderRepository repository,
             OrderItemRepository items, JdbcBuyerLockRepository buyerLockRepository,
             OrderFulfillmentService fulfillmentService, AdmissionService admission, InventoryService inventory,
             PaymentService payments, SellerSkuService sellerSkus, SettlementService settlement, Clock clock,
-            @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow) {
+            @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow,
+            @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
+            @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget) {
         this.repository = Objects.requireNonNull(repository);
         this.items = Objects.requireNonNull(items);
         this.buyerLockRepository = Objects.requireNonNull(buyerLockRepository);
@@ -87,6 +92,7 @@ public final class OrderServiceImpl implements OrderService {
         this.sellerSkus = Objects.requireNonNull(sellerSkus);
         this.clock = Objects.requireNonNull(clock);
         this.checkoutWindow = Objects.requireNonNull(checkoutWindow);
+        this.expirySweep = new ExpirySweepPolicy(expirySweepBatchSize, expirySweepTimeBudget);
         if (checkoutWindow.isZero() || checkoutWindow.isNegative()) {
             throw new IllegalArgumentException("checkoutWindow must be positive");
         }
@@ -350,9 +356,11 @@ public final class OrderServiceImpl implements OrderService {
     @Scheduled(fixedDelayString = "${atlas.orders.expiry-poll-interval:PT1S}")
     public int expireDueOrders() {
         Instant now = clock.instant();
-        List<UUID> dueOrders = repository.findReservedOrdersExpiredBy(now);
+        long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();
+        List<UUID> dueOrders = repository.findReservedOrdersExpiredBy(now, Limit.of(expirySweep.batchSize()));
         int expired = 0;
         for (UUID orderId : dueOrders) {
+            if (System.nanoTime() >= deadline) break;
             Integer changed = transactions.execute(status -> {
                 PurchaseOrder order = lockOrder(orderId);
                 if (order.state() != OrderState.RESERVED || clock.instant().isBefore(order.checkoutExpiresAt())) return 0;

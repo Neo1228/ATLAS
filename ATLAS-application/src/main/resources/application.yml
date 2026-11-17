@@ -44,6 +44,8 @@ atlas:
     expiry-poll-interval: PT1S
   orders:
     expiry-poll-interval: PT1S
+    expiry-sweep-batch-size: ${ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE:100}
+    expiry-sweep-time-budget: ${ATLAS_ORDERS_EXPIRY_SWEEP_TIME_BUDGET:PT2S}
   payment:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
     recovery:

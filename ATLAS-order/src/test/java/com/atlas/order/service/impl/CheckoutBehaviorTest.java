@@ -47,6 +47,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Limit;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -90,7 +91,7 @@ class CheckoutBehaviorTest {
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
                 inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
-                fixedClock(), Duration.ofMinutes(10));
+                fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
 
         ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
         service.startCheckout(CAMPAIGN, TICKET);
@@ -126,7 +127,7 @@ class CheckoutBehaviorTest {
         OrderServiceImpl service = new OrderServiceImpl(manager, orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
                 inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
-                fixedClock(), Duration.ofMinutes(10));
+                fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
 
         CatalogException exception = assertThrows(CatalogException.class,
                 () -> service.startCheckout(CAMPAIGN, TICKET));
@@ -164,7 +165,7 @@ class CheckoutBehaviorTest {
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), fulfillment, mock(AdmissionService.class), inventory,
-                payments, mock(SellerSkuService.class), settlement, fixedClock(), Duration.ofMinutes(10));
+                payments, mock(SellerSkuService.class), settlement, fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
 
         OrderResponse response = service.reconcilePayment(orderId, "captured-reconciliation");
 
@@ -202,7 +203,7 @@ class CheckoutBehaviorTest {
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
-                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10));
+                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
 
         OrderResponse response = service.reconcilePayment(orderId, "crash-recovery-key");
 
@@ -241,7 +242,7 @@ class CheckoutBehaviorTest {
 
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
                 orders, items, inventory, fulfillment, payments, settlement, mock(SellerCouponService.class),
-                fixedClock());
+                fixedClock(), 100, Duration.ofSeconds(2));
         AtomicReference<BuyerCheckoutState> cancellationState = new AtomicReference<>();
         when(payments.submitCheckout(eq(checkoutId), any())).thenAnswer(invocation -> {
             cancellationState.set(service.cancel(checkoutId, "cancel-racing-submit").state());
@@ -257,6 +258,27 @@ class CheckoutBehaviorTest {
         verify(inventory, never()).releaseAll(order.orderId());
         verify(fulfillment).initialize(order.orderId());
         verify(settlement).recordCheckoutCapture(any());
+    }
+
+
+    @Test
+    void expirySweepIsBoundedByTheConfiguredBatchSize() {
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderItemRepository items = mock(OrderItemRepository.class);
+        InventoryService inventory = mock(InventoryService.class);
+        when(orders.findReservedOrdersExpiredBy(any(Instant.class), any())).thenReturn(List.of());
+
+        OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
+                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(AdmissionService.class), inventory, mock(PaymentService.class),
+                mock(SellerSkuService.class), mock(SettlementService.class), fixedClock(),
+                Duration.ofMinutes(10), 25, Duration.ofSeconds(2));
+
+        assertEquals(0, service.expireDueOrders());
+
+        ArgumentCaptor<Limit> limit = ArgumentCaptor.forClass(Limit.class);
+        verify(orders).findReservedOrdersExpiredBy(any(Instant.class), limit.capture());
+        assertEquals(25, limit.getValue().max());
     }
 
     private static void setOrderId(PurchaseOrder order, UUID id) {
