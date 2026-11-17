@@ -39,8 +39,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.UUID;
 import java.util.Locale;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -216,9 +217,8 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         BuyerCheckout checkout = checkouts.findById(checkoutId).orElseThrow(() -> new OrderException(
                 OrderException.Code.NOT_FOUND, "Buyer checkout not found"));
         List<PurchaseOrder> childOrders = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
-        List<OrderResponse> childResponses = childOrders.stream()
-                .map(order -> orderService.find(order.orderId()))
-                .toList();
+        List<OrderResponse> childResponses = childOrders.isEmpty() ? List.of()
+                : orderService.findAll(childOrders.stream().map(PurchaseOrder::orderId).toList());
         return new CheckoutResponse(checkout.checkoutId(), checkout.buyerRef(), checkout.state(),
                 checkout.totalWon(), childResponses);
     }
@@ -227,12 +227,11 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         List<Fact> cartFacts = cartItems.stream()
                 .map(item -> new Fact(item.sellerId(), item.skuId(), item.quantity(), item.priceWon()))
                 .sorted(FACT_ORDER).toList();
-        List<Fact> existingFacts = new ArrayList<>();
-        for (PurchaseOrder order : childOrders) {
-            for (OrderItem item : orderItems.findByOrderOrderIdOrderBySkuIdAsc(order.orderId())) {
-                existingFacts.add(new Fact(item.sellerId(), item.skuId(), item.quantity(), item.unitPriceWon()));
-            }
-        }
+        List<Fact> existingFacts = childOrders.isEmpty() ? new ArrayList<>()
+                : orderItems.findAllByOrderIds(childOrders.stream().map(PurchaseOrder::orderId).toList())
+                        .stream()
+                        .map(item -> new Fact(item.sellerId(), item.skuId(), item.quantity(), item.unitPriceWon()))
+                        .collect(Collectors.toCollection(ArrayList::new));
         existingFacts.sort(FACT_ORDER);
         return cartFacts.equals(existingFacts);
     }

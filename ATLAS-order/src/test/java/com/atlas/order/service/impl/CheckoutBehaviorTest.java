@@ -321,6 +321,42 @@ class CheckoutBehaviorTest {
         verify(inventory, never()).findReservations(any());
     }
 
+
+
+    @Test
+    void batchOrderResponsesReadCheckoutPaymentOnceForAllChildOrders() {
+        PurchaseOrder first = new PurchaseOrder(SELLER, "buyer", "key-1", OrderState.RESERVED,
+                NOW.plusSeconds(600), NOW, NOW);
+        PurchaseOrder second = new PurchaseOrder(SELLER, "buyer", "key-2", OrderState.RESERVED,
+                NOW.plusSeconds(600), NOW, NOW);
+        UUID checkoutId = UUID.randomUUID();
+        setOrderId(first, UUID.randomUUID());
+        setOrderId(second, UUID.randomUUID());
+        first.setCheckoutId(checkoutId);
+        second.setCheckoutId(checkoutId);
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderItemRepository items = mock(OrderItemRepository.class);
+        InventoryService inventory = mock(InventoryService.class);
+        PaymentService payments = mock(PaymentService.class);
+        when(orders.findAllById(any())).thenReturn(List.of(first, second));
+        when(items.findAllByOrderIds(any())).thenReturn(List.of());
+        when(inventory.findReservationsByOrderIds(any())).thenReturn(Map.of());
+        when(payments.findCheckout(checkoutId))
+                .thenReturn(new PaymentResponse(null, checkoutId, null, PaymentState.NOT_STARTED, false));
+
+        OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
+                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
+                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
+
+        assertEquals(2, service.findAll(List.of(first.orderId(), second.orderId())).size());
+
+        verify(payments, times(1)).findCheckout(checkoutId);
+        verify(items, times(1)).findAllByOrderIds(any());
+        verify(inventory, times(1)).findReservationsByOrderIds(any());
+        verify(items, never()).findByOrderOrderIdOrderBySkuIdAsc(any());
+    }
+
     private static void setOrderId(PurchaseOrder order, UUID id) {
         try {
             var field = PurchaseOrder.class.getDeclaredField("orderId");
