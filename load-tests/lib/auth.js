@@ -27,6 +27,10 @@ function tokenResponse(response, expectedStatus, operation) {
   } catch (_) {
     throw new Error(`${operation} returned invalid JSON`);
   }
+  if (body.mfaRequired && !body.tokens) {
+    throw new Error(`${operation} requires an MFA challenge`);
+  }
+  body = body.tokens || body;
   if (!body.accessToken || !body.refreshToken || !body.buyerRef
       || !Number.isFinite(Number(body.expiresInSeconds))) {
     throw new Error(`${operation} returned an incomplete token response`);
