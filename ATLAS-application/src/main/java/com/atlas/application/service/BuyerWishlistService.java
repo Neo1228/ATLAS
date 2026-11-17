@@ -28,7 +28,9 @@ public class BuyerWishlistService {
     public BuyerWishlistItemResponse save(String buyerRef, UUID productId) {
         requireBuyerRef(buyerRef);
         Objects.requireNonNull(productId, "productId");
-        products.findProduct(productId);
+        if (!products.isPublicOrderable(productId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown product: " + productId);
+        }
         wishlist.saveIfAbsent(buyerRef, productId);
         return wishlist.find(buyerRef, productId)
                 .map(item -> new BuyerWishlistItemResponse(item.productId(), item.savedAt()))

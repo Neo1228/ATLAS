@@ -2,6 +2,7 @@ package com.atlas.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -53,6 +54,7 @@ class BuyerProductReviewIntegrationTest {
         }
         repository = new ProductReviewRepository(jdbc);
         products = mock(ProductService.class);
+        when(products.isPublicOrderable(any())).thenReturn(true);
         orders = mock(OrderService.class);
         reviews = new ProductReviewService(repository, products, orders);
     }

@@ -51,6 +51,16 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             """, nativeQuery = true)
     Optional<Product> findPublicOrderableByProductId(@Param("productId") UUID productId);
     @Query(value = """
+            SELECT EXISTS (
+                SELECT 1 FROM product p
+                WHERE p.product_id = :productId
+                    AND p.status = 'ACTIVE'
+                    AND EXISTS (SELECT 1 FROM product_channel_availability c
+                        WHERE c.product_id = p.product_id AND c.sales_channel = 'ONLINE_STORE' AND c.available = TRUE)
+            )
+            """, nativeQuery = true)
+    boolean existsPublicOrderableByProductId(@Param("productId") UUID productId);
+    @Query(value = """
             SELECT DISTINCT p.product_id
             FROM product p
             JOIN product_channel_availability c ON c.product_id = p.product_id
