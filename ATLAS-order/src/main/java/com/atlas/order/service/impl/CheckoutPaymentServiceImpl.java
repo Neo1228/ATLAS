@@ -32,8 +32,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Limit;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -389,17 +391,26 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
 
     private CheckoutResponse toResponse(BuyerCheckout checkout) {
         PaymentResponse payment = payments.findCheckout(checkout.checkoutId());
-        List<OrderResponse> childResponses = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkout.checkoutId())
-                .stream().map(order -> toResponse(order, payment)).toList();
+        List<PurchaseOrder> childOrders = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkout.checkoutId());
+        List<UUID> childOrderIds = childOrders.stream().map(PurchaseOrder::orderId).toList();
+        Map<UUID, List<ReservationResponse>> reservationsByOrder = childOrderIds.isEmpty()
+                ? Map.of() : inventory.findReservationsByOrderIds(childOrderIds);
+        Map<UUID, List<OrderItem>> itemsByOrder = childOrderIds.isEmpty()
+                ? Map.of() : items.findAllByOrderIds(childOrderIds).stream()
+                        .collect(Collectors.groupingBy(item -> item.order().orderId()));
+        List<OrderResponse> childResponses = childOrders.stream()
+                .map(order -> toResponse(order, payment,
+                        reservationsByOrder.getOrDefault(order.orderId(), List.of()),
+                        itemsByOrder.getOrDefault(order.orderId(), List.of())))
+                .toList();
         return new CheckoutResponse(checkout.checkoutId(), checkout.buyerRef(), checkout.state(),
                 checkout.totalWon(), childResponses, payment == null ? null : payment.attemptId(),
                 payment == null ? PaymentState.NOT_STARTED : payment.state(),
                 payment == null ? null : payment.approvalUrl());
     }
-    private OrderResponse toResponse(PurchaseOrder order, PaymentResponse payment) {
-        List<ReservationResponse> reservations = inventory.findReservations(order.orderId());
+    private OrderResponse toResponse(PurchaseOrder order, PaymentResponse payment,
+            List<ReservationResponse> reservations, List<OrderItem> orderItems) {
         PaymentState paymentState = payment == null ? PaymentState.NOT_STARTED : payment.state();
-        List<OrderItem> orderItems = items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId());
         List<OrderItemResponse> itemResponses = orderItems.stream()
                 .map(item -> new OrderItemResponse(item.productId(), item.sellerId(), item.skuId(),
                         item.productName(), item.quantity(), item.unitPriceWon(),

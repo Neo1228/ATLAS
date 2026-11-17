@@ -11,7 +11,9 @@ import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.InventoryTransferResponse;
 import com.atlas.inventory.dto.response.LocationInventoryResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,6 +32,9 @@ public interface InventoryService {
     Optional<ReservationResponse> tryReserve(ReserveInventoryRequest request);
     ReservationResponse findReservation(UUID orderId);
     List<ReservationResponse> findReservations(UUID orderId);
+
+    /** 여러 주문의 reservation을 한 번의 조회로 반환한다. 읽기 전용 응답 조립용이다. */
+    Map<UUID, List<ReservationResponse>> findReservationsByOrderIds(Collection<UUID> orderIds);
     ReservationResponse release(UUID orderId);
     List<ReservationResponse> releaseAll(UUID orderId);
     void restoreClaimed(UUID orderId, UUID sellerId, String skuId, int quantity);
