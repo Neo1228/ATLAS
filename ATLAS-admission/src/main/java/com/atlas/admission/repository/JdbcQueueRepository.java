@@ -2,6 +2,7 @@ package com.atlas.admission.repository;
 
 import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,77 @@ public class JdbcQueueRepository {
 
     public void createCounterIfAbsent(UUID sellerId, String skuId) {
         jdbc.update("INSERT INTO admission_counter (seller_id, sku_id, last_sequence) VALUES (?, ?, 0) ON CONFLICT (seller_id, sku_id) DO NOTHING", sellerId, skuId);
+    }
+
+
+    public record DueTicketCandidate(UUID ticketId, UUID sellerId, String skuId, Instant expiresAt) {
+        public DueTicketCursor cursor() {
+            return new DueTicketCursor(expiresAt, ticketId);
+        }
+    }
+
+    public record DueTicketCursor(Instant expiresAt, UUID ticketId) { }
+
+    /** Reads a keyset-bounded window of due tickets from the expiry index. */
+    public List<DueTicketCandidate> findDueTicketCandidates(
+            Instant now, DueTicketCursor after, int limit, Duration queryTimeout) {
+        if (limit < 1 || limit > 2_000) {
+            throw new IllegalArgumentException("candidate limit must be between 1 and 2000");
+        }
+        int timeoutSeconds = Math.max(1, Math.toIntExact(queryTimeout.toSeconds()));
+        String sql = after == null ? """
+                SELECT ticket_id, seller_id, sku_id, expires_at
+                FROM admission_ticket
+                WHERE status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ?
+                ORDER BY expires_at, ticket_id
+                LIMIT ?
+                """ : """
+                SELECT ticket_id, seller_id, sku_id, expires_at
+                FROM admission_ticket
+                WHERE status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ?
+                  AND (expires_at, ticket_id) > (?, ?)
+                ORDER BY expires_at, ticket_id
+                LIMIT ?
+                """;
+        return jdbc.query(connection -> {
+            var statement = connection.prepareStatement(sql);
+            statement.setQueryTimeout(timeoutSeconds);
+            statement.setTimestamp(1, Timestamp.from(now));
+            if (after == null) {
+                statement.setInt(2, limit);
+            } else {
+                statement.setTimestamp(2, Timestamp.from(after.expiresAt()));
+                statement.setObject(3, after.ticketId());
+                statement.setInt(4, limit);
+            }
+            return statement;
+        }, (result, rowNumber) -> new DueTicketCandidate(
+                result.getObject("ticket_id", UUID.class),
+                result.getObject("seller_id", UUID.class),
+                result.getString("sku_id"), result.getTimestamp("expires_at").toInstant()));
+    }
+
+    public enum CounterLockResult {
+        ACQUIRED,
+        BUSY,
+        MISSING
+    }
+
+    /** 다른 scheduler instance의 counter lock을 기다리지 않고 획득을 시도한다. */
+    public CounterLockResult tryLockCounter(UUID sellerId, String skuId) {
+        entityManager.flush();
+        List<Long> rows = jdbc.query("SELECT last_sequence FROM admission_counter "
+                        + "WHERE seller_id = ? AND sku_id = ? FOR UPDATE SKIP LOCKED",
+                (rs, rowNum) -> rs.getLong(1), sellerId, skuId);
+        if (!rows.isEmpty()) {
+            entityManager.clear();
+            return CounterLockResult.ACQUIRED;
+        }
+        Boolean exists = jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM admission_counter WHERE seller_id = ? AND sku_id = ?)",
+                Boolean.class, sellerId, skuId);
+        entityManager.clear();
+        return Boolean.TRUE.equals(exists) ? CounterLockResult.BUSY : CounterLockResult.MISSING;
     }
 
     public boolean lockCounter(UUID sellerId, String skuId) {

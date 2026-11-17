@@ -1,6 +1,7 @@
 package com.atlas.admission.service.impl;
 
 import com.atlas.admission.service.AdmissionService;
+import com.atlas.admission.service.AdmissionExpirySweepPolicy;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.dto.request.JoinQueueRequest;
@@ -19,11 +20,16 @@ import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -31,10 +37,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@RequiredArgsConstructor
 @Service
 public class AdmissionServiceImpl implements AdmissionService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AdmissionServiceImpl.class);
     private final TicketRepository tickets;
     private final JdbcQueueRepository queueRepository;
     private final CampaignService campaigns;
@@ -42,6 +50,23 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final SellerSkuService sellerSkus;
     private final Clock clock;
     private final PlatformTransactionManager transactionManager;
+    private final AdmissionExpirySweepPolicy expirySweepPolicy;
+    private JdbcQueueRepository.DueTicketCursor expiryCursor;
+
+    public AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository,
+            CampaignService campaigns, AdmissionPolicyRepository policies, SellerSkuService sellerSkus,
+            Clock clock, PlatformTransactionManager transactionManager,
+            @Value("${atlas.admission.expiry-sweep-batch-size:100}") int expiryBatchSize,
+            @Value("${atlas.admission.expiry-sweep-time-budget:PT2S}") Duration expiryTimeBudget) {
+        this.tickets = Objects.requireNonNull(tickets);
+        this.queueRepository = Objects.requireNonNull(queueRepository);
+        this.campaigns = Objects.requireNonNull(campaigns);
+        this.policies = Objects.requireNonNull(policies);
+        this.sellerSkus = Objects.requireNonNull(sellerSkus);
+        this.clock = Objects.requireNonNull(clock);
+        this.transactionManager = Objects.requireNonNull(transactionManager);
+        this.expirySweepPolicy = new AdmissionExpirySweepPolicy(expiryBatchSize, expiryTimeBudget);
+    }
 
     @Override
     @Transactional
@@ -195,22 +220,71 @@ public class AdmissionServiceImpl implements AdmissionService {
     }
 
     @Scheduled(fixedDelayString = "${atlas.admission.expiry-poll-interval:PT1S}")
-    public int expireDueTickets() {
+    public synchronized int expireDueTickets() {
         Instant now = clock.instant();
-        List<UUID> sellers = tickets.findDueSellerIds(List.of(TicketStatus.WAITING, TicketStatus.CHECKOUT_ACTIVE), now);
+        long deadline = System.nanoTime() + expirySweepPolicy.timeBudget().toNanos();
+        List<JdbcQueueRepository.DueTicketCandidate> candidates;
+        try {
+            candidates = queueRepository.findDueTicketCandidates(
+                    now, expiryCursor, expirySweepPolicy.candidateWindowSize(), expirySweepPolicy.timeBudget());
+        } catch (DataAccessException exception) {
+            LOGGER.warn("Unable to query admission expiry candidates; failureType={}",
+                    exception.getClass().getSimpleName());
+            return 0;
+        }
+        if (candidates.isEmpty()) {
+            expiryCursor = null;
+            return 0;
+        }
+
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        transactionTemplate.setTimeout(Math.max(1, Math.toIntExact(expirySweepPolicy.timeBudget().toSeconds())));
+        Set<SellerSkuKey> visitedPairs = new HashSet<>();
+        int attemptedPairs = 0;
+        int consumedRows = 0;
         int expired = 0;
-        for (UUID sellerId : sellers) {
-            for (String skuId : tickets.findDueSkuIds(sellerId, List.of(TicketStatus.WAITING, TicketStatus.CHECKOUT_ACTIVE), now)) {
-                expired += transactionTemplate.execute(status -> {
-                    if (!lockCounter(sellerId, skuId)) throw new IllegalStateException("Admission counter is missing for expired tickets");
-                    return expireDueTicketsForSellerSku(sellerId, skuId, now);
-                });
+        JdbcQueueRepository.DueTicketCursor lastConsumed = expiryCursor;
+        for (JdbcQueueRepository.DueTicketCandidate candidate : candidates) {
+            if (System.nanoTime() >= deadline) break;
+            SellerSkuKey pair = new SellerSkuKey(candidate.sellerId(), candidate.skuId());
+            if (visitedPairs.add(pair)) {
+                if (attemptedPairs >= expirySweepPolicy.batchSize()) break;
+                attemptedPairs++;
+                try {
+                    Integer changed = transactionTemplate.execute(status -> {
+                        JdbcQueueRepository.CounterLockResult lockResult = queueRepository
+                                .tryLockCounter(pair.sellerId(), pair.skuId());
+                        if (lockResult == JdbcQueueRepository.CounterLockResult.BUSY) return -1;
+                        if (lockResult == JdbcQueueRepository.CounterLockResult.MISSING) {
+                            throw new MissingAdmissionCounterException();
+                        }
+                        return expireDueTicketsForSellerSku(pair.sellerId(), pair.skuId(), now);
+                    });
+                    expired += changed == null || changed < 0 ? 0 : changed;
+                } catch (MissingAdmissionCounterException exception) {
+                    LOGGER.error("Admission expiry candidate has no counter; sellerId={} skuId={}",
+                            pair.sellerId(), pair.skuId());
+                } catch (RuntimeException exception) {
+                    LOGGER.warn("Admission expiry failed for seller-SKU; failureType={}",
+                            exception.getClass().getSimpleName());
+                }
             }
+            lastConsumed = candidate.cursor();
+            consumedRows++;
+        }
+        expiryCursor = lastConsumed;
+        if (consumedRows == candidates.size() && candidates.size() < expirySweepPolicy.candidateWindowSize()) {
+            expiryCursor = null;
         }
         return expired;
     }
+
+    private static final class MissingAdmissionCounterException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    private record SellerSkuKey(UUID sellerId, String skuId) { }
 
     private int expireDueTicketsForSellerSku(UUID sellerId, String skuId, Instant now) {
         int expired = queueRepository.expireDueTicketsForSellerSku(sellerId, skuId, now);

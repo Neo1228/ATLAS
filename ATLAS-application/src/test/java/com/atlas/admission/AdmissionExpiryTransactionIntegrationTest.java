@@ -36,7 +36,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestReporter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -75,64 +74,63 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
     @Autowired private PlatformTransactionManager transactionManager;
 
     @Test
-    void commitsOneSellerSkuExpiryBeforeWaitingOnTheNextCounterLock(TestReporter reporter) throws Exception {
+    void expiresUnlockedSellerSkuAndSkipsAnotherInstanceHoldingTheNextCounter() throws Exception {
         SellerResponse seller = sellers.createSeller();
         ProductResponse product = products.createProduct(seller.sellerId(),
                 new CreateProductRequest("admission expiry " + UUID.randomUUID(), "description"));
         DueTicket first = createDueTicket(seller.sellerId(), product, "first");
         DueTicket second = createDueTicket(seller.sellerId(), product, "second");
 
-        List<String> skuOrder = tickets.findDueSkuIds(seller.sellerId(),
-                List.of(TicketStatus.WAITING, TicketStatus.CHECKOUT_ACTIVE), Instant.now());
-        assertThat(skuOrder).containsExactlyInAnyOrder(first.skuId(), second.skuId());
+        List<JdbcQueueRepository.DueTicketCandidate> candidates = queueRepository.findDueTicketCandidates(
+                Instant.now(), null, 10, Duration.ofSeconds(2));
+        assertThat(candidates).extracting(JdbcQueueRepository.DueTicketCandidate::skuId)
+                .containsExactlyInAnyOrder(first.skuId(), second.skuId());
         DueTicket visibleBeforeRelease = Map.of(first.skuId(), first, second.skuId(), second)
-                .get(skuOrder.get(0));
+                .get(candidates.get(0).skuId());
         DueTicket blocked = Map.of(first.skuId(), first, second.skuId(), second)
-                .get(skuOrder.get(1));
+                .get(candidates.get(1).skuId());
 
         CountDownLatch counterLocked = new CountDownLatch(1);
         CountDownLatch releaseCounter = new CountDownLatch(1);
-        AtomicInteger blockerPid = new AtomicInteger(-1);
-        ExecutorService executor = Executors.newFixedThreadPool(2);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> lockHolder = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
+            if (!queueRepository.lockCounter(seller.sellerId(), blocked.skuId())) {
+                throw new IllegalStateException("Admission counter is missing");
+            }
+            counterLocked.countDown();
+            try {
+                if (!releaseCounter.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out waiting to release admission counter");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while holding admission counter", exception);
+            }
+            return null;
+        }));
+
         try {
-            Future<?> lockHolder = executor.submit(() -> new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(status -> {
-                        if (!queueRepository.lockCounter(seller.sellerId(), blocked.skuId())) {
-                            throw new IllegalStateException("Admission counter missing for regression fixture");
-                        }
-                        blockerPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
-                        counterLocked.countDown();
-                        awaitLatch(releaseCounter);
-                    }));
             assertThat(counterLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
-            Future<Integer> expiry = executor.submit(admissionService::expireDueTickets);
-            assertThat(awaitExpired(visibleBeforeRelease, Duration.ofSeconds(10)))
-                    .as("the first seller-SKU expiry commits while the next counter is locked")
-                    .isTrue();
+            int firstTickExpired = admissionService.expireDueTickets();
 
-            try (Connection observer = dataSource.getConnection()) {
-                int observerPid = PostgresLockWaitProbe.backendPid(observer);
-                PostgresLockWaitProbe.Observation observation = PostgresLockWaitProbe.awaitWaiter(
-                        observer, blockerPid.get(), observerPid, Duration.ofSeconds(10), Duration.ofMillis(100));
-                assertThat(observation.queryElapsedMillis()).isPositive();
-                reporter.publishEntry("admission.expiry.counter.queryElapsedAtObservationMs",
-                        Double.toString(observation.queryElapsedMillis()));
-                reporter.publishEntry("admission.expiry.counter.waitEvent", observation.waitEvent());
-                reporter.publishEntry("admission.expiry.counter.pollIntervalMs", "100");
-            }
+            assertThat(firstTickExpired).isEqualTo(1);
+            assertThat(admission.find(visibleBeforeRelease.ticket().campaignId(),
+                    visibleBeforeRelease.ticket().ticketId()).status()).isEqualTo(TicketStatus.EXPIRED);
+            assertThat(admission.find(blocked.ticket().campaignId(), blocked.ticket().ticketId()).status())
+                    .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
+
             releaseCounter.countDown();
-            assertThat(expiry.get(10, TimeUnit.SECONDS)).isEqualTo(2);
-            assertThat(lockHolder.get(10, TimeUnit.SECONDS)).isNull();
+            lockHolder.get(10, TimeUnit.SECONDS);
+            assertThat(admissionService.expireDueTickets()).isEqualTo(1);
             assertThat(admission.find(blocked.ticket().campaignId(), blocked.ticket().ticketId()).status())
                     .isEqualTo(TicketStatus.EXPIRED);
         } finally {
             releaseCounter.countDown();
             executor.shutdownNow();
-            executor.awaitTermination(5, TimeUnit.SECONDS);
+            executor.awaitTermination(10, TimeUnit.SECONDS);
         }
     }
-
 
     @Test
     void increasingPolicyCapacityImmediatelyPromotesNextWaitingTicketInFifoOrder() {

@@ -3,6 +3,8 @@ package com.atlas.admission.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -52,9 +54,37 @@ class AdmissionServiceTest {
     private final AdmissionPolicyRepository policies = mock(AdmissionPolicyRepository.class);
     private final AdmissionServiceImpl admission = new AdmissionServiceImpl(
             tickets, queueRepository, campaigns, policies, sellerSkus, Clock.systemUTC(),
-            mock(PlatformTransactionManager.class));
+            mock(PlatformTransactionManager.class), 100, Duration.ofSeconds(2));
     private final UUID sellerId = UUID.randomUUID();
     private final String skuId = "sku-1";
+
+
+    @Test
+    void missingCounterDoesNotAbortRemainingExpiryCandidates() {
+        UUID missingSeller = UUID.randomUUID();
+        UUID activeSeller = UUID.randomUUID();
+        String missingSku = "missing-counter";
+        String activeSku = "active-counter";
+        Instant expiresAt = Instant.now().minusSeconds(1);
+        when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
+                .thenReturn(List.of(
+                        new JdbcQueueRepository.DueTicketCandidate(
+                                UUID.randomUUID(), missingSeller, missingSku, expiresAt),
+                        new JdbcQueueRepository.DueTicketCandidate(
+                                UUID.randomUUID(), activeSeller, activeSku, expiresAt)));
+        when(queueRepository.tryLockCounter(missingSeller, missingSku))
+                .thenReturn(JdbcQueueRepository.CounterLockResult.MISSING);
+        when(queueRepository.tryLockCounter(activeSeller, activeSku))
+                .thenReturn(JdbcQueueRepository.CounterLockResult.ACQUIRED);
+        when(queueRepository.expireDueTicketsForSellerSku(eq(activeSeller), eq(activeSku), any(Instant.class)))
+                .thenReturn(0);
+
+        assertEquals(0, admission.expireDueTickets());
+
+        verify(queueRepository).tryLockCounter(missingSeller, missingSku);
+        verify(queueRepository).tryLockCounter(activeSeller, activeSku);
+        verify(queueRepository).expireDueTicketsForSellerSku(eq(activeSeller), eq(activeSku), any(Instant.class));
+    }
 
     @BeforeEach
     void sellerSkuExists() {
