@@ -29,4 +29,7 @@ public interface ProductService {
     ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
             Long minPriceWon, Long maxPriceWon, Integer limit, String cursor);
     ProductListingResponse findProduct(UUID productId);
+
+    /** 공개 구매 가능 상태(ACTIVE + ONLINE_STORE)인지만 확인한다. 전체 상세 조립 없이 존재 검증에 쓴다. */
+    boolean isPublicOrderable(UUID productId);
 }

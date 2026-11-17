@@ -271,6 +271,13 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean isPublicOrderable(UUID productId) {
+        if (productId == null) throw new CatalogException(Code.INVALID_REQUEST, "Product ID required");
+        return products.existsPublicOrderableByProductId(productId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public ProductListingResponse findProduct(UUID productId) {
         if (productId == null) throw new CatalogException(Code.INVALID_REQUEST, "Product ID required");
         Product product = products.findPublicOrderableByProductId(productId)

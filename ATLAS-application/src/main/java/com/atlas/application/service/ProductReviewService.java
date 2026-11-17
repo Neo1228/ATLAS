@@ -53,7 +53,9 @@ public class ProductReviewService {
 
     public ProductReviewPage list(UUID productId, int requestedLimit, int offset) {
         Objects.requireNonNull(productId, "productId");
-        products.findProduct(productId);
+        if (!products.isPublicOrderable(productId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown product: " + productId);
+        }
         int limit = requestedLimit == 0 ? DEFAULT_PAGE_SIZE : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit must be between 1 and 100");

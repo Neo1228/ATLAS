@@ -2,9 +2,11 @@ package com.atlas.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.atlas.application.dto.response.BuyerWishlistItemResponse;
 import com.atlas.application.service.BuyerWishlistRepository;
@@ -52,6 +54,7 @@ class BuyerWishlistIntegrationTest {
         }
         repository = new BuyerWishlistRepository(jdbc);
         products = mock(ProductService.class);
+        when(products.isPublicOrderable(any())).thenReturn(true);
         wishlist = new BuyerWishlistService(repository, products);
     }
 
@@ -66,7 +69,7 @@ class BuyerWishlistIntegrationTest {
 
         assertThat(replay).isEqualTo(first);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_wishlist_item", Integer.class)).isEqualTo(1);
-        verify(products, times(2)).findProduct(productId);
+        verify(products, times(2)).isPublicOrderable(productId);
         wishlist.remove(buyerRef, productId);
         wishlist.remove(buyerRef, productId);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_wishlist_item", Integer.class)).isZero();
