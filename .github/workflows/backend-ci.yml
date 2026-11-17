@@ -8,10 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   backend:
     name: Java 25 and PostgreSQL integration checks
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -19,7 +24,23 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          # 워크플로가 바뀌지 않는 한 캐시를 재사용하고, PR에서는 main 캐시를 읽기 전용으로 쓴다.
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Verify Docker is available for PostgreSQL integration tests
         run: docker info
       - name: Run Gradle checks
+        env:
+          ATLAS_TEST_FORKS: '2'
         run: ./gradlew --no-daemon check
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/build/reports/tests/test
+            **/build/test-results/test
+          retention-days: 7
+          if-no-files-found: ignore
