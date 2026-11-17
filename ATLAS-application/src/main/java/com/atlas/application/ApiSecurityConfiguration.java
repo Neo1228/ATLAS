@@ -43,7 +43,7 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/*",
                                 "/api/products/*/reviews", "/api/campaigns/*", "/actuator/health",
-                                "/actuator/health/**")
+                                "/actuator/health/**", "/actuator/prometheus")
                         .permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> { }))
