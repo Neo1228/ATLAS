@@ -31,6 +31,7 @@ services:
       ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas
       ATLAS_DB_USER: atlas
       ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+      ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
       SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
       SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
       ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
