@@ -39,8 +39,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -78,16 +78,17 @@ class AdmissionServiceTest {
                 .thenReturn(JdbcQueueRepository.CounterLockResult.MISSING);
         when(queueRepository.tryLockCounter(activeSeller, activeSku))
                 .thenReturn(JdbcQueueRepository.CounterLockResult.ACQUIRED);
-        when(queueRepository.expireDueTicketsForSellerSku(eq(activeSeller), eq(activeSku), any(Instant.class)))
+        when(queueRepository.expireDueTicketCandidates(
+                eq(activeSeller), eq(activeSku), any(), any(Instant.class)))
                 .thenReturn(0);
 
         assertEquals(0, admission.expireDueTickets());
 
         verify(queueRepository).tryLockCounter(missingSeller, missingSku);
         verify(queueRepository).tryLockCounter(activeSeller, activeSku);
-        verify(queueRepository).expireDueTicketsForSellerSku(eq(activeSeller), eq(activeSku), any(Instant.class));
+        verify(queueRepository).expireDueTicketCandidates(
+                eq(activeSeller), eq(activeSku), any(), any(Instant.class));
     }
-
     @BeforeEach
     void sellerSkuExists() {
         when(sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN))
@@ -321,7 +322,7 @@ class AdmissionServiceTest {
     void preservesNonNullExpiryCursorWhenCandidateQueryFails() {
         Instant expiresAt = Instant.now().minusSeconds(10);
         List<JdbcQueueRepository.DueTicketCandidate> candidates =
-                java.util.stream.IntStream.range(0, 200)
+                IntStream.range(0, 200)
                         .mapToObj(index -> new JdbcQueueRepository.DueTicketCandidate(
                                 UUID.randomUUID(), sellerId, skuId, expiresAt.plusMillis(index)))
                         .toList();

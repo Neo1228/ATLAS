@@ -4,6 +4,7 @@ import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -120,7 +121,7 @@ public class JdbcQueueRepository {
             return 0;
         }
         entityManager.flush();
-        String placeholders = String.join(", ", java.util.Collections.nCopies(ticketIds.size(), "?"));
+        String placeholders = String.join(", ", Collections.nCopies(ticketIds.size(), "?"));
         Object[] parameters = new Object[ticketIds.size() + 3];
         parameters[0] = sellerId;
         parameters[1] = skuId;
