@@ -32,6 +32,11 @@ case "$mode" in
             # isolation instead of always paying for the whole matrix.
             IFS=';' read -r -a scenarios <<< "$LOAD_RATES"
             session_rate_time_unit='1s'
+        elif [[ "$workload" == "fulldomain" ]]; then
+            # One iteration walks 9 steps; payment and fulfilment only run for the
+            # minority of sessions that convert, so VUs need headroom for the tail.
+            scenarios=('20 24' '40 48')
+            session_rate_time_unit='1s'
         elif [[ "$workload" == "journey" ]]; then
             # One journey iteration is ~7 requests (4 reads, 1 resumed cart read, and
             # occasionally a cart write + read-after-write + checkout).
@@ -62,6 +67,14 @@ case "$workload" in
     reads)
         workload_script='catalog-read-capacity.js'
         workload_k6_args=()
+        ;;
+    fulldomain)
+        # Whole slice: browse -> cart -> checkout -> payment -> shipment -> statement.
+        workload_script='full-domain-capacity.js'
+        workload_k6_args=(-e SEEDED_SELLER_IDS="${SEEDED_SELLER_IDS:-}")
+        if [[ -n "${HOT_SELLER_SHARE:-}" ]]; then
+            workload_k6_args+=(-e HOT_SELLER_SHARE="${HOT_SELLER_SHARE}")
+        fi
         ;;
     journey)
         # Mixed read/write buyer journey: reads dominate, but cart writes and the

@@ -1,0 +1,76 @@
+{
+  "experiment": "EXP-038",
+  "issue": 351,
+  "dataset": {
+    "sellers": 2000,
+    "products": 2000000,
+    "skus": 4000000,
+    "inventoryPools": 4000000
+  },
+  "nodeSpec": {
+    "application": {
+      "cpus": 2.0,
+      "memoryGiB": 2,
+      "replicas": 3
+    },
+    "postgres": {
+      "cpus": 1.0,
+      "memoryGiB": 1,
+      "maxConnections": 60
+    },
+    "balancer": "nginx round-robin",
+    "pooler": "PgBouncer 1.24.1 transaction mode, DEFAULT_POOL_SIZE=24"
+  },
+  "settingsEvidence": {
+    "hikariFormula": "(core_count * 2) + effective_spindle_count = 5 for a 2 vCPU app",
+    "measured": "pool 10 -> 14.0% drop, pool 5 -> 6.0% drop at the same 160 it/s"
+  },
+  "fullDomain": {
+    "requests": 2400,
+    "dropped": 0,
+    "p95Ms": 11,
+    "checkoutP95Ms": 122,
+    "paymentP95Ms": 20,
+    "ordersCreated": 25,
+    "paymentsSubmitted": 25,
+    "trafficMix": {
+      "cartAdd": "6%",
+      "checkoutOfCartAdds": "25%",
+      "shipOfPaid": "50%",
+      "statement": "20%"
+    },
+    "limitation": "ATLAS_PAYMENT_PROVIDER=disabled: local state machine only, no PayPal latency"
+  },
+  "results": [
+    {
+      "configuration": "3 replicas, Hikari pool 10 (default)",
+      "offeredIterationsPerSecond": 160,
+      "planned": 19201,
+      "completed": 16522,
+      "dropped": 2679,
+      "dropPercent": 13.95,
+      "p95Ms": 2942.4,
+      "measuredFailureRate": 0
+    },
+    {
+      "configuration": "3 replicas, Hikari pool 5 (formula)",
+      "offeredIterationsPerSecond": 160,
+      "planned": 19201,
+      "completed": 18054,
+      "dropped": 1147,
+      "dropPercent": 5.97,
+      "p95Ms": 1808.1,
+      "measuredFailureRate": 0
+    },
+    {
+      "configuration": "3 replicas, pool 5 + PgBouncer",
+      "offeredIterationsPerSecond": 160,
+      "planned": 19201,
+      "completed": 18258,
+      "dropped": 943,
+      "dropPercent": 4.91,
+      "p95Ms": 1855.9,
+      "measuredFailureRate": 0
+    }
+  ]
+}
