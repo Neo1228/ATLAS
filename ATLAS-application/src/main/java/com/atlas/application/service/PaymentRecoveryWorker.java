@@ -155,8 +155,7 @@ public class PaymentRecoveryWorker {
     private void recoverPayment(PaymentRecoveryJob job) {
         PaymentResponse current = payments.findByAttemptId(job.operationId());
         if (terminal(current.state())) {
-            recovery.complete(job);
-            counter("completed", job.operationType()).increment();
+            recordCompletion(job);
             return;
         }
         if (awaitingBuyer(current)) {
@@ -180,8 +179,7 @@ public class PaymentRecoveryWorker {
     private void recoverRefund(PaymentRecoveryJob job) {
         PaymentRefundResponse current = payments.findRefundOperation(job.operationId());
         if (terminal(current.status())) {
-            recovery.complete(job);
-            counter("completed", job.operationType()).increment();
+            recordCompletion(job);
             return;
         }
         refunds.reconcilePayPalRefund(job.operationId());
@@ -191,13 +189,25 @@ public class PaymentRecoveryWorker {
 
     private void settle(PaymentRecoveryJob job, boolean terminal, boolean awaitingBuyer) {
         if (terminal) {
-            recovery.complete(job);
-            counter("completed", job.operationType()).increment();
+            recordCompletion(job);
         } else if (awaitingBuyer) {
             recovery.waitForBuyer(job);
         } else if (recovery.reschedule(job, backoff(job.attemptCount()), maxAttempts, maxAge,
                 "PROVIDER_RESULT_UNRESOLVED")) {
             counter("rescheduled", job.operationType()).increment();
+        }
+    }
+
+    /**
+     * Lease-fenced completion. {@code complete} returns false when another replica has
+     * already taken the lease (the 60 s lease is not renewed while a provider call runs),
+     * so counting unconditionally would report more completions than jobs.
+     */
+    private void recordCompletion(PaymentRecoveryJob job) {
+        if (recovery.complete(job)) {
+            counter("completed", job.operationType()).increment();
+        } else {
+            counter("completion_fenced", job.operationType()).increment();
         }
     }
 

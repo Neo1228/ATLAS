@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 /** 영속화된 검증 이벤트를 처리하며 provider API를 호출하지 않습니다. Issue #277. */
 @Component
 @ConditionalOnProperty(
-        name = "atlas.paypal.webhook-retry.worker.enabled", havingValue = "true", matchIfMissing = true)
+        name = "atlas.payment.paypal.webhook-retry.worker.enabled", havingValue = "true", matchIfMissing = true)
 public class PayPalWebhookRetryWorker {
     private static final String RUNS_METRIC = "atlas.paypal.webhook.retry.runs";
     private static final String CLAIMED_METRIC = "atlas.paypal.webhook.retry.claimed";
@@ -38,8 +38,8 @@ public class PayPalWebhookRetryWorker {
         this.meters = meters;
     }
 
-    @Scheduled(initialDelayString = "${atlas.paypal.webhook-retry-initial-delay:PT1S}",
-            fixedDelayString = "${atlas.paypal.webhook-retry-poll-interval:PT1S}")
+    @Scheduled(initialDelayString = "${atlas.payment.paypal.webhook-retry.worker.initial-delay:PT1S}",
+            fixedDelayString = "${atlas.payment.paypal.webhook-retry.worker.poll-interval:PT1S}")
     public void retryDueEvents() {
         Timer.Sample sample = Timer.start(meters);
         String outcome = "success";

@@ -93,9 +93,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
-        properties.add("atlas.paypal.webhook-retry-poll-interval", () -> "PT24H");
-        properties.add("atlas.paypal.webhook-retry-initial-delay", () -> "PT24H");
-        properties.add("atlas.paypal.webhook-retry.worker.enabled", () -> "false");
+        properties.add("atlas.payment.paypal.webhook-retry.worker.poll-interval", () -> "PT24H");
+        properties.add("atlas.payment.paypal.webhook-retry.worker.initial-delay", () -> "PT24H");
+        properties.add("atlas.payment.paypal.webhook-retry.worker.enabled", () -> "false");
         properties.add("atlas.payment.recovery.worker.enabled", () -> "false");
         properties.add("spring.datasource.hikari.connection-init-sql", () -> "SET lock_timeout TO '2s'");
     }
