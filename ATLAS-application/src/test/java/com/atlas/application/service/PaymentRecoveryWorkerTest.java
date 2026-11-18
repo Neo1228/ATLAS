@@ -170,6 +170,27 @@ class PaymentRecoveryWorkerTest {
         verify(payments, never()).findByAttemptId(any(UUID.class));
     }
 
+    @Test
+    void completedCounterIgnoresCompletionFencedByAnotherReplica() {
+        UUID attemptId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        PaymentRecoveryJob job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        // The provider call outlived the 60 s lease, so another replica already holds it.
+        PaymentResponse captured = new PaymentResponse(
+                orderId, null, attemptId, PaymentState.CAPTURED, false, null, "capture-1", null);
+        when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),
+                eq(Duration.ofHours(24)))).thenReturn(List.of(job)).thenReturn(List.of());
+        when(payments.findByAttemptId(attemptId)).thenReturn(captured);
+        when(recovery.complete(job)).thenReturn(false);
+
+        worker.poll();
+
+        assertThat(meters.counter("atlas.payment.recovery.completed",
+                "operation_type", "PAYMENT_ATTEMPT").count()).isZero();
+        assertThat(meters.counter("atlas.payment.recovery.completion_fenced",
+                "operation_type", "PAYMENT_ATTEMPT").count()).isEqualTo(1);
+    }
+
     private static PaymentRecoveryJob job(PaymentRecoveryOperationType type, UUID operationId) {
         return new PaymentRecoveryJob(
                 UUID.randomUUID(), type, operationId, 1, Instant.now(), UUID.randomUUID());

@@ -3,9 +3,10 @@ spring:
     host: localhost
 
 atlas:
-  paypal:
-    webhook-retry-poll-interval: PT24H
-    webhook-retry-initial-delay: PT24H
-    webhook-retry:
-      worker:
-        enabled: false
+  payment:
+    paypal:
+      webhook-retry:
+        worker:
+          enabled: false
+          poll-interval: PT24H
+          initial-delay: PT24H

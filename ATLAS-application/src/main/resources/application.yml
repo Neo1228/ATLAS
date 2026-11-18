@@ -71,6 +71,13 @@ atlas:
       client-id: ${PAYPAL_CLIENT_ID:}
       client-secret: ${PAYPAL_CLIENT_SECRET:}
       webhook-id: ${PAYPAL_WEBHOOK_ID:}
+      webhook-retry:
+        worker:
+          # Canonical location: the worker used to read atlas.paypal.*, which nothing
+          # declared, so these values could not be overridden in a deployment.
+          enabled: ${ATLAS_PAYPAL_WEBHOOK_RETRY_ENABLED:true}
+          poll-interval: ${ATLAS_PAYPAL_WEBHOOK_RETRY_POLL_INTERVAL:PT1S}
+          initial-delay: ${ATLAS_PAYPAL_WEBHOOK_RETRY_INITIAL_DELAY:PT1S}
   settlement:
     report:
       operator:
