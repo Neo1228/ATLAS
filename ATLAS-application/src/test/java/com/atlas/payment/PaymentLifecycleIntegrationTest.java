@@ -589,7 +589,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse created = cartCheckouts.checkout(buyerRef, "checkout-webhook-lease-race-" + UUID.randomUUID());
         UUID checkoutId = created.checkoutId();
-        PaymentResponse pending = checkoutPayments.submit(checkoutId);
+        CheckoutResponse pending = checkoutPayments.submit(checkoutId);
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         String providerOrderId = payments.findCheckout(checkoutId).providerOrderId();
         PaymentResponse authorized = payments.completeCheckoutApproval(checkoutId, providerOrderId);
