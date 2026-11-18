@@ -6,12 +6,17 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: docs-lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   markdownlint:
     name: Markdown lint
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -24,6 +29,7 @@ jobs:
         run: npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"
 
   pr-checklist:
+    timeout-minutes: 10
     name: PR checklist
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

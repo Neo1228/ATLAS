@@ -23,7 +23,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-          cache: gradle
       - uses: gradle/actions/setup-gradle@v4
         with:
           # 워크플로가 바뀌지 않는 한 캐시를 재사용하고, PR에서는 main 캐시를 읽기 전용으로 쓴다.

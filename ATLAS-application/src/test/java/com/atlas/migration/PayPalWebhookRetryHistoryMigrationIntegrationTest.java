@@ -176,6 +176,41 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
+    void reaperBoundsEachPollAndDrainsExpiredMaxAttemptRows() throws IOException {
+        apply("V33__paypal_webhook_retry_attempt_history.sql");
+        apply("V42__paypal_webhook_retry_reaper_index.sql");
+        int rowCount = 11;
+        for (int i = 0; i < rowCount; i++) {
+            String eventId = "evt-reaper-" + i;
+            insertQueueRow(eventId, 0);
+            jdbc.update("UPDATE paypal_webhook_retry SET attempt_count = 8, lease_until = "
+                    + "CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE event_id = ?", eventId);
+        }
+
+        List<String> plan = new TransactionTemplate(new DataSourceTransactionManager(dataSource)).execute(status -> {
+            jdbc.execute("SET LOCAL enable_seqscan = off");
+            jdbc.execute("SET LOCAL enable_sort = off");
+            return jdbc.queryForList("EXPLAIN SELECT event_id FROM paypal_webhook_retry "
+                    + "WHERE state = 'PENDING' AND attempt_count = 8 "
+                    + "AND (lease_until IS NULL OR lease_until <= clock_timestamp()) "
+                    + "ORDER BY lease_until, event_id LIMIT 8", String.class);
+        });
+        assertThat(plan).anyMatch(line -> line.contains("paypal_webhook_retry_reaper_idx"));
+
+        PayPalWebhookRetryRepository.PollResult first = repository.pollDue();
+        assertThat(first.reapedCount()).isEqualTo(8);
+        assertThat(first.claimed()).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE state = 'EXHAUSTED'",
+                Integer.class)).isEqualTo(8);
+
+        PayPalWebhookRetryRepository.PollResult second = repository.pollDue();
+        assertThat(second.reapedCount()).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE state = 'EXHAUSTED'",
+                Integer.class)).isEqualTo(rowCount);
+        assertThat(repository.pollDue().reapedCount()).isZero();
+    }
+
+    @Test
     void legacyQueueAndRecreatedEventRetainTheirDistinctClaims() throws IOException {
         insertQueueRow("evt-legacy", 3);
         apply("V33__paypal_webhook_retry_attempt_history.sql");

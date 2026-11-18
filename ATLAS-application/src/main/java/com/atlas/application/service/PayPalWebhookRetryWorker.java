@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 public class PayPalWebhookRetryWorker {
     private static final String RUNS_METRIC = "atlas.paypal.webhook.retry.runs";
     private static final String CLAIMED_METRIC = "atlas.paypal.webhook.retry.claimed";
+    private static final String REAPED_METRIC = "atlas.paypal.webhook.retry.reaped";
     private static final String OUTCOMES_METRIC = "atlas.paypal.webhook.retry.outcomes";
     private static final String DURATION_METRIC = "atlas.paypal.webhook.retry.duration";
     private static final String ATTEMPT_DURATION_METRIC = "atlas.paypal.webhook.retry.attempt.duration";
@@ -43,7 +44,11 @@ public class PayPalWebhookRetryWorker {
         Timer.Sample sample = Timer.start(meters);
         String outcome = "success";
         try {
-            List<PayPalWebhookRetryRepository.ClaimedRetry> claimed = retries.claimDue();
+            PayPalWebhookRetryRepository.PollResult poll = retries.pollDue();
+            List<PayPalWebhookRetryRepository.ClaimedRetry> claimed = poll.claimed();
+            if (poll.reapedCount() > 0) {
+                Counter.builder(REAPED_METRIC).register(meters).increment(poll.reapedCount());
+            }
             Counter claimedCounter = Counter.builder(CLAIMED_METRIC).register(meters);
             if (!claimed.isEmpty()) claimedCounter.increment(claimed.size());
             for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {
