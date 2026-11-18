@@ -189,6 +189,43 @@
         "listing_first_latency": 51.4,
         "product_detail_latency": 6.9
       }
+    },
+    {
+      "phase": "scale-out-3x2vcpu",
+      "appReplicas": 3,
+      "offeredIterationsPerSecond": 40,
+      "planned": 4801,
+      "completed": 4801,
+      "dropped": 0,
+      "dropPercent": 0.0,
+      "p95Ms": 9.2,
+      "appCpu": {
+        "mean": 40.8
+      },
+      "postgresCpu": {
+        "mean": 17.6
+      }
+    },
+    {
+      "phase": "scale-out-3x2vcpu",
+      "appReplicas": 3,
+      "offeredIterationsPerSecond": 80,
+      "planned": 9601,
+      "completed": 9601,
+      "dropped": 0,
+      "dropPercent": 0.0,
+      "p95Ms": 8.0,
+      "appCpu": {
+        "mean": 39.0
+      },
+      "postgresCpu": {
+        "mean": 31.1
+      }
     }
+  ],
+  "progression": [
+    "tiny 1 vCPU: application CPU saturates first (PG idle)",
+    "app 2 vCPU only: same wall removed, PG unchanged",
+    "app 2 vCPU x3 + nginx: 2x throughput at lower p95"
   ]
 }

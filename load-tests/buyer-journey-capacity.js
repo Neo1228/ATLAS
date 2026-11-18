@@ -145,9 +145,11 @@ function buyerForVu(seed) {
 // account per iteration would measure registration, not shopping.
 export function setup() {
   const buyers = [];
-  // Provision for the maximum VU count, not just the pre-allocated set: k6 may
-  // scale up to maxVUs when the arrival rate cannot be met.
-  const count = Math.max(FIXED_VUS * 4, 4);
+  // Provision per VU, but cap the provisioning round trips: k6 aborts setup after
+  // 60s, and one login per VU at 96+ VUs exceeds that. maxVUs is still honoured by
+  // reusing accounts round-robin, which is realistic (shared devices do exist) and
+  // keeps setup bounded.
+  const count = Math.min(Math.max(FIXED_VUS, 4), 48);
   for (let index = 0; index < count; index += 1) {
     // Reuse accounts from a previous run in the same dataset: signup performs an
     // email round trip (Mailpit) which is slow and not what this scenario measures.
