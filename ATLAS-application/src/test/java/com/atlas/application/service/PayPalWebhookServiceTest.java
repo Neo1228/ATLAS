@@ -18,6 +18,7 @@ import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.OrderSource;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.JdbcBuyerLockRepository;
+import com.atlas.order.repository.JdbcExpirySweepLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutPaymentService;
@@ -270,7 +271,8 @@ class PayPalWebhookServiceTest {
                 orderItems, mock(JdbcBuyerLockRepository.class),
                 mock(OrderFulfillmentService.class), mock(AdmissionService.class), inventory,
                 payments, mock(SellerSkuService.class), mock(SettlementService.class), Clock.systemUTC(),
-                Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
+                Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
+                mock(JdbcExpirySweepLockRepository.class));
         PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
                 mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
                 mock(PayPalWebhookRetryRepository.class));

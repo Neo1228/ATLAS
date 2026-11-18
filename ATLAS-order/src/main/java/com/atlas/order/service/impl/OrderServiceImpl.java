@@ -21,6 +21,7 @@ import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.OrderSource;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.JdbcBuyerLockRepository;
+import com.atlas.order.repository.JdbcExpirySweepLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.ExpirySweepPolicy;
@@ -74,6 +75,7 @@ public final class OrderServiceImpl implements OrderService {
     private final Clock clock;
     private final Duration checkoutWindow;
     private final ExpirySweepPolicy expirySweep;
+    private final JdbcExpirySweepLockRepository expirySweepLock;
 
     public OrderServiceImpl(PlatformTransactionManager transactionManager, OrderRepository repository,
             OrderItemRepository items, JdbcBuyerLockRepository buyerLockRepository,
@@ -81,7 +83,8 @@ public final class OrderServiceImpl implements OrderService {
             PaymentService payments, SellerSkuService sellerSkus, SettlementService settlement, Clock clock,
             @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow,
             @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
-            @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget) {
+            @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget,
+            JdbcExpirySweepLockRepository expirySweepLock) {
         this.repository = Objects.requireNonNull(repository);
         this.items = Objects.requireNonNull(items);
         this.buyerLockRepository = Objects.requireNonNull(buyerLockRepository);
@@ -95,6 +98,7 @@ public final class OrderServiceImpl implements OrderService {
         this.clock = Objects.requireNonNull(clock);
         this.checkoutWindow = Objects.requireNonNull(checkoutWindow);
         this.expirySweep = new ExpirySweepPolicy(expirySweepBatchSize, expirySweepTimeBudget);
+        this.expirySweepLock = expirySweepLock;
         if (checkoutWindow.isZero() || checkoutWindow.isNegative()) {
             throw new IllegalArgumentException("checkoutWindow must be positive");
         }
@@ -366,6 +370,9 @@ public final class OrderServiceImpl implements OrderService {
 
     @Override
     public int expireDueOrders() {
+        // Only one replica runs this sweep per tick; the others skip instead of
+        // duplicating the candidate scan and racing for the same row locks.
+        if (expirySweepLock != null && !expirySweepLock.tryAcquire("orders")) return 0;
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();
         List<UUID> dueOrders = repository.findReservedOrdersExpiredBy(now, Limit.of(expirySweep.batchSize()));
