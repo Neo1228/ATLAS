@@ -18,6 +18,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
     private static final String CLAIMED_METRIC = "atlas.paypal.webhook.retry.claimed";
     private static final String OUTCOMES_METRIC = "atlas.paypal.webhook.retry.outcomes";
     private static final String DURATION_METRIC = "atlas.paypal.webhook.retry.duration";
+    private static final String ATTEMPT_DURATION_METRIC = "atlas.paypal.webhook.retry.attempt.duration";
 
     private final PayPalWebhookRetryRepository retries = mock(PayPalWebhookRetryRepository.class);
     private final PayPalWebhookService webhooks = mock(PayPalWebhookService.class);
@@ -33,6 +34,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
         assertThat(meters.counter(CLAIMED_METRIC).count()).isZero();
         assertThat(meters.counter(RUNS_METRIC, "outcome", "success").count()).isEqualTo(1);
         assertThat(meters.timer(DURATION_METRIC).count()).isEqualTo(1);
+        assertThat(meters.timer(ATTEMPT_DURATION_METRIC).count()).isZero();
     }
 
     @Test
@@ -69,6 +71,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
         assertThat(outcome("rescheduled")).isEqualTo(1);
         assertThat(outcome("rejected")).isEqualTo(1);
         assertThat(meters.counter(RUNS_METRIC, "outcome", "success").count()).isEqualTo(4);
+        assertThat(meters.timer(ATTEMPT_DURATION_METRIC).count()).isEqualTo(4);
         assertThat(meters.find(OUTCOMES_METRIC).meters())
                 .allSatisfy(meter -> assertThat(meter.getId().getTags())
                         .extracting(tag -> tag.getKey())
@@ -94,6 +97,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
         assertThat(outcome("transient_failure")).isEqualTo(1);
         assertThat(outcome("stale_claim")).isEqualTo(1);
         assertThat(meters.timer(DURATION_METRIC).count()).isEqualTo(2);
+        assertThat(meters.timer(ATTEMPT_DURATION_METRIC).count()).isEqualTo(2);
     }
 
     @Test
@@ -104,6 +108,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
         assertThat(meters.counter(RUNS_METRIC, "outcome", "failure").count()).isEqualTo(1);
         assertThat(meters.timer(DURATION_METRIC).count()).isEqualTo(1);
+        assertThat(meters.timer(ATTEMPT_DURATION_METRIC).count()).isZero();
     }
 
     private double outcome(String outcome) {

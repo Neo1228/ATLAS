@@ -16,7 +16,7 @@
 
 ## 2. 근거 목록: 확인된 사실과 미검증 가설
 
-| 영역 | 확인된 근거 | 미확인 사항·가설 | 가장 저비용인 다음 확인 |
+| 영역 | 확인된 근거 | 미확인 사항·가설 | 비용이 가장 적게 드는 다음 확인 |
 |---|---|---|---|
 | 정상 부하 checkout | EXP-033 remote 4-vCPU runner에서 각 부하를 120초 실행. 2.78 sessions/s에서는 334/334 완료, dropped 0, HTTP 오류 0. 5초 주기 Hikari 표본은 active=1, pending=0, max=10, timeouts=0. | 생성 checkout 시나리오와 요청률이 운영 트래픽을 대표하는지 불명확합니다. 5초 표본은 짧은 pool peak를 놓칠 수 있고 PostgreSQL CPU·lock wait·connection 여유는 측정되지 않았습니다. | 정상 트래픽 형태를 담당자에게 확인합니다. 대표성이 확인되면 낮은 부하만 재실행하고 DB-side CPU/connection/lock 지표를 함께 수집합니다. |
 | 높은 부하 경계 관측 | 44.48 sessions/s에서 계획된 5,338개 중 26개가 dropped(0.49%)했고 HTTP 오류는 0이었습니다. EXP-033도 이를 capacity ceiling으로 주장하지 않습니다. | drop 원인은 분리되지 않았고 runner 경합 및 짧은 표본 주기가 교란 요인입니다. | 특정 용량 결정을 위해 더 싼 근거가 불가능하다는 승인된 질문이 없는 한 추가 peak test를 하지 않습니다. |
@@ -39,12 +39,12 @@ Alert를 만들거나 운영 준비 완료를 선언하기 전에 서비스/제�
 3. PostgreSQL durable job의 RTO/RPO 및 backup/restore 담당자
 4. 운영 Hikari max pool, PostgreSQL connection limit, scheduler replica/flag, management bind/scrape 경로, SMTP 설정, alert notification route의 유효 배포값
 
-이 항목이 없으면 추측한 SLO를 만들지 않고 명시적인 운영 준비 격차로 기록합니다.
+위 정보가 없으면 추측한 SLO를 만들지 않고 명시적인 운영 준비 격차로 기록합니다.
 
 ### 단계 B — 저비용 코드 정확성 및 관측
 
 1. 주입된 `MeterRegistry`를 사용해 기존 webhook retry poll의 duration, poll failure, claimed count, 제한된 outcome counter를 기록합니다. label은 고정된 소수의 outcome만 허용하며 event ID, order ID, exception 메시지, URL, 고객 정보를 넣지 않습니다.
-- 다음 네 가지 metric series를 사용합니다: `atlas.paypal.webhook.retry.runs{outcome=success|failure}`, `atlas.paypal.webhook.retry.claimed`, `atlas.paypal.webhook.retry.outcomes{outcome=accepted|duplicate|rescheduled|rejected|transient_failure|stale_claim|record_failure}`, `atlas.paypal.webhook.retry.duration`.
+- 다음 다섯 가지 metric series를 사용합니다: `atlas.paypal.webhook.retry.runs{outcome=success|failure}`, `atlas.paypal.webhook.retry.claimed`, `atlas.paypal.webhook.retry.outcomes{outcome=accepted|duplicate|rescheduled|rejected|transient_failure|stale_claim|record_failure}`, `atlas.paypal.webhook.retry.duration`, `atlas.paypal.webhook.retry.attempt.duration`.
 - 기존 poll 경로에서만 갱신하며 주기적인 SQL query를 추가하지 않습니다. label에 event/order ID나 exception text를 넣지 않습니다.
 1. poll마다 또는 scrape마다 별도 query를 추가하지 않습니다. 담당자가 delivery 목표상 backlog age를 요구하는 경우에만 후속 작업으로 검토하며, 먼저 index와 query 비용을 입증합니다.
 1. 다음을 테스트합니다: due event가 없는 poll도 claim 0으로 관측됨, claim 수가 한 번만 증가함, success/duplicate, transient reschedule, permanent rejection, stale lease, repository poll failure가 의도한 outcome으로 기록됨, metrics가 retry/lease 의미를 바꾸지 않음.
@@ -65,15 +65,17 @@ Alert를 만들거나 운영 준비 완료를 선언하기 전에 서비스/제�
 3. Email: SMTP 실패가 이미 commit된 계정 상태를 rollback하지 않고 사용자 resend가 동작함을 확인합니다. 사용자에게 보이는 복구 경로를 문서화합니다.
 4. Alert rule은 담당자가 목표와 notification route를 정한 뒤에만 도입합니다. 검토 후보는 지속적인 pool pending/timeout, worker poll failure, due-backlog age, Prometheus target down, expiry run failure이며 현재 승인된 임계치는 없습니다.
 
-
 ### 추가 검증: webhook lease 만료 경계
 
 **후속 검증:** [#339](https://github.com/Neo1228/ATLAS/issues/339)
 
-코드상 claim lease는 60초이며 `processVerified` 실행 중 lease를 갱신하지 않습니다. 따라서 처리 시간이 lease를 넘으면 다른 instance가 아직 실행 중인 event를 다시 claim할 가능성이 있습니다. 이는 코드에서 확인한 위험이지 관측된 장애는 아니며, 실제 처리 시간과 발생 빈도는 미확인입니다.
+`PayPalWebhookRetryRepository`는 최대 8회 시도와 60초 lease를 사용하고, claim 시 시도 횟수를 증가시킵니다. `PayPalWebhookRetryWorker`는 `processVerified`를 동기 실행하며 처리 중 lease를 갱신하지 않습니다. 처리 시간이 lease를 넘으면 다른 instance가 같은 이벤트를 다시 claim할 수 있고, 만료된 8번째 lease는 원 worker가 끝나기 전에 `EXHAUSTED`로 바뀔 수 있습니다. 이는 코드에서 확인한 가능성이지 실측 장애는 아닙니다.
 
-- 60초 대기나 부하 테스트 대신 lease timestamp를 통제하는 결정론적 통합 테스트를 추가합니다. Worker A의 처리를 hold하고 lease를 만료시킨 뒤 Worker B가 claim하도록 하며, business effect의 idempotency와 이전 owner의 stale completion을 확인합니다.
-- 대표 정상 조건에서 event 처리시간 분포와 최대 지연을 측정합니다. 안전한 margin이 확인되기 전에는 lease 연장이나 renewal을 추가하지 않습니다. 처리가 60초를 넘을 수 있다면 multi-instance 동작을 포함해 bounded timeout/lease renewal을 별도 검토합니다.
+- `PaymentServiceImpl`의 capture 반영은 event ID 기반으로 중복 적용을 막지만, `PayPalWebhookService`는 그 transaction 이후 order/checkout reconciliation도 실행합니다. 이 후속 동작의 재실행 안전성은 별도로 검증해야 합니다.
+- 기존 통합 테스트는 만료 lease 재claim, stale owner 차단, 8회 시도 소진을 다룹니다. 아직 처리 중인 handler가 lease 경계를 넘는 다중 instance 시나리오는 검증하지 않습니다.
+- `atlas.paypal.webhook.retry.duration`은 claim query를 포함한 전체 poll 시간을 기록해 lease 사용 구간의 보수적 상한으로 볼 수 있습니다. `atlas.paypal.webhook.retry.attempt.duration`은 claim 결과를 받은 뒤 outcome을 기록할 때까지의 처리 시간을 재지만 claim query 시간은 제외하므로 실제 lease 시간보다 짧을 수 있습니다. 두 지표를 `atlas.paypal.webhook.retry.claimed`와 함께 비교해 60초 경계 위험을 살핍니다. `EXHAUSTED` 건수와 queue age는 현재 worker metrics에 없으며, claim 0이 exhausted row가 없음을 보장하지 않습니다.
+- 60초 sleep이나 부하 테스트 대신 lease timestamp를 통제하는 결정론적 통합 테스트를 추가합니다. Worker A의 처리를 hold하고 lease 만료 후 Worker B가 claim하게 한 뒤 capture/reconciliation의 멱등성, stale owner 차단, 시도 횟수·최종 상태를 확인합니다.
+- 대표 정상 조건에서 poll 시간과 60초 lease 사이의 여유를 확인합니다. 안전한 margin이 측정되기 전에는 lease 연장이나 renewal을 추가하지 않습니다. 초과가 관측되면 multi-instance 실패 의미를 포함해 bounded timeout과 lease renewal을 비교합니다.
 
 ## 4. 인프라 및 튜닝을 위한 명시적 결정 기준
 

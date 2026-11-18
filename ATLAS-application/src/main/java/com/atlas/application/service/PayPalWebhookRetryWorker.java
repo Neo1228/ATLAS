@@ -22,6 +22,7 @@ public class PayPalWebhookRetryWorker {
     private static final String CLAIMED_METRIC = "atlas.paypal.webhook.retry.claimed";
     private static final String OUTCOMES_METRIC = "atlas.paypal.webhook.retry.outcomes";
     private static final String DURATION_METRIC = "atlas.paypal.webhook.retry.duration";
+    private static final String ATTEMPT_DURATION_METRIC = "atlas.paypal.webhook.retry.attempt.duration";
     private static final long FAILURE_LOG_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
     private static final Logger log = LoggerFactory.getLogger(PayPalWebhookRetryWorker.class);
     private final PayPalWebhookRetryRepository retries;
@@ -46,40 +47,45 @@ public class PayPalWebhookRetryWorker {
             Counter claimedCounter = Counter.builder(CLAIMED_METRIC).register(meters);
             if (!claimed.isEmpty()) claimedCounter.increment(claimed.size());
             for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {
-                PaymentWebhookResult result;
+                Timer.Sample attemptSample = Timer.start(meters);
                 try {
-                    result = webhooks.processVerified(retry.event());
-                } catch (RuntimeException failure) {
-                    recordTransientFailure(retry, failure);
-                    continue;
-                }
+                    PaymentWebhookResult result;
+                    try {
+                        result = webhooks.processVerified(retry.event());
+                    } catch (RuntimeException failure) {
+                        recordTransientFailure(retry, failure);
+                        continue;
+                    }
 
-                try {
-                    boolean recorded;
-                    String resultOutcome;
-                    if (result.accepted() || result.duplicate()) {
-                        recorded = retries.complete(retry.event().eventId(), retry.leaseOwner());
-                        resultOutcome = result.duplicate() ? "duplicate" : "accepted";
-                    } else if (result.retryable()) {
-                        recorded = retries.reschedule(retry.event().eventId(), retry.attempt(),
-                                retry.leaseOwner(), PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS,
-                                "Verified event is not correlated yet");
-                        resultOutcome = "rescheduled";
-                    } else {
-                        recorded = retries.reject(retry.event().eventId(), retry.attempt(),
-                                retry.leaseOwner(), "Verified event failed permanent validation");
-                        resultOutcome = "rejected";
+                    try {
+                        boolean recorded;
+                        String resultOutcome;
+                        if (result.accepted() || result.duplicate()) {
+                            recorded = retries.complete(retry.event().eventId(), retry.leaseOwner());
+                            resultOutcome = result.duplicate() ? "duplicate" : "accepted";
+                        } else if (result.retryable()) {
+                            recorded = retries.reschedule(retry.event().eventId(), retry.attempt(),
+                                    retry.leaseOwner(), PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS,
+                                    "Verified event is not correlated yet");
+                            resultOutcome = "rescheduled";
+                        } else {
+                            recorded = retries.reject(retry.event().eventId(), retry.attempt(),
+                                    retry.leaseOwner(), "Verified event failed permanent validation");
+                            resultOutcome = "rejected";
+                        }
+                        if (!recorded) {
+                            logStaleClaim(retry);
+                            recordOutcome("stale_claim");
+                        } else {
+                            recordOutcome(resultOutcome);
+                        }
+                    } catch (RuntimeException failure) {
+                        recordOutcome("record_failure");
+                        log.error("Unable to record PayPal webhook outcome for event {} (attempt {}, failure type {})",
+                                retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
                     }
-                    if (!recorded) {
-                        logStaleClaim(retry);
-                        recordOutcome("stale_claim");
-                    } else {
-                        recordOutcome(resultOutcome);
-                    }
-                } catch (RuntimeException failure) {
-                    recordOutcome("record_failure");
-                    log.error("Unable to record PayPal webhook outcome for event {} (attempt {}, failure type {})",
-                            retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
+                } finally {
+                    attemptSample.stop(Timer.builder(ATTEMPT_DURATION_METRIC).register(meters));
                 }
             }
         } catch (RuntimeException failure) {
