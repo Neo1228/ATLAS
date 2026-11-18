@@ -217,6 +217,22 @@ public class PayPalWebhookRetryRepository {
         return changed != null && changed == 1;
     }
 
+    /**
+     * Oldest pending retry age in seconds, or null when the queue is empty.
+     *
+     * Issue #337: the worker exposed claim/outcome/duration but nothing said whether
+     * retries were falling behind, so an operator could not tell "no work" from "work
+     * piling up". age is measured from the earliest {@code next_attempt_at}, i.e. how
+     * long the most overdue event has been waiting past its own schedule.
+     */
+    public Double oldestPendingAgeSeconds() {
+        return jdbc.queryForObject("""
+                SELECT EXTRACT(EPOCH FROM (clock_timestamp() - MIN(next_attempt_at)))
+                FROM paypal_webhook_retry
+                WHERE state = 'PENDING' AND attempt_count < ?
+                """, Double.class, MAX_ATTEMPTS);
+    }
+
     public record PollResult(List<ClaimedRetry> claimed, int reapedCount) { }
 
     public record ClaimedRetry(PaymentWebhookEvent event, int attempt, String leaseOwner) { }

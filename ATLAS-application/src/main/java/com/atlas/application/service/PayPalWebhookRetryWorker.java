@@ -5,6 +5,7 @@ import java.util.List;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -24,6 +25,7 @@ public class PayPalWebhookRetryWorker {
     private static final String OUTCOMES_METRIC = "atlas.paypal.webhook.retry.outcomes";
     private static final String DURATION_METRIC = "atlas.paypal.webhook.retry.duration";
     private static final String ATTEMPT_DURATION_METRIC = "atlas.paypal.webhook.retry.attempt.duration";
+    private static final String OLDEST_PENDING_AGE_METRIC = "atlas.paypal.webhook.retry.oldest_pending_age";
     private static final long FAILURE_LOG_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
     private static final Logger log = LoggerFactory.getLogger(PayPalWebhookRetryWorker.class);
     private final PayPalWebhookRetryRepository retries;
@@ -51,6 +53,7 @@ public class PayPalWebhookRetryWorker {
             }
             Counter claimedCounter = Counter.builder(CLAIMED_METRIC).register(meters);
             if (!claimed.isEmpty()) claimedCounter.increment(claimed.size());
+            recordOldestPendingAge();
             for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {
                 Timer.Sample attemptSample = Timer.start(meters);
                 try {
@@ -120,6 +123,19 @@ public class PayPalWebhookRetryWorker {
             log.error("Unable to record transient PayPal webhook failure for event {} (attempt {}, failure type {})",
                     retry.event().eventId(), retry.attempt(), outcomeFailure.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Publishes how far past its own schedule the most overdue pending retry is.
+     * An empty queue leaves the gauge at its last value only if a value ever existed;
+     * it is deliberately not set to 0 so "unknown" is not reported as "healthy".
+     */
+    private void recordOldestPendingAge() {
+        Double ageSeconds = retries.oldestPendingAgeSeconds();
+        if (ageSeconds == null) return;
+        Gauge.builder(OLDEST_PENDING_AGE_METRIC, ageSeconds, Double::doubleValue)
+                .baseUnit("seconds")
+                .register(meters);
     }
 
     private void recordOutcome(String outcome) {
