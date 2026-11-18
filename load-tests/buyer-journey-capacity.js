@@ -75,6 +75,8 @@ const CART_WRITES = new Counter('journey_cart_writes');
 const CHECKOUT_ATTEMPTS = new Counter('journey_checkout_attempts');
 const READ_AFTER_WRITE = new Rate('journey_cart_read_after_write_ok');
 const DROPPED = new Counter('journey_cursor_missing');
+const STATUS_CODES = new Counter('journey_error_status');
+const UNEXPECTED_ERRORS = new Counter('journey_unexpected_errors');
 
 export const options = {
   scenarios: {
@@ -90,7 +92,8 @@ export const options = {
   },
   thresholds: {
     checks: ['rate>0.995'],
-    http_req_failed: ['rate<0.01'],
+    // Only shopper-phase requests count; setup() provisioning is excluded by tag.
+    'http_req_failed{phase:measure}': ['rate<0.01'],
   },
 };
 
@@ -106,11 +109,25 @@ function sellerFor(vu, iteration) {
 function get(path, tag) {
   return http.get(`${BASE_URL}${path}`, {
     headers: { Accept: 'application/json' },
-    tags: { name: tag, operation: tag },
+    tags: { name: tag, operation: tag, phase: 'measure' },
   });
 }
 
+function noteStatus(response, label) {
+  if (response.status >= 400) {
+    STATUS_CODES.add(1);
+    let code = '';
+    try {
+      code = String(response.json().code || '');
+    } catch (_) {
+      code = '';
+    }
+    if (code) UNEXPECTED_ERRORS.add(1, { route: label, code });
+  }
+}
+
 function timed(label, response) {
+  noteStatus(response, label);
   ROUTE_LATENCY[label].add(response.timings.duration);
   return response;
 }
@@ -135,6 +152,9 @@ export function setup() {
     // Reuse accounts from a previous run in the same dataset: signup performs an
     // email round trip (Mailpit) which is slow and not what this scenario measures.
     // A 404 account makes signup the only option, so try login first.
+    // Auth helpers tag their requests with phase=setup. Those requests are
+    // provisioning, not shopper traffic, and a probe login that 401s before signup
+    // must not be counted as a failed user request.
     try {
       buyers.push(loginBuyer(BASE_URL, RUN_ID, 'journey', index));
       continue;
@@ -195,7 +215,9 @@ export default function (seed) {
   const auth = authHeaders(buyer.accessToken, { Accept: 'application/json' });
   const cartRead = http.get(`${BASE_URL}/api/buyers/${buyerRef}/cart`, {
     headers: auth,
-    tags: { name: 'cart_read', operation: 'cart_read' },
+    // A shopper without a cart gets 404 CART_NOT_FOUND; that is a valid state.
+    responseCallback: http.expectedStatuses(200, 404),
+    tags: { name: 'cart_read', operation: 'cart_read', phase: 'measure' },
   });
   timed('cart_read', cartRead);
   // A first-time shopper has no cart yet; 404 CART_NOT_FOUND is a normal state, not
@@ -233,7 +255,8 @@ export default function (seed) {
     JSON.stringify({ quantity: 1 }),
     {
       headers: authHeaders(buyer.accessToken, { 'Content-Type': 'application/json' }),
-      tags: { name: 'cart_write', operation: 'cart_write' },
+      responseCallback: http.expectedStatuses(200, 409, 422),
+      tags: { name: 'cart_write', operation: 'cart_write', phase: 'measure' },
     },
   );
   timed('cart_write', write);
@@ -261,7 +284,8 @@ export default function (seed) {
   // property a cache or read replica would break, so it is measured explicitly.
   const afterWrite = http.get(`${BASE_URL}/api/buyers/${buyerRef}/cart`, {
     headers: auth,
-    tags: { name: 'cart_read_after_write', operation: 'cart_read_after_write' },
+    responseCallback: http.expectedStatuses(200, 404),
+    tags: { name: 'cart_read_after_write', operation: 'cart_read_after_write', phase: 'measure' },
   });
   let visible = false;
   try {
@@ -277,7 +301,10 @@ export default function (seed) {
     CHECKOUT_ATTEMPTS.add(1);
     const checkout = http.post(`${BASE_URL}/api/buyers/${buyerRef}/cart/checkout`, null, {
       headers: authHeaders(buyer.accessToken, { 'Content-Type': 'application/json' }),
-      tags: { name: 'checkout', operation: 'checkout' },
+      // Checkout answers 4xx when the cart is not payable; that is a business
+      // outcome, not a transport failure.
+      responseCallback: http.expectedStatuses({ min: 200, max: 499 }),
+      tags: { name: 'checkout', operation: 'checkout', phase: 'business' },
     });
     timed('checkout', checkout);
     check(checkout, { 'checkout: 2xx or business rejection': (r) => r.status < 500 });
