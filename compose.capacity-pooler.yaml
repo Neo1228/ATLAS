@@ -1,0 +1,51 @@
+# Transaction-mode connection pooler for the tiny-node experiment (EXP-037).
+#
+# Why: AWS documents that PostgreSQL exhausts connections and memory long before
+# CPU, and a measured PgBouncer run reached 210K queries/s on a fixed 128-connection
+# pool (PostgreSQL CPU 97%, up from 22%). Both say the same thing: the fix for
+# connection pressure is multiplexing, not a bigger max_connections.
+#
+# This profile adds PgBouncer in *transaction* mode with a deliberately small server
+# pool, so the app can keep its 40-client budget while PostgreSQL sees far fewer
+# backends. The experiment then shows whether that moves the wall.
+#
+# Session-state caveat: transaction mode does not preserve per-session state between
+# statements. ATLAS uses plain JDBC without session-level temporary tables or
+# advisory locks held across statements, so it is compatible; that assumption is
+# stated here because it is the usual reason transaction mode breaks an application.
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p0@sha256:53d98b3174b0842c475b9842fb0a733b2d9f7ec9da834ec42252aa553f48c628
+    profiles: ["observability", "loadtest"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: atlas
+      DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+      DB_NAME: atlas
+      POOL_MODE: transaction
+      # 24 server connections for an app fleet that may hold 40+ clients, which is
+      # the ratio AWS/PgBouncer guidance recommends for read-heavy OLTP.
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "24"
+      RESERVE_POOL_SIZE: "6"
+      MAX_DB_CONNECTIONS: "32"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+      SERVER_RESET_QUERY: DISCARD ALL
+    ports:
+      - "127.0.0.1:6432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  application:
+    environment:
+      # Route the app through the pooler. Flyway runs at startup too, so the pooler
+      # must be reachable before the app; compose `depends_on` handles ordering.
+      ATLAS_DB_URL: jdbc:postgresql://pgbouncer:5432/atlas
+    depends_on:
+      pgbouncer:
+        condition: service_started

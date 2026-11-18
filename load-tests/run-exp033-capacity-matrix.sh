@@ -32,6 +32,11 @@ case "$mode" in
             # isolation instead of always paying for the whole matrix.
             IFS=';' read -r -a scenarios <<< "$LOAD_RATES"
             session_rate_time_unit='1s'
+        elif [[ "$workload" == "journey" ]]; then
+            # One journey iteration is ~7 requests (4 reads, 1 resumed cart read, and
+            # occasionally a cart write + read-after-write + checkout).
+            scenarios=('5 6' '10 12' '20 24')
+            session_rate_time_unit='1s'
         elif [[ "$workload" == "reads" ]]; then
             # One read iteration is six GETs (first page, deep page, price filter,
             # needle search, broad search, detail) => 30/60/120 HTTP req/s offered.
@@ -58,6 +63,15 @@ case "$workload" in
         workload_script='catalog-read-capacity.js'
         workload_k6_args=()
         ;;
+    journey)
+        # Mixed read/write buyer journey: reads dominate, but cart writes and the
+        # read-after-write check exercise the paths a pure read loop never touches.
+        workload_script='buyer-journey-capacity.js'
+        workload_k6_args=(-e SEEDED_SELLER_IDS="${SEEDED_SELLER_IDS:-}")
+        if [[ -n "${HOT_SELLER_SHARE:-}" ]]; then
+            workload_k6_args+=(-e HOT_SELLER_SHARE="${HOT_SELLER_SHARE}")
+        fi
+        ;;
     *)
         echo "Unsupported LOAD_WORKLOAD=${workload}" >&2
         exit 2
@@ -82,7 +96,14 @@ for spec in "${scenarios[@]}"; do
     curl_error_file="${results_dir}/${run_id}-readiness.curl-error"
     echo "Starting fresh 4-CPU probe mode=${mode} run=${run_id} rate=${rate}/${session_rate_time_unit} fixed_vus=${fixed_vus} duration=${duration}"
 
-    compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+    # A large dataset is rebuilt once and reused across rates. Removing volumes here
+    # would wipe it before every scenario, which silently produced an empty-catalog
+    # measurement, so LOAD_KEEP_DATA=1 downgrades this to a plain `down`.
+    if [[ "${LOAD_KEEP_DATA:-0}" == "1" ]]; then
+        compose down --remove-orphans >/dev/null 2>&1 || true
+    else
+        compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+    fi
     # Distributed runs must not start the base single-node service: it would add
     # an unmeasured instance and take the published port from app-a.
     read -r -a stack_services <<< "${LOAD_STACK_SERVICES:-application postgres-exporter prometheus}"
@@ -150,9 +171,10 @@ for spec in "${scenarios[@]}"; do
         continue
     fi
 
-    # Each scenario recreates the stack with fresh volumes, so the seed flag must
-    # reset too; keeping it stale silently ran scenarios against an empty catalog.
-    if [[ "$workload" == "reads" ]]; then
+    # LOAD_SKIP_SEED=1 is for datasets that are too large to rebuild per scenario
+    # (e.g. the 2M-row EXP-037 catalog). The guard below still fails the run if the
+    # catalog is smaller than requested, so a skipped seed cannot go unnoticed.
+    if [[ "$workload" == "reads" && "${LOAD_SKIP_SEED:-0}" != "1" ]]; then
         # Seed once per freshly created stack. Running this inside the per-rate loop
         # put ~700k inserts inside the first rate's metric window, which made that
         # row's buffer counters incomparable with the later rows.
@@ -190,12 +212,27 @@ for spec in "${scenarios[@]}"; do
     if [[ "$workload" == "reads" ]]; then
         product_rows=$(compose exec -T postgres psql -U atlas -d atlas -tAc \
             "SELECT count(*) FROM product" 2>/dev/null | tr -d '[:space:]')
-        if [[ "${product_rows:-0}" -lt "$((seed_sellers * seed_products_per_seller))" ]]; then
-            echo "Read workload needs a seeded catalog: found ${product_rows:-0} products for ${run_id}" >&2
+        expected_min=$(( seed_sellers * seed_products_per_seller ))
+        if [[ "${LOAD_SKIP_SEED:-0}" == "1" ]]; then
+            # Reused dataset: trust the actual row count, not the requested scope.
+            printf 'reused_dataset product_rows=%s\n' "${product_rows:-0}" \
+                >> "${results_dir}/${run_id}-seed.log"
+        elif [[ "${product_rows:-0}" -lt "$expected_min" ]]; then
+            echo "Read workload needs a seeded catalog: found ${product_rows:-0} products (want ${expected_min}) for ${run_id}" >&2
             failures=1
         fi
-        printf 'product_rows=%s\n' "${product_rows:-0}" >> "${results_dir}/${run_id}-seed.log"
     fi
+
+    # A 200 response with zero items still looks healthy but measures nothing.
+    # This exact failure produced a meaningless "fast" result against an empty clone.
+    listing_items=$(curl --silent --show-error \
+        "${LOAD_READINESS_URL:-${api_url}/api/products?limit=1}" 2>/dev/null \
+        | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("items") or []))' 2>/dev/null || echo 0)
+    if [[ "${listing_items:-0}" -lt 1 ]]; then
+        echo "Catalog listing returned no items for ${run_id}; measurement would be meaningless" >&2
+        failures=1
+    fi
+    printf 'listing_items=%s\n' "${listing_items:-0}" >> "${results_dir}/${run_id}-seed.log"
 
     window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     if ! compose run --rm k6 run \
@@ -289,6 +326,10 @@ for spec in "${scenarios[@]}"; do
 done
 
 if [[ "${LOAD_KEEP_STACK:-0}" != "1" ]]; then
-    compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+    if [[ "${LOAD_KEEP_DATA:-0}" == "1" ]]; then
+        compose down --remove-orphans >/dev/null 2>&1 || true
+    else
+        compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+    fi
 fi
 exit "$failures"
