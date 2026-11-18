@@ -1,7 +1,9 @@
 package com.atlas.application.service;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,6 +28,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 class PaymentRecoveryWorkerTest {
     private final PaymentRecoveryService recovery = mock(PaymentRecoveryService.class);
@@ -139,6 +142,32 @@ class PaymentRecoveryWorkerTest {
 
         verify(refunds).reconcilePayPalRefund(refundId);
         verify(recovery).complete(job);
+    }
+
+    @Test
+    void recordsFailureToMarkExhaustedJobsWithoutClaiming() {
+        doThrow(new DataAccessResourceFailureException("database unavailable"))
+                .when(recovery).expireExhausted(8, Duration.ofHours(24));
+
+        worker.poll();
+
+        assertThat(meters.counter("atlas.payment.recovery.poll.failures", "stage", "expire_exhausted").count())
+                .isEqualTo(1);
+        verify(recovery, never()).claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)),
+                eq(8), eq(Duration.ofHours(24)));
+    }
+
+    @Test
+    void recordsFailureToClaimDueJobs() {
+        when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),
+                eq(Duration.ofHours(24))))
+                .thenThrow(new DataAccessResourceFailureException("database unavailable"));
+
+        worker.poll();
+
+        assertThat(meters.counter("atlas.payment.recovery.poll.failures", "stage", "claim_due").count())
+                .isEqualTo(1);
+        verify(payments, never()).findByAttemptId(any(UUID.class));
     }
 
     private static PaymentRecoveryJob job(PaymentRecoveryOperationType type, UUID operationId) {

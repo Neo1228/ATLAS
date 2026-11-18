@@ -16,6 +16,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 class PayPalWebhookRetryWorkerMetricsTest {
     private static final String RUNS_METRIC = "atlas.paypal.webhook.retry.runs";
     private static final String CLAIMED_METRIC = "atlas.paypal.webhook.retry.claimed";
+    private static final String REAPED_METRIC = "atlas.paypal.webhook.retry.reaped";
     private static final String OUTCOMES_METRIC = "atlas.paypal.webhook.retry.outcomes";
     private static final String DURATION_METRIC = "atlas.paypal.webhook.retry.duration";
     private static final String ATTEMPT_DURATION_METRIC = "atlas.paypal.webhook.retry.attempt.duration";
@@ -27,14 +28,29 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsSuccessfulEmptyPollAsZeroClaims() {
-        when(retries.claimDue()).thenReturn(List.of());
+        when(retries.pollDue()).thenReturn(new PayPalWebhookRetryRepository.PollResult(List.of(), 0));
 
         worker.retryDueEvents();
 
         assertThat(meters.counter(CLAIMED_METRIC).count()).isZero();
+        assertThat(meters.find(REAPED_METRIC).counter()).isNull();
         assertThat(meters.counter(RUNS_METRIC, "outcome", "success").count()).isEqualTo(1);
         assertThat(meters.timer(DURATION_METRIC).count()).isEqualTo(1);
         assertThat(meters.timer(ATTEMPT_DURATION_METRIC).count()).isZero();
+    }
+
+    @Test
+    void recordsReapedTerminalRowsInOneTaglessSeries() {
+        when(retries.pollDue()).thenReturn(new PayPalWebhookRetryRepository.PollResult(List.of(), 3),
+                new PayPalWebhookRetryRepository.PollResult(List.of(), 2));
+
+        worker.retryDueEvents();
+        worker.retryDueEvents();
+
+        assertThat(meters.counter(REAPED_METRIC).count()).isEqualTo(5);
+        assertThat(meters.counter(REAPED_METRIC).getId().getTags()).isEmpty();
+        assertThat(meters.find(REAPED_METRIC).meters()).hasSize(1);
+        assertThat(meters.counter(CLAIMED_METRIC).count()).isZero();
     }
 
     @Test
@@ -44,10 +60,11 @@ class PayPalWebhookRetryWorkerMetricsTest {
         PaymentWebhookEvent rescheduled = event("rescheduled");
         PaymentWebhookEvent rejected = event("rejected");
         doReturn(
-                List.of(claim(accepted, "lease-1")),
-                List.of(claim(duplicate, "lease-2")),
-                List.of(claim(rescheduled, "lease-3")),
-                List.of(claim(rejected, "lease-4"))).when(retries).claimDue();
+                new PayPalWebhookRetryRepository.PollResult(List.of(claim(accepted, "lease-1")), 0),
+                new PayPalWebhookRetryRepository.PollResult(List.of(claim(duplicate, "lease-2")), 0),
+                new PayPalWebhookRetryRepository.PollResult(List.of(claim(rescheduled, "lease-3")), 0),
+                new PayPalWebhookRetryRepository.PollResult(
+                        List.of(claim(rejected, "lease-4")), 0)).when(retries).pollDue();
         when(webhooks.processVerified(accepted)).thenReturn(result(false, true, false));
         when(webhooks.processVerified(duplicate)).thenReturn(result(true, true, false));
         when(webhooks.processVerified(rescheduled)).thenReturn(result(false, false, true));
@@ -82,8 +99,9 @@ class PayPalWebhookRetryWorkerMetricsTest {
     void recordsTransientFailureAndStaleLeaseOutcomes() {
         PaymentWebhookEvent transientFailure = event("transient");
         PaymentWebhookEvent staleLease = event("stale");
-        doReturn(List.of(claim(transientFailure, "lease-1")), List.of(claim(staleLease, "lease-2")))
-                .when(retries).claimDue();
+        doReturn(new PayPalWebhookRetryRepository.PollResult(List.of(claim(transientFailure, "lease-1")), 0),
+                new PayPalWebhookRetryRepository.PollResult(List.of(claim(staleLease, "lease-2")), 0))
+                .when(retries).pollDue();
         when(webhooks.processVerified(transientFailure)).thenThrow(new IllegalStateException("provider unavailable"));
         when(retries.reschedule(transientFailure.eventId(), 1, "lease-1",
                 PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR,
@@ -102,7 +120,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsPollFailureAndReturnsForTheNextScheduledAttempt() {
-        when(retries.claimDue()).thenThrow(new DataAccessResourceFailureException("database unavailable"));
+        when(retries.pollDue()).thenThrow(new DataAccessResourceFailureException("database unavailable"));
 
         worker.retryDueEvents();
 

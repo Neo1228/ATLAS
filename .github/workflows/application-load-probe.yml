@@ -31,10 +31,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-          cache: gradle
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: true
+      - name: Verify load-probe script syntax
+        shell: bash
+        run: bash -n load-tests/run-exp033-capacity-matrix.sh
       - name: Verify runner capacity
         run: docker info
       - name: Create ephemeral load-test credentials

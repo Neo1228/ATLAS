@@ -98,6 +98,7 @@ for spec in "${scenarios[@]}"; do
     if ! compose run --rm k6 run \
             -e BASE_URL=http://application:8080 \
             -e PROFILE=one-seller \
+            -e PAYMENT_MODE=checkout-only \
             -e RUN_ID="${run_id}" \
             -e UNIT_PRICE_WON=100 \
             -e DURATION="${duration}" \

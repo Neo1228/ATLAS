@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +41,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -77,16 +79,17 @@ class AdmissionServiceTest {
                 .thenReturn(JdbcQueueRepository.CounterLockResult.MISSING);
         when(queueRepository.tryLockCounter(activeSeller, activeSku))
                 .thenReturn(JdbcQueueRepository.CounterLockResult.ACQUIRED);
-        when(queueRepository.expireDueTicketsForSellerSku(eq(activeSeller), eq(activeSku), any(Instant.class)))
+        when(queueRepository.expireDueTicketCandidates(
+                eq(activeSeller), eq(activeSku), any(), any(Instant.class)))
                 .thenReturn(0);
 
         assertEquals(0, admission.expireDueTickets());
 
         verify(queueRepository).tryLockCounter(missingSeller, missingSku);
         verify(queueRepository).tryLockCounter(activeSeller, activeSku);
-        verify(queueRepository).expireDueTicketsForSellerSku(eq(activeSeller), eq(activeSku), any(Instant.class));
+        verify(queueRepository).expireDueTicketCandidates(
+                eq(activeSeller), eq(activeSku), any(), any(Instant.class));
     }
-
     @BeforeEach
     void sellerSkuExists() {
         when(sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN))
@@ -314,6 +317,34 @@ class AdmissionServiceTest {
         assertThrows(DataAccessResourceFailureException.class, () -> admission.expireDueTickets());
 
         verify(queueRepository, never()).tryLockCounter(sellerId, skuId);
+    }
+
+    @Test
+    void preservesNonNullExpiryCursorWhenCandidateQueryFails() {
+        Instant expiresAt = Instant.now().minusSeconds(10);
+        List<JdbcQueueRepository.DueTicketCandidate> candidates =
+                IntStream.range(0, 200)
+                        .mapToObj(index -> new JdbcQueueRepository.DueTicketCandidate(
+                                UUID.randomUUID(), sellerId, skuId, expiresAt.plusMillis(index)))
+                        .toList();
+        JdbcQueueRepository.DueTicketCursor lastCursor = candidates.get(candidates.size() - 1).cursor();
+        DataAccessResourceFailureException failure =
+                new DataAccessResourceFailureException("candidate query failed after cursor");
+        when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
+                .thenReturn(candidates);
+        when(queueRepository.findDueTicketCandidates(
+                any(Instant.class), eq(lastCursor), anyInt(), any(Duration.class)))
+                .thenThrow(failure)
+                .thenReturn(List.of());
+        when(queueRepository.tryLockCounter(sellerId, skuId))
+                .thenReturn(JdbcQueueRepository.CounterLockResult.BUSY);
+
+        assertEquals(0, admission.expireDueTickets());
+        assertThrows(DataAccessResourceFailureException.class, () -> admission.expireDueTickets());
+        assertEquals(0, admission.expireDueTickets());
+
+        verify(queueRepository, times(2)).findDueTicketCandidates(
+                any(Instant.class), eq(lastCursor), anyInt(), any(Duration.class));
     }
 
     @Test

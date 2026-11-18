@@ -299,6 +299,7 @@ export function handleSummary(data) {
   const report = {
     profile: PROFILE,
     paymentMode: PAYMENT_MODE,
+    completionSemantics: 'completed_checkout_sessions counts validated checkout responses, not payment capture',
     runId: RUN_ID,
     duration: DURATION,
     plannedSessionArrivalRate: `${SESSION_RATE_NUMERATOR}/${SESSION_RATE_TIME_UNIT} sessions/s`,

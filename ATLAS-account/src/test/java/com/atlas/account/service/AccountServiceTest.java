@@ -10,9 +10,11 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 import com.atlas.account.domain.AccountException;
 import com.atlas.account.domain.AccountPrincipal;
@@ -40,7 +42,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.bastiaanjansen.otp.TOTPGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class AccountServiceTest {
     private static final Instant NOW = Instant.parse("2026-11-10T12:00:00Z");
@@ -252,6 +257,52 @@ class AccountServiceTest {
 
         assertTrue(response.accepted());
         verify(emailSender, never()).sendPasswordReset(anyString(), anyString());
+    }
+
+    @Test
+    void failedAfterCommitVerificationEmailCanBeRetriedByUserRequest() {
+        when(accounts.findUnverifiedAccountIdByEmail("buyer@example.com")).thenReturn(Optional.of(ACCOUNT_ID));
+        int[] sendAttempts = {0};
+        doAnswer(invocation -> {
+            if (sendAttempts[0]++ == 0) throw new IllegalStateException("SMTP unavailable");
+            return null;
+        }).when(emailSender).sendVerification(eq("buyer@example.com"), anyString());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            AccountActionResponse first = service.requestEmailVerification(" Buyer@Example.com ");
+            assertTrue(first.accepted());
+            assertEquals(0, sendAttempts[0]);
+            List<TransactionSynchronization> firstCallbacks = TransactionSynchronizationManager.getSynchronizations();
+            firstCallbacks.forEach(TransactionSynchronization::afterCommit);
+            TransactionSynchronizationManager.clearSynchronization();
+        } finally {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+        assertEquals(1, sendAttempts[0]);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            AccountActionResponse resend = service.requestEmailVerification("buyer@example.com");
+            assertTrue(resend.accepted());
+            assertEquals(1, sendAttempts[0]);
+            List<TransactionSynchronization> resendCallbacks = TransactionSynchronizationManager.getSynchronizations();
+            resendCallbacks.forEach(TransactionSynchronization::afterCommit);
+            TransactionSynchronizationManager.clearSynchronization();
+        } finally {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+        assertEquals(2, sendAttempts[0]);
+        verify(emailSender, times(2)).sendVerification(eq("buyer@example.com"), anyString());
+
+        ArgumentCaptor<String> tokenHashes = ArgumentCaptor.forClass(String.class);
+        verify(accounts, times(2)).replaceActionToken(eq(ACCOUNT_ID), eq("EMAIL_VERIFICATION"),
+                tokenHashes.capture(), eq(NOW), eq(NOW.plus(Duration.ofHours(24))));
+        assertNotEquals(tokenHashes.getAllValues().get(0), tokenHashes.getAllValues().get(1));
     }
 
     @Test

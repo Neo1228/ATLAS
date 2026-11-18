@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PayPalWebhookRetryRepository {
     private static final int MAX_ATTEMPTS = 8;
+    private static final int REAPER_BATCH_SIZE = MAX_ATTEMPTS;
     private static final int LEASE_SECONDS = 60;
     private final JdbcTemplate jdbc;
 
@@ -38,14 +39,22 @@ public class PayPalWebhookRetryRepository {
      * 하나의 SQL 문에서 원자적으로 처리합니다.
      */
     public List<ClaimedRetry> claimDue() {
+        return pollDue().claimed();
+    }
+
+    public PollResult pollDue() {
         // 마지막 시도의 worker가 중단되면 다시 claim할 수 없으므로 lease 만료 시 이력을 종결하고
         // queue 행을 EXHAUSTED로 전환합니다. 마이그레이션 이전 lease에는 기존 이력이 없습니다.
-        jdbc.update("""
+        int reapedCount = jdbc.queryForObject("""
                 WITH expired AS MATERIALIZED (
                     SELECT event_id, attempt_count, lease_owner
                     FROM paypal_webhook_retry
-                    WHERE state = 'PENDING' AND attempt_count >= ?
+                    -- 8 is the schema ceiling (V31 CHECK constraint) and matches MAX_ATTEMPTS; the
+                    -- literal keeps the partial reaper index predicate provable to the planner.
+                    WHERE state = 'PENDING' AND attempt_count = 8
                       AND (lease_until IS NULL OR lease_until <= clock_timestamp())
+                    ORDER BY lease_until, event_id
+                    LIMIT ?
                     FOR UPDATE SKIP LOCKED
                 ), finalized AS (
                     UPDATE paypal_webhook_retry_attempt_history h
@@ -54,25 +63,27 @@ public class PayPalWebhookRetryRepository {
                     WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
                       AND h.attempt_number = e.attempt_count AND h.outcome = 'CLAIMED'
                     RETURNING h.lease_token
-                )
-                UPDATE paypal_webhook_retry r
-                SET state = 'EXHAUSTED',
-                    last_error = COALESCE(r.last_error, 'Retry lease expired at attempt limit'),
-                    finished_at = COALESCE(r.finished_at, clock_timestamp()),
-                    lease_owner = NULL, lease_until = NULL
-                FROM expired e
-                WHERE r.event_id = e.event_id
-                  AND (e.lease_owner IS NULL
-                       OR EXISTS (SELECT 1 FROM finalized f WHERE f.lease_token = e.lease_owner)
-                       OR NOT EXISTS (SELECT 1 FROM paypal_webhook_retry_attempt_history h
-                                      WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
-                                        AND h.attempt_number = e.attempt_count))
-                """, MAX_ATTEMPTS);
+                ), exhausted AS (
+                    UPDATE paypal_webhook_retry r
+                    SET state = 'EXHAUSTED',
+                        last_error = COALESCE(r.last_error, 'Retry lease expired at attempt limit'),
+                        finished_at = COALESCE(r.finished_at, clock_timestamp()),
+                        lease_owner = NULL, lease_until = NULL
+                    FROM expired e
+                    WHERE r.event_id = e.event_id
+                      AND (e.lease_owner IS NULL
+                           OR EXISTS (SELECT 1 FROM finalized f WHERE f.lease_token = e.lease_owner)
+                           OR NOT EXISTS (SELECT 1 FROM paypal_webhook_retry_attempt_history h
+                                          WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
+                                            AND h.attempt_number = e.attempt_count))
+                    RETURNING r.event_id
+                ) SELECT count(*) FROM exhausted
+                """, Integer.class, REAPER_BATCH_SIZE);
 
         // batch 크기 1은 의도적입니다. 여러 행을 claim하도록 바꾸면 batch UUID를 공유하지 말고
         // 각 행마다 별도의 lease token을 생성해야 합니다.
         String token = UUID.randomUUID().toString();
-        return jdbc.query("""
+        List<ClaimedRetry> claimed = jdbc.query("""
                 WITH due AS MATERIALIZED (
                     SELECT event_id, attempt_count, lease_owner
                     FROM paypal_webhook_retry
@@ -110,6 +121,7 @@ public class PayPalWebhookRetryRepository {
                 )
                 SELECT c.* FROM claimed c JOIN history h ON h.lease_token = c.lease_owner
                 """, this::mapClaim, MAX_ATTEMPTS, token, LEASE_SECONDS);
+        return new PollResult(claimed, reapedCount);
     }
 
     private ClaimedRetry mapClaim(ResultSet rs, int rowNum) throws SQLException {
@@ -204,6 +216,8 @@ public class PayPalWebhookRetryRepository {
                 rejected, MAX_ATTEMPTS, error);
         return changed != null && changed == 1;
     }
+
+    public record PollResult(List<ClaimedRetry> claimed, int reapedCount) { }
 
     public record ClaimedRetry(PaymentWebhookEvent event, int attempt, String leaseOwner) { }
 }

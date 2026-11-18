@@ -4,6 +4,7 @@ import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -111,6 +112,22 @@ public class JdbcQueueRepository {
     public int expireDueTicketsForSellerSku(UUID sellerId, String skuId, Instant now) {
         entityManager.flush();
         int changed = jdbc.update("UPDATE admission_ticket SET status = 'EXPIRED', checkout_slot_held = false WHERE seller_id = ? AND sku_id = ? AND status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ?", sellerId, skuId, Timestamp.from(now));
+        entityManager.clear();
+        return changed;
+    }
+
+    public int expireDueTicketCandidates(UUID sellerId, String skuId, List<UUID> ticketIds, Instant now) {
+        if (ticketIds.isEmpty()) {
+            return 0;
+        }
+        entityManager.flush();
+        String placeholders = String.join(", ", Collections.nCopies(ticketIds.size(), "?"));
+        Object[] parameters = new Object[ticketIds.size() + 3];
+        parameters[0] = sellerId;
+        parameters[1] = skuId;
+        parameters[2] = Timestamp.from(now);
+        System.arraycopy(ticketIds.toArray(), 0, parameters, 3, ticketIds.size());
+        int changed = jdbc.update("UPDATE admission_ticket SET status = 'EXPIRED', checkout_slot_held = false WHERE seller_id = ? AND sku_id = ? AND status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ? AND ticket_id IN (" + placeholders + ")", parameters);
         entityManager.clear();
         return changed;
     }

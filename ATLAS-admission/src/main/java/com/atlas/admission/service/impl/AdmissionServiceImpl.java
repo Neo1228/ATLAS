@@ -251,7 +251,14 @@ public class AdmissionServiceImpl implements AdmissionService {
                         if (lockResult == JdbcQueueRepository.CounterLockResult.MISSING) {
                             throw new MissingAdmissionCounterException();
                         }
-                        return expireDueTicketsForSellerSku(pair.sellerId(), pair.skuId(), now);
+                        return expireDueTicketCandidates(
+                                pair.sellerId(), pair.skuId(),
+                                candidates.stream()
+                                        .filter(dueCandidate -> dueCandidate.sellerId().equals(pair.sellerId())
+                                                && dueCandidate.skuId().equals(pair.skuId()))
+                                        .map(JdbcQueueRepository.DueTicketCandidate::ticketId)
+                                        .toList(),
+                                now);
                     });
                     expired += changed == null || changed < 0 ? 0 : changed;
                 } catch (MissingAdmissionCounterException exception) {
@@ -289,6 +296,12 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     private int expireDueTicketsForSellerSku(UUID sellerId, String skuId, Instant now) {
         int expired = queueRepository.expireDueTicketsForSellerSku(sellerId, skuId, now);
+        if (expired > 0) promote(sellerId, skuId);
+        return expired;
+    }
+
+    private int expireDueTicketCandidates(UUID sellerId, String skuId, List<UUID> ticketIds, Instant now) {
+        int expired = queueRepository.expireDueTicketCandidates(sellerId, skuId, ticketIds, now);
         if (expired > 0) promote(sellerId, skuId);
         return expired;
     }
