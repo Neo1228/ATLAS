@@ -59,6 +59,7 @@ public class PayPalWebhookRetryRepository {
                     WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
                       AND h.attempt_number = e.attempt_count AND h.outcome = 'CLAIMED'
                     RETURNING h.lease_token
+                """, Integer.class, REAPER_BATCH_SIZE);
                 )
                 SET state = 'EXHAUSTED',
                     last_error = COALESCE(r.last_error, 'Retry lease expired at attempt limit'),
@@ -166,6 +167,92 @@ public class PayPalWebhookRetryRepository {
     public record ClaimedRetry(PaymentWebhookEvent event, int attempt, String leaseOwner) { }
 }
 
+    private ClaimedRetry mapClaim(ResultSet rs, int rowNum) throws SQLException {
+        return new ClaimedRetry(event, rs.getInt("attempt_count"), rs.getString("lease_owner"));
+    }
+
+    /** lease가 오래되었거나 만료·누락 또는 이미 종결된 경우 false를 반환합니다. */
+    public boolean complete(String eventId, String leaseOwner) {
+        Integer changed = jdbc.queryForObject("""
+                WITH locked AS MATERIALIZED (
+                    SELECT event_id, state, attempt_count, lease_owner, lease_until
+                    FROM paypal_webhook_retry WHERE event_id = ? FOR UPDATE
+                ), eligible AS MATERIALIZED (
+                    SELECT * FROM locked WHERE state = 'PENDING' AND lease_owner = ?
+                      AND lease_until > clock_timestamp()
+                ), finalized AS (
+                    UPDATE paypal_webhook_retry_attempt_history h
+                    SET outcome = 'PROCESSED', finished_at = clock_timestamp()
+                    FROM eligible e
+                    WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
+                      AND h.attempt_number = e.attempt_count AND h.outcome = 'CLAIMED'
+                    RETURNING h.lease_token
+                ), completed AS (
+                    DELETE FROM paypal_webhook_retry r USING eligible e
+                    WHERE r.event_id = e.event_id
+                      AND (EXISTS (SELECT 1 FROM finalized f WHERE f.lease_token = e.lease_owner)
+                           OR NOT EXISTS (SELECT 1 FROM paypal_webhook_retry_attempt_history h
+                                          WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
+                                            AND h.attempt_number = e.attempt_count))
+                    RETURNING r.event_id
+                )
+                SELECT COUNT(*) FROM completed
+                """, Integer.class, eventId, leaseOwner);
+        return changed != null && changed == 1;
+    }
+
+    public enum RetryFailure { CORRELATION_MISS, TRANSIENT_ERROR }
+
+    /** 일시적 실패를 재예약하고 시도 한도에 도달하면 EXHAUSTED 이력을 기록합니다. */
+    public boolean reschedule(String eventId, int attempt, String leaseOwner, RetryFailure failure, String reason) {
+        Objects.requireNonNull(failure, "failure");
+        int delaySeconds = Math.min(300, 1 << Math.min(Math.max(attempt - 1, 0), 8));
+        return finishFailure(eventId, attempt, leaseOwner, failure.name(), reason, false, delaySeconds);
+    /** 영구 거부 결과를 기록하며 다음 시도를 예약하지 않습니다. */
+    public boolean reject(String eventId, int attempt, String leaseOwner, String reason) {
+        return finishFailure(eventId, attempt, leaseOwner, "PERMANENT_REJECT", reason, true, 0);
+    private boolean finishFailure(String eventId, int attempt, String leaseOwner, String outcome, String reason,
+                                  boolean rejected, int delaySeconds) {
+        String error = reason == null ? "Unknown retry failure" : reason.substring(0, Math.min(1000, reason.length()));
+        Integer changed = jdbc.queryForObject("""
+                WITH locked AS MATERIALIZED (
+                    SELECT event_id, state, attempt_count, lease_owner, lease_until
+                    FROM paypal_webhook_retry WHERE event_id = ? FOR UPDATE
+                ), eligible AS MATERIALIZED (
+                    SELECT * FROM locked WHERE state = 'PENDING' AND attempt_count = ?
+                      AND lease_owner = ? AND lease_until > clock_timestamp()
+                ), finalized AS (
+                    UPDATE paypal_webhook_retry_attempt_history h
+                    SET outcome = CASE WHEN ? THEN 'PERMANENT_REJECT'
+                                       WHEN e.attempt_count >= ? THEN 'EXHAUSTED' ELSE ? END,
+                        finished_at = clock_timestamp()
+                    FROM eligible e
+                    WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
+                      AND h.attempt_number = e.attempt_count AND h.outcome = 'CLAIMED'
+                    RETURNING h.lease_token
+                ), failed AS (
+                    UPDATE paypal_webhook_retry r
+                    SET state = CASE WHEN ? OR e.attempt_count >= ? THEN 'EXHAUSTED' ELSE 'PENDING' END,
+                        next_attempt_at = CASE WHEN ? OR e.attempt_count >= ? THEN r.next_attempt_at
+                                               ELSE clock_timestamp() + (? * INTERVAL '1 second') END,
+                        finished_at = CASE WHEN ? OR e.attempt_count >= ? THEN clock_timestamp() ELSE NULL END,
+                        last_error = ?, lease_owner = NULL, lease_until = NULL
+                    FROM eligible e
+                    WHERE r.event_id = e.event_id
+                      AND (EXISTS (SELECT 1 FROM finalized f WHERE f.lease_token = e.lease_owner)
+                           OR NOT EXISTS (SELECT 1 FROM paypal_webhook_retry_attempt_history h
+                                          WHERE h.lease_token = e.lease_owner AND h.event_id = e.event_id
+                                            AND h.attempt_number = e.attempt_count))
+                    RETURNING r.event_id
+                )
+                SELECT COUNT(*) FROM failed
+                """, Integer.class, eventId, attempt, leaseOwner, rejected, MAX_ATTEMPTS, outcome,
+                rejected, MAX_ATTEMPTS, rejected, MAX_ATTEMPTS, delaySeconds,
+                rejected, MAX_ATTEMPTS, error);
+        return changed != null && changed == 1;
+    public record PollResult(List<ClaimedRetry> claimed, int reapedCount) { }
+
+    public record ClaimedRetry(PaymentWebhookEvent event, int attempt, String leaseOwner) { }
     private ClaimedRetry mapClaim(ResultSet rs, int rowNum) throws SQLException {
         return new ClaimedRetry(event, rs.getInt("attempt_count"), rs.getString("lease_owner"));
     }
