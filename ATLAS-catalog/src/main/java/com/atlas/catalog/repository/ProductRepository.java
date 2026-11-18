@@ -119,7 +119,17 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                         SELECT 1 FROM product_category_assignment assignment
                         WHERE assignment.seller_id = p.seller_id AND assignment.product_id = p.product_id
                             AND assignment.category_id IN (SELECT category_id FROM category_tree)))
-                AND (CAST(:keyword AS text) = '' OR position(CAST(:keyword AS text) in lower(p.name)) > 0)
+                -- `position(... in lower(name))` cannot use a trigram index, so every
+                -- keyword search scanned the whole product table in listing order
+                -- until LIMIT rows matched (measured 409 ms over 100k rows). The
+                -- LIKE form is equivalent for our normalization (keyword is already
+                -- trimmed and lowercased, see ProductServiceImpl) and is indexable.
+                -- LIKE metacharacters in the user keyword are escaped so they keep
+                -- matching literally, exactly as they did with position().
+                AND (CAST(:keyword AS text) = ''
+                    OR lower(p.name) LIKE '%' || replace(replace(replace(
+                            CAST(:keyword AS text), '\\', '\\\\'), '%', '\\%'), '_', '\\_')
+                        || '%' ESCAPE '\\')
             AND (CAST(:minPriceWon AS bigint) IS NULL AND CAST(:maxPriceWon AS bigint) IS NULL
                 OR EXISTS (
                     SELECT 1

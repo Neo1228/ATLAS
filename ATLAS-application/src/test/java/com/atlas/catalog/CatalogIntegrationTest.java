@@ -133,6 +133,30 @@ class CatalogIntegrationTest {
     }
 
     @Test
+    void keywordSearchTreatsLikeWildcardsAsLiteralCharacters() {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        // Names chosen so `%` and `_` would match more rows if they were wildcards.
+        Product percentLiteral = create(sellerId, "100% cotton shirt");
+        Product percentDecoy = create(sellerId, "100 percent cotton shirt");
+        Product underscoreLiteral = create(sellerId, "size_42 jacket");
+        Product underscoreDecoy = create(sellerId, "sizeX42 jacket");
+        create(sellerId, "plain shirt");
+
+        assertThat(products.findListingPage(null, null, "100%", null, null, 10))
+                .extracting(Product::getProductId)
+                .containsExactly(percentLiteral.getProductId());
+        assertThat(products.findListingPage(null, null, "size_42", null, null, 10))
+                .extracting(Product::getProductId)
+                .containsExactly(underscoreLiteral.getProductId());
+        // Matching is still case-insensitive substring search on the lowered name.
+        assertThat(products.findListingPage(null, null, "cotton", null, null, 10))
+                .extracting(Product::getProductId)
+                .containsExactlyInAnyOrder(percentLiteral.getProductId(), percentDecoy.getProductId());
+        assertThat(percentDecoy.getProductId()).isNotEqualTo(underscoreLiteral.getProductId());
+        assertThat(underscoreDecoy.getProductId()).isNotEqualTo(underscoreLiteral.getProductId());
+    }
+
+    @Test
     void publicPriceRangesUseEffectiveSkuPriceBeforeStableCursorPagination() {
         UUID sellerId = sellerService.createSeller().sellerId();
         Product activeSaleA = create(sellerId, "active sale A");
