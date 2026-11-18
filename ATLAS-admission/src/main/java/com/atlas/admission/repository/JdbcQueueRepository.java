@@ -115,6 +115,22 @@ public class JdbcQueueRepository {
         return changed;
     }
 
+    public int expireDueTicketCandidates(UUID sellerId, String skuId, List<UUID> ticketIds, Instant now) {
+        if (ticketIds.isEmpty()) {
+            return 0;
+        }
+        entityManager.flush();
+        String placeholders = String.join(", ", java.util.Collections.nCopies(ticketIds.size(), "?"));
+        Object[] parameters = new Object[ticketIds.size() + 3];
+        parameters[0] = sellerId;
+        parameters[1] = skuId;
+        parameters[2] = Timestamp.from(now);
+        System.arraycopy(ticketIds.toArray(), 0, parameters, 3, ticketIds.size());
+        int changed = jdbc.update("UPDATE admission_ticket SET status = 'EXPIRED', checkout_slot_held = false WHERE seller_id = ? AND sku_id = ? AND status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ? AND ticket_id IN (" + placeholders + ")", parameters);
+        entityManager.clear();
+        return changed;
+    }
+
     public List<UUID> findWaitingTicketIdsForPromotion(UUID sellerId, String skuId, Instant now, int limit) {
         entityManager.flush();
         return jdbc.query("SELECT ticket_id FROM admission_ticket WHERE seller_id = ? AND sku_id = ? AND status = 'WAITING' AND expires_at > ? ORDER BY sequence LIMIT ? FOR UPDATE", (rs, rowNum) -> rs.getObject(1, UUID.class), sellerId, skuId, Timestamp.from(now), limit);

@@ -265,6 +265,37 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
     }
 
 
+    @Test
+    void scheduledExpiryDoesNotExpireTheTwoHundredFirstCandidateForOneSellerSku() {
+        SellerResponse seller = sellers.createSeller();
+        String skuId = "admission-expiry-page-" + UUID.randomUUID();
+        ProductResponse product = products.createProduct(seller.sellerId(),
+                new CreateProductRequest("admission expiry page " + UUID.randomUUID(), "description"));
+        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
+        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+                seller.sellerId(), skuId, Duration.ofMinutes(5)));
+        campaigns.open(campaign.campaignId());
+
+        List<QueueTicketResponse> tickets = new java.util.ArrayList<>();
+        for (int i = 0; i < 201; i++) {
+            tickets.add(admission.join(new JoinQueueRequest(campaign.campaignId(), skuId,
+                    "buyer-page-" + i + "-" + UUID.randomUUID(), "expiry-page-" + i + "-" + UUID.randomUUID())));
+        }
+        Instant dueAt = Instant.now().minus(Duration.ofHours(1));
+        jdbc.update("UPDATE admission_ticket SET expires_at = ? WHERE seller_id = ? AND sku_id = ?",
+                Timestamp.from(dueAt), seller.sellerId(), skuId);
+
+        List<JdbcQueueRepository.DueTicketCandidate> page = queueRepository.findDueTicketCandidates(
+                Instant.now(), null, 201, Duration.ofSeconds(2));
+        assertThat(page).hasSize(201);
+        UUID ticketIdOutsidePage = page.get(200).ticketId();
+
+        assertThat(admissionService.expireDueTickets()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT status FROM admission_ticket WHERE ticket_id = ?",
+                String.class, ticketIdOutsidePage)).isNotEqualTo("EXPIRED");
+    }
+
     private DueTicket createDueTicket(UUID sellerId, ProductResponse product, String label) {
         String skuId = "admission-expiry-" + label + "-" + UUID.randomUUID();
         products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
