@@ -299,6 +299,40 @@ FROM generate_series(1, :sellers::bigint * :products_per_seller::bigint,
 
 INSERT INTO seed_phase (phase, at) VALUES ('availability', clock_timestamp());
 
+-- Inventory: without stock every checkout is rejected with INSUFFICIENT_STOCK, so the
+-- payment, fulfilment and settlement paths can never be measured. Each SKU gets a
+-- pool at the seller's DEFAULT location (created by V16) with enough units that the
+-- load scenario does not exhaust it.
+INSERT INTO seed_phase (phase, at) VALUES ('inventory', clock_timestamp());
+
+-- V16 seeds a DEFAULT location only for sellers that existed at migration time.
+-- Sellers created by this script afterwards have none, so inventory_pool cannot be
+-- keyed until they do. Creating them here keeps the seed self-contained.
+INSERT INTO inventory_location (seller_id, location_code, name, priority, active)
+SELECT seller_id, 'DEFAULT', 'Default', 0, TRUE FROM seller
+ON CONFLICT (seller_id, location_code) DO NOTHING;
+
+SELECT format(
+    $sql$INSERT INTO inventory_pool
+        (seller_id, location_id, sku_id, initial_capacity, available, reserved, claimed)
+SELECT s.seller_id, l.location_id, sku.sku_id, 100000, 100000, 0, 0
+FROM seller_sku sku
+JOIN inventory_location l
+  ON l.seller_id = sku.seller_id AND l.location_code = 'DEFAULT'
+JOIN seller s ON s.seller_id = sku.seller_id
+WHERE sku.seller_id IN (
+    SELECT seed_uuid('seller-' || g) FROM generate_series(%s::bigint, %s::bigint) AS g
+)
+ON CONFLICT (seller_id, location_id, sku_id) DO NOTHING;$sql$,
+    chunks.lo, chunks.hi)
+FROM (
+    SELECT format('%s', n) AS lo, format('%s', LEAST(n + :batch_rows::bigint - 1, :sellers::bigint)) AS hi
+    FROM generate_series(1, :sellers::bigint, :batch_rows::bigint) AS n
+) AS chunks
+\gexec
+
+INSERT INTO seed_phase (phase, at) VALUES ('inventory_done', clock_timestamp());
+
 -- VACUUM (not just ANALYZE) flushes the trigram index pending list and removes any
 -- dead tuples from reruns, so the sizes reported below are the sizes queries see.
 VACUUM (ANALYZE) seller;
