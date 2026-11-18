@@ -3,6 +3,7 @@ package com.atlas.order.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -29,6 +30,7 @@ import com.atlas.order.persistence.state.BuyerCheckoutState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.JdbcBuyerLockRepository;
+import com.atlas.order.repository.JdbcExpirySweepLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.OrderFulfillmentService;
@@ -93,7 +95,8 @@ class CheckoutBehaviorTest {
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
                 inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
-                fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
+                fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
+                sweepLock());
 
         ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
         service.startCheckout(CAMPAIGN, TICKET);
@@ -129,7 +132,8 @@ class CheckoutBehaviorTest {
         OrderServiceImpl service = new OrderServiceImpl(manager, orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
                 inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
-                fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
+                fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
+                sweepLock());
 
         CatalogException exception = assertThrows(CatalogException.class,
                 () -> service.startCheckout(CAMPAIGN, TICKET));
@@ -167,7 +171,8 @@ class CheckoutBehaviorTest {
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), fulfillment, mock(AdmissionService.class), inventory,
-                payments, mock(SellerSkuService.class), settlement, fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
+                payments, mock(SellerSkuService.class), settlement, fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
+                sweepLock());
 
         OrderResponse response = service.reconcilePayment(orderId, "captured-reconciliation");
 
@@ -205,7 +210,8 @@ class CheckoutBehaviorTest {
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
-                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
+                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
+                sweepLock());
 
         OrderResponse response = service.reconcilePayment(orderId, "crash-recovery-key");
 
@@ -244,7 +250,8 @@ class CheckoutBehaviorTest {
 
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
                 orders, items, inventory, fulfillment, payments, settlement, mock(SellerCouponService.class),
-                fixedClock(), 100, Duration.ofSeconds(2));
+                fixedClock(), 100, Duration.ofSeconds(2),
+                sweepLock());
         AtomicReference<BuyerCheckoutState> cancellationState = new AtomicReference<>();
         when(payments.submitCheckout(eq(checkoutId), any())).thenAnswer(invocation -> {
             cancellationState.set(service.cancel(checkoutId, "cancel-racing-submit").state());
@@ -274,7 +281,8 @@ class CheckoutBehaviorTest {
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, mock(PaymentService.class),
                 mock(SellerSkuService.class), mock(SettlementService.class), fixedClock(),
-                Duration.ofMinutes(10), 25, Duration.ofSeconds(2));
+                Duration.ofMinutes(10), 25, Duration.ofSeconds(2),
+                sweepLock());
 
         assertEquals(0, service.expireDueOrders());
 
@@ -311,7 +319,8 @@ class CheckoutBehaviorTest {
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
                 orders, items, inventory, mock(OrderFulfillmentService.class), payments,
                 mock(SettlementService.class), mock(SellerCouponService.class),
-                fixedClock(), 100, Duration.ofSeconds(2));
+                fixedClock(), 100, Duration.ofSeconds(2),
+                sweepLock());
 
         service.find(checkoutId);
 
@@ -347,7 +356,8 @@ class CheckoutBehaviorTest {
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
                 mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
-                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2));
+                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
+                sweepLock());
 
         List<OrderResponse> responses = service.findAll(List.of(second.orderId(), first.orderId()));
 
@@ -399,4 +409,15 @@ class CheckoutBehaviorTest {
             public void rollback(TransactionStatus status) { }
         };
     }
+
+    /**
+     * 만료 sweep 테스트는 실제로 후보 조회까지 진행해야 하므로 락을 항상 허용합니다.
+     * 락으로 인한 skip 동작 자체는 JdbcExpirySweepLockRepositoryTest가 검증합니다.
+     */
+    private static JdbcExpirySweepLockRepository sweepLock() {
+        JdbcExpirySweepLockRepository lock = mock(JdbcExpirySweepLockRepository.class);
+        when(lock.tryAcquire(anyString())).thenReturn(true);
+        return lock;
+    }
+
 }

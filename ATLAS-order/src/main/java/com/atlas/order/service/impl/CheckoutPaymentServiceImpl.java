@@ -15,6 +15,7 @@ import com.atlas.order.persistence.state.BuyerCheckoutState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.OrderItemRepository;
+import com.atlas.order.repository.JdbcExpirySweepLockRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.ExpirySweepPolicy;
@@ -55,13 +56,15 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final ExpirySweepPolicy expirySweep;
+    private final JdbcExpirySweepLockRepository expirySweepLock;
 
     public CheckoutPaymentServiceImpl(PlatformTransactionManager transactionManager,
             BuyerCheckoutRepository checkouts, OrderRepository orders, OrderItemRepository items,
             InventoryService inventory, OrderFulfillmentService fulfillment, PaymentService payments,
             SettlementService settlement, SellerCouponService sellerCoupons, Clock clock,
             @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
-            @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget) {
+            @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget,
+            JdbcExpirySweepLockRepository expirySweepLock) {
         this.transactions = new TransactionTemplate(transactionManager);
         this.checkouts = Objects.requireNonNull(checkouts);
         this.orders = Objects.requireNonNull(orders);
@@ -73,6 +76,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         this.sellerCoupons = Objects.requireNonNull(sellerCoupons);
         this.clock = Objects.requireNonNull(clock);
         this.expirySweep = new ExpirySweepPolicy(expirySweepBatchSize, expirySweepTimeBudget);
+        this.expirySweepLock = expirySweepLock;
     }
 
     @Override
@@ -339,6 +343,8 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
 
     @Override
     public int expireDueCheckouts() {
+        // Same reasoning as expireDueOrders: one replica per tick, others skip.
+        if (expirySweepLock != null && !expirySweepLock.tryAcquire("checkouts")) return 0;
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();
         List<UUID> due = orders.findExpiredCheckoutIds(
