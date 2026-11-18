@@ -579,6 +579,146 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     @Test
+    void expiredWebhookRetryOwnerCannotCompleteAfterReclaimedCaptureIsApplied() throws Exception {
+        long amountWon = 17200L;
+        UUID sellerId = sellers.createSeller().sellerId();
+        var product = products.createProduct(sellerId, new CreateProductRequest("Webhook lease race product", null));
+        String skuId = "webhook-lease-race-" + UUID.randomUUID();
+        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, amountWon, 2));
+        String buyerRef = "buyer-webhook-lease-race-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+        CheckoutResponse created = cartCheckouts.checkout(buyerRef, "checkout-webhook-lease-race-" + UUID.randomUUID());
+        UUID checkoutId = created.checkoutId();
+        PaymentResponse pending = checkoutPayments.submit(checkoutId);
+        assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+        String providerOrderId = payments.findCheckout(checkoutId).providerOrderId();
+        PaymentResponse authorized = payments.completeCheckoutApproval(checkoutId, providerOrderId);
+        assertThat(authorized.state()).isEqualTo(PaymentState.AUTHORIZED);
+        PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
+
+        String eventId = "WH-LEASE-RACE-" + UUID.randomUUID();
+        String captureId = "CAPTURE-LEASE-RACE-" + UUID.randomUUID();
+        PaymentWebhookEvent event = new PaymentWebhookEvent(eventId, "PAYMENT.CAPTURE.COMPLETED",
+                captureId, "COMPLETED", providerOrderId, null,
+                BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2), attempt.getProviderCurrency());
+        CountDownLatch firstWorkerAtPostPaymentTransaction = new CountDownLatch(1);
+        CountDownLatch releaseFirstWorker = new CountDownLatch(1);
+        AtomicInteger checkoutReconciliationCalls = new AtomicInteger();
+        AtomicInteger successfulCompletions = new AtomicInteger();
+        AtomicReference<String> rejectedCompletionOwner = new AtomicReference<>();
+        CheckoutPaymentService checkoutPaymentsProbe = mock(CheckoutPaymentService.class);
+        doAnswer(invocation -> {
+            if (checkoutReconciliationCalls.incrementAndGet() == 1) {
+                firstWorkerAtPostPaymentTransaction.countDown();
+                assertThat(releaseFirstWorker.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            return checkoutPayments.reconcile(invocation.getArgument(0, UUID.class),
+                    invocation.getArgument(1, String.class));
+        }).when(checkoutPaymentsProbe).reconcile(eq(checkoutId), eq(eventId));
+
+        PayPalWebhookRetryRepository retryRepository = new PayPalWebhookRetryRepository(jdbc) {
+            @Override
+            public boolean complete(String candidateEventId, String leaseOwner) {
+                boolean completed = super.complete(candidateEventId, leaseOwner);
+                if (completed) successfulCompletions.incrementAndGet();
+                else rejectedCompletionOwner.set(leaseOwner);
+                return completed;
+            }
+        };
+        retryRepository.enqueue(event);
+        PayPalWebhookService retryWebhookService = new PayPalWebhookService(transactionManager, payments,
+                mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class), retryRepository);
+        PayPalWebhookRetryWorker workerA =
+                new PayPalWebhookRetryWorker(retryRepository, retryWebhookService, new SimpleMeterRegistry());
+        PayPalWebhookRetryWorker workerB =
+                new PayPalWebhookRetryWorker(retryRepository, retryWebhookService, new SimpleMeterRegistry());
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> firstWorker = workers.submit(workerA::retryDueEvents);
+            assertThat(firstWorkerAtPostPaymentTransaction.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(firstWorker.isDone()).isFalse();
+            String firstLeaseOwner = jdbc.queryForObject(
+                    "SELECT lease_owner FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId);
+            assertThat(firstLeaseOwner).isNotBlank();
+            assertThat(jdbc.queryForObject(
+                    "SELECT state FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId))
+                    .isEqualTo("PENDING");
+            assertThat(jdbc.queryForObject(
+                    "SELECT lease_until > clock_timestamp() FROM paypal_webhook_retry WHERE event_id = ?",
+                    Boolean.class, eventId)).isTrue();
+            assertThat(jdbc.queryForObject(
+                    "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                    String.class, eventId)).isEqualTo("PROCESSED");
+            assertThat(payments.findCheckout(checkoutId).state()).isEqualTo(PaymentState.CAPTURED);
+            CheckoutResponse awaitingReconciliation = checkoutPayments.find(checkoutId);
+            assertThat(awaitingReconciliation.state()).isEqualTo(BuyerCheckoutState.PAYMENT_PENDING);
+            assertThat(awaitingReconciliation.orders()).hasSize(1);
+            assertThat(awaitingReconciliation.orders().getFirst().state()).isEqualTo(OrderState.PAYMENT_PENDING);
+            assertThat(awaitingReconciliation.orders().getFirst().inventoryState())
+                    .isEqualTo(ReservationStatus.RESERVED);
+
+            assertThat(jdbc.update(
+                    "UPDATE paypal_webhook_retry SET lease_until = clock_timestamp() - INTERVAL '1 second' "
+                            + "WHERE event_id = ?", eventId)).isEqualTo(1);
+            Future<?> secondWorker = workers.submit(workerB::retryDueEvents);
+            secondWorker.get(10, TimeUnit.SECONDS);
+            assertThat(firstWorker.isDone()).isFalse();
+            assertThat(checkoutReconciliationCalls).hasValue(2);
+            assertThat(successfulCompletions).hasValue(1);
+            assertThat(rejectedCompletionOwner.get()).isNull();
+
+            releaseFirstWorker.countDown();
+            firstWorker.get(10, TimeUnit.SECONDS);
+        } finally {
+            releaseFirstWorker.countDown();
+            workers.shutdownNow();
+            assertThat(workers.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(checkoutReconciliationCalls).hasValue(2);
+        assertThat(successfulCompletions).hasValue(1);
+        assertThat(rejectedCompletionOwner.get()).isNotBlank();
+        assertThat(rejectedCompletionOwner.get()).isEqualTo(
+                jdbc.queryForObject("SELECT lease_token FROM paypal_webhook_retry_attempt_history "
+                                + "WHERE event_id = ? AND attempt_number = 1",
+                        String.class, eventId));
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?", Integer.class, eventId)).isZero();
+        List<String> retryHistory = jdbc.query(
+                "SELECT attempt_number || ':' || outcome FROM paypal_webhook_retry_attempt_history "
+                        + "WHERE event_id = ? ORDER BY attempt_number",
+                (rs, rowNum) -> rs.getString(1), eventId);
+        assertThat(retryHistory).containsExactly("1:LEASE_EXPIRED", "2:PROCESSED");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM paypal_webhook_retry_attempt_history "
+                        + "WHERE event_id = ? AND outcome = 'PROCESSED'",
+                Integer.class, eventId)).isEqualTo(1);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM payment_provider_webhook_event WHERE event_id = ?",
+                Integer.class, eventId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM payment_provider_webhook_event WHERE event_id = ?",
+                String.class, eventId)).isEqualTo("PROCESSED");
+        PaymentResponse captured = payments.findCheckout(checkoutId);
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(captured.providerCaptureId()).isEqualTo(captureId);
+        CheckoutResponse reconciled = checkoutPayments.find(checkoutId);
+        assertThat(reconciled.state()).isEqualTo(BuyerCheckoutState.PAID);
+        assertThat(reconciled.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(reconciled.orders()).hasSize(1);
+        var paidOrder = reconciled.orders().getFirst();
+        assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
+        assertThat(paidOrder.paymentState()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(paidOrder.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM settlement_journal WHERE source_attempt_id = ?",
+                Integer.class, captured.attemptId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_fulfillment WHERE order_id = ?",
+                Integer.class, paidOrder.orderId())).isEqualTo(1);
+    }
+
+    @Test
     void unmatchedCaptureWebhookRemainsRetryableWhileMappedMismatchIsQuarantined() throws Exception {
         assertCaptureWebhookMismatchIsQuarantined("12.92", "USD");
         assertCaptureWebhookMismatchIsQuarantined("12.91", "KRW");

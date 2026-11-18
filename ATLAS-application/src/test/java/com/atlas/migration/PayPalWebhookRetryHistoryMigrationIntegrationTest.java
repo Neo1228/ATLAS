@@ -4,10 +4,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.application.service.PayPalWebhookRetryRepository;
 import com.atlas.application.service.PayPalWebhookRetryRepository.ClaimedRetry;
+import com.atlas.application.service.PayPalWebhookRetryWorker;
+import com.atlas.application.service.PayPalWebhookService;
+import com.atlas.order.service.CheckoutPaymentService;
+import com.atlas.order.service.OrderRefundService;
+import com.atlas.order.service.OrderService;
+import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.provider.PaymentWebhookEvent;
+import com.atlas.payment.service.PaymentService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -116,6 +132,50 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
+    void concurrentClaimersDoNotReceiveTheSameDueWebhookRetry() throws Exception {
+        apply("V33__paypal_webhook_retry_attempt_history.sql");
+        insertQueueRow("evt-concurrent-claim", 0);
+        CountDownLatch firstClaimed = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        ExecutorService claimers = Executors.newFixedThreadPool(2);
+        try {
+            Future<ClaimedRetry> firstClaim = claimers.submit(() -> {
+                TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+                return transaction.execute(status -> {
+                    ClaimedRetry claimed = repository.claimDue().get(0);
+                    firstClaimed.countDown();
+                    try {
+                        if (!releaseFirst.await(10, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("first claim was not released");
+                        }
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                    return claimed;
+                });
+            });
+            assertThat(firstClaimed.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(firstClaim.isDone()).isFalse();
+
+            Future<List<ClaimedRetry>> secondClaim = claimers.submit(repository::claimDue);
+            assertThat(secondClaim.get(5, TimeUnit.SECONDS)).isEmpty();
+            releaseFirst.countDown();
+
+            ClaimedRetry claimed = firstClaim.get(5, TimeUnit.SECONDS);
+            assertThat(claimed.attempt()).isEqualTo(1);
+            assertThat(historyCount("evt-concurrent-claim")).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                    "SELECT attempt_count FROM paypal_webhook_retry WHERE event_id = ?",
+                    Integer.class, "evt-concurrent-claim")).isEqualTo(1);
+        } finally {
+            releaseFirst.countDown();
+            claimers.shutdownNow();
+            assertThat(claimers.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
     void legacyQueueAndRecreatedEventRetainTheirDistinctClaims() throws IOException {
         insertQueueRow("evt-legacy", 3);
         apply("V33__paypal_webhook_retry_attempt_history.sql");
@@ -135,5 +195,61 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
         assertThat(recreatedAgain.attempt()).isEqualTo(1);
         repository.complete("evt-legacy", recreatedAgain.leaseOwner());
         assertThat(historyCount("evt-legacy")).isEqualTo(3);
+    }
+
+    @Test
+    void workerRecreationAcknowledgesDuplicateFromPersistentRetryQueue() throws IOException {
+        apply("V33__paypal_webhook_retry_attempt_history.sql");
+        insertQueueRow("evt-worker-recreation", 0);
+
+        ClaimedRetry initial = repository.claimDue().get(0);
+        assertThat(initial.attempt()).isEqualTo(1);
+        assertThat(repository.reschedule("evt-worker-recreation", initial.attempt(), initial.leaseOwner(),
+                PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR,
+                "initial transient failure")).isTrue();
+        assertThat(historyCount("evt-worker-recreation")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?",
+                Integer.class, "evt-worker-recreation")).isEqualTo(1);
+
+        jdbc.update("UPDATE paypal_webhook_retry SET next_attempt_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE event_id = ?",
+                "evt-worker-recreation");
+
+        PayPalWebhookRetryRepository recreatedRepository = new PayPalWebhookRetryRepository(jdbc);
+        PaymentService payments = Mockito.mock(PaymentService.class);
+        Mockito.doAnswer(invocation -> {
+            java.util.function.Supplier<?> action = invocation.getArgument(1);
+            return action.get();
+        }).when(payments).withPayPalWebhookOwnerLock(Mockito.any(), Mockito.any());
+        Mockito.when(payments.processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEvent.class)))
+                .thenReturn(new PaymentWebhookResult(true, false, null, null, null, false, false));
+        PayPalWebhookService recreatedWebhookService = new PayPalWebhookService(
+                new DataSourceTransactionManager(dataSource), payments,
+                Mockito.mock(OrderService.class), Mockito.mock(CheckoutPaymentService.class),
+                Mockito.mock(OrderRefundService.class), recreatedRepository);
+        PayPalWebhookRetryWorker recreatedWorker = new PayPalWebhookRetryWorker(
+                recreatedRepository, recreatedWebhookService, new SimpleMeterRegistry());
+
+        recreatedWorker.retryDueEvents();
+
+        Mockito.verify(payments).processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEvent.class));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?",
+                Integer.class, "evt-worker-recreation")).isZero();
+        assertThat(historyCount("evt-worker-recreation")).isEqualTo(2);
+        assertThat(jdbc.queryForObject("""
+                SELECT outcome FROM paypal_webhook_retry_attempt_history
+                WHERE event_id = ? ORDER BY attempt_number DESC LIMIT 1
+                """, String.class, "evt-worker-recreation")).isEqualTo("PROCESSED");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM paypal_webhook_retry_attempt_history
+                WHERE event_id = ? AND outcome = 'TRANSIENT_ERROR'
+                """, Integer.class, "evt-worker-recreation")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM paypal_webhook_retry_attempt_history
+                WHERE event_id = ? AND outcome = 'PROCESSED'
+                """, Integer.class, "evt-worker-recreation")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT attempt_number FROM paypal_webhook_retry_attempt_history
+                WHERE event_id = ? AND outcome = 'PROCESSED'
+                """, Integer.class, "evt-worker-recreation")).isEqualTo(2);
     }
 }

@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -314,6 +315,34 @@ class AdmissionServiceTest {
         assertThrows(DataAccessResourceFailureException.class, () -> admission.expireDueTickets());
 
         verify(queueRepository, never()).tryLockCounter(sellerId, skuId);
+    }
+
+    @Test
+    void preservesNonNullExpiryCursorWhenCandidateQueryFails() {
+        Instant expiresAt = Instant.now().minusSeconds(10);
+        List<JdbcQueueRepository.DueTicketCandidate> candidates =
+                java.util.stream.IntStream.range(0, 200)
+                        .mapToObj(index -> new JdbcQueueRepository.DueTicketCandidate(
+                                UUID.randomUUID(), sellerId, skuId, expiresAt.plusMillis(index)))
+                        .toList();
+        JdbcQueueRepository.DueTicketCursor lastCursor = candidates.get(candidates.size() - 1).cursor();
+        DataAccessResourceFailureException failure =
+                new DataAccessResourceFailureException("candidate query failed after cursor");
+        when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
+                .thenReturn(candidates);
+        when(queueRepository.findDueTicketCandidates(
+                any(Instant.class), eq(lastCursor), anyInt(), any(Duration.class)))
+                .thenThrow(failure)
+                .thenReturn(List.of());
+        when(queueRepository.tryLockCounter(sellerId, skuId))
+                .thenReturn(JdbcQueueRepository.CounterLockResult.BUSY);
+
+        assertEquals(0, admission.expireDueTickets());
+        assertThrows(DataAccessResourceFailureException.class, () -> admission.expireDueTickets());
+        assertEquals(0, admission.expireDueTickets());
+
+        verify(queueRepository, times(2)).findDueTicketCandidates(
+                any(Instant.class), eq(lastCursor), anyInt(), any(Duration.class));
     }
 
     @Test

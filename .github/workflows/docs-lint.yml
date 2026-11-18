@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
+      - name: Check load-probe shell syntax
+        run: bash -n load-tests/run-exp033-capacity-matrix.sh
       - name: Lint Markdown
         run: npx --yes markdownlint-cli2@0.24.0 "**/*.md" "*.md"
 
