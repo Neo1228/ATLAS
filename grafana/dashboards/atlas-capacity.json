@@ -1,0 +1,214 @@
+{
+  "uid": "atlas-capacity-local",
+  "title": "ATLAS capacity and saturation (local probe)",
+  "tags": ["atlas", "capacity", "sre"],
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "utc",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Offered load: HTTP requests/s by route",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{uri!~\"/actuator.*\"}[1m]))",
+          "legendFormat": "{{uri}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latency p95 / p99 by route",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{uri!~\"/actuator.*\"}[1m])))",
+          "legendFormat": "p95 {{uri}}"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{uri!~\"/actuator.*\"}[1m])))",
+          "legendFormat": "p99 {{uri}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Hikari pool: active / idle / max vs pending",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "hikaricp_connections_active", "legendFormat": "active" },
+        { "refId": "B", "expr": "hikaricp_connections_idle", "legendFormat": "idle" },
+        { "refId": "C", "expr": "hikaricp_connections_max", "legendFormat": "max" },
+        { "refId": "D", "expr": "hikaricp_connections_pending", "legendFormat": "pending" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Hikari acquisition latency p95 and timeouts",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket[1m])))",
+          "legendFormat": "acquire p95"
+        },
+        {
+          "refId": "B",
+          "expr": "increase(hikaricp_connections_timeout_total[1m])",
+          "legendFormat": "timeouts/min"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Application CPU utilisation (process_cpu_usage)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "process_cpu_usage", "legendFormat": "app CPU" },
+        { "refId": "B", "expr": "system_cpu_usage", "legendFormat": "host CPU" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Request threads and JVM threads",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "http_server_requests_active_seconds_gcount", "legendFormat": "in-flight requests" },
+        { "refId": "B", "expr": "jvm_threads_live_threads", "legendFormat": "live threads" },
+        { "refId": "C", "expr": "jvm_threads_states_threads{state=\"blocked\"}", "legendFormat": "blocked" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "JVM heap and GC pause",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "heap used" },
+        { "refId": "B", "expr": "sum(jvm_memory_max_bytes{area=\"heap\"})", "legendFormat": "heap max" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "PostgreSQL backends vs max_connections",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 0, "y": 24, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(pg_stat_database_numbackends{datname=\"atlas\"})",
+          "legendFormat": "atlas backends"
+        },
+        { "refId": "B", "expr": "max(pg_settings_max_connections)", "legendFormat": "max_connections" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "PostgreSQL transactions and deadlocks",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 8, "y": 24, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_xact_commit{datname=\"atlas\"}[1m]))",
+          "legendFormat": "commits/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(pg_stat_database_xact_rollback{datname=\"atlas\"}[1m]))",
+          "legendFormat": "rollbacks/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(pg_stat_database_deadlocks{datname=\"atlas\"}[1m]))",
+          "legendFormat": "deadlocks/s"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "PostgreSQL buffer cache hit ratio",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 16, "y": 24, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_blks_hit{datname=\"atlas\"}[1m])) / clamp_min(sum(rate(pg_stat_database_blks_hit{datname=\"atlas\"}[1m])) + sum(rate(pg_stat_database_blks_read{datname=\"atlas\"}[1m])), 0.000001)",
+          "legendFormat": "hit ratio"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "PostgreSQL disk reads per second (table+index blocks)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_blks_read{datname=\"atlas\"}[1m]))",
+          "legendFormat": "blocks read/s"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Background work: expiry sweeps and payment recovery backlog",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (workflow) (rate(atlas_expiry_sweep_runs_total[1m]))",
+          "legendFormat": "expiry runs/s {{workflow}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(atlas_payment_recovery_jobs)",
+          "legendFormat": "recovery jobs"
+        },
+        {
+          "refId": "C",
+          "expr": "max(atlas_payment_recovery_oldest_due_age_seconds)",
+          "legendFormat": "oldest due age (s)"
+        }
+      ]
+    }
+  ]
+}

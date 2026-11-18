@@ -1,0 +1,144 @@
+# Horizontally scaled comparison profile for EXP-035.
+#
+# Why: the single-node run (compose.capacity-node.yaml) shows where one 2 vCPU /
+# 2 GiB application container saturates. This profile keeps *the same per-container
+# limits and the same PostgreSQL* and only adds application replicas behind a
+# round-robin nginx. That isolates "more app capacity" from "bigger database", so
+# the improvement can be attributed to the change that was actually made.
+#
+# Usage:
+#   docker compose -f compose.yaml -f compose.capacity-node.yaml \
+#     -f compose.capacity-distributed.yaml \
+#     --profile observability --profile loadtest up -d
+#
+# app-a keeps the published 18080 port so existing scripts still work; app-b and
+# app-c are reachable through the balancer on 18081.
+#
+# Each replica repeats the 2 vCPU / 2 GiB envelope explicitly: compose `extends`
+# does not inherit the override applied to the base `application` service, and an
+# accidentally unconstrained replica would invalidate the comparison.
+
+services:
+  # The base single-node service must not run in this phase: it would add an
+  # unmeasured 2 vCPU instance and collide on the published 18080 port.
+  application:
+    profiles: !override ["single-node-only"]
+
+  app-a:
+    extends:
+      file: compose.yaml
+      service: application
+    container_name: atlas-app-a
+    cpus: 2.0
+    mem_limit: 2g
+    environment:
+      ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas
+      SPRING_PROFILES_ACTIVE: observability
+      ATLAS_SERVER_ADDRESS: 0.0.0.0
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      ATLAS_DB_USER: atlas
+      ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+      ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
+      SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
+      SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
+      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
+      SERVER_TOMCAT_THREADS_MAX: "64"
+      SERVER_TOMCAT_ACCEPT_COUNT: "64"
+    # !override is required: compose merges `ports` lists from `extends`, which
+    # would otherwise publish 18080 on every replica and collide.
+    ports: !override
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18082:8081"
+
+  app-b:
+    extends:
+      file: compose.yaml
+      service: application
+    container_name: atlas-app-b
+    cpus: 2.0
+    mem_limit: 2g
+    environment:
+      ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas
+      SPRING_PROFILES_ACTIVE: observability
+      ATLAS_SERVER_ADDRESS: 0.0.0.0
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      ATLAS_DB_USER: atlas
+      ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+      ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
+      SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
+      SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
+      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
+      SERVER_TOMCAT_THREADS_MAX: "64"
+      SERVER_TOMCAT_ACCEPT_COUNT: "64"
+    ports: !override
+      - "127.0.0.1:18083:8081"
+
+  app-c:
+    extends:
+      file: compose.yaml
+      service: application
+    container_name: atlas-app-c
+    cpus: 2.0
+    mem_limit: 2g
+    environment:
+      ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas
+      SPRING_PROFILES_ACTIVE: observability
+      ATLAS_SERVER_ADDRESS: 0.0.0.0
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      ATLAS_DB_USER: atlas
+      ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+      ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
+      SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
+      SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
+      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
+      SERVER_TOMCAT_THREADS_MAX: "64"
+      SERVER_TOMCAT_ACCEPT_COUNT: "64"
+    ports: !override
+      - "127.0.0.1:18084:8081"
+
+  app-lb:
+    # Pinned for reproducibility; Expires 2036 ephemeral key is fine for a local probe.
+    image: nginx@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    container_name: atlas-app-lb
+    profiles: ["observability", "loadtest"]
+    volumes:
+      - ./load-tests/nginx-lb.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:18081:8080"
+    depends_on:
+      - app-a
+      - app-b
+      - app-c
+    restart: unless-stopped
+
+  prometheus:
+    volumes:
+      - ./observability/prometheus-distributed.yml:/etc/prometheus/prometheus.yml:ro
+    # The base `application` service is disabled in this phase, so dependencies
+    # must point at the replicas that actually exist.
+    depends_on: !override
+      - app-a
+      - postgres-exporter
+
+  k6:
+    depends_on: !override
+      - app-lb
+      - mailpit
+    environment:
+      BASE_URL: http://app-lb:8080
+      ATLAS_BASE_URL: http://app-lb:8080

@@ -105,6 +105,7 @@
 | D-099 | ✓ #305 global catalog listing exact-order expression index | `product_listing_sort_idx`가 seller/product Java UUID ordering expression을 그대로 index해 global first/cursor pages에서 full scan+sort를 줄인다. Order/cursor 계약은 유지하고 V40 plan/EXP-028로 검증한다. | [#305](https://github.com/Neo1228/ATLAS/issues/305), [ADR-0040](../02-decisions/adr/ADR-0040-global-catalog-listing-sort-index.md) |
 | D-100 | ✓ #307 seller-scoped 상품 목록 access path 회귀 수정 | seller scope에서 seller sort key가 상수이므로 조건부 `ORDER BY`로 제외해 `product_seller_idx` 경로를 되찾는다. Global 경로는 V40 index를 유지하며 정렬 결과는 동일하다. | [#307](https://github.com/Neo1228/ATLAS/issues/307), [ADR-0040](../02-decisions/adr/ADR-0040-global-catalog-listing-sort-index.md) |
 | D-101 | ◐ #309 admission expiry keyset·counter SKIP LOCKED 진행 | V41 `(expires_at, ticket_id)` partial index와 process-local keyset cursor로 due ticket page를 이어 읽고 batch/time budget으로 pair attempts를 제한한다. Query 성공 후 deadline이 지났더라도 첫 pair를 진행시키고, 남은 시간 기반 transaction timeout(최대 1초 allowance)과 rate-limited query-failure 경고를 사용한다. | [#309](https://github.com/Neo1228/ATLAS/issues/309), [#315](https://github.com/Neo1228/ATLAS/issues/315), [ADR-0041](../02-decisions/adr/ADR-0041-bounded-admission-expiry-sweep.md) |
+| D-102 | ◐ #342 고정 노드 스펙에서 단일→분산 용량 비교 | 애플리케이션 2 vCPU/2 GiB·PostgreSQL 2 vCPU/2 GiB/`max_connections=60`을 노드 스펙으로 고정하고, 단일 노드에서 포화를 먼저 재현한 뒤 동일 per-container 스펙의 replica 3개로만 확장해 개선을 귀속한다. `product_listing`의 keyword predicate는 정렬 index를 타 전체 스캔이 되므로 별도 후속으로 분리한다. | [#342](https://github.com/Neo1228/ATLAS/issues/342), [ADR-0042](../02-decisions/adr/ADR-0042-fixed-node-capacity-methodology.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -121,6 +122,7 @@
 <a id="d-099"></a>
 <a id="d-100"></a>
 <a id="d-101"></a>
+<a id="d-102"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -165,4 +167,5 @@
 | [ADR-0038 — 결제·환불 PostgreSQL 복구 workflow](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md) | #293: 미확정 payment/refund의 durable claim·lease·backoff 및 감사 기반 operator requeue | [D-096](#d-096) |
 | [ADR-0039 — 만료 sweep batch·시간 상한](../02-decisions/adr/ADR-0039-bounded-expiry-sweep.md) | #295: 만료 후보 조회 상한과 tick 작업량 제한 | [D-097](#d-097) |
 | [ADR-0040 — Global catalog listing UUID sort-key index](../02-decisions/adr/ADR-0040-global-catalog-listing-sort-index.md) | #305: expression B-tree for global product order/cursor | [D-099](#d-099) |
+| [ADR-0042 — 고정 노드 스펙 기반 단일→분산 용량 비교](../02-decisions/adr/ADR-0042-fixed-node-capacity-methodology.md) | #342: 노드 스펙 고정, replica만 변경, 지표별 Grafana 캡처 | [D-102](#d-102) |
 | [ADR-0041 — Admission expiry sweep batch·SKIP LOCKED](../02-decisions/adr/ADR-0041-bounded-admission-expiry-sweep.md) | #309: due seller-SKU pair sweep 상한·multi-instance counter lock skip | [D-101](#d-101) |

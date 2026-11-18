@@ -88,6 +88,10 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-local-only-change-me}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_RENDERING_SERVER_URL: http://grafana-image-renderer:8081/render
+      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
+      GF_RENDERING_RENDERER_TOKEN: ${GRAFANA_RENDERER_TOKEN:-local-render-token}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/atlas-capacity.json
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -95,6 +99,17 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
+      - grafana-image-renderer
+    restart: unless-stopped
+
+  grafana-image-renderer:
+    # Pinned for reproducible panel captures; see docs/03-experiments/EXP-035.
+    image: grafana/grafana-image-renderer@sha256:cfa6c8f63e6d626f90208f2880f15bd5facc279daec1b9bb642af07aa850d95e
+    profiles: ["observability"]
+    environment:
+      AUTH_TOKEN: ${GRAFANA_RENDERER_TOKEN:-local-render-token}
+    expose:
+      - "8081"
     restart: unless-stopped
   k6:
     image: grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
