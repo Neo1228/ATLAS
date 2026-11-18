@@ -2,6 +2,11 @@ package com.atlas.application.service;
 
 import com.atlas.payment.dto.response.PaymentWebhookResult;
 import java.util.List;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -13,62 +18,117 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(
         name = "atlas.paypal.webhook-retry.worker.enabled", havingValue = "true", matchIfMissing = true)
 public class PayPalWebhookRetryWorker {
+    private static final String RUNS_METRIC = "atlas.paypal.webhook.retry.runs";
+    private static final String CLAIMED_METRIC = "atlas.paypal.webhook.retry.claimed";
+    private static final String OUTCOMES_METRIC = "atlas.paypal.webhook.retry.outcomes";
+    private static final String DURATION_METRIC = "atlas.paypal.webhook.retry.duration";
+    private static final String ATTEMPT_DURATION_METRIC = "atlas.paypal.webhook.retry.attempt.duration";
+    private static final long FAILURE_LOG_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
     private static final Logger log = LoggerFactory.getLogger(PayPalWebhookRetryWorker.class);
     private final PayPalWebhookRetryRepository retries;
     private final PayPalWebhookService webhooks;
+    private final MeterRegistry meters;
+    private final AtomicLong lastPollFailureLogNanos = new AtomicLong();
 
-    public PayPalWebhookRetryWorker(PayPalWebhookRetryRepository retries, PayPalWebhookService webhooks) {
+    public PayPalWebhookRetryWorker(PayPalWebhookRetryRepository retries, PayPalWebhookService webhooks,
+            MeterRegistry meters) {
         this.retries = retries;
         this.webhooks = webhooks;
+        this.meters = meters;
     }
 
     @Scheduled(initialDelayString = "${atlas.paypal.webhook-retry-initial-delay:PT1S}",
             fixedDelayString = "${atlas.paypal.webhook-retry-poll-interval:PT1S}")
     public void retryDueEvents() {
-        List<PayPalWebhookRetryRepository.ClaimedRetry> claimed = retries.claimDue();
-        for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {
-                PaymentWebhookResult result;
+        Timer.Sample sample = Timer.start(meters);
+        String outcome = "success";
+        try {
+            List<PayPalWebhookRetryRepository.ClaimedRetry> claimed = retries.claimDue();
+            Counter claimedCounter = Counter.builder(CLAIMED_METRIC).register(meters);
+            if (!claimed.isEmpty()) claimedCounter.increment(claimed.size());
+            for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {
+                Timer.Sample attemptSample = Timer.start(meters);
                 try {
-                    result = webhooks.processVerified(retry.event());
-                } catch (RuntimeException failure) {
-                    recordTransientFailure(retry, failure);
-                    continue;
-                }
-
-                try {
-                    boolean recorded;
-                    if (result.accepted() || result.duplicate()) {
-                        recorded = retries.complete(retry.event().eventId(), retry.leaseOwner());
-                    } else if (result.retryable()) {
-                        recorded = retries.reschedule(retry.event().eventId(), retry.attempt(),
-                                retry.leaseOwner(), PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS,
-                                "Verified event is not correlated yet");
-                    } else {
-                        recorded = retries.reject(retry.event().eventId(), retry.attempt(),
-                                retry.leaseOwner(), "Verified event failed permanent validation");
+                    PaymentWebhookResult result;
+                    try {
+                        result = webhooks.processVerified(retry.event());
+                    } catch (RuntimeException failure) {
+                        recordTransientFailure(retry, failure);
+                        continue;
                     }
-                    if (!recorded) logStaleClaim(retry);
-                } catch (RuntimeException failure) {
-                    log.error("Unable to record PayPal webhook outcome for event {} (attempt {}, failure type {})",
-                            retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
+
+                    try {
+                        boolean recorded;
+                        String resultOutcome;
+                        if (result.accepted() || result.duplicate()) {
+                            recorded = retries.complete(retry.event().eventId(), retry.leaseOwner());
+                            resultOutcome = result.duplicate() ? "duplicate" : "accepted";
+                        } else if (result.retryable()) {
+                            recorded = retries.reschedule(retry.event().eventId(), retry.attempt(),
+                                    retry.leaseOwner(), PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS,
+                                    "Verified event is not correlated yet");
+                            resultOutcome = "rescheduled";
+                        } else {
+                            recorded = retries.reject(retry.event().eventId(), retry.attempt(),
+                                    retry.leaseOwner(), "Verified event failed permanent validation");
+                            resultOutcome = "rejected";
+                        }
+                        if (!recorded) {
+                            logStaleClaim(retry);
+                            recordOutcome("stale_claim");
+                        } else {
+                            recordOutcome(resultOutcome);
+                        }
+                    } catch (RuntimeException failure) {
+                        recordOutcome("record_failure");
+                        log.error("Unable to record PayPal webhook outcome for event {} (attempt {}, failure type {})",
+                                retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
+                    }
+                } finally {
+                    attemptSample.stop(Timer.builder(ATTEMPT_DURATION_METRIC).register(meters));
                 }
+            }
+        } catch (RuntimeException failure) {
+            outcome = "failure";
+            warnPollFailure(failure);
+        } finally {
+            Counter.builder(RUNS_METRIC).tag("outcome", outcome).register(meters).increment();
+            sample.stop(Timer.builder(DURATION_METRIC).register(meters));
         }
     }
 
     private void recordTransientFailure(PayPalWebhookRetryRepository.ClaimedRetry retry, RuntimeException failure) {
-        log.warn("PayPal webhook retry failed for event {} (attempt {}, failure type {})",
+        log.warn("PayPal webhook processing failed for event {} (attempt {}, failure type {})",
                 retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
         try {
             boolean recorded = retries.reschedule(retry.event().eventId(), retry.attempt(),
                     retry.leaseOwner(), PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR,
                     "Transient webhook processing failure");
-            if (!recorded) logStaleClaim(retry);
+            if (!recorded) {
+                logStaleClaim(retry);
+                recordOutcome("stale_claim");
+            } else {
+                recordOutcome("transient_failure");
+            }
         } catch (RuntimeException outcomeFailure) {
+            recordOutcome("record_failure");
             log.error("Unable to record transient PayPal webhook failure for event {} (attempt {}, failure type {})",
                     retry.event().eventId(), retry.attempt(), outcomeFailure.getClass().getSimpleName());
         }
     }
 
+    private void recordOutcome(String outcome) {
+        Counter.builder(OUTCOMES_METRIC).tag("outcome", outcome).register(meters).increment();
+    }
+
+    private void warnPollFailure(RuntimeException failure) {
+        long now = System.nanoTime();
+        long last = lastPollFailureLogNanos.get();
+        if ((last == 0 || now - last >= FAILURE_LOG_INTERVAL_NANOS)
+                && lastPollFailureLogNanos.compareAndSet(last, now)) {
+            log.warn("PayPal webhook retry poll failed (failure type {})", failure.getClass().getSimpleName());
+        }
+    }
     private void logStaleClaim(PayPalWebhookRetryRepository.ClaimedRetry retry) {
         log.warn("PayPal webhook retry claim is no longer current for event {} (attempt {})",
                 retry.event().eventId(), retry.attempt());

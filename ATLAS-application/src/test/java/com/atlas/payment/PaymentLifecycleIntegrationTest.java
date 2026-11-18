@@ -48,6 +48,7 @@ import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -641,7 +642,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 mock(OrderService.class), mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
                 new PayPalWebhookRetryRepository(jdbc));
         new PayPalWebhookRetryWorker(
-                new PayPalWebhookRetryRepository(jdbc), retryWebhookService).retryDueEvents();
+                new PayPalWebhookRetryRepository(jdbc), retryWebhookService, new SimpleMeterRegistry()).retryDueEvents();
         assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?", Integer.class, eventId)).isZero();
