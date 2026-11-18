@@ -25,6 +25,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -163,7 +164,8 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
             ExecutorService workers = Executors.newFixedThreadPool(2);
             CountDownLatch workersReady = new CountDownLatch(2);
             CountDownLatch start = new CountDownLatch(1);
-            try (Connection blocker = dataSource.getConnection()) {
+            Connection blocker = dataSource.getConnection();
+            try {
                 blocker.setAutoCommit(false);
                 try (PreparedStatement lock = blocker.prepareStatement(
                         "SELECT checkout_id FROM buyer_checkout WHERE checkout_id = ? FOR UPDATE")) {
@@ -203,15 +205,19 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
                 int expiredBySecondary = secondaryExpiry.get(10, TimeUnit.SECONDS);
                 assertThat(expiredByPrimary + expiredBySecondary).isEqualTo(2);
             } finally {
+                start.countDown();
                 try {
                     blocker.rollback();
-                } catch (SQLException rollbackFailure) {
-                    // Preserve the original test failure while still attempting executor cleanup.
-                } finally {
-                    start.countDown();
-                    workers.shutdownNow();
-                    assertThat(workers.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+                } catch (SQLException cleanupException) {
+                    // Preserve any assertion failure from the test body.
                 }
+                try {
+                    blocker.close();
+                } catch (SQLException cleanupException) {
+                    // Preserve any assertion failure from the test body.
+                }
+                workers.shutdownNow();
+                assertThat(workers.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
             }
 
             assertThat(checkoutState(earlierCheckoutId)).isEqualTo("EXPIRED");
