@@ -254,8 +254,8 @@ public class AdmissionServiceImpl implements AdmissionService {
                         return expireDueTicketCandidates(
                                 pair.sellerId(), pair.skuId(),
                                 candidates.stream()
-                                        .filter(candidate -> candidate.sellerId().equals(pair.sellerId())
-                                                && candidate.skuId().equals(pair.skuId()))
+                                        .filter(dueCandidate -> dueCandidate.sellerId().equals(pair.sellerId())
+                                                && dueCandidate.skuId().equals(pair.skuId()))
                                         .map(JdbcQueueRepository.DueTicketCandidate::ticketId)
                                         .toList(),
                                 now);
