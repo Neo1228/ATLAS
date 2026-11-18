@@ -1,0 +1,194 @@
+{
+  "experiment": "EXP-037",
+  "dataset": {
+    "sellers": 2000,
+    "products": 2000000,
+    "skus": 4000000,
+    "needleProducts": 20
+  },
+  "nodeSpec": {
+    "tiny": {
+      "application": {
+        "cpus": 1.0,
+        "memoryGiB": 1
+      },
+      "postgres": {
+        "cpus": 1.0,
+        "memoryGiB": 1,
+        "maxConnections": 40,
+        "sharedBuffersMB": 96
+      }
+    },
+    "scaleUp": {
+      "application": {
+        "cpus": 2.0,
+        "memoryGiB": 2
+      },
+      "postgres": {
+        "cpus": 1.0,
+        "memoryGiB": 1
+      }
+    }
+  },
+  "scenario": {
+    "script": "load-tests/buyer-journey-capacity.js",
+    "durationSeconds": 120,
+    "trafficMix": {
+      "cartAddRate": "6% of sessions (Dynamic Yield 6.04% benchmark)",
+      "checkoutShare": "25% of cart adds",
+      "hotSellerShare": 0.5
+    }
+  },
+  "awsReference": {
+    "t4g.small": "1 vCPU share, 2 GiB, baseline 24%",
+    "t4g.medium": "2 vCPU, 4 GiB",
+    "db.r7g.large": "2 vCPU, 16 GiB"
+  },
+  "results": [
+    {
+      "phase": "tiny-1vcpu",
+      "offeredIterationsPerSecond": 10,
+      "planned": 1201,
+      "completed": 1201,
+      "dropped": 0,
+      "dropPercent": 0.0,
+      "p95Ms": 13.7,
+      "measuredFailureRate": 0,
+      "appCpu": {
+        "mean": 38.9,
+        "peak": 100.8,
+        "samples": 16
+      },
+      "postgresCpu": {
+        "mean": 8.7,
+        "peak": 12.0,
+        "samples": 15
+      },
+      "journey": {
+        "search_selective_latency": 10.3,
+        "listing_first_latency": 12.7,
+        "product_detail_latency": 5.1,
+        "cart_read_latency": 9.7,
+        "cart_write_latency": 18.0,
+        "listing_deep_latency": 15.1,
+        "checkout_latency": 7.9
+      }
+    },
+    {
+      "phase": "tiny-1vcpu",
+      "offeredIterationsPerSecond": 20,
+      "planned": 2401,
+      "completed": 2350,
+      "dropped": 51,
+      "dropPercent": 2.12,
+      "p95Ms": 791.3,
+      "measuredFailureRate": 0,
+      "appCpu": {
+        "mean": 57.0,
+        "peak": 106.4,
+        "samples": 16
+      },
+      "postgresCpu": {
+        "mean": 12.3,
+        "peak": 16.8,
+        "samples": 16
+      },
+      "journey": {
+        "cart_write_latency": 927.4,
+        "product_detail_latency": 604.7,
+        "checkout_latency": 683.3,
+        "search_selective_latency": 696.0,
+        "listing_deep_latency": 793.5,
+        "cart_read_latency": 899.3,
+        "listing_first_latency": 848.4
+      }
+    },
+    {
+      "phase": "tiny-1vcpu",
+      "offeredIterationsPerSecond": 40,
+      "planned": 4801,
+      "completed": 4309,
+      "dropped": 492,
+      "dropPercent": 10.25,
+      "p95Ms": 1705.8,
+      "measuredFailureRate": 0,
+      "appCpu": {
+        "mean": 92.1,
+        "peak": 100.8,
+        "samples": 21
+      },
+      "postgresCpu": {
+        "mean": 18.6,
+        "peak": 34.2,
+        "samples": 21
+      },
+      "journey": {
+        "listing_deep_latency": 1795.3,
+        "cart_write_latency": 2192.7,
+        "cart_read_latency": 1703.8,
+        "listing_first_latency": 1871.6,
+        "checkout_latency": 1577.0,
+        "search_selective_latency": 1695.5,
+        "product_detail_latency": 1597.4
+      }
+    },
+    {
+      "phase": "scale-up-2vcpu",
+      "offeredIterationsPerSecond": 20,
+      "planned": 2401,
+      "completed": 2401,
+      "dropped": 0,
+      "dropPercent": 0.0,
+      "p95Ms": 7.5,
+      "measuredFailureRate": 0,
+      "appCpu": {
+        "mean": 58.0,
+        "peak": 200.7,
+        "samples": 16
+      },
+      "postgresCpu": {
+        "mean": 13.3,
+        "peak": 17.0,
+        "samples": 16
+      },
+      "journey": {
+        "listing_first_latency": 8.2,
+        "product_detail_latency": 2.9,
+        "checkout_latency": 3.3,
+        "cart_write_latency": 9.8,
+        "listing_deep_latency": 7.8,
+        "cart_read_latency": 5.0,
+        "search_selective_latency": 5.0
+      }
+    },
+    {
+      "phase": "scale-up-2vcpu",
+      "offeredIterationsPerSecond": 40,
+      "planned": 4801,
+      "completed": 4778,
+      "dropped": 23,
+      "dropPercent": 0.48,
+      "p95Ms": 75.9,
+      "measuredFailureRate": 0,
+      "appCpu": {
+        "mean": 74.9,
+        "peak": 199.7,
+        "samples": 21
+      },
+      "postgresCpu": {
+        "mean": 17.6,
+        "peak": 41.5,
+        "samples": 21
+      },
+      "journey": {
+        "cart_write_latency": 10.7,
+        "checkout_latency": 2.3,
+        "listing_deep_latency": 81.7,
+        "search_selective_latency": 14.2,
+        "cart_read_latency": 12.9,
+        "listing_first_latency": 51.4,
+        "product_detail_latency": 6.9
+      }
+    }
+  ]
+}

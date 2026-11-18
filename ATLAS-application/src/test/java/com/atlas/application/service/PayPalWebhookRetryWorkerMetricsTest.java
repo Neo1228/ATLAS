@@ -20,6 +20,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
     private static final String OUTCOMES_METRIC = "atlas.paypal.webhook.retry.outcomes";
     private static final String DURATION_METRIC = "atlas.paypal.webhook.retry.duration";
     private static final String ATTEMPT_DURATION_METRIC = "atlas.paypal.webhook.retry.attempt.duration";
+    private static final String OLDEST_PENDING_AGE_METRIC = "atlas.paypal.webhook.retry.oldest_pending_age";
 
     private final PayPalWebhookRetryRepository retries = mock(PayPalWebhookRetryRepository.class);
     private final PayPalWebhookService webhooks = mock(PayPalWebhookService.class);
@@ -37,6 +38,19 @@ class PayPalWebhookRetryWorkerMetricsTest {
         assertThat(meters.counter(RUNS_METRIC, "outcome", "success").count()).isEqualTo(1);
         assertThat(meters.timer(DURATION_METRIC).count()).isEqualTo(1);
         assertThat(meters.timer(ATTEMPT_DURATION_METRIC).count()).isZero();
+    }
+
+    @Test
+    void publishesOldestPendingRetryAgeAndStaysSilentWhenTheQueueIsEmpty() {
+        when(retries.pollDue()).thenReturn(new PayPalWebhookRetryRepository.PollResult(List.of(), 0));
+        when(retries.oldestPendingAgeSeconds()).thenReturn(42.5, (Double) null);
+
+        worker.retryDueEvents();
+        assertThat(meters.get(OLDEST_PENDING_AGE_METRIC).gauge().value()).isEqualTo(42.5);
+
+        worker.retryDueEvents();
+        // An empty queue must not be reported as a healthy zero.
+        assertThat(meters.get(OLDEST_PENDING_AGE_METRIC).gauge().value()).isEqualTo(42.5);
     }
 
     @Test
