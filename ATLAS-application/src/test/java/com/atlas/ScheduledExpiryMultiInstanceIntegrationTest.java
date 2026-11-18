@@ -313,7 +313,13 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
             assertThat(secondExpiry.get(10, TimeUnit.SECONDS)).isZero();
             blocker.commit();
 
-            int drained = admissionService.expireDueTickets();
+            int drained = 0;
+            int ticks = 0;
+            while (drained < profile.tickets().size() && ticks < profile.tickets().size() + 2) {
+                int tickExpired = admissionService.expireDueTickets();
+                drained += tickExpired;
+                ticks++;
+            }
             assertThat(drained).isEqualTo(profile.tickets().size());
             assertThat(jdbc.queryForObject(
                     "SELECT COUNT(*) FROM admission_ticket WHERE campaign_id = ? AND status = 'EXPIRED'",

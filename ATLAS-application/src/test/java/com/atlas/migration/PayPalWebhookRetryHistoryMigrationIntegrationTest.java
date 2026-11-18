@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -252,7 +253,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
         PayPalWebhookRetryRepository recreatedRepository = new PayPalWebhookRetryRepository(jdbc);
         PaymentService payments = Mockito.mock(PaymentService.class);
         Mockito.doAnswer(invocation -> {
-            java.util.function.Supplier<?> action = invocation.getArgument(1);
+            Supplier<?> action = invocation.getArgument(1);
             return action.get();
         }).when(payments).withPayPalWebhookOwnerLock(Mockito.any(), Mockito.any());
         Mockito.when(payments.processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEvent.class)))

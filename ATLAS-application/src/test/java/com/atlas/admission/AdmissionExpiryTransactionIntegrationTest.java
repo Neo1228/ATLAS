@@ -25,6 +25,7 @@ import java.sql.Connection;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -277,7 +278,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
                 seller.sellerId(), skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
 
-        List<QueueTicketResponse> tickets = new java.util.ArrayList<>();
+        List<QueueTicketResponse> tickets = new ArrayList<>();
         for (int i = 0; i < 201; i++) {
             tickets.add(admission.join(new JoinQueueRequest(campaign.campaignId(), skuId,
                     "buyer-page-" + i + "-" + UUID.randomUUID(), "expiry-page-" + i + "-" + UUID.randomUUID())));
