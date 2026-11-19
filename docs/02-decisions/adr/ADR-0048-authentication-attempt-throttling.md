@@ -44,7 +44,9 @@
 ## 동시성·확장·운영
 
 - 카운터 갱신은 `INSERT … ON CONFLICT DO UPDATE` 단일 statement이므로 동시 요청이 같은 row에 직렬화된다. 다중 인스턴스에서도 합산된다.
-- 주체 축 확인은 인덱스 탐색 1회, 출처 축 소비는 upsert 1회다. 인증 경로에 transaction 2개(확인·기록)가 추가되지만, PBKDF2 수십 ms에 비하면 무시할 수준이다.
+- 주체 축 확인은 인덱스 탐색 1회, 출처 축 소비는 upsert 1회다. 인증 경로에 `REQUIRES_NEW` transaction 2개(확인·기록)가 추가된다.
+- **실측(로컬, [EXP-040](../03-experiments/EXP-040-auth-throttle-cost.md))**: 실제 스키마와 같은 SQL로 200회 반복 측정한 결과 **0.711–0.738 ms/시도**(중위 0.712 ms, 3라운드). 조건: PostgreSQL 18.6 컨테이너, `synchronous_commit=on`, `fsync=on`, 같은 호스트에서 클라이언트 실행(2 transaction/시도). 서버 내부 SQL 비용만 보면 0.045 ms/시도(2000회, 3라운드)였다. 즉 대부분은 transaction·round-trip 비용이다. PBKDF2 검증 1회(47.7–58.3 ms)의 약 1.2–1.5%이므로, 한도 확인을 검증 앞에 두는 이득이 이 비용을 크게 웃돈다.
+- 측정 한계: 로컬 단일 호스트·합성 반복이다. 운영에서는 네트워크 RTT와 풀 경쟁이 더해지고, 풀이 포화되면 이 비용도 커진다. 이 경우 `pool-budget-per-replica`와 인증 경로 대기가 함께 관측되어야 한다.
 - 설정: `atlas.auth.throttle.window`(기본 `PT15M`), `subject-limit`(10), `origin-limit`(60). 창·한도는 배포 후 실패 분포를 보고 조정한다.
 - 관측: 거절은 기존 인증 실패 metric에 포함되고, 회수는 `atlas.auth.throttle.purged`로 기록한다.
 
