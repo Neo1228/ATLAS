@@ -171,8 +171,8 @@ class AccountAuthenticationIntegrationTest {
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
         String buyerRef = accountService.buyerRef(accountId);
-        AccountLoginResponse firstLogin = accountService.login(new LoginRequest(email, password));
-        AccountLoginResponse secondLogin = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse firstLogin = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountLoginResponse secondLogin = accountService.login(new LoginRequest(email, password), "198.51.100.7");
         String cartPath = "/api/buyers/" + buyerRef + "/cart";
 
         assertThat(firstLogin.mfaRequired()).isFalse();
@@ -206,7 +206,7 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse initial = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse initial = accountService.login(new LoginRequest(email, password), "198.51.100.7");
         UUID familyId = UUID.fromString(SignedJWT.parse(initial.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
 
@@ -301,8 +301,8 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse first = accountService.login(new LoginRequest(email, password));
-        AccountLoginResponse second = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse first = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountLoginResponse second = accountService.login(new LoginRequest(email, password), "198.51.100.7");
         UUID firstFamily = UUID.fromString(SignedJWT.parse(first.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
         UUID secondFamily = UUID.fromString(SignedJWT.parse(second.tokens().accessToken())
@@ -348,7 +348,7 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse login = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse login = accountService.login(new LoginRequest(email, password), "198.51.100.7");
         UUID familyId = UUID.fromString(SignedJWT.parse(login.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
         jdbc.update("UPDATE refresh_token_family SET created_at = ?, expires_at = ? WHERE family_id = ?",
@@ -368,8 +368,8 @@ class AccountAuthenticationIntegrationTest {
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
         String buyerRef = accountService.buyerRef(accountId);
-        AccountLoginResponse first = accountService.login(new LoginRequest(email, password));
-        AccountLoginResponse second = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse first = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountLoginResponse second = accountService.login(new LoginRequest(email, password), "198.51.100.7");
         UUID firstFamily = UUID.fromString(SignedJWT.parse(first.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
         UUID secondFamily = UUID.fromString(SignedJWT.parse(second.tokens().accessToken())
@@ -419,14 +419,14 @@ class AccountAuthenticationIntegrationTest {
         UUID otherAccountId = accounts.createAccount(otherEmail, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(otherAccountId);
         accounts.verifyEmail(otherAccountId, Instant.now());
-        AccountLoginResponse other = accountService.login(new LoginRequest(otherEmail, password));
+        AccountLoginResponse other = accountService.login(new LoginRequest(otherEmail, password), "198.51.100.7");
         mockMvc.perform(delete(sessionsPath + "/{familyId}", secondFamily)
                         .header("Authorization", "Bearer " + other.tokens().accessToken()))
                 .andExpect(status().isNoContent());
         mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + second.tokens().accessToken()))
                 .andExpect(status().isOk());
 
-        accountService.requestPasswordReset(email);
+        accountService.requestPasswordReset(email, "198.51.100.7");
         String resetToken = testEmailSender.passwordResetTokens.poll();
         assertThat(resetToken).isNotBlank();
         mockMvc.perform(post("/api/auth/password-reset/confirm")
@@ -440,7 +440,7 @@ class AccountAuthenticationIntegrationTest {
                 .andExpect(status().isOk());
 
         AccountLoginResponse afterReset = accountService.login(
-                new LoginRequest(email, "new-long-enough-password-456"));
+                new LoginRequest(email, "new-long-enough-password-456"), "198.51.100.7");
         mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + afterReset.tokens().accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1));
@@ -494,8 +494,8 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse first = accountService.login(new LoginRequest(email, password));
-        AccountLoginResponse second = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse first = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountLoginResponse second = accountService.login(new LoginRequest(email, password), "198.51.100.7");
         String closurePath = "/api/auth/account";
 
         // 잘못된 비밀번호는 계정을 건드리지 않는다.

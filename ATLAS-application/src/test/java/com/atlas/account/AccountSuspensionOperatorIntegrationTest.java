@@ -80,7 +80,7 @@ class AccountSuspensionOperatorIntegrationTest {
         UUID accountId = newVerifiedAccount(password);
         AccountLoginResponse session = accountService.login(new LoginRequest(
                 jdbc.queryForObject("SELECT email FROM user_account WHERE account_id = ?", String.class, accountId),
-                password));
+                password), "198.51.100.7");
 
         // 일반 사용자 토큰으로는 운영자 API 에 접근할 수 없다.
         mockMvc.perform(post("/api/internal/accounts/{id}/suspension", accountId)

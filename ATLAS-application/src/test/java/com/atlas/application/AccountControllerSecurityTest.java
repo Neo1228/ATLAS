@@ -40,7 +40,7 @@ class AccountControllerSecurityTest {
     @BeforeEach
     void allowRequestsPastAccountOwnershipInterceptor() throws Exception {
         when(ownership.preHandle(any(), any(), any())).thenReturn(true);
-        when(accounts.registerBuyer(any())).thenReturn(new AccountActionResponse(true));
+        when(accounts.registerBuyer(any(), any())).thenReturn(new AccountActionResponse(true));
     }
 
     @Test

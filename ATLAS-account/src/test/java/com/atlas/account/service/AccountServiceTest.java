@@ -59,14 +59,16 @@ class AccountServiceTest {
     private final AccountEmailSender emailSender = mock(AccountEmailSender.class);
     private final AccountMfaSecretProtector mfaSecrets = mock(AccountMfaSecretProtector.class);
     private final AccountSuspensionRepository suspensions = mock(AccountSuspensionRepository.class);
+    private final AuthAttemptLimiter limiter = mock(AuthAttemptLimiter.class);
     private final AtomicReference<String> enrollmentSecret = new AtomicReference<>();
     private AccountService service;
 
     @BeforeEach
     void setUp() {
         when(passwords.encode(any())).thenReturn("dummy-encoded-password");
+        when(limiter.tryAcquire(any(), any(), any(), any())).thenReturn(true);
         service = new AccountService(accounts, passwords, accessTokens, emailSender, mfaSecrets,
-                Clock.fixed(NOW, ZoneOffset.UTC), suspensions);
+                Clock.fixed(NOW, ZoneOffset.UTC), suspensions, limiter);
     }
 
     @Test
@@ -75,7 +77,7 @@ class AccountServiceTest {
         when(passwords.encode("long-enough-password")).thenReturn("encoded-password");
 
         AccountActionResponse result = service.registerBuyer(
-                new RegisterBuyerRequest(" Buyer@Example.com ", "long-enough-password"));
+                new RegisterBuyerRequest(" Buyer@Example.com ", "long-enough-password"), "198.51.100.7");
 
         assertTrue(result.accepted());
         verify(accounts).createBuyer(ACCOUNT_ID);
@@ -93,7 +95,7 @@ class AccountServiceTest {
                 .thenReturn(Optional.empty());
 
         AccountActionResponse response = service.registerBuyer(
-                new RegisterBuyerRequest("buyer@example.com", "long-enough-password"));
+                new RegisterBuyerRequest("buyer@example.com", "long-enough-password"), "198.51.100.7");
 
         assertTrue(response.accepted());
         verify(accounts, never()).createBuyer(any());
@@ -106,8 +108,8 @@ class AccountServiceTest {
                 .thenReturn(Optional.of(ACCOUNT_ID)).thenReturn(Optional.empty());
         RegisterBuyerRequest request = new RegisterBuyerRequest("buyer@example.com", "long-enough-password");
 
-        AccountActionResponse freshAccountResponse = service.registerBuyer(request);
-        AccountActionResponse existingAccountResponse = service.registerBuyer(request);
+        AccountActionResponse freshAccountResponse = service.registerBuyer(request, "198.51.100.7");
+        AccountActionResponse existingAccountResponse = service.registerBuyer(request, "198.51.100.7");
 
         assertEquals(freshAccountResponse, existingAccountResponse);
         assertTrue(existingAccountResponse.accepted());
@@ -197,7 +199,7 @@ class AccountServiceTest {
         when(passwords.matches("correct-password", "stored-password-hash")).thenReturn(true);
         when(accessTokens.issue(eq(ACCOUNT_ID), any(UUID.class))).thenReturn("signed-access-token");
 
-        AccountLoginResponse result = service.login(new LoginRequest("buyer@example.com", "correct-password"));
+        AccountLoginResponse result = service.login(new LoginRequest("buyer@example.com", "correct-password"), "198.51.100.7");
 
         assertEquals(false, result.mfaRequired());
         assertEquals(ACCOUNT_ID, result.tokens().accountId());
@@ -212,7 +214,7 @@ class AccountServiceTest {
         when(accounts.findPasswordHash("missing@example.com")).thenReturn(Optional.empty());
 
         AccountException error = assertThrows(AccountException.class,
-                () -> service.login(new LoginRequest("missing@example.com", "incorrect-password")));
+                () -> service.login(new LoginRequest("missing@example.com", "incorrect-password"), "198.51.100.7"));
 
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
         verify(accessTokens, never()).issue(any(), any());
@@ -227,7 +229,7 @@ class AccountServiceTest {
         when(passwords.matches("incorrect-password", "stored-password-hash")).thenReturn(false);
 
         AccountException error = assertThrows(AccountException.class,
-                () -> service.login(new LoginRequest("buyer@example.com", "incorrect-password")));
+                () -> service.login(new LoginRequest("buyer@example.com", "incorrect-password"), "198.51.100.7"));
 
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
         verify(accessTokens, never()).issue(any(), any());
@@ -243,7 +245,7 @@ class AccountServiceTest {
         when(passwords.matches("old-password", "new-password-hash")).thenReturn(false);
 
         AccountException error = assertThrows(AccountException.class,
-                () -> service.login(new LoginRequest("buyer@example.com", "old-password")));
+                () -> service.login(new LoginRequest("buyer@example.com", "old-password"), "198.51.100.7"));
 
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
         verify(accessTokens, never()).issue(any(), any());
@@ -255,7 +257,7 @@ class AccountServiceTest {
     void passwordResetRequestDoesNotRevealUnknownAccounts() {
         when(accounts.findVerifiedAccountIdByEmail("missing@example.com")).thenReturn(Optional.empty());
 
-        AccountActionResponse response = service.requestPasswordReset("Missing@Example.com");
+        AccountActionResponse response = service.requestPasswordReset("Missing@Example.com", "198.51.100.7");
 
         assertTrue(response.accepted());
         verify(emailSender, never()).sendPasswordReset(anyString(), anyString());
@@ -272,7 +274,7 @@ class AccountServiceTest {
 
         TransactionSynchronizationManager.initSynchronization();
         try {
-            AccountActionResponse first = service.requestEmailVerification(" Buyer@Example.com ");
+            AccountActionResponse first = service.requestEmailVerification(" Buyer@Example.com ", "198.51.100.7");
             assertTrue(first.accepted());
             assertEquals(0, sendAttempts[0]);
             List<TransactionSynchronization> firstCallbacks = TransactionSynchronizationManager.getSynchronizations();
@@ -287,7 +289,7 @@ class AccountServiceTest {
 
         TransactionSynchronizationManager.initSynchronization();
         try {
-            AccountActionResponse resend = service.requestEmailVerification("buyer@example.com");
+            AccountActionResponse resend = service.requestEmailVerification("buyer@example.com", "198.51.100.7");
             assertTrue(resend.accepted());
             assertEquals(1, sendAttempts[0]);
             List<TransactionSynchronization> resendCallbacks = TransactionSynchronizationManager.getSynchronizations();
@@ -331,7 +333,7 @@ class AccountServiceTest {
         when(passwords.matches("correct-password", "stored-password-hash")).thenReturn(true);
         when(accounts.mfaEnabled(ACCOUNT_ID)).thenReturn(true);
 
-        AccountLoginResponse response = service.login(new LoginRequest("buyer@example.com", "correct-password"));
+        AccountLoginResponse response = service.login(new LoginRequest("buyer@example.com", "correct-password"), "198.51.100.7");
 
         assertTrue(response.mfaRequired());
         assertNotNull(response.challengeToken());

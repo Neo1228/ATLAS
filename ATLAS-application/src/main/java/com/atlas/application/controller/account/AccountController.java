@@ -1,5 +1,8 @@
 package com.atlas.application.controller.account;
 
+import com.atlas.application.controller.ClientOrigin;
+import jakarta.servlet.http.HttpServletRequest;
+
 import com.atlas.account.dto.request.LoginRequest;
 import com.atlas.account.dto.request.AccountActionTokenRequest;
 import com.atlas.account.dto.request.PasswordResetConfirmRequest;
@@ -42,8 +45,9 @@ public class AccountController {
 
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public AccountActionResponse registerBuyer(@Valid @RequestBody RegisterBuyerRequest request) {
-        return accounts.registerBuyer(request);
+    public AccountActionResponse registerBuyer(@Valid @RequestBody RegisterBuyerRequest request,
+            HttpServletRequest httpRequest) {
+        return accounts.registerBuyer(request, ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/verify-email")
@@ -53,13 +57,15 @@ public class AccountController {
     }
 
     @PostMapping("/email-verification/request")
-    public AccountActionResponse requestEmailVerification(@Valid @RequestBody PasswordResetRequest request) {
-        return accounts.requestEmailVerification(request.email());
+    public AccountActionResponse requestEmailVerification(
+            @Valid @RequestBody PasswordResetRequest request, HttpServletRequest httpRequest) {
+        return accounts.requestEmailVerification(request.email(), ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/password-reset/request")
-    public AccountActionResponse requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
-        return accounts.requestPasswordReset(request.email());
+    public AccountActionResponse requestPasswordReset(
+            @Valid @RequestBody PasswordResetRequest request, HttpServletRequest httpRequest) {
+        return accounts.requestPasswordReset(request.email(), ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/password-reset/confirm")
@@ -69,8 +75,9 @@ public class AccountController {
     }
 
     @PostMapping("/login")
-    public AccountLoginResponse login(@Valid @RequestBody LoginRequest request) {
-        return accounts.login(request);
+    public AccountLoginResponse login(@Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest) {
+        return accounts.login(request, ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/mfa/challenge")
