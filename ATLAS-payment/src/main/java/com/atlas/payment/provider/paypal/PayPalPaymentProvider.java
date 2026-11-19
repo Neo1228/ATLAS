@@ -11,12 +11,20 @@ import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import java.math.BigDecimal;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(name = "atlas.payment.provider", havingValue = "paypal")
 public class PayPalPaymentProvider implements PaymentProvider {
+    /**
+     * A provider outage is turned into UNKNOWN by the payment service, so without this
+     * log the operator cannot tell "PayPal is down" from "PayPal rejected us" or
+     * "the base URL is wrong". The cause chain is the only place that distinction lives.
+     */
+    private static final Logger LOGGER = LoggerFactory.getLogger(PayPalPaymentProvider.class);
     private final PayPalRestClient client;
 
     public PayPalPaymentProvider(PayPalRestClient client) {
@@ -37,7 +45,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
                 case VOID -> voidAuthorization(request);
             };
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
-            throw unavailable();
+            throw unavailable("perform", exception);
         }
     }
 
@@ -53,7 +61,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
             validateOrderAmount(request, order);
             return orderStatusResult(request, order);
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
-            throw unavailable();
+            throw unavailable("complete-approval", exception);
         }
     }
 
@@ -66,7 +74,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
                     request.requestId());
             return refundResult(refund.id(), refund.status(), refund.amount(), refund.currency());
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
-            throw unavailable();
+            throw unavailable("refund", exception);
         }
     }
 
@@ -76,7 +84,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
             PayPalRestClient.RefundResult refund = client.getRefund(refundId);
             return refundResult(refund.id(), refund.status(), refund.amount(), refund.currency());
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
-            throw unavailable();
+            throw unavailable("refund-lookup", exception);
         }
     }
 
@@ -89,7 +97,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
             }
             return client.parseWebhook(rawBody);
         } catch (PayPalRestClient.PayPalUnavailableException exception) {
-            throw unavailable();
+            throw unavailable("verify-webhook", exception);
         }
     }
 
@@ -256,8 +264,13 @@ public class PayPalPaymentProvider implements PaymentProvider {
         return new PaymentProviderResult(outcome, orderId, authorizationId, captureId, approvalUrl);
     }
 
-    private static PaymentException unavailable() {
-        return new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
+    private static PaymentException unavailable(String stage, RuntimeException cause) {
+        LOGGER.warn("PayPal provider unavailable; stage={} failureType={} causeType={}",
+                stage, cause.getClass().getSimpleName(),
+                cause.getCause() == null ? "none" : cause.getCause().getClass().getSimpleName());
+        PaymentException wrapped = new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
                 "PayPal payment provider is unavailable");
+        wrapped.initCause(cause);
+        return wrapped;
     }
 }

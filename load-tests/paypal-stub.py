@@ -131,6 +131,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         _delay()
         path = urlparse(self.path).path
+        # BOK ECOS exchange-rate stand-in: the PayPal provider requires a USD/KRW
+        # snapshot before it will call PayPal, and the real ECOS API needs a key.
+        # Returning a fixed recent rate keeps the payment path measurable offline.
+        if path.startswith("/api/StatisticSearch/"):
+            today = time.strftime("%Y%m%d", time.gmtime())
+            return self._send(200, {
+                "StatisticSearch": {
+                    "row": [{
+                        "TIME": today,
+                        "DATA_VALUE": "1350.00",
+                        "STAT_CODE": "731Y001",
+                        "UNIT_NAME": "1달러",
+                    }],
+                },
+            })
         if path.startswith("/v2/checkout/orders/"):
             order_id = path.split("/")[4]
             order = ORDERS.get(order_id)
