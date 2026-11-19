@@ -89,6 +89,27 @@ class AccountAuthenticationIntegrationTest {
     private TestAccountEmailSender testEmailSender;
 
     @Test
+    void counterStoreFailureIsVisibleAsAServerErrorNotAsAFakeCredentialRejection() throws Exception {
+        // 인증 카운터 저장소가 죽으면 실제 장애를 "비밀번호가 틀렸다"로 위장하지 않아야 한다.
+        // 401로 위장하면 운영자는 원인을 찾지 못하고 사용자는 재시도만 반복한다.
+        // 주입: 카운터 테이블을 잠시 사라지게 해 실제 저장소 오류(relation missing)를 만든다.
+        // 잠금 대기 방식은 요청 스레드의 connection 에 lock_timeout 이 걸려야 해서 결정적이지 않다.
+        String email = "counter-down-" + UUID.randomUUID() + "@example.com";
+        jdbc.execute("ALTER TABLE auth_origin_bucket RENAME TO auth_origin_bucket_unavailable");
+        try {
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"" + email + "\",\"password\":\"long-enough-password-123\"}"))
+                    .andExpect(result -> assertThat(result.getResponse().getStatus())
+                            .as("카운터 저장소 장애는 가시적 5xx여야 한다")
+                            .isGreaterThanOrEqualTo(500))
+                    .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+        } finally {
+            jdbc.execute("ALTER TABLE auth_origin_bucket_unavailable RENAME TO auth_origin_bucket");
+        }
+    }
+
+    @Test
     void normalizedEmailConflictDoesNotCreateAnotherAccount() {
         String email = "Buyer-" + UUID.randomUUID() + "@example.com";
 
