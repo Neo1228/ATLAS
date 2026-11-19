@@ -10,7 +10,7 @@
 
 측정·코드로 확인한 사실:
 
-- `AccountSecurityConfiguration`이 `Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8()`을 쓴다. 같은 인코더로 검증 1회를 10회 측정한 결과 **평균 55.8 ms**(로컬, JDK 25)였다.
+- `AccountSecurityConfiguration`이 `DelegatingPasswordEncoder("pbkdf2", Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8())`를 쓴다. 실제 구성과 같은 인코더로 `matches` 1회를 10회씩 5라운드 측정한 결과 **47.7–58.3 ms, 중위 50.3 ms**(로컬 Apple Silicon, JDK 25, JIT warmup 3회 후)였다. 최초 기록은 단일 라운드 55.8 ms였으나, 반복 측정에서 편차가 커 범위와 중위값으로 정정한다. 절대값보다 **검증 1회가 수십 ms 규모**라는 사실이 판단 근거다.
 - `AccountService.login`은 존재 여부를 감추기 위해 비밀번호를 **두 번** 검증한다. 로그인 1건이 최대 110 ms의 CPU를 쓴다.
 - `/api/auth/login`, `/api/auth/refresh`, `/api/auth/signup` 등이 `permitAll()`이며, 이 경로에 시도 제한이 없다.
 - `requestPasswordReset`/`requestEmailVerification`은 인증 없이 호출되며 매 호출마다 action token을 만들고 메일을 발송한다.
@@ -38,7 +38,7 @@
 
 - 한도 판단의 SSOT는 DB 카운터다. 단일 인스턴스 메모리 카운터는 replica 간에 합산되지 않으므로 쓰지 않는다.
 - 카운터 row가 없으면 한도가 남은 것으로 본다. sweep이 지운 직후에도 정상 동작해야 한다.
-- DB 오류로 한도 확인이 실패하면 인증은 거절된다(기본 차단). 가용성보다 추측 방어를 우선하며, 이 경우는 `AuthAttemptLimiter`의 예외로 5xx가 아닌 401로 수렴하지 않도록 호출부에서 다룬다.
+- **DB 오류 시 동작(명시적)**: `AuthAttemptLimiter`는 DB 예외를 삼키지 않고 그대로 전파한다. `GlobalExceptionHandler.handleUnexpected`가 이를 500 ProblemDetail로 매핑하고 `requestId`와 함께 ERROR 로그를 남긴다(코드 확인). 즉 카운터 저장소 장애는 "인증 거절(401)"이 아니라 **가시적 장애(500)** 로 나타난다. 가용성보다 추측 방어를 우선한다는 방향은 유지하되, 조용히 401로 위장하지 않는다. 401로 위장하면 실제 장애가 "비밀번호가 틀렸다"로 보여 운영자가 원인을 찾지 못하고, 사용자는 재시도만 반복하게 된다. 장애는 장애로 드러내는 편이 낫다.
 - 창 경계는 정확한 sliding window가 아니다. 고정 창은 경계에서 최대 2배까지 허용하지만, 구현과 저장 비용이 단순하고 요구 수준(추측 방어)에 충분하다.
 
 ## 동시성·확장·운영
@@ -59,6 +59,9 @@
 - 출처 한도가 서로 다른 주체에 걸쳐 공유된다(한 출처의 다계정 시도 차단).
 - 메일 요청이 한도 소진 시 더 이상 허용되지 않는다.
 - 오래된 카운터가 sweep으로 삭제된다.
+- `counterStoreFailureIsVisibleAsAServerErrorNotAsAFakeCredentialRejection`: 카운터 테이블을 잠시 사용 불가로 만들어 실제 저장소 오류를 주입하면, 응답이 401이 아니라 **500 `INTERNAL_ERROR`** 임을 확인한다. 장애를 인증 실패로 위장하지 않는다는 SSOT 절의 주장을 코드로 고정한다.
+
+측정 위생: 검증 비용은 단일 측정값이 아니라 5라운드 반복의 범위(47.7–58.3 ms)로 기록한다. 최초 기록의 단일 값 55.8 ms는 편차를 감춰 과대 확정했다.
 
 ## 대안과 trade-off
 
