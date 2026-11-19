@@ -109,6 +109,7 @@
 | D-103 | ◐ #344 catalog keyword search trigram index | `position(keyword in lower(name))`는 인덱스를 쓸 수 없어 정렬 index를 따라 100k 전 행을 훑었다(409 ms, 92,826 hits). `LIKE` + 이스케이프로 의미를 유지한 채 V43 `pg_trgm` GIN index를 추가해 8.7 ms로 줄이고, 선택도가 낮은 키워드는 기존 정렬 경로를 유지한다. | [#344](https://github.com/Neo1228/ATLAS/issues/344), [ADR-0043](../02-decisions/adr/ADR-0043-catalog-keyword-trigram-index.md) |
 | D-104 | ◐ #373·#375·#376 커넥션 비용 측정 기준 | `idle in transaction` 비율을 목표로 삼아 트랜잭션을 제거했더니 커넥션 획득이 요청당 3.09 → 6.43 으로 늘어 대기가 117 → 244 ms 가 됐다. 1차 지표를 `획득 횟수 x 획득 대기`로 정하고, 쿼리 병합 3종(상관 서브쿼리·단일 조인·UNION ALL)은 모두 미채택으로 기록한다. | [#376](https://github.com/Neo1228/ATLAS/issues/376), [ADR-0045](../02-decisions/adr/ADR-0045-connection-cost-measurement.md) |
 | D-105 | ◐ #409 payment recovery를 intent→provider→owner 적용 단일 workflow로 확장 | `payment_recovery_job`에 `work_stage`(PROVIDER/APPLY)를 추가해 업무 transaction이 attempt/refund operation과 job을 함께 commit하고, provider terminal 결과도 같은 transaction에서 APPLY로 넘긴다. Owner service가 inventory·fulfillment·settlement 적용과 같은 transaction에서 `markOwnerApplied`를 호출해 완료하므로 중간 프로세스 종료가 자금 이동과 업무 반영의 불일치를 남기지 않는다. | [#409](https://github.com/Neo1228/ATLAS/issues/409), [ADR-0046](../02-decisions/adr/ADR-0046-order-payment-transactional-outbox.md) |
+| D-106 | ◐ #411 승인 화면 이탈 결제의 deadline과 provider 확정 | `payment_attempt.approval_expires_at`을 두고, deadline이 지난 `WAITING_FOR_BUYER` job을 bounded sweep으로 재개한다. 재개된 job은 provider에 실제 상태를 먼저 조회하고, 여전히 승인 전일 때만 결제를 닫아 재고·slot을 정리한다. 승인 화면을 닫았다는 사실만으로 void하지 않는다. | [#411](https://github.com/Neo1228/ATLAS/issues/411), [ADR-0047](../02-decisions/adr/ADR-0047-abandoned-approval-deadline.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -129,6 +130,7 @@
 <a id="d-103"></a>
 <a id="d-104"></a>
 <a id="d-105"></a>
+<a id="d-106"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -178,3 +180,4 @@
 | [ADR-0041 — Admission expiry sweep batch·SKIP LOCKED](../02-decisions/adr/ADR-0041-bounded-admission-expiry-sweep.md) | #309: due seller-SKU pair sweep 상한·multi-instance counter lock skip | [D-101](#d-101) |
 | [ADR-0045 — 커넥션 비용은 획득 횟수로 측정한다](../02-decisions/adr/ADR-0045-connection-cost-measurement.md) | #376: 대리 지표 회귀와 쿼리 병합 미채택 기록 | [D-104](#d-104) |
 | [ADR-0046 — payment recovery의 intent→provider→owner 단일 workflow](../02-decisions/adr/ADR-0046-order-payment-transactional-outbox.md) | #409: 업무 commit과 recovery job의 원자적 기록, provider terminal→owner 적용 분리, 단계별 관측 | [D-105](#d-105) |
+| [ADR-0047 — 승인 화면 이탈 결제의 deadline과 provider 확정](../02-decisions/adr/ADR-0047-abandoned-approval-deadline.md) | #411: approval deadline, WAITING_FOR_BUYER 재개 sweep, provider 우선 확정 | [D-106](#d-106) |

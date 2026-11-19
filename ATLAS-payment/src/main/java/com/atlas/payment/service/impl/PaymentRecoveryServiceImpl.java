@@ -63,6 +63,11 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
+    public int resumeExpiredApprovalWaits(int limit) {
+        return recovery.resumeExpiredApprovalWaits(limit);
+    }
+
+    @Override
     public List<PaymentRecoveryJob> claimDue(
             int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge) {
         return recovery.claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAge).stream()

@@ -71,6 +71,8 @@ atlas:
     expiry-sweep-time-budget: ${ATLAS_ORDERS_EXPIRY_SWEEP_TIME_BUDGET:PT2S}
   payment:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
+    # 승인 화면 이탈에도 결제 대기가 무기한 남지 않도록 하는 deadline. PayPal approval 유효기간보다 짧게 둔다.
+    approval-ttl: ${ATLAS_PAYMENT_APPROVAL_TTL:PT30M}
     recovery:
       initial-delay: ${ATLAS_PAYMENT_RECOVERY_INITIAL_DELAY:PT30S}
       initial-poll-delay: ${ATLAS_PAYMENT_RECOVERY_INITIAL_POLL_DELAY:PT2S}

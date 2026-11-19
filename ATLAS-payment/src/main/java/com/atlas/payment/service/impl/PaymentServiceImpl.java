@@ -52,6 +52,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final FxConversionService fxConversionService;
     private final String publicBaseUrl;
     private final Duration recoveryInitialDelay;
+    private final Duration approvalTtl;
     private final Supplier<UUID> ids;
 
     @Autowired
@@ -60,9 +61,10 @@ public class PaymentServiceImpl implements PaymentService {
             PlatformTransactionManager transactionManager, PaymentProvider psp,
             FxConversionService fxConversionService,
             @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}") String publicBaseUrl,
-            @Value("${atlas.payment.recovery.initial-delay:PT30S}") Duration recoveryInitialDelay) {
+            @Value("${atlas.payment.recovery.initial-delay:PT30S}") Duration recoveryInitialDelay,
+            @Value("${atlas.payment.approval-ttl:PT30M}") Duration approvalTtl) {
         this(repository, refunds, webhookEvents, recovery, transactionManager, psp, fxConversionService,
-                publicBaseUrl, recoveryInitialDelay, UUID::randomUUID);
+                publicBaseUrl, recoveryInitialDelay, approvalTtl, UUID::randomUUID);
     }
 
     public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
@@ -70,14 +72,14 @@ public class PaymentServiceImpl implements PaymentService {
             PlatformTransactionManager transactionManager, PaymentProvider psp,
             FxConversionService fxConversionService, String publicBaseUrl) {
         this(repository, refunds, webhookEvents, recovery, transactionManager, psp, fxConversionService,
-                publicBaseUrl, Duration.ofSeconds(30), UUID::randomUUID);
+                publicBaseUrl, Duration.ofSeconds(30), Duration.ofMinutes(30), UUID::randomUUID);
     }
 
     PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
             PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
             PlatformTransactionManager transactionManager, PaymentProvider psp,
             FxConversionService fxConversionService, String publicBaseUrl, Duration recoveryInitialDelay,
-            Supplier<UUID> ids) {
+            Duration approvalTtl, Supplier<UUID> ids) {
         this.repository = Objects.requireNonNull(repository);
         this.refunds = Objects.requireNonNull(refunds);
         this.webhookEvents = Objects.requireNonNull(webhookEvents);
@@ -92,6 +94,10 @@ public class PaymentServiceImpl implements PaymentService {
         this.recoveryInitialDelay = Objects.requireNonNull(recoveryInitialDelay);
         if (this.recoveryInitialDelay.isNegative()) {
             throw new IllegalArgumentException("recoveryInitialDelay must not be negative");
+        }
+        this.approvalTtl = Objects.requireNonNull(approvalTtl);
+        if (this.approvalTtl.isZero() || this.approvalTtl.isNegative()) {
+            throw new IllegalArgumentException("approvalTtl must be positive");
         }
     }
     @Override
@@ -245,6 +251,57 @@ public class PaymentServiceImpl implements PaymentService {
             String phaseKey = attempt.getPaymentPhase() == PaymentPhase.VOID
                     ? idempotencyKey + ":void" : idempotencyKey + ":cancel-reconcile";
             return performPhase(attempt, phaseKey, false);
+        });
+    }
+
+    @Override
+    public PaymentResponse resolveExpiredApproval(UUID attemptId, String idempotencyKey) {
+        if (attemptId == null || idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw invalidRequest("attemptId and idempotencyKey required");
+        }
+        PaymentAttempt loaded = Objects.requireNonNull(transactions.execute(status ->
+                repository.findWithLockByAttemptId(attemptId)
+                        .orElseThrow(() -> notFound("No payment attempt: " + attemptId))));
+        UUID ownerId = loaded.getCheckoutId() == null ? loaded.getOrderId() : loaded.getCheckoutId();
+        return withOwnerLock(ownerId, () -> {
+            PaymentAttempt current = Objects.requireNonNull(transactions.execute(status ->
+                    repository.findWithLockByAttemptId(attemptId)
+                            .orElseThrow(() -> notFound("No payment attempt: " + attemptId))));
+            // 이미 확정된 결과(capture/void/decline)는 뒤집지 않는다. owner 적용만 남았다.
+            if (terminal(current.getState()) || current.getProviderOrderId() == null
+                    || current.getState() != PaymentState.AUTHORIZATION_PENDING) {
+                return toResponse(current);
+            }
+            // 승인 화면 이탈 여부를 추정하지 않고 provider에 실제 상태를 확인한다. 승인 화면에서
+            // 이탈했더라도 capture가 이미 확정됐을 수 있으므로, 조회 없이 void하면 자금 이동을
+            // 놓친다.
+            PaymentResponse reconciled = current.getCheckoutId() == null
+                    ? reconcile(current.getOrderId(), idempotencyKey + ":get")
+                    : reconcileCheckout(current.getCheckoutId(), idempotencyKey + ":get");
+            if (terminal(reconciled.state()) || !reconciled.authorizationActive()
+                    || reconciled.state() != PaymentState.AUTHORIZATION_PENDING) {
+                return reconciled;
+            }
+            // 아직 승인 전임이 provider 조회로 확인됐다. 이 시점에는 PayPal authorization이
+            // 존재하지 않는다(승인 후 우리가 /authorize를 호출해야 생성된다). 따라서 취소할 자금이
+            // 없고, order를 로컬에서 VOIDED로 닫으면 owner 적용이 재고·슬롯을 정리한다.
+            // 승인 대기 flag를 함께 내려야 APPLY 단계로 넘어갈 수 있다.
+            PaymentAttempt closed = Objects.requireNonNull(transactions.execute(status -> {
+                PaymentAttempt latest = repository.findWithLockByAttemptId(attemptId)
+                        .orElseThrow(() -> notFound("No payment attempt: " + attemptId));
+                if (terminal(latest.getState())
+                        || latest.getState() != PaymentState.AUTHORIZATION_PENDING) {
+                    return latest;
+                }
+                latest.setApprovalExpiresAt(null);
+                latest.setState(PaymentState.VOIDED);
+                latest.setPaymentPhase(PaymentPhase.AUTHORIZATION);
+                latest.setAuthorizationActive(false);
+                repository.save(latest);
+                recovery.markAttemptForApplication(attemptId);
+                return latest;
+            }));
+            return toResponse(closed);
         });
     }
 
@@ -717,8 +774,14 @@ public class PaymentServiceImpl implements PaymentService {
             }
             switch (phase) {
                 case AUTHORIZATION -> {
-                    if (current.getState() == PaymentState.NOT_STARTED) {
+                    if (current.getState() == PaymentState.NOT_STARTED
+                            || current.getState() == PaymentState.AUTHORIZATION_PENDING) {
                         current.setState(PaymentState.AUTHORIZATION_PENDING);
+                        // 승인 화면 이탈 시에도 deadline이 남도록 대기 시작 시점에 기록한다.
+                        // 구매자가 callback을 보내지 않아도 이 시각 이후 worker가 확정한다.
+                        if (current.getApprovalExpiresAt() == null) {
+                            current.setApprovalExpiresAt(Instant.now().plus(approvalTtl));
+                        }
                     }
                     current.setAuthorizationActive(true);
                 }
@@ -996,7 +1059,7 @@ public class PaymentServiceImpl implements PaymentService {
     private static PaymentResponse toResponse(PaymentAttempt attempt) {
         return new PaymentResponse(attempt.getOrderId(), attempt.getCheckoutId(), attempt.getAttemptId(),
                 attempt.getState(), attempt.isAuthorizationActive(), attempt.getProviderOrderId(),
-                attempt.getProviderCaptureId(), attempt.getApprovalUrl());
+                attempt.getProviderCaptureId(), attempt.getApprovalUrl(), attempt.getApprovalExpiresAt());
     }
 
     private static boolean terminal(PaymentState state) {

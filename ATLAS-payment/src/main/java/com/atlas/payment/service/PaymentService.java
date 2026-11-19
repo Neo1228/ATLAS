@@ -30,6 +30,13 @@ public interface PaymentService {
     PaymentResponse reconcileCheckoutForCancellation(UUID checkoutId, String idempotencyKey);
     /** checkout 결제 시도의 유효한 승인을 취소한다. */
     PaymentResponse voidCheckoutAuthorization(UUID checkoutId, String idempotencyKey);
+    /**
+     * 승인 deadline이 지난 결제 시도를 실제 provider 상태로 확정한다.
+     *
+     * <p>이미 승인/청구/취소가 확정됐으면 그 사실을 그대로 반영하고, 아직 승인 전이면
+     * provider order를 void한다. 재고 해제는 owner 적용 단계에서만 일어난다.
+     */
+    PaymentResponse resolveExpiredApproval(UUID attemptId, String idempotencyKey);
 
     /** checkout의 결제 시도를 반환한다. 결제 시도가 없으면 {@code null}을 반환한다. */
     PaymentResponse findCheckout(UUID checkoutId);
