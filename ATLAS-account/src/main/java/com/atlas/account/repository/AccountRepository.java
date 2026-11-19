@@ -130,6 +130,35 @@ public class AccountRepository {
                 passwordHash, Timestamp.from(updatedAt), accountId);
     }
 
+    /**
+     * 계정을 폐쇄 상태로 바꿉니다.
+     *
+     * <p>{@code status = 'DISABLED'} 로 두면 {@code isRefreshFamilyActive} 와 모든 로그인
+     * 쿼리가 이미 {@code status = 'ACTIVE'} 를 요구하므로, 이후 발급·갱신·검증이 모두
+     * 거부됩니다. 행을 지우지 않는 이유는 주문·결제 이력의 참조 무결성을 유지하기
+     * 위해서입니다.
+     *
+     * @return 이번 호출로 상태가 바뀌었으면 {@code true}. 이미 폐쇄였으면 {@code false}.
+     */
+    public boolean closeAccount(UUID accountId, Instant closedAt) {
+        return jdbc.update("""
+                UPDATE user_account SET status = 'DISABLED', updated_at = ?
+                WHERE account_id = ? AND status = 'ACTIVE'
+                """, Timestamp.from(closedAt), accountId) > 0;
+    }
+
+    /** 폐쇄 여부와 무관하게 계정이 존재하는지 확인합니다. */
+    public boolean accountExists(UUID accountId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM user_account WHERE account_id = ?)", Boolean.class, accountId));
+    }
+
+    /** 비밀번호 해시를 상태 조건 없이 읽습니다(폐쇄 판정용). */
+    public Optional<String> findPasswordHashForClosure(UUID accountId) {
+        return jdbc.query("SELECT password_hash FROM user_account WHERE account_id = ?",
+                (rs, row) -> rs.getString("password_hash"), accountId).stream().findFirst();
+    }
+
     public void revokeAllRefreshFamilies(UUID accountId, Instant revokedAt) {
         jdbc.update("""
                 UPDATE refresh_token_family SET revoked_at = ?

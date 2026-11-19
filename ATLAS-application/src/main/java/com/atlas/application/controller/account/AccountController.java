@@ -5,6 +5,7 @@ import com.atlas.account.dto.request.AccountActionTokenRequest;
 import com.atlas.account.dto.request.PasswordResetConfirmRequest;
 import com.atlas.account.dto.request.PasswordResetRequest;
 import com.atlas.account.dto.request.MfaChallengeRequest;
+import com.atlas.account.dto.request.CloseAccountRequest;
 import com.atlas.account.dto.request.MfaCodeRequest;
 import com.atlas.account.dto.request.RefreshTokenRequest;
 import com.atlas.account.dto.request.RegisterBuyerRequest;
@@ -111,6 +112,22 @@ public class AccountController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void revokeSession(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID familyId) {
         accounts.revokeSession(UUID.fromString(jwt.getSubject()), familyId);
+    }
+
+    /**
+     * 본인 계정을 폐쇄합니다.
+     *
+     * <p>비밀번호를 다시 요구하는 이유와 폐쇄 시 무효화되는 범위는
+     * {@code AccountService#closeAccount} 에 기록되어 있습니다.
+     *
+     * <p>DELETE 를 쓰는 이유: 계정 자체를 더 이상 사용할 수 없게 만드는 의미이며,
+     * 실제 행은 주문·결제 이력의 참조 무결성을 위해 남깁니다(상태만 DISABLED).
+     */
+    @DeleteMapping("/account")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void closeAccount(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody CloseAccountRequest request) {
+        accounts.closeAccount(UUID.fromString(jwt.getSubject()), request.password());
     }
 
     @PostMapping("/logout")

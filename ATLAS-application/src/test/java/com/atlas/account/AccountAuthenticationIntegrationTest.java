@@ -479,4 +479,65 @@ class AccountAuthenticationIntegrationTest {
         }
     }
 
+
+    /**
+     * 계정 폐쇄가 즉시·전면적으로 적용되는지 확인합니다.
+     *
+     * <p>폐쇄는 되돌릴 수 없는 작업이므로 다음이 모두 성립해야 합니다:
+     * 같은 액세스 토큰이 즉시 401, refresh 거부, 다른 세션도 함께 무효화,
+     * 잘못된 비밀번호는 상태를 바꾸지 않음, 재요청은 멱등.
+     */
+    @Test
+    void closingAccountInvalidatesEverySessionImmediatelyAndRequiresThePassword() throws Exception {
+        String email = "closure-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        AccountLoginResponse first = accountService.login(new LoginRequest(email, password));
+        AccountLoginResponse second = accountService.login(new LoginRequest(email, password));
+        String closurePath = "/api/auth/account";
+
+        // 잘못된 비밀번호는 계정을 건드리지 않는다.
+        mockMvc.perform(delete(closurePath)
+                        .header("Authorization", "Bearer " + first.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"wrong-but-long-enough-123\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isOk());
+
+        // 올바른 비밀번호로 폐쇄하면 204.
+        mockMvc.perform(delete(closurePath)
+                        .header("Authorization", "Bearer " + first.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"" + password + "\"}"))
+                .andExpect(status().isNoContent());
+
+        // 같은 액세스 토큰이 즉시 거부된다.
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + first.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+        // 다른 기기의 세션도 함께 거부된다.
+        mockMvc.perform(get("/api/auth/sessions")
+                        .header("Authorization", "Bearer " + second.tokens().accessToken()))
+                .andExpect(status().isUnauthorized());
+        // refresh 도 거부된다.
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + first.tokens().refreshToken() + "\"}"))
+                .andExpect(status().isUnauthorized());
+        // 로그인도 불가능하다.
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
+                .andExpect(status().isUnauthorized());
+        // 이미 폐쇄된 계정에 다시 요청하면 토큰이 이미 무효라 401 이다(멱등).
+        mockMvc.perform(delete(closurePath)
+                        .header("Authorization", "Bearer " + first.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"" + password + "\"}"))
+                .andExpect(status().isUnauthorized());
+    }
 }

@@ -270,6 +270,36 @@ public class AccountService {
         accounts.revokeRefreshFamily(session.familyId(), clock.instant());
     }
 
+    /**
+     * 본인이 자기 계정을 폐쇄합니다.
+     *
+     * <p>폐쇄는 되돌릴 수 없으므로 비밀번호를 다시 확인합니다. 액세스 토큰만으로
+     * 허용하면 탈취된 기기에서 악의적으로 계정을 닫을 수 있습니다.
+     *
+     * <p>한 트랜잭션에서 상태 변경과 모든 세션 폐기를 함께 수행합니다:
+     * <ul>
+     *   <li>{@code user_account.status = 'DISABLED'} — 이후 모든 검증이 거부됩니다.</li>
+     *   <li>모든 refresh family 폐기 — 갱신 경로를 닫습니다.</li>
+     *   <li>진행 중 MFA challenge 폐기 — 대기 중 인증을 무효화합니다.</li>
+     * </ul>
+     *
+     * <p>응답 직후 같은 액세스 토큰이 401 이 되는 것은 검증기가 {@code status='ACTIVE'} 를
+     * 요구하기 때문이며, 이 계약을 통합 테스트로 고정했습니다.
+     *
+     * <p>멱등성: 이미 폐쇄된 계정에 다시 요청하면 비밀번호가 맞아도 상태 변경 없이
+     * 조용히 종료합니다(204). 호출자가 재시도해도 안전합니다.
+     */
+    @Transactional
+    public void closeAccount(UUID accountId, String password) {
+        if (accountId == null || !StringUtils.hasText(password)) throw invalidRequest();
+        String passwordHash = accounts.findPasswordHashForClosure(accountId).orElseThrow(AccountService::invalidCredentials);
+        if (!passwords.matches(password, passwordHash)) throw invalidCredentials();
+        Instant now = clock.instant();
+        if (!accounts.closeAccount(accountId, now)) return; // 이미 폐쇄됨: 멱등 종료
+        accounts.revokeAllRefreshFamilies(accountId, now);
+        accounts.revokeMfaChallenges(accountId, now);
+    }
+
     @Transactional
     public void linkSeller(UUID accountId, UUID sellerId) {
         if (accountId == null || sellerId == null || accounts.findActiveById(accountId).isEmpty()) {
