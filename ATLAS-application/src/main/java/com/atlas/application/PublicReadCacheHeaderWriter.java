@@ -2,6 +2,7 @@ package com.atlas.application;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Set;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.web.header.HeaderWriter;
 import org.springframework.util.StringUtils;
@@ -42,6 +43,7 @@ public class PublicReadCacheHeaderWriter implements HeaderWriter {
             // Authorization 변형을 분리해야 한다.
             response.addHeader(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION);
             response.addHeader(HttpHeaders.VARY, HttpHeaders.ACCEPT_ENCODING);
+            response.addHeader(HttpHeaders.VARY, "Cookie");
             response.setHeader("Pragma", null);
             response.setHeader("Expires", null);
             return;
@@ -60,16 +62,25 @@ public class PublicReadCacheHeaderWriter implements HeaderWriter {
      */
     static boolean isPublicRead(HttpServletRequest request) {
         if (!"GET".equals(request.getMethod())) return false;
-        if (StringUtils.hasText(request.getHeader(HttpHeaders.AUTHORIZATION))) return false;
+        if (StringUtils.hasText(request.getHeader(HttpHeaders.AUTHORIZATION))
+                || StringUtils.hasText(request.getHeader(HttpHeaders.COOKIE))) return false;
         String path = request.getRequestURI();
         if (path == null) return false;
         String contextPath = request.getContextPath();
         if (contextPath != null && !contextPath.isEmpty() && path.startsWith(contextPath)) {
             path = path.substring(contextPath.length());
         }
-        return path.equals("/api/products")
-                || path.matches("^/api/products/[^/]+$")
-                || path.matches("^/api/products/[^/]+/reviews$")
-                || path.matches("^/api/campaigns/[^/]+$");
+        Set<String> parameters = request.getParameterMap().keySet();
+        if (path.equals("/api/products")) {
+            return parameters.stream().allMatch(Set.of(
+                    "sellerId", "query", "categoryId", "minPriceWon", "maxPriceWon", "limit", "cursor")::contains);
+        }
+        if (path.matches("^/api/products/[^/]+/reviews$")) {
+            return parameters.stream().allMatch(Set.of("limit", "offset")::contains);
+        }
+        if (path.matches("^/api/products/[^/]+$") || path.matches("^/api/campaigns/[^/]+$")) {
+            return parameters.isEmpty();
+        }
+        return false;
     }
 }

@@ -65,7 +65,7 @@ class PublicReadCacheHeaderWriterTest {
         assertThat(response.getHeader("Cache-Control"))
                 .isEqualTo("public, max-age=0, s-maxage=1");
         assertThat(response.getHeader("Pragma")).isNull();
-        assertThat(response.getHeaders("Vary")).contains("Authorization", "Accept-Encoding");
+        assertThat(response.getHeaders("Vary")).contains("Authorization", "Accept-Encoding", "Cookie");
     }
 
     @Test
@@ -95,6 +95,24 @@ class PublicReadCacheHeaderWriterTest {
 
         assertThat(response.getHeader("Cache-Control"))
                 .isEqualTo("no-cache, no-store, max-age=0, must-revalidate");
+    }
+
+    @Test
+    void cookieBearingRequestsAreNotPublicCacheable() {
+        MockHttpServletRequest request = get("/api/products");
+        request.addHeader("Cookie", "future-session=opaque");
+        assertThat(PublicReadCacheHeaderWriter.isPublicRead(request)).isFalse();
+    }
+
+    @Test
+    void onlyKnownQueryParametersAreCacheable() {
+        MockHttpServletRequest known = get("/api/products");
+        known.setParameter("limit", "100");
+        assertThat(PublicReadCacheHeaderWriter.isPublicRead(known)).isTrue();
+
+        MockHttpServletRequest unknown = get("/api/products");
+        unknown.setParameter("cacheProbe", "random-value");
+        assertThat(PublicReadCacheHeaderWriter.isPublicRead(unknown)).isFalse();
     }
 
 }
