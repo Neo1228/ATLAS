@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -64,12 +65,13 @@ public class AccountService {
     private final AccountMfaSecretProtector mfaSecrets;
     private final Clock clock;
     private final AccountSuspensionRepository suspensions;
+    private final AuthAttemptLimiter limiter;
     private final String dummyLoginPasswordHash;
 
     public AccountService(AccountRepository accounts, PasswordEncoder passwords,
             AccessTokenService accessTokens, AccountEmailSender emailSender,
             AccountMfaSecretProtector mfaSecrets, Clock clock,
-            AccountSuspensionRepository suspensions) {
+            AccountSuspensionRepository suspensions, AuthAttemptLimiter limiter) {
         this.accounts = accounts;
         this.passwords = passwords;
         this.accessTokens = accessTokens;
@@ -77,16 +79,19 @@ public class AccountService {
         this.mfaSecrets = mfaSecrets;
         this.clock = clock;
         this.suspensions = suspensions;
+        this.limiter = Objects.requireNonNull(limiter);
         this.dummyLoginPasswordHash = passwords.encode(UUID.randomUUID().toString());
     }
 
     @Transactional
-    public AccountActionResponse registerBuyer(RegisterBuyerRequest request) {
+    public AccountActionResponse registerBuyer(RegisterBuyerRequest request, String origin) {
         if (request == null || request.password() == null || request.password().length() < 12
                 || request.password().length() > 128) {
             throw invalidRequest();
         }
         String email = normalizeEmail(request.email());
+        // 가입도 인증 없이 호출 가능한 메일 발송 경로다. 남은 한도가 없으면 계정을 만들지 않는다.
+        if (!limiter.tryAcquire("EMAIL", email, origin, clock.instant())) throw invalidRequest();
         Optional<UUID> createdAccount = accounts.createAccount(email, passwords.encode(request.password()));
         if (createdAccount.isEmpty()) return new AccountActionResponse(true);
         UUID accountId = createdAccount.get();
@@ -96,9 +101,15 @@ public class AccountService {
         return new AccountActionResponse(true);
     }
 
+    /**
+     * 메일 발송형 요청. 한도를 넘으면 메일을 보내지 않지만 응답은 동일하게 유지한다.
+     * 응답을 바꾸면 계정 존재 여부가 드러나므로, 남은 한도 없음도 성공처럼 보여야 한다.
+     */
     @Transactional
-    public AccountActionResponse requestPasswordReset(String requestedEmail) {
+    public AccountActionResponse requestPasswordReset(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
+        Instant now = clock.instant();
+        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountActionResponse(true);
         accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId -> {
             String token = newActionToken(accountId, "PASSWORD_RESET", PASSWORD_RESET_LIFETIME);
             sendAfterCommit(() -> emailSender.sendPasswordReset(email, token));
@@ -107,8 +118,10 @@ public class AccountService {
     }
 
     @Transactional
-    public AccountActionResponse requestEmailVerification(String requestedEmail) {
+    public AccountActionResponse requestEmailVerification(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
+        Instant now = clock.instant();
+        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountActionResponse(true);
         accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId -> {
             String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
             sendAfterCommit(() -> emailSender.sendVerification(email, token));
@@ -141,27 +154,44 @@ public class AccountService {
         accounts.revokeMfaChallenges(token.accountId(), now);
     }
 
+    /**
+     * @param origin 클라이언트 주소. 없으면 출처 축은 "unknown" 하나로 합산된다.
+     */
     @Transactional
-    public AccountLoginResponse login(LoginRequest request) {
+    public AccountLoginResponse login(LoginRequest request, String origin) {
         if (request == null || request.password() == null || request.password().length() > 128) {
             throw invalidCredentials();
         }
         String email = normalizeEmail(request.email());
+        Instant now = clock.instant();
+        // 비밀번호 검증(PBKDF2)은 수십 ms의 CPU를 쓴다. 한도 확인은 반드시 그 앞에서 해야
+        // 자원 고갈을 막을 수 있다. 응답은 실제 인증 실패와 구분되지 않게 같은 예외를 쓴다.
+        if (!limiter.tryAcquire("LOGIN", email, origin == null ? "unknown" : origin, now)) {
+            throw invalidCredentials();
+        }
         Optional<AccountPrincipal> account = accounts.findActiveByEmail(email);
         Optional<String> storedPasswordHash = accounts.findPasswordHash(email);
         String passwordHash = storedPasswordHash.orElse(dummyLoginPasswordHash);
         boolean passwordMatches = passwords.matches(request.password(), passwordHash);
         if (account.isEmpty() || storedPasswordHash.isEmpty() || !passwordMatches
                 || account.get().buyerId() == null) {
+            limiter.recordSubjectFailure("LOGIN", email, now);
             throw invalidCredentials();
         }
-        String currentPasswordHash = accounts.lockPasswordHashForLogin(email).orElseThrow(AccountService::invalidCredentials);
-        if (!passwords.matches(request.password(), currentPasswordHash)) throw invalidCredentials();
+        String currentPasswordHash = accounts.lockPasswordHashForLogin(email).orElseThrow(() -> {
+            limiter.recordSubjectFailure("LOGIN", email, now);
+            return invalidCredentials();
+        });
+        if (!passwords.matches(request.password(), currentPasswordHash)) {
+            limiter.recordSubjectFailure("LOGIN", email, now);
+            throw invalidCredentials();
+        }
+        limiter.resetSubject("LOGIN", email);
         if (accounts.mfaEnabled(account.get().accountId())) {
             String challenge = newRefreshToken();
-            Instant now = clock.instant();
+            Instant challengeNow = clock.instant();
             accounts.createMfaChallenge(hashRefreshToken(challenge), account.get().accountId(),
-                    now, now.plus(MFA_CHALLENGE_LIFETIME));
+                    challengeNow, challengeNow.plus(MFA_CHALLENGE_LIFETIME));
             return new AccountLoginResponse(true, null, challenge);
         }
         return new AccountLoginResponse(false, issueTokens(account.get()), null);
@@ -224,10 +254,21 @@ public class AccountService {
                 .orElseThrow(AccountService::invalidCredentials);
         AccountPrincipal account = accounts.findActiveById(accountId).orElseThrow(AccountService::invalidCredentials);
         AccountMfaSecret secret = accounts.findMfaSecretForUpdate(accountId).orElseThrow(AccountService::invalidCredentials);
+        // 챌린지 TTL(5분) 안에서 6자리 코드를 무제한 시도할 수 있으면 MFA가 사실상 무력화된다.
+        // 실패 한도를 넘으면 챌린지를 소모시켜 같은 챌린지로 계속 시도하지 못하게 한다.
+        String mfaSubject = "mfa:" + accountId;
+        if (!limiter.tryAcquire("MFA", mfaSubject, mfaSubject, now)) {
+            accounts.consumeMfaChallenge(challengeHash, now);
+            throw invalidCredentials();
+        }
         boolean valid = secret.enabledAt() != null && (StringUtils.hasText(request.code())
                 ? validTotp(accountId, secret.encryptedSecret(), request.code())
                 : accounts.consumeMfaRecoveryCode(accountId, hashRefreshToken(request.recoveryCode()), now));
-        if (!valid || !accounts.consumeMfaChallenge(challengeHash, now)) throw invalidCredentials();
+        if (!valid || !accounts.consumeMfaChallenge(challengeHash, now)) {
+            if (!valid) limiter.recordSubjectFailure("MFA", mfaSubject, now);
+            throw invalidCredentials();
+        }
+        limiter.resetSubject("MFA", mfaSubject);
         return issueTokens(account);
     }
 

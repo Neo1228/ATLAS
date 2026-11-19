@@ -61,6 +61,16 @@ atlas:
       issuer: ${ATLAS_JWT_ISSUER:http://127.0.0.1:8080}
       audience: ${ATLAS_JWT_AUDIENCE:atlas-api}
   checkout-window: PT10M
+  # 인증 시도 제한. 실패가 한도를 넘으면 비밀번호 검증(PBKDF2, 수십 ms CPU) 전에 거절한다.
+  auth:
+    throttle:
+      window: ${ATLAS_AUTH_THROTTLE_WINDOW:PT15M}
+      subject-limit: ${ATLAS_AUTH_THROTTLE_SUBJECT_LIMIT:10}
+      origin-limit: ${ATLAS_AUTH_THROTTLE_ORIGIN_LIMIT:60}
+      retention: ${ATLAS_AUTH_THROTTLE_RETENTION:PT24H}
+      purge-batch-size: ${ATLAS_AUTH_THROTTLE_PURGE_BATCH_SIZE:500}
+      purge-initial-delay: ${ATLAS_AUTH_THROTTLE_PURGE_INITIAL_DELAY:PT5M}
+      purge-interval: ${ATLAS_AUTH_THROTTLE_PURGE_INTERVAL:PT10M}
   admission:
     expiry-poll-interval: PT1S
     expiry-sweep-batch-size: ${ATLAS_ADMISSION_EXPIRY_SWEEP_BATCH_SIZE:100}
