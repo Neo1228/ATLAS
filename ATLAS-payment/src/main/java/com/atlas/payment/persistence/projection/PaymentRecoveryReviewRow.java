@@ -1,12 +1,14 @@
 package com.atlas.payment.persistence.projection;
 
 import com.atlas.payment.persistence.state.PaymentRecoveryOperationType;
+import com.atlas.payment.persistence.state.PaymentRecoveryWorkStage;
 import java.time.Instant;
 import java.util.UUID;
 
 public record PaymentRecoveryReviewRow(
         UUID recoveryJobId,
         PaymentRecoveryOperationType operationType,
+        PaymentRecoveryWorkStage workStage,
         UUID operationId,
         UUID paymentAttemptId,
         UUID orderId,

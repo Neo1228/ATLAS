@@ -247,6 +247,8 @@ class CheckoutBehaviorTest {
         when(items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId())).thenReturn(List.of(item));
         when(payments.findCheckout(checkoutId))
                 .thenReturn(new PaymentResponse(null, checkoutId, null, PaymentState.NOT_STARTED, false));
+        when(payments.prepareCheckout(eq(checkoutId), any()))
+                .thenReturn(new PaymentResponse(null, checkoutId, attemptId, PaymentState.NOT_STARTED, false));
 
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
                 orders, items, inventory, fulfillment, payments, settlement, mock(SellerCouponService.class),

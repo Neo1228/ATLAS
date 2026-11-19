@@ -95,22 +95,35 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
     @Override
+    public PaymentResponse prepareInitial(UUID orderId, BigDecimal amount) {
+        if (orderId == null) throw invalidRequest("orderId required");
+        long amountWon = amountWon(amount);
+        return withOwnerLock(orderId, () -> {
+            PaymentAttempt attempt = preparePaymentAttempt(orderId, null, amountWon);
+            verifyPreparedAmount(attempt, amountWon);
+            return toResponse(attempt);
+        });
+    }
+
+    @Override
+    public PaymentResponse prepareCheckout(UUID checkoutId, BigDecimal amount) {
+        if (checkoutId == null) throw invalidRequest("checkoutId required");
+        long amountWon = amountWon(amount);
+        return withOwnerLock(checkoutId, () -> {
+            PaymentAttempt attempt = preparePaymentAttempt(null, checkoutId, amountWon);
+            verifyPreparedAmount(attempt, amountWon);
+            return toResponse(attempt);
+        });
+    }
+
+    @Override
     public PaymentResponse submitInitial(UUID orderId, BigDecimal amount) {
         if (orderId == null) throw invalidRequest("orderId required");
         long amountWon = amountWon(amount);
         return withOwnerLock(orderId, () -> {
-            PaymentAttempt attempt = transactions.execute(status -> {
-                repository.insertInitial(orderId, amountWon, ids.get());
-                PaymentAttempt initial = requireOrder(orderId);
-                if (!terminal(initial.getState())) {
-                    recovery.enqueueAttempt(initial.getAttemptId(), recoveryInitialDelay);
-                }
-                return initial;
-            });
+            PaymentAttempt attempt = preparePaymentAttempt(orderId, null, amountWon);
+            verifyPreparedAmount(attempt, amountWon);
             if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
-            if (attempt.getTotalWon() == null || attempt.getTotalWon() != amountWon) {
-                throw invalidRequest("PayPal amount does not match the stored payment attempt");
-            }
             return performPhase(attempt, "initial:" + attempt.getAttemptId());
         });
     }
@@ -120,20 +133,29 @@ public class PaymentServiceImpl implements PaymentService {
         if (checkoutId == null) throw invalidRequest("checkoutId required");
         long amountWon = amountWon(amount);
         return withOwnerLock(checkoutId, () -> {
-            PaymentAttempt attempt = transactions.execute(status -> {
-                repository.insertCheckoutInitial(checkoutId, amountWon, ids.get());
-                PaymentAttempt initial = requireCheckout(checkoutId);
-                if (!terminal(initial.getState())) {
-                    recovery.enqueueAttempt(initial.getAttemptId(), recoveryInitialDelay);
-                }
-                return initial;
-            });
+            PaymentAttempt attempt = preparePaymentAttempt(null, checkoutId, amountWon);
+            verifyPreparedAmount(attempt, amountWon);
             if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
-            if (attempt.getTotalWon() == null || attempt.getTotalWon() != amountWon) {
-                throw invalidRequest("PayPal amount does not match the stored payment attempt");
-            }
             return performPhase(attempt, "initial:" + attempt.getAttemptId());
         });
+    }
+
+    private PaymentAttempt preparePaymentAttempt(UUID orderId, UUID checkoutId, long amountWon) {
+        return Objects.requireNonNull(transactions.execute(status -> {
+            if (orderId != null) repository.insertInitial(orderId, amountWon, ids.get());
+            else repository.insertCheckoutInitial(checkoutId, amountWon, ids.get());
+            PaymentAttempt attempt = orderId != null ? requireOrder(orderId) : requireCheckout(checkoutId);
+            if (!terminal(attempt.getState())) {
+                recovery.enqueueAttempt(attempt.getAttemptId(), recoveryInitialDelay);
+            }
+            return attempt;
+        }));
+    }
+
+    private static void verifyPreparedAmount(PaymentAttempt attempt, long amountWon) {
+        if (attempt.getTotalWon() == null || attempt.getTotalWon() != amountWon) {
+            throw invalidRequest("PayPal amount does not match the stored payment attempt");
+        }
     }
 
     @Override
@@ -295,6 +317,33 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    public void markOwnerApplied(UUID attemptId) {
+        if (attemptId == null) throw invalidRequest("attemptId required");
+        transactions.execute(status -> {
+            PaymentAttempt attempt = repository.findWithLockByAttemptId(attemptId)
+                    .orElseThrow(() -> notFound("No payment attempt: " + attemptId));
+            if (terminal(attempt.getState()) && !attempt.isAuthorizationActive()) {
+                recovery.markAttemptApplied(attemptId);
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public void markRefundApplied(UUID refundOperationId) {
+        if (refundOperationId == null) throw invalidRequest("Refund operation id is required");
+        transactions.execute(status -> {
+            PaymentRefundOperation operation = refunds.findByOperationIdForUpdate(refundOperationId)
+                    .orElseThrow(() -> notFound("Refund operation not found"));
+            if (operation.state() == PaymentRefundState.COMPLETED
+                    || operation.state() == PaymentRefundState.FAILED) {
+                recovery.markRefundApplied(refundOperationId);
+            }
+            return null;
+        });
+    }
+
+    @Override
     public PaymentRefundResponse refundOrder(UUID orderId, String idempotencyKey, long amountWon) {
         return refund(orderId, null, idempotencyKey, amountWon);
     }
@@ -304,106 +353,170 @@ public class PaymentServiceImpl implements PaymentService {
         return refund(null, checkoutId, idempotencyKey, amountWon);
     }
 
+    @Override
+    public PaymentRefundResponse prepareRefundOrder(UUID orderId, String idempotencyKey, long amountWon) {
+        return prepareRefund(orderId, null, idempotencyKey, amountWon);
+    }
+
+    @Override
+    public PaymentRefundResponse prepareRefundCheckout(UUID checkoutId, String idempotencyKey, long amountWon) {
+        return prepareRefund(null, checkoutId, idempotencyKey, amountWon);
+    }
+
+    private PaymentRefundResponse prepareRefund(
+            UUID orderId, UUID checkoutId, String idempotencyKey, long amountWon) {
+        UUID ownerId = validateRefundRequest(orderId, checkoutId, idempotencyKey, amountWon);
+        return withOwnerLock(ownerId, () -> {
+            PaymentRefundOperation operation = reserveRefundOperation(
+                    orderId, checkoutId, idempotencyKey, amountWon);
+            return refundResponse(operation, operation.state(), operation.providerRefundId(), operation.updatedAt());
+        });
+    }
+
     private PaymentRefundResponse refund(UUID orderId, UUID checkoutId, String idempotencyKey, long amountWon) {
-        if ((orderId == null) == (checkoutId == null)) throw invalidRequest("Exactly one payment owner is required");
+        UUID ownerId = validateRefundRequest(orderId, checkoutId, idempotencyKey, amountWon);
+        return withOwnerLock(ownerId, () -> executeRefundOperation(
+                reserveRefundOperation(orderId, checkoutId, idempotencyKey, amountWon)));
+    }
+
+    private UUID validateRefundRequest(UUID orderId, UUID checkoutId, String idempotencyKey, long amountWon) {
+        if ((orderId == null) == (checkoutId == null)) {
+            throw invalidRequest("Exactly one payment owner is required");
+        }
         UUID ownerId = orderId == null ? checkoutId : orderId;
         validateOwnerAndKey(ownerId, idempotencyKey, orderId == null ? "checkoutId" : "orderId");
         if (amountWon <= 0) throw invalidRequest("Refund amount must be positive");
-        return withOwnerLock(ownerId, () -> {
-            PaymentAttempt attempt = Objects.requireNonNull(transactions.execute(status ->
-                    orderId == null ? requireCheckout(checkoutId) : requireOrder(orderId)));
-            if (attempt.getState() != PaymentState.CAPTURED || attempt.getProviderCaptureId() == null
-                    || attempt.getTotalWon() == null
-                    || (psp.requiresFxSnapshot() && !attempt.hasFxSnapshot())) {
-                throw invalidRequest("Only a captured PayPal payment can be refunded");
-            }
-            Instant now = Instant.now();
-            PaymentRefundOperation operation = Objects.requireNonNull(transactions.execute(status -> {
-                refunds.lockAttempt(attempt.getAttemptId());
-                var existing = refunds.findByAttemptIdAndIdempotencyKeyForUpdate(
-                        attempt.getAttemptId(), idempotencyKey);
-                String providerCurrency = psp.requiresFxSnapshot()
-                        ? attempt.getProviderCurrency() : psp.providerCurrency();
-                if (providerCurrency == null || providerCurrency.isBlank()) {
-                    throw invalidRequest("Provider currency is unavailable for this refund");
-                }
-                if (existing.isPresent()) {
-                    PaymentRefundOperation prior = existing.get();
-                    if (prior.amountWon() != amountWon
-                            || !Objects.equals(prior.captureId(), attempt.getProviderCaptureId())
-                            || !"KRW".equals(prior.currency()) || prior.providerAmountMinor() == null
-                            || !providerCurrency.equals(prior.providerCurrency())) {
-                        throw invalidRequest("Idempotency key was used for different refund facts");
-                    }
-                    return prior;
-                }
-                long totalAfterRefund;
-                try {
-                    totalAfterRefund = Math.addExact(refunds.refundedAmountForAttempt(attempt.getAttemptId()), amountWon);
-                } catch (ArithmeticException overflow) {
-                    throw invalidRequest("Refund amount is too large");
-                }
-                if (totalAfterRefund > attempt.getTotalWon()) {
-                    throw invalidRequest("Refund exceeds the captured payment amount");
-                }
-                if (refunds.hasUnpricedNonFailedRefunds(attempt.getAttemptId())) {
-                    throw invalidRequest("An existing refund must be reconciled before another refund");
-                }
-                long providerRefundAmount = amountWon;
-                if (psp.requiresFxSnapshot()) {
-                    long remainingProviderAmount = attempt.getProviderAmountMinor()
-                            - refunds.refundedProviderAmountForAttempt(attempt.getAttemptId());
-                    if (remainingProviderAmount <= 0) {
-                        throw invalidRequest("Refund exceeds the remaining PayPal capture amount");
-                    }
-                    providerRefundAmount = Math.min(
-                            FxConversionService.krwToUsdCents(amountWon, attempt.getFxRateWonPerUsd()),
-                            remainingProviderAmount);
-                    if (providerRefundAmount <= 0) {
-                        throw invalidRequest("Refund amount is below the PayPal minimum");
-                    }
-                }
-                PaymentRefundOperation created = refunds.reserve(ids.get(), attempt.getAttemptId(),
-                        attempt.getProviderCaptureId(), idempotencyKey, amountWon,
-                        providerRefundAmount, providerCurrency, ids.get(), now);
-                recovery.enqueueRefund(created.refundOperationId(), recoveryInitialDelay);
-                return created;
-            }));
-            if (operation.state() == PaymentRefundState.COMPLETED || operation.state() == PaymentRefundState.FAILED) {
-                return refundResponse(operation, operation.state(), operation.providerRefundId(), operation.updatedAt());
-            }
+        return ownerId;
+    }
 
-            PaymentRefundProviderResult result;
+    private PaymentRefundOperation reserveRefundOperation(
+            UUID orderId, UUID checkoutId, String idempotencyKey, long amountWon) {
+        PaymentAttempt attempt = Objects.requireNonNull(transactions.execute(status ->
+                orderId == null ? requireCheckout(checkoutId) : requireOrder(orderId)));
+        if (attempt.getState() != PaymentState.CAPTURED || attempt.getProviderCaptureId() == null
+                || attempt.getTotalWon() == null
+                || (psp.requiresFxSnapshot() && !attempt.hasFxSnapshot())) {
+            throw invalidRequest("Only a captured PayPal payment can be refunded");
+        }
+        Instant now = Instant.now();
+        return Objects.requireNonNull(transactions.execute(status -> {
+            refunds.lockAttempt(attempt.getAttemptId());
+            var existing = refunds.findByAttemptIdAndIdempotencyKeyForUpdate(
+                    attempt.getAttemptId(), idempotencyKey);
+            String providerCurrency = psp.requiresFxSnapshot()
+                    ? attempt.getProviderCurrency() : psp.providerCurrency();
+            if (providerCurrency == null || providerCurrency.isBlank()) {
+                throw invalidRequest("Provider currency is unavailable for this refund");
+            }
+            if (existing.isPresent()) {
+                PaymentRefundOperation prior = existing.get();
+                if (prior.amountWon() != amountWon
+                        || !Objects.equals(prior.captureId(), attempt.getProviderCaptureId())
+                        || !"KRW".equals(prior.currency()) || prior.providerAmountMinor() == null
+                        || !providerCurrency.equals(prior.providerCurrency())) {
+                    throw invalidRequest("Idempotency key was used for different refund facts");
+                }
+                if (prior.state() != PaymentRefundState.COMPLETED
+                        && prior.state() != PaymentRefundState.FAILED) {
+                    recovery.enqueueRefund(prior.refundOperationId(), recoveryInitialDelay);
+                }
+                return prior;
+            }
+            long totalAfterRefund;
             try {
-                result = operation.providerRefundId() == null
-                        ? psp.refund(new PaymentRefundRequest(operation.captureId(), operation.providerAmountMinor(),
-                                operation.providerCurrency(), operation.providerRequestId().toString()))
-                        : psp.getRefund(operation.providerRefundId());
-            } catch (PaymentException exception) {
-                if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
-                result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
-                        operation.providerRefundId(), operation.providerStatus());
+                totalAfterRefund = Math.addExact(
+                        refunds.refundedAmountForAttempt(attempt.getAttemptId()), amountWon);
+            } catch (ArithmeticException overflow) {
+                throw invalidRequest("Refund amount is too large");
             }
-            if (result.outcome() != PaymentRefundProviderResult.Outcome.FAILED
-                    && (result.amount() == null
-                    || result.amount().compareTo(BigDecimal.valueOf(operation.providerAmountMinor(), 2)) != 0
-                    || !operation.providerCurrency().equalsIgnoreCase(result.currency()))) {
-                result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
-                        result.refundId(), result.providerStatus(), result.amount(), result.currency());
+            if (totalAfterRefund > attempt.getTotalWon()) {
+                throw invalidRequest("Refund exceeds the captured payment amount");
             }
-            PaymentRefundState state = switch (result.outcome()) {
-                case COMPLETED -> PaymentRefundState.COMPLETED;
-                case PENDING -> PaymentRefundState.PENDING;
-                case FAILED -> PaymentRefundState.FAILED;
-                case UNKNOWN -> PaymentRefundState.UNKNOWN;
-            };
-            Instant updatedAt = Instant.now();
-            refunds.updateResult(operation.refundOperationId(), state, result.refundId(), result.providerStatus(), updatedAt);
-            if (state == PaymentRefundState.COMPLETED || state == PaymentRefundState.FAILED) {
-                recovery.markRefundCompleted(operation.refundOperationId());
+            if (refunds.hasUnpricedNonFailedRefunds(attempt.getAttemptId())) {
+                throw invalidRequest("An existing refund must be reconciled before another refund");
             }
-            return refundResponse(operation, state, result.refundId(), updatedAt);
+            long providerRefundAmount = amountWon;
+            if (psp.requiresFxSnapshot()) {
+                long remainingProviderAmount = attempt.getProviderAmountMinor()
+                        - refunds.refundedProviderAmountForAttempt(attempt.getAttemptId());
+                if (remainingProviderAmount <= 0) {
+                    throw invalidRequest("Refund exceeds the remaining PayPal capture amount");
+                }
+                providerRefundAmount = Math.min(
+                        FxConversionService.krwToUsdCents(amountWon, attempt.getFxRateWonPerUsd()),
+                        remainingProviderAmount);
+                if (providerRefundAmount <= 0) {
+                    throw invalidRequest("Refund amount is below the PayPal minimum");
+                }
+            }
+            PaymentRefundOperation created = refunds.reserve(ids.get(), attempt.getAttemptId(),
+                    attempt.getProviderCaptureId(), idempotencyKey, amountWon,
+                    providerRefundAmount, providerCurrency, ids.get(), now);
+            recovery.enqueueRefund(created.refundOperationId(), recoveryInitialDelay);
+            return created;
+        }));
+    }
+
+    @Override
+    public PaymentRefundResponse retryRefundOperation(UUID refundOperationId) {
+        if (refundOperationId == null) throw invalidRequest("Refund operation id is required");
+        PaymentRefundOperation loaded = Objects.requireNonNull(transactions.execute(status ->
+                refunds.findByOperationIdForUpdate(refundOperationId)
+                        .orElseThrow(() -> notFound("Refund operation not found"))));
+        PaymentAttempt attempt = Objects.requireNonNull(transactions.execute(status ->
+                repository.findWithLockByAttemptId(loaded.attemptId())
+                        .orElseThrow(() -> notFound("Payment attempt for refund was not found"))));
+        UUID ownerId = attempt.getCheckoutId() == null ? attempt.getOrderId() : attempt.getCheckoutId();
+        return withOwnerLock(ownerId, () -> {
+            PaymentRefundOperation current = Objects.requireNonNull(transactions.execute(status ->
+                    refunds.findByOperationIdForUpdate(refundOperationId)
+                            .orElseThrow(() -> notFound("Refund operation not found"))));
+            return executeRefundOperation(current);
         });
+    }
+
+    private PaymentRefundResponse executeRefundOperation(PaymentRefundOperation operation) {
+        if (operation.state() == PaymentRefundState.COMPLETED || operation.state() == PaymentRefundState.FAILED) {
+            recovery.markRefundForApplication(operation.refundOperationId());
+            return refundResponse(operation, operation.state(), operation.providerRefundId(), operation.updatedAt());
+        }
+        PaymentRefundProviderResult result;
+        try {
+            result = operation.providerRefundId() == null
+                    ? psp.refund(new PaymentRefundRequest(operation.captureId(), operation.providerAmountMinor(),
+                            operation.providerCurrency(), operation.providerRequestId().toString()))
+                    : psp.getRefund(operation.providerRefundId());
+        } catch (PaymentException exception) {
+            if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
+            result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
+                    operation.providerRefundId(), operation.providerStatus());
+        }
+        if (result.outcome() != PaymentRefundProviderResult.Outcome.FAILED
+                && (result.amount() == null
+                || result.amount().compareTo(BigDecimal.valueOf(operation.providerAmountMinor(), 2)) != 0
+                || !operation.providerCurrency().equalsIgnoreCase(result.currency()))) {
+            result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
+                    result.refundId(), result.providerStatus(), result.amount(), result.currency());
+        }
+        PaymentRefundProviderResult recordedResult = result;
+        PaymentRefundState state = switch (result.outcome()) {
+            case COMPLETED -> PaymentRefundState.COMPLETED;
+            case PENDING -> PaymentRefundState.PENDING;
+            case FAILED -> PaymentRefundState.FAILED;
+            case UNKNOWN -> PaymentRefundState.UNKNOWN;
+        };
+        Instant updatedAt = Instant.now();
+        PaymentRefundOperation persisted = Objects.requireNonNull(transactions.execute(status -> {
+            refunds.updateResult(operation.refundOperationId(), state, recordedResult.refundId(),
+                    recordedResult.providerStatus(), updatedAt);
+            PaymentRefundOperation latest = refunds.findByOperationIdForUpdate(operation.refundOperationId())
+                    .orElseThrow(() -> notFound("Refund operation not found"));
+            if (latest.state() == PaymentRefundState.COMPLETED || latest.state() == PaymentRefundState.FAILED) {
+                recovery.markRefundForApplication(operation.refundOperationId());
+            }
+            return latest;
+        }));
+        return refundResponse(persisted, persisted.state(), persisted.providerRefundId(), persisted.updatedAt());
     }
 
     @Override
@@ -481,7 +594,7 @@ public class PaymentServiceImpl implements PaymentService {
                 current.setPaymentPhase(PaymentPhase.CAPTURE);
                 current.setAuthorizationActive(false);
                 repository.save(current);
-                recovery.markAttemptCompleted(current.getAttemptId());
+                recovery.markAttemptForApplication(current.getAttemptId());
                 webhookEvents.markProcessed(event.eventId(), now);
                 return new PaymentWebhookResult(false, true, null, null, current.getAttemptId(), true);
             }
@@ -517,7 +630,7 @@ public class PaymentServiceImpl implements PaymentService {
                 refunds.updateResult(current.refundOperationId(), refundState, event.resourceId(),
                         event.resourceStatus(), now);
                 if (refundState == PaymentRefundState.COMPLETED || refundState == PaymentRefundState.FAILED) {
-                    recovery.markRefundCompleted(current.refundOperationId());
+                    recovery.markRefundForApplication(current.refundOperationId());
                 }
                 webhookEvents.markProcessed(event.eventId(), now);
                 return new PaymentWebhookResult(false, true, current.refundOperationId(),
@@ -656,8 +769,8 @@ public class PaymentServiceImpl implements PaymentService {
                 case VOID -> voidResult(current, outcome);
             }
             repository.save(current);
-            if (terminal(current.getState())) {
-                recovery.markAttemptCompleted(current.getAttemptId());
+            if (terminal(current.getState()) && !current.isAuthorizationActive()) {
+                recovery.markAttemptForApplication(current.getAttemptId());
             }
             return current;
         });

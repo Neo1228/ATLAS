@@ -16,7 +16,7 @@ ATLAS는 단일 모듈러 모놀리스로 시작했습니다. EXP-037/038에서 
 | --- | --- | --- | --- |
 | HTTP 세션 | `STATELESS` (JWT) | 없음 | 안전 |
 | 만료 sweep | advisory lock으로 1개만 수행 | 없음(중복 조회 제거됨) | 안전 |
-| payment recovery | lease + `SKIP LOCKED` | 없음(중복 호출은 provider request-id로 흡수) | 안전 |
+| payment recovery | lease + `SKIP LOCKED`, `PROVIDER`/`APPLY` stage | 없음(중복 호출은 provider request-id, 중복 owner 적용은 업무 키로 흡수) | 안전 |
 | webhook retry | `SKIP LOCKED` + lease | 없음 | 안전 |
 | **owner 단위 직렬화** | `OwnerLockRegistry` = JVM 전역 `synchronized` | **인스턴스 간 무효** | 주의 |
 | **admission sweep cursor** | 인메모리 `expiryCursor` | replica마다 다른 위치에서 스캔 | 주의(효율만) |
@@ -115,7 +115,7 @@ read replica 도입 시 **read-after-write 경로는 절대 replica로 보내지
 | 항목 | 확인 결과 |
 | --- | --- |
 | HTTP 세션 | `SessionCreationPolicy.STATELESS` — sticky session 불필요 |
-| payment recovery | `FOR UPDATE SKIP LOCKED` + lease token fencing |
+| payment recovery | `FOR UPDATE SKIP LOCKED` + lease token fencing + `PROVIDER`/`APPLY` stage fencing ([ADR-0046](adr/ADR-0046-order-payment-transactional-outbox.md)) |
 | webhook retry | `SKIP LOCKED` + lease, `LIMIT 1` claim |
 | 만료 sweep 3종 | advisory try-lock으로 tick당 1개만 수행 |
 | 로컬 파일 저장 | `Files.write`/`FileOutputStream` 사용 없음 |
