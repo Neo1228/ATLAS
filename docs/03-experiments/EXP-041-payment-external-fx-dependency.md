@@ -73,3 +73,46 @@
 - 1차로 TTL 캐시 + 단일 비행을 도입했다. 단일 비행은 측정으로 필요성이 확인됐다: 캐시만 있으면 만료 직후 동시 요청이 N회 외부로 나간다.
 - 2차(stale-while-error)도 함께 도입했다. 외부 장애 시 결제 전면 중단보다 몇 분 된 고시값 사용이 낫다는 판단이며, `max-stale` 초과 시에는 결제를 막는다.
 - 다중 인스턴스 공유 캐시(Redis)는 **보류**한다. 지금은 replica 수와 외부 호출량을 먼저 측정해야 한다. 이 실험은 단일 프로세스 비용만 다뤘다.
+
+## 추가: 외부 호출 관측은 이미 존재했다 (측정 후 발견)
+
+공유 캐시 도입 여부를 판단하려면 replica 별 외부 호출률이 필요하다. 처음에는 도메인에 카운터를 넣거나 로그 파이프라인을 만드는 방안을 검토했으나, **실측 결과 둘 다 불필요했다.**
+
+### 확인 방법
+
+환율 API 를 1회 호출한 뒤 `MeterRegistry` 를 덤프했다.
+
+```text
+http.client.requests{client.name=localhost, error=none, exception=none,
+  method=GET, outcome=SUCCESS, status=200,
+  uri=/api/StatisticSearch/{key}/json/kr/1/10/731Y001/D/{from}/{to}/0000001/}
+```
+
+### 이유
+
+- `micrometer-observation` 이 이미 runtime classpath 에 있다(Spring Boot 의존성).
+- `BokEcosExchangeRateProvider` 가 주입받는 `RestClient.Builder` 는 Spring Boot 가 제공한다.
+- Boot 는 micrometer-observation 이 있을 때 `RestClient` 에 자동으로 계측을 붙인다.
+
+따라서 외부 호출 수·지연·상태가 이미 `http.client.requests` 로 노출된다. 새 카운터도, 로그 수집기도 필요 없었다.
+
+### 이번에 바꾼 것
+
+`application-observability.yml` 한 항목. 호출 **수**는 기본 카운터로 보이지만 **지연 분포**는 histogram 이 있어야 PromQL 로 계산된다.
+
+```yaml
+management.metrics.distribution.percentiles-histogram:
+  http.client.requests: true
+```
+
+### replica 별 호출률 확인 방법
+
+```promql
+sum by (instance) (rate(http_client_requests_seconds_count{uri=~".*StatisticSearch.*"}[5m]))
+```
+
+이 값을 BOK ECOS quota 와 비교해 공유 캐시 도입 임계를 정한다.
+
+### 교훈
+
+"가장 작은 변경"을 찾을 때, 새 계측을 설계하기 전에 **이미 존재하는 계측을 먼저 확인**해야 한다. 이 실험에서 그 순서를 지키지 않아 세 번의 구현 시도가 낭비됐다.
