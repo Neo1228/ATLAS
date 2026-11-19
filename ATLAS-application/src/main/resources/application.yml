@@ -34,6 +34,13 @@ spring:
 
 
 atlas:
+  datasource:
+    # replica 하나에 허용되는 커넥션 수. 0 이면 검사하지 않는다.
+    # 실제 상한은 풀러의 서버 연결 상한(예: PgBouncer max_db_connections)을
+    # replica 수로 나눈 값이다. 이 값을 넘기면 애플리케이션은 기동은 되지만
+    # 요청이 풀러에서 대기하며 모든 API 가 균일하게 느려진다.
+    # /actuator/health 에서 OUT_OF_SERVICE 로 노출된다.
+    pool-budget-per-replica: ${ATLAS_POOL_BUDGET_PER_REPLICA:0}
   security:
     jwt:
       signing-secret: ${ATLAS_JWT_SIGNING_SECRET:}
