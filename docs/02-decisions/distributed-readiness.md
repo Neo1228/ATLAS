@@ -38,11 +38,24 @@ synchronized (entry) { return action.get(); }
 
 `static` + `ConcurrentHashMap` + `synchronized` 조합은 **한 JVM 안에서만** 유효합니다. replica 2대가 같은 주문에 동시에 결제를 제출하면 두 스레드가 병렬로 진행합니다.
 
-**실제 피해가 제한적인 이유:** 최종 정합성은 DB가 지킵니다. 주문 상태 전이는 조건부 갱신이고, 결제 단계는 `PESSIMISTIC_WRITE`로 보호되며, provider 호출은 고정 request-id로 멱등합니다. 즉 **중복 작업은 발생하지만 중복 전이는 막힙니다.**
+### 다중 인스턴스에서 실제로 남는 위험
 
-**다중 인스턴스에서 달라지는 것:** 한 인스턴스에서는 두 번째 요청이 락 대기 후 즉시 반환되지만, 여러 인스턴스에서는 두 요청 모두 DB까지 내려가 락 경쟁과 재시도를 유발합니다. 부하가 늘면 지연이 늘고, 드물게 `CONFLICT` 응답이 사용자에게 보일 수 있습니다.
+이 락이 무효해도 **DB가 최종 방어선**입니다. 경로별로 확인한 사실은 다음과 같습니다.
 
-**도입 검토 방향(지금 하지 않음):** `pg_advisory_xact_lock`을 owner 키에 걸어 DB 수준으로 올리는 방법이 가장 작습니다. 다만 락 대기가 커넥션을 점유하므로, **언제 실제로 경쟁이 발생하는지** 먼저 측정해야 합니다. 현재 측정에서는 이 경쟁이 드롭의 주원인이 아니었습니다.
+| 경로 | 인메모리 락 | DB 락 | 판정 |
+| --- | --- | --- | --- |
+| 결제 제출 `submitPayment` | 있음 | `lockOrder` = `PESSIMISTIC_WRITE` (L173) | 상태 전이는 안전, provider 중복 호출 가능 |
+| 결제 대조 `reconcilePayment` | 있음 | `lockOrder` 호출 있음(L307) | 위와 같음 |
+| 주문 취소 `cancel` | 있음 | `lockOrder` 호출 있음(L279) | 위와 같음 |
+| 주문 만료 sweep | 없음(advisory lock) | 조건부 `UPDATE` + `PESSIMISTIC_WRITE` | 안전 |
+
+즉 **중복 상태 전이는 DB 락과 조건부 갱신이 막고**, 남는 것은 **중복 provider 호출과 그로 인한 락 대기**입니다. provider 호출은 고정 request-id(`phaseRequestId`)로 멱등이므로 금전 사고로 이어지지는 않습니다.
+
+### 다중 인스턴스에서 달라지는 것
+
+한 인스턴스에서는 두 번째 요청이 인메모리 락에서 대기 후 즉시 반환됩니다. 여러 인스턴스에서는 두 요청 모두 DB까지 내려가 `PESSIMISTIC_WRITE` 경쟁과 재시도를 유발합니다. 부하가 늘면 지연이 늘고, 드물게 `CONFLICT` 응답이 사용자에게 보일 수 있습니다.
+
+**도입 검토 방향(지금 하지 않음):** `pg_advisory_xact_lock`을 owner 키에 걸어 인메모리 락을 대체하거나, 조건부 `UPDATE … WHERE state = expected`로 전이를 명시합니다. 다만 락 대기가 커넥션을 점유하므로 **2대 이상에서 경쟁 빈도를 먼저 측정**해야 합니다. 현재 측정에서 이 경쟁은 드롭의 주원인이 아니었습니다.
 
 ## 2. admission sweep cursor는 replica별로 다르다
 
@@ -120,7 +133,24 @@ read replica 도입 시 **read-after-write 경로는 절대 replica로 보내지
 | 4 | 읽기 확장(read replica 또는 캐시) | PostgreSQL CPU가 병목이 될 때 | 위 5절의 관측 조건 |
 | 5 | 다통화 원장 | 요구사항 발생 시 | 제품 결정 |
 
-## 8. 이 문서의 한계
+## 8. 실제 PayPal Sandbox 계약 검증 결과
+
+로컬 스텁은 우리가 기대하는 응답을 우리가 작성한 것이므로, PayPal이 필드나 상태 이름을 바꿔도 통과합니다. 이를 보완하려고 실제 `api-m.sandbox.paypal.com`을 호출하는 워크플로(`.github/workflows/paypal-sandbox-contract.yml`)를 두고 1회 실행했습니다.
+
+| 확인 항목 | 실제 결과 |
+| --- | --- |
+| OAuth client_credentials | 토큰 발급 성공(길이 97) |
+| 주문 생성 | `order_id=4V745537SE3747156`, `status=CREATED` |
+| 주문 조회 | `status=CREATED`, `amount=1.00 USD` |
+| `PayPal-Request-Id` 멱등성 | 같은 요청 ID 재전송 시 **동일 order_id 반환** |
+
+즉 ATLAS가 의존하는 요청 형식과 응답 필드(`id`, `status`, `links`, `purchase_units.amount`)가 실제 Sandbox에서 유효함을 확인했습니다.
+
+**검증 중 발견한 워크플로 버그:** 첫 실행에서 토큰 발급과 주문 생성은 성공했지만 응답 검증이 `JSONDecodeError`로 실패했습니다. `printf ... | python3 - <<'PY'` 형태는 heredoc이 stdin을 차지해 파이프 데이터가 전달되지 않습니다. 검증 스크립트를 파일로 쓰고 응답도 파일로 넘기도록 고쳤습니다.
+
+**범위 밖:** 승인·캡처·환불은 구매자 승인 상호작용이 필요해 이 워크플로에 넣지 않았습니다. 그 경로는 통합 테스트(MockWebServer)와 로컬 실측이 담당합니다.
+
+## 9. 이 문서의 한계
 
 - 코드 정적 분석과 EXP-037/038 측정에 근거하며, 다중 인스턴스에서 owner 락 경쟁을 직접 측정하지는 않았습니다.
 - "안전"으로 분류한 항목도 DB predicate에 의존하므로, 새 상태 전이를 추가할 때 그 predicate를 유지해야 합니다.

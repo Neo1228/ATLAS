@@ -87,9 +87,11 @@ jobs:
           echo "   order_id=$order_id status=$order_status"
 
           # ATLAS 클라이언트가 파싱하는 필드가 실제 응답에 있는지 확인한다.
-          printf '%s' "$order_json" | python3 - <<'PY'
+          # 응답은 파일로 넘긴다: heredoc이 stdin을 차지하므로 파이프로는 전달되지 않는다.
+          printf '%s' "$order_json" > order.json
+          cat > check_order.py <<'PY'
           import json, sys
-          body = json.load(sys.stdin)
+          body = json.load(open(sys.argv[1]))
           required = ["id", "status", "links"]
           missing = [k for k in required if k not in body]
           if missing:
@@ -99,13 +101,15 @@ jobs:
               raise SystemExit("::error::CREATED 주문에 approve 링크가 없습니다.")
           print("   주문 응답 필드 검증 통과:", sorted(body.keys())[:6])
           PY
+          python3 check_order.py order.json
 
           echo "3) 주문 조회"
           detail_json=$(curl -sS --fail-with-body -H "Authorization: Bearer $token" \
             "$base/v2/checkout/orders/$order_id")
-          printf '%s' "$detail_json" | python3 - <<'PY'
+          printf '%s' "$detail_json" > detail.json
+          cat > check_detail.py <<'PY'
           import json, sys
-          body = json.load(sys.stdin)
+          body = json.load(open(sys.argv[1]))
           if body.get("id") is None or body.get("status") is None:
               raise SystemExit("::error::주문 조회 응답에 id/status가 없습니다.")
           units = body.get("purchase_units") or []
@@ -116,6 +120,7 @@ jobs:
               raise SystemExit("::error::purchase_units.amount에 currency_code/value가 없습니다.")
           print(f"   조회 성공: status={body['status']} amount={amount['value']} {amount['currency_code']}")
           PY
+          python3 check_detail.py detail.json
 
           echo "4) 주문 생성 멱등성(PayPal-Request-Id 재사용)"
           replay_json=$(curl -sS --fail-with-body \
