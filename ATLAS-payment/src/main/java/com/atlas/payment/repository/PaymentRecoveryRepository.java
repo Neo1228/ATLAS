@@ -343,6 +343,44 @@ public class PaymentRecoveryRepository {
         expireExhausted(maxAttempts, positiveMillis(maxAge, "maxAge"));
     }
 
+    /**
+     * 승인 화면에서 이탈한 결제를 다시 worker 대상으로 되돌린다.
+     *
+     * <p>{@code WAITING_FOR_BUYER}는 외부 callback 없이는 빠져나오지 못하므로, deadline이 지난
+     * job을 {@code PENDING}으로 재개해 provider 상태 조회와 owner 적용을 다시 태운다. 재개
+     * 사유를 {@code last_error_code}에 남겨 자동 재개와 buyer callback을 구분한다.
+     */
+    public int resumeExpiredApprovalWaits(int limit) {
+        if (limit < 1 || limit > MAX_BATCH_SIZE) {
+            throw new IllegalArgumentException("limit must be between 1 and 100");
+        }
+        return jdbc.update("""
+                WITH expired AS (
+                    SELECT work.recovery_job_id
+                    FROM payment_recovery_job AS work
+                    JOIN payment_attempt AS attempt ON attempt.attempt_id = work.payment_attempt_id
+                    WHERE work.status = 'WAITING_FOR_BUYER'
+                      AND work.work_stage = 'PROVIDER'
+                      AND attempt.approval_expires_at IS NOT NULL
+                      AND attempt.approval_expires_at <= CURRENT_TIMESTAMP
+                    ORDER BY attempt.approval_expires_at, work.recovery_job_id
+                    LIMIT ?
+                    FOR UPDATE OF work SKIP LOCKED
+                )
+                UPDATE payment_recovery_job AS work
+                SET status = 'PENDING',
+                    attempt_count = 0,
+                    retry_window_started_at = CURRENT_TIMESTAMP,
+                    available_at = CURRENT_TIMESTAMP,
+                    lease_token = NULL,
+                    lease_until = NULL,
+                    last_error_code = 'APPROVAL_WINDOW_EXPIRED',
+                    updated_at = CURRENT_TIMESTAMP
+                FROM expired
+                WHERE work.recovery_job_id = expired.recovery_job_id
+                """, limit);
+    }
+
     private void expireExhausted(int maxAttempts, long maxAgeMillis) {
         jdbc.update("""
                 UPDATE payment_recovery_job

@@ -17,6 +17,8 @@ public interface PaymentRecoveryService {
     void markAttemptApplied(UUID attemptId);
     void markRefundApplied(UUID refundOperationId);
     void expireExhausted(int maxAttempts, Duration maxAge);
+    /** 승인 deadline이 지난 {@code WAITING_FOR_BUYER} job을 다시 worker 대상으로 되돌린다. */
+    int resumeExpiredApprovalWaits(int limit);
     List<PaymentRecoveryJob> claimDue(
             int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge);
     List<PaymentRecoveryJob> claimNextDue(

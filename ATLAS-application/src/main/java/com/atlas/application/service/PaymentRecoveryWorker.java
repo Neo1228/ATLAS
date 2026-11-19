@@ -23,6 +23,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -43,6 +44,7 @@ public class PaymentRecoveryWorker {
     private static final String POLL_FAILURES_METRIC = "atlas.payment.recovery.poll.failures";
     private static final String EXHAUSTED_POLL_STAGE = "expire_exhausted";
     private static final String CLAIM_POLL_STAGE = "claim_due";
+    private static final String APPROVAL_RESUME_STAGE = "approval_resume";
     private static final long POLL_FAILURE_LOG_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
     private final PaymentRecoveryService recovery;
     private final PaymentService payments;
@@ -58,6 +60,7 @@ public class PaymentRecoveryWorker {
     private final Duration maxBackoff;
     private final AtomicReference<Long> lastExhaustedFailureLogNanos = new AtomicReference<>();
     private final AtomicReference<Long> lastClaimFailureLogNanos = new AtomicReference<>();
+    private final AtomicReference<Long> lastApprovalResumeFailureLogNanos = new AtomicReference<>();
 
     public PaymentRecoveryWorker(
             PaymentRecoveryService recovery,
@@ -124,6 +127,18 @@ public class PaymentRecoveryWorker {
             recordPollFailure(EXHAUSTED_POLL_STAGE, exception, lastExhaustedFailureLogNanos);
             return;
         }
+        try {
+            // 승인 화면에서 이탈한 결제는 callback이 없어 WAITING_FOR_BUYER에 머문다. deadline이
+            // 지난 job을 되돌려 provider 상태 확인과 owner 적용을 다시 태운다.
+            int resumed = recovery.resumeExpiredApprovalWaits(batchSize);
+            if (resumed > 0) {
+                Counter.builder("atlas.payment.recovery.approval.resumed").register(meters)
+                        .increment(resumed);
+            }
+        } catch (RuntimeException exception) {
+            recordPollFailure(APPROVAL_RESUME_STAGE, exception, lastApprovalResumeFailureLogNanos);
+            return;
+        }
         for (int index = 0; index < batchSize; index++) {
             List<PaymentRecoveryJob> claimed;
             try {
@@ -181,13 +196,26 @@ public class PaymentRecoveryWorker {
             settle(job, terminal(result.state()) && !result.authorizationActive(), awaitingBuyer(result));
             return;
         }
-        if (awaitingBuyer(current)) {
+        if (awaitingBuyer(current) && !approvalWindowExpired(current)) {
             recovery.waitForBuyer(job);
             return;
         }
-        reconcilePaymentOwner(job, current);
+        PaymentResponse resolved = approvalWindowExpired(current)
+                ? payments.resolveExpiredApproval(job.operationId(), "payment-recovery-" + job.operationId())
+                : current;
+        reconcilePaymentOwner(job, resolved);
         PaymentResponse result = payments.findByAttemptId(job.operationId());
         settle(job, terminal(result.state()) && !result.authorizationActive(), awaitingBuyer(result));
+    }
+
+    /**
+     * 승인 대기 deadline이 지났는지 확인한다. 지났으면 구매자 신호를 기다리지 않고 provider
+     * 상태를 확정해야 하므로, {@code WAITING_FOR_BUYER}로 다시 보내지 않는다.
+     */
+    private boolean approvalWindowExpired(PaymentResponse payment) {
+        return payment.state() == PaymentState.AUTHORIZATION_PENDING
+                && payment.approvalExpiresAt() != null
+                && !Instant.now().isBefore(payment.approvalExpiresAt());
     }
 
     private void reconcilePaymentOwner(PaymentRecoveryJob job, PaymentResponse payment) {
