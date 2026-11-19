@@ -15,6 +15,7 @@ import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.persistence.projection.ProductChannelAvailability;
 import com.atlas.catalog.repository.ProductCategoryRepository;
 import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
+import com.atlas.catalog.repository.ProductListingProjectionRepository;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
@@ -30,6 +31,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -52,6 +54,7 @@ public class ProductServiceImpl implements ProductService {
     private final SellerSkuRepository sellerSkus;
     private final InventoryService inventory;
     private final Clock clock;
+    private final ProductListingProjectionRepository listingProjections;
 
     @Override
     @Transactional
@@ -61,9 +64,12 @@ public class ProductServiceImpl implements ProductService {
         }
         if (!sellers.existsById(sellerId)) throw new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId);
         List<UUID> categoryIds = resolveCategoryIds(sellerId, request.categoryIds(), true);
-        Product product = products.save(new Product(sellerId, categoryIds.getFirst(), request.name(), request.description()));
+        Product product = products.saveAndFlush(new Product(sellerId, categoryIds.getFirst(), request.name(), request.description()));
         List<UUID> additionalCategoryIds = categoryIds.subList(1, categoryIds.size());
         categoryAssignments.saveAll(toAssignments(sellerId, product.getProductId(), additionalCategoryIds));
+        // 목록 읽기 모델을 같은 트랜잭션에서 갱신한다. 별도 배치로 미루면 목록이
+        // 신규 상품을 놓치는 창이 생긴다.
+        listingProjections.refresh(product.getProductId(), clock.instant());
         return toResponse(product, additionalCategoryIds, product.getChannelAvailability().entrySet().stream()
                 .filter(Map.Entry::getValue).map(Map.Entry::getKey).sorted().toList());
     }
@@ -79,11 +85,12 @@ public class ProductServiceImpl implements ProductService {
         UUID primaryCategoryId = resolvedCategoryIds.contains(product.getPrimaryCategoryId())
                 ? product.getPrimaryCategoryId() : resolvedCategoryIds.getFirst();
         product.assignPrimaryCategory(primaryCategoryId);
-        products.save(product);
+        products.saveAndFlush(product);
         List<UUID> additionalCategoryIds = resolvedCategoryIds.stream()
                 .filter(categoryId -> !categoryId.equals(primaryCategoryId)).toList();
         categoryAssignments.deleteAllBySellerIdAndProductId(sellerId, productId);
         categoryAssignments.saveAll(toAssignments(sellerId, productId, additionalCategoryIds));
+        listingProjections.refresh(productId, clock.instant());
         return toResponse(product, additionalCategoryIds, product.getChannelAvailability().entrySet().stream()
                 .filter(Map.Entry::getValue).map(Map.Entry::getKey).sorted().toList());
     }
@@ -95,7 +102,11 @@ public class ProductServiceImpl implements ProductService {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product status update");
         Product product = requireOwnedProduct(sellerId, productId);
         product.updateStatus(status);
-        return toResponse(products.save(product));
+        // @ElementCollection 은 flush 시점에 반영된다. 투영 갱신이 원본을 읽으므로
+        // 먼저 flush 해야 방금 바꾼 값이 투영에 들어간다(측정으로 확인한 버그).
+        Product saved = products.saveAndFlush(product);
+        listingProjections.refresh(productId, clock.instant());
+        return toResponse(saved);
     }
 
     @Override
@@ -106,7 +117,11 @@ public class ProductServiceImpl implements ProductService {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product channel availability update");
         Product product = requireOwnedProduct(sellerId, productId);
         product.updateChannelAvailability(channel, available);
-        return toResponse(products.save(product));
+        // @ElementCollection 은 flush 시점에 반영된다. 투영 갱신이 원본을 읽으므로
+        // 먼저 flush 해야 방금 바꾼 채널 상태가 투영에 들어간다.
+        Product saved = products.saveAndFlush(product);
+        listingProjections.refresh(productId, clock.instant());
+        return toResponse(saved);
     }
 
 
@@ -259,15 +274,19 @@ public class ProductServiceImpl implements ProductService {
         List<UUID> productIds = page.stream().map(Product::getProductId).toList();
         if (productIds.isEmpty()) return new ProductListingPageResponse(List.of(), null);
         Map<UUID, Product> productsById = page.stream().collect(Collectors.toMap(Product::getProductId, product -> product));
-        Map<UUID, List<ProductSalesChannel>> availableChannelsByProductId =
-                products.findAvailableChannelsByProductIdIn(productIds).stream().collect(Collectors.groupingBy(
-                        ProductChannelAvailability::getProductId,
-                        Collectors.mapping(row -> ProductSalesChannel.valueOf(row.getSalesChannel()),
-                                Collectors.toList())));
-        Map<UUID, List<UUID>> categoryIdsByProductId = categoryAssignments
-                .findAllByProductIdInOrderByProductIdAscCategoryIdAsc(productIds).stream()
-                .collect(Collectors.groupingBy(ProductCategoryAssignment::getProductId,
-                        Collectors.mapping(ProductCategoryAssignment::getCategoryId, Collectors.toList())));
+        // 채널·카테고리는 읽기 모델에서 한 번에 읽는다. 원본 3개 테이블을 다시 읽으면
+        // buffer 1,132, 이 투영을 쓰면 103 이다(로컬 2M 상품 실측, 이슈 #389).
+        // 목록은 준실시간이면 충분하고, 상세·주문 가능 판정은 원본을 계속 본다.
+        Map<UUID, List<ProductSalesChannel>> availableChannelsByProductId = new HashMap<>();
+        Map<UUID, List<UUID>> categoryIdsByProductId = new HashMap<>();
+        for (ProductListingProjectionRepository.Row row : listingProjections.findPage(productIds)) {
+            // 응답 계약은 enum 선언 순서(ONLINE_STORE, CAMPAIGN)를 따른다.
+            // 투영에는 이름순으로 저장되므로, 노출 순서를 enum 순서로 맞춘다.
+            availableChannelsByProductId.put(row.productId(),
+                    row.channels().stream().map(ProductSalesChannel::valueOf)
+                            .sorted().toList());
+            categoryIdsByProductId.put(row.productId(), row.categories());
+        }
         Instant pricingAt = asOf;
         Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
                 .map(sku -> toResponse(productsById.get(sku.getProductId()), sku, pricingAt))

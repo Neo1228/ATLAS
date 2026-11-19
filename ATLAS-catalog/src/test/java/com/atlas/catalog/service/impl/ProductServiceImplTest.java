@@ -19,6 +19,7 @@ import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.persistence.entity.SellerSku;
+import com.atlas.catalog.repository.ProductListingProjectionRepository;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
 import com.atlas.catalog.repository.ProductCategoryRepository;
@@ -48,9 +49,11 @@ class ProductServiceImplTest {
             mock(ProductCategoryAssignmentRepository.class);
     private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
     private final InventoryService inventory = mock(InventoryService.class);
+    private final ProductListingProjectionRepository listingProjections =
+            mock(ProductListingProjectionRepository.class);
     private final Instant now = Instant.parse("2026-01-01T00:00:00Z");
     private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, categories,
-            categoryAssignments, sellerSkus, inventory, Clock.fixed(now, ZoneOffset.UTC));
+            categoryAssignments, sellerSkus, inventory, Clock.fixed(now, ZoneOffset.UTC), listingProjections);
     private final UUID sellerId = UUID.randomUUID();
     private final UUID productId = UUID.randomUUID();
 
@@ -154,7 +157,7 @@ class ProductServiceImplTest {
         when(defaultCategory.getCategoryId()).thenReturn(defaultCategoryId);
         when(categories.findBySellerIdAndCode(sellerId, ProductCategory.UNCATEGORIZED_CODE))
                 .thenReturn(Optional.of(defaultCategory));
-        when(products.save(any(Product.class))).thenAnswer(call -> call.getArgument(0));
+        when(products.saveAndFlush(any(Product.class))).thenAnswer(call -> call.getArgument(0));
 
         var response = service.createProduct(sellerId, new CreateProductRequest("Tea", "description"));
 
@@ -163,7 +166,7 @@ class ProductServiceImplTest {
         assertEquals(ProductStatus.ACTIVE, response.status());
         assertEquals(List.of(ProductSalesChannel.ONLINE_STORE, ProductSalesChannel.CAMPAIGN),
                 response.availableChannels());
-        verify(products).save(any(Product.class));
+        verify(products).saveAndFlush(any(Product.class));
     }
 
     @Test

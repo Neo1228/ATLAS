@@ -20,6 +20,7 @@ import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
 import com.atlas.catalog.repository.ProductCategoryRepository;
+import com.atlas.catalog.repository.ProductListingProjectionRepository;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
@@ -43,8 +44,10 @@ class ProductCategoryProductServiceTest {
             mock(ProductCategoryAssignmentRepository.class);
     private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
     private final InventoryService inventory = mock(InventoryService.class);
+    private final ProductListingProjectionRepository listingProjections =
+            mock(ProductListingProjectionRepository.class);
     private final ProductServiceImpl service = new ProductServiceImpl(sellers, products, categories,
-            categoryAssignments, sellerSkus, inventory, Clock.systemUTC());
+            categoryAssignments, sellerSkus, inventory, Clock.systemUTC(), listingProjections);
     private final UUID sellerId = UUID.randomUUID();
     private final UUID categoryId = UUID.randomUUID();
 
@@ -55,7 +58,7 @@ class ProductCategoryProductServiceTest {
         when(categories.findBySellerIdAndCode(sellerId, ProductCategory.UNCATEGORIZED_CODE))
                 .thenReturn(Optional.of(category));
         when(category.getCategoryId()).thenReturn(categoryId);
-        when(products.save(any(Product.class)))
+        when(products.saveAndFlush(any(Product.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         var response = service.createProduct(sellerId, new CreateProductRequest("Item", null));

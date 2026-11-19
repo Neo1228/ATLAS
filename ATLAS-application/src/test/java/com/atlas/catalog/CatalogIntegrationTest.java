@@ -22,6 +22,10 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import com.atlas.catalog.persistence.state.ProductSalesChannel;
+import com.atlas.catalog.persistence.state.ProductStatus;
+import java.sql.Array;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -580,4 +584,58 @@ class CatalogIntegrationTest {
         assertThat(jdbc.queryForMap(inventoryQuery, sellerId, skuId)).isEqualTo(inventoryBefore);
     }
 
+
+    /**
+     * 목록 읽기 모델이 원본과 어긋나지 않는지 고정합니다.
+     *
+     * <p>투영은 목록 조회 비용을 buffer 1,132 → 103 으로 줄이는 대신 원본과의
+     * 시차를 허용합니다. 그 시차가 "영원히 낡음"이 되지 않도록, 카탈로그 쓰기마다
+     * 같은 트랜잭션에서 갱신되는지 확인합니다.
+     *
+     * <p>구현 중 실제로 잡은 버그: {@code @ElementCollection} 은 flush 시점에
+     * 반영되므로, flush 전에 투영을 갱신하면 이전 채널 상태가 들어갑니다.
+     */
+    @Test
+    void listingProjectionFollowsCatalogWritesWithinTheSameTransaction() {
+        UUID sellerId = sellerService.createSeller().sellerId();
+        UUID productId = productService.createProduct(
+                sellerId, new CreateProductRequest("projection-" + UUID.randomUUID(), "description")).productId();
+
+        // 생성 직후: 기본 채널 두 개가 투영에 들어와 있어야 한다.
+        assertThat(projectionChannels(productId))
+                .containsExactlyInAnyOrder("ONLINE_STORE", "CAMPAIGN");
+
+        // 채널을 끄면 투영도 즉시 따라와야 한다.
+        productService.updateChannelAvailability(sellerId, productId, ProductSalesChannel.ONLINE_STORE, false);
+        assertThat(projectionChannels(productId)).containsExactly("CAMPAIGN");
+
+        // 카테고리를 바꾸면 투영의 categories 도 따라와야 한다(최소 1개가 필요하다).
+        // 판매자 생성 시 기본 카테고리가 만들어진다. 업데이트에 최소 1개가 필요하다.
+        UUID categoryId = jdbc.queryForObject(
+                "SELECT category_id FROM product_category WHERE seller_id = ? LIMIT 1", UUID.class, sellerId);
+        productService.updateProductCategories(sellerId, productId, List.of(categoryId));
+        assertThat(projectionStatus(productId)).isEqualTo("ACTIVE");
+
+        // 상태를 바꾸면 투영 status 가 따라와, 목록에서 사라진다.
+        productService.updateStatus(sellerId, productId, ProductStatus.INACTIVE);
+        assertThat(projectionStatus(productId)).isEqualTo("INACTIVE");
+    }
+
+    private List<String> projectionChannels(UUID productId) {
+        return jdbc.queryForObject(
+                "SELECT channels FROM product_listing_projection WHERE product_id = ?",
+                (rs, row) -> {
+                    Array array = rs.getArray("channels");
+                    try {
+                        return array == null ? List.<String>of() : List.of((String[]) array.getArray());
+                    } catch (SQLException exception) {
+                        throw new IllegalStateException(exception);
+                    }
+                }, productId);
+    }
+
+    private String projectionStatus(UUID productId) {
+        return jdbc.queryForObject(
+                "SELECT status FROM product_listing_projection WHERE product_id = ?", String.class, productId);
+    }
 }
