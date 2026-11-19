@@ -172,15 +172,26 @@ public class ProductServiceImpl implements ProductService {
         return toResponse(product, sellerSkus.save(sku), clock.instant());
     }
 
+    /**
+     * 목록 조회는 의도적으로 트랜잭션을 열지 않습니다.
+     *
+     * <p>{@code readOnly} 트랜잭션을 걸면 쿼리 4개(목록·SKU·채널·카테고리) 사이에
+     * 앱이 매핑·커서 디코딩을 하는 동안 커넥션을 계속 쥡니다. 실측(640 VU)에서
+     * 커넥션의 평균 62% 가 {@code idle in transaction} 이었고 실제 DB 작업은
+     * 3–8개뿐이었습니다. 같은 부하에서 {@code hikaricp_connections_pending} 은 54 까지
+     * 올라 사용자가 커넥션 대기를 기다렸습니다.
+     *
+     * <p>이 경로는 쓰기가 없고 네이티브 쿼리 + 프로젝션이라 지연 로딩도 없습니다.
+     * 4개 쿼리가 같은 스냅샷을 볼 필요도 없으므로, 트랜잭션을 열지 않으면 각 쿼리가
+     * 끝나는 즉시 커넥션을 반납합니다.
+     */
     @Override
-    @Transactional(readOnly = true)
     public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
         return listProductsPage(sellerId, categoryId, query, null, null, requestedLimit, cursor);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
             Long minPriceWon, Long maxPriceWon, Integer requestedLimit, String cursor) {
         return listProductsPageInternal(
@@ -188,7 +199,6 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public ProductListingPageResponse listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
         if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID required");
