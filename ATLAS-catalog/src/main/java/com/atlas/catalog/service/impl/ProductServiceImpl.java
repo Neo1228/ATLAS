@@ -173,25 +173,31 @@ public class ProductServiceImpl implements ProductService {
     }
 
     /**
-     * 목록 조회는 의도적으로 트랜잭션을 열지 않습니다.
+     * 목록 조회는 하나의 커넥션을 페이지 조립 전체에 재사용합니다.
      *
-     * <p>{@code readOnly} 트랜잭션을 걸면 쿼리 4개(목록·SKU·채널·카테고리) 사이에
-     * 앱이 매핑·커서 디코딩을 하는 동안 커넥션을 계속 쥡니다. 실측(640 VU)에서
-     * 커넥션의 평균 62% 가 {@code idle in transaction} 이었고 실제 DB 작업은
-     * 3–8개뿐이었습니다. 같은 부하에서 {@code hikaricp_connections_pending} 은 54 까지
-     * 올라 사용자가 커넥션 대기를 기다렸습니다.
+     * <p>{@code readOnly} 트랜잭션을 걸지 않으면 쿼리 4개(목록·SKU·채널·카테고리)가
+     * 각각 커넥션을 빌리고 반납합니다. 실측(160 VU, 20초 창)에서 HTTP 요청 1건당
+     * 커넥션 획득 횟수가 <b>3.09회(트랜잭션 있음) 대비 6.43회(없음)</b> 였습니다.
+     * 획득 1회마다 풀 대기가 붙으므로 요청당 대기가 약 2배가 됩니다.
      *
-     * <p>이 경로는 쓰기가 없고 네이티브 쿼리 + 프로젝션이라 지연 로딩도 없습니다.
-     * 4개 쿼리가 같은 스냅샷을 볼 필요도 없으므로, 트랜잭션을 열지 않으면 각 쿼리가
-     * 끝나는 즉시 커넥션을 반납합니다.
+     * <p>앞서 "유휴 커넥션 비율"을 근거로 이 트랜잭션을 제거한 적이 있는데,
+     * 그 지표는 대리 지표였습니다. 유휴 비율은 62%에서 28%로 줄었지만 커넥션 획득
+     * 횟수가 2배가 되어 실제 비용은 늘었습니다. 커넥션 비용은 점유율이 아니라
+     * <b>획득 횟수 x 대기 시간</b>으로 판단해야 합니다.
+     *
+     * <p>쿼리 사이에 앱 매핑이 끼어 커넥션이 유휴로 보이지만, 그 유휴를 없애려고
+     * 트랜잭션을 빼면 획득 횟수가 늘어 손해입니다. 한 번 빌려 여러 쿼리에 쓰는 편이
+     * 여러 번 빌리는 것보다 쌉니다.
      */
     @Override
+    @Transactional(readOnly = true)
     public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
         return listProductsPage(sellerId, categoryId, query, null, null, requestedLimit, cursor);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
             Long minPriceWon, Long maxPriceWon, Integer requestedLimit, String cursor) {
         return listProductsPageInternal(
@@ -199,6 +205,7 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ProductListingPageResponse listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
         if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID required");

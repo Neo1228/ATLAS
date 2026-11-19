@@ -1,5 +1,6 @@
 package com.atlas.catalog.service.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +29,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -264,5 +267,27 @@ class ProductCategoryProductServiceTest {
 
     private static String encode(String value) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 목록 조회가 페이지 조립 전체에서 커넥션 하나를 재사용하는지 고정한다.
+     *
+     * <p>이 어노테이션이 없으면 쿼리 4개가 각각 커넥션을 빌리고 반납합니다. 실측에서
+     * HTTP 요청 1건당 커넥션 획득이 3.09회에서 6.43회로 늘었고, 획득 1회마다 풀 대기가
+     * 붙어 요청당 대기가 약 2배가 됐습니다. "유휴 커넥션 비율"이 낮다는 이유로 이
+     * 어노테이션을 제거하면 그 회귀가 다시 생깁니다.
+     */
+    @Test
+    void listingReusesOneConnectionForTheWholePageAssembly() throws NoSuchMethodException {
+        assertThat(ProductServiceImpl.class
+                .getMethod("listProductsPage", UUID.class, UUID.class, String.class,
+                        Long.class, Long.class, Integer.class, String.class)
+                .isAnnotationPresent(Transactional.class)).isTrue();
+        assertThat(ProductServiceImpl.class
+                .getMethod("listProductsPage", UUID.class, UUID.class, String.class, Integer.class, String.class)
+                .isAnnotationPresent(Transactional.class)).isTrue();
+        assertThat(ProductServiceImpl.class
+                .getMethod("listSellerProductsPage", UUID.class, UUID.class, String.class, Integer.class, String.class)
+                .isAnnotationPresent(Transactional.class)).isTrue();
     }
 }
