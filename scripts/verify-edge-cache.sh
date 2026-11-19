@@ -46,6 +46,20 @@ request "host-a-cold" "$host_path" 200 MISS -H 'Host: a.example.test'
 request "host-a-warm" "$host_path" 200 HIT -H 'Host: a.example.test'
 request "host-b-isolated" "$host_path" 200 MISS -H 'Host: b.example.test'
 
+# Compressed and identity representations are separate cache variants.
+encoding_path="/api/products?limit=100&encodingProbe=$RUN_ID"
+request "gzip-cold" "$encoding_path" 200 MISS -H 'Accept-Encoding: gzip'
+if ! grep -qi '^Content-Encoding: gzip' "$TMP_DIR/gzip-cold.headers"; then
+  echo "FAIL gzip-cold: expected Content-Encoding: gzip" >&2
+  exit 1
+fi
+request "identity-cold" "$encoding_path" 200 MISS -H 'Accept-Encoding: identity'
+if grep -qi '^Content-Encoding: gzip' "$TMP_DIR/identity-cold.headers"; then
+  echo "FAIL identity-cold: got a gzip body for identity request" >&2
+  exit 1
+fi
+request "gzip-warm" "$encoding_path" 200 HIT -H 'Accept-Encoding: gzip'
+
 # Authorization requests bypass shared storage and receive the application's no-store policy.
 request "authorization-bypass" "/api/products?limit=1&cacheProbe=$RUN_ID" 401 BYPASS \
   -H 'Authorization: Bearer invalid'

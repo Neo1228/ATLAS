@@ -65,7 +65,7 @@ class PublicReadCacheHeaderWriterTest {
         assertThat(response.getHeader("Cache-Control"))
                 .isEqualTo("public, max-age=0, s-maxage=1");
         assertThat(response.getHeader("Pragma")).isNull();
-        assertThat(response.getHeaders("Vary")).contains("Authorization");
+        assertThat(response.getHeaders("Vary")).contains("Authorization", "Accept-Encoding");
     }
 
     @Test

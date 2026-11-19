@@ -41,6 +41,7 @@ public class PublicReadCacheHeaderWriter implements HeaderWriter {
             // origin 의 bypass 로직은 실행되지 않으므로, Vary 로 익명 변형과
             // Authorization 변형을 분리해야 한다.
             response.addHeader(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION);
+            response.addHeader(HttpHeaders.VARY, HttpHeaders.ACCEPT_ENCODING);
             response.setHeader("Pragma", null);
             response.setHeader("Expires", null);
             return;

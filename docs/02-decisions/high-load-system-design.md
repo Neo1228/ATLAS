@@ -178,7 +178,9 @@ SKU 324, 채널/카테고리 305). 세 쿼리를 합치는 것은 행 작업이 
 
 **기본 앱 정책** (#399, #404): 공개 GET 200 에만
 `Cache-Control: public, max-age=0, s-maxage=1` 을 주고, 인증·오류 응답은 항상
-`no-store` 로 유지합니다. `Vary: Authorization` 으로 익명·인증 변형을 분리합니다.
+`no-store` 로 유지합니다. `Vary: Authorization` 으로 익명·인증 변형을,
+`Vary: Accept-Encoding` 으로 gzip·identity 변형을 분리합니다. 캐시 검증 스크립트가
+같은 URI 에서 gzip MISS → identity MISS → gzip HIT 순서를 확인합니다.
 
 TTL 을 1초로 제한한 이유: 목록·상세 응답에는 `sale_starts_at` / `sale_ends_at` 에
 따라 시간만으로 바뀌는 유효 가격이 들어갑니다. 30초 stale 로 두면 sale 경계 뒤에
@@ -190,7 +192,7 @@ stale 가격을 제공하지 않습니다. 주문·체크아웃은 계속 원본
 
 - disk cache `max_size=512m`, inactive 10분 (bounded)
 - 전체 URI 를 key 에 넣어 cursor/filter 조합을 분리
-- Authorization 은 bypass, `Vary` 도 존중
+- Authorization 은 bypass, `Vary: Authorization`·`Vary: Accept-Encoding` 을 존중
 - GET/HEAD 만, 200 만 저장
 - `proxy_cache_lock` 으로 동시 동일 MISS 를 한 원본 요청으로 합침
 - `X-Cache-Status` 로 MISS/HIT/BYPASS 를 관측
