@@ -45,15 +45,14 @@ server {
         proxy_cache_bypass $skip_auth_cache $skip_revalidation_cache;
         proxy_no_cache $skip_auth_cache $skip_revalidation_cache $upstream_http_set_cookie;
 
-        # Honor the app's public s-maxage=30; this is a cap/fallback, not an
-        # override of no-store/private responses. The application is the policy source.
-        proxy_cache_valid 200 30s;
+        # Product responses include time-bounded sale prices. One second is the
+        # maximum shared-cache age; do not serve stale prices while revalidating
+        # or when the origin errors. The app's no-store on errors/auth still wins.
+        proxy_cache_valid 200 1s;
         proxy_cache_lock on;
         proxy_cache_lock_timeout 5s;
         proxy_cache_lock_age 5s;
         proxy_cache_revalidate on;
-        proxy_cache_background_update on;
-        proxy_cache_use_stale updating error timeout http_500 http_502 http_503 http_504;
 
         add_header X-Cache-Status $upstream_cache_status always;
     }

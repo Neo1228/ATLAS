@@ -19,8 +19,8 @@ import org.springframework.util.StringUtils;
  * 받으므로 공유 캐시에 적합합니다.
  *
  * <p>안전성: 캐시된 목록으로는 주문할 수 없습니다. 주문 가능 판정과 가격 확정은
- * 상세·체크아웃에서 원본을 다시 검증합니다. 따라서 30초 지연은 탐색 화면에서
- * 허용 가능한 손실입니다.
+ * 상세·체크아웃에서 원본을 다시 검증합니다. 다만 목록에는 시간 경계가 있는 판매가격이
+ * 있으므로 캐시 TTL 은 1초로 제한하고 stale 응답은 제공하지 않습니다.
  *
  * <p>Spring Security 의 기본 cache-control writer 는 아래에서 끕니다. 그러므로 이
  * writer 는 공개 경로에만 public 을 붙이는 것뿐 아니라, 나머지 모든 응답에
@@ -29,19 +29,14 @@ import org.springframework.util.StringUtils;
  */
 public class PublicReadCacheHeaderWriter implements HeaderWriter {
     /** 공유 캐시(CDN·프록시)용 초. 짧게 두어 상품 변경이 빨리 반영되게 한다. */
-    static final int SHARED_MAX_AGE_SECONDS = 30;
-
-    /** 만료 후 백그라운드 재검증 동안 계속 응답할 수 있는 시간. */
-    static final int STALE_WHILE_REVALIDATE_SECONDS = 60;
-
-    @Override
+    static final int SHARED_MAX_AGE_SECONDS = 1;
+@Override
     public void writeHeaders(HttpServletRequest request, HttpServletResponse response) {
         // 공개 경로라도 4xx/5xx 를 공유 캐시에 저장하지 않는다. 특히 404 는
         // 상품이 새로 생성되거나 공개 전환된 뒤에도 stale-negative 캐시가 남을 수 있다.
         if (isPublicRead(request) && response.getStatus() == HttpServletResponse.SC_OK) {
             response.setHeader(HttpHeaders.CACHE_CONTROL,
-                    "public, max-age=0, s-maxage=" + SHARED_MAX_AGE_SECONDS
-                            + ", stale-while-revalidate=" + STALE_WHILE_REVALIDATE_SECONDS);
+                    "public, max-age=0, s-maxage=" + SHARED_MAX_AGE_SECONDS);
             // Cache key 에 Authorization 을 포함한다. 공유 캐시가 먼저 응답하면
             // origin 의 bypass 로직은 실행되지 않으므로, Vary 로 익명 변형과
             // Authorization 변형을 분리해야 한다.
