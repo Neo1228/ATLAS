@@ -72,5 +72,21 @@
       "p95Ms": 1855.9,
       "measuredFailureRate": 0
     }
+  ],
+  "paymentPath": {
+    "note": "PayPal provider enabled against load-tests/paypal-stub.py (loopback, ECOS FX stub). Stub latency is 0 ms, so this is not PayPal latency.",
+    "iterations": 600,
+    "dropped": 0,
+    "ordersCreated": 133,
+    "paymentsSubmitted": 133,
+    "paymentRejections": 0,
+    "checkoutP95Ms": 25.7,
+    "paymentP95Ms": 40.3,
+    "shipmentP95Ms": 5.0
+  },
+  "paymentRootCausesFound": [
+    "base URL host allowlist rejects service names; loopback required",
+    "PayPal needs a USD/KRW FX snapshot, so BOK_ECOS_API_KEY must be set",
+    "provider failures dropped their cause, making outages indistinguishable from misconfiguration"
   ]
 }

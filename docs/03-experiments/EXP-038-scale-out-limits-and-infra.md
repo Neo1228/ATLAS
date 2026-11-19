@@ -175,16 +175,39 @@ HikariCP 위키가 제시하는 출발점은 `connections = (core_count × 2) + 
 
 감지 구간의 실패는 `proxy_next_upstream_tries 3`으로도 완전히 없어지지 않았습니다. 원인은 keepalive 연결 재사용입니다. 이미 열린 연결이 죽은 peer에 물려 있으면 재시도가 새 연결을 만들지 않습니다. 완전 제거에는 `proxy_next_upstream_timeout`·`keepalive` 조정 또는 애플리케이션 측 재시도가 필요하며, 이는 별도 과제로 남깁니다.
 
-### 결제(외부 provider) 경로 측정의 실패
+### 결제(외부 provider) 경로 측정
 
-PayPal provider를 켜고 로컬 스텁(`load-tests/paypal-stub.py`)으로 결제 경로를 측정하려 했으나 **완료하지 못했습니다.** 확인된 사실:
+PayPal provider를 켜고 로컬 스텁(`load-tests/paypal-stub.py`)으로 결제 경로를 측정했습니다. 처음에는 세 번 연속 실패했고, 그 원인을 하나씩 제거했습니다.
 
-- `PayPalProperties`는 loopback base URL을 공식 허용합니다(코드 확인).
-- 스텁은 IPv4·IPv6 모두에서 리슨하고 토큰 엔드포인트도 정상 응답했습니다.
-- 그럼에도 앱의 결제 호출이 스텁에 도달하지 않았고, 결제는 `PAYMENT_PROVIDER_UNAVAILABLE`로 거절된 뒤 UNKNOWN으로 흡수됐습니다.
-- 원인은 sidecar(`network_mode: service:app-x`)가 **앱 컨테이너 재생성 시 네임스페이스가 어긋나는** 구조적 문제로 좁혀졌습니다.
+| 시도 | 증상 | 원인 | 수정 |
+| --- | --- | --- | --- |
+| 1 | `paypalClientRegistrationRepository` 생성 실패 | base URL `http://paypal-stub:8099`의 host가 allowlist에 없음 | 스텁을 앱과 같은 네트워크 네임스페이스에 두어 `127.0.0.1` 사용 |
+| 2 | 결제가 `NOT_STARTED`로 남음 | PayPal은 USD 결제라 **FX 스냅샷이 선행**해야 하고, `BOK_ECOS_API_KEY`가 비어 있으면 실패 | 스텁에 ECOS 환율 엔드포인트 추가, `ATLAS_PAYMENT_BOK_ECOS_BASE_URL`을 스텁으로 지정 |
+| 3 | provider 로그가 전혀 없음 | `unavailable()`이 cause를 버려 "왜 실패했는지" 알 수 없었음 | stage·failureType·causeType을 WARN으로 남기고 cause를 예외에 보존 |
 
-**정직한 결론:** 결제 상태 기계·재고 확정·정산 기록은 `ATLAS_PAYMENT_PROVIDER=disabled` 경로로 이미 측정했지만(체크아웃 p95 122 ms), **외부 provider 호출을 포함한 결제 지연은 이번에 측정하지 못했습니다.** 스텁을 안정화하려면 sidecar 대신 호스트 포트 매핑이나 별도 네트워크를 쓰고, 앱을 먼저 띄운 뒤 스텁을 붙이는 순서를 강제해야 합니다.
+세 번째 항목은 측정 실패가 아니라 **운영 결함**입니다. provider 장애는 결제 서비스에서 UNKNOWN으로 흡수되므로, 로그가 없으면 운영자가 "PayPal 장애"와 "설정 오류"를 구분할 수 없습니다.
+
+### 측정 결과 (replica 3, pool 5 + PgBouncer, PayPal provider 활성)
+
+| 단계 | p95 (ms) | 건수 |
+| --- | ---: | ---: |
+| 목록 / 검색 / 상세 | 13 / 9 / 6 | — |
+| 장바구니 조회 / 담기 | 8 / 16 | — |
+| **체크아웃(재고 예약)** | **25.7** | 133 |
+| **결제(외부 provider 왕복 포함)** | **40.3** | 133 |
+| 배송 생성 | 5.0 | — |
+
+- 주문 133건 생성, 결제 133건 제출, 결제 거절 0건
+- 스텁이 실제로 주문 31건(첫 측정)과 133건(본 측정)을 수신
+- DB에서 `payment_attempt.state`가 `NOT_STARTED` → `AUTHORIZATION_PENDING`으로 진행
+
+**결제가 체크아웃보다 느립니다**(25.7 → 40.3 ms). 외부 왕복이 14.6 ms를 더 쓰며, 이는 스텁 기준값입니다. **실제 PayPal Sandbox 지연은 스텁보다 크고 변동도 크므로, 이 수치를 PayPal 지연으로 인용하면 안 됩니다.** 이 실험이 보여주는 것은 "결제 경로가 정상 동작하고, 외부 왕복이 체크아웃 대비 약 1.6배를 더 쓴다"는 구조입니다.
+
+### 결제 측정의 남은 한계
+
+- 스텁 지연은 0 ms로 설정했습니다. 실제 provider 지연을 모사하려면 `PAYPAL_STUB_LATENCY_MS`로 고정 지연을 주고 재측정해야 합니다.
+- 승인 이후 capture·webhook 경로는 이 시나리오에 포함되지 않았습니다.
+- sidecar 네임스페이스는 앱 재생성 시 어긋나므로, 앱을 먼저 띄우고 스텁을 붙이는 순서를 지켜야 합니다.
 
 ## 해석 규칙
 

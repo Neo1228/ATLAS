@@ -41,15 +41,18 @@ services:
       ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
       SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
       SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
-      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
-      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
-      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
-      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
-      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
-      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
+      # PayPal requires a USD/KRW snapshot before calling out; point ECOS at the same
+      # local stand-in so the payment path is measurable without a BOK API key.
       SERVER_TOMCAT_THREADS_MAX: "64"
       SERVER_TOMCAT_ACCEPT_COUNT: "64"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${ATLAS_POOL_SIZE:-10}
+      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-local-stub-ecos}
+      ATLAS_PAYMENT_BOK_ECOS_BASE_URL: ${ATLAS_PAYMENT_BOK_ECOS_BASE_URL:-http://127.0.0.1:8099}
       # extends resolves against compose.yaml, so payment settings must be repeated
       # here rather than inherited from a later overlay.
     # !override is required: compose merges `ports` lists from `extends`, which
@@ -75,10 +78,16 @@ services:
       ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
       SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
       SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
-      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
       SERVER_TOMCAT_THREADS_MAX: "64"
       SERVER_TOMCAT_ACCEPT_COUNT: "64"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${ATLAS_POOL_SIZE:-10}
+      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-local-stub-ecos}
+      ATLAS_PAYMENT_BOK_ECOS_BASE_URL: ${ATLAS_PAYMENT_BOK_ECOS_BASE_URL:-http://127.0.0.1:8099}
       # extends resolves against compose.yaml, so payment settings must be repeated
       # here rather than inherited from a later overlay.
     ports: !override
@@ -101,10 +110,16 @@ services:
       ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
       SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
       SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
-      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
       SERVER_TOMCAT_THREADS_MAX: "64"
       SERVER_TOMCAT_ACCEPT_COUNT: "64"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${ATLAS_POOL_SIZE:-10}
+      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-local-stub-ecos}
+      ATLAS_PAYMENT_BOK_ECOS_BASE_URL: ${ATLAS_PAYMENT_BOK_ECOS_BASE_URL:-http://127.0.0.1:8099}
       # extends resolves against compose.yaml, so payment settings must be repeated
       # here rather than inherited from a later overlay.
     ports: !override
