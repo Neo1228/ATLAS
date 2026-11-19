@@ -93,11 +93,11 @@ Execution Time: 409.979 ms
 
 ```bash
 # 1) 시드
-docker compose -f compose.yaml -f compose.capacity-node.yaml exec -T postgres \
+docker compose -f compose.yaml -f .local/compose.capacity-node.yaml exec -T postgres \
   psql -U atlas -d atlas -v sellers=200 -v products_per_seller=500 \
   -f - < load-tests/seed-catalog-read.sql
 
 # 2) 계획 비교 (변경 전 predicate는 position(...), 변경 후는 LIKE ... ESCAPE)
-docker compose -f compose.yaml -f compose.capacity-node.yaml exec -T postgres \
+docker compose -f compose.yaml -f .local/compose.capacity-node.yaml exec -T postgres \
   psql -U atlas -d atlas -c "EXPLAIN (ANALYZE, BUFFERS) <listing query>"
 ```

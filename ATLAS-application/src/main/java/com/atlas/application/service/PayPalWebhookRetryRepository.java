@@ -218,12 +218,12 @@ public class PayPalWebhookRetryRepository {
     }
 
     /**
-     * Oldest pending retry age in seconds, or null when the queue is empty.
+     * 대기 중인 재시도 중 가장 오래된 항목의 경과 시간(초). 큐가 비어 있으면 null.
      *
-     * Issue #337: the worker exposed claim/outcome/duration but nothing said whether
-     * retries were falling behind, so an operator could not tell "no work" from "work
-     * piling up". age is measured from the earliest {@code next_attempt_at}, i.e. how
-     * long the most overdue event has been waiting past its own schedule.
+     * Issue #337: worker가 claim·outcome·duration은 노출했지만 밀리고 있는지는
+     * 알 수 없었다. 그래서 운영자가 "할 일 없음"과 "적체"를 구분하지 못했다.
+     * 경과 시간은 가장 이른 {@code next_attempt_at} 기준이며, 가장 밀린 항목이
+     * 자기 예정 시각을 얼마나 넘겼는지를 뜻한다.
      */
     public Double oldestPendingAgeSeconds() {
         return jdbc.queryForObject("""

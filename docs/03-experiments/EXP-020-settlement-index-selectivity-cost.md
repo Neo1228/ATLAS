@@ -1,5 +1,7 @@
 # EXP-020 — 정산 인덱스 선택도·비용 A/B
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **상태:** 측정 완료 · production index 채택 없음 · local-only synthetic experiment
 
 ## 목적과 범위
@@ -90,17 +92,17 @@ Twenty samples/window은 기술 통계용. p95/SLO/처리용량/사용자 수로
 
 ## 재현 방법
 
-- [요약 JSON](results/exp-020/exp020-summary.json)
-- SQL plans: [baseline](results/exp-020/baseline-sql-plans.json) · [candidate](results/exp-020/candidate-sql-plans.json)
-- Write plans: [baseline](results/exp-020/baseline-write-plans.json) · [candidate](results/exp-020/candidate-write-plans.json)
-- Metrics: [baseline](results/exp-020/baseline-observability.json) · [candidate](results/exp-020/candidate-observability.json)
-- SQL plans: [baseline](results/exp-020/baseline-sql-plans.json) · [candidate](results/exp-020/candidate-sql-plans.json)
-- Write plans: [baseline](results/exp-020/baseline-write-plans.json) · [candidate](results/exp-020/candidate-write-plans.json)
-- Metrics: [baseline](results/exp-020/baseline-observability.json) · [candidate](results/exp-020/candidate-observability.json)
-- k6 results: [baseline 10초](results/exp-020/baseline-10s-k6.json) · [100초](results/exp-020/baseline-100s-k6.json) · [1,000초](results/exp-020/baseline-1000s-k6.json) · [전체](results/exp-020/baseline-full-k6.json)
-- k6 results: [candidate 10초](results/exp-020/candidate-10s-k6.json) · [100초](results/exp-020/candidate-100s-k6.json) · [1,000초](results/exp-020/candidate-1000s-k6.json) · [전체](results/exp-020/candidate-full-k6.json)
-- Comparison: [EXP-018 query-plan baseline](EXP-018-read-query-performance.md) · [EXP-018 candidate A/B](results/exp-018/index-candidate-ab.json)
-- 비교 기준: [EXP-018 query-plan baseline](EXP-018-read-query-performance.md) · [EXP-018 candidate A/B](results/exp-018/index-candidate-ab.json)
+- `요약 JSON`
+- SQL plans: `baseline` · `candidate`
+- Write plans: `baseline` · `candidate`
+- Metrics: `baseline` · `candidate`
+- SQL plans: `baseline` · `candidate`
+- Write plans: `baseline` · `candidate`
+- Metrics: `baseline` · `candidate`
+- k6 results: `baseline 10초` · `100초` · `1,000초` · `전체`
+- k6 results: `candidate 10초` · `100초` · `1,000초` · `전체`
+- Comparison: [EXP-018 query-plan baseline](EXP-018-read-query-performance.md) · `EXP-018 candidate A/B`
+- 비교 기준: [EXP-018 query-plan baseline](EXP-018-read-query-performance.md) · `EXP-018 candidate A/B`
 
 ## 해석과 한계
 

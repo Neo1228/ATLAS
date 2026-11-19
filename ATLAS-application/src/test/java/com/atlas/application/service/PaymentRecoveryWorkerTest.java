@@ -175,7 +175,7 @@ class PaymentRecoveryWorkerTest {
         UUID attemptId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         PaymentRecoveryJob job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
-        // The provider call outlived the 60 s lease, so another replica already holds it.
+        // provider 호출이 60초 lease를 넘겨 다른 replica가 이미 lease를 보유한 상태다.
         PaymentResponse captured = new PaymentResponse(
                 orderId, null, attemptId, PaymentState.CAPTURED, false, null, "capture-1", null);
         when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),

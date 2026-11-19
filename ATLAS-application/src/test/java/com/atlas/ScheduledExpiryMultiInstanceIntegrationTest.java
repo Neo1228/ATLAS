@@ -209,12 +209,12 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
                 try {
                     blocker.rollback();
                 } catch (SQLException cleanupException) {
-                    // Preserve any assertion failure from the test body.
+                    // 테스트 본문의 assertion 실패를 보존한다.
                 }
                 try {
                     blocker.close();
                 } catch (SQLException cleanupException) {
-                    // Preserve any assertion failure from the test body.
+                    // 테스트 본문의 assertion 실패를 보존한다.
                 }
                 workers.shutdownNow();
                 assertThat(workers.awaitTermination(10, TimeUnit.SECONDS)).isTrue();

@@ -8,3 +8,20 @@ build/
 .openidea/
 **/bin/
 *.class
+
+# Local-only measurement harnesses. The repository keeps the experiment write-ups
+# and the decisions they produced; the multi-million-row seeds, per-experiment
+# compose overlays, Grafana render helper and PayPal stand-in are developer tools
+# that only make sense on a machine with spare CPU, disk and Docker.
+.local/
+docs/03-experiments/results/
+load-tests/paypal-stub.py
+load-tests/nginx-lb.conf
+load-tests/seed-catalog-*.sql
+load-tests/*single-to-distributed*.sh
+load-tests/run-exp03[5-9]-*.sh
+load-tests/*-capacity.js
+scripts/capture-grafana-panels.mjs
+
+# Local agent/tooling working directory
+.gjc/

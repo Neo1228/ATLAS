@@ -6,7 +6,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 @Configuration
 public class SchedulingConfiguration {
-    // Issue #277: webhook再試行の独立ジョブを加え、同時実行枠を4つにする。
+    // Issue #277: webhook 재시도 전용 job을 분리하고 동시 실행 슬롯을 4개로 둔다.
     private static final int SCHEDULER_POOL_SIZE = 4;
 
     @Bean(name = "taskScheduler")

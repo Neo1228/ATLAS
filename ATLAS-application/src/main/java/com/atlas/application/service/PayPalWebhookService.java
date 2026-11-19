@@ -40,7 +40,7 @@ public class PayPalWebhookService {
                 "PayPal webhook verification returned no event");
         PaymentWebhookResult result = processVerified(event);
         if (result.retryable()) {
-            // 最小限の再試行レコードをcommitした後にのみ成功応答する。
+            // 최소한의 재시도 레코드를 commit한 뒤에만 성공 응답을 반환한다.
             retries.enqueue(event);
         }
     }

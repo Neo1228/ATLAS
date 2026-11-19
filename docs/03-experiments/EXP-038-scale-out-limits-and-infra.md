@@ -1,5 +1,7 @@
 # EXP-038: 스케일 아웃의 다음 한계와 필요한 인프라
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **추적 이슈:** [#351](https://github.com/Neo1228/ATLAS/issues/351)
 
 **상태:** 진행 중 · 측정값은 실제 실행 결과만 기록
@@ -80,7 +82,7 @@ HikariCP 위키가 제시하는 출발점은 `connections = (core_count × 2) + 
 
 ### PgBouncer 측정 결과
 
-`compose.capacity-pooler.yaml`(transaction mode, `DEFAULT_POOL_SIZE=24`, `MAX_DB_CONNECTIONS=32`)로 앱을 pooler 경유로 돌리고 같은 160 it/s를 측정했습니다.
+`.local/compose.capacity-pooler.yaml`(transaction mode, `DEFAULT_POOL_SIZE=24`, `MAX_DB_CONNECTIONS=32`)로 앱을 pooler 경유로 돌리고 같은 160 it/s를 측정했습니다.
 
 | 구성 | 완료/계획 | 드롭 | p95 (ms) | PG backends |
 | --- | ---: | ---: | ---: | ---: |
@@ -177,7 +179,7 @@ HikariCP 위키가 제시하는 출발점은 `connections = (core_count × 2) + 
 
 ### 결제(외부 provider) 경로 측정
 
-PayPal provider를 켜고 로컬 스텁(`load-tests/paypal-stub.py`)으로 결제 경로를 측정했습니다. 처음에는 세 번 연속 실패했고, 그 원인을 하나씩 제거했습니다.
+PayPal provider를 켜고 로컬 스텁(`load-tests/paypal-stub.py`(로컬 전용))으로 결제 경로를 측정했습니다. 처음에는 세 번 연속 실패했고, 그 원인을 하나씩 제거했습니다.
 
 | 시도 | 증상 | 원인 | 수정 |
 | --- | --- | --- | --- |

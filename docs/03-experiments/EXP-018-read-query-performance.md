@@ -1,5 +1,7 @@
 # EXP-018 — 상품·정산 조회 계획 기준선
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **상태:** PostgreSQL 18.6 격리 DB에서 합성 10k·100k row dataset의 `EXPLAIN ANALYZE` 완료
 
 ## 목적과 범위
@@ -53,7 +55,7 @@ Candidate-index A/B: PostgreSQL 18.6 image defaults, 동일한 100k checkout-onl
 | 동일 | 10초 window page | 15.693 → 0.055 ms (−99.6%) | 10 rows 반환. 3,976 KiB |
 | 두 후보 index | Full-period totals/page | 19.742 / 18.807 ms | Planner가 time-key index를 선택하지 않고 Journal sequential scan 유지 |
 
-재현 가능한 run 및 plan-node 요약: [`index-candidate-ab.json`](results/exp-018/index-candidate-ab.json). 후보 index read A/B는 disposable DB에서만 수행. 10초/100k (0.01%)의 강한 selectivity에서 큰 차이 확인. Full-period allocation index 읽기 개선은 synthetic A/B 결과; write 비용은 아래 별도 측정.
+재현 가능한 run 및 plan-node 요약: ``index-candidate-ab.json``. 후보 index read A/B는 disposable DB에서만 수행. 10초/100k (0.01%)의 강한 selectivity에서 큰 차이 확인. Full-period allocation index 읽기 개선은 synthetic A/B 결과; write 비용은 아래 별도 측정.
 
 **V28 migration:** `settlement_seller_allocation(seller_id, journal_id)` B-tree lookup index 추가.
 - Read A/B: Seller 선택도 1% (`1,000/100,000`)에서 totals·page SQL 실행시간 합 43.778 → 40.601 ms (−3.177 ms, −7.3%). Allocation scan은 100k rows 전체 scan에서 1k matches bitmap scan으로 전환.
@@ -72,7 +74,7 @@ Candidate-index A/B: PostgreSQL 18.6 image defaults, 동일한 100k checkout-onl
 | Baseline | 240.331 [210.628–379.020] | 38,600,443 | — |
 | Candidate | 354.606 [296.626–465.204] | 51,360,745 | 8,462,336 bytes (8,264 KiB) |
 
-반복별 원자료: [`allocation-index-write-cost.json`](results/exp-018/allocation-index-write-cost.json). 실행시간 범위 일부 겹침이나 5개 paired delta 모두 양수; 단일 synthetic table insert 결과이며 API latency나 전체 checkout/capture transaction 비용으로 일반화 금지. WAL 차이는 5회 모두 동일한 12,760,302 bytes.
+반복별 원자료: ``allocation-index-write-cost.json``. 실행시간 범위 일부 겹침이나 5개 paired delta 모두 양수; 단일 synthetic table insert 결과이며 API latency나 전체 checkout/capture transaction 비용으로 일반화 금지. WAL 차이는 5회 모두 동일한 12,760,302 bytes.
 
 **결론:** `recorded_at` index는 짧은 기간 조회의 후보 가설. V28 allocation index는 synthetic read/write tradeoff를 근거로 이 변경에 포함. 실제 production R/W 비율과 application-level 증분 비용 미측정으로 production performance gain 주장은 미해당. Post-merge 검증은 실제 R/W·WAL·저장 공간·cache·동시성 비용 확인.
 
@@ -91,7 +93,7 @@ Candidate-index A/B: PostgreSQL 18.6 image defaults, 동일한 100k checkout-onl
 
 - [`EXP-018-read-query-performance.sql`](EXP-018-read-query-performance.sql): 허용 dataset size 10,000/100,000; DB가 `atlas_query_evidence`가 아니거나 기존 experiment rows가 있으면 중단.
 - [`EXP-018-read-query-performance-explain.sql`](EXP-018-read-query-performance-explain.sql): actual Catalog subtree 및 Settlement totals/page query plans.
-- [`results/exp-018/`](results/exp-018/): per-run EXPLAIN JSON, 10k/100k 요약, narrow-period 요약.
+- ``results/exp-018/``: per-run EXPLAIN JSON, 10k/100k 요약, narrow-period 요약.
 - Historical comparison: [EXP-015](EXP-015-catalog-listing-performance.md), [EXP-016](EXP-016-buyer-checkout-comparison.md).
 
 Seed script는 허용된 두 크기의 fresh V1–V20 PostgreSQL schema에서 검증. 10k → Product 10k / journal 10k / entry 20k; 100k → Product 100k / journal 100k / entry 200k. 모두 합성 fixture 검증.

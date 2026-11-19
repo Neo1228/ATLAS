@@ -20,9 +20,9 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "atlas.payment.provider", havingValue = "paypal")
 public class PayPalPaymentProvider implements PaymentProvider {
     /**
-     * A provider outage is turned into UNKNOWN by the payment service, so without this
-     * log the operator cannot tell "PayPal is down" from "PayPal rejected us" or
-     * "the base URL is wrong". The cause chain is the only place that distinction lives.
+     * provider 장애는 결제 서비스에서 UNKNOWN으로 흡수된다. 따라서 이 로그가 없으면
+     * 운영자는 "PayPal 장애"와 "PayPal 거절", "base URL 오류"를 구분할 수 없다.
+     * 그 구분은 cause 체인에만 남아 있다.
      */
     private static final Logger LOGGER = LoggerFactory.getLogger(PayPalPaymentProvider.class);
     private final PayPalRestClient client;

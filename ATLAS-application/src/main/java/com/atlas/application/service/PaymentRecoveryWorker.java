@@ -199,9 +199,9 @@ public class PaymentRecoveryWorker {
     }
 
     /**
-     * Lease-fenced completion. {@code complete} returns false when another replica has
-     * already taken the lease (the 60 s lease is not renewed while a provider call runs),
-     * so counting unconditionally would report more completions than jobs.
+     * lease로 보호되는 완료 처리. 다른 replica가 lease를 가져갔으면 {@code complete}가
+     * false를 반환한다(provider 호출 중에는 60초 lease가 갱신되지 않는다).
+     * 무조건 집계하면 실제 job 수보다 많은 완료를 보고하게 된다.
      */
     private void recordCompletion(PaymentRecoveryJob job) {
         if (recovery.complete(job)) {
