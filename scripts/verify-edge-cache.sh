@@ -3,6 +3,15 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:18082}"
 RUN_ID="${RUN_ID:-$(date +%s)-$$}"
+# Product names in the seed contain "atlas". Vary case (the API normalizes it) to
+# create a unique but semantically equivalent allowed query key per run.
+QUERY_VARIANT="$(python3 - "$RUN_ID" <<'PY_QUERY'
+import random, sys
+random.seed(sys.argv[1])
+word = "atlas"
+print("".join(ch.upper() if random.randrange(2) else ch for ch in word))
+PY_QUERY
+)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -28,26 +37,27 @@ request() {
 }
 
 # A unique query key guarantees the first request is cold.
-request "cold-public" "/api/products?limit=1&cacheProbe=$RUN_ID" 200 MISS
-request "warm-public" "/api/products?limit=1&cacheProbe=$RUN_ID" 200 HIT
+public_path="/api/products?limit=100&query=$QUERY_VARIANT"
+request "cold-public" "$public_path" 200 MISS
+request "warm-public" "$public_path" 200 HIT
 
 # Sale prices have start/end instants, so the public TTL is capped at one second
 # and stale-while-revalidate is deliberately disabled. After expiry the origin is
 # queried again instead of serving a potentially stale price.
 sleep 2
-request "expired-public" "/api/products?limit=1&cacheProbe=$RUN_ID" 200 EXPIRED
+request "expired-public" "$public_path" 200 EXPIRED
 
 # Query parameters are part of the cache key.
-request "different-query" "/api/products?limit=2&cacheProbe=$RUN_ID" 200 MISS
+request "different-query" "/api/products?limit=99&query=$QUERY_VARIANT" 200 MISS
 
 # Host is part of the cache key so multiple domains cannot share variants.
-host_path="/api/products?limit=1&hostProbe=$RUN_ID"
+host_path="$public_path"
 request "host-a-cold" "$host_path" 200 MISS -H 'Host: a.example.test'
 request "host-a-warm" "$host_path" 200 HIT -H 'Host: a.example.test'
 request "host-b-isolated" "$host_path" 200 MISS -H 'Host: b.example.test'
 
 # Compressed and identity representations are separate cache variants.
-encoding_path="/api/products?limit=100&encodingProbe=$RUN_ID"
+encoding_path="$public_path"
 request "gzip-cold" "$encoding_path" 200 MISS -H 'Accept-Encoding: gzip'
 if ! grep -qi '^Content-Encoding: gzip' "$TMP_DIR/gzip-cold.headers"; then
   echo "FAIL gzip-cold: expected Content-Encoding: gzip" >&2
@@ -60,8 +70,16 @@ if grep -qi '^Content-Encoding: gzip' "$TMP_DIR/identity-cold.headers"; then
 fi
 request "gzip-warm" "$encoding_path" 200 HIT -H 'Accept-Encoding: gzip'
 
+# Cookie-bearing requests bypass the shared cache (future personalization guard).
+request "cookie-bypass" "$host_path" 200 BYPASS -H 'Cookie: future-session=opaque'
+
+# Unknown query parameters are not admitted, preventing cache-key pollution/churn.
+unknown_path="$public_path&unrecognizedProbe=$RUN_ID"
+request "unknown-query-first" "$unknown_path" 200 MISS
+request "unknown-query-repeat" "$unknown_path" 200 MISS
+
 # Authorization requests bypass shared storage and receive the application's no-store policy.
-request "authorization-bypass" "/api/products?limit=1&cacheProbe=$RUN_ID" 401 BYPASS \
+request "authorization-bypass" "$public_path" 401 BYPASS \
   -H 'Authorization: Bearer invalid'
 
 # Errors must never become shared cache hits.
