@@ -1,5 +1,7 @@
 # EXP-033: existing PostgreSQL/Hikari capacity probe
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **상태:** Two remote 4-vCPU synthetic runs complete · no production capacity/SLO claim
 
 ## 목적과 경계
@@ -12,7 +14,7 @@ Use existing Compose, k6, Prometheus, and Hikari metrics before changing pool si
 - Existing Compose stack: PostgreSQL 18.6, app observability profile, Prometheus, Postgres exporter, Mailpit, k6.
 - Sequential rates, fresh DB/ephemeral services per run, 120 seconds each: 2.78 / 11.12 / 44.48 synthetic checkout sessions/s (1×/4×/16× EXP-016 baseline).
 - Initial run `44155788679` used fixed VUs 1/1/4. Adjusted run `44164690046` used VUs 1/2/6 from observed per-rate p99 × arrival rate × 1.5 headroom.
-- Prometheus scrape interval is 5 seconds. Hikari active/pending figures are maxima of sampled gauges, not continuous instantaneous peaks. Raw summaries: [initial](results/exp-033/initial-run-44155788679.json), [adjusted](results/exp-033/adjusted-run-44164690046.json).
+- Prometheus scrape interval is 5 seconds. Hikari active/pending figures are maxima of sampled gauges, not continuous instantaneous peaks. Raw summaries: `initial`, `adjusted`.
 
 ## k6 results
 

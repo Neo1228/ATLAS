@@ -16,11 +16,11 @@ EXP-033은 원격 GitHub Actions 4 vCPU 러너에서 체크아웃 부하를 측�
 
 ## 결정
 
-1. **노드 스펙을 명시적으로 고정한다.** `compose.capacity-node.yaml`에 애플리케이션 `cpus: 2.0` / `mem_limit: 2g`, PostgreSQL `cpus: 2.0` / `mem_limit: 2g` / `max_connections=60` / `shared_buffers=256MB`를 선언한다. 실험 문서는 이 값을 "노드 스펙"으로 인용한다.
+1. **노드 스펙을 명시적으로 고정한다.** `.local/compose.capacity-node.yaml`에 애플리케이션 `cpus: 2.0` / `mem_limit: 2g`, PostgreSQL `cpus: 2.0` / `mem_limit: 2g` / `max_connections=60` / `shared_buffers=256MB`를 선언한다. 실험 문서는 이 값을 "노드 스펙"으로 인용한다.
 2. **단일 노드에서 먼저 한계를 재현한다.** 포화 신호(드롭, p95 급증, Hikari pending, PG 연결·버퍼)를 지표로 특정한 뒤에만 확장을 논한다.
-3. **분산 단계는 애플리케이션 replica만 늘린다.** `compose.capacity-distributed.yaml`은 동일한 per-container 스펙의 replica 3개를 nginx round-robin 뒤에 둔다. PostgreSQL은 그대로 둔다. 따라서 개선 폭은 "replica 수"에 귀속된다.
+3. **분산 단계는 애플리케이션 replica만 늘린다.** `.local/compose.capacity-distributed.yaml`은 동일한 per-container 스펙의 replica 3개를 nginx round-robin 뒤에 둔다. PostgreSQL은 그대로 둔다. 따라서 개선 폭은 "replica 수"에 귀속된다.
 4. **인스턴스별로 scrape한다.** `observability/prometheus-distributed.yml`은 `app-a`/`app-b`/`app-c`를 각각 target으로 등록하고 `instance_name` 라벨을 붙인다. 합산 평균은 포화를 숨기기 때문이다.
-5. **패널 캡처를 코드로 남긴다.** `grafana/dashboards/atlas-capacity.json`과 `scripts/capture-grafana-panels.mjs`로 지표별 창을 고정 캡처하고, 창·크기·해시를 `manifest.json`에 기록한다.
+5. **패널 캡처를 코드로 남긴다.** `grafana/dashboards/atlas-capacity.json`과 `scripts/capture-grafana-panels.mjs`(로컬 전용)로 지표별 창을 고정 캡처하고, 창·크기·해시를 `manifest.json`에 기록한다.
 
 ## 근거
 

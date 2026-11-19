@@ -1,5 +1,7 @@
 # EXP-037: 아주 작은 단일 노드에서 시작해 한계를 찾고 스케일 아웃으로 해결
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **추적 이슈:** [#346](https://github.com/Neo1228/ATLAS/issues/346)
 
 **상태:** 진행 중 · 측정값은 실제 실행 결과만 기록
@@ -53,7 +55,7 @@ AWS `t4g.small`은 **2 GiB / baseline 24%**(2 CPU credits/h, 최대 576)입니�
 | ONLINE_STORE availability | 2,000,000 |
 | 선택도 높은 keyword(`needle`) | 20건 (1/100,000) |
 
-시드는 `load-tests/seed-catalog-scale.sql`로 수행합니다. 각 단계를 `batch_rows` 청크로 나눠 청크마다 별도 트랜잭션으로 커밋하므로, 한 트랜잭션이 수백만 인덱스 항목을 붙잡지 않고 실패해도 이미 커밋된 청크는 남아 멱등 재시도가 가능합니다.
+시드는 `load-tests/seed-catalog-scale.sql`(로컬 전용)로 수행합니다. 각 단계를 `batch_rows` 청크로 나눠 청크마다 별도 트랜잭션으로 커밋하므로, 한 트랜잭션이 수백만 인덱스 항목을 붙잡지 않고 실패해도 이미 커밋된 청크는 남아 멱등 재시도가 가능합니다.
 
 실측(이 환경, 컨테이너 기본값):
 
@@ -66,7 +68,7 @@ AWS `t4g.small`은 **2 GiB / baseline 24%**(2 CPU credits/h, 최대 576)입니�
 
 ## 결과
 
-원자료: [`results/exp-037/exp-037-summary.json`](results/exp-037/exp-037-summary.json).
+원자료: ``results/exp-037/exp-037-summary.json``.
 
 ### 단계 1 — tiny 단일 노드 (앱 1 vCPU/1 GiB, PG 1 vCPU/1 GiB) · 측정 완료
 

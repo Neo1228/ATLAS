@@ -126,9 +126,9 @@ public class PayPalWebhookRetryWorker {
     }
 
     /**
-     * Publishes how far past its own schedule the most overdue pending retry is.
-     * An empty queue leaves the gauge at its last value only if a value ever existed;
-     * it is deliberately not set to 0 so "unknown" is not reported as "healthy".
+     * 가장 밀린 대기 재시도가 예정 시각을 얼마나 넘겼는지 발행한다.
+     * 큐가 비어도 마지막 값을 유지하며, 값을 0으로 덮지 않는다.
+     * unknown을 healthy로 보고하지 않기 위해서다.
      */
     private void recordOldestPendingAge() {
         Double ageSeconds = retries.oldestPendingAgeSeconds();

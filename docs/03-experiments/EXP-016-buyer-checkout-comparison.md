@@ -1,5 +1,7 @@
 # EXP-016: Buyer checkout 판매자 분할 비교
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **상태:** benchmark 기록 · JWT enforcement 이전 실행
 
 > [!WARNING]
@@ -61,7 +63,7 @@ All script inputs must be passed to k6 using CLI `-e KEY=value` options after `k
 - Script JSON의 `checkoutSessionLatencyMs.p50`, `.p95`, `.p99`에 각각 기록. VU 산정에는 `.p95` 사용.
 - 고정 VU 공식: `ceil(2.78 sessions/s × observed p95 session duration in seconds)`. p95가 0.8초면 `ceil(2.78 × 0.8) = 3 VUs`.
 - 0.8초는 산식 예시이지 측정값이 아님. p95 표본이 없으면 임의 VU로 진행하지 않고 setup/checkout을 조사하거나 calibration 재실행.
-실측 calibration p95: one-seller `61.2ms`, two-seller `39ms`. 산식에 따라 두 프로파일 모두 fixed VU `1`을 사용. 원본: [one-seller](results/exp-016/exp016-cal-a.json), [two-seller](results/exp-016/exp016-cal-b.json).
+실측 calibration p95: one-seller `61.2ms`, two-seller `39ms`. 산식에 따라 두 프로파일 모두 fixed VU `1`을 사용. 원본: `one-seller`, `two-seller`.
 
 ```sh
 mkdir -p docs/03-experiments/results/exp-016
@@ -148,7 +150,7 @@ Seeded rows는 DB에 지속되고 API 삭제 endpoint가 없다. 각 controlled 
 
 two-seller p95 중앙값은 3ms(약 6.4%) 높았으나 run ranges overlap. p99 중앙값은 사실상 동일; p99는 334 samples/run 수준의 descriptive value. 이 결과는 Seller split의 안정적인 latency 증가를 입증하지 않음. Arrival rate는 test input으로 고정했으므로 처리 용량을 의미하지 않음.
 
-- k6 controlled run JSON: [A1](results/exp-016/exp016-clean-a.json), [A2](results/exp-016/exp016-clean-a-r2.json), [A3](results/exp-016/exp016-clean-a-r3.json); [B1](results/exp-016/exp016-clean-b.json), [B2](results/exp-016/exp016-clean-b-r2.json), [B3](results/exp-016/exp016-clean-b-r3.json).
+- k6 controlled run JSON: `A1`, `A2`, `A3`; `B1`, `B2`, `B3`.
 
 ### 상태 무결성 smoke
 
@@ -157,8 +159,8 @@ two-seller p95 중앙값은 3ms(약 6.4%) 높았으나 run ranges overlap. p99 �
 - **one-seller:** 14 checkout / 14 PurchaseOrder / 28 OrderItem. Inventory pool `2/2` 보존, capacity `28 = 28`, 모두 claimed. Payment capture `14/14`; journal balance·gross allocation `14/14`.
 - **two-seller:** 14 checkout / 28 PurchaseOrder / 28 OrderItem. Inventory pool `2/2` 보존, capacity `28 = 28`, 모두 claimed. Payment capture `14/14`; journal balance·gross allocation `14/14`.
 - **중복·cardinality:** 두 profile 모두 expected order-count mismatch, duplicate checkout/payment attempt/journal `0`. Checkout당 journal `1건`.
-- Read-only query: [check-integrity.sql](results/exp-016/check-integrity.sql). 실행: `docker compose cp docs/03-experiments/results/exp-016/check-integrity.sql postgres:/tmp/check-integrity.sql` 후 `docker compose exec -T postgres psql -U atlas -d atlas -v run_id=<RUN_ID> -v profile=<PROFILE> -f /tmp/check-integrity.sql`.
-- 증거: [A k6](results/exp-016/exp016-integrity-a.json), [A DB 상태](results/exp-016/exp016-integrity-a-state.json), [B k6](results/exp-016/exp016-integrity-b.json), [B DB 상태](results/exp-016/exp016-integrity-b-state.json).
+- Read-only query: `check-integrity.sql`. 실행: `docker compose cp docs/03-experiments/results/exp-016/check-integrity.sql postgres:/tmp/check-integrity.sql` 후 `docker compose exec -T postgres psql -U atlas -d atlas -v run_id=<RUN_ID> -v profile=<PROFILE> -f /tmp/check-integrity.sql`.
+- 증거: `A k6`, `A DB 상태`, `B k6`, `B DB 상태`.
 
 ### Prometheus snapshot
 
@@ -169,7 +171,7 @@ two-seller p95 중앙값은 3ms(약 6.4%) 높았으나 run ranges overlap. p99 �
 | Hikari active connection max | 1 | 1 | 같은 local run profile |
 | PostgreSQL deadlock count | 0 | 0 | fresh DB profile |
 
-Process CPU/JVM heap maxima도 [one-seller](results/exp-016/observability-clean-a.json)/[two-seller](results/exp-016/observability-clean-b.json)에 기록. 해당 lookback은 app startup·pilot·idle을 포함하므로 A/B resource 승패 비교에 사용하지 않음. Host settings: 11 logical CPU/18GiB; Docker VM 4 CPU/약 9.7GiB. Compose에 CPU/memory quota는 설정하지 않음.
+Process CPU/JVM heap maxima도 `one-seller`/`two-seller`에 기록. 해당 lookback은 app startup·pilot·idle을 포함하므로 A/B resource 승패 비교에 사용하지 않음. Host settings: 11 logical CPU/18GiB; Docker VM 4 CPU/약 9.7GiB. Compose에 CPU/memory quota는 설정하지 않음.
 
 ### 판단과 한계
 

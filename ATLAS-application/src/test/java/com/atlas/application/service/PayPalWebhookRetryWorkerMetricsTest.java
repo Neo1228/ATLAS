@@ -49,7 +49,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
         assertThat(meters.get(OLDEST_PENDING_AGE_METRIC).gauge().value()).isEqualTo(42.5);
 
         worker.retryDueEvents();
-        // An empty queue must not be reported as a healthy zero.
+        // 빈 큐를 healthy 0으로 보고하면 안 된다.
         assertThat(meters.get(OLDEST_PENDING_AGE_METRIC).gauge().value()).isEqualTo(42.5);
     }
 

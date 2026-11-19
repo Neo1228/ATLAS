@@ -1,5 +1,7 @@
 # EXP-015: 상품 목록 조회 성능 기준선
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **상태:** 10k·100k synthetic dataset 실측 완료 · PostgreSQL 18.6 · 4-vCPU Colima profile
 
 ## 목적과 범위
@@ -84,7 +86,7 @@ Run k6 on the private Docker network; capture each run JSON under `results/exp-0
 | 100,000 | Search `broad` (10%) | 17.751 | 19.699 | 22.424 |
 | 100,000 | Search `needle` (1%) | 16.162 | 17.937 | 18.503 |
 
-- Each raw k6 summary: [`results/exp-015/`](results/exp-015/); one JSON per dataset/run
+- Each raw k6 summary: ``results/exp-015/``; one JSON per dataset/run
 - Cursor verification failed before measurement because k6 `b64decode` returns an `ArrayBuffer`; the test harness now converts those bytes before comparing the decoded UUIDs. Re-run after the fix: all 28 checks per request passed.
 - Request rate from one VU is not interpreted as RPS capacity.
 
@@ -107,7 +109,7 @@ Run k6 on the private Docker network; capture each run JSON under `results/exp-0
 - Sort는 메모리 사용, disk spill 없음
 - Seller filter는 `product_seller_idx` 사용. Global·substring search는 expression sort key와 `position()` 조건으로 Seq Scan + sort
 - 100k search의 planner estimate와 actual matches 차이: `broad` 10,000, `needle` 1,000 actual. `position(lower(name))` 선택도 추정의 후속 검토 근거; 단독으로 index 추가를 정당화하지 않음
-- Raw plan JSON: [`results/exp-015/`](results/exp-015/)
+- Raw plan JSON: ``results/exp-015/``
 
 ### 관측성 및 수집 지표
 

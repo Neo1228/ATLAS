@@ -1,5 +1,7 @@
 # EXP-035: 단일 노드 한계와 분산 확장 비교
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **추적 이슈:** [#342](https://github.com/Neo1228/ATLAS/issues/342)
 
 **상태:** Measured — 로컬 2 vCPU 노드 한계와 replica 확장 결과를 기록. 프로덕션 SLA 아님.
@@ -46,7 +48,7 @@ EXP-033은 원격 4 vCPU 러너에서 체크아웃 흐름의 대략적인 상한
 
 ## 결과
 
-원자료: [`results/exp-035/exp-035-summary.json`](results/exp-035/exp-035-summary.json). 패널 캡처는 각 실행 디렉터리의 `manifest.json`(창·크기·SHA-256)으로 추적합니다.
+원자료: ``results/exp-035/exp-035-summary.json``. 패널 캡처는 각 실행 디렉터리의 `manifest.json`(창·크기·SHA-256)으로 추적합니다.
 
 ### 단일 노드 (2 vCPU / 2 GiB 앱 1대)
 
@@ -94,9 +96,9 @@ EXP-033은 원격 4 vCPU 러너에서 체크아웃 흐름의 대략적인 상한
 
 ```bash
 # 단일 노드
-docker compose -f compose.yaml -f compose.capacity-node.yaml \
+docker compose -f compose.yaml -f .local/compose.capacity-node.yaml \
   --profile observability --profile loadtest build application
-LOAD_COMPOSE_FILES="compose.yaml compose.capacity-node.yaml" \
+LOAD_COMPOSE_FILES="compose.yaml .local/compose.capacity-node.yaml" \
 LOAD_STACK_SERVICES="application postgres-exporter prometheus grafana grafana-image-renderer" \
 LOAD_WORKLOAD=reads LOAD_PROBE_MODE=matrix LOAD_RATES="5 4;10 8;20 16" \
 LOAD_RUN_PREFIX=exp035single GRAFANA_CAPTURE=1 \

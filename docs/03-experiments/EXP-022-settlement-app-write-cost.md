@@ -1,5 +1,7 @@
 # EXP-022 — 정산 애플리케이션 쓰기 비용 A/B
 
+> **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
+
 **상태:** 역사적 측정 완료 · production index 미채택 · 현재 PayPal order flow와 비교 불가
 
 ## 목적과 범위
@@ -61,7 +63,7 @@ flowchart LR
 
 ## 제외한 사전 실행
 
-초기 baseline 사전 실행에서 capture 100회는 완료했으나 k6 summary metric parser 오류로 SQL after-snapshot을 확보하지 못했다. 실험 전용 DB/container/network는 정리했으며 A/B 결과에서 제외. [제외 기록](results/exp-022/exp022-preflight-excluded-baseline-k6.json).
+초기 baseline 사전 실행에서 capture 100회는 완료했으나 k6 summary metric parser 오류로 SQL after-snapshot을 확보하지 못했다. 실험 전용 DB/container/network는 정리했으며 A/B 결과에서 제외. `제외 기록`.
 
 ## 해석과 한계
 
@@ -87,7 +89,7 @@ flowchart LR
 ## 재현 산출물
 
 - 과거 K6 harness는 retired. 현재 smoke는 기존 100-capture workload를 재현하지 않음
-- [요약 JSON](results/exp-022/exp022-summary.json)
+- `요약 JSON`
 - Per-run SQL/K6 원자료: 요약 JSON의 `rawResultFile`, `rawK6SummaryFile` 경로
 - 스키마/entry-side 근거: [V10 settlement ledger migration](../../ATLAS-application/src/main/resources/db/migration/V10__gross_capture_settlement_ledger.sql)
 - [EXP-020 정산 read/index 기준 실험](EXP-020-settlement-index-selectivity-cost.md)
