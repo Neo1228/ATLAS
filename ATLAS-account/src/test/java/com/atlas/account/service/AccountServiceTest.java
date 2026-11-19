@@ -31,6 +31,7 @@ import com.atlas.account.dto.response.AccountLoginResponse;
 import com.atlas.account.dto.response.MfaEnrollmentResponse;
 import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
 import com.atlas.account.repository.AccountRepository;
+import com.atlas.account.repository.AccountSuspensionRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -57,6 +58,7 @@ class AccountServiceTest {
     private final AccessTokenService accessTokens = mock(AccessTokenService.class);
     private final AccountEmailSender emailSender = mock(AccountEmailSender.class);
     private final AccountMfaSecretProtector mfaSecrets = mock(AccountMfaSecretProtector.class);
+    private final AccountSuspensionRepository suspensions = mock(AccountSuspensionRepository.class);
     private final AtomicReference<String> enrollmentSecret = new AtomicReference<>();
     private AccountService service;
 
@@ -64,7 +66,7 @@ class AccountServiceTest {
     void setUp() {
         when(passwords.encode(any())).thenReturn("dummy-encoded-password");
         service = new AccountService(accounts, passwords, accessTokens, emailSender, mfaSecrets,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC), suspensions);
     }
 
     @Test

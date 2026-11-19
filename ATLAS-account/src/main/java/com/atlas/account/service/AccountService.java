@@ -19,6 +19,8 @@ import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
 import com.atlas.account.dto.response.AccountSessionResponse;
 import com.atlas.account.dto.response.AccountSessionPage;
 import com.atlas.account.repository.AccountRepository;
+import com.atlas.account.repository.AccountSuspensionRepository;
+import com.atlas.account.dto.response.AccountSuspensionActionResponse;
 import com.bastiaanjansen.otp.SecretGenerator;
 import com.bastiaanjansen.otp.TOTPGenerator;
 import java.nio.charset.StandardCharsets;
@@ -61,17 +63,20 @@ public class AccountService {
     private final AccountEmailSender emailSender;
     private final AccountMfaSecretProtector mfaSecrets;
     private final Clock clock;
+    private final AccountSuspensionRepository suspensions;
     private final String dummyLoginPasswordHash;
 
     public AccountService(AccountRepository accounts, PasswordEncoder passwords,
             AccessTokenService accessTokens, AccountEmailSender emailSender,
-            AccountMfaSecretProtector mfaSecrets, Clock clock) {
+            AccountMfaSecretProtector mfaSecrets, Clock clock,
+            AccountSuspensionRepository suspensions) {
         this.accounts = accounts;
         this.passwords = passwords;
         this.accessTokens = accessTokens;
         this.emailSender = emailSender;
         this.mfaSecrets = mfaSecrets;
         this.clock = clock;
+        this.suspensions = suspensions;
         this.dummyLoginPasswordHash = passwords.encode(UUID.randomUUID().toString());
     }
 
@@ -298,6 +303,58 @@ public class AccountService {
         if (!accounts.closeAccount(accountId, now)) return; // 이미 폐쇄됨: 멱등 종료
         accounts.revokeAllRefreshFamilies(accountId, now);
         accounts.revokeMfaChallenges(accountId, now);
+    }
+
+    /**
+     * 운영자가 계정을 정지시킵니다.
+     *
+     * <p>본인 폐쇄와 달리 해제될 수 있고, 근거와 책임을 남겨야 합니다. 그래서
+     * actor·reason·idempotency-key 를 모두 요구하고 감사 기록을 함께 씁니다.
+     *
+     * <p>정지하면 상태가 DISABLED 가 되어, 모든 로그인·갱신·액세스 검증이
+     * 즉시 거부됩니다({@code isRefreshFamilyActive} 가 status='ACTIVE' 를 요구).
+     * 진행 중 세션을 즉시 끊기 위해 refresh family 와 MFA challenge 도 폐기합니다.
+     *
+     * <p>멱등: 같은 idempotency-key 로 다시 요청하면 아무 것도 바꾸지 않고 종료합니다.
+     * 운영 자동화가 재시도해도 감사 기록이 중복되지 않습니다.
+     */
+    @Transactional
+    public void suspendAccount(UUID accountId, String reason, String actor, String idempotencyKey) {
+        applySuspension(accountId, true, reason, actor, idempotencyKey);
+    }
+
+    /** 운영자가 계정 정지를 해제합니다. 감사 기록을 남기고 세션을 새로 발급받게 합니다. */
+    @Transactional
+    public void releaseAccount(UUID accountId, String reason, String actor, String idempotencyKey) {
+        applySuspension(accountId, false, reason, actor, idempotencyKey);
+    }
+
+    private void applySuspension(UUID accountId, boolean suspend, String reason, String actor,
+            String idempotencyKey) {
+        if (accountId == null || !StringUtils.hasText(reason) || !StringUtils.hasText(actor)
+                || !StringUtils.hasText(idempotencyKey) || reason.length() > 500) {
+            throw invalidRequest();
+        }
+        if (!suspensions.accountExists(accountId)) {
+            throw new AccountException(Code.INVALID_REQUEST, "Unknown account: " + accountId);
+        }
+        if (suspensions.actionRecorded(accountId, idempotencyKey)) return; // 재시도: 변화 없음
+        Instant now = clock.instant();
+        boolean changed = suspensions.apply(accountId, suspend, idempotencyKey, actor, reason, now);
+        if (changed && suspend) {
+            accounts.revokeAllRefreshFamilies(accountId, now);
+            accounts.revokeMfaChallenges(accountId, now);
+        }
+        // 해제 시에는 세션이 이미 폐기됐으므로 재로그인으로 새 family 를 만든다.
+    }
+
+    /** 한 계정의 정지·해제 감사 기록입니다. 운영 확인용입니다. */
+    public List<AccountSuspensionActionResponse> suspensionHistory(UUID accountId, int limit) {
+        if (accountId == null) throw invalidRequest();
+        return suspensions.history(accountId, limit <= 0 ? 20 : Math.min(limit, 100)).stream()
+                .map(action -> new AccountSuspensionActionResponse(action.action(), action.idempotencyKey(),
+                        action.actor(), action.reason(), action.createdAt()))
+                .toList();
     }
 
     @Transactional
