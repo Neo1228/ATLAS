@@ -71,6 +71,7 @@ const LATENCY = {
 };
 const ORDERS_CREATED = new Counter('fd_orders_created');
 const PAYMENTS_SUBMITTED = new Counter('fd_payments_submitted');
+const PAYMENT_REJECTIONS = new Counter('fd_payment_rejections');
 const SHIPMENTS_CREATED = new Counter('fd_shipments_created');
 const STATEMENTS_READ = new Counter('fd_statements_read');
 // Diagnoses whether checkout returned orders at all, instead of silently skipping.
@@ -227,8 +228,10 @@ export default function (seed) {
   if (checkout.status >= 300) return;
   let orderIds = [];
   let paymentAttemptId = null;
+  let checkoutId = null;
   try {
     const body = checkout.json();
+    checkoutId = body.checkoutId ?? null;
     const orders = body.orders ?? [];
     orderIds = orders.map((o) => o.orderId).filter(Boolean);
     paymentAttemptId = body.paymentAttemptId ?? null;
@@ -241,17 +244,29 @@ export default function (seed) {
   if (orderIds.length === 0) return;
   ORDERS_CREATED.add(orderIds.length);
 
-  // 7. Payment (local provider records state; does not call PayPal in this stack)
-  for (const orderId of orderIds) {
-    const payment = http.post(`${BASE_URL}/api/orders/${orderId}/payment`, null, {
-      headers: jsonAuth,
-      responseCallback: http.expectedStatuses({ min: 200, max: 499 }),
-      tags: { name: 'payment', operation: 'payment', phase: 'measure' },
-    });
-    timed('payment', payment);
-    PAYMENTS_SUBMITTED.add(1);
-    check(payment, { 'payment: <500': (r) => r.status < 500 });
+  // 7. Payment. Orders created by a cart checkout are owned by the parent checkout,
+  // so they must be paid through `/api/checkouts/{id}/payment`. Posting to the
+  // seller-order endpoint is rejected with CONFLICT by design.
+  if (!checkoutId) return;
+  const payment = http.post(`${BASE_URL}/api/checkouts/${checkoutId}/payment`, null, {
+    headers: jsonAuth,
+    responseCallback: http.expectedStatuses({ min: 200, max: 499 }),
+    tags: { name: 'payment', operation: 'payment', phase: 'measure' },
+  });
+  timed('payment', payment);
+  PAYMENTS_SUBMITTED.add(1);
+  let paymentCode = 'OK';
+  if (payment.status >= 300) {
+    try {
+      paymentCode = String(payment.json().code || `HTTP_${payment.status}`);
+    } catch (_) {
+      paymentCode = `HTTP_${payment.status}`;
+    }
+    PAYMENT_REJECTIONS.add(1);
+    check(payment, { [`payment rejected: ${paymentCode}`]: () => false });
   }
+  check(payment, { 'payment: 2xx': () => paymentCode === 'OK' });
+  if (paymentCode !== 'OK') return;
 
   // 8. Fulfilment: seller ships a paid order
   if (Math.random() >= SHIP_SHARE) return;

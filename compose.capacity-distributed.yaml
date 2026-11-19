@@ -50,6 +50,8 @@ services:
       SERVER_TOMCAT_THREADS_MAX: "64"
       SERVER_TOMCAT_ACCEPT_COUNT: "64"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${ATLAS_POOL_SIZE:-10}
+      # extends resolves against compose.yaml, so payment settings must be repeated
+      # here rather than inherited from a later overlay.
     # !override is required: compose merges `ports` lists from `extends`, which
     # would otherwise publish 18080 on every replica and collide.
     ports: !override
@@ -73,15 +75,12 @@ services:
       ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
       SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
       SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
-      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
-      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
-      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
-      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
-      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
       BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
       SERVER_TOMCAT_THREADS_MAX: "64"
       SERVER_TOMCAT_ACCEPT_COUNT: "64"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${ATLAS_POOL_SIZE:-10}
+      # extends resolves against compose.yaml, so payment settings must be repeated
+      # here rather than inherited from a later overlay.
     ports: !override
       - "127.0.0.1:18083:8081"
 
@@ -102,15 +101,12 @@ services:
       ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
       SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
       SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
-      ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}
-      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-disabled}
-      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-disabled}
-      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL:-https://api-m.sandbox.paypal.com}
-      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
       BOK_ECOS_API_KEY: ${BOK_ECOS_API_KEY:-}
       SERVER_TOMCAT_THREADS_MAX: "64"
       SERVER_TOMCAT_ACCEPT_COUNT: "64"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${ATLAS_POOL_SIZE:-10}
+      # extends resolves against compose.yaml, so payment settings must be repeated
+      # here rather than inherited from a later overlay.
     ports: !override
       - "127.0.0.1:18084:8081"
 
@@ -145,3 +141,43 @@ services:
     environment:
       BASE_URL: http://app-lb:8080
       ATLAS_BASE_URL: http://app-lb:8080
+
+  # PayPal stand-in as a sidecar: it shares each app's network namespace so the base
+  # URL is 127.0.0.1, which PayPalProperties accepts as a local test endpoint. This
+  # exercises the real PayPal client without the public sandbox's latency in a run.
+  paypal-stub-a:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    profiles: ["observability", "loadtest"]
+    network_mode: "service:app-a"
+    volumes:
+      - ./load-tests/paypal-stub.py:/stub.py:ro
+    command: ["python", "/stub.py", "--port", "8099"]
+    environment:
+      # Verbose request logging is on for the payment experiment: without it a client
+      # that never reaches the stub is indistinguishable from a client that fails.
+      PAYPAL_STUB_VERBOSE: "1"
+    depends_on:
+      - app-a
+    restart: unless-stopped
+
+  paypal-stub-b:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    profiles: ["observability", "loadtest"]
+    network_mode: "service:app-b"
+    volumes:
+      - ./load-tests/paypal-stub.py:/stub.py:ro
+    command: ["python", "/stub.py", "--port", "8099"]
+    depends_on:
+      - app-b
+    restart: unless-stopped
+
+  paypal-stub-c:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    profiles: ["observability", "loadtest"]
+    network_mode: "service:app-c"
+    volumes:
+      - ./load-tests/paypal-stub.py:/stub.py:ro
+    command: ["python", "/stub.py", "--port", "8099"]
+    depends_on:
+      - app-c
+    restart: unless-stopped
