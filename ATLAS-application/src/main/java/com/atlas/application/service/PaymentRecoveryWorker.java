@@ -197,8 +197,12 @@ public class PaymentRecoveryWorker {
             return;
         }
         if (awaitingBuyer(current) && !approvalWindowExpired(current)) {
-            recovery.waitForBuyer(job);
-            return;
+            if (current.approvalExpiresAt() != null && recovery.waitForBuyer(job)) {
+                return;
+            }
+            // deadline 없는 대기 행은 재개 sweep이 확정할 수 없어 영구 미확정으로 남는다.
+            // 그렇게 남기느니 재시도/운영자 검토로 보낸다.
+            throw new IllegalStateException("Approval wait has no deadline");
         }
         PaymentResponse resolved = approvalWindowExpired(current)
                 ? payments.resolveExpiredApproval(job.operationId(), "payment-recovery-" + job.operationId())
@@ -211,11 +215,15 @@ public class PaymentRecoveryWorker {
     /**
      * 승인 대기 deadline이 지났는지 확인한다. 지났으면 구매자 신호를 기다리지 않고 provider
      * 상태를 확정해야 하므로, {@code WAITING_FOR_BUYER}로 다시 보내지 않는다.
+     *
+     * <p>deadline이 없는 대기 상태는 정상 경로가 만들지 않는다. 그런 행은 재개 sweep도 확정
+     * 대상으로 보므로(NULL을 즉시 due로 처리), 여기서도 같은 판단을 유지해야 두 경로가
+     * 서로 되돌리며 무한 재시도하는 일이 없다.
      */
     private boolean approvalWindowExpired(PaymentResponse payment) {
         return payment.state() == PaymentState.AUTHORIZATION_PENDING
-                && payment.approvalExpiresAt() != null
-                && !Instant.now().isBefore(payment.approvalExpiresAt());
+                && (payment.approvalExpiresAt() == null
+                    || !Instant.now().isBefore(payment.approvalExpiresAt()));
     }
 
     private void reconcilePaymentOwner(PaymentRecoveryJob job, PaymentResponse payment) {

@@ -231,6 +231,8 @@ public class PaymentRecoveryRepository {
                   AND attempt.provider_order_id IS NOT NULL
                   AND attempt.approval_url IS NOT NULL
                   AND length(trim(attempt.approval_url)) > 0
+                  -- deadline 없는 대기 행을 만들지 않는다. 있으면 재개 sweep이 확정할 수 있다.
+                  AND attempt.approval_expires_at IS NOT NULL
                 """, job.recoveryJobId(), job.leaseToken()) > 0;
     }
 
@@ -361,9 +363,12 @@ public class PaymentRecoveryRepository {
                     JOIN payment_attempt AS attempt ON attempt.attempt_id = work.payment_attempt_id
                     WHERE work.status = 'WAITING_FOR_BUYER'
                       AND work.work_stage = 'PROVIDER'
-                      AND attempt.approval_expires_at IS NOT NULL
-                      AND attempt.approval_expires_at <= CURRENT_TIMESTAMP
-                    ORDER BY attempt.approval_expires_at, work.recovery_job_id
+                      -- deadline이 NULL이면 "대기 시작 시각을 기록하지 못한 행"이다. 정상 경로는
+                      -- 진입 시 항상 deadline을 남기므로, NULL은 즉시 확정 대상으로 본다. 그렇지
+                      -- 않으면 이 행들은 재개 대상에서도 만료 대상에서도 빠져 영원히 남는다.
+                      AND (attempt.approval_expires_at IS NULL
+                           OR attempt.approval_expires_at <= CURRENT_TIMESTAMP)
+                    ORDER BY attempt.approval_expires_at NULLS FIRST, work.recovery_job_id
                     LIMIT ?
                     FOR UPDATE OF work SKIP LOCKED
                 )
