@@ -51,7 +51,7 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Sandbox 계약 검증
+      - name: Sandbox 계약 검증(curl 기준)
         if: steps.guard.outputs.ready == 'true'
         env:
           PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
@@ -148,3 +148,14 @@ jobs:
             echo
             echo "승인·캡처·환불은 구매자 승인이 필요해 이 워크플로 범위에서 제외했습니다."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ATLAS 클라이언트로 주문 생성·조회 검증
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          ATLAS_PAYPAL_SANDBOX_TEST: "1"
+          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+        run: |
+          # 위 curl 단계는 PayPal 계약을, 이 단계는 ATLAS 코드가 그 응답을 실제로
+          # 파싱하는지를 검증한다. 전자는 API 형태를, 후자는 우리 클라이언트를 지킨다.
+          ./gradlew --no-daemon :payment-module:test --tests '*PayPalSandboxContractTest'
