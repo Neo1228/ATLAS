@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 /**
  * 공개 읽기 응답에만 캐시 정책이 붙는지 고정합니다.
@@ -56,4 +57,44 @@ class PublicReadCacheHeaderWriterTest {
         assertThat(PublicReadCacheHeaderWriter.isPublicRead(
                 get("/api/products/a/reviews/b"))).isFalse();
     }
+    @Test
+    void publicResponseGetsSharedCachePolicy() {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new PublicReadCacheHeaderWriter().writeHeaders(get("/api/products"), response);
+
+        assertThat(response.getHeader("Cache-Control"))
+                .isEqualTo("public, max-age=0, s-maxage=30, stale-while-revalidate=60");
+        assertThat(response.getHeader("Pragma")).isNull();
+        assertThat(response.getHeaders("Vary")).contains("Authorization");
+    }
+
+    @Test
+    void userScopedResponseExplicitlyRemainsNoStore() {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new PublicReadCacheHeaderWriter().writeHeaders(get("/api/auth/sessions"), response);
+
+        assertThat(response.getHeader("Cache-Control"))
+                .isEqualTo("no-cache, no-store, max-age=0, must-revalidate");
+        assertThat(response.getHeader("Pragma")).isEqualTo("no-cache");
+    }
+
+    @Test
+    void authorizedRequestToPublicPathIsNotSharedCacheable() {
+        MockHttpServletRequest request = get("/api/products");
+        request.addHeader("Authorization", "Bearer token");
+        assertThat(PublicReadCacheHeaderWriter.isPublicRead(request)).isFalse();
+    }
+
+    @Test
+    void errorsOnPublicPathsAreNeverSharedCacheable() {
+        MockHttpServletRequest request = get("/api/products/missing");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        response.setStatus(404);
+
+        new PublicReadCacheHeaderWriter().writeHeaders(request, response);
+
+        assertThat(response.getHeader("Cache-Control"))
+                .isEqualTo("no-cache, no-store, max-age=0, must-revalidate");
+    }
+
 }
