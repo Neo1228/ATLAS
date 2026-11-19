@@ -46,6 +46,7 @@
   - deadline 경과 후 실제 승인·capture 확정 → 재고 해제 없이 `PAID`, 정산 1건, job `COMPLETED`.
   - deadline 이전 → `WAITING_FOR_BUYER` 유지, 재고 예약 유지, capture 요청 0건.
 - `PaymentRecoveryIntegrationTest`가 기존 fence·lease·operator requeue 계약을 계속 검증한다.
+- **deadline 불변식**: 정상 경로는 대기 진입 시 항상 deadline을 남긴다(`waitForBuyer`가 `approval_expires_at IS NOT NULL`을 요구). 과거 데이터나 다른 경로가 deadline 없이 대기 행을 만들더라도 영구 미확정으로 남지 않도록, 재개 sweep과 worker 모두 NULL을 **즉시 due**로 처리한다. 두 경로가 서로 다른 규칙을 쓰면 한쪽이 `PENDING`으로 되돌리고 다른 쪽이 다시 대기시키는 무한 재시도가 생기므로 같은 판단을 공유한다.
 
 ## ADR-0046과의 관계
 

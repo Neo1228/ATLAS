@@ -90,9 +90,12 @@ class PaymentRecoveryWorkerTest {
         when(order.state()).thenReturn(OrderState.PAYMENT_PENDING);
         when(orders.find(orderId)).thenReturn(order);
         PaymentRecoveryJob job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        // 정상 대기 상태는 진입 시 deadline을 남긴다. deadline이 없으면 "확정 대상"이므로
+        // 이 테스트는 미래 deadline을 가진 정상 대기를 표현한다.
         PaymentResponse awaitingApproval = new PaymentResponse(
                 orderId, null, attemptId, PaymentState.AUTHORIZATION_PENDING, false,
-                "provider-order-1", null, "https://provider.test/approve");
+                "provider-order-1", null, "https://provider.test/approve",
+                Instant.now().plus(Duration.ofMinutes(30)));
         when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),
                 eq(Duration.ofHours(24)))).thenReturn(List.of(job)).thenReturn(List.of());
         when(payments.findByAttemptId(attemptId)).thenReturn(awaitingApproval);
@@ -113,7 +116,8 @@ class PaymentRecoveryWorkerTest {
         PaymentRecoveryJob job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
         PaymentResponse awaitingApproval = new PaymentResponse(
                 orderId, null, attemptId, PaymentState.AUTHORIZATION_PENDING, false,
-                "provider-order-1", null, "https://provider.test/approve");
+                "provider-order-1", null, "https://provider.test/approve",
+                Instant.now().plus(Duration.ofMinutes(30)));
         OrderResponse cancellingOrder = mock(OrderResponse.class);
         when(cancellingOrder.state()).thenReturn(OrderState.CANCEL_PENDING);
         when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),

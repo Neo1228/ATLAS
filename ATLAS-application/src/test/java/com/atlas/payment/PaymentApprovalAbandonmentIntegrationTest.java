@@ -24,6 +24,7 @@ import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.service.PaymentRecoveryService;
 import com.atlas.payment.service.PaymentService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
@@ -154,6 +155,40 @@ class PaymentApprovalAbandonmentIntegrationTest extends PayPalIntegrationTestSup
                 .containsEntry("status", PaymentRecoveryJobStatus.WAITING_FOR_BUYER.name());
         assertThat(inventory.find(fixture.sellerId(), fixture.skuId()).reserved()).isEqualTo(1);
         assertThat(captureRequestCount()).isZero();
+    }
+
+    @Test
+    void aParkedApprovalWaitWithoutADeadlineIsStillResumed() {
+        Fixture fixture = awaitingApproval();
+        assertThat(job(fixture.attemptId()))
+                .containsEntry("status", PaymentRecoveryJobStatus.WAITING_FOR_BUYER.name());
+
+        // 과거 데이터나 다른 경로가 deadline 없이 대기 상태를 만들 수 있다. 그런 행은 재개
+        // sweep의 조건(deadline 경과)에 걸리지 않아 영원히 남는다. NULL은 즉시 확정 대상이다.
+        jdbc.update("UPDATE payment_attempt SET approval_expires_at = NULL WHERE attempt_id = ?",
+                fixture.attemptId());
+        providerStillAwaitsPayer();
+        pollUntilDone();
+
+        assertThat(payments.findCheckout(fixture.checkoutId()).state()).isEqualTo(PaymentState.VOIDED);
+        assertThat(jdbc.queryForObject(
+                "SELECT state FROM buyer_checkout WHERE checkout_id = ?",
+                String.class, fixture.checkoutId())).isEqualTo(BuyerCheckoutState.FAILED.name());
+        assertThat(inventory.find(fixture.sellerId(), fixture.skuId()).reserved()).isZero();
+        assertThat(job(fixture.attemptId()))
+                .containsEntry("status", PaymentRecoveryJobStatus.COMPLETED.name());
+    }
+
+    @Test
+    void parkedApprovalWaitAlwaysCarriesADeadline() {
+        Fixture fixture = awaitingApproval();
+
+        // 대기 상태로 넘어간 결제는 반드시 deadline을 가져야, 재개 sweep이 확정할 수 있다.
+        assertThat(jdbc.queryForObject(
+                "SELECT approval_expires_at FROM payment_attempt WHERE attempt_id = ?",
+                Timestamp.class, fixture.attemptId())).isNotNull();
+        assertThat(job(fixture.attemptId()))
+                .containsEntry("status", PaymentRecoveryJobStatus.WAITING_FOR_BUYER.name());
     }
 
     private record Fixture(UUID sellerId, String skuId, UUID checkoutId, UUID orderId, UUID attemptId) { }
