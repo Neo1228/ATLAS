@@ -171,14 +171,37 @@ SKU 324, 채널/카테고리 305). 세 쿼리를 합치는 것은 행 작업이 
 이 단계가 **쿼리 횟수를 원본 테이블 수와 분리하는** 방향입니다. 다음 후보는 SKU 를
 투영에 포함해 2 → 1 로 더 줄이는 것입니다.
 
-### 4단계 — 캐시 계층
+### 4단계 — 공개 읽기 응답의 엣지 캐시 (기본 정책 완료, 프록시 옵션 추가)
 
-읽기 모델로도 부족하면 캐시를 둡니다.
+공개 상품 응답은 인증 사용자와 비로그인 사용자가 같은 데이터를 받습니다. 이 요청을
+앱까지 전달하지 않는 것이 고정 3.43 ms 프레임워크 비용을 없애는 직접적인 방법입니다.
 
-- 위치: 앱 앞(프록시) 또는 앱 내부. 측정상 앱 CPU 가 포화이므로 **앱 앞**이 낫습니다.
-- 무효화: 상품 변경 이벤트 기반. TTL 은 안전망으로만.
-- 주의: 이 프로젝트는 이미 "캐시 도입 전에 무효화 경로를 단일화한다"는 교훈을
-  얻었습니다(2단계).
+**기본 앱 정책** (#399, #404): 공개 GET 200 에만
+`Cache-Control: public, max-age=0, s-maxage=1` 을 주고, 인증·오류 응답은 항상
+`no-store` 로 유지합니다. `Vary: Authorization` 으로 익명·인증 변형을 분리합니다.
+
+TTL 을 1초로 제한한 이유: 목록·상세 응답에는 `sale_starts_at` / `sale_ends_at` 에
+따라 시간만으로 바뀌는 유효 가격이 들어갑니다. 30초 stale 로 두면 sale 경계 뒤에
+잘못된 가격을 표시할 수 있습니다. **stale-while-revalidate 는 쓰지 않고**, 오류 때도
+stale 가격을 제공하지 않습니다. 주문·체크아웃은 계속 원본 가격을 검증합니다.
+
+**옵트인 Nginx edge-cache** (#406): 기존 앱 경로는 바꾸지 않고
+`docker compose --profile edge-cache up catalog-edge-cache` 로 켭니다.
+
+- disk cache `max_size=512m`, inactive 10분 (bounded)
+- 전체 URI 를 key 에 넣어 cursor/filter 조합을 분리
+- Authorization 은 bypass, `Vary` 도 존중
+- GET/HEAD 만, 200 만 저장
+- `proxy_cache_lock` 으로 동시 동일 MISS 를 한 원본 요청으로 합침
+- `X-Cache-Status` 로 MISS/HIT/BYPASS 를 관측
+
+**로컬 실측:** edge HIT median 0.76 ms / p90 1.16 ms, direct app median 10.60 ms /
+p90 18.13 ms. 100회 같은 key HIT 에서 앱 요청 카운터 증가 0 이었고, 20개 동시
+cold miss 가 원본 요청 1회로 합쳐졌습니다. 이는 단일 호스트 실험이며 운영 hit rate 를
+주장하지 않습니다.
+
+이 단계는 스펙을 늘리는 게 아니라 **요청을 앱까지 보내지 않는** 구조입니다.
+다음 측정은 실제 트래픽 분포에서 cache hit ratio 와 stale/가격 민원을 보는 것입니다.
 
 ### 5단계 — 그래도 부족할 때
 
