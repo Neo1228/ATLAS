@@ -16,3 +16,9 @@ scrape_configs:
   - job_name: pgbouncer
     static_configs:
       - targets: ["pgbouncer-exporter:9127"]
+
+  # 호스트 상태. 부하 실험이 유효했는지(예: load average 가 코어 수를 넘었는지)
+  # 사후에 판정하기 위해 필요하다.
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
