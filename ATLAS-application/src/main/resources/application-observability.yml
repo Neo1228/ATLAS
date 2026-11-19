@@ -9,6 +9,9 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        # 외부 환율 API 호출의 지연 분포. replica 별 호출량·지연을 보려면 histogram 이 필요하다.
+        # Spring Boot 가 RestClient 에 자동 계측을 붙이므로 애플리케이션 코드는 관여하지 않는다.
+        http.client.requests: true
   endpoints:
     web:
       exposure:

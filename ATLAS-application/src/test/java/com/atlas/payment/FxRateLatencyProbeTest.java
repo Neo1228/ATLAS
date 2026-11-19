@@ -21,9 +21,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 /**
  * 환율 조회 1회의 wall-clock 을 표본으로 남긴다.
  *
- * <p>지연 자체를 주장하려는 테스트가 아니다. "이 호출이 결제 임계 경로에 있다"는 사실과
- * 그 표본 분포를 기록해, 캐시 도입 전후를 같은 조건에서 비교할 수 있게 한다.
- * stub 지연은 {@code FX_STUB_LATENCY_MS} 환경변수로 조절한다(기본 0).
+ * <p>지연 자체를 주장하려는 테스트가 아니다. EXP-041 의 측정을 재현하는 도구다.
+ * 캐시 도입 전후를 같은 조건에서 비교하려면 이 표본을 다시 뽑을 수 있어야 한다.
+ *
+ * <p>사용법: {@code FX_STUB_LATENCY_MS=80 ./gradlew :application-module:test --tests '*FxRateLatencyProbeTest' --rerun-tasks}
+ * 결과는 테스트 출력의 {@code FX_LOOKUP_SAMPLES} 줄에 남는다.
  */
 @Testcontainers
 @SpringBootTest
