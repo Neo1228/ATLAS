@@ -46,6 +46,29 @@ services:
       # Route the app through the pooler. Flyway runs at startup too, so the pooler
       # must be reachable before the app; compose `depends_on` handles ordering.
       ATLAS_DB_URL: jdbc:postgresql://pgbouncer:5432/atlas
+      # Local PayPal stand-in: loopback base URLs are an allowed test endpoint
+      # (PayPalProperties.validateBaseUrl), so the real client is exercised without
+      # depending on the public sandbox during a load run.
+      ATLAS_PAYMENT_PROVIDER: paypal
+      PAYPAL_BASE_URL: http://paypal-stub:8099
+      PAYPAL_CLIENT_ID: local-stub-client
+      PAYPAL_CLIENT_SECRET: local-stub-secret
+      PAYPAL_WEBHOOK_ID: local-stub-webhook
     depends_on:
       pgbouncer:
         condition: service_started
+
+  # Local PayPal stand-in for payment-path measurements. Loopback base URLs are an
+  # explicitly allowed test endpoint (PayPalProperties.validateBaseUrl), so this
+  # exercises the real PayPal client without depending on the public sandbox's
+  # latency and availability during a load run.
+  paypal-stub:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    profiles: ["observability", "loadtest"]
+    volumes:
+      - ./load-tests/paypal-stub.py:/stub.py:ro
+    command: ["python", "/stub.py", "--port", "8099"]
+    expose:
+      - "8099"
+    restart: unless-stopped
+

@@ -158,6 +158,34 @@ HikariCP 위키가 제시하는 출발점은 `connections = (core_count × 2) + 
 
 로컬 스택은 `ATLAS_PAYMENT_PROVIDER=disabled`입니다. 따라서 `/orders/{id}/payment`는 PayPal을 호출하지 않고 로컬 상태 전이만 기록합니다. 이 실험은 **결제 상태 기계·재고 확정·정산 기록 경로**를 측정하며, **PayPal 응답 지연이나 외부 실패율은 측정하지 않습니다.** 이 구분은 의도적이며, 외부 provider 지연은 별도 실험(MockWebServer 또는 Sandbox)이 필요합니다.
 
+## 분산 환경: replica 손실과 로드밸런서
+
+스케일 아웃을 하면 반드시 마주치는 문제는 "replica 하나가 죽었을 때"입니다. 기존 LB 설정은 `max_fails=0`으로, nginx에게 **peer를 절대 비정상으로 판단하지 말라**고 지시하는 것과 같았습니다.
+
+### 측정 (replica 3개 중 1개 중지)
+
+| 설정 | 중지 직후 20요청 | 감지 후 30요청 |
+| --- | ---: | ---: |
+| `max_fails=0` (기존) | **6 실패 / 20 (30%)** | 계속 실패 |
+| `max_fails=3 fail_timeout=10s` + `proxy_next_upstream` | 4 실패 / 10 | **0 실패 / 30** |
+
+**개선:** 죽은 replica가 회전에서 제외되면 실패가 **0**이 됩니다. 남은 4–6건은 nginx가 peer를 비정상으로 표시하기 전 **감지 구간**의 실패입니다.
+
+### 남은 한계
+
+감지 구간의 실패는 `proxy_next_upstream_tries 3`으로도 완전히 없어지지 않았습니다. 원인은 keepalive 연결 재사용입니다. 이미 열린 연결이 죽은 peer에 물려 있으면 재시도가 새 연결을 만들지 않습니다. 완전 제거에는 `proxy_next_upstream_timeout`·`keepalive` 조정 또는 애플리케이션 측 재시도가 필요하며, 이는 별도 과제로 남깁니다.
+
+### 결제(외부 provider) 경로 측정의 실패
+
+PayPal provider를 켜고 로컬 스텁(`load-tests/paypal-stub.py`)으로 결제 경로를 측정하려 했으나 **완료하지 못했습니다.** 확인된 사실:
+
+- `PayPalProperties`는 loopback base URL을 공식 허용합니다(코드 확인).
+- 스텁은 IPv4·IPv6 모두에서 리슨하고 토큰 엔드포인트도 정상 응답했습니다.
+- 그럼에도 앱의 결제 호출이 스텁에 도달하지 않았고, 결제는 `PAYMENT_PROVIDER_UNAVAILABLE`로 거절된 뒤 UNKNOWN으로 흡수됐습니다.
+- 원인은 sidecar(`network_mode: service:app-x`)가 **앱 컨테이너 재생성 시 네임스페이스가 어긋나는** 구조적 문제로 좁혀졌습니다.
+
+**정직한 결론:** 결제 상태 기계·재고 확정·정산 기록은 `ATLAS_PAYMENT_PROVIDER=disabled` 경로로 이미 측정했지만(체크아웃 p95 122 ms), **외부 provider 호출을 포함한 결제 지연은 이번에 측정하지 못했습니다.** 스텁을 안정화하려면 sidecar 대신 호스트 포트 매핑이나 별도 네트워크를 쓰고, 앱을 먼저 띄운 뒤 스텁을 붙이는 순서를 강제해야 합니다.
+
 ## 해석 규칙
 
 - 드롭이 0이 아닌 지점을 "용량"이라 부르지 않습니다.
