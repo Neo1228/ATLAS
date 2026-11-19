@@ -148,7 +148,17 @@ read replica 도입 시 **read-after-write 경로는 절대 replica로 보내지
 
 **검증 중 발견한 워크플로 버그:** 첫 실행에서 토큰 발급과 주문 생성은 성공했지만 응답 검증이 `JSONDecodeError`로 실패했습니다. `printf ... | python3 - <<'PY'` 형태는 heredoc이 stdin을 차지해 파이프 데이터가 전달되지 않습니다. 검증 스크립트를 파일로 쓰고 응답도 파일로 넘기도록 고쳤습니다.
 
+**실측에서 확인한 PayPal 동작:** `payment_source`를 포함해 주문을 만들면 PayPal은 `approve` 대신 **`payer-action`** rel을 반환합니다. ATLAS 클라이언트는 두 rel을 모두 처리하므로 코드는 정상입니다.
+
 **범위 밖:** 승인·캡처·환불은 구매자 승인 상호작용이 필요해 이 워크플로에 넣지 않았습니다. 그 경로는 통합 테스트(MockWebServer)와 로컬 실측이 담당합니다.
+
+**클라이언트 테스트를 넣지 않은 이유:** Sandbox를 직접 호출하는 JUnit 테스트를 세 번 시도했지만, 실패 원인이 계속 제품 코드가 아니라 테스트의 `RestClient` 구성이었습니다. 맨 `RestClient.builder()`는 중첩 JSON의 `links`를 Map으로 바인딩하지 않고, Spring 7에서는 converter 등록 API도 deprecated됐습니다. 실제 앱은 Spring Boot가 구성한 builder를 주입받습니다. 검증 책임을 계층별로 나누는 편이 정직합니다.
+
+| 계층 | 검증 대상 | 도구 |
+| --- | --- | --- |
+| PayPal API 계약 | OAuth·주문 생성/조회·Request-Id 멱등성 | 이 워크플로의 curl |
+| ATLAS 결제 흐름·상태 전이 | 주문→승인→캡처→환불 로직 | MockWebServer 통합 테스트 |
+| 결제 경로 지연 | 체크아웃·결제 p95 | EXP-038 로컬 실측 |
 
 ## 9. 이 문서의 한계
 
