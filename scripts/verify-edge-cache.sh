@@ -40,6 +40,12 @@ request "expired-public" "/api/products?limit=1&cacheProbe=$RUN_ID" 200 EXPIRED
 # Query parameters are part of the cache key.
 request "different-query" "/api/products?limit=2&cacheProbe=$RUN_ID" 200 MISS
 
+# Host is part of the cache key so multiple domains cannot share variants.
+host_path="/api/products?limit=1&hostProbe=$RUN_ID"
+request "host-a-cold" "$host_path" 200 MISS -H 'Host: a.example.test'
+request "host-a-warm" "$host_path" 200 HIT -H 'Host: a.example.test'
+request "host-b-isolated" "$host_path" 200 MISS -H 'Host: b.example.test'
+
 # Authorization requests bypass shared storage and receive the application's no-store policy.
 request "authorization-bypass" "/api/products?limit=1&cacheProbe=$RUN_ID" 401 BYPASS \
   -H 'Authorization: Bearer invalid'
