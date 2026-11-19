@@ -41,7 +41,7 @@ server {
         # Nginx caches GET/HEAD by default; state it explicitly for review.
         proxy_cache_methods GET HEAD;
         proxy_cache atlas_public_catalog;
-        proxy_cache_key "$scheme|$proxy_host|$request_uri";
+        proxy_cache_key "$scheme|$host|$request_uri";
         proxy_cache_bypass $skip_auth_cache $skip_revalidation_cache;
         proxy_no_cache $skip_auth_cache $skip_revalidation_cache $upstream_http_set_cookie;
 
