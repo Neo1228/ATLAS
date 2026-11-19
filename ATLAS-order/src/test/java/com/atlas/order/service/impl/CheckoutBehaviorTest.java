@@ -1,7 +1,9 @@
 package com.atlas.order.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -11,6 +13,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
+import com.atlas.cart.service.CartService;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.persistence.state.TicketStatus;
@@ -33,7 +36,9 @@ import com.atlas.order.repository.JdbcBuyerLockRepository;
 import com.atlas.order.repository.JdbcExpirySweepLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.service.CheckoutIdempotencyKeys;
 import com.atlas.order.service.OrderFulfillmentService;
+import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.service.PaymentService;
@@ -62,6 +67,30 @@ class CheckoutBehaviorTest {
     private static final UUID CAMPAIGN = UUID.randomUUID();
     private static final UUID TICKET = UUID.randomUUID();
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
+
+    @Test
+    void checkoutCreationRejectsKeysThatReconcileAndCancelWouldRefuse() {
+        // 생성은 256자, reconcile·cancel 은 221자를 받던 비대칭. 222자 키로 checkout 이
+        // 만들어지면, 이후 결제 상태 확인과 취소가 키 길이 때문에 막혀 복구 경로가 없다.
+        CartCheckoutServiceImpl service = new CartCheckoutServiceImpl(
+                mock(CartService.class), mock(SellerSkuService.class), mock(SellerCouponService.class),
+                mock(InventoryService.class), mock(BuyerCheckoutRepository.class), mock(OrderRepository.class),
+                mock(OrderItemRepository.class), mock(OrderService.class), transactionManager(),
+                fixedClock(), Duration.ofMinutes(10));
+        String keyAcceptedByCreateButNotByReconcile = "k".repeat(222);
+
+        OrderException exception = assertThrows(OrderException.class,
+                () -> service.checkout("buyer-split-limit", keyAcceptedByCreateButNotByReconcile));
+
+        assertEquals(OrderException.Code.INVALID_REQUEST, exception.code());
+    }
+
+    @Test
+    void checkoutCreationAcceptsTheSharedMaximumKey() {
+        // 221자는 path 전 구간(생성·reconcile·cancel)이 함께 받는 경계값이다.
+        assertFalse(CheckoutIdempotencyKeys.isTooLong("k".repeat(CheckoutIdempotencyKeys.MAX_LENGTH)));
+        assertTrue(CheckoutIdempotencyKeys.isTooLong("k".repeat(CheckoutIdempotencyKeys.MAX_LENGTH + 1)));
+    }
 
     @Test
     void campaignCheckoutReleasesSlotWhenInventoryCannotBeReserved() {

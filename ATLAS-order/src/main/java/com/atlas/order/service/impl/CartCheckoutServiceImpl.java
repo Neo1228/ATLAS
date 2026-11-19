@@ -25,6 +25,7 @@ import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CartCheckoutService;
+import com.atlas.order.service.CheckoutIdempotencyKeys;
 import com.atlas.order.service.OrderService;
 import java.math.BigInteger;
 import java.time.Clock;
@@ -341,7 +342,8 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
 
     private static void validate(String buyerRef, String idempotencyKey) {
         if (buyerRef == null || buyerRef.isBlank() || buyerRef.length() > 256
-                || idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 256) {
+                || idempotencyKey == null || idempotencyKey.isBlank()
+                || CheckoutIdempotencyKeys.isTooLong(idempotencyKey)) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST,
                     "buyer and valid idempotency key are required");
         }
