@@ -177,9 +177,8 @@ public class AuthAttemptLimiter {
     }
 
     /**
-     * 원문 이메일·주소를 저장하지 않는다. 카운터 키만 필요하므로 SHA-256으로 줄인다.
+     * 카운터 키. 원문 이메일·주소를 저장하지 않도록 SHA-256으로 단방향 축약한다.
      */
-    /** 카운터 키. 저장소에 원문 이메일·주소를 남기지 않기 위한 단방향 축약이다. */
     public static String key(String value) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
