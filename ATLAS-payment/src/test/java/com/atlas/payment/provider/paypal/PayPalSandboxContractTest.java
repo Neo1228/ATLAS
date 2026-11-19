@@ -55,7 +55,9 @@ class PayPalSandboxContractTest {
         PayPalRestClient client = new PayPalRestClient(RestClient.builder(), properties,
                 authorizedClientManager(properties), new ObjectMapper());
 
-        String requestId = "atlas-sandbox-contract-" + System.nanoTime();
+        // PayPal-Request-Id는 최대 38자다. nanoTime(19자)을 그대로 붙이면 42자가 되어
+        // 클라이언트의 validateRequestId에 걸린다.
+        String requestId = "atlas-sb-" + Long.toString(System.nanoTime(), 36);
 
         PayPalRestClient.OrderResult created = client.createOrder("atlas-contract",
                 new BigDecimal("1.00"), "USD", "https://example.test/return",
