@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.web.header.HeaderWriter;
+import org.springframework.util.StringUtils;
 
 /**
  * 공개 읽기 응답에만 캐시 정책을 부여합니다.
@@ -21,8 +22,10 @@ import org.springframework.security.web.header.HeaderWriter;
  * 상세·체크아웃에서 원본을 다시 검증합니다. 따라서 30초 지연은 탐색 화면에서
  * 허용 가능한 손실입니다.
  *
- * <p>인증·사용자별 경로는 이 필터가 건드리지 않으므로 기존 {@code no-store} 가
- * 그대로 유지됩니다.
+ * <p>Spring Security 의 기본 cache-control writer 는 아래에서 끕니다. 그러므로 이
+ * writer 는 공개 경로에만 public 을 붙이는 것뿐 아니라, 나머지 모든 응답에
+ * {@code no-store} 를 명시적으로 다시 붙여야 합니다. Authorization 헤더가 있는
+ * 공개 경로도 공유 캐시에 넣지 않습니다(향후 개인화가 추가될 때의 방어선).
  */
 public class PublicReadCacheHeaderWriter implements HeaderWriter {
     /** 공유 캐시(CDN·프록시)용 초. 짧게 두어 상품 변경이 빨리 반영되게 한다. */
@@ -33,13 +36,24 @@ public class PublicReadCacheHeaderWriter implements HeaderWriter {
 
     @Override
     public void writeHeaders(HttpServletRequest request, HttpServletResponse response) {
-        if (!isPublicRead(request)) return;
-        response.setHeader(HttpHeaders.CACHE_CONTROL,
-                "public, max-age=0, s-maxage=" + SHARED_MAX_AGE_SECONDS
-                        + ", stale-while-revalidate=" + STALE_WHILE_REVALIDATE_SECONDS);
-        // Spring Security 가 붙인 no-store 계열 헤더를 제거한다.
-        response.setHeader("Pragma", "");
-        response.setHeader("Expires", "");
+        // 공개 경로라도 4xx/5xx 를 공유 캐시에 저장하지 않는다. 특히 404 는
+        // 상품이 새로 생성되거나 공개 전환된 뒤에도 stale-negative 캐시가 남을 수 있다.
+        if (isPublicRead(request) && response.getStatus() == HttpServletResponse.SC_OK) {
+            response.setHeader(HttpHeaders.CACHE_CONTROL,
+                    "public, max-age=0, s-maxage=" + SHARED_MAX_AGE_SECONDS
+                            + ", stale-while-revalidate=" + STALE_WHILE_REVALIDATE_SECONDS);
+            // Cache key 에 Authorization 을 포함한다. 공유 캐시가 먼저 응답하면
+            // origin 의 bypass 로직은 실행되지 않으므로, Vary 로 익명 변형과
+            // Authorization 변형을 분리해야 한다.
+            response.addHeader(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION);
+            response.setHeader("Pragma", null);
+            response.setHeader("Expires", null);
+            return;
+        }
+        // Security 기본 writer 를 껐으므로 사용자별·인증 실패 응답에 no-store 를 직접 보장한다.
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, max-age=0, must-revalidate");
+        response.setHeader("Pragma", "no-cache");
+        response.setDateHeader("Expires", 0L);
     }
 
     /**
@@ -50,6 +64,7 @@ public class PublicReadCacheHeaderWriter implements HeaderWriter {
      */
     static boolean isPublicRead(HttpServletRequest request) {
         if (!"GET".equals(request.getMethod())) return false;
+        if (StringUtils.hasText(request.getHeader(HttpHeaders.AUTHORIZATION))) return false;
         String path = request.getRequestURI();
         if (path == null) return false;
         String contextPath = request.getContextPath();
