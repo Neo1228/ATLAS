@@ -21,6 +21,7 @@ import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
 import jakarta.validation.Valid;
 import java.time.Clock;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -128,6 +129,17 @@ public class OrderController {
         OrderReturnRequest command = new OrderReturnRequest(buyerRef, orderId, idempotencyKey,
                 request.items().stream().map(item -> new OrderReturnRequest.Item(item.orderItemId(), item.quantity())).toList());
         return returns.request(command);
+    }
+
+    /**
+     * 구매자가 한 주문의 반품 목록을 본다.
+     *
+     * <p>returnId 를 모르면 상태를 확인할 수 없던 문제를 해결한다. 반품 요청 응답에는 id 가
+     * 있지만, 앱을 다시 열거나 기록을 잃으면 조회 수단이 없었다.
+     */
+    @GetMapping("/buyers/{buyerRef}/orders/{orderId}/returns")
+    public List<OrderReturnResponse> findReturns(@PathVariable String buyerRef, @PathVariable UUID orderId) {
+        return returns.findForBuyer(buyerRef, orderId);
     }
 
     @GetMapping("/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}")

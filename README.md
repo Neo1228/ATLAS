@@ -23,6 +23,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 Buyer 주문 내역: `GET /api/buyers/{buyerRef}/orders`는 인증된 Buyer의 Campaign·cart 주문 요약을 keyset cursor로 조회. 기본 limit 10, 최대 100; 상세는 `GET /api/orders/{orderId}`.
 Buyer 관심 상품 목록은 `GET /api/buyers/{buyerRef}/wishlist`로 페이지 조회하고, `POST`/`DELETE /api/buyers/{buyerRef}/wishlist/products/{productId}`로 멱등 저장·삭제. 본인 계정만 접근하며 장바구니·재고 예약과 분리됩니다.
 Verified buyer 상품 리뷰는 배송 완료된 본인 주문 상품만 작성할 수 있습니다: `POST /api/buyers/{buyerRef}/reviews`; 공개 평점·리뷰 페이지는 `GET /api/products/{productId}/reviews`입니다.
+반품은 배송 완료 후 구매자가 요청하고 Seller가 수령·검수합니다. 구매자는 `GET /api/buyers/{buyerRef}/orders/{orderId}/returns`로 자신의 주문에 대한 반품 목록과 단계별 상태를 조회합니다(`returnId` 없이). 단건 조회는 `GET /api/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}`입니다. 다른 구매자의 주문은 `NOT_FOUND`로 응답해 존재 여부를 드러내지 않습니다.
 계정 session은 `GET /api/auth/sessions`로 bounded 조회하고 `DELETE /api/auth/sessions/{familyId}`로 본인 family를 종료할 수 있습니다. Logout·비밀번호 재설정 뒤 관련 access JWT는 다음 요청부터 즉시 폐기됩니다.
 인증 시도는 주체(이메일)·출처(주소) 두 축으로 제한합니다. PBKDF2 검증 1회가 수십 ms의 CPU를 쓰므로, 실패 한도를 넘으면 **비밀번호 검증 전에** 거절하고 응답은 실제 인증 실패와 동일하게 유지합니다. 실패 기록은 인증 transaction과 분리해 rollback되어도 남으며, 정상 로그인은 카운터를 초기화합니다. MFA 코드 시도와 비밀번호 재설정·이메일 인증 메일 발송도 같은 한도를 공유합니다. 설정과 판단 근거는 [ADR-0048](docs/02-decisions/adr/ADR-0048-authentication-attempt-throttling.md)입니다.
 Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범위를 필터링하며, 기간 판매가가 활성인 동안에는 effective price 기준으로 cursor 페이지 조회합니다.
