@@ -31,6 +31,12 @@ request() {
 request "cold-public" "/api/products?limit=1&cacheProbe=$RUN_ID" 200 MISS
 request "warm-public" "/api/products?limit=1&cacheProbe=$RUN_ID" 200 HIT
 
+# Sale prices have start/end instants, so the public TTL is capped at one second
+# and stale-while-revalidate is deliberately disabled. After expiry the origin is
+# queried again instead of serving a potentially stale price.
+sleep 2
+request "expired-public" "/api/products?limit=1&cacheProbe=$RUN_ID" 200 EXPIRED
+
 # Query parameters are part of the cache key.
 request "different-query" "/api/products?limit=2&cacheProbe=$RUN_ID" 200 MISS
 
