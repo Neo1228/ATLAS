@@ -162,8 +162,10 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 .contains("\"value\":\"9.68\"")
                 .contains("\"return_url\":\"http://127.0.0.1:18080/api/orders/" + orderId + "/payment/return\"")
                 .contains("\"cancel_url\":\"http://127.0.0.1:18080/api/orders/" + orderId + "/payment/cancel\"");
-        RecordedRequest rateRequest = ECOS.takeRequest(2, TimeUnit.SECONDS);
-        assertThat(rateRequest).isNotNull();
+        // 결제 1건은 외부 환율 조회를 정확히 1회 만든다. 캐시는 TTL(60초) 안에서만 재사용하므로
+        // 새 컨텍스트의 첫 결제는 반드시 ECOS 를 호출한다.
+        RecordedRequest rateRequest = ECOS.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(rateRequest).as("first payment must call the FX API").isNotNull();
         assertThat(rateRequest.getPath()).contains("/json/kr/1/10/731Y001/D/");
         PaymentAttempt attempt = paymentAttempts.findById(pending.attemptId()).orElseThrow();
         assertThat(attempt.getTotalWon()).isEqualTo(12900L);
