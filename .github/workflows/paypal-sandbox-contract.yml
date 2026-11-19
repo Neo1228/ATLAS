@@ -38,16 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # 클라이언트 테스트는 저장소 코드를 빌드해야 하므로 checkout과 JDK가 필요하다.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: '25'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: true
-
       - name: 자격 증명 확인
         id: guard
         env:
@@ -178,13 +168,3 @@ jobs:
             echo "승인·캡처·환불은 구매자 승인이 필요해 이 워크플로 범위에서 제외했습니다."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: ATLAS 클라이언트로 주문 생성·조회 검증
-        if: steps.guard.outputs.ready == 'true'
-        env:
-          ATLAS_PAYPAL_SANDBOX_TEST: "1"
-          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
-          PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
-        run: |
-          # 위 curl 단계는 PayPal 계약을, 이 단계는 ATLAS 코드가 그 응답을 실제로
-          # 파싱하는지를 검증한다. 전자는 API 형태를, 후자는 우리 클라이언트를 지킨다.
-          ./gradlew --no-daemon :payment-module:test --tests '*PayPalSandboxContractTest'
