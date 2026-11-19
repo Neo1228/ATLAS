@@ -47,6 +47,10 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
                         .permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> { }))
+                .headers(headers -> headers
+                        .cacheControl(cache -> cache.disable())
+                        // 아래 필터가 공개 읽기 응답에만 캐시 정책을 다시 붙인다.
+                        .addHeaderWriter(new PublicReadCacheHeaderWriter()))
                 .build();
     }
 }
