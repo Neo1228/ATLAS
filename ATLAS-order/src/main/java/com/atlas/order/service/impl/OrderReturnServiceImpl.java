@@ -110,6 +110,24 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     @Override
+    public List<OrderReturnResponse> findForBuyer(String buyerRef, UUID orderId) {
+        if (buyerRef == null || buyerRef.isBlank() || orderId == null) {
+            throw invalid("Buyer and order are required");
+        }
+        // 읽기 전용이므로 row lock 을 잡지 않는다.
+        PurchaseOrder order = orders.findById(orderId)
+                .orElseThrow(() -> notFound("Order not found"));
+        if (!order.buyerRef().equals(buyerRef)) {
+            // 존재 여부를 노출하지 않도록 소유하지 않은 주문도 같은 응답을 쓴다.
+            throw notFound("Order not found");
+        }
+        return returns.findAllByOrderId(orderId).stream()
+                .filter(row -> row.buyerRef().equals(buyerRef))
+                .map(this::response)
+                .toList();
+    }
+
+    @Override
     public OrderReturnResponse receive(UUID sellerId, UUID orderId, UUID returnId) {
         if (sellerId == null || orderId == null || returnId == null) throw invalid("Seller, order and return are required");
         return Objects.requireNonNull(transactions.execute(tx -> {

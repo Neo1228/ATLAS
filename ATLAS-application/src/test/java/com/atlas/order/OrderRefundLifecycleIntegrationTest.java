@@ -790,6 +790,59 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         return jdbc.queryForObject("SELECT buyer_ref FROM purchase_order WHERE order_id = ?", String.class, orderId);
     }
 
+    @Test
+    void buyerCanListReturnsForAnOrderWithoutKnowingReturnIds() {
+        // 반품 요청 응답에는 returnId 가 있지만, 앱을 다시 열거나 기록을 잃으면 조회 수단이
+        // 없었다. 구매자는 진행 중인 반품 상태를 목록으로 확인할 수 있어야 한다.
+        Fixture fixture = paidOrder(1, 2, 125);
+        String buyerRef = buyerRef(fixture.orderId());
+        deliver(fixture);
+        OrderReturnResponse created = returns.request(returnRequest(buyerRef, fixture.orderId(),
+                "return-list-key", new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+
+        List<OrderReturnResponse> listed = returns.findForBuyer(buyerRef, fixture.orderId());
+
+        assertThat(listed).hasSize(1);
+        assertThat(listed.getFirst().returnId()).isEqualTo(created.returnId());
+        assertThat(listed.getFirst().status()).isEqualTo(OrderReturnStatus.REQUESTED);
+    }
+
+    @Test
+    void buyerReturnListEndpointReturnsRequestedReturns() throws Exception {
+        Fixture fixture = paidOrder(1, 2, 125);
+        String buyerRef = buyerRef(fixture.orderId());
+        deliver(fixture);
+        returns.request(returnRequest(buyerRef, fixture.orderId(), "return-http-key",
+                new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+
+        mockMvc.perform(get("/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, fixture.orderId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("REQUESTED"))
+                .andExpect(jsonPath("$[0].returnId").isNotEmpty());
+    }
+
+    @Test
+    void buyerCannotListAnotherBuyersReturns() {
+        Fixture fixture = paidOrder(1, 2, 125);
+        deliver(fixture);
+        returns.request(returnRequest(buyerRef(fixture.orderId()), fixture.orderId(),
+                "return-other-key", new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+
+        // 존재 여부를 노출하지 않도록 소유하지 않은 주문은 NOT_FOUND 다.
+        assertThatThrownBy(() -> returns.findForBuyer("someone-else", fixture.orderId()))
+                .isInstanceOfSatisfying(OrderException.class,
+                        error -> assertThat(error.code()).isEqualTo(OrderException.Code.NOT_FOUND));
+    }
+
+    @Test
+    void returnListIsEmptyWhenNoReturnWasRequested() {
+        Fixture fixture = paidOrder(1, 2, 125);
+        deliver(fixture);
+
+        assertThat(returns.findForBuyer(buyerRef(fixture.orderId()), fixture.orderId())).isEmpty();
+    }
+
     private OrderReturnRequest returnRequest(String buyerRef, UUID orderId, String key, OrderReturnRequest.Item item) {
         return new OrderReturnRequest(buyerRef, orderId, key, List.of(item));
     }
