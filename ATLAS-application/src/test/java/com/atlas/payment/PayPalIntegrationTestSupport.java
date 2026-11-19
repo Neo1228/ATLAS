@@ -21,6 +21,8 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.BeforeEach;
+import com.atlas.payment.provider.exchange.CachingExchangeRateProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -50,6 +52,8 @@ public abstract class PayPalIntegrationTestSupport {
     private static final AtomicBoolean DISCONNECT_NEXT_AUTHORIZATION = new AtomicBoolean();
     private static final AtomicBoolean DISCONNECT_NEXT_REFUND = new AtomicBoolean();
     private static final AtomicInteger CAPTURE_REQUEST_COUNT = new AtomicInteger();
+    /** 외부 환율 API 호출 수. 결제 임계 경로의 외부 의존 횟수를 세는 데 쓴다. */
+    private static final AtomicInteger EXCHANGE_RATE_REQUESTS = new AtomicInteger();
     private static final Queue<String> REFUND_REQUEST_IDS = new ConcurrentLinkedQueue<>();
     protected static void queueAuthorizationStatus(String status) { AUTHORIZATION_STATUSES.add(status); }
     protected static void queueOrderStatus(String status) { ORDER_STATUSES.add(status); }
@@ -68,10 +72,28 @@ public abstract class PayPalIntegrationTestSupport {
     /** 다음 refund POST를 stub에 기록한 뒤 응답 없이 연결을 끊는다. */
     protected static void disconnectNextRefundResponse() { DISCONNECT_NEXT_REFUND.set(true); }
     protected static int captureRequestCount() { return CAPTURE_REQUEST_COUNT.get(); }
+    protected static int exchangeRateRequestCount() { return EXCHANGE_RATE_REQUESTS.get(); }
+
+    /** 테스트 JVM 은 -D 를 상속하지 않으므로 환경변수로 지연을 주입한다. */
+    private static long parseEnvLong(String name) {
+        String raw = System.getenv(name);
+        if (raw == null || raw.isBlank()) return 0L;
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException invalid) {
+            return 0L;
+        }
+    }
     protected static List<String> refundRequestIds() { return List.copyOf(REFUND_REQUEST_IDS); }
+
+    @Autowired(required = false)
+    private CachingExchangeRateProvider fxCacheUnderTest;
 
     @BeforeEach
     protected void resetPayPalStubState() throws InterruptedException {
+        // 결제 테스트는 Spring context 를 공유한다. 앞선 테스트가 데운 환율 캐시를 비우지 않으면
+        // "결제 1건이 외부 호출 1회"라는 계약이 테스트 순서에 의존하게 된다.
+        if (fxCacheUnderTest != null) fxCacheUnderTest.clear();
         ORDERS.clear();
         AUTHORIZATIONS.clear();
         CAPTURES.clear();
@@ -94,6 +116,7 @@ public abstract class PayPalIntegrationTestSupport {
         DISCONNECT_NEXT_AUTHORIZATION.set(false);
         DISCONNECT_NEXT_REFUND.set(false);
         CAPTURE_REQUEST_COUNT.set(0);
+        EXCHANGE_RATE_REQUESTS.set(0);
         REFUND_REQUEST_IDS.clear();
         while (PAYPAL.takeRequest(0, TimeUnit.MILLISECONDS) != null) {
             // 이전 테스트의 미소비 요청을 제거한다.
@@ -250,6 +273,16 @@ public abstract class PayPalIntegrationTestSupport {
         ECOS.setDispatcher(new Dispatcher() {
             @Override
             public MockResponse dispatch(RecordedRequest request) {
+                EXCHANGE_RATE_REQUESTS.incrementAndGet();
+                // 외부 환율 API 의 네트워크 지연을 주입해 결제 임계 경로의 영향을 잰다.
+                long injected = parseEnvLong("FX_STUB_LATENCY_MS");
+                if (injected > 0) {
+                    try {
+                        Thread.sleep(injected);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
                 String date = LocalDate.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.BASIC_ISO_DATE);
                 return json("{\"StatisticSearch\":{\"row\":[{\"TIME\":\"" + date
                         + "\",\"DATA_VALUE\":\"1332.4\"}]}}");
