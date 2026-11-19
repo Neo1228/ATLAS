@@ -19,7 +19,7 @@ services:
       retries: 20
   mailpit:
     image: axllent/mailpit:v1.34.0
-    profiles: ["observability", "loadtest"]
+    profiles: ["observability", "loadtest", "edge-cache"]
     expose:
       - "1025"
       - "8025"
@@ -28,7 +28,7 @@ services:
     build:
       context: ./ATLAS-application
       dockerfile: Dockerfile
-    profiles: ["observability", "loadtest"]
+    profiles: ["observability", "loadtest", "edge-cache"]
     environment:
       SPRING_PROFILES_ACTIVE: observability
       ATLAS_SERVER_ADDRESS: 0.0.0.0
@@ -56,6 +56,24 @@ services:
     expose:
       - "8080"
       - "8081"
+    restart: unless-stopped
+
+  # Optional shared cache for public catalog GETs. It is opt-in so local behavior
+  # remains unchanged unless --profile edge-cache is selected. The cache is bounded
+  # on disk, bypasses Authorization requests, and coalesces concurrent misses.
+  catalog-edge-cache:
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    profiles: ["edge-cache"]
+    environment:
+      ATLAS_CACHE_UPSTREAM: ${ATLAS_CACHE_UPSTREAM:-application:8080}
+    volumes:
+      - ./config/nginx/catalog-cache.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - atlas-nginx-cache:/var/cache/nginx/catalog
+    ports:
+      - "127.0.0.1:18082:8080"
+    depends_on:
+      application:
+        condition: service_started
     restart: unless-stopped
 
   postgres-exporter:
@@ -156,3 +174,4 @@ services:
 volumes:
   atlas-postgres-data:
   atlas-prometheus-data:
+  atlas-nginx-cache:

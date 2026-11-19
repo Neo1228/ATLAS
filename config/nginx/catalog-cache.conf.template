@@ -1,0 +1,59 @@
+# Public catalog edge cache. This file is rendered by the official Nginx image's
+# envsubst entrypoint; only ATLAS_CACHE_UPSTREAM is interpolated.
+
+proxy_cache_path /var/cache/nginx/catalog
+    levels=1:2
+    keys_zone=atlas_public_catalog:16m
+    max_size=512m
+    inactive=10m
+    use_temp_path=off;
+
+# Any Authorization header bypasses both lookup and storage. Vary: Authorization
+# from the app is a second line of defense against cache-key confusion.
+map $http_authorization $skip_auth_cache {
+    default 1;
+    "" 0;
+}
+
+# Respect explicit client revalidation instead of serving a cached response.
+map $http_cache_control $skip_revalidation_cache {
+    default 0;
+    ~*(no-cache|no-store|max-age=0) 1;
+}
+
+upstream atlas_cache_origin {
+    server ${ATLAS_CACHE_UPSTREAM};
+    keepalive 64;
+}
+
+server {
+    listen 8080;
+    server_name _;
+
+    location / {
+        proxy_pass http://atlas_cache_origin;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Nginx caches GET/HEAD by default; state it explicitly for review.
+        proxy_cache_methods GET HEAD;
+        proxy_cache atlas_public_catalog;
+        proxy_cache_key "$scheme|$host|$request_uri";
+        proxy_cache_bypass $skip_auth_cache $skip_revalidation_cache;
+        proxy_no_cache $skip_auth_cache $skip_revalidation_cache $upstream_http_set_cookie;
+
+        # Product responses include time-bounded sale prices. One second is the
+        # maximum shared-cache age; do not serve stale prices while revalidating
+        # or when the origin errors. The app's no-store on errors/auth still wins.
+        proxy_cache_valid 200 1s;
+        proxy_cache_lock on;
+        proxy_cache_lock_timeout 5s;
+        proxy_cache_lock_age 5s;
+        proxy_cache_revalidate on;
+
+        add_header X-Cache-Status $upstream_cache_status always;
+    }
+}
