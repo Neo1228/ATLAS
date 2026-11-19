@@ -54,6 +54,9 @@ public abstract class PayPalIntegrationTestSupport {
     private static final AtomicInteger CAPTURE_REQUEST_COUNT = new AtomicInteger();
     /** 외부 환율 API 호출 수. 결제 임계 경로의 외부 의존 횟수를 세는 데 쓴다. */
     private static final AtomicInteger EXCHANGE_RATE_REQUESTS = new AtomicInteger();
+    /** PayPal stub 이 받은 요청을 경로별로 센다. 중복 provider 호출 진단에 쓴다. */
+    private static final Map<String, Integer> PROVIDER_CALLS =
+            new ConcurrentHashMap<>();
     private static final Queue<String> REFUND_REQUEST_IDS = new ConcurrentLinkedQueue<>();
     protected static void queueAuthorizationStatus(String status) { AUTHORIZATION_STATUSES.add(status); }
     protected static void queueOrderStatus(String status) { ORDER_STATUSES.add(status); }
@@ -73,6 +76,11 @@ public abstract class PayPalIntegrationTestSupport {
     protected static void disconnectNextRefundResponse() { DISCONNECT_NEXT_REFUND.set(true); }
     protected static int captureRequestCount() { return CAPTURE_REQUEST_COUNT.get(); }
     protected static int exchangeRateRequestCount() { return EXCHANGE_RATE_REQUESTS.get(); }
+
+    /** 경로별 provider 호출 수 스냅샷. */
+    protected static Map<String, Integer> providerCalls() {
+        return Map.copyOf(PROVIDER_CALLS);
+    }
 
     /** 테스트 JVM 은 -D 를 상속하지 않으므로 환경변수로 지연을 주입한다. */
     private static long parseEnvLong(String name) {
@@ -117,6 +125,7 @@ public abstract class PayPalIntegrationTestSupport {
         DISCONNECT_NEXT_REFUND.set(false);
         CAPTURE_REQUEST_COUNT.set(0);
         EXCHANGE_RATE_REQUESTS.set(0);
+        PROVIDER_CALLS.clear();
         REFUND_REQUEST_IDS.clear();
         while (PAYPAL.takeRequest(0, TimeUnit.MILLISECONDS) != null) {
             // 이전 테스트의 미소비 요청을 제거한다.
@@ -156,6 +165,7 @@ public abstract class PayPalIntegrationTestSupport {
                 String path = request.getPath() == null ? "" : request.getPath().split("\\?", 2)[0];
                 String method = request.getMethod();
                 String body = request.getBody().clone().readUtf8();
+                PROVIDER_CALLS.merge(method + " " + path, 1, Integer::sum);
                 if (path.equals("/v1/oauth2/token")) {
                     return json("{\"access_token\":\"local-access-token\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
                 }
