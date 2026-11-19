@@ -56,6 +56,7 @@ class PayPalSandboxContractTest {
                 authorizedClientManager(properties), new ObjectMapper());
 
         String requestId = "atlas-sandbox-contract-" + System.nanoTime();
+
         PayPalRestClient.OrderResult created = client.createOrder("atlas-contract",
                 new BigDecimal("1.00"), "USD", "https://example.test/return",
                 "https://example.test/cancel", requestId);
@@ -63,7 +64,13 @@ class PayPalSandboxContractTest {
         // ATLAS가 실제로 읽는 필드가 응답에 있어야 한다.
         assertThat(created.id()).as("order id").isNotBlank();
         assertThat(created.status()).as("order status").isEqualTo("CREATED");
-        assertThat(created.approvalUrl()).as("approve link").isNotBlank();
+        // Sandbox는 payment_source에 따라 approve 또는 payer-action 링크를 준다.
+        // 클라이언트가 두 rel을 모두 처리하는지, 아니면 링크 자체가 없는지를 구분하려면
+        // 실제 응답의 rel 목록을 봐야 한다. 실패 시 바로 보이도록 함께 단정한다.
+        assertThat(created.approvalUrl())
+                .as("approval link rel (approve 또는 payer-action)이 응답에 있어야 한다. "
+                        + "status=%s", created.status())
+                .isNotBlank();
 
         PayPalRestClient.OrderStatus fetched = client.getOrder(created.id());
         assertThat(fetched.status()).isEqualTo("CREATED");
