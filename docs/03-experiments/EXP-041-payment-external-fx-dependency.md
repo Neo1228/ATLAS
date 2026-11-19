@@ -116,3 +116,43 @@ sum by (instance) (rate(http_client_requests_seconds_count{uri=~".*StatisticSear
 ### 교훈
 
 "가장 작은 변경"을 찾을 때, 새 계측을 설계하기 전에 **이미 존재하는 계측을 먼저 확인**해야 한다. 이 실험에서 그 순서를 지키지 않아 세 번의 구현 시도가 낭비됐다.
+
+## 추가: replica 간 측정 시도와 환경 제약 (미완)
+
+replica 수에 따른 외부 호출 배수를 실측하려 했다. **완료하지 못했고, 그 원인을 남긴다.**
+
+### 구성한 것
+
+현재 코드로 `bootJar` 빌드 → 격리 PostgreSQL(15432) + `load-tests/paypal-stub.py`(18100) + ECOS stub(18099) + app(18090, `observability` profile). V49 마이그레이션 적용 확인. 기존 `load-tests/buyer-checkout.js` 로 signup → seller onboarding → product/SKU → cart → checkout → payment 전 구간 성공.
+
+이 과정에서 outbound 호출이 실제로 관측되는 것을 확인했다:
+
+```text
+http_client_requests_seconds_count{client_name="127.0.0.1", status="CLIENT_ERROR",
+  uri="/api/StatisticSearch/{key}/json/kr/1/10/731Y001/D/{from}/{to}/0000001/"} 8
+```
+
+### 막힌 지점
+
+`PayPalProperties.validateBaseUrl` 은 PayPal base URL 호스트를 `localhost` / `127.0.0.1` / `::1` / sandbox 로만 허용한다. 이 런타임(Colima VM)은 `--network host` 에서도 컨테이너 네트워크 네임스페이스를 분리한다. 따라서:
+
+- 컨테이너의 `127.0.0.1` 은 호스트 stub 이 아니다
+- 호스트 bridge 주소(`172.17.0.1` 등)는 검증에서 거부된다
+
+결과적으로 앱이 ECOS stub 에 도달하지 못하고 `ResourceAccessException`(회당 ~8ms 로 빠른 실패)이 발생했다. 검증을 우회하면 측정이 아니라 설정 변경이 되므로 하지 않았다.
+
+### 이미 측정된 것
+
+`FxRateCallCostIntegrationTest` 가 실제 HTTP 경로로 검증한다(통과 중):
+
+| 시나리오 | FX 외부 호출 |
+|---|---:|
+| 결제 3건 | 1회 |
+| 같은 금액 5회 변환 | 1회 |
+| 8스레드 동시 콜드 스타트 | 1회 |
+
+단일 인스턴스에서 캐시·단일 비행은 실측으로 확인됐다. **남은 것은 replica 간 배수뿐**이며 이 환경에서는 재현할 수 없다.
+
+### 다음 시도에서 필요한 것
+
+컨테이너 런타임이 `--network host` 를 실제로 공유하거나, stub 을 앱과 **같은 네임스페이스**에 두어야 한다(예: stub 을 앱 컨테이너 안에서 실행, 또는 검증 허용 호스트가 같은 네임스페이스를 가리키게 구성). 또는 운영과 동일한 compose 스택에서 replica 수만 늘려 측정한다.
