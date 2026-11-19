@@ -17,6 +17,12 @@ scrape_configs:
       - targets: ["app-c:8081"]
         labels:
           instance_name: app-c
+      - targets: ["app-d:8081"]
+        labels:
+          instance_name: app-d
+      - targets: ["app-e:8081"]
+        labels:
+          instance_name: app-e
 
   - job_name: postgres
     static_configs:
