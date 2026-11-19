@@ -32,8 +32,34 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
     List<UUID> findExpiredOrderIds(@Param("state") OrderState state, @Param("now") Instant now,
             Limit limit);
 
-    @Query("select distinct po.checkoutId from PurchaseOrder po where po.checkoutId is not null "
-            + "and po.state = :state and po.checkoutExpiresAt <= :now order by po.checkoutId")
+    /**
+     * 만료된 checkout 후보를 조회합니다.
+     *
+     * <p>{@code ORDER BY checkout_id} 를 쓰지 않습니다. 그 정렬은
+     * {@code (checkout_id, seller_id)} 인덱스로 만족되지만, 그 인덱스로는
+     * {@code state}·{@code checkout_expires_at} 필터를 걸러낼 수 없습니다.
+     * 플래너는 정렬 비용 0 을 이유로 그 계획을 고르고, 결과적으로 LIMIT 이
+     * 조기 종료되지 못해 {@code purchase_order} 전체를 훑습니다.
+     *
+     * <p>실측(로컬, 10,934행 중 RESERVED 810행): 기존 계획은 buffer 9,960 /
+     * 4.7–23 ms, {@code purchase_order_expiry_idx} 를 쓰는 아래 형태는
+     * buffer 16 / 0.376 ms 입니다. 같은 조건의 주문 sweep 과 같은 정렬 키를
+     * 써서 두 sweep 이 같은 부분 인덱스를 공유하게 합니다.
+     *
+     * <p>정렬은 {@code checkout_expires_at} 다음에 {@code checkout_id} 를 둡니다.
+     * 만료 시각만으로 정렬하면 같은 시각의 후보 순서가 비결정적이 되는데,
+     * 다중 인스턴스 만료 테스트가 특정 checkout 이 먼저 처리되는 것에 의존합니다.
+     * {@code checkout_id} 를 타이브레이커로 두면 순서가 확정적이면서도 첫 키가
+     * 부분 인덱스와 일치해 incremental sort 로 처리됩니다(실측 buffer 21).
+     *
+     * <p>정렬 키가 select 목록에 있어야 하므로 {@code distinct} 는 두지 않습니다
+     * (PostgreSQL 은 {@code SELECT DISTINCT} 와 그 밖의 정렬 표현식을 함께 허용하지
+     * 않습니다). 한 checkout 의 주문들은 만료 시각이 같아 중복이 생길 수 있고,
+     * 호출자가 같은 checkout 의 두 번째 처리에서 {@code state} 를 다시 확인해
+     * 0 을 반환하므로 중복은 무해합니다. 배치 크기는 중복을 포함해 제한됩니다.
+     */
+    @Query("select po.checkoutId from PurchaseOrder po where po.checkoutId is not null "
+            + "and po.state = :state and po.checkoutExpiresAt <= :now order by po.checkoutExpiresAt, po.checkoutId")
     List<UUID> findExpiredCheckoutIds(@Param("state") OrderState state, @Param("now") Instant now,
             Limit limit);
 
