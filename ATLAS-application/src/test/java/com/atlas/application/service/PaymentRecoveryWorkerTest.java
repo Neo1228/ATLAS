@@ -18,6 +18,7 @@ import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentRecoveryJob;
 import com.atlas.payment.persistence.state.PaymentRecoveryOperationType;
+import com.atlas.payment.persistence.state.PaymentRecoveryWorkStage;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.service.PaymentRecoveryService;
@@ -193,7 +194,8 @@ class PaymentRecoveryWorkerTest {
 
     private static PaymentRecoveryJob job(PaymentRecoveryOperationType type, UUID operationId) {
         return new PaymentRecoveryJob(
-                UUID.randomUUID(), type, operationId, 1, Instant.now(), UUID.randomUUID());
+                UUID.randomUUID(), type, PaymentRecoveryWorkStage.PROVIDER,
+                operationId, 1, Instant.now(), UUID.randomUUID());
     }
 
     private static PaymentRefundResponse refund(UUID refundId, UUID attemptId, PaymentRefundState status) {

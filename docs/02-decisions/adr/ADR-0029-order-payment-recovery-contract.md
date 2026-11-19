@@ -7,6 +7,8 @@
 
 주문, payment provider, inventory, refund, settlement는 서로 다른 상태를 소유한다. 특히 외부 provider timeout은 결제 미실행을 뜻하지 않으며, 여러 모듈의 상태를 하나의 `success/failure` 값으로 축약하면 중복 청구 또는 재고 조기 해제 위험이 있다. 이 문서는 기존 구현과 선행 ADR의 계약을 한곳에서 연결해 설명한다. 현재 구현을 넘어서는 분산 workflow 인프라를 새로 결정하지 않는다.
 
+> 결정 범위 업데이트: 당시에는 provider retry와 client replay를 선택했지만 실제 commit 사이 crash window가 확인됐다. 주문·checkout·refund intent의 durable dispatch와 local application은 [ADR-0046](ADR-0046-order-payment-transactional-outbox.md)이 대체한다. 아래 기존 provider idempotency, SSOT, inventory-release 계약은 계속 유효하다.
+
 ## 현재 계약
 
 | 대상 | 상태/권한 계약 | 근거 |

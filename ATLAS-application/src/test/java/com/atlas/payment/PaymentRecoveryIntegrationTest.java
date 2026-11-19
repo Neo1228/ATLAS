@@ -84,6 +84,7 @@ class PaymentRecoveryIntegrationTest {
     void onlyOneConcurrentWorkerClaimsAnOperationAndExpiredLeaseFencesStaleCompletion() throws Exception {
         UUID attemptId = createAttempt();
         recovery.enqueueAttempt(attemptId, Duration.ZERO);
+        recovery.markAttemptForApplication(attemptId);
         UUID firstToken = UUID.randomUUID();
         UUID secondToken = UUID.randomUUID();
         CountDownLatch start = new CountDownLatch(1);

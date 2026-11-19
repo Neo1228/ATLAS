@@ -252,6 +252,14 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             for (OrderRefundRequest.Item line : requestItems) {
                 refunds.insertRequestItem(refundId, line.orderItemId(), line.quantity());
             }
+            if (refunds.paymentStatus(refundId) != OrderRefundPaymentStatus.NOT_APPLICABLE) {
+                PaymentRefundResponse payment = order.checkoutId() == null
+                        ? payments.prepareRefundOrder(orderId, idempotencyKey, recordedAmountWon)
+                        : payments.prepareRefundCheckout(
+                                order.checkoutId(), idempotencyKey, recordedAmountWon);
+                refunds.linkPaymentOperation(refundId, payment.refundOperationId());
+                refunds.updatePaymentStatus(refundId, refundStatus(payment.status()));
+            }
             return refunds.findByIdempotencyKey(idempotencyKey)
                     .orElseThrow(() -> new IllegalStateException("Refund request was not persisted"));
         }));
@@ -283,6 +291,11 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                             "Order refund request not found"));
             if (changed && currentStatus == OrderRefundPaymentStatus.COMPLETED) {
                 applyConfirmedRefund(current);
+            }
+            if ((currentStatus == OrderRefundPaymentStatus.COMPLETED
+                    || currentStatus == OrderRefundPaymentStatus.FAILED)
+                    && payment.refundOperationId() != null) {
+                payments.markRefundApplied(payment.refundOperationId());
             }
             RefundRecord updated = refunds.findByIdempotencyKey(reserved.idempotencyKey()).orElse(current);
             return response(updated, currentStatus, payment.providerRefundId());

@@ -5,6 +5,7 @@ import com.atlas.payment.dto.response.PaymentRecoveryReviewItem;
 import com.atlas.payment.persistence.projection.ClaimedPaymentRecoveryJob;
 import com.atlas.payment.persistence.projection.PaymentRecoveryReviewRow;
 import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
+import com.atlas.payment.persistence.state.PaymentRecoveryWorkStage;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.service.PaymentRecoveryService;
 import java.time.Duration;
@@ -36,6 +37,26 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
         recovery.enqueueRefund(refundOperationId, initialDelay);
     }
 
+
+    @Override
+    public void markAttemptForApplication(UUID attemptId) {
+        recovery.markAttemptForApplication(attemptId);
+    }
+
+    @Override
+    public void markRefundForApplication(UUID refundOperationId) {
+        recovery.markRefundForApplication(refundOperationId);
+    }
+
+    @Override
+    public void markAttemptApplied(UUID attemptId) {
+        recovery.markAttemptApplied(attemptId);
+    }
+
+    @Override
+    public void markRefundApplied(UUID refundOperationId) {
+        recovery.markRefundApplied(refundOperationId);
+    }
     @Override
     public void expireExhausted(int maxAttempts, Duration maxAge) {
         recovery.expireExhausted(maxAttempts, maxAge);
@@ -92,24 +113,34 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
+    public long count(PaymentRecoveryJobStatus status, PaymentRecoveryWorkStage stage) {
+        return recovery.count(status, stage);
+    }
+
+    @Override
     public double oldestDueAgeSeconds() {
         return recovery.oldestDueAgeSeconds();
     }
 
+    @Override
+    public double oldestDueAgeSeconds(PaymentRecoveryWorkStage stage) {
+        return recovery.oldestDueAgeSeconds(stage);
+    }
+
     private static PaymentRecoveryJob toDto(ClaimedPaymentRecoveryJob job) {
-        return new PaymentRecoveryJob(job.recoveryJobId(), job.operationType(), job.operationId(),
-                job.attemptCount(), job.firstEnqueuedAt(), job.leaseToken());
+        return new PaymentRecoveryJob(job.recoveryJobId(), job.operationType(), job.workStage(),
+                job.operationId(), job.attemptCount(), job.firstEnqueuedAt(), job.leaseToken());
     }
 
     private static ClaimedPaymentRecoveryJob toProjection(PaymentRecoveryJob job) {
         return new ClaimedPaymentRecoveryJob(
-                job.recoveryJobId(), job.operationType(), job.operationId(),
+                job.recoveryJobId(), job.operationType(), job.workStage(), job.operationId(),
                 job.attemptCount(), job.firstEnqueuedAt(), job.leaseToken());
     }
 
     private static PaymentRecoveryReviewItem toDto(PaymentRecoveryReviewRow item) {
-        return new PaymentRecoveryReviewItem(item.recoveryJobId(), item.operationType(), item.operationId(),
-                item.paymentAttemptId(), item.orderId(), item.checkoutId(), item.attemptCount(),
+        return new PaymentRecoveryReviewItem(item.recoveryJobId(), item.operationType(), item.workStage(),
+                item.operationId(), item.paymentAttemptId(), item.orderId(), item.checkoutId(), item.attemptCount(),
                 item.manualRequeueCount(), item.firstEnqueuedAt(), item.lastAttemptAt(), item.lastErrorCode());
     }
 }

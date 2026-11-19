@@ -86,7 +86,7 @@ public class PaymentRefundRepository {
             String providerStatus, Instant updatedAt) {
         int updated = jdbc.update("""
                 UPDATE payment_refund_operation
-                SET refund_state = CASE WHEN refund_state = 'COMPLETED' THEN refund_state ELSE ? END,
+                SET refund_state = CASE WHEN refund_state IN ('COMPLETED', 'FAILED') THEN refund_state ELSE ? END,
                     provider_refund_id = COALESCE(?, provider_refund_id),
                     provider_status = COALESCE(?, provider_status),
                     updated_at = ?

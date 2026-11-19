@@ -3,6 +3,7 @@ package com.atlas.payment.service;
 import com.atlas.payment.dto.response.PaymentRecoveryJob;
 import com.atlas.payment.dto.response.PaymentRecoveryReviewItem;
 import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
+import com.atlas.payment.persistence.state.PaymentRecoveryWorkStage;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -11,6 +12,10 @@ public interface PaymentRecoveryService {
     void enqueueAttempt(UUID attemptId, Duration initialDelay);
     void activateAttemptFromBuyer(UUID attemptId, Duration initialDelay);
     void enqueueRefund(UUID refundOperationId, Duration initialDelay);
+    void markAttemptForApplication(UUID attemptId);
+    void markRefundForApplication(UUID refundOperationId);
+    void markAttemptApplied(UUID attemptId);
+    void markRefundApplied(UUID refundOperationId);
     void expireExhausted(int maxAttempts, Duration maxAge);
     List<PaymentRecoveryJob> claimDue(
             int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge);
@@ -24,5 +29,7 @@ public interface PaymentRecoveryService {
     boolean markNeedsReview(PaymentRecoveryJob job, String errorCode);
     List<PaymentRecoveryReviewItem> listNeedsReview(int limit, int offset);
     long count(PaymentRecoveryJobStatus status);
+    long count(PaymentRecoveryJobStatus status, PaymentRecoveryWorkStage stage);
+    double oldestDueAgeSeconds(PaymentRecoveryWorkStage stage);
     double oldestDueAgeSeconds();
 }

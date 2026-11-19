@@ -199,12 +199,13 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 
 ## 결제·환불 복구 운영
 
-`PaymentAttempt`와 `PaymentRefundOperation`의 미확정 provider 작업은 PostgreSQL `payment_recovery_job`에 원자적으로 기록되고, lease 기반 worker가 기존 order/checkout/refund 재조정 경로를 사용해 복구합니다. 외부 message broker를 추가하지 않으며, at-least-once 재실행은 저장된 provider request ID와 상태 검증에 의존합니다. 구매자 승인 redirect 대기 상태는 자동 재요청하지 않고 결제·재고는 provider 결과가 확정될 때까지 해제하지 않습니다. 자세한 상태·장애·절충은 [ADR-0038](docs/02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md)을 참고하세요.
+`PaymentAttempt`와 `PaymentRefundOperation`은 주문/checkout/refund 업무 변경과 **같은 transaction**에서 PostgreSQL `payment_recovery_job`에 기록됩니다. job은 `PROVIDER`(PayPal 호출/대조) → `APPLY`(주문·재고·fulfillment·정산 반영) 두 단계로 진행하며, owner 적용과 job 완료가 한 transaction이라 중간 종료 시 둘 다 rollback되어 재전달됩니다. lease 기반 worker가 두 단계를 stage별로 claim해 복구합니다. 외부 message broker를 추가하지 않으며, at-least-once 재실행은 저장된 provider request ID와 상태 검증에 의존합니다. 구매자 승인 redirect 대기 상태는 자동 재요청하지 않고 결제·재고는 provider 결과가 확정될 때까지 해제하지 않습니다. 자세한 상태·장애·절충은 [ADR-0038](docs/02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md)을 참고하세요.
 
 - Worker 기본 활성화: `ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED=true`. Initial delay 30초, poll 1초, batch 최대 10건(각 작업은 개별 claim), lease 60초, 최대 자동 시도 8회/24시간. `ATLAS_PAYMENT_RECOVERY_*` 환경 변수로 조정할 수 있습니다.
 - `NEEDS_REVIEW`는 `/api/internal/payment/recovery/needs-review?limit=20&offset=0`에서 조회합니다. `/api/internal/payment/recovery/{recoveryJobId}/requeue`는 Idempotency-Key와 검토 사유가 필요하며 task당 최대 3회입니다.
 - Operator API는 기본 비활성화(`ATLAS_PAYMENT_RECOVERY_OPERATOR_ENABLED=false`)입니다. 활성화 시 별도 Basic-auth 사용자와 32자 이상의 password가 필요하며, 인증정보는 secret manager/environment에서만 공급합니다.
-- Prometheus metric prefix: `atlas.payment.recovery.*` (status별 backlog, `oldest_due_age_seconds`, operation별 claim/retry/failure/completion, 처리 duration). `UNKNOWN` 또는 `NEEDS_REVIEW`를 성공/실패로 수동 간주하지 않습니다.
+- Prometheus metric prefix: `atlas.payment.recovery.*` (status별 backlog, stage별 `work_stage`+`status` backlog와 `oldest_due_age_seconds`, operation별 claim/retry/failure/completion, `operation_type`+`work_stage` 처리 duration). `work_stage=APPLY`의 pending count/age가 provider 결과 확정 후 owner 반영까지의 지연을 나타냅니다. `UNKNOWN` 또는 `NEEDS_REVIEW`를 성공/실패로 수동 간주하지 않습니다.
+- 자세한 단계·crash window·검증은 [ADR-0046](docs/02-decisions/adr/ADR-0046-order-payment-transactional-outbox.md)에 정리했습니다.
 
 ## 만료 sweep 운영
 

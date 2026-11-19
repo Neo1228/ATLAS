@@ -115,6 +115,16 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 throw new OrderException(OrderException.Code.CONFLICT,
                         "Checkout is not eligible for payment submission");
             }
+            if (checkout.state() == BuyerCheckoutState.PAYMENT_PENDING
+                    || checkout.state() == BuyerCheckoutState.PAYMENT_UNKNOWN) {
+                PaymentResponse attempt = payments.prepareCheckout(
+                        checkoutId, BigDecimal.valueOf(checkout.totalWon()));
+                for (PurchaseOrder order : orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId)) {
+                    if (order.state() == OrderState.PAYMENT_SUBMITTED) {
+                        order.updateState(OrderState.PAYMENT_SUBMITTED, attempt.attemptId(), clock.instant());
+                    }
+                }
+            }
             return checkout;
         });
         if (prepared == null || (prepared.state() != BuyerCheckoutState.PAYMENT_PENDING
@@ -335,6 +345,14 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 }
                 for (PurchaseOrder order : children) order.updateState(childState, payment.attemptId(), now);
                 checkout.update(checkoutState, checkout.totalWon(), now);
+            }
+            if (payment.attemptId() != null
+                    && (checkout.state() == BuyerCheckoutState.PAID
+                    || checkout.state() == BuyerCheckoutState.FAILED
+                    || checkout.state() == BuyerCheckoutState.CANCELLED
+                    || checkout.state() == BuyerCheckoutState.EXPIRED)
+                    && !payment.authorizationActive()) {
+                payments.markOwnerApplied(payment.attemptId());
             }
             return checkout;
         });

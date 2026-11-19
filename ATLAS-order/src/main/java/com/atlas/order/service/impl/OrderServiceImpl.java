@@ -188,6 +188,14 @@ public final class OrderServiceImpl implements OrderService {
             if (order.state() == OrderState.RESERVED) {
                 updateOrderState(orderId, OrderState.PAYMENT_SUBMITTED, order.paymentAttemptId(), clock.instant());
             }
+            PurchaseOrder submitted = requireOrder(orderId);
+            if (submitted.state() == OrderState.PAYMENT_SUBMITTED) {
+                PaymentResponse attempt = payments.prepareInitial(
+                        orderId, BigDecimal.valueOf(paymentAmountWon(orderId)));
+                if (!Objects.equals(submitted.paymentAttemptId(), attempt.attemptId())) {
+                    updateOrderState(orderId, OrderState.PAYMENT_SUBMITTED, attempt.attemptId(), clock.instant());
+                }
+            }
             return requireOrder(orderId);
         });
         if (prepared.state() != OrderState.PAYMENT_SUBMITTED) return find(orderId);
@@ -424,6 +432,9 @@ public final class OrderServiceImpl implements OrderService {
             };
             updateOrderState(orderId, next, payment.attemptId(), clock.instant());
             if (next == OrderState.PAID) fulfillmentService.initialize(orderId);
+            if (next.isTerminal() && !payment.authorizationActive() && payment.attemptId() != null) {
+                payments.markOwnerApplied(payment.attemptId());
+            }
             return toResponse(requireOrder(orderId));
         });
     }

@@ -17,6 +17,7 @@ import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.service.PaymentRecoveryService;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.payment.persistence.state.PaymentRecoveryWorkStage;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -95,6 +96,19 @@ public class PaymentRecoveryWorker {
                     .tag("status", status.name())
                     .register(meters);
         }
+        for (PaymentRecoveryWorkStage stage : PaymentRecoveryWorkStage.values()) {
+            for (PaymentRecoveryJobStatus status : PaymentRecoveryJobStatus.values()) {
+                Gauge.builder("atlas.payment.recovery.stage.jobs", recovery,
+                        service -> service.count(status, stage))
+                        .tag("work_stage", stage.name())
+                        .tag("status", status.name())
+                        .register(meters);
+            }
+            Gauge.builder("atlas.payment.recovery.stage.oldest_due_age_seconds",
+                    recovery, service -> service.oldestDueAgeSeconds(stage))
+                    .tag("work_stage", stage.name())
+                    .register(meters);
+        }
         Gauge.builder("atlas.payment.recovery.oldest_due_age_seconds",
                 recovery, PaymentRecoveryService::oldestDueAgeSeconds).register(meters);
     }
@@ -148,39 +162,55 @@ public class PaymentRecoveryWorker {
             }
         } finally {
             sample.stop(Timer.builder("atlas.payment.recovery.duration")
-                    .tag("operation_type", job.operationType().name()).register(meters));
+                    .tag("operation_type", job.operationType().name())
+                    .tag("work_stage", job.workStage().name()).register(meters));
         }
     }
 
     private void recoverPayment(PaymentRecoveryJob job) {
         PaymentResponse current = payments.findByAttemptId(job.operationId());
-        if (terminal(current.state())) {
-            recordCompletion(job);
+        if (current == null) {
+            recovery.markNeedsReview(job, "PAYMENT_ATTEMPT_MISSING");
+            counter("needs_review", job.operationType()).increment();
+            return;
+        }
+        if (job.workStage() == PaymentRecoveryWorkStage.APPLY
+                || (terminal(current.state()) && !current.authorizationActive())) {
+            reconcilePaymentOwner(job, current);
+            PaymentResponse result = payments.findByAttemptId(job.operationId());
+            settle(job, terminal(result.state()) && !result.authorizationActive(), awaitingBuyer(result));
             return;
         }
         if (awaitingBuyer(current)) {
             recovery.waitForBuyer(job);
             return;
         }
+        reconcilePaymentOwner(job, current);
+        PaymentResponse result = payments.findByAttemptId(job.operationId());
+        settle(job, terminal(result.state()) && !result.authorizationActive(), awaitingBuyer(result));
+    }
+
+    private void reconcilePaymentOwner(PaymentRecoveryJob job, PaymentResponse payment) {
         String idempotencyKey = "payment-recovery-" + job.operationId();
-        if (current.orderId() != null) {
-            orders.reconcilePayment(current.orderId(), idempotencyKey);
-        } else if (current.checkoutId() != null) {
-            checkouts.reconcile(current.checkoutId(), idempotencyKey);
+        if (payment.orderId() != null) {
+            orders.reconcilePayment(payment.orderId(), idempotencyKey);
+        } else if (payment.checkoutId() != null) {
+            checkouts.reconcile(payment.checkoutId(), idempotencyKey);
         } else {
             recovery.markNeedsReview(job, "PAYMENT_OWNER_MISSING");
             counter("needs_review", job.operationType()).increment();
-            return;
         }
-        PaymentResponse result = payments.findByAttemptId(job.operationId());
-        settle(job, terminal(result.state()), awaitingBuyer(result));
     }
 
     private void recoverRefund(PaymentRecoveryJob job) {
         PaymentRefundResponse current = payments.findRefundOperation(job.operationId());
-        if (terminal(current.status())) {
-            recordCompletion(job);
+        if (current == null) {
+            recovery.markNeedsReview(job, "REFUND_OPERATION_MISSING");
+            counter("needs_review", job.operationType()).increment();
             return;
+        }
+        if (!terminal(current.status())) {
+            payments.retryRefundOperation(job.operationId());
         }
         refunds.reconcilePayPalRefund(job.operationId());
         PaymentRefundResponse result = payments.findRefundOperation(job.operationId());
