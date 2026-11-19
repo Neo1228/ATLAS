@@ -77,13 +77,35 @@ services:
     profiles: ["observability"]
     command:
       - --config.file=/etc/prometheus/prometheus.yml
+      # 부하 실험 사이 비교가 가능하도록 시계열을 보관한다. 볼륨이 없으면 컨테이너
+      # 재시작마다 모든 지표가 사라져 "이 측정이 유효했는가"를 사후에 판정할 수 없다.
+      - --storage.tsdb.retention.time=${ATLAS_PROMETHEUS_RETENTION:-30d}
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - atlas-prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
     depends_on:
       - application
       - postgres-exporter
+    restart: unless-stopped
+
+  # 호스트 부하를 시계열로 남긴다. 이 저장소의 측정 규칙은 "측정 없이 성능을
+  # 주장하지 않는다" 이지만, 정작 측정 환경의 상태(load average, 메모리 압박)를
+  # 기록하지 않아 호스트 과부하 상태의 값을 정상 값과 구분하지 못했다.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    profiles: ["observability"]
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "127.0.0.1:9100:9100"
     restart: unless-stopped
 
   grafana:
@@ -133,3 +155,4 @@ services:
 
 volumes:
   atlas-postgres-data:
+  atlas-prometheus-data:
