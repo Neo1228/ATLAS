@@ -29,6 +29,7 @@ import org.springframework.web.client.RestClientException;
 @ConditionalOnProperty(name = "atlas.payment.provider", havingValue = "paypal")
 public class PayPalRestClient {
     private static final String REQUEST_ID = "PayPal-Request-Id";
+    private static final String PREFER = "Prefer";
     private static final String REGISTRATION_ID = "paypal";
 
     private final RestClient.Builder builder;
@@ -66,8 +67,14 @@ public class PayPalRestClient {
     }
 
     public OrderStatus getOrder(String orderId) {
-        Map<String, Object> response = api().get().uri("/v2/checkout/orders/{id}", orderId)
-                .retrieve().body(mapType());
+        Map<String, Object> response;
+        try {
+            response = api().get().uri("/v2/checkout/orders/{id}", orderId).retrieve().body(mapType());
+        } catch (RestClientException exception) {
+            // 다른 호출과 같이 provider 장애로 감싼다. 감싸지 않으면 승인 반영 중 연결 시간 초과가
+            // 500 으로 새어 나가고 결제 시도는 UNKNOWN 으로 기록되지 않아 복구 worker 가 재시도하지 못한다.
+            throw new PayPalUnavailableException("PayPal order lookup failed", exception);
+        }
         Map<String, Object> authorization = firstResource(response, "authorization");
         Map<String, Object> capture = firstResource(response, "capture");
         return new OrderStatus(text(response, "id"), text(response, "status"),
@@ -97,9 +104,13 @@ public class PayPalRestClient {
     }
 
     public void voidAuthorization(String authorizationId, String requestId) {
-        api().post().uri("/v2/payments/authorizations/{id}/void", authorizationId)
-                .header(REQUEST_ID, requestId).contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of()).retrieve().toBodilessEntity();
+        try {
+            api().post().uri("/v2/payments/authorizations/{id}/void", authorizationId)
+                    .header(REQUEST_ID, requestId).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of()).retrieve().toBodilessEntity();
+        } catch (RestClientException exception) {
+            throw new PayPalUnavailableException("PayPal authorization void failed", exception);
+        }
     }
 
     public RefundResult refundCapture(String captureId, BigDecimal amount, String currency, String requestId) {
@@ -192,7 +203,9 @@ public class PayPalRestClient {
     private Map<String, Object> post(String uri, Object body, String requestId) {
         validateRequestId(requestId);
         try {
-            return api().post().uri(uri).header(REQUEST_ID, requestId)
+            // PayPal 기본값(return=minimal)은 capture·refund 응답에서 amount 를 빼므로, 성공한 capture 도
+            // 금액 검증에 실패해 UNKNOWN 이 된다(실제 Sandbox 확인). 전체 표현을 명시적으로 요청한다.
+            return api().post().uri(uri).header(REQUEST_ID, requestId).header(PREFER, "return=representation")
                     .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(mapType());
         } catch (RestClientException exception) {
             throw new PayPalUnavailableException("PayPal API request failed", exception);

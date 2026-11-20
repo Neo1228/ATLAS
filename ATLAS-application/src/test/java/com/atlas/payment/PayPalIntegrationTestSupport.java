@@ -242,7 +242,10 @@ public abstract class PayPalIntegrationTestSupport {
                     if (DISCONNECT_NEXT_CAPTURE.compareAndSet(true, false)) {
                         return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
                     }
-                    return captureResource(captureId, amount, nextStatus(CAPTURE_STATUSES, "COMPLETED"));
+                    String captureStatus = nextStatus(CAPTURE_STATUSES, "COMPLETED");
+                    // 실제 PayPal 처럼 return=representation 없이는 amount 를 주지 않는다.
+                    if (!wantsRepresentation(request)) return minimal(captureId, captureStatus);
+                    return captureResource(captureId, amount, captureStatus);
                 }
                 if (path.matches("/v2/payments/authorizations/[^/]+/void") && "POST".equals(method)) {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));
@@ -261,6 +264,7 @@ public abstract class PayPalIntegrationTestSupport {
                         return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
                     }
                     String refundStatus = nextStatus(REFUND_STATUSES, "COMPLETED");
+                    if (!wantsRepresentation(request)) return minimal(refundId, refundStatus);
                     return json("{\"id\":\"" + refundId + "\",\"status\":\"" + refundStatus + "\",\"amount\":{\"currency_code\":\"" + amount.currency + "\",\"value\":\"" + amount.value + "\"}}");
                 }
                 if (path.matches("/v2/payments/refunds/[^/]+") && "GET".equals(method)) {
@@ -344,6 +348,16 @@ public abstract class PayPalIntegrationTestSupport {
                 + "\",\"status\":\"" + status + "\",\"amount\":{\"currency_code\":\""
                 + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]}}]}");
     }
+    /** PayPal 의 기본 응답(Prefer: return=minimal): id·status·links 만 준다. 실제 Sandbox 에서 확인했다. */
+    private static MockResponse minimal(String id, String status) {
+        return json("{\"id\":\"" + id + "\",\"status\":\"" + status + "\",\"links\":[]}");
+    }
+
+    private static boolean wantsRepresentation(RecordedRequest request) {
+        String prefer = request.getHeader("Prefer");
+        return prefer != null && prefer.contains("return=representation");
+    }
+
     private static MockResponse captureResource(String capture, Amount amount, String status) {
         return json("{\"id\":\"" + capture + "\",\"status\":\"" + status
                 + "\",\"amount\":{\"currency_code\":\"" + amount.currency
