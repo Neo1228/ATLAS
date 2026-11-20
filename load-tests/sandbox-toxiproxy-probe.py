@@ -103,6 +103,7 @@ def main():
                                "attributes": {"latency": 500, "jitter": 0}}),
             ("reset_peer", {"name": "experiment", "type": "reset_peer", "stream": "downstream",
                             "attributes": {"timeout": 0}}),
+            ("recovered", None),
         )
         for label, toxic in conditions:
             try:

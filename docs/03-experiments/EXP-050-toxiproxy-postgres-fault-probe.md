@@ -55,6 +55,18 @@ JDK 21 `HttpClient`로 실제 Sandbox의 `/v1/oauth2/token`에도 별도 POST를
 
 각 요청은 새 Java 프로세스에서 실행해 컴파일과 클라이언트 초기화의 영향이 있으며, 두 표본만으로 지연 분포를 판단할 수 없다. 실제 ATLAS의 Spring OAuth 클라이언트, 인증 성공, 주문 생성, 결제 결과와 복구는 검증하지 않았다.
 
+### GitHub Actions에서 인증된 Sandbox OAuth 장애 주입
+
+로컬에서는 실제 자격 증명을 찾지 못했지만, 기존 GitHub Actions Sandbox 계약 검증의 secret이 사용 가능함을 확인했다. 실험 브랜치의 동일 워크플로에서 그 secret을 runner에만 주입하고, Toxiproxy 뒤의 **실제** PayPal Sandbox OAuth 엔드포인트를 호출했다. 토큰과 응답 본문은 저장·출력하지 않았다. [실행 기록](https://github.com/Neo1228/ATLAS/actions/runs/44685731552)의 artifact에는 상태 코드·시간·예외 클래스만 담았다.
+
+| 조건 | 반복 결과 |
+|---|---|
+| 기준선 | HTTP 200: 178.2ms, 591.7ms, 239.6ms |
+| downstream 500ms 지연 | HTTP 200: 1237.7ms, 1561.4ms, 1117.2ms |
+| downstream `reset_peer` | `SSLEOFError`: 18.7ms, 57.4ms, 6.4ms |
+
+이 결과는 인증된 실제 Sandbox OAuth 호출과 TCP 장애 주입을 확인한다. 단, Python HTTPS 클라이언트의 순차 호출 3회이며 ATLAS 애플리케이션·결제 요청·동시 부하를 사용하지 않았다. 요청은 토큰 발급만 수행했고 주문 생성이나 capture는 하지 않았다. 첫 실행은 reset 제거 후 복구 호출을 포함하지 않아 복구를 주장하지 않는다.
+
 ## 해석과 한계
 
 - 이 설정에서 JDBC 응답 지연은 조회 지연과 일부 실패를 동반했고, 덤프에서 DB 소켓 대기와 커넥션 획득 대기가 동시에 관찰됐다. 이 결과만으로 특정 쿼리나 설정값이 실패의 단독 원인이라고 단정할 수 없다.
