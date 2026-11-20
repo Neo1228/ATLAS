@@ -1061,4 +1061,77 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     private record Entry(String accountCode, String side, long recordedAmountWon) {
     }
+
+    @Test
+    void refundIdempotencyKeyIsScopedToOrderSoOtherSellersCanReuseIt() {
+        String sharedKey = "refund-1";
+
+        // 서로 다른 checkout 의 두 판매자가 같은 key 를 써도 둘 다 환불된다(예전에는 전역 UNIQUE 로 409).
+        Fixture first = paidOrder(1, 2, 125);
+        Fixture second = paidOrder(1, 2, 300);
+        OrderRefundResponse firstRefund = refunds.refund(request(first.sellerId(), first.orderId(), sharedKey,
+                first.orderItemId(), 1));
+        OrderRefundResponse secondRefund = refunds.refund(request(second.sellerId(), second.orderId(), sharedKey,
+                second.orderItemId(), 1));
+        assertThat(firstRefund.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+        assertThat(secondRefund.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+        assertThat(secondRefund.refundId()).isNotEqualTo(firstRefund.refundId());
+        assertThat(secondRefund.refundAmountWon()).isEqualTo(300);
+        assertThat(refundRequestCount(first.orderId())).isEqualTo(1);
+        assertThat(refundRequestCount(second.orderId())).isEqualTo(1);
+        assertStock(first, 2, 0);
+        assertStock(second, 2, 0);
+
+        // 같은 checkout 의 두 판매자 주문은 결제 attempt 하나를 공유한다. 같은 key 를 써도 payment
+        // 계층에서 서로 다른 송금 작업이 되어야 한다.
+        UUID sellerA = sellers.createSeller().sellerId();
+        UUID sellerB = sellers.createSeller().sellerId();
+        String skuA = "refund-scope-a-" + UUID.randomUUID();
+        String skuB = "refund-scope-b-" + UUID.randomUUID();
+        products.registerSku(sellerA, products.createProduct(sellerA,
+                new CreateProductRequest("Refund scope A", null)).productId(),
+                new RegisterSellerSkuRequest(skuA, 125, 2));
+        products.registerSku(sellerB, products.createProduct(sellerB,
+                new CreateProductRequest("Refund scope B", null)).productId(),
+                new RegisterSellerSkuRequest(skuB, 125, 2));
+        String buyerRef = "refund-scope-buyer-" + UUID.randomUUID();
+        carts.setItemQuantity(sellerA, buyerRef, skuA, 1);
+        carts.setItemQuantity(sellerB, buyerRef, skuB, 1);
+        CheckoutResponse checkout = checkouts.checkout(buyerRef, "refund-scope-checkout-" + UUID.randomUUID());
+        assertThat(checkout.orders()).hasSize(2);
+        List<OrderResponse> paidOrders = completePayPalCheckout(checkout.checkoutId()).orders();
+        assertThat(paidOrders).hasSize(2);
+        for (OrderResponse paid : paidOrders) {
+            assertThat(paid.state()).isEqualTo(OrderState.PAID);
+            UUID orderItemId = jdbc.queryForObject(
+                    "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, paid.orderId());
+            UUID sellerId = jdbc.queryForObject(
+                    "SELECT seller_id FROM purchase_order WHERE order_id = ?", UUID.class, paid.orderId());
+            OrderRefundResponse refund = refunds.refund(request(sellerId, paid.orderId(), sharedKey,
+                    orderItemId, 1));
+            assertThat(refund.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+            assertThat(refund.refundAmountWon()).isEqualTo(125);
+        }
+        UUID sharedAttemptId = paidOrders.get(0).paymentAttemptId();
+        assertThat(paidOrders.get(1).paymentAttemptId()).isEqualTo(sharedAttemptId);
+        assertThat(jdbc.queryForList(
+                "SELECT idempotency_key FROM payment_refund_operation WHERE attempt_id = ?",
+                String.class, sharedAttemptId))
+                .containsExactlyInAnyOrder(
+                        "order:" + paidOrders.get(0).orderId() + ":" + sharedKey,
+                        "order:" + paidOrders.get(1).orderId() + ":" + sharedKey);
+
+        // 같은 주문 안에서 같은 key 로 다른 품목을 보내면 여전히 CONFLICT 다.
+        MultiItemFixture multi = paidOrderWithTwoItems();
+        OrderRefundResponse multiRefund = refunds.refund(request(multi.sellerId(), multi.orderId(), sharedKey,
+                multi.firstItemId(), 1));
+        assertThat(refunds.refund(request(multi.sellerId(), multi.orderId(), sharedKey,
+                multi.firstItemId(), 1))).isEqualTo(multiRefund);
+        assertThatThrownBy(() -> refunds.refund(request(multi.sellerId(), multi.orderId(), sharedKey,
+                multi.secondItemId(), 1)))
+                .isInstanceOf(OrderException.class)
+                .satisfies(error -> assertThat(((OrderException) error).code())
+                        .isEqualTo(OrderException.Code.CONFLICT));
+        assertThat(refundRequestCount(multi.orderId())).isEqualTo(1);
+    }
 }

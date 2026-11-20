@@ -28,11 +28,15 @@ import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.dto.request.RefundPostingRequest;
 import com.atlas.settlement.service.SettlementService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,6 +51,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class OrderRefundServiceImpl implements OrderRefundService {
+    /** payment_refund_operation.idempotency_key 의 최대 길이. */
+    private static final int MAX_PAYMENT_KEY_LENGTH = 128;
+
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderFulfillmentRepository fulfillments;
@@ -109,8 +116,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         // 실제로 다시 송금을 시도한다. 회차는 기존 키 개수에서 유도하므로 호출자가
         // key 를 고를 필요가 없다.
         String baseKey = "return-" + returnId;
-        // 회차 구분자 "-r" 까지 포함해 세야 다른 반품 키와 섞이지 않는다.
-        int priorAttempts = refunds.countByKeyPrefix(baseKey + "-r");
+        // 회차 구분자 "-r" 까지 포함해 세야 다른 반품 키와 섞이지 않는다. key 의 유일 범위가
+        // 주문이므로 같은 주문 안에서만 센다.
+        int priorAttempts = refunds.countByKeyPrefix(row.orderId(), baseKey + "-r");
         String idempotencyKey = priorAttempts == 0 ? baseKey : baseKey + "-r" + priorAttempts;
         return new OrderRefundRequest(row.sellerId(), row.orderId(), idempotencyKey, passed);
     }
@@ -124,12 +132,14 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         }
 
         PurchaseOrder order = requireOrder(reserved.orderId());
+        // 예약 시점에 고정한 payment key 를 그대로 쓴다. 다시 유도하면 V57 이전 행이나 다른 규칙으로
+        // 만든 행이 새 송금 작업을 만들 수 있다.
+        String paymentKey = refunds.paymentIdempotencyKey(reserved.refundId());
         PaymentRefundResponse payment;
         try {
             payment = order.checkoutId() == null
-                    ? payments.refundOrder(order.orderId(), reserved.idempotencyKey(), reserved.recordedAmountWon())
-                    : payments.refundCheckout(order.checkoutId(), reserved.idempotencyKey(),
-                            reserved.recordedAmountWon());
+                    ? payments.refundOrder(order.orderId(), paymentKey, reserved.recordedAmountWon())
+                    : payments.refundCheckout(order.checkoutId(), paymentKey, reserved.recordedAmountWon());
         } catch (PaymentException exception) {
             // 일시적 장애를 영구 실패로 만들지 않는다.
             //
@@ -178,8 +188,10 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 if (!passedFacts.equals(requestItems))
                     throw conflict("Refund lines must exactly match persisted passed inspection lines");
             }
-            refunds.lockIdempotencyKey(idempotencyKey);
-            var existing = refunds.findByIdempotencyKey(idempotencyKey);
+            // key 의 유일 범위는 (주문, key) 다. 다른 주문·다른 판매자가 같은 key 를 써도 서로
+            // 막지 않고, 같은 주문 안에서 같은 key 로 다른 사실을 보내면 아래에서 CONFLICT 다.
+            refunds.lockIdempotencyKey(orderId, idempotencyKey);
+            var existing = refunds.findByIdempotencyKey(orderId, idempotencyKey);
             if (existing.isPresent()) {
                 RefundRecord prior = existing.get();
                 List<OrderRefundRequest.Item> priorItems = prior.items().stream()
@@ -269,20 +281,21 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             OrderRefundStatus resultStatus = fullyRefunded
                     ? OrderRefundStatus.FULLY_RECORDED : OrderRefundStatus.PARTIALLY_RECORDED;
             var createdAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
-            UUID refundId = refunds.insertRequest(orderId, sellerId, idempotencyKey, recordedAmountWon,
-                    resultStatus, createdAt);
+            String paymentKey = paymentIdempotencyKey(order, idempotencyKey);
+            UUID refundId = refunds.insertRequest(orderId, sellerId, idempotencyKey, paymentKey,
+                    recordedAmountWon, resultStatus, createdAt);
             for (OrderRefundRequest.Item line : requestItems) {
                 refunds.insertRequestItem(refundId, line.orderItemId(), line.quantity());
             }
             if (refunds.paymentStatus(refundId) != OrderRefundPaymentStatus.NOT_APPLICABLE) {
                 PaymentRefundResponse payment = order.checkoutId() == null
-                        ? payments.prepareRefundOrder(orderId, idempotencyKey, recordedAmountWon)
+                        ? payments.prepareRefundOrder(orderId, paymentKey, recordedAmountWon)
                         : payments.prepareRefundCheckout(
-                                order.checkoutId(), idempotencyKey, recordedAmountWon);
+                                order.checkoutId(), paymentKey, recordedAmountWon);
                 refunds.linkPaymentOperation(refundId, payment.refundOperationId());
                 refunds.updatePaymentStatus(refundId, refundStatus(payment.status()));
             }
-            return refunds.findByIdempotencyKey(idempotencyKey)
+            return refunds.findByRefundId(refundId)
                     .orElseThrow(() -> new IllegalStateException("Refund request was not persisted"));
         }));
     }
@@ -308,7 +321,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             refunds.linkPaymentOperation(reserved.refundId(), payment.refundOperationId());
             boolean changed = refunds.updatePaymentStatus(reserved.refundId(), nextStatus);
             OrderRefundPaymentStatus currentStatus = refunds.paymentStatus(reserved.refundId());
-            RefundRecord current = refunds.findByIdempotencyKey(reserved.idempotencyKey())
+            RefundRecord current = refunds.findByRefundId(reserved.refundId())
                     .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND,
                             "Order refund request not found"));
             if (changed && currentStatus == OrderRefundPaymentStatus.COMPLETED) {
@@ -319,7 +332,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                     && payment.refundOperationId() != null) {
                 payments.markRefundApplied(payment.refundOperationId());
             }
-            RefundRecord updated = refunds.findByIdempotencyKey(reserved.idempotencyKey()).orElse(current);
+            RefundRecord updated = refunds.findByRefundId(reserved.refundId()).orElse(current);
             return response(updated, currentStatus, payment.providerRefundId());
         }));
     }
@@ -416,6 +429,28 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         if (sellerId == null || orderId == null || idempotencyKey == null || idempotencyKey.isBlank()
                 || idempotencyKey.length() > 128) {
             throw invalidRequest("Seller, order, and an idempotency key of at most 128 characters are required");
+        }
+    }
+
+    /**
+     * payment 계층에 넘길 환불 key 를 정한다.
+     *
+     * <p>환불 key 의 유일 범위는 주문이다. 직접 결제 주문은 결제 attempt 가 그 주문 하나의 것이라
+     * key 를 그대로 넘겨도 범위가 같다. checkout 주문은 여러 판매자 주문이 attempt 하나를
+     * 공유하고 payment 는 (attempt, key) 로 송금 작업을 식별하므로, 주문 id 를 붙여야 다른
+     * 판매자의 같은 key 와 합쳐지지 않는다. payment key 는 최대 128자라 넘치면 key 를 SHA-256
+     * 으로 줄인다. 결과는 환불 요청 행에 저장해 재시도마다 같은 값을 쓴다.
+     */
+    private static String paymentIdempotencyKey(PurchaseOrder order, String idempotencyKey) {
+        if (order.checkoutId() == null) return idempotencyKey;
+        String scoped = "order:" + order.orderId() + ":" + idempotencyKey;
+        if (scoped.length() <= MAX_PAYMENT_KEY_LENGTH) return scoped;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(idempotencyKey.getBytes(StandardCharsets.UTF_8));
+            return "order:" + order.orderId() + ":sha256:" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is required by the Java platform", impossible);
         }
     }
 

@@ -26,9 +26,15 @@ public class OrderRefundRepository {
         this.jdbc = jdbc;
     }
 
-    public void lockIdempotencyKey(String idempotencyKey) {
+    /**
+     * 한 주문 안의 환불 idempotency key 를 transaction 끝까지 직렬화한다.
+     *
+     * <p>key 의 유일 범위는 (order_id, idempotency_key) 다. 잠금 키에도 주문 id 를 넣어야
+     * 다른 주문이 같은 key 를 쓸 때 서로 기다리지 않는다.
+     */
+    public void lockIdempotencyKey(UUID orderId, String idempotencyKey) {
         jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
-                (RowCallbackHandler) rs -> { }, idempotencyKey);
+                (RowCallbackHandler) rs -> { }, "order-refund:" + orderId + ":" + idempotencyKey);
     }
 
     /**
@@ -39,6 +45,9 @@ public class OrderRefundRepository {
      *
      * <p>주의: 접두사 매칭이므로 반드시 회차 구분자까지 포함해 넘겨야 한다. 단순히
      * {@code "return-<returnId>"} 로 LIKE 하면 다른 접미사가 붙은 키까지 걸린다.
+     *
+     * <p>key 의 유일 범위가 주문이므로 서비스는 주문을 지정한 {@link #countByKeyPrefix(UUID, String)}
+     * 를 쓴다. 이 전역 버전은 반품 id 가 들어간 접두사처럼 이미 전역에서 구분되는 값에만 쓴다.
      */
     public int countByKeyPrefix(String prefix) {
         String escaped = prefix
@@ -51,16 +60,48 @@ public class OrderRefundRepository {
         return count == null ? 0 : count;
     }
 
-    public Optional<RefundRecord> findByIdempotencyKey(String idempotencyKey) {
+    /** 한 주문 안에서 특정 접두사로 시작하는 환불 요청 수를 센다. 접두사 규칙은 위와 같다. */
+    public int countByKeyPrefix(UUID orderId, String prefix) {
+        String escaped = prefix
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        Integer count = jdbc.queryForObject(
+                "SELECT count(*) FROM order_refund_request WHERE order_id = ? AND idempotency_key LIKE ? ESCAPE '\\'",
+                Integer.class, orderId, escaped + "%");
+        return count == null ? 0 : count;
+    }
+
+    public Optional<RefundRecord> findByIdempotencyKey(UUID orderId, String idempotencyKey) {
+        return findRecord("order_id = ? AND idempotency_key = ?", orderId, idempotencyKey);
+    }
+
+    public Optional<RefundRecord> findByRefundId(UUID refundId) {
+        return findRecord("refund_id = ?", refundId);
+    }
+
+    /**
+     * payment 계층에 넘길 환불 key 를 돌려준다. V57 이전 행과 직접 넣은 행은 컬럼이 비어 있으므로
+     * 원래 idempotency key 를 쓴다(이미 그 key 로 payment 작업이 만들어졌다).
+     */
+    public String paymentIdempotencyKey(UUID refundId) {
+        return jdbc.queryForObject("""
+                SELECT COALESCE(payment_idempotency_key, idempotency_key)
+                FROM order_refund_request
+                WHERE refund_id = ?
+                """, String.class, refundId);
+    }
+
+    private Optional<RefundRecord> findRecord(String condition, Object... args) {
         List<RefundHeader> rows = jdbc.query("""
                 SELECT refund_id, order_id, seller_id, idempotency_key, amount_won, refund_status, created_at
                 FROM order_refund_request
-                WHERE idempotency_key = ?
-                """, (resultSet, rowNum) -> new RefundHeader(
+                WHERE
+                """ + condition, (resultSet, rowNum) -> new RefundHeader(
                 resultSet.getObject("refund_id", UUID.class), resultSet.getObject("order_id", UUID.class),
                 resultSet.getObject("seller_id", UUID.class), resultSet.getString("idempotency_key"),
                 resultSet.getLong("amount_won"), OrderRefundStatus.valueOf(resultSet.getString("refund_status")),
-                resultSet.getTimestamp("created_at").toInstant()), idempotencyKey);
+                resultSet.getTimestamp("created_at").toInstant()), args);
         if (rows.isEmpty()) return Optional.empty();
         RefundHeader row = rows.get(0);
         return Optional.of(new RefundRecord(row.refundId(), row.orderId(), row.sellerId(), row.idempotencyKey(),
@@ -150,12 +191,12 @@ public class OrderRefundRepository {
     }
 
     public Optional<RefundRecord> findByPaymentOperationId(UUID paymentOperationId) {
-        List<String> keys = jdbc.query("""
-                SELECT idempotency_key FROM order_refund_request
+        List<UUID> refundIds = jdbc.query("""
+                SELECT refund_id FROM order_refund_request
                 WHERE payment_refund_operation_id = ?
                 FOR UPDATE
-                """, (resultSet, rowNum) -> resultSet.getString("idempotency_key"), paymentOperationId);
-        return keys.stream().findFirst().flatMap(this::findByIdempotencyKey);
+                """, (resultSet, rowNum) -> resultSet.getObject("refund_id", UUID.class), paymentOperationId);
+        return refundIds.stream().findFirst().flatMap(this::findByRefundId);
     }
     public Optional<RefundSummary> findSummary(UUID orderId) {
         return jdbc.query("""
@@ -175,15 +216,16 @@ public class OrderRefundRepository {
                 .orElse(false);
     }
 
-    public UUID insertRequest(UUID orderId, UUID sellerId, String idempotencyKey,
+    public UUID insertRequest(UUID orderId, UUID sellerId, String idempotencyKey, String paymentIdempotencyKey,
                               long recordedAmountWon, OrderRefundStatus status, Instant createdAt) {
         return jdbc.queryForObject("""
                 INSERT INTO order_refund_request
-                (order_id, seller_id, idempotency_key, amount_won, refund_status, payment_refund_status, created_at)
-                VALUES (?, ?, ?, ?, ?, 'PENDING', ?)
+                (order_id, seller_id, idempotency_key, payment_idempotency_key, amount_won, refund_status,
+                 payment_refund_status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)
                 RETURNING refund_id
-                """, UUID.class, orderId, sellerId, idempotencyKey, recordedAmountWon, status.name(),
-                Timestamp.from(createdAt));
+                """, UUID.class, orderId, sellerId, idempotencyKey, paymentIdempotencyKey, recordedAmountWon,
+                status.name(), Timestamp.from(createdAt));
     }
 
     public void insertRequestItem(UUID refundId, UUID orderItemId, int quantity) {

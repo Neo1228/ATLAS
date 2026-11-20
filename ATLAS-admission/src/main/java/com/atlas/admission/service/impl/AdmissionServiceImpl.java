@@ -22,8 +22,10 @@ import com.atlas.catalog.dto.response.SellerSkuResponse;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Optional;
@@ -342,7 +344,19 @@ public class AdmissionServiceImpl implements AdmissionService {
         int slots = requirePolicyForPromotion(sellerId, skuId) - Math.toIntExact(active);
         if (slots <= 0) return;
         List<UUID> waiting = tickets.findWaitingForSellerSku(sellerId, skuId, TicketStatus.WAITING, now, PageRequest.of(0, slots));
-        for (UUID ticketId : waiting) queueRepository.activateWaitingTicket(ticketId, now);
+        // 승격된 ticket의 checkout 창은 slot 획득 시점부터 시작합니다. join 즉시 slot을 얻은 ticket과 같이
+        // Campaign ticket TTL을 쓰며, 전역 FIFO는 여러 Campaign ticket을 섞어 승격하므로 ticket별 Campaign 값을 씁니다.
+        Map<UUID, Duration> checkoutSlotWindows = new HashMap<>();
+        for (UUID ticketId : waiting) {
+            Duration checkoutSlotWindow = checkoutSlotWindows.computeIfAbsent(requireWaitingTicketCampaignId(ticketId),
+                    campaignId -> campaigns.find(campaignId).queueTicketTtl());
+            queueRepository.activateWaitingTicket(ticketId, now, checkoutSlotWindow);
+        }
+    }
+
+    private UUID requireWaitingTicketCampaignId(UUID ticketId) {
+        return tickets.findById(ticketId).map(QueueTicket::getCampaignId)
+                .orElseThrow(() -> new IllegalStateException("Waiting ticket disappeared during promotion: " + ticketId));
     }
 
     private int requirePolicyForPromotion(UUID sellerId, String skuId) {

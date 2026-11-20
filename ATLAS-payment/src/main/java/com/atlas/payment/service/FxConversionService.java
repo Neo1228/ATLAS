@@ -1,5 +1,6 @@
 package com.atlas.payment.service;
 
+import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
 import com.atlas.payment.provider.exchange.ExchangeRateQuote;
 import java.math.BigDecimal;
@@ -17,7 +18,13 @@ public class FxConversionService {
 
     public Conversion convertKrwToUsdCents(long amountKrw) {
         if (amountKrw <= 0) throw new IllegalArgumentException("A positive KRW amount is required");
-        ExchangeRateQuote quote = Objects.requireNonNull(exchangeRates.latestUsdKrwRate());
+        ExchangeRateQuote quote = exchangeRates.latestUsdKrwRate();
+        // 환율 조회 실패는 결제 대행사 일시 장애와 같은 계약(503 + 재시도 안내)으로 드러낸다.
+        // provider 가 계약을 어기고 null 을 돌려줘도 NPE(500)로 새지 않게 이 경계에서 막는다.
+        if (quote == null) {
+            throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
+                    "Exchange-rate quote is unavailable");
+        }
         return new Conversion(quote, krwToUsdCents(amountKrw, quote.wonPerUsd()));
     }
 

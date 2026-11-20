@@ -136,13 +136,20 @@ class AdmissionServiceTest {
         when(tickets.findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING),
                 any(Instant.class), eq(PageRequest.of(0, 1))))
                 .thenReturn(List.of(oldestWaitingTicket));
+        UUID waitingCampaignId = UUID.randomUUID();
+        Duration waitingTicketTtl = Duration.ofMinutes(7);
+        QueueTicket waitingTicket = mock(QueueTicket.class);
+        when(waitingTicket.getCampaignId()).thenReturn(waitingCampaignId);
+        when(tickets.findById(oldestWaitingTicket)).thenReturn(Optional.of(waitingTicket));
+        when(campaigns.find(waitingCampaignId)).thenReturn(new CampaignResponse(
+                waitingCampaignId, sellerId, skuId, CampaignStatus.OPEN, waitingTicketTtl));
 
         admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 2));
 
         verify(queueRepository).lockCounter(sellerId, skuId);
         verify(tickets).findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING),
                 any(Instant.class), eq(PageRequest.of(0, 1)));
-        verify(queueRepository).activateWaitingTicket(eq(oldestWaitingTicket), any(Instant.class));
+        verify(queueRepository).activateWaitingTicket(eq(oldestWaitingTicket), any(Instant.class), eq(waitingTicketTtl));
     }
 
     @Test
@@ -173,13 +180,20 @@ class AdmissionServiceTest {
         when(tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(sellerId, skuId)).thenReturn(1L);
         when(tickets.findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING), any(Instant.class), eq(PageRequest.of(0, 2))))
                 .thenReturn(List.of(firstWaitingTicket));
+        UUID waitingCampaignId = UUID.randomUUID();
+        Duration waitingTicketTtl = Duration.ofMinutes(7);
+        QueueTicket waitingTicket = mock(QueueTicket.class);
+        when(waitingTicket.getCampaignId()).thenReturn(waitingCampaignId);
+        when(tickets.findById(firstWaitingTicket)).thenReturn(Optional.of(waitingTicket));
+        when(campaigns.find(waitingCampaignId)).thenReturn(new CampaignResponse(
+                waitingCampaignId, sellerId, skuId, CampaignStatus.OPEN, waitingTicketTtl));
         Method promote = AdmissionServiceImpl.class.getDeclaredMethod("promote", UUID.class, String.class);
         promote.setAccessible(true);
 
         promote.invoke(admission, sellerId, skuId);
 
         verify(tickets).findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING), any(Instant.class), eq(PageRequest.of(0, 2)));
-        verify(queueRepository).activateWaitingTicket(eq(firstWaitingTicket), any(Instant.class));
+        verify(queueRepository).activateWaitingTicket(eq(firstWaitingTicket), any(Instant.class), eq(waitingTicketTtl));
     }
 
 
@@ -301,11 +315,17 @@ class AdmissionServiceTest {
         UUID waitingId = UUID.randomUUID();
         when(tickets.findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING), any(Instant.class), any()))
                 .thenReturn(List.of(waitingId));
+        Duration waitingTicketTtl = Duration.ofMinutes(7);
+        QueueTicket waitingTicket = mock(QueueTicket.class);
+        when(waitingTicket.getCampaignId()).thenReturn(campaignId);
+        when(tickets.findById(waitingId)).thenReturn(Optional.of(waitingTicket));
+        when(campaigns.find(campaignId)).thenReturn(new CampaignResponse(
+                campaignId, sellerId, skuId, CampaignStatus.OPEN, waitingTicketTtl));
 
         admission.releaseCheckoutSlot(campaignId, ticketId, CheckoutSlotReleaseReason.PRODUCT_NOT_ORDERABLE);
 
         verify(tickets).releaseSlot(campaignId, ticketId, TicketStatus.CHECKOUT_FAILED);
-        verify(queueRepository).activateWaitingTicket(eq(waitingId), any(Instant.class));
+        verify(queueRepository).activateWaitingTicket(eq(waitingId), any(Instant.class), eq(waitingTicketTtl));
     }
 
     @Test

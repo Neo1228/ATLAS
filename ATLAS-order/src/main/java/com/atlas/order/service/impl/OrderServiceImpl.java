@@ -285,6 +285,15 @@ public final class OrderServiceImpl implements OrderService {
     private OrderResponse cancelLocked(UUID orderId, String idempotencyKey) {
         PurchaseOrder current = transactions.execute(status -> {
             PurchaseOrder order = lockOrder(orderId);
+            if (order.state() == OrderState.PAID) {
+                // 결제 완료 주문은 취소로 되돌릴 수 없다. 200 무변경 응답은 구매자에게 취소 성공으로 읽히므로
+                // checkout 취소와 같은 CONFLICT 로 거절하고 Seller 환불 경로로 안내한다.
+                throw new OrderException(OrderException.Code.CONFLICT,
+                        "Paid orders use the Seller order refund path");
+            }
+            // CANCELLED 는 같은 취소의 재시도이고, EXPIRED/FAILED 는 재고·대기열 슬롯·결제 승인이 이미 해제되어
+            // 되돌릴 것이 없다. 취소 요청의 목적(주문이 진행되지 않음)이 이미 충족되므로 checkout 취소와 같이
+            // 현재 상태를 그대로 반환하는 멱등 no-op 으로 둔다.
             if (order.state().isTerminal()) return order;
             if (order.state() == OrderState.RESERVED && !clock.instant().isBefore(order.checkoutExpiresAt())) {
                 expire(order);

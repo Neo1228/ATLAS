@@ -40,6 +40,17 @@ public interface PaymentService {
 
     /** checkout의 결제 시도를 반환한다. 결제 시도가 없으면 {@code null}을 반환한다. */
     PaymentResponse findCheckout(UUID checkoutId);
+
+    /**
+     * 아직 provider 에 보내지 않은(NOT_STARTED) checkout 결제 시도를 종결한다.
+     *
+     * <p>시도 행을 잠그고 NOT_STARTED 일 때만 VOIDED 로 바꾼다. 결제 단계 예약({@code reservePhase})도
+     * 같은 행을 잠그고 terminal 이면 provider 를 부르지 않으므로, 이 호출이 성공하면 이후 provider
+     * 호출이 일어나지 않는다는 펜스가 된다. 시도가 없으면 provider 작업도 없으므로 {@code true}.
+     *
+     * @return 종결했거나 시도가 없으면 {@code true}; 이미 provider 단계로 넘어갔으면 {@code false}
+     */
+    boolean abandonUnstartedCheckout(UUID checkoutId);
     /** PayPal checkout 취소 callback의 {@code state}가 저장된 create-order 요청 ID와 일치하는지 확인한다. */
     boolean matchesCheckoutCancelState(UUID checkoutId, String state);
     PaymentResponse findByAttemptId(UUID attemptId);
