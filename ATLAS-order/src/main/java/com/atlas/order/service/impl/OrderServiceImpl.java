@@ -304,6 +304,9 @@ public final class OrderServiceImpl implements OrderService {
                 return requireOrder(orderId);
             }
             if (order.state() != OrderState.CANCEL_PENDING) {
+                // 취소 요청과 캡처 펜스를 같은 트랜잭션에 기록한다. 복구·승인 콜백이 이 뒤에
+                // AUTHORIZED 결제의 새 capture 를 시작하지 못한다(이미 시작된 capture 는 계속 복구).
+                payments.prohibitNewOrderCapture(orderId);
                 updateOrderState(orderId, OrderState.CANCEL_PENDING, order.paymentAttemptId(), clock.instant());
             }
             return requireOrder(orderId);

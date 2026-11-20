@@ -1,0 +1,8 @@
+{
+  "name": "atlas-paypal-real-fault",
+  "private": true,
+  "type": "module",
+  "description": "로컬 전용 실제 PayPal Sandbox 장애 실험 도구. 애플리케이션 runtime 의존성이 아니다.",
+  "scripts": { "flow": "node real-flow.mjs" },
+  "devDependencies": { "playwright": "1.64.0" }
+}

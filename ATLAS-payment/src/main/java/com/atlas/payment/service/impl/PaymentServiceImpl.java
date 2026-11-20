@@ -363,10 +363,19 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void prohibitNewCheckoutCapture(UUID checkoutId) {
         if (checkoutId == null) throw invalidRequest("checkoutId is required");
-        repository.findWithLockByCheckoutId(checkoutId).ifPresent(attempt -> {
-            attempt.prohibitNewCapture();
-            repository.save(attempt);
-        });
+        repository.findWithLockByCheckoutId(checkoutId).ifPresent(this::prohibitNewCapture);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void prohibitNewOrderCapture(UUID orderId) {
+        if (orderId == null) throw invalidRequest("orderId is required");
+        repository.findWithLockByOrderId(orderId).ifPresent(this::prohibitNewCapture);
+    }
+
+    private void prohibitNewCapture(PaymentAttempt attempt) {
+        attempt.prohibitNewCapture();
+        repository.save(attempt);
     }
 
 
