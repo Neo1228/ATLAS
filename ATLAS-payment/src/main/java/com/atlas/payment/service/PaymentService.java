@@ -36,6 +36,12 @@ public interface PaymentService {
      * 이미 예약된 캡처는 계속 복구할 수 있다.
      */
     void prohibitNewCheckoutCapture(UUID checkoutId);
+
+    /**
+     * 주문이 직접 소유한 결제 시도(캠페인 주문)에 같은 캡처 펜스를 저장한다. 호출자는 주문 행을
+     * 잠그고 취소 요청을 기록하는 동일한 트랜잭션에서 호출해야 하며, 잠금 순서는 주문, 결제 시도 순이다.
+     */
+    void prohibitNewOrderCapture(UUID orderId);
     /** checkout 결제 시도의 유효한 승인을 취소한다. */
     PaymentResponse voidCheckoutAuthorization(UUID checkoutId, String idempotencyKey);
     /**

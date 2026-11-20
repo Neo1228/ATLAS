@@ -12,6 +12,8 @@ import com.atlas.payment.service.PaymentService;
 import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -73,27 +75,77 @@ class CheckoutCaptureFencePostgresIntegrationTest extends PayPalIntegrationTestS
                     started.countDown();
                     return payments.reconcileCheckout(checkout, "racing-capture");
                 });
-                try {
-                    if (!started.await(5, TimeUnit.SECONDS)) throw new AssertionError("reconcile did not start");
-                    // 스레드 시작 신호만으로는 원하는 경합 순서를 보장할 수 없다.
-                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-                    while (System.nanoTime() < deadline) {
-                        Integer waiters = jdbc.queryForObject(
-                                "SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid() "
-                                        + "AND wait_event_type = 'Lock' AND lower(query) LIKE '%payment_attempt%'",
-                                Integer.class);
-                        if (waiters != null && waiters > 0) return future;
-                        Thread.sleep(20);
-                    }
-                    throw new AssertionError("reconcile did not block on the payment row");
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new AssertionError(e);
-                }
+                awaitRowLockWait(started, future);
+                return future;
             });
             assertThat(result.get(10, TimeUnit.SECONDS).state()).isEqualTo(PaymentState.AUTHORIZED);
             verify(provider, never()).perform(any());
         }
+    }
+
+    @Test
+    void orderOwnedFenceRollsBackWithItsTransaction() {
+        UUID order = authorizedOrderAttempt();
+        new TransactionTemplate(manager).executeWithoutResult(status -> {
+            payments.prohibitNewOrderCapture(order);
+            status.setRollbackOnly();
+        });
+        assertThat(jdbc.queryForObject("SELECT capture_prohibited FROM payment_attempt WHERE order_id = ?",
+                Boolean.class, order)).isFalse();
+    }
+
+    @Test
+    void committedOrderFenceBeatsConcurrentCaptureReservation() throws Exception {
+        UUID order = authorizedOrderAttempt();
+        CountDownLatch started = new CountDownLatch(1);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var result = new TransactionTemplate(manager).execute(status -> {
+                payments.prohibitNewOrderCapture(order);
+                var future = executor.submit(() -> {
+                    started.countDown();
+                    return payments.reconcile(order, "racing-order-capture");
+                });
+                awaitRowLockWait(started, future);
+                return future;
+            });
+            assertThat(result.get(10, TimeUnit.SECONDS).state()).isEqualTo(PaymentState.AUTHORIZED);
+            verify(provider, never()).perform(any());
+        }
+    }
+
+    /**
+     * 경쟁 스레드가 payment_attempt 행 잠금을 실제로 기다릴 때까지 대기한다.
+     * pg_stat_activity 는 트랜잭션 안에서 처음 읽은 스냅샷을 재사용하므로 매번 비운다.
+     */
+    private void awaitRowLockWait(CountDownLatch started, Future<?> racer) {
+        try {
+            if (!started.await(5, TimeUnit.SECONDS)) throw new AssertionError("reconcile did not start");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (System.nanoTime() < deadline) {
+                jdbc.queryForObject("SELECT pg_stat_clear_snapshot()", Object.class);
+                Integer waiters = jdbc.queryForObject(
+                        "SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid() "
+                                + "AND wait_event_type = 'Lock' AND lower(query) LIKE '%payment_attempt%'",
+                        Integer.class);
+                if (waiters != null && waiters > 0) return;
+                if (racer.isDone()) throw new AssertionError("reconcile finished without blocking: " + racer.get());
+                Thread.sleep(20);
+            }
+            throw new AssertionError("reconcile did not block on the payment row");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(e);
+        } catch (ExecutionException e) {
+            throw new AssertionError("reconcile failed before blocking", e.getCause());
+        }
+    }
+
+    // 캠페인 주문처럼 주문이 직접 소유한 결제 시도. payment_attempt.order_id 에는 FK 가 없다.
+    private UUID authorizedOrderAttempt() {
+        UUID order = UUID.randomUUID();
+        jdbc.update("INSERT INTO payment_attempt (attempt_id, order_id, state, payment_phase, authorization_active, total_won) "
+                + "VALUES (?, ?, 'AUTHORIZED', 'CAPTURE', true, 100)", UUID.randomUUID(), order);
+        return order;
     }
 
     // 별도 JDBC 트랜잭션과 실제 행 잠금을 사용하지만 Spring 서비스 인스턴스는 하나다.

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
@@ -55,6 +56,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Limit;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -245,6 +247,42 @@ class CheckoutBehaviorTest {
         verify(fulfillment).initialize(orderId);
     }
 
+
+    @Test
+    void orderCancelFencesCaptureBeforeAnyProviderWork() {
+        UUID orderId = UUID.randomUUID();
+        UUID attemptId = UUID.randomUUID();
+        PurchaseOrder order = new PurchaseOrder(SELLER, "buyer", "order-cancel-key",
+                OrderState.PAYMENT_PENDING, NOW.plusSeconds(600), NOW, NOW);
+        setOrderId(order, orderId);
+        OrderItem orderItem = new OrderItem(order, UUID.randomUUID(), SELLER, "SKU-1", "Product", 1, 1_000);
+        OrderRepository orders = mock(OrderRepository.class);
+        OrderItemRepository items = mock(OrderItemRepository.class);
+        InventoryService inventory = mock(InventoryService.class);
+        PaymentService payments = mock(PaymentService.class);
+        when(orders.findById(orderId)).thenReturn(Optional.of(order));
+        when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(order));
+        when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(orderItem));
+        when(inventory.findReservations(orderId)).thenReturn(List.of());
+        PaymentResponse authorized = new PaymentResponse(orderId, attemptId, PaymentState.AUTHORIZED, true);
+        when(payments.find(orderId)).thenReturn(authorized);
+        when(payments.reconcileForCancellation(orderId, "order-cancel")).thenReturn(authorized);
+        when(payments.voidAuthorization(orderId, "order-cancel:void"))
+                .thenReturn(new PaymentResponse(orderId, attemptId, PaymentState.VOIDED, false));
+
+        OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
+                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
+                mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
+                sweepLock());
+
+        service.cancel(orderId, "order-cancel");
+
+        // 펜스는 취소 요청 트랜잭션 안에서, provider 를 부르는 취소 정리보다 먼저 기록돼야 한다.
+        InOrder ordered = inOrder(payments);
+        ordered.verify(payments).prohibitNewOrderCapture(orderId);
+        ordered.verify(payments).reconcileForCancellation(orderId, "order-cancel");
+    }
 
     @Test
     void reconciliationResumesPaymentAttemptPersistedBeforePhaseReservation() {
