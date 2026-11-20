@@ -11,11 +11,15 @@ import com.atlas.payment.provider.PaymentWebhookSignature;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Objects;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -31,13 +35,23 @@ public class PayPalRestClient {
     private final PayPalProperties properties;
     private final OAuth2AuthorizedClientManager authorizedClientManager;
     private final ObjectMapper objectMapper;
+    /**
+     * 외부 호출 상한. 기본값이 없으면 PayPal 이 응답하지 않을 때 Tomcat 스레드가 무한정
+     * 묶여 커넥션 풀까지 고갈된다. 연결과 응답 모두 유한 상한을 둔다.
+     */
+    private final Duration connectTimeout;
+    private final Duration readTimeout;
 
     public PayPalRestClient(RestClient.Builder builder, PayPalProperties properties,
-            OAuth2AuthorizedClientManager authorizedClientManager, ObjectMapper objectMapper) {
+            OAuth2AuthorizedClientManager authorizedClientManager, ObjectMapper objectMapper,
+            @Value("${atlas.payment.paypal.connect-timeout:PT2S}") Duration connectTimeout,
+            @Value("${atlas.payment.paypal.read-timeout:PT10S}") Duration readTimeout) {
         this.builder = Objects.requireNonNull(builder).clone();
         this.properties = Objects.requireNonNull(properties);
         this.authorizedClientManager = Objects.requireNonNull(authorizedClientManager);
         this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.connectTimeout = Objects.requireNonNull(connectTimeout);
+        this.readTimeout = Objects.requireNonNull(readTimeout);
     }
 
     public OrderResult createOrder(String referenceId, BigDecimal amount, String currency,
@@ -197,12 +211,24 @@ public class PayPalRestClient {
             if (authorized == null || authorized.getAccessToken() == null) {
                 throw new PayPalUnavailableException("PayPal OAuth authorization failed");
             }
+            // 호출마다 새 RestClient 를 만들지만, 요청 팩토리는 타임아웃을 공유한다.
+            // 이 상한이 없으면 응답 없는 PayPal 호출이 스레드와 커넥션을 영구 점유한다.
             return builder.clone().baseUrl(trimSlash(properties.getBaseUrl()))
+                    .requestFactory(requestFactory())
                     .defaultHeader("Authorization", "Bearer " + authorized.getAccessToken().getTokenValue())
                     .build();
         } catch (RestClientException exception) {
             throw new PayPalUnavailableException("PayPal OAuth request failed", exception);
         }
+    }
+
+    private JdkClientHttpRequestFactory requestFactory() {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(readTimeout);
+        return factory;
     }
 
     private static String approvalUrl(Map<String, Object> response) {

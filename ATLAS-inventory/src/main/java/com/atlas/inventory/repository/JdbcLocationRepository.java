@@ -90,40 +90,22 @@ public class JdbcLocationRepository {
                 : Optional.empty(), parameters.toArray());
     }
 
+    /**
+     * 요구 수량을 모두 만족하는 활성 location 을 고른다. <b>읽기 전용</b>이다.
+     *
+     * <p>과거에는 이 메서드가 매 예약마다 pool 행을 upsert 하고 {@code FOR UPDATE OF pool} 로
+     * 잠갔다. 그 결과 같은 SKU 에 대한 모든 예약이 본 UPDATE 에 도달하기도 전에 단일 행 락에서
+     * 직렬화됐다(EXP-044: 128 동시 구매자에서 p50 264ms, 처리량 460 tps 정체).
+     *
+     * <p>그 쓰기·잠금은 <b>불필요</b>했다. pool 은 SKU 등록 시
+     * ({@code ProductServiceImpl.registerSku} → {@code createInventoryPool} → {@code ensurePool})
+     * 이미 만들어지고, 재고 정확성은 뒤따르는 {@code stock.reserve} 의 조건부 UPDATE
+     * ({@code WHERE available >= ?})가 보장한다. 후보 선택이 낡아도 그 UPDATE 가 0 행을 돌려주고,
+     * 호출자는 품절로 처리한다. 따라서 location 선택은 스냅샷 읽기로 충분하다.
+     *
+     * <p>호출자 쪽 transaction 안에서 실행되므로 선택과 차감 사이의 원자성은 유지된다.
+     */
     public Optional<UUID> select(UUID sellerId, Map<String, Integer> requiredQuantities) {
-        if (requiredQuantities == null || requiredQuantities.isEmpty()
-                || requiredQuantities.values().stream().anyMatch(quantity -> quantity == null || quantity < 1)) {
-            return Optional.empty();
-        }
-        List<String> skuIds = requiredQuantities.keySet().stream().sorted().toList();
-        String requestedSkus = String.join(", ", Collections.nCopies(skuIds.size(), "(?)"));
-        String insertMissingPools = """
-                INSERT INTO inventory_pool (
-                    seller_id, location_id, sku_id, initial_capacity, available, reserved, claimed
-                )
-                SELECT location.seller_id, location.location_id, requested.sku_id, 0, 0, 0, 0
-                FROM inventory_location location
-                CROSS JOIN (VALUES %s) AS requested(sku_id)
-                WHERE location.seller_id = ? AND location.active
-                ON CONFLICT (seller_id, location_id, sku_id) DO NOTHING
-                """.formatted(requestedSkus);
-        List<Object> insertParameters = new ArrayList<>(skuIds.size() + 1);
-        insertParameters.addAll(skuIds);
-        insertParameters.add(sellerId);
-        jdbc.update(insertMissingPools, insertParameters.toArray());
-
-        String placeholders = String.join(",", Collections.nCopies(skuIds.size(), "?"));
-        List<Object> parameters = new ArrayList<>();
-        parameters.add(sellerId);
-        parameters.addAll(skuIds);
-        String lockSql = "SELECT pool.location_id, pool.sku_id "
-                + "FROM inventory_pool AS pool "
-                + "JOIN inventory_location AS location "
-                + "ON location.seller_id = pool.seller_id AND location.location_id = pool.location_id "
-                + "WHERE pool.seller_id = ? AND pool.sku_id IN (" + placeholders + ") "
-                + "AND location.active "
-                + "ORDER BY pool.seller_id, pool.sku_id, pool.location_id FOR UPDATE OF pool";
-        jdbc.query(lockSql, result -> { }, parameters.toArray());
         return advisorySelect(sellerId, requiredQuantities);
     }
 

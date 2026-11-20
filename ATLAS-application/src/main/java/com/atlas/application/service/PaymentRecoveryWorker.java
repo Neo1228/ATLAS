@@ -94,26 +94,35 @@ public class PaymentRecoveryWorker {
         this.maxAge = maxAge;
         this.baseBackoff = baseBackoff;
         this.maxBackoff = maxBackoff;
+        // 모든 Gauge 가 하나의 TTL 캐시 스냅샷을 공유한다.
+        //
+        // 이전 구현은 상태 4 + stage×상태 8 + stage 나이 3 + 전체 나이 1 = 16개의 Gauge 가
+        // 각각 COUNT(*) 를 실행했다. Micrometer Gauge 는 스크레이프마다 값을 읽으므로,
+        // Prometheus 스크레이프 빈도가 곧 DB 부하가 됐고 /actuator/prometheus 는 비인증이었다.
+        // payment_recovery_job 은 append-only 라 스캔 비용이 영구히 증가한다.
+        // Gauge 는 스크레이프마다 값을 읽으므로, 매번 DB 를 치지 않고 TTL 캐시를 통과한다.
         for (PaymentRecoveryJobStatus status : PaymentRecoveryJobStatus.values()) {
-            Gauge.builder("atlas.payment.recovery.jobs", recovery, repository -> repository.count(status))
+            Gauge.builder("atlas.payment.recovery.jobs", recovery,
+                    service -> service.metricsSnapshot().statusCount(status.name()))
                     .tag("status", status.name())
                     .register(meters);
         }
         for (PaymentRecoveryWorkStage stage : PaymentRecoveryWorkStage.values()) {
             for (PaymentRecoveryJobStatus status : PaymentRecoveryJobStatus.values()) {
                 Gauge.builder("atlas.payment.recovery.stage.jobs", recovery,
-                        service -> service.count(status, stage))
+                        service -> service.metricsSnapshot().stageCount(stage.name(), status.name()))
                         .tag("work_stage", stage.name())
                         .tag("status", status.name())
                         .register(meters);
             }
-            Gauge.builder("atlas.payment.recovery.stage.oldest_due_age_seconds",
-                    recovery, service -> service.oldestDueAgeSeconds(stage))
+            Gauge.builder("atlas.payment.recovery.stage.oldest_due_age_seconds", recovery,
+                    service -> service.metricsSnapshot().stageOldestDueAgeSeconds(stage.name()))
                     .tag("work_stage", stage.name())
                     .register(meters);
         }
-        Gauge.builder("atlas.payment.recovery.oldest_due_age_seconds",
-                recovery, PaymentRecoveryService::oldestDueAgeSeconds).register(meters);
+        Gauge.builder("atlas.payment.recovery.oldest_due_age_seconds", recovery,
+                service -> service.metricsSnapshot().oldestDueAgeAnyStage())
+                .register(meters);
     }
 
     @Scheduled(
