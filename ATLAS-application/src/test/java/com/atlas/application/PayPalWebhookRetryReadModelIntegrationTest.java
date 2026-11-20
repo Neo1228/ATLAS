@@ -41,10 +41,13 @@ class PayPalWebhookRetryReadModelIntegrationTest {
                 + "attempt_count INTEGER NOT NULL, state VARCHAR(16) NOT NULL, event_type VARCHAR(128), "
                 + "next_attempt_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, "
                 + "updated_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, lease_owner VARCHAR(128), lease_until TIMESTAMPTZ)");
+        // V54 와 동일하게 recorded_at 생성 컬럼을 둔다. 요약 쿼리가 COALESCE 대신 이 컬럼을
+        // 쓰므로, 스키마를 손으로 만드는 이 테스트도 같은 모양이어야 한다.
         jdbc.execute("CREATE TABLE paypal_webhook_retry_attempt_history (id BIGINT GENERATED ALWAYS AS IDENTITY, "
                 + "event_id VARCHAR(128) NOT NULL, event_type VARCHAR(128), attempt_number INTEGER NOT NULL, "
                 + "lease_token VARCHAR(128), outcome VARCHAR(32) NOT NULL, claimed_at TIMESTAMPTZ NOT NULL, "
-                + "finished_at TIMESTAMPTZ)");
+                + "finished_at TIMESTAMPTZ, recorded_at TIMESTAMPTZ "
+                + "GENERATED ALWAYS AS (COALESCE(finished_at, claimed_at)) STORED)");
         jdbc.execute("CREATE TABLE paypal_webhook_retry_operator_audit (idempotency_key VARCHAR(128), "
                 + "event_id VARCHAR(128), actor VARCHAR(128), reason VARCHAR(500), "
                 + "outcome VARCHAR(16), created_at TIMESTAMPTZ)");

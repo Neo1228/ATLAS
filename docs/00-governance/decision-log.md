@@ -119,6 +119,7 @@
 | D-113 | ✓ #434 판매자 잔액 전체 스캔 제거 | `sellerBalance` 가 seller_id 인덱스 없이 settlement_entry 전체를 스캔했다. 이력이 쌓일수록 영구 악화되는 구조. V53 인덱스 추가. 실측 4,600행: Seq Scan 2,936 버퍼 → 4 버퍼. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-045](../03-experiments/EXP-045-settlement-balance-index.md) |
 | D-114 | ✓ #434 메트릭 스크레이프 전체 스캔 제거 | Gauge 16개가 스크레이프마다 각각 COUNT(*) 를 실행했고 /actuator/prometheus 는 비인증이었다. 단일 GROUP BY 2쿼리 + 5초 TTL 캐시로 교체. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-046](../03-experiments/EXP-046-metrics-scrape-full-scan.md) |
 | D-115 | ✓ #434 극한 부하 경계 설정 | Tomcat 200:Hikari 10 비율과 5초 커넥션 대기가 실패 배출을 40 rps 로 제한했다. 스레드 40, 대기 500ms, 서버 측 statement_timeout·idle_in_transaction_timeout 추가. PayPal 토큰 경로에도 타임아웃. 인프라는 측정 임계값 미도달로 계속 보류. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0055](../02-decisions/adr/ADR-0055-extreme-load-boundaries-and-infra-gates.md) |
+| D-116 | ✓ #434 웹훅 이력 요약 전체 스캔 제거 | COALESCE(finished_at, claimed_at) 술어가 인덱스를 못 타 append-only 이력을 매 조회 전체 스캔했다. 생성 컬럼 recorded_at + (recorded_at, outcome) 인덱스로 교체. 실측 20만행: 2,705 → 31 버퍼. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-047](../03-experiments/EXP-047-webhook-history-scan.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -149,6 +150,7 @@
 <a id="d-113"></a>
 <a id="d-114"></a>
 <a id="d-115"></a>
+<a id="d-116"></a>
 
 <a id="detailed-decision-records"></a>
 
