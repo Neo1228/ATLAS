@@ -82,7 +82,7 @@ JDK 21 `HttpClient`로 실제 Sandbox의 `/v1/oauth2/token`에도 별도 POST를
 ### 구성
 
 - `load-tests/paypal-real-fault/start-app.sh`: 실제 ATLAS jar를 실험 전용 PostgreSQL 18.6·Mailpit 컨테이너와 연결해 실행한다. JVM hosts 파일로 `api-m.sandbox.paypal.com`을 loopback으로 고정하고, 같은 호스트명의 Toxiproxy 포트를 거쳐 **실제** Sandbox로 보낸다. TLS SNI·인증서 검증은 실제 호스트명 그대로 유지한다. PayPal 자격 증명은 git 제외 파일 `.env.local`에서만 읽는다.
-- `load-tests/paypal-real-fault/real-flow.mjs`: 실제 API로 판매자·상품·구매자·장바구니·checkout을 만든다. 결제 제출(실제 PayPal 주문 생성) 후 **Sandbox 구매자 계정으로 headless Chromium(Playwright)이 실제 PayPal 승인 화면에서 승인**한다. 이어서 return URL로 승인 반영·capture를 호출한다. 단계별로 Toxiproxy 장애를 걸고 상품 조회 10 rps를 동시에 보낸다.
+- `load-tests/paypal-real-fault/real-flow.mjs`: 실제 API로 판매자·상품·구매자·장바구니·checkout을 만든다. 결제 제출(실제 PayPal 주문 생성) 후 **Sandbox 구매자 계정으로 headless Chromium(Playwright)이 실제 PayPal 승인 화면에서 승인**한다. 이어서 return URL로 승인 반영·capture를 호출한다. 장애는 주문 생성 요청과 구매자 승인 후 첫 PayPal 단계인 `GET /v2/checkout/orders/{id}` 조회에 주입하고, 상품 조회 10 rps를 동시에 보낸다. 이 측정은 capture POST 자체에 장애를 주입한 것이 아니다.
 - 진실 원천 비교: 실험 종료 후 Toxiproxy를 거치지 않는 직접 연결로 PayPal 주문을 조회한다. capture 수·금액을 ATLAS 상태·정산 journal과 비교한다(capture ≤ 1, `PAID` ⇔ capture 1건, capture 금액 = FX 스냅샷 금액, `PAID` ⇔ journal 1건).
 - 한계로 남는 합성 요소: BOK ECOS 키가 없어 **FX 스냅샷만** `SYNTHETIC_FIXTURE`(1,400 KRW/USD)로 DB에 넣었다. 1,000원 상품은 $0.71로 실제 Sandbox에 청구된다. 나머지 PayPal 호출과 승인은 stub 없이 실제다.
 - 승인 화면 순서(이메일 → 비밀번호 → 검토 → 승인 버튼)는 실제 Sandbox에서 먼저 확인했다. 승인마다 새 브라우저 컨텍스트를 쓴다. 같은 컨텍스트를 재사용하면 앞선 로그인 세션이 남아 화면 순서가 바뀐다.
@@ -93,21 +93,21 @@ JDK 21 `HttpClient`로 실제 Sandbox의 `/v1/oauth2/token`에도 별도 POST를
 
 ### 결과 (2026-11-20, 조건별 checkout 3건, 상품 조회 10 rps 동시)
 
-장애는 Toxiproxy downstream에 해당 단계 동안만 건다. "수렴"은 return 응답 이후 복구 worker만으로 checkout이 종결 상태가 되기까지 걸린 시간이다(수동 reconcile 없음). PayPal capture 수는 Toxiproxy를 거치지 않는 직접 연결로 조회했다.
+- Toxiproxy toxic은 HTTP 요청 경로를 볼 수 없는 TLS tunnel 전체에 적용된다. 따라서 승인 후 toxic은 return URL 처리의 첫 PayPal 요청인 주문 GET에 걸린다. GET이 성공한 뒤 authorization·capture에 개별 장애를 거는 실험은 수행하지 않았다. "수렴"은 return 응답 이후 복구 worker만으로 checkout이 종결 상태가 되기까지 걸린 시간이다(수동 reconcile 없음). PayPal capture 수는 Toxiproxy를 거치지 않는 직접 연결로 조회했다.
 
 | 조건 | 결제 제출 응답 | 승인 반영(return) 응답 | 최종 상태 | 수렴 시간 | PayPal capture | 상품 조회 p95 / 실패 |
 |---|---|---|---|---|---|---|
 | 기준선 | 200 `AUTHORIZATION_PENDING`, 1.2~1.4s | 200 `CAPTURED`, 5.0~5.5s | 3/3 `PAID` | 0.1s 이내 | 각 1건 | 19ms / 0 |
 | 주문 생성 3s 지연 | 200 `UNKNOWN`, 2.06s | 200 `CAPTURED`, 4.3~4.6s | 3/3 `PAID` | 0.1s 이내 | 각 1건 | 14ms / 0 |
 | 주문 생성 응답 유실 | 200 `UNKNOWN`, 2.05s | 200 `CAPTURED`, 4.4~5.2s | 3/3 `PAID` | 0.1s 이내 | 각 1건 | 12ms / 0 |
-| 승인 반영 3s 지연 (수정 전) | 200, 1.0~1.2s | **500 `INTERNAL_ERROR`**, 2.04s | 3/3 `PAYMENT_PENDING` 고착 | 180s 내 미수렴 | 0건 | 17ms / 0 |
-| 승인 반영 3s 지연 (수정 후) | 200 | 200 `UNKNOWN`, 2.04s | 3/3 `PAID` | 0.6~36.9s | 각 1건 | 21ms / 0 |
-| 승인 반영 응답 유실 (수정 후) | 200 | 200 `UNKNOWN`, 2.07s | 3/3 `PAID` | 2.5~32.7s | 각 1건 | 143ms / 0 |
-| 승인 반영 연결 reset (수정 후) | 200 | 200 `UNKNOWN`, 0.2~0.3s | 3/3 `PAID` | 0.1~43.5s | 각 1건 | 52ms / 0 |
+| 승인 후 주문 GET 3s 지연 (수정 전) | 200, 1.0~1.2s | **500 `INTERNAL_ERROR`**, 2.04s | 3/3 `PAYMENT_PENDING` 고착 | 180s 내 미수렴 | 0건 | 17ms / 0 |
+| 승인 후 주문 GET 3s 지연 (수정 후) | 200 | 200 `UNKNOWN`, 2.04s | 3/3 `PAID` | 0.6~36.9s | 각 1건 | 21ms / 0 |
+| 승인 후 주문 GET 응답 유실 (수정 후) | 200 | 200 `UNKNOWN`, 2.07s | 3/3 `PAID` | 2.5~32.7s | 각 1건 | 143ms / 0 |
+| 승인 후 주문 GET 연결 reset (수정 후) | 200 | 200 `UNKNOWN`, 0.2~0.3s | 3/3 `PAID` | 0.1~43.5s | 각 1건 | 52ms / 0 |
 
 - 주문 생성 단계 장애에서는 제출 응답이 2초(연결 시간 초과 상한)에 `UNKNOWN`으로 끝났다. 이후 reconcile이 기존 PayPal 주문과 승인 URL을 되찾아 중복 주문 없이 결제됐다.
-- 수정 전 승인 반영 단계 장애: `PayPalRestClient.getOrder`가 연결 시간 초과를 provider 장애로 감싸지 않아 500이 났다. 결제 시도는 `AUTHORIZATION_PENDING`, 복구 작업은 `WAITING_FOR_BUYER`로 남았다. 구매자가 이미 승인했는데도 승인 만료까지 다시 승인을 기다리는 상태다([#444](https://github.com/Neo1228/ATLAS/issues/444)).
-- 수정 후 모든 조건에서 불변식 4개(capture ≤ 1, `PAID` ⇔ capture 1건, capture 금액 = FX 스냅샷, `PAID` ⇔ journal 1건)를 위반한 건은 없었다.
+- 수정 전 승인 후 주문 GET 장애: `PayPalRestClient.getOrder`가 연결 시간 초과를 provider 장애로 감싸지 않아 500이 났다. 결제 시도는 `AUTHORIZATION_PENDING`, 복구 작업은 `WAITING_FOR_BUYER`로 남았다. 구매자가 이미 승인했는데도 승인 만료까지 다시 승인을 기다리는 상태다([#444](https://github.com/Neo1228/ATLAS/issues/444)).
+- 수정 후 주문 GET 장애는 provider 오류로 처리되어 200 `UNKNOWN`으로 돌아오고, toxin을 제거한 뒤 복구 worker가 authorization과 capture를 수행했다. 측정 9건 모두 불변식 4개(capture ≤ 1, `PAID` ⇔ capture 1건, capture 금액 = FX 스냅샷, `PAID` ⇔ journal 1건)를 만족했다. 이 결과를 capture POST 자체의 장애 복구 검증으로 해석하지 않는다.
 - 수렴 시간 편차는 복구 worker의 첫 재시도 지연과 backoff에서 온다(첫 건이 30s대인 패턴). 표본이 조건당 3건이라 분포를 판단할 수 없다.
 - 응답 유실 조건에서 상품 조회 p95가 143ms로 커졌다. 단일 실행이라 원인(실험 프로세스 CPU, 연결 점유 등)을 분리하지 못했다.
 

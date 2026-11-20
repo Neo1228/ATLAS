@@ -250,14 +250,14 @@ function catalogLoad(rps) {
 }
 
 // ---------- 시나리오 ----------
-// phase=submit: 주문 생성(POST /payment) 중 장애. phase=capture: 승인 후 return(승인·capture) 중 장애.
+// phase=submit: 주문 생성(POST /payment) 중 장애. phase=approval-return: 승인 후 첫 provider 요청(GET order) 중 장애.
 const CONDITIONS = [
   { name: 'baseline', phase: null, toxic: null },
   { name: 'submit-latency-3s', phase: 'submit', toxic: { type: 'latency', attributes: { latency: 3000, jitter: 0 } } },
   { name: 'submit-response-lost', phase: 'submit', toxic: { type: 'timeout', attributes: { timeout: 15000 } } },
-  { name: 'capture-latency-3s', phase: 'capture', toxic: { type: 'latency', attributes: { latency: 3000, jitter: 0 } } },
-  { name: 'capture-response-lost', phase: 'capture', toxic: { type: 'timeout', attributes: { timeout: 15000 } } },
-  { name: 'capture-reset', phase: 'capture', toxic: { type: 'reset_peer', attributes: { timeout: 0 } } },
+  { name: 'approval-order-lookup-latency-3s', phase: 'approval-return', toxic: { type: 'latency', attributes: { latency: 3000, jitter: 0 } } },
+  { name: 'approval-order-lookup-response-lost', phase: 'approval-return', toxic: { type: 'timeout', attributes: { timeout: 15000 } } },
+  { name: 'approval-order-lookup-reset', phase: 'approval-return', toxic: { type: 'reset_peer', attributes: { timeout: 0 } } },
 ];
 const only = process.env.CONDITIONS ? new Set(process.env.CONDITIONS.split(',')) : null;
 
@@ -295,10 +295,10 @@ async function runCondition(cond, catalog, buyers, counter) {
   for (const r of results) returnPaths.push(r.approvalUrl ? await approve(r.approvalUrl) : null);
 
   log(cond.name, 'approved', returnPaths.filter(Boolean).length);
-  // 3) 승인 반영·capture
-  if (cond.phase === 'capture') await applyToxic(cond.toxic);
+  // 3) 승인 반영. toxic 은 return 처리의 첫 provider 단계(GET order)에 걸린다.
+  if (cond.phase === 'approval-return') await applyToxic(cond.toxic);
   const returns = await Promise.all(returnPaths.map((p) => (p ? api('GET', p, { timeoutMs: 60_000 }) : null)));
-  if (cond.phase === 'capture') await applyToxic(null);
+  if (cond.phase === 'approval-return') await applyToxic(null);
   const catalogStats = await stopCatalog();
 
   log(cond.name, 'returned', returns.map((r) => r?.status).join(','));
