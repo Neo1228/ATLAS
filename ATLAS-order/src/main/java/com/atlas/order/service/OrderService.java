@@ -22,5 +22,13 @@ public interface OrderService {
     List<OrderResponse> findAll(List<UUID> orderIds);
     boolean isOwnedByBuyer(UUID orderId, String buyerRef);
     OrderHistoryPageResponse findBuyerOrderHistory(String buyerRef, Integer limit, String cursor);
+
+    /**
+     * 판매자 주문 목록. 구매자 이력과 같은 keyset 페이지네이션을 쓴다.
+     *
+     * <p>이 API 가 없으면 판매자는 자기가 처리해야 할 orderId 를 알 수 없어, 배송·환불 등
+     * 모든 이행 경로가 HTTP 만으로는 도달 불가능했다.
+     */
+    OrderHistoryPageResponse findSellerOrderHistory(UUID sellerId, Integer limit, String cursor);
     Optional<UUID> findDeliveredOrderItemId(String buyerRef, UUID productId);
 }

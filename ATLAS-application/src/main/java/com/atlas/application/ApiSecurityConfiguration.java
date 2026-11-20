@@ -38,8 +38,16 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/webhooks/paypal")
                         .permitAll()
+                        // PayPal 승인 후 브라우저 리다이렉트가 돌아오는 경로.
+                        //
+                        // checkout 형제 경로와 레거시/campaign 주문 경로가 모두 열려 있어야 한다.
+                        // 주문 경로가 빠져 있으면 캠페인 주문(checkoutId == null) 구매자는 PayPal
+                        // 승인을 마친 뒤 401 을 받는다. 인증은 token 파라미터와 provider 상태로
+                        // 검증하므로 이 경로를 인증 없이 여는 것이 안전하다.
                         .requestMatchers(HttpMethod.GET, "/api/checkouts/*/payment/return",
-                                "/api/checkouts/*/payment/cancel")
+                                "/api/checkouts/*/payment/cancel",
+                                "/api/orders/*/payment/return",
+                                "/api/orders/*/payment/cancel")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/*",
                                 "/api/products/*/reviews", "/api/campaigns/*", "/actuator/health",

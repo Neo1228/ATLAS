@@ -222,6 +222,15 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         if (!preparation.refundId().equals(refund.refundId())) {
             throw conflict("환불 처리 중 준비된 환불 식별자가 변경되었습니다.");
         }
+        // 검수 성공과 송금 성공은 다르다.
+        //
+        // provider 환불이 FAILED 인데 반품을 REFUND_RECORDED 로 확정하면, 판매자 화면에는
+        // "환불 완료"로 보이지만 구매자는 돈을 받지 못한다. terminal FAILED 는 재시도도
+        // 막으므로(executeRefundOperation 이 즉시 반환) 조용한 금전 불일치가 영구화된다.
+        // 여기서 충돌로 남겨 반품을 RECEIVED 에 두면, 새 idempotency key 로 다시 시도할 수 있다.
+        if (refund.paymentStatus() == OrderRefundPaymentStatus.FAILED) {
+            throw conflict("환불 송금이 실패했습니다. 환불을 다시 시도한 뒤 검수를 완료해야 합니다.");
+        }
         return Objects.requireNonNull(transactions.execute(tx -> {
             lockOrder(orderId);
             OrderReturn row = lockedReturn(orderId, returnId);

@@ -120,6 +120,7 @@
 | D-114 | ✓ #434 메트릭 스크레이프 전체 스캔 제거 | Gauge 16개가 스크레이프마다 각각 COUNT(*) 를 실행했고 /actuator/prometheus 는 비인증이었다. 단일 GROUP BY 2쿼리 + 5초 TTL 캐시로 교체. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-046](../03-experiments/EXP-046-metrics-scrape-full-scan.md) |
 | D-115 | ✓ #434 극한 부하 경계 설정 | Tomcat 200:Hikari 10 비율과 5초 커넥션 대기가 실패 배출을 40 rps 로 제한했다. 스레드 40, 대기 500ms, 서버 측 statement_timeout·idle_in_transaction_timeout 추가. PayPal 토큰 경로에도 타임아웃. 인프라는 측정 임계값 미도달로 계속 보류. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0055](../02-decisions/adr/ADR-0055-extreme-load-boundaries-and-infra-gates.md) |
 | D-116 | ✓ #434 웹훅 이력 요약 전체 스캔 제거 | COALESCE(finished_at, claimed_at) 술어가 인덱스를 못 타 append-only 이력을 매 조회 전체 스캔했다. 생성 컬럼 recorded_at + (recorded_at, outcome) 인덱스로 교체. 실측 20만행: 2,705 → 31 버퍼. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-047](../03-experiments/EXP-047-webhook-history-scan.md) |
+| D-117 | ✓ #437 판매자 이행 식별자 공백 해소 | 판매자는 모든 이행 API 가 요구하는 orderId·orderItemId 를 HTTP 로 얻을 수 없었다(통합 테스트 3곳이 JDBC 로 우회). 판매자 주문 목록 API 와 OrderItemResponse.orderItemId 를 추가한다. 아울러 지급 상태 전이 운영자 API(돈이 REQUESTED 에 영구히 묶이던 문제), 환불 실패를 REFUND_RECORDED 로 오기록하던 문제, 캠페인 주문 PayPal 리다이렉트 401 을 함께 고친다. | [#437](https://github.com/Neo1228/ATLAS/issues/437), [ADR-0056](../02-decisions/adr/ADR-0056-seller-fulfillment-identifier-gaps.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -151,6 +152,7 @@
 <a id="d-114"></a>
 <a id="d-115"></a>
 <a id="d-116"></a>
+<a id="d-117"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -208,3 +210,4 @@
 | [ADR-0053 — 공유 인프라 도입 게이트](../02-decisions/adr/ADR-0053-shared-infra-adoption-gates.md) | #434: 캐시·MQ·외부 락의 측정 임계값과 기각 근거 | [D-111](#d-111) |
 | [ADR-0054 — 秒杀 경합 중복 직렬화 제거](../02-decisions/adr/ADR-0054-flash-sale-contention-removal.md) | #434: 실서비스 경로 실측, 중복 락 제거로 tps +40~175% | [D-112](#d-112) |
 | [ADR-0055 — 극한 부하 경계와 인프라 게이트](../02-decisions/adr/ADR-0055-extreme-load-boundaries-and-infra-gates.md) | #434: 실패 배출 속도 계산, 스레드/풀/타임아웃 경계, 인프라 도입 조건 | [D-115](#d-115) |
+| [ADR-0056 — 판매자 이행 식별자 공백](../02-decisions/adr/ADR-0056-seller-fulfillment-identifier-gaps.md) | #437: 판매자 주문 목록, orderItemId 노출, 지급 전이 API, 환불 실패 처리, 리다이렉트 401 | [D-117](#d-117) |
