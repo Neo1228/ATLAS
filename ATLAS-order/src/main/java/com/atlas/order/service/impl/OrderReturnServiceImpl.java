@@ -4,6 +4,8 @@ import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderRefundResponse;
 import com.atlas.order.dto.response.OrderReturnResponse;
+import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
+import com.atlas.order.dto.response.SellerOrderReturnResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.OrderReturn;
@@ -21,10 +23,12 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.repository.OrderReturnRepository;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -125,6 +130,33 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                 .filter(row -> row.buyerRef().equals(buyerRef))
                 .map(this::response)
                 .toList();
+    }
+
+    @Override
+    public SellerOrderReturnPageResponse findForSeller(UUID sellerId, OrderReturnStatus status,
+            Integer requestedLimit, String cursor) {
+        if (sellerId == null) throw invalid("Seller is required");
+        int limit = requestedLimit == null ? 20 : requestedLimit;
+        if (limit < 1 || limit > 100) throw invalid("Return history limit is out of range");
+        SellerReturnCursor position = decodeSellerReturnCursor(cursor);
+        return Objects.requireNonNull(transactions.execute(tx -> {
+            List<OrderReturn> fetched = position == null
+                    ? returns.findSellerReturns(sellerId, status, PageRequest.of(0, limit + 1))
+                    : returns.findSellerReturnsBefore(sellerId, status, position.requestedAt(),
+                            position.returnId(), PageRequest.of(0, limit + 1));
+            boolean hasNext = fetched.size() > limit;
+            List<OrderReturn> page = hasNext ? fetched.subList(0, limit) : fetched;
+            if (page.isEmpty()) return new SellerOrderReturnPageResponse(List.of(), null);
+
+            List<UUID> returnIds = page.stream().map(OrderReturn::returnId).toList();
+            Map<UUID, OrderReturn> withItems = new HashMap<>();
+            returns.findWithItemsByReturnIdIn(returnIds).forEach(row -> withItems.put(row.returnId(), row));
+            List<SellerOrderReturnResponse> responses = page.stream()
+                    .map(row -> sellerResponse(withItems.get(row.returnId())))
+                    .toList();
+            String nextCursor = hasNext ? encodeSellerReturnCursor(page.get(page.size() - 1)) : null;
+            return new SellerOrderReturnPageResponse(responses, nextCursor);
+        }));
     }
 
     @Override
@@ -299,14 +331,45 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                 && i.inspectionResult() == input.get(i.orderItemId()));
     }
     private OrderReturnResponse response(OrderReturn row) {
-        OrderRefundPaymentStatus paymentStatus = row.items().stream().map(OrderReturnItem::refundId)
-                .filter(Objects::nonNull).findFirst().map(refundRecords::paymentStatus)
-                .orElse(OrderRefundPaymentStatus.NOT_APPLICABLE);
         return new OrderReturnResponse(row.returnId(), row.orderId(), row.sellerId(), row.buyerRef(), row.status(),
-                paymentStatus, row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream().map(i ->
+                paymentStatus(row), row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream().map(i ->
                 new OrderReturnResponse.Item(i.orderItemId(), i.quantity(), i.inspectionResult(), i.refundId(),
                         i.refundAmountWon(), i.inspectedAt())).toList());
     }
+
+    private SellerOrderReturnResponse sellerResponse(OrderReturn row) {
+        return new SellerOrderReturnResponse(row.returnId(), row.orderId(), row.sellerId(), row.status(),
+                paymentStatus(row), row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream()
+                .map(item -> new SellerOrderReturnResponse.Item(item.orderItemId(), item.quantity(),
+                        item.inspectionResult(), item.refundId(), item.refundAmountWon(), item.inspectedAt()))
+                .toList());
+    }
+
+    private OrderRefundPaymentStatus paymentStatus(OrderReturn row) {
+        return row.items().stream().map(OrderReturnItem::refundId).filter(Objects::nonNull)
+                .findFirst().map(refundRecords::paymentStatus)
+                .orElse(OrderRefundPaymentStatus.NOT_APPLICABLE);
+    }
+
+    private static String encodeSellerReturnCursor(OrderReturn row) {
+        String value = row.requestedAt() + "|" + row.returnId();
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static SellerReturnCursor decodeSellerReturnCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) return null;
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] parts = decoded.split("\\|", -1);
+            if (parts.length != 2) throw new IllegalArgumentException();
+            return new SellerReturnCursor(Instant.parse(parts[0]), UUID.fromString(parts[1]));
+        } catch (RuntimeException exception) {
+            throw invalid("Return history cursor is invalid");
+        }
+    }
+
+    private record SellerReturnCursor(Instant requestedAt, UUID returnId) { }
     private record InspectionPreparation(OrderReturnResponse completedResponse, UUID refundId, Instant inspectedAt) {
         private static InspectionPreparation completed(OrderReturnResponse response) {
             return new InspectionPreparation(response, null, null);

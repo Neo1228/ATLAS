@@ -16,6 +16,8 @@ import com.atlas.order.dto.response.OrderRefundSummaryResponse;
 import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
+import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
+import com.atlas.order.persistence.state.OrderReturnStatus;
 import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.service.OrderRefundService;
@@ -160,6 +162,13 @@ public class OrderController {
     @GetMapping("/buyers/{buyerRef}/orders/{orderId}/returns")
     public List<OrderReturnResponse> findReturns(@PathVariable String buyerRef, @PathVariable UUID orderId) {
         return returns.findForBuyer(buyerRef, orderId);
+    }
+    @GetMapping("/sellers/{sellerId}/returns")
+    public SellerOrderReturnPageResponse sellerReturns(@PathVariable UUID sellerId,
+            @RequestParam(value = "status", required = false) OrderReturnStatus status,
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam(value = "cursor", required = false) String cursor) {
+        return returns.findForSeller(sellerId, status, limit, cursor);
     }
 
     @GetMapping("/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}")
