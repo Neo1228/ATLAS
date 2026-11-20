@@ -117,42 +117,60 @@ sum by (instance) (rate(http_client_requests_seconds_count{uri=~".*StatisticSear
 
 "가장 작은 변경"을 찾을 때, 새 계측을 설계하기 전에 **이미 존재하는 계측을 먼저 확인**해야 한다. 이 실험에서 그 순서를 지키지 않아 세 번의 구현 시도가 낭비됐다.
 
-## 추가: replica 간 측정 시도와 환경 제약 (미완)
+## 추가: replica 간 배수 실측 (완료)
 
-replica 수에 따른 외부 호출 배수를 실측하려 했다. **완료하지 못했고, 그 원인을 남긴다.**
+replica 수에 따른 외부 호출 배수를 **실측했다.** 이전 시도는 환경 제약으로 막혔고, 원인을 해결해 완료했다.
 
-### 구성한 것
+### 이전 시도가 막힌 이유와 해결
 
-현재 코드로 `bootJar` 빌드 → 격리 PostgreSQL(15432) + `load-tests/paypal-stub.py`(18100) + ECOS stub(18099) + app(18090, `observability` profile). V49 마이그레이션 적용 확인. 기존 `load-tests/buyer-checkout.js` 로 signup → seller onboarding → product/SKU → cart → checkout → payment 전 구간 성공.
+`PayPalProperties.validateBaseUrl` 은 PayPal base URL 호스트를 `localhost`/`127.0.0.1`/`::1`/sandbox 로만 허용한다. 컨테이너 런타임(Colima VM)은 `--network host` 에서도 네트워크 네임스페이스를 분리해, 컨테이너의 `127.0.0.1` 이 호스트 stub 을 가리키지 않았다.
 
-이 과정에서 outbound 호출이 실제로 관측되는 것을 확인했다:
+**해결: 컨테이너를 쓰지 않고 호스트에서 직접 실행했다.** JDK 21 로 `bootJar` 결과물을 실행하고, PayPal stub·ECOS stub·Mailpit·k6 를 모두 호스트에서 돌렸다. 그러면 모든 프로세스가 같은 네임스페이스에서 `127.0.0.1` 을 공유한다.
 
 ```text
-http_client_requests_seconds_count{client_name="127.0.0.1", status="CLIENT_ERROR",
-  uri="/api/StatisticSearch/{key}/json/kr/1/10/731Y001/D/{from}/{to}/0000001/"} 8
+JDK 21 (host) + application-module.jar  :18090 (replica1), :18092 (replica2)
+PostgreSQL 18.6 (docker, port 15432)    : 공유 DB
+paypal-stub.py (host)                   :18100
+ECOS stub (host)                        :18099
+Mailpit (docker)                        :11025/18025
+k6 (host, brew install k6)              : 부하 생성
 ```
 
-### 막힌 지점
+### 측정 결과
 
-`PayPalProperties.validateBaseUrl` 은 PayPal base URL 호스트를 `localhost` / `127.0.0.1` / `::1` / sandbox 로만 허용한다. 이 런타임(Colima VM)은 `--network host` 에서도 컨테이너 네트워크 네임스페이스를 분리한다. 따라서:
+실제 HTTP 경로로 signup → seller onboarding → product/SKU → cart → checkout → payment 를 실행하고, 각 인스턴스의 `http.client.requests{uri="...StatisticSearch..."}` 를 읽었다. 모든 실행에서 `checkoutSessionErrors=0`, `paypalSandboxOrderSubmissions=1` 이었다.
 
-- 컨테이너의 `127.0.0.1` 은 호스트 stub 이 아니다
-- 호스트 bridge 주소(`172.17.0.1` 등)는 검증에서 거부된다
+#### 측정 1: 단일 인스턴스, 캐시 재사용
 
-결과적으로 앱이 ECOS stub 에 도달하지 못하고 `ResourceAccessException`(회당 ~8ms 로 빠른 실패)이 발생했다. 검증을 우회하면 측정이 아니라 설정 변경이 되므로 하지 않았다.
+| 구간 | 결제 건수 | FX 호출 증가 |
+|---|---:|---:|
+| 최초 결제 | 1 | **1** |
+| TTL(60초) 내 연속 3건 | 3 | **0** |
+| TTL 만료 후 1건 | 1 | **1** |
 
-### 이미 측정된 것
+캐시와 TTL 만료가 설계대로 동작한다. 60초 안의 3건은 외부 호출을 전혀 만들지 않았다.
 
-`FxRateCallCostIntegrationTest` 가 실제 HTTP 경로로 검증한다(통과 중):
+#### 측정 2: replica 2대, 같은 TTL 창
 
-| 시나리오 | FX 외부 호출 |
+두 인스턴스의 캐시를 모두 만료시킨 뒤, 각 인스턴스로 결제 1건씩 보냈다.
+
+| 인스턴스 | FX 증가 |
 |---|---:|
-| 결제 3건 | 1회 |
-| 같은 금액 5회 변환 | 1회 |
-| 8스레드 동시 콜드 스타트 | 1회 |
+| replica1 (:18090) | **+1** |
+| replica2 (:18092) | **+1** |
+| 합계 (결제 2건) | **2** |
 
-단일 인스턴스에서 캐시·단일 비행은 실측으로 확인됐다. **남은 것은 replica 간 배수뿐**이며 이 환경에서는 재현할 수 없다.
+**로컬 캐시는 replica 수에 비례한다**는 계산 모델이 관측으로 확인됐다. replica1 이 방금 채운 캐시를 replica2 는 볼 수 없다.
 
-### 다음 시도에서 필요한 것
+### 해석과 판단
 
-컨테이너 런타임이 `--network host` 를 실제로 공유하거나, stub 을 앱과 **같은 네임스페이스**에 두어야 한다(예: stub 을 앱 컨테이너 안에서 실행, 또는 검증 허용 호스트가 같은 네임스페이스를 가리키게 구성). 또는 운영과 동일한 compose 스택에서 replica 수만 늘려 측정한다.
+- 단일 replica 에서는 캐시가 외부 호출을 TTL 당 1회로 접는다(측정 1).
+- replica 가 늘면 각자 TTL 당 1회씩 호출한다(측정 2). 계산대로다.
+- **절대값은 여전히 작다.** 이 측정은 결제율이 낮은 조건이었으므로, 호출률은 `replica 수 / TTL` 수준이다. 외부 quota 를 위협하는 수준인지는 **운영 결제율과 quota 를 함께 봐야** 판단할 수 있다.
+- 따라서 공유 캐시 도입은 **여전히 보류**한다. 다만 이제 "측정이 없어서"가 아니라, "측정된 배수가 알려졌고 운영 quota 대비 판단이 남아서" 보류다.
+
+### replica 측정의 한계
+
+- 호스트 단일 머신 측정이다. replica 간 네트워크 지연·DB 경쟁은 포함되지 않는다.
+- 결제율이 낮은 조건(vus=1)이었다. 높은 결제율에서 배수가 그대로 유지되는지는 별도 측정이 필요하다.
+- 운영 PayPal/ECOS 대신 stub 을 썼다. 지연은 `PAYPAL_STUB_LATENCY_MS`·ECOS stub 으로 조절할 수 있으나, 이번 측정은 기본값(ECOS 80ms)이다.

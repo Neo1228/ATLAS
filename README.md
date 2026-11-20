@@ -103,7 +103,7 @@ git ls-files -z -- '*.md' | xargs -0 npx --yes markdownlint-cli2@0.24.0
 
 PostgreSQL integration test에는 Docker 접근 필요. Colima에서는 현재 Docker context에서 `DOCKER_HOST`를 설정하고 `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` 사용. 기기별 socket path 고정 금지.
 
-부하 측정에서 `load-tests/` 의 PayPal·ECOS stub 을 쓸 때는 stub 과 애플리케이션이 **같은 네트워크 네임스페이스**에 있어야 한다. PayPal base URL 검증이 `localhost`/`127.0.0.1`/`::1`/sandbox 만 허용하므로, 컨테이너 안의 `127.0.0.1` 이 stub 을 가리켜야 한다. `--network host` 가 호스트 네임스페이스를 공유하지 않는 런타임(예: Colima VM)에서는 컨테이너가 호스트 stub 에 도달하지 못해 연결이 거부된다.
+부하 측정에서 `load-tests/` 의 PayPal·ECOS stub 을 쓸 때는 stub 과 애플리케이션이 **같은 네트워크 네임스페이스**에 있어야 한다. 가장 확실한 방법은 **JVM·stub·k6 를 모두 호스트에서** 실행하는 것이다(`k6` 는 `brew install k6`). 그러면 검증이 허용하는 `127.0.0.1` 이 실제 stub 을 가리킨다. PayPal base URL 검증이 `localhost`/`127.0.0.1`/`::1`/sandbox 만 허용하므로, 컨테이너 안의 `127.0.0.1` 이 stub 을 가리켜야 한다. `--network host` 가 호스트 네임스페이스를 공유하지 않는 런타임(예: Colima VM)에서는 컨테이너가 호스트 stub 에 도달하지 못해 연결이 거부된다.
 
 > [!WARNING]
 > V6 migration은 빈 데이터베이스에서 시작하는 경우만 지원. 기존 application table에 행이 있으면 DDL 전 중단. 자동 변환·backfill 미지원. 상세 기준은 [ADR-0006](docs/02-decisions/adr/ADR-0006-v6-clean-start.md) 참고.
