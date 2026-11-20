@@ -102,7 +102,17 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
                 .sorted((left, right) -> left.orderItemId().compareTo(right.orderItemId())).toList();
         if (passed.isEmpty()) throw conflict("Return has no passed inspection lines");
-        return new OrderRefundRequest(row.sellerId(), row.orderId(), "return-" + returnId, passed);
+        // 영구 실패한 이전 시도가 있으면 회차를 올려 새 송금 작업을 만든다.
+        //
+        // 파생 키 "return-" + returnId 는 한 번 FAILED 가 되면 재사용할 수 없다(payment 계층이
+        // terminal FAILED 를 즉시 반환한다). "return-<id>-r<n>" 을 쓰면 새 operation 이 생겨
+        // 실제로 다시 송금을 시도한다. 회차는 기존 키 개수에서 유도하므로 호출자가
+        // key 를 고를 필요가 없다.
+        String baseKey = "return-" + returnId;
+        // 회차 구분자 "-r" 까지 포함해 세야 다른 반품 키와 섞이지 않는다.
+        int priorAttempts = refunds.countByKeyPrefix(baseKey + "-r");
+        String idempotencyKey = priorAttempts == 0 ? baseKey : baseKey + "-r" + priorAttempts;
+        return new OrderRefundRequest(row.sellerId(), row.orderId(), idempotencyKey, passed);
     }
 
     private OrderRefundResponse refund(OrderRefundRequest request, UUID returnId) {
@@ -121,10 +131,22 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                     : payments.refundCheckout(order.checkoutId(), reserved.idempotencyKey(),
                             reserved.recordedAmountWon());
         } catch (PaymentException exception) {
-            transactions.execute(status -> {
-                refunds.updatePaymentStatus(reserved.refundId(), OrderRefundPaymentStatus.FAILED);
-                return null;
-            });
+            // 일시적 장애를 영구 실패로 만들지 않는다.
+            //
+            // 반품 환불의 idempotency key 는 "return-" + returnId 로 파생된다. 구매자·판매자가
+            // key 를 고를 수 없으므로, 여기서 FAILED 를 기록하면 payment 계층의 terminal 처리
+            // (executeRefundOperation 이 COMPLETED/FAILED 를 즉시 반환) 때문에 같은 반품은
+            // 다시 송금을 시도하지 않는다. 즉 provider 가 잠깐 꺼져 있었던 것만으로 구매자가
+            // 받아야 할 돈이 영구히 막힌다.
+            //
+            // 재시도 가능한 코드는 상태를 바꾸지 않고 그대로 올려, 같은 반품 검수를 다시
+            // 호출하면 새 송금 시도가 나가게 한다.
+            if (!isRetryableProviderFailure(exception)) {
+                transactions.execute(status -> {
+                    refunds.updatePaymentStatus(reserved.refundId(), OrderRefundPaymentStatus.FAILED);
+                    return null;
+                });
+            }
             throw exception;
         }
         return finalizeRefund(reserved, payment);
@@ -409,5 +431,16 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
     private static OrderException invalidRequest(String message) {
         return new OrderException(OrderException.Code.INVALID_REQUEST, message);
+    }
+
+    /**
+     * provider 가 일시적으로 응답하지 못한 경우인지 판단한다.
+     *
+     * <p>이 경우는 송금 실패가 아니라 "아직 결과를 모름"에 가깝다. 영구 실패로 기록하면
+     * 파생 idempotency key 때문에 재시도가 불가능해진다.
+     */
+    private static boolean isRetryableProviderFailure(PaymentException exception) {
+        return exception.code() == PaymentException.Code.PAYMENT_PROVIDER_DISABLED
+                || exception.code() == PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE;
     }
 }

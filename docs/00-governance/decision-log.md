@@ -121,6 +121,7 @@
 | D-115 | ✓ #434 극한 부하 경계 설정 | Tomcat 200:Hikari 10 비율과 5초 커넥션 대기가 실패 배출을 40 rps 로 제한했다. 스레드 40, 대기 500ms, 서버 측 statement_timeout·idle_in_transaction_timeout 추가. PayPal 토큰 경로에도 타임아웃. 인프라는 측정 임계값 미도달로 계속 보류. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0055](../02-decisions/adr/ADR-0055-extreme-load-boundaries-and-infra-gates.md) |
 | D-116 | ✓ #434 웹훅 이력 요약 전체 스캔 제거 | COALESCE(finished_at, claimed_at) 술어가 인덱스를 못 타 append-only 이력을 매 조회 전체 스캔했다. 생성 컬럼 recorded_at + (recorded_at, outcome) 인덱스로 교체. 실측 20만행: 2,705 → 31 버퍼. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-047](../03-experiments/EXP-047-webhook-history-scan.md) |
 | D-117 | ✓ #437 판매자 이행 식별자 공백 해소 | 판매자는 모든 이행 API 가 요구하는 orderId·orderItemId 를 HTTP 로 얻을 수 없었다(통합 테스트 3곳이 JDBC 로 우회). 판매자 주문 목록 API 와 OrderItemResponse.orderItemId 를 추가한다. 아울러 지급 상태 전이 운영자 API(돈이 REQUESTED 에 영구히 묶이던 문제), 환불 실패를 REFUND_RECORDED 로 오기록하던 문제, 캠페인 주문 PayPal 리다이렉트 401 을 함께 고친다. | [#437](https://github.com/Neo1228/ATLAS/issues/437), [ADR-0056](../02-decisions/adr/ADR-0056-seller-fulfillment-identifier-gaps.md) |
+| D-118 | ✓ #437 반품 환불 재시도 경로 복구 | 반품 환불 idempotency key 가 파생값이라 한 번 FAILED 면 재시도가 불가능했고, 일시적 provider 장애도 영구 실패로 기록됐다. 재시도 가능한 코드는 상태를 유지하고, 영구 실패는 `-r<n>` 회차 키로 새 작업을 만든다. 오류 상세 문구 노출은 기존 보안 계약(내부 메시지 비노출)을 깨므로 철회하고 기록만 남긴다. | [#437](https://github.com/Neo1228/ATLAS/issues/437), [EXP-048](../03-experiments/EXP-048-refund-retry-and-error-details.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -153,6 +154,7 @@
 <a id="d-115"></a>
 <a id="d-116"></a>
 <a id="d-117"></a>
+<a id="d-118"></a>
 
 <a id="detailed-decision-records"></a>
 
