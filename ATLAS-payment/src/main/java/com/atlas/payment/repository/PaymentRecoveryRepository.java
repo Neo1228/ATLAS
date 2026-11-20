@@ -1,5 +1,6 @@
 package com.atlas.payment.repository;
 
+import com.atlas.payment.persistence.projection.RecoveryMetricsSnapshot;
 import com.atlas.payment.persistence.projection.ClaimedPaymentRecoveryJob;
 import com.atlas.payment.persistence.projection.PaymentRecoveryReviewRow;
 import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
@@ -10,7 +11,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -337,6 +340,49 @@ public class PaymentRecoveryRepository {
                 """, Double.class, stage.name());
         return seconds == null ? 0 : Math.max(0, seconds);
     }
+
+
+    /**
+     * 메트릭 수집용 스냅샷. <b>한 번의 쿼리</b>로 상태·stage 별 건수와 가장 오래된 due 나이를 모은다.
+     *
+     * <p>왜 필요한가: 이전에는 Gauge 16개가 각각 {@code COUNT(*)} 를 실행했다. Micrometer Gauge 는
+     * 스크레이프마다 값을 읽으므로, Prometheus 가 긁을 때마다 16번 스캔이 돌았다.
+     * {@code payment_recovery_job} 은 append-only(완료 행을 지우지 않음)라 테이블이 계속 커지고,
+     * {@code /actuator/prometheus} 는 인증 없이 열려 있어 누구나 스크레이프 빈도를 조절할 수 있었다.
+     *
+     * <p>이제 GROUP BY 한 번으로 전체를 채우고, 나이 계산은 PENDING 그룹에서만 필요하므로
+     * 별도 최소값 집계를 함께 돌린다(총 2 쿼리, 상태/stage 조합 수와 무관).
+     */
+    public RecoveryMetricsSnapshot metricsSnapshot() {
+        Map<String, Long> statusCounts = new HashMap<>();
+        jdbc.query("""
+                SELECT status, COUNT(*) AS total
+                FROM payment_recovery_job
+                GROUP BY status
+                """, result -> {
+            statusCounts.put(result.getString("status"), result.getLong("total"));
+        });
+
+        Map<RecoveryMetricsSnapshot.StageKey, RecoveryMetricsSnapshot.StageMetrics> stages = new HashMap<>();
+        jdbc.query("""
+                SELECT work_stage, status, COUNT(*) AS total,
+                       COALESCE(
+                           EXTRACT(EPOCH FROM CURRENT_TIMESTAMP - MIN(
+                               CASE WHEN available_at <= CURRENT_TIMESTAMP THEN available_at END
+                           )),
+                           0
+                       )::double precision AS oldest_due
+                FROM payment_recovery_job
+                GROUP BY work_stage, status
+                """, result -> {
+            RecoveryMetricsSnapshot.StageKey key = new RecoveryMetricsSnapshot.StageKey(
+                    result.getString("work_stage"), result.getString("status"));
+            stages.put(key, new RecoveryMetricsSnapshot.StageMetrics(result.getLong("total"),
+                    Math.max(0, result.getDouble("oldest_due"))));
+        });
+        return new RecoveryMetricsSnapshot(statusCounts, stages);
+    }
+
 
     public void expireExhausted(int maxAttempts, Duration maxAge) {
         if (maxAttempts < 1) {

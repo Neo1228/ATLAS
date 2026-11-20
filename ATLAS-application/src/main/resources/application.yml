@@ -1,6 +1,16 @@
 server:
   address: ${ATLAS_SERVER_ADDRESS:127.0.0.1}
   port: ${ATLAS_SERVER_PORT:8080}
+  tomcat:
+    # 기본 200 스레드는 Hikari 10 커넥션에 20:1 로 몰려, 대부분의 스레드가 커넥션을
+    # 기다리며 메모리와 문맥 전환만 소모한다. 처리량은 풀이 결정하므로 스레드는
+    # 풀의 몇 배면 충분하다(출처: HikariCP pool sizing, PostgreSQL wiki).
+    # 10 커넥션 × 4 = 40. 정상 DB 작업이 수 ms 이므로 이 정도로 풀을 포화시킬 수 있다.
+    threads:
+      max: ${ATLAS_TOMCAT_MAX_THREADS:40}
+      min-spare: ${ATLAS_TOMCAT_MIN_SPARE_THREADS:10}
+    # 대기 연결 큐. 넘치면 503 대신 reset 이 나가므로 여유를 두되 무한정 두지 않는다.
+    accept-count: ${ATLAS_TOMCAT_ACCEPT_COUNT:100}
   # 목록 응답이 91 KiB 인데 압축이 없어 원본 그대로 전송됐다.
   # gzip-6 기준 7%까지 줄고, 앱이 소켓에 쓰는 바이트도 함께 줄어든다.
   # 작은 응답은 압축 이득이 없으므로 2 KiB 미만은 건너뛴다.
@@ -24,15 +34,45 @@ spring:
       max-file-size: 10MB
       max-request-size: 11MB
   datasource:
-    url: ${ATLAS_DB_URL:jdbc:postgresql://localhost:5432/atlas}
+    # 서버 측 상한을 연결에 건다. spring.jdbc.template.query-timeout 은 JdbcTemplate 만
+    # 덮고 JPA/Hibernate 쿼리(@Query, 파생 쿼리, findWithLock 등)는 덮지 못한다.
+    # statement_timeout 은 서버가 직접 끊으므로 두 경로 모두에 적용된다.
+    # idle-in-transaction 상한은 커넥션을 쥔 채 멈춘 요청을 자동으로 회수한다.
+    url: ${ATLAS_DB_URL:jdbc:postgresql://localhost:5432/atlas?options=-c%20statement_timeout%3D30000%20-c%20idle_in_transaction_session_timeout%3D60000}
     username: ${ATLAS_DB_USER:atlas}
     password: ${ATLAS_DB_PASSWORD:atlas-local-only}
+    hikari:
+      # 커넥션 대기 상한.
+      #
+      # 왜 500ms 인가: 이 값이 곧 "실패를 배출하는 속도"다. Tomcat 스레드가 N개이고
+      # 대기 상한이 T초이면, 굶는 요청을 배출하는 최대 속도는 N/T 다. 200 스레드 × 5초면
+      # 40 rps 로, 그 이상 유입되면 Tomcat accept queue(기본 100)가 차서 503 대신
+      # TCP reset 이 나간다. 500ms 면 같은 200 스레드로 400 rps 까지 정상적으로
+      # 503 을 돌려줄 수 있다(Meituan·Hikari·AWS 가이드의 "짧게 끊고 빨리 실패" 원칙).
+      #
+      # 정상 경로에는 영향이 없다: DB 작업은 수 ms 이고 풀은 10개다. 500ms 를 기다릴
+      # 정도로 풀이 비었다는 것은 이미 과부하라는 뜻이다.
+      connection-timeout: ${ATLAS_DB_CONNECTION_TIMEOUT_MS:500}
+      # 커넥션이 살아있는지 확인하는 주기. 장애 후 죽은 커넥션을 빨리 교체한다.
+      validation-timeout: ${ATLAS_DB_VALIDATION_TIMEOUT_MS:3000}
+  jdbc:
+    template:
+      # 단일 SQL 상한. 이 값이 없으면 느린 쿼리 하나가 커넥션을 영구 점유한다.
+      # 정산·주문 조회는 수십 ms 이므로 30s 는 정상 경로에 영향이 없다.
+      query-timeout: ${ATLAS_DB_QUERY_TIMEOUT_SECONDS:30}
   flyway:
     enabled: true
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  # Spring Boot 의 모든 자동 구성 HTTP 클라이언트(특히 OAuth2 토큰 요청)에 적용되는 상한.
+  # 토큰 요청에 타임아웃이 없으면 PayPal OAuth 가 멈출 때 결제 스레드가 무한 대기한다.
+  # PayPalRestClient 는 자체 요청 팩토리로 API 호출 상한을 별도로 둔다.
+  http:
+    client:
+      connect-timeout: ${ATLAS_HTTP_CONNECT_TIMEOUT:2s}
+      read-timeout: ${ATLAS_HTTP_READ_TIMEOUT:10s}
   security:
     oauth2:
       client:

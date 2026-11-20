@@ -114,6 +114,11 @@
 | D-108 | ✓ #418 checkout Idempotency-Key 상한 정합 | 같은 checkout 인데 생성은 256자, reconcile·cancel 은 221자를 받아 222~256자 키로 만든 checkout 의 복구 경로가 막혔다. ADR-0015 가 정한 221자(suffix 여유 포함)로 생성 상한을 맞춘다. | [#418](https://github.com/Neo1228/ATLAS/issues/418), [ADR-0050](../02-decisions/adr/ADR-0050-idempotency-key-limit.md) |
 | D-109 | ◐ #420 결제 환율 조회 캐시·단일 비행 | 결제마다 외부 환율 API 를 동기 호출해 그 지연이 응답시간에 1:1 로 더해졌다(주입 80ms → p50 91.90ms). BOK 고시는 일 단위이고 결제 금액은 불변 스냅샷이므로 60초 TTL 재사용이 안전하다. 단일 비행으로 만료 직후 동시 요청을 1회로 접고, 외부 장애 시 10분까지 마지막 값을 쓴다. 실측: 단일 인스턴스 TTL 내 결제 3건 → FX 0회, replica 2대 각 1건 → 2회(인스턴스별 1). 로컬 캐시가 replica 수만큼 곱해지므로 공유 캐시는 운영 quota 대비 판단 전까지 보류한다. | [#420](https://github.com/Neo1228/ATLAS/issues/420), [ADR-0051](../02-decisions/adr/ADR-0051-payment-fx-cache-single-flight.md), [EXP-041](../03-experiments/EXP-041-payment-external-fx-dependency.md) |
 | D-110 | ◐ #432 정산 수수료·보류금·지급 실행 | 원장이 gross 만 표현해 판매자가 실수령액을 알 수 없었다(ADR-0011 미구현, Q-006). 4계정 복식부기(`PLATFORM_FEE`, `SELLER_RESERVE` 추가)와 지급 상태 기계(`settlement_payout`)를 도입한다. 요율은 capture 시점에 스냅샷하고, refund 는 보류에서 먼저 차감하며, 미확정 지급은 잔액을 예약한다. | [#432](https://github.com/Neo1228/ATLAS/issues/432), [ADR-0052](../02-decisions/adr/ADR-0052-settlement-fee-reserve-payout.md) |
+| D-111 | ◐ #434 공유 캐시·브로커·외부 락 도입 게이트 | 캐시·MQ·분산 락은 "도입하면 좋다"는 일반론으로 반복 검토됐으나 측정된 병목이 없었다. FX 캐시는 초당 0.033회 수준이고 EXP-038 읽기 p95 는 13/9/6ms, EXP-042 는 DB 가 동시성을 이미 막음을 보였다. 세 후보를 한 곳에 모아 **도입 임계값**을 수치로 남기고 지금은 도입하지 않는다. Toxiproxy 는 `pg_terminate_backend` 로 대체 가능함을 EXP-043 이 보였으므로 철회한다. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0053](../02-decisions/adr/ADR-0053-shared-infra-adoption-gates.md), [EXP-043](../03-experiments/EXP-043-settlement-db-failure-atomicity.md) |
+| D-112 | ✓ #434 秒杀 재고 경합 병목 제거 | 128 동시 구매자 실측에서 처리량 460 tps 정체·p50 264ms 로 완전 직렬화됐다. 원인은 재고가 아니라 `JdbcLocationRepository.select` 의 예약마다 반복되는 upsert+`FOR UPDATE OF pool` 이었다. pool 은 SKU 등록 시 이미 생성되고 정확성은 조건부 UPDATE 가 보장하므로 select 를 읽기 전용으로 바꿨다. 실측: hot-row tps +40%, p50 −31%, flash-sale tps +175%, p50 −76%. 정확성 불변식 유지. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0054](../02-decisions/adr/ADR-0054-flash-sale-contention-removal.md), [EXP-044](../03-experiments/EXP-044-flash-sale-inventory-contention.md) |
+| D-113 | ✓ #434 판매자 잔액 전체 스캔 제거 | `sellerBalance` 가 seller_id 인덱스 없이 settlement_entry 전체를 스캔했다. 이력이 쌓일수록 영구 악화되는 구조. V53 인덱스 추가. 실측 4,600행: Seq Scan 2,936 버퍼 → 4 버퍼. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-045](../03-experiments/EXP-045-settlement-balance-index.md) |
+| D-114 | ✓ #434 메트릭 스크레이프 전체 스캔 제거 | Gauge 16개가 스크레이프마다 각각 COUNT(*) 를 실행했고 /actuator/prometheus 는 비인증이었다. 단일 GROUP BY 2쿼리 + 5초 TTL 캐시로 교체. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [EXP-046](../03-experiments/EXP-046-metrics-scrape-full-scan.md) |
+| D-115 | ✓ #434 극한 부하 경계 설정 | Tomcat 200:Hikari 10 비율과 5초 커넥션 대기가 실패 배출을 40 rps 로 제한했다. 스레드 40, 대기 500ms, 서버 측 statement_timeout·idle_in_transaction_timeout 추가. PayPal 토큰 경로에도 타임아웃. 인프라는 측정 임계값 미도달로 계속 보류. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0055](../02-decisions/adr/ADR-0055-extreme-load-boundaries-and-infra-gates.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -139,6 +144,11 @@
 <a id="d-108"></a>
 <a id="d-109"></a>
 <a id="d-110"></a>
+<a id="d-111"></a>
+<a id="d-112"></a>
+<a id="d-113"></a>
+<a id="d-114"></a>
+<a id="d-115"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -193,3 +203,6 @@
 | [ADR-0050 — Idempotency-Key 상한 통일](../02-decisions/adr/ADR-0050-idempotency-key-limit.md) | #418: checkout 생성·reconcile·cancel 221자 정합 | [D-108](#d-108) |
 | [ADR-0051 — 결제 환율 캐시·단일 비행](../02-decisions/adr/ADR-0051-payment-fx-cache-single-flight.md) | #420: 외부 환율 동기 의존 제거, staleness 상한, 실패 시 차단 | [D-109](#d-109) |
 | [ADR-0052 — 정산 수수료·보류·지급](../02-decisions/adr/ADR-0052-settlement-fee-reserve-payout.md) | #432: 4계정 복식부기, 요율 스냅샷, 지급 상태 기계, 잔액 예약 | [D-110](#d-110) |
+| [ADR-0053 — 공유 인프라 도입 게이트](../02-decisions/adr/ADR-0053-shared-infra-adoption-gates.md) | #434: 캐시·MQ·외부 락의 측정 임계값과 기각 근거 | [D-111](#d-111) |
+| [ADR-0054 — 秒杀 경합 중복 직렬화 제거](../02-decisions/adr/ADR-0054-flash-sale-contention-removal.md) | #434: 실서비스 경로 실측, 중복 락 제거로 tps +40~175% | [D-112](#d-112) |
+| [ADR-0055 — 극한 부하 경계와 인프라 게이트](../02-decisions/adr/ADR-0055-extreme-load-boundaries-and-infra-gates.md) | #434: 실패 배출 속도 계산, 스레드/풀/타임아웃 경계, 인프라 도입 조건 | [D-115](#d-115) |

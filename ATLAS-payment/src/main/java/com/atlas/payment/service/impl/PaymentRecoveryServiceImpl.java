@@ -2,24 +2,60 @@ package com.atlas.payment.service.impl;
 
 import com.atlas.payment.dto.response.PaymentRecoveryJob;
 import com.atlas.payment.dto.response.PaymentRecoveryReviewItem;
+import com.atlas.payment.dto.response.PaymentRecoveryMetrics;
 import com.atlas.payment.persistence.projection.ClaimedPaymentRecoveryJob;
 import com.atlas.payment.persistence.projection.PaymentRecoveryReviewRow;
+import com.atlas.payment.persistence.projection.RecoveryMetricsSnapshot;
 import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
 import com.atlas.payment.persistence.state.PaymentRecoveryWorkStage;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.service.PaymentRecoveryService;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
 public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
+    /**
+     * 메트릭 스냅샷 캐시 TTL. Prometheus 스크레이프 주기(보통 15초)보다 짧게 두어 신선도를
+     * 유지하면서, 여러 스크레이퍼나 비인증 호출이 같은 스냅샷을 공유하게 한다.
+     *
+     * <p>왜 캐시가 필요한가: Micrometer Gauge 는 스크레이프마다 값을 읽는다. 이전 구현은
+     * Gauge 16개가 각각 COUNT(*) 를 실행해, 스크레이프 빈도가 곧 DB 부하가 됐다.
+     * {@code /actuator/prometheus} 는 인증 없이 열려 있어 그 빈도를 누구나 조절할 수 있었다.
+     */
+    static final Duration METRICS_CACHE_TTL = Duration.ofSeconds(5);
+
     private final PaymentRecoveryRepository recovery;
+
+    private volatile PaymentRecoveryMetrics metricsSnapshot;
+    private volatile long metricsFetchedAtNanos = Long.MIN_VALUE;
 
     public PaymentRecoveryServiceImpl(PaymentRecoveryRepository recovery) {
         this.recovery = Objects.requireNonNull(recovery);
+    }
+
+    /**
+     * 모든 메트릭 Gauge 가 공유하는 스냅샷. TTL 이 지나면 단 한 번만 DB 를 읽는다.
+     *
+     * <p>동시 스크레이프가 겹쳐도 여러 쿼리가 동시에 나가지 않도록 메서드 수준에서 직렬화한다.
+     * 이 경로는 초당 소수 회만 호출되므로 경합 비용은 무시할 수 있다.
+     */
+    @Override
+    public synchronized PaymentRecoveryMetrics metricsSnapshot() {
+        long now = System.nanoTime();
+        if (metricsSnapshot != null
+                && now - metricsFetchedAtNanos < METRICS_CACHE_TTL.toNanos()) {
+            return metricsSnapshot;
+        }
+        PaymentRecoveryMetrics fresh = toMetrics(recovery.metricsSnapshot());
+        metricsSnapshot = fresh;
+        metricsFetchedAtNanos = now;
+        return fresh;
     }
 
     @Override
@@ -147,5 +183,15 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
         return new PaymentRecoveryReviewItem(item.recoveryJobId(), item.operationType(), item.workStage(),
                 item.operationId(), item.paymentAttemptId(), item.orderId(), item.checkoutId(), item.attemptCount(),
                 item.manualRequeueCount(), item.firstEnqueuedAt(), item.lastAttemptAt(), item.lastErrorCode());
+    }
+
+    private static PaymentRecoveryMetrics toMetrics(
+            RecoveryMetricsSnapshot snapshot) {
+        Map<PaymentRecoveryMetrics.StageKey, PaymentRecoveryMetrics.StageMetrics> stages =
+                new HashMap<>();
+        snapshot.stages().forEach((key, value) -> stages.put(
+                new PaymentRecoveryMetrics.StageKey(key.stage(), key.status()),
+                new PaymentRecoveryMetrics.StageMetrics(value.total(), value.oldestDueAgeSeconds())));
+        return new PaymentRecoveryMetrics(Map.copyOf(snapshot.statusCounts()), Map.copyOf(stages));
     }
 }
