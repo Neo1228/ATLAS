@@ -24,13 +24,21 @@ public class PayPalWebhookRetryHistoryService {
         this.jdbc = jdbc;
     }
 
+    /**
+     * 최근 24시간 재시도 outcome 요약.
+     *
+     * <p>{@code recorded_at} 은 {@code COALESCE(finished_at, claimed_at)} 인 생성 컬럼이다.
+     * 원래 술어가 COALESCE 를 직접 쓰면 인덱스를 못 타 이력 테이블 전체를 스캔했다
+     * (200,000행에서 2,705 버퍼). 생성 컬럼 + (recorded_at, outcome) 인덱스로
+     * Index Only Scan 31 버퍼가 됐다(V54, EXP-047).
+     */
     public PayPalWebhookRetrySummary summary() {
         Map<String, Long> outcomeCounts = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT outcome, COUNT(*) AS outcome_count
                 FROM paypal_webhook_retry_attempt_history
-                WHERE COALESCE(finished_at, claimed_at) >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
-                  AND COALESCE(finished_at, claimed_at) <= CURRENT_TIMESTAMP
+                WHERE recorded_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+                  AND recorded_at <= CURRENT_TIMESTAMP
                 GROUP BY outcome
                 ORDER BY outcome
                 """, rs -> {
