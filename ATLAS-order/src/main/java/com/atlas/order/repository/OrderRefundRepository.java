@@ -31,6 +31,26 @@ public class OrderRefundRepository {
                 (RowCallbackHandler) rs -> { }, idempotencyKey);
     }
 
+    /**
+     * 특정 접두사로 시작하는 환불 요청 수를 센다. 반품 환불의 재시도 회차를 정하는 데 쓴다.
+     *
+     * <p>반품 환불 키는 호출자가 고르지 못한다. 첫 시도는 {@code "return-<returnId>"},
+     * 재시도는 {@code "return-<returnId>-r1"}, {@code "-r2"} 처럼 회차를 붙인다.
+     *
+     * <p>주의: 접두사 매칭이므로 반드시 회차 구분자까지 포함해 넘겨야 한다. 단순히
+     * {@code "return-<returnId>"} 로 LIKE 하면 다른 접미사가 붙은 키까지 걸린다.
+     */
+    public int countByKeyPrefix(String prefix) {
+        String escaped = prefix
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        Integer count = jdbc.queryForObject(
+                "SELECT count(*) FROM order_refund_request WHERE idempotency_key LIKE ? ESCAPE '\\'",
+                Integer.class, escaped + "%");
+        return count == null ? 0 : count;
+    }
+
     public Optional<RefundRecord> findByIdempotencyKey(String idempotencyKey) {
         List<RefundHeader> rows = jdbc.query("""
                 SELECT refund_id, order_id, seller_id, idempotency_key, amount_won, refund_status, created_at

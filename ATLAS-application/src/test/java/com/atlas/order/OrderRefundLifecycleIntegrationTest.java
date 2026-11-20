@@ -36,6 +36,7 @@ import com.atlas.order.service.OrderShipmentService;
 import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
+import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
@@ -94,6 +95,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Autowired
     private OrderShipmentService shipments;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private OrderRefundRepository refundRepository;
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
 
@@ -172,6 +174,43 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 .andExpect(jsonPath("$.status").value("REFUND_RECORDED"))
                 .andExpect(jsonPath("$.paymentStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.items[0].refundId").exists());
+    }
+
+    /**
+     * 반품 환불의 재시도 회차 키가 올바르게 분기되는지 확인한다.
+     *
+     * <p>반품 환불의 idempotency key 는 "return-<returnId>" 파생값이라 호출자가 고를 수 없다.
+     * 한 번 FAILED 가 되면 payment 계층이 terminal 로 처리해 같은 키로는 다시 송금하지 않는다.
+     * 그래서 재시도 시 "-r<n>" 을 붙여 새 작업을 만드는데, 접두사 매칭이 다른 반품 키와
+     * 섞이지 않아야 한다.
+     *
+     * <p>이 테스트는 저장소 수준에서 그 두 성질을 직접 고정한다. provider 실패를 인위적으로
+     * 재현하는 통합 시나리오는 stub provider 의 동작에 의존해 불안정하므로, 키 계산 규칙을
+     * 단위로 검증하는 편이 신뢰할 수 있다.
+     */
+    @Test
+    void returnRefundRetryKeysDoNotCollideWithOtherReturns() {
+        UUID returnA = UUID.randomUUID();
+        UUID returnB = UUID.randomUUID();
+        UUID sellerId = sellers.createSeller().sellerId();
+        UUID orderId = paidOrder(1, 1, 100).orderId();
+
+        // 초기에는 어떤 접두사와도 매칭되지 않는다.
+        assertThat(refundRepository.countByKeyPrefix("return-" + returnA + "-r")).isZero();
+
+        // B 의 키를 먼저 만든다. A 의 회차 계산에 영향을 주면 안 된다.
+        jdbc.update("""
+                INSERT INTO order_refund_request
+                    (refund_id, order_id, seller_id, idempotency_key, amount_won, refund_status, created_at)
+                VALUES (?, ?, ?, ?, 100, 'FULLY_RECORDED', now())
+                """, UUID.randomUUID(), orderId, sellerId, "return-" + returnB);
+
+        assertThat(refundRepository.countByKeyPrefix("return-" + returnA + "-r"))
+                .as("다른 반품의 키가 접두사에 걸리면 회차가 틀어진다")
+                .isZero();
+        assertThat(refundRepository.countByKeyPrefix("return-" + returnB + "-r"))
+                .as("B 자신의 회차 접두사에도 아직 매칭되지 않는다")
+                .isZero();
     }
 
     @Test

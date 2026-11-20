@@ -227,7 +227,9 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         // provider 환불이 FAILED 인데 반품을 REFUND_RECORDED 로 확정하면, 판매자 화면에는
         // "환불 완료"로 보이지만 구매자는 돈을 받지 못한다. terminal FAILED 는 재시도도
         // 막으므로(executeRefundOperation 이 즉시 반환) 조용한 금전 불일치가 영구화된다.
-        // 여기서 충돌로 남겨 반품을 RECEIVED 에 두면, 새 idempotency key 로 다시 시도할 수 있다.
+        // 여기서 충돌로 남겨 반품을 RECEIVED 에 두면, 같은 검수를 다시 호출해 재시도할 수 있다.
+        // 반품 환불 키는 파생값이지만 OrderRefundServiceImpl 이 실패 회차를 세어
+        // "return-<id>-r<n>" 으로 새 송금 작업을 만든다. 따라서 재시도가 실제로 유효하다.
         if (refund.paymentStatus() == OrderRefundPaymentStatus.FAILED) {
             throw conflict("환불 송금이 실패했습니다. 환불을 다시 시도한 뒤 검수를 완료해야 합니다.");
         }
