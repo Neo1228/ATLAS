@@ -1492,9 +1492,20 @@ assertUuidV7(paymentOrderId);
                 Integer.class, checkout.checkoutId())).isEqualTo(1);
         UUID journalId = jdbc.queryForObject("SELECT journal_id FROM settlement_journal WHERE checkout_id = ?",
                 UUID.class, checkout.checkoutId());
-        assertThat(jdbc.queryForList("SELECT account_code || ':' || entry_side || ':' || amount_won " +
-                        "FROM settlement_entry WHERE journal_id = ? ORDER BY account_code", String.class, journalId))
-                .containsExactly("PSP_CLEARING:DEBIT:350", "SELLER_PAYABLE:CREDIT:350");
+        // checkout 은 seller 별로 분개한다(수수료·보류율 기본 0 이므로 seller 몫 = gross).
+        // journal 전체 합계는 여전히 총액 350 이고, 차변 합 = 대변 합이다.
+        List<String> entries = jdbc.queryForList(
+                "SELECT entry_side || ':' || amount_won FROM settlement_entry WHERE journal_id = ?",
+                String.class, journalId);
+        long debitTotal = jdbc.queryForObject(
+                "SELECT COALESCE(SUM(amount_won),0) FROM settlement_entry "
+                        + "WHERE journal_id = ? AND entry_side = 'DEBIT'", Long.class, journalId);
+        long creditTotal = jdbc.queryForObject(
+                "SELECT COALESCE(SUM(amount_won),0) FROM settlement_entry "
+                        + "WHERE journal_id = ? AND entry_side = 'CREDIT'", Long.class, journalId);
+        assertThat(entries).hasSize(4);
+        assertThat(debitTotal).isEqualTo(350L);
+        assertThat(creditTotal).isEqualTo(350L);
         List<Map<String, Object>> allocations = jdbc.queryForList(
                 "SELECT seller_id, amount_won FROM settlement_seller_allocation " +
                         "WHERE journal_id = ? ORDER BY allocation_ordinal", journalId);

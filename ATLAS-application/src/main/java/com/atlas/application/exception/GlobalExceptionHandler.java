@@ -119,6 +119,7 @@ public class GlobalExceptionHandler {
                 case INVALID_REQUEST ->
                         response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", settlement.getMessage());
                 case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", settlement.getMessage());
+                case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "NOT_FOUND", settlement.getMessage());
             };
         }
         return internalError(exception);

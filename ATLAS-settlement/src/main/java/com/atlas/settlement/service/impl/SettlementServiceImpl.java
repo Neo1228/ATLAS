@@ -14,12 +14,15 @@ import com.atlas.settlement.persistence.projection.RefundJournalRecord;
 import com.atlas.settlement.persistence.projection.SellerStatementRow;
 import org.springframework.transaction.annotation.Isolation;
 import com.atlas.settlement.repository.SettlementJournalRepository;
+import com.atlas.settlement.repository.SettlementPayoutRepository;
+import com.atlas.settlement.service.SettlementPolicy;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.DateTimeException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -34,10 +37,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SettlementServiceImpl implements SettlementService {
     private final SettlementJournalRepository journals;
+    private final SettlementPayoutRepository payoutTotals;
+    private final SettlementPolicy policy;
     private final Clock clock;
 
-    public SettlementServiceImpl(SettlementJournalRepository journals, Clock clock) {
+    public SettlementServiceImpl(SettlementJournalRepository journals,
+            SettlementPayoutRepository payoutTotals,
+            SettlementPolicy policy, Clock clock) {
         this.journals = Objects.requireNonNull(journals);
+        this.payoutTotals = Objects.requireNonNull(payoutTotals);
+        this.policy = Objects.requireNonNull(policy);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -48,9 +57,13 @@ public class SettlementServiceImpl implements SettlementService {
         CaptureJournalRecord facts = new CaptureJournalRecord(
                 request.orderId(), request.attemptId(), request.sellerId(), request.grossAmountWon());
         Instant recordedAt = clock.instant();
-        Optional<UUID> journalId = journals.insertIfAbsent(facts, recordedAt);
+        // 수수료·보류를 capture 시점 정책으로 분해하고, 적용 요율을 journal 에 스냅샷한다.
+        SettlementPolicy.Split split = policy.split(request.grossAmountWon());
+        Optional<UUID> journalId = journals.insertIfAbsent(facts, split.feeAmountWon(),
+                split.reserveAmountWon(), split.feeRateBps(), split.reserveRateBps(), recordedAt);
         if (journalId.isPresent()) {
-            journals.insertEntries(journalId.get(), request.grossAmountWon(), recordedAt);
+            journals.insertEntries(journalId.get(), request.sellerId(), request.grossAmountWon(),
+                    split.feeAmountWon(), split.reserveAmountWon(), recordedAt);
             return;
         }
         CaptureJournalRecord existing = journals.findByAttemptId(request.attemptId())
@@ -68,7 +81,13 @@ public class SettlementServiceImpl implements SettlementService {
         Optional<UUID> journalId = journals.insertCheckoutIfAbsent(facts, recordedAt);
         if (journalId.isPresent()) {
             UUID id = journalId.get();
-            journals.insertEntries(id, facts.totalAmountWon(), recordedAt);
+            // checkout 은 seller 별로 수수료·보류를 계산한다. seller 별 entry 를 기록해,
+            // seller statement 가 정확히 자기 몫을 본다.
+            for (CheckoutSettlementAllocation allocation : facts.allocations()) {
+                SettlementPolicy.Split split = policy.split(allocation.amountWon());
+                journals.insertEntries(id, allocation.sellerId(), allocation.amountWon(),
+                        split.feeAmountWon(), split.reserveAmountWon(), recordedAt);
+            }
             journals.insertCheckoutAllocations(id, facts.allocations());
             return;
         }
@@ -117,7 +136,7 @@ public class SettlementServiceImpl implements SettlementService {
         Instant recordedAt = clock.instant();
         Optional<UUID> journalId = journals.insertRefundIfAbsent(facts, recordedAt);
         if (journalId.isPresent()) {
-            journals.insertRefundEntries(journalId.get(), request.amountWon(), recordedAt);
+            journals.insertRefundEntries(journalId.get(), request.sellerId(), request.amountWon(), recordedAt);
             return;
         }
         RefundJournalRecord existing = journals.findByRefundId(request.refundId())
@@ -166,6 +185,7 @@ public class SettlementServiceImpl implements SettlementService {
             }
         }
         var totals = journals.sellerStatementTotals(request.sellerId(), request.from(), request.to());
+        var balance = journals.sellerBalance(request.sellerId());
         List<SellerStatementRow> rows = journals.sellerStatementRows(request.sellerId(),
                 request.from(), request.to(), afterAt, afterId, pageSize + 1);
         boolean hasMore = rows.size() > pageSize;
@@ -183,7 +203,15 @@ public class SettlementServiceImpl implements SettlementService {
         }
         return new SellerSettlementStatementResponse(request.sellerId(), request.from(), request.to(),
                 new SellerSettlementStatementResponse.Summary(totals.capturedAmountWon(),
-                        totals.refundReversalAmountWon(), totals.netLedgerChangeWon()), items, next);
+                        totals.refundReversalAmountWon(), totals.netLedgerChangeWon(),
+                        // 기간 흐름(fee/reserve/paidOut)과 현재 잔액을 모두 노출한다.
+                        // 어느 쪽도 captured/net 에 더하지 않는다(이중 계산 방지).
+                        totals.feeAmountWon(), totals.reserveAmountWon(), totals.paidOutAmountWon(),
+                        balance.feeAmountWon(), balance.reserveAmountWon(),
+                        balance.payableAmountWon(),
+                        BigInteger.valueOf(payoutTotals.pendingAmount(request.sellerId())),
+                        BigInteger.valueOf(payoutTotals.confirmedAmount(request.sellerId()))),
+                items, next);
     }
 
     private static SettlementException invalidStatementRequest() {
