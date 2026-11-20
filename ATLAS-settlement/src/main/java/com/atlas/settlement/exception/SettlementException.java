@@ -15,6 +15,7 @@ public class SettlementException extends RuntimeException {
 
     public enum Code {
         INVALID_REQUEST,
-        CONFLICT
+        CONFLICT,
+        NOT_FOUND
     }
 }

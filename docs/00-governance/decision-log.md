@@ -113,6 +113,7 @@
 | D-107 | ✓ #413 인증 시도 빈도 제한 | PBKDF2 검증 1회가 로컬 측정 47.7–58.3 ms(중위 50.3 ms)라, 시도 제한 없이는 소수 연결로 로그인 CPU를 고갈시킬 수 있었다. 주체(이메일)·출처(주소) 두 축의 PostgreSQL 고정 창 카운터를 두고, **비밀번호 검증 전에** 한도를 확인한다. 실패 기록은 `REQUIRES_NEW`로 분리해 인증 rollback과 무관하게 남긴다. 카운터 비용은 실측 0.711–0.738 ms/시도로 PBKDF2 검증(중위 50.3 ms)의 약 1.4 %다. | [#413](https://github.com/Neo1228/ATLAS/issues/413), [ADR-0048](../02-decisions/adr/ADR-0048-authentication-attempt-throttling.md), [EXP-040](../03-experiments/EXP-040-auth-throttle-cost.md) |
 | D-108 | ✓ #418 checkout Idempotency-Key 상한 정합 | 같은 checkout 인데 생성은 256자, reconcile·cancel 은 221자를 받아 222~256자 키로 만든 checkout 의 복구 경로가 막혔다. ADR-0015 가 정한 221자(suffix 여유 포함)로 생성 상한을 맞춘다. | [#418](https://github.com/Neo1228/ATLAS/issues/418), [ADR-0050](../02-decisions/adr/ADR-0050-idempotency-key-limit.md) |
 | D-109 | ◐ #420 결제 환율 조회 캐시·단일 비행 | 결제마다 외부 환율 API 를 동기 호출해 그 지연이 응답시간에 1:1 로 더해졌다(주입 80ms → p50 91.90ms). BOK 고시는 일 단위이고 결제 금액은 불변 스냅샷이므로 60초 TTL 재사용이 안전하다. 단일 비행으로 만료 직후 동시 요청을 1회로 접고, 외부 장애 시 10분까지 마지막 값을 쓴다. 실측: 단일 인스턴스 TTL 내 결제 3건 → FX 0회, replica 2대 각 1건 → 2회(인스턴스별 1). 로컬 캐시가 replica 수만큼 곱해지므로 공유 캐시는 운영 quota 대비 판단 전까지 보류한다. | [#420](https://github.com/Neo1228/ATLAS/issues/420), [ADR-0051](../02-decisions/adr/ADR-0051-payment-fx-cache-single-flight.md), [EXP-041](../03-experiments/EXP-041-payment-external-fx-dependency.md) |
+| D-110 | ◐ #432 정산 수수료·보류금·지급 실행 | 원장이 gross 만 표현해 판매자가 실수령액을 알 수 없었다(ADR-0011 미구현, Q-006). 4계정 복식부기(`PLATFORM_FEE`, `SELLER_RESERVE` 추가)와 지급 상태 기계(`settlement_payout`)를 도입한다. 요율은 capture 시점에 스냅샷하고, refund 는 보류에서 먼저 차감하며, 미확정 지급은 잔액을 예약한다. | [#432](https://github.com/Neo1228/ATLAS/issues/432), [ADR-0052](../02-decisions/adr/ADR-0052-settlement-fee-reserve-payout.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -137,6 +138,7 @@
 <a id="d-107"></a>
 <a id="d-108"></a>
 <a id="d-109"></a>
+<a id="d-110"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -190,3 +192,4 @@
 | [ADR-0048 — 인증 시도 빈도 제한](../02-decisions/adr/ADR-0048-authentication-attempt-throttling.md) | #413: 주체·출처 고정 창 카운터, 검증 전 차단, MFA·메일 경로 공유 | [D-107](#d-107) |
 | [ADR-0050 — Idempotency-Key 상한 통일](../02-decisions/adr/ADR-0050-idempotency-key-limit.md) | #418: checkout 생성·reconcile·cancel 221자 정합 | [D-108](#d-108) |
 | [ADR-0051 — 결제 환율 캐시·단일 비행](../02-decisions/adr/ADR-0051-payment-fx-cache-single-flight.md) | #420: 외부 환율 동기 의존 제거, staleness 상한, 실패 시 차단 | [D-109](#d-109) |
+| [ADR-0052 — 정산 수수료·보류·지급](../02-decisions/adr/ADR-0052-settlement-fee-reserve-payout.md) | #432: 4계정 복식부기, 요율 스냅샷, 지급 상태 기계, 잔액 예약 | [D-110](#d-110) |
