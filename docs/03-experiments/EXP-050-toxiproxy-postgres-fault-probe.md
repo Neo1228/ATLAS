@@ -116,5 +116,7 @@ JDK 21 `HttpClient`로 실제 Sandbox의 `/v1/oauth2/token`에도 별도 POST를
 - 이 설정에서 JDBC 응답 지연은 조회 지연과 일부 실패를 동반했고, 덤프에서 DB 소켓 대기와 커넥션 획득 대기가 동시에 관찰됐다. 이 결과만으로 특정 쿼리나 설정값이 실패의 단독 원인이라고 단정할 수 없다.
 - 장애 주입 전후의 Tomcat 200과 40 설정을 비교하지 않았다. 처리율, 실패 상태 코드별 분포, 커넥션 active/pending 시계열도 수집하지 않았다.
 - 각 조건은 순서대로 3회 실행했으며 별도 예열 구간과 조건별 무작위 배치를 두지 않았다. 호스트의 다른 프로세스와 캐시 영향도 배제하지 못했다.
-- 로컬 PayPal Sandbox 자격 증명을 찾지 못했다. 과거 `/tmp/atlas-app.env`의 PayPal·ECOS 값은 테스트용 placeholder였으므로 실제 자격 증명으로 취급하지 않았다. 사용자 요청에 따라 PayPal stub으로 대체하지 않았다.
-- PayPal 지연·단절, 결제와 조회의 혼합 부하, 장애 격리 후보의 전후 비교는 미완료다. 따라서 이 결과로 벌크헤드 도입이나 ADR-0055 설정값을 확정하지 않는다.
+- Sandbox PayPal Client ID/Secret과 buyer 로그인은 사용자가 허가한 Aside 세션에서 가져와 git 제외 `.env.local`에만 보관했다. 값은 출력·commit하지 않았다. BOK ECOS 키는 찾지 못해 FX 스냅샷만 `SYNTHETIC_FIXTURE`로 처리했다.
+- 실제 Toxiproxy 장애는 주문 생성 POST와 승인 return의 첫 PayPal 주문 조회 GET에 주입했다. TLS tunnel은 URL path를 구분할 수 없어 capture POST 자체의 응답 유실/단절은 아직 미측정이다([#448](https://github.com/Neo1228/ATLAS/issues/448)). 이번 측정은 실제 구매자 승인과 capture 완료, ATLAS·PayPal·정산 간 최종 일치를 검증하지만 capture POST 중 장애 복구를 주장하지 않는다.
+- 혼합 workload는 catalog 조회 10 rps와 결제 흐름을 동시에 실행했다. 조건당 3건이며 순서 고정, 별도 예열·무작위 순서 없음이다. 표본과 실험 환경만으로 운영 분포·SLA를 추론할 수 없다.
+- 이 결과로 벌크헤드 도입이나 ADR-0055 설정값을 확정하지 않는다.
