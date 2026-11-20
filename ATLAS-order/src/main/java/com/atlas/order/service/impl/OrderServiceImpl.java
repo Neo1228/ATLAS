@@ -15,6 +15,7 @@ import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.OrderHistoryPageResponse;
 import com.atlas.order.dto.response.OrderItemResponse;
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.response.SellerOrderDetailResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
@@ -336,6 +337,26 @@ public final class OrderServiceImpl implements OrderService {
     public OrderResponse find(UUID orderId) {
         if (orderId == null) throw invalidRequest();
         return transactions.execute(status -> toResponse(requireOrder(orderId)));
+    }
+
+    @Override
+    public SellerOrderDetailResponse findSellerOrder(UUID sellerId, UUID orderId) {
+        if (sellerId == null || orderId == null) throw invalidRequest();
+        return transactions.execute(status -> {
+            PurchaseOrder order = requireOrder(orderId);
+            if (!sellerId.equals(order.sellerId())) {
+                throw new OrderException(OrderException.Code.NOT_FOUND, "Order not found");
+            }
+            OrderResponse detail = toResponse(order);
+            if (detail.items().isEmpty()
+                    || detail.items().stream().anyMatch(item -> !sellerId.equals(item.sellerId()))) {
+                throw new OrderException(OrderException.Code.NOT_FOUND, "Order not found");
+            }
+            return new SellerOrderDetailResponse(detail.orderId(), sellerId, order.source(), detail.state(),
+                    order.createdAt(), detail.checkoutExpiresAt(), detail.inventoryState(),
+                    detail.fulfillmentLocationId(), detail.items(), detail.totalPriceWon(),
+                    detail.sellerCouponCode(), detail.couponDiscountWon());
+        });
     }
 
     @Override
