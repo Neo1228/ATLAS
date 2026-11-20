@@ -1,8 +1,11 @@
 package com.atlas.order.repository;
 
 import com.atlas.order.persistence.entity.OrderReturn;
+import com.atlas.order.persistence.state.OrderReturnStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.time.Instant;
+import org.springframework.data.domain.Pageable;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -20,6 +23,30 @@ public interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> 
 
     @EntityGraph(attributePaths = "items")
     List<OrderReturn> findAllByOrderId(UUID orderId);
+
+    @Query("""
+            select r from OrderReturn r
+            where r.sellerId = :sellerId
+                and (:status is null or r.status = :status)
+            order by r.requestedAt desc, r.returnId desc
+            """)
+    List<OrderReturn> findSellerReturns(@Param("sellerId") UUID sellerId,
+            @Param("status") OrderReturnStatus status, Pageable pageable);
+
+    @Query("""
+            select r from OrderReturn r
+            where r.sellerId = :sellerId
+                and (:status is null or r.status = :status)
+                and (r.requestedAt < :requestedAt
+                    or (r.requestedAt = :requestedAt and r.returnId < :returnId))
+            order by r.requestedAt desc, r.returnId desc
+            """)
+    List<OrderReturn> findSellerReturnsBefore(@Param("sellerId") UUID sellerId,
+            @Param("status") OrderReturnStatus status, @Param("requestedAt") Instant requestedAt,
+            @Param("returnId") UUID returnId, Pageable pageable);
+
+    @EntityGraph(attributePaths = "items")
+    List<OrderReturn> findWithItemsByReturnIdIn(List<UUID> returnIds);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select distinct r from OrderReturn r where r.orderId = :orderId and r.returnId = :returnId")

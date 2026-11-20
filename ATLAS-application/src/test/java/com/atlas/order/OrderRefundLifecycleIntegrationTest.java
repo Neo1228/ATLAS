@@ -36,6 +36,8 @@ import com.atlas.order.service.OrderShipmentService;
 import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
+import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
+import com.atlas.order.dto.response.SellerOrderReturnResponse;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderService;
@@ -174,6 +176,63 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 .andExpect(jsonPath("$.status").value("REFUND_RECORDED"))
                 .andExpect(jsonPath("$.paymentStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.items[0].refundId").exists());
+    }
+
+    @Test
+    void sellerReturnQueueIsPagedAndExcludesBuyerReference() throws Exception {
+        String indexDefinition = jdbc.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_order_return_seller_history'", String.class);
+        assertThat(indexDefinition).contains("seller_id", "requested_at DESC", "return_id DESC");
+        Fixture sellerA = paidOrder(2, 2, 125);
+        deliver(sellerA);
+        String buyerA = buyerRef(sellerA.orderId());
+        OrderReturnResponse returnA1 = returns.request(returnRequest(buyerA, sellerA.orderId(), "seller-return-a1",
+                new OrderReturnRequest.Item(sellerA.orderItemId(), 1)));
+        OrderReturnResponse returnA2 = returns.request(returnRequest(buyerA, sellerA.orderId(), "seller-return-a2",
+                new OrderReturnRequest.Item(sellerA.orderItemId(), 1)));
+
+        Fixture sellerB = paidOrder(1, 1, 175);
+        deliver(sellerB);
+        String buyerB = buyerRef(sellerB.orderId());
+        OrderReturnResponse returnB = returns.request(returnRequest(buyerB, sellerB.orderId(), "seller-return-b",
+                new OrderReturnRequest.Item(sellerB.orderItemId(), 1)));
+
+        String firstBody = mockMvc.perform(get("/api/sellers/{sellerId}/returns", sellerA.sellerId())
+                        .param("status", "REQUESTED")
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        SellerOrderReturnPageResponse first = objectMapper.readValue(firstBody, SellerOrderReturnPageResponse.class);
+        assertThat(first.returns()).hasSize(1);
+        assertThat(first.returns().getFirst().returnId()).isIn(returnA1.returnId(), returnA2.returnId());
+        assertThat(first.returns().getFirst().sellerId()).isEqualTo(sellerA.sellerId());
+        assertThat(first.returns().getFirst().orderId()).isEqualTo(sellerA.orderId());
+        assertThat(first.returns().getFirst().items()).extracting(SellerOrderReturnResponse.Item::orderItemId)
+                .containsExactly(sellerA.orderItemId());
+        assertThat(firstBody).doesNotContain(buyerA, buyerB, "buyerRef");
+        assertThat(first.nextCursor()).isNotBlank();
+
+        String secondBody = mockMvc.perform(get("/api/sellers/{sellerId}/returns", sellerA.sellerId())
+                        .param("status", "REQUESTED")
+                        .param("limit", "1")
+                        .param("cursor", first.nextCursor()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        SellerOrderReturnPageResponse second = objectMapper.readValue(secondBody, SellerOrderReturnPageResponse.class);
+        assertThat(second.returns()).singleElement()
+                .satisfies(row -> assertThat(row.returnId()).isNotEqualTo(first.returns().getFirst().returnId()));
+        assertThat(second.returns().getFirst().returnId()).isIn(returnA1.returnId(), returnA2.returnId());
+        assertThat(second.returns().getFirst().returnId()).isNotEqualTo(returnB.returnId());
+        assertThat(second.nextCursor()).isNull();
+
+        SellerOrderReturnPageResponse sellerBPage = objectMapper.readValue(mockMvc.perform(
+                        get("/api/sellers/{sellerId}/returns", sellerB.sellerId()).param("limit", "10"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), SellerOrderReturnPageResponse.class);
+        assertThat(sellerBPage.returns()).extracting(SellerOrderReturnResponse::returnId)
+                .containsExactly(returnB.returnId());
+        assertThat(returns.findForSeller(sellerA.sellerId(), OrderReturnStatus.RECEIVED, 10, null).returns())
+                .isEmpty();
     }
 
     /**
