@@ -189,6 +189,15 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found")));
         boolean cancellationRequested = current.state() == BuyerCheckoutState.CANCEL_PENDING
                 || current.state() == BuyerCheckoutState.CANCELLED;
+        if (cancellationRequested && noProviderWork(payments.findCheckout(checkoutId))
+                && payments.abandonUnstartedCheckout(checkoutId)) {
+            // 취소가 요청됐고 아직 PSP 에 보낸 작업이 없다. 여기서 결제 계층의 reconcile 을 부르면
+            // NOT_STARTED 승인 단계가 실행 가능하다고 판단되어(canExecutePhase) 구매자가 이미 취소한
+            // checkout 에 새 PayPal 주문이 만들어진다. 시도를 먼저 종결(펜스)했으므로 provider 호출은
+            // 더 일어나지 않고, 그때에만 예약을 풀어 닫는다. 펜스에 실패하면(이미 provider 단계)
+            // 아래 일반 경로가 provider 결과로 수렴시킨다.
+            return toResponse(closeCancellationWithoutProviderWork(checkoutId));
+        }
         PaymentResponse payment = payments.reconcileCheckout(checkoutId, idempotencyKey);
         if ((cancellationRequested && payment.state() == PaymentState.AUTHORIZED)
                 || (payment.state() == PaymentState.DECLINED && payment.authorizationActive())) {
@@ -240,9 +249,21 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             return toResponse(marked);
         }
         PaymentResponse currentPayment = payments.findCheckout(checkoutId);
-        if (currentPayment == null || currentPayment.state() == PaymentState.NOT_STARTED) {
-            // 요청 스레드가 로컬 상태를 결제 대기로 바꿨지만 결제 시도는 아직 저장되지 않았을 수 있다.
-            // 진행 중인 PSP 작업 결과를 확인할 수 있을 때까지 모든 예약을 유지한다.
+        if (noProviderWork(currentPayment)) {
+            // 결제 시도가 없거나 NOT_STARTED 다.
+            //
+            // 그대로 예약을 풀면 안 된다: submit 은 checkout 잠금을 놓은 뒤 provider 를 호출하므로,
+            // 이 순간 NOT_STARTED 로 보여도 곧 승인·캡처될 수 있다. 캡처가 이기면 재고는 이미 풀린
+            // 채 결제만 성사된다(CheckoutBehaviorTest#capturedPaymentWinsCancellationRaceAndIsRecorded).
+            //
+            // 그래서 결제 시도 행에 펜스를 건다. abandonUnstartedCheckout 은 시도 행을 잠그고
+            // NOT_STARTED 일 때만 종결한다. submitCheckout 의 시작 가드와 reservePhase 가 같은 행을
+            // 확인하므로, 펜스가 성공하면 provider 호출은 일어나지 않는다. 그때에만 예약을 풀고
+            // CANCELLED 로 닫는다. 펜스가 실패하면 provider 단계가 이미 시작된 것이므로 예약을 유지하고
+            // CANCEL_PENDING 으로 두어 provider 결과(void/캡처)로 수렴시킨다.
+            if (payments.abandonUnstartedCheckout(checkoutId)) {
+                return toResponse(closeCancellationWithoutProviderWork(checkoutId));
+            }
             return toResponse(marked);
         }
         PaymentResponse payment = payments.reconcileCheckoutForCancellation(checkoutId, idempotencyKey);
@@ -399,6 +420,34 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         if (order.sellerCouponId() != null) {
             sellerCoupons.redeemRedemption(order.sellerId(), order.sellerCouponId(), order.orderId(), at);
         }
+    }
+
+    private static boolean noProviderWork(PaymentResponse payment) {
+        return payment == null || payment.state() == PaymentState.NOT_STARTED;
+    }
+
+    /**
+     * PSP 에 보낸 작업이 없는 취소를 닫는다. checkout 행을 잠그고 다시 확인한 뒤에만 해제한다.
+     *
+     * <p>이미 terminal 이면 아무것도 하지 않는다(재시도 멱등). 취소 요청 상태가 아니면 건드리지
+     * 않는다 — 잠금을 기다리는 사이 다른 흐름이 상태를 바꿨을 수 있다.
+     */
+    private BuyerCheckout closeCancellationWithoutProviderWork(UUID checkoutId) {
+        return Objects.requireNonNull(transactions.execute(status -> {
+            BuyerCheckout checkout = checkouts.findWithLockByCheckoutId(checkoutId)
+                    .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found"));
+            if (checkout.state() != BuyerCheckoutState.CANCEL_PENDING) return checkout;
+            Instant now = clock.instant();
+            for (PurchaseOrder order : orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId)) {
+                if (order.state() != OrderState.CANCELLED && !order.state().isTerminal()) {
+                    inventory.releaseAll(order.orderId());
+                    releaseCouponReservation(order, now);
+                    order.updateState(OrderState.CANCELLED, order.paymentAttemptId(), now);
+                }
+            }
+            checkout.update(BuyerCheckoutState.CANCELLED, checkout.totalWon(), now);
+            return checkout;
+        }));
     }
 
     private void releaseCouponReservation(PurchaseOrder order, Instant at) {

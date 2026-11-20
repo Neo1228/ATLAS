@@ -137,9 +137,16 @@ public class JdbcQueueRepository {
         return jdbc.query("SELECT ticket_id FROM admission_ticket WHERE seller_id = ? AND sku_id = ? AND status = 'WAITING' AND expires_at > ? ORDER BY sequence LIMIT ? FOR UPDATE", (rs, rowNum) -> rs.getObject(1, UUID.class), sellerId, skuId, Timestamp.from(now), limit);
     }
 
-    public void activateWaitingTicket(UUID ticketId, Instant acquiredAt) {
+    /**
+     * 대기 ticket을 checkout slot 보유 상태로 승격합니다.
+     * 미시작 checkout 창은 join 시점이 아니라 slot 획득 시점부터 계산하므로 {@code expires_at}을
+     * {@code acquiredAt + checkoutSlotWindow}로 다시 설정합니다. join 즉시 slot을 얻은 ticket과 같은 기준입니다.
+     */
+    public void activateWaitingTicket(UUID ticketId, Instant acquiredAt, Duration checkoutSlotWindow) {
         entityManager.flush();
-        jdbc.update("UPDATE admission_ticket SET status = 'CHECKOUT_ACTIVE', checkout_slot_held = true, checkout_slot_acquired_at = ? WHERE ticket_id = ? AND status = 'WAITING'", Timestamp.from(acquiredAt), ticketId);
+        Instant expiresAt = acquiredAt.plus(checkoutSlotWindow);
+        jdbc.update("UPDATE admission_ticket SET status = 'CHECKOUT_ACTIVE', checkout_slot_held = true, checkout_slot_acquired_at = ?, expires_at = ? WHERE ticket_id = ? AND status = 'WAITING'",
+                Timestamp.from(acquiredAt), Timestamp.from(expiresAt), ticketId);
         entityManager.clear();
     }
 }

@@ -359,6 +359,21 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    public boolean abandonUnstartedCheckout(UUID checkoutId) {
+        if (checkoutId == null) throw invalidRequest("checkoutId required");
+        return Boolean.TRUE.equals(transactions.execute(status -> {
+            PaymentAttempt attempt = repository.findWithLockByCheckoutId(checkoutId).orElse(null);
+            if (attempt == null) return true;
+            if (attempt.getState() != PaymentState.NOT_STARTED) return false;
+            // provider 에 아무것도 보내지 않았으므로 승인도 없다. 되돌릴 PSP 작업 없이 종결한다.
+            attempt.setState(PaymentState.VOIDED);
+            attempt.setAuthorizationActive(false);
+            repository.save(attempt);
+            return true;
+        }));
+    }
+
+    @Override
     public boolean matchesCheckoutCancelState(UUID checkoutId, String state) {
         if (checkoutId == null || state == null || state.isBlank()) return false;
         return repository.findByCheckoutId(checkoutId)

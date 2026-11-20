@@ -3,6 +3,7 @@ package com.atlas.order.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -64,7 +65,7 @@ class OrderRefundServiceImplTest {
         when(fulfillment.status()).thenReturn(FulfillmentStatus.UNFULFILLED);
         when(fulfillments.findById(orderId)).thenReturn(Optional.of(fulfillment));
         when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
-        when(refunds.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(new RefundRecord(
+        when(refunds.findByIdempotencyKey(orderId, idempotencyKey)).thenReturn(Optional.of(new RefundRecord(
                 refundId, orderId, sellerId, idempotencyKey, 200, OrderRefundStatus.PARTIALLY_RECORDED,
                 Instant.parse("2026-01-01T00:00:00Z"), List.of(new RefundItem(javaSecond, 1),
                 new RefundItem(javaFirst, 1)))));
@@ -130,7 +131,7 @@ class OrderRefundServiceImplTest {
             when(fulfillments.findById(orderId)).thenReturn(Optional.of(fulfillment));
             when(items.findByOrderOrderIdOrderBySkuIdAsc(orderId)).thenReturn(List.of(item));
             when(refunds.refundedQuantitiesByOrder(orderId)).thenReturn(Map.of());
-            when(refunds.findByIdempotencyKey(any())).thenReturn(Optional.empty());
+            when(refunds.findByIdempotencyKey(eq(orderId), any())).thenReturn(Optional.empty());
             when(returns.findAllByOrderId(orderId)).thenReturn(List.of(openReturn));
 
         OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders, items, fulfillments,

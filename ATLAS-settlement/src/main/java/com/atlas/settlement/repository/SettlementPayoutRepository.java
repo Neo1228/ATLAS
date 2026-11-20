@@ -22,9 +22,13 @@ public class SettlementPayoutRepository {
     }
 
     /**
-     * 지급을 요청한다. 같은 seller·기간은 unique 제약으로 한 번만 생성된다.
+     * 지급을 요청한다. 같은 seller·기간의 진행 중/확정 지급(FAILED 제외)은 partial unique
+     * index({@code settlement_payout_seller_period_active_unique})로 하나만 생성된다.
+     * FAILED 지급은 이 제한에서 빠지므로 실패 후 같은 기간으로 다시 요청할 수 있다.
      *
-     * @return 새로 생성됐으면 payoutId, 이미 있으면 empty(멱등 재요청)
+     * <p>ON CONFLICT 대상의 WHERE 절은 partial index 추론에 필요하며 인덱스 조건과 같아야 한다.
+     *
+     * @return 새로 생성됐으면 payoutId, FAILED 가 아닌 같은 기간 지급이 이미 있으면 empty(멱등 재요청)
      */
     public Optional<UUID> request(UUID sellerId, Instant periodStart, Instant periodEnd,
             long amountWon, String idempotencyKey, Instant now) {
@@ -33,7 +37,7 @@ public class SettlementPayoutRepository {
                     (seller_id, period_start, period_end, amount_won, state, idempotency_key,
                      requested_at, updated_at)
                 VALUES (?, ?, ?, ?, 'REQUESTED', ?, ?, ?)
-                ON CONFLICT (seller_id, period_start, period_end) DO NOTHING
+                ON CONFLICT (seller_id, period_start, period_end) WHERE state <> 'FAILED' DO NOTHING
                 RETURNING payout_id
                 """, resultSet -> resultSet.next()
                 ? Optional.of(resultSet.getObject("payout_id", UUID.class)) : Optional.empty(),
@@ -57,13 +61,17 @@ public class SettlementPayoutRepository {
                 """, (resultSet, rowNumber) -> map(resultSet), idempotencyKey).stream().findFirst();
     }
 
+    /**
+     * 같은 seller·기간의 FAILED 가 아닌 지급을 찾는다. FAILED 지급은 잔액을 예약하지 않으므로
+     * 같은 기간의 재요청을 막지 않는다(partial unique index 와 같은 조건).
+     */
     public Optional<SettlementPayoutRow> findBySellerAndPeriod(UUID sellerId, Instant periodStart,
             Instant periodEnd) {
         return jdbc.query("""
                 SELECT payout_id, seller_id, period_start, period_end, amount_won, state,
                        requested_at, sent_at, confirmed_at
                 FROM settlement_payout
-                WHERE seller_id = ? AND period_start = ? AND period_end = ?
+                WHERE seller_id = ? AND period_start = ? AND period_end = ? AND state <> 'FAILED'
                 """, (resultSet, rowNumber) -> map(resultSet),
                 sellerId, Timestamp.from(periodStart), Timestamp.from(periodEnd))
                 .stream().findFirst();

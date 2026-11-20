@@ -1,5 +1,6 @@
 package com.atlas.payment.provider.exchange;
 
+import com.atlas.payment.exception.PaymentException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -73,6 +74,12 @@ public class CachingExchangeRateProvider implements ExchangeRateProvider {
             }
             try {
                 ExchangeRateQuote refreshed = delegate.latestUsdKrwRate();
+                // null 을 캐시하면 TTL 동안 모든 결제가 환율 없이 실패한다. 조회 실패로 취급해
+                // 허용 범위 안의 직전 값으로 버티거나, 없으면 결제 대행사 일시 장애로 알린다.
+                if (refreshed == null) {
+                    throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
+                            "Exchange-rate provider returned no quote");
+                }
                 cached = refreshed;
                 cachedAt = clock.instant();
                 return refreshed;

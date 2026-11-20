@@ -63,6 +63,14 @@ public class SettlementPayoutService {
         // 같은 기간 재요청은 멱등이다. idempotency key 또는 같은 (seller, 기간) 이 이미 있으면
         // 새 지급을 만들지 않고 그 지급을 돌려준다. 이 검사가 잔액 검사보다 먼저여야 한다:
         // 첫 요청이 그 잔액을 이미 예약했으므로, 잔액부터 보면 "잔액 없음"으로 잘못 실패한다.
+        //
+        // FAILED 지급의 처리:
+        // - 같은 key 재전송: 같은 요청의 재시도이므로 그 지급을 상태(FAILED) 그대로 돌려준다.
+        //   key 는 요청 하나를 식별하고 그 요청의 결과는 이미 FAILED 로 확정됐다. 새 지급을 만들면
+        //   같은 key 가 두 결과를 갖게 되고(key unique 제약과도 충돌), REQUESTED 로 꾸며 돌려주면
+        //   실패를 숨긴다. 응답의 state=FAILED 로 호출자는 실패를 알 수 있고, 재지급은 새 key 로 요청한다.
+        // - 새 key 로 같은 기간 요청: FAILED 는 잔액을 예약하지 않으므로 기간을 막지 않는다.
+        //   findBySellerAndPeriod 는 FAILED 를 제외하므로 아래 잔액 검사를 거쳐 새 지급이 생성된다.
         Optional<SettlementPayoutRow> prior = payouts.findByIdempotencyKey(idempotencyKey);
         if (prior.isPresent()) return requireSameFacts(toDto(prior.get()), sellerId, periodStart, periodEnd);
         Optional<SettlementPayoutRow> samePeriod = payouts.findBySellerAndPeriod(sellerId, periodStart, periodEnd);
@@ -78,12 +86,10 @@ public class SettlementPayoutService {
         Optional<UUID> created = payouts.request(sellerId, periodStart, periodEnd, amount,
                 idempotencyKey, now);
         if (created.isEmpty()) {
-            // 같은 기간에 이미 지급이 있다. 그 지급을 돌려준다(중복 지급 금지).
-            return payouts.findBySeller(sellerId, MAX_PAYOUT_LIST).stream()
-                    .filter(payout -> payout.periodStart().equals(periodStart)
-                            && payout.periodEnd().equals(periodEnd))
+            // 같은 기간에 FAILED 가 아닌 지급이 이미 있다. 그 지급을 돌려준다(중복 지급 금지).
+            // FAILED 지급은 partial unique index 대상이 아니므로 여기서 돌려주면 안 된다.
+            return payouts.findBySellerAndPeriod(sellerId, periodStart, periodEnd)
                     .map(SettlementPayoutService::toDto)
-                    .findFirst()
                     .orElseThrow(() -> conflict("Payout already exists for this period"));
         }
         return toDto(payouts.find(created.get()).orElseThrow(
