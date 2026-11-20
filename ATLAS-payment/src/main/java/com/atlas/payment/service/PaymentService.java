@@ -28,6 +28,14 @@ public interface PaymentService {
     PaymentResponse reconcileCheckout(UUID checkoutId, String idempotencyKey);
     PaymentResponse completeCheckoutApproval(UUID checkoutId, String providerOrderId);
     PaymentResponse reconcileCheckoutForCancellation(UUID checkoutId, String idempotencyKey);
+
+    /**
+     * 새 checkout 캡처 예약을 막는 펜스를 저장한다. 호출자는 checkout 행을 잠그고
+     * 취소 요청을 기록하는 동일한 트랜잭션에서 호출해야 한다.
+     * 잠금 순서는 checkout, 결제 시도 순이며 provider 호출은 하지 않는다.
+     * 이미 예약된 캡처는 계속 복구할 수 있다.
+     */
+    void prohibitNewCheckoutCapture(UUID checkoutId);
     /** checkout 결제 시도의 유효한 승인을 취소한다. */
     PaymentResponse voidCheckoutAuthorization(UUID checkoutId, String idempotencyKey);
     /**

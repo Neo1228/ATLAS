@@ -36,6 +36,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -357,6 +359,16 @@ public class PaymentServiceImpl implements PaymentService {
         PaymentAttempt attempt = repository.findByCheckoutId(checkoutId).orElse(null);
         return attempt == null ? null : toResponse(attempt);
     }
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void prohibitNewCheckoutCapture(UUID checkoutId) {
+        if (checkoutId == null) throw invalidRequest("checkoutId is required");
+        repository.findWithLockByCheckoutId(checkoutId).ifPresent(attempt -> {
+            attempt.prohibitNewCapture();
+            repository.save(attempt);
+        });
+    }
+
 
     @Override
     public boolean abandonUnstartedCheckout(UUID checkoutId) {
@@ -781,6 +793,12 @@ public class PaymentServiceImpl implements PaymentService {
         return transactions.execute(status -> {
             PaymentAttempt current = repository.findWithLockByAttemptId(attemptId)
                     .orElseThrow(() -> notFound("No payment attempt: " + attemptId));
+            // AUTHORIZED만 아직 캡처를 예약하지 않은 상태다. PENDING과 UNKNOWN은
+            // provider에 전달됐을 수 있으므로 계속 복구해야 한다.
+            if (phase == PaymentPhase.CAPTURE && current.getState() == PaymentState.AUTHORIZED
+                    && current.isCaptureProhibited()) {
+                return new PhaseStart(current, null, phase, null);
+            }
             if (current.getPaymentPhase() != phase || terminal(current.getState())
                     || (!continueCapture && phase == PaymentPhase.CAPTURE
                     && current.getState() == PaymentState.AUTHORIZED)

@@ -123,6 +123,7 @@
 | D-117 | ✓ #437 판매자 이행 식별자 공백 해소 | 판매자는 모든 이행 API 가 요구하는 orderId·orderItemId 를 HTTP 로 얻을 수 없었다(통합 테스트 3곳이 JDBC 로 우회). 판매자 주문 목록 API 와 OrderItemResponse.orderItemId 를 추가한다. 아울러 지급 상태 전이 운영자 API(돈이 REQUESTED 에 영구히 묶이던 문제), 환불 실패를 REFUND_RECORDED 로 오기록하던 문제, 캠페인 주문 PayPal 리다이렉트 401 을 함께 고친다. | [#437](https://github.com/Neo1228/ATLAS/issues/437), [ADR-0056](../02-decisions/adr/ADR-0056-seller-fulfillment-identifier-gaps.md) |
 | D-118 | ✓ #437 반품 환불 재시도 경로 복구 | 반품 환불 idempotency key 가 파생값이라 한 번 FAILED 면 재시도가 불가능했고, 일시적 provider 장애도 영구 실패로 기록됐다. 재시도 가능한 코드는 상태를 유지하고, 영구 실패는 `-r<n>` 회차 키로 새 작업을 만든다. 오류 상세 문구 노출은 기존 보안 계약(내부 메시지 비노출)을 깨므로 철회하고 기록만 남긴다. | [#437](https://github.com/Neo1228/ATLAS/issues/437), [EXP-048](../03-experiments/EXP-048-refund-retry-and-error-details.md) |
 | D-119 | ✓ #440 도메인 상태 전이·멱등성 결함 6건 | FAILED 지급 기간 재요청(V56 부분 유니크), 승격 티켓 체크아웃 창을 획득 시점부터 계산, 결제 시도 전 취소는 결제 시도 행 펜스 성공 시에만 예약 해제, FX null 을 503 으로, PAID 캠페인 주문 취소는 409, 환불 키를 주문 단위로(V57). 결제 시도 전 취소의 첫 수정은 캡처 경합에서 재고를 풀어 기존 테스트가 잡았고, checkout 이 아닌 결제 시도 행 펜스로 바꿨다. | [#440](https://github.com/Neo1228/ATLAS/issues/440), [EXP-049](../03-experiments/EXP-049-domain-consistency-batch.md) |
+| D-120 | ✓ #442 취소 요청 후 새 capture 차단 | 취소 트랜잭션에서 `payment_attempt.capture_prohibited`(V58)를 함께 기록하고, `reservePhase`는 attempt 행 잠금 아래에서 `CAPTURE`+`AUTHORIZED`+펜스일 때만 새 provider 호출을 거부한다. 진행 중 capture(`CAPTURE_PENDING`/`UNKNOWN`)는 계속 복구하고 `CAPTURED`는 그대로 반영한다. 실제 PayPal 재현은 미실행. | [#442](https://github.com/Neo1228/ATLAS/issues/442), [EXP-050](../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -157,6 +158,7 @@
 <a id="d-117"></a>
 <a id="d-118"></a>
 <a id="d-119"></a>
+<a id="d-120"></a>
 
 <a id="detailed-decision-records"></a>
 

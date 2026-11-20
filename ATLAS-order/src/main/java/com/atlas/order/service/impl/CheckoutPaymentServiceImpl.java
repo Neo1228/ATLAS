@@ -198,7 +198,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             // 아래 일반 경로가 provider 결과로 수렴시킨다.
             return toResponse(closeCancellationWithoutProviderWork(checkoutId));
         }
-        PaymentResponse payment = payments.reconcileCheckout(checkoutId, idempotencyKey);
+        PaymentResponse payment = cancellationRequested
+                ? payments.reconcileCheckoutForCancellation(checkoutId, idempotencyKey)
+                : payments.reconcileCheckout(checkoutId, idempotencyKey);
         if ((cancellationRequested && payment.state() == PaymentState.AUTHORIZED)
                 || (payment.state() == PaymentState.DECLINED && payment.authorizationActive())) {
             payment = payments.voidCheckoutAuthorization(checkoutId, idempotencyKey + ":void");
@@ -233,6 +235,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             if (checkout.state() == BuyerCheckoutState.PAYMENT_PENDING
                     || checkout.state() == BuyerCheckoutState.PAYMENT_UNKNOWN
                     || checkout.state() == BuyerCheckoutState.CANCEL_PENDING) {
+                // 같은 트랜잭션에서 checkout과 결제 시도 행을 잠가 취소 요청이
+                // 확정된 뒤 새로운 캡처가 예약되지 않도록 한다.
+                payments.prohibitNewCheckoutCapture(checkoutId);
                 List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
                 for (PurchaseOrder order : children) {
                     if (!order.state().isTerminal()) {

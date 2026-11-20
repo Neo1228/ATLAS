@@ -32,6 +32,8 @@ public class PaymentAttempt {
     @Getter private PaymentPhase paymentPhase;
     @Column(name = "authorization_active", nullable = false)
     @Getter private boolean authorizationActive;
+    @Column(name = "capture_prohibited", nullable = false)
+    @Getter private boolean captureProhibited;
     @Column(name = "total_won")
     @Getter private Long totalWon;
     @Column(name = "provider_amount_minor")
@@ -86,6 +88,7 @@ public class PaymentAttempt {
     public void setState(PaymentState state) { this.state = state; }
     public void setPaymentPhase(PaymentPhase paymentPhase) { this.paymentPhase = paymentPhase; }
     public void setAuthorizationActive(boolean authorizationActive) { this.authorizationActive = authorizationActive; }
+    public void prohibitNewCapture() { this.captureProhibited = true; }
     public void setTotalWon(long totalWon) {
         if (totalWon <= 0) throw new IllegalArgumentException("Payment amount must be positive");
         this.totalWon = totalWon;
