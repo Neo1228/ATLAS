@@ -1,6 +1,7 @@
 package com.atlas.order.service;
 
 import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.order.dto.response.SellerOrderDetailResponse;
 import com.atlas.order.dto.response.OrderHistoryPageResponse;
 import java.util.List;
 import java.util.Optional;
@@ -30,5 +31,7 @@ public interface OrderService {
      * 모든 이행 경로가 HTTP 만으로는 도달 불가능했다.
      */
     OrderHistoryPageResponse findSellerOrderHistory(UUID sellerId, Integer limit, String cursor);
+    /** 판매자만 자기 주문의 항목 식별자와 이행 필드를 조회한다. */
+    SellerOrderDetailResponse findSellerOrder(UUID sellerId, UUID orderId);
     Optional<UUID> findDeliveredOrderItemId(String buyerRef, UUID productId);
 }

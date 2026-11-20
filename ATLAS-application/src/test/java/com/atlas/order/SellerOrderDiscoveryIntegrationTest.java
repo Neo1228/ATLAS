@@ -1,7 +1,11 @@
 package com.atlas.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.account.service.AccountService;
 import com.atlas.cart.service.CartService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
@@ -9,18 +13,22 @@ import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderHistoryPageResponse;
-import com.atlas.order.dto.response.OrderItemResponse;
+import com.atlas.order.dto.response.SellerOrderDetailResponse;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.OrderService;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 판매자가 HTTP 응답만으로 자기 주문과 주문 항목을 식별할 수 있는지 검증한다.
@@ -31,6 +39,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  */
 @Testcontainers
 @SpringBootTest
+@AutoConfigureMockMvc
 class SellerOrderDiscoveryIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
@@ -52,12 +61,14 @@ class SellerOrderDiscoveryIntegrationTest {
     @Autowired private CartService carts;
     @Autowired private CartCheckoutService checkouts;
     @Autowired private OrderService orders;
+    @Autowired private AccountService accounts;
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
 
-    /**
-     * 판매자 주문 목록 API 로 orderId 를 발견하고, 주문 상세에서 orderItemId 를 얻는다.
-     */
+    /** 판매자 상세 API 가 배송·환불에 필요한 주문 항목 식별자를 제공하는지 검증한다. */
     @Test
-    void sellerDiscoversOrderAndItemIdsFromResponsesAlone() {
+    void sellerDiscoversOrderAndItemIdsThroughSellerScopedHttpResponses() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         var product = products.createProduct(sellerId,
                 new CreateProductRequest("seller-discovery-" + UUID.randomUUID(), null));
@@ -68,21 +79,43 @@ class SellerOrderDiscoveryIntegrationTest {
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "seller-discovery-" + UUID.randomUUID());
         UUID expectedOrderId = checkout.orders().getFirst().orderId();
+        UUID sellerAccountId = createSellerAccount(sellerId);
 
-        // 1) 판매자 주문 목록으로 orderId 를 발견할 수 있어야 한다.
-        OrderHistoryPageResponse page = orders.findSellerOrderHistory(sellerId, 20, null);
-        assertThat(page.orders())
-                .as("판매자 목록에 방금 만든 주문이 보여야 한다")
-                .anyMatch(entry -> entry.orderId().equals(expectedOrderId));
+        String listJson = mockMvc.perform(get("/api/sellers/{sellerId}/orders", sellerId)
+                        .with(jwt().jwt(token -> token.subject(sellerAccountId.toString()))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        OrderHistoryPageResponse page = objectMapper.readValue(listJson, OrderHistoryPageResponse.class);
+        assertThat(page.orders()).anyMatch(entry -> entry.orderId().equals(expectedOrderId));
 
-        // 2) 주문 상세의 항목에서 orderItemId 를 얻을 수 있어야 한다.
-        var detail = orders.find(expectedOrderId);
-        assertThat(detail.items()).as("주문 항목이 있어야 한다").isNotEmpty();
-        for (OrderItemResponse item : detail.items()) {
-            assertThat(item.orderItemId())
-                    .as("이행 API 가 요구하는 orderItemId 가 응답에 있어야 한다")
-                    .isNotNull();
-        }
+        String detailJson = mockMvc.perform(get("/api/sellers/{sellerId}/orders/{orderId}", sellerId, expectedOrderId)
+                        .with(jwt().jwt(token -> token.subject(sellerAccountId.toString()))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        SellerOrderDetailResponse detail = objectMapper.readValue(detailJson, SellerOrderDetailResponse.class);
+        assertThat(detail.orderId()).isEqualTo(expectedOrderId);
+        assertThat(detail.items()).singleElement().satisfies(item -> {
+            assertThat(item.orderItemId()).isNotNull();
+            assertThat(item.sellerId()).isEqualTo(sellerId);
+        });
+        assertThat(detailJson).doesNotContain("paymentAttemptId", "paymentApprovalUrl", "buyerRef");
+
+        UUID otherSellerId = sellers.createSeller().sellerId();
+        UUID otherAccountId = createSellerAccount(otherSellerId);
+        mockMvc.perform(get("/api/sellers/{sellerId}/orders/{orderId}", otherSellerId, expectedOrderId)
+                        .with(jwt().jwt(token -> token.subject(otherAccountId.toString()))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/orders/{orderId}", expectedOrderId)
+                        .with(jwt().jwt(token -> token.subject(sellerAccountId.toString()))))
+                .andExpect(status().isForbidden());
+    }
+
+    private UUID createSellerAccount(UUID sellerId) {
+        UUID accountId = UUID.randomUUID();
+        jdbc.update("INSERT INTO user_account (account_id, email, password_hash, email_verified_at) VALUES (?, ?, ?, now())",
+                accountId, accountId + "@example.test", "integration-test-password-hash");
+        accounts.linkSeller(accountId, sellerId);
+        return accountId;
     }
 
     /**
