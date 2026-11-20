@@ -28,21 +28,12 @@ on:
         description: 주문 금액(USD). Sandbox이므로 실제 결제는 발생하지 않는다.
         required: false
         default: "1.00"
-      mode:
-        description: Select the existing contract or the Sandbox transport fault experiment.
-        type: choice
-        options:
-          - contract
-          - transport-fault
-        default: contract
-        required: true
 
 permissions:
   contents: read
 
 jobs:
   sandbox-contract:
-    if: ${{ inputs.mode != 'transport-fault' }}
     name: PayPal sandbox API contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -177,34 +168,3 @@ jobs:
             echo "승인·캡처·환불은 구매자 승인이 필요해 이 워크플로 범위에서 제외했습니다."
           } >> "$GITHUB_STEP_SUMMARY"
 
-
-  sandbox-transport-fault:
-    if: ${{ inputs.mode == 'transport-fault' }}
-    name: PayPal Sandbox transport fault experiment
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Run real Sandbox OAuth through Toxiproxy
-        env:
-          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
-          PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$PAYPAL_CLIENT_ID" || -z "$PAYPAL_CLIENT_SECRET" ]]; then
-            echo "::error::PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are required"
-            exit 1
-          fi
-          container="atlas-paypal-toxiproxy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
-          docker run -d --name "$container" \
-            -p 127.0.0.1:18474:8474 -p 127.0.0.1:18666:8666 \
-            ghcr.io/shopify/toxiproxy:2.12.0 -host 0.0.0.0 >/dev/null
-          python3 load-tests/sandbox-toxiproxy-probe.py
-      - name: Upload sanitized experiment results
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: paypal-sandbox-transport-fault
-          path: sandbox-toxiproxy-results.json
-          if-no-files-found: warn

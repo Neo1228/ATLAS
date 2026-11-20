@@ -69,6 +69,38 @@ class CheckoutBehaviorTest {
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
 
     @Test
+    void reconciliationOfCancellationDoesNotStartCapture() {
+        UUID checkoutId = UUID.randomUUID();
+        BuyerCheckout checkout = new BuyerCheckout("buyer", "cancel-key", BuyerCheckoutState.CANCEL_PENDING,
+                100, NOW, NOW);
+        PurchaseOrder order = new PurchaseOrder(SELLER, "buyer", "cancel-key", OrderState.CANCEL_PENDING,
+                NOW.plusSeconds(600), NOW, NOW);
+        order.setCheckoutId(checkoutId);
+        BuyerCheckoutRepository checkouts = mock(BuyerCheckoutRepository.class);
+        OrderRepository orders = mock(OrderRepository.class);
+        PaymentService payments = mock(PaymentService.class);
+        InventoryService inventory = mock(InventoryService.class);
+        PaymentResponse payment = mock(PaymentResponse.class);
+        when(payment.checkoutId()).thenReturn(checkoutId);
+        when(payment.state()).thenReturn(PaymentState.UNKNOWN);
+        when(checkouts.findById(checkoutId)).thenReturn(Optional.of(checkout));
+        when(checkouts.findWithLockByCheckoutId(checkoutId)).thenReturn(Optional.of(checkout));
+        when(orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId)).thenReturn(List.of(order));
+        when(payments.findCheckout(checkoutId)).thenReturn(payment);
+        when(payments.reconcileCheckoutForCancellation(checkoutId, "reconcile")).thenReturn(payment);
+        CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(),
+                checkouts, orders, mock(OrderItemRepository.class), inventory,
+                mock(OrderFulfillmentService.class), payments, mock(SettlementService.class),
+                mock(SellerCouponService.class), fixedClock(), 100, Duration.ofSeconds(2), sweepLock());
+
+        service.reconcile(checkoutId, "reconcile");
+
+        verify(payments).reconcileCheckoutForCancellation(checkoutId, "reconcile");
+        verify(payments, never()).reconcileCheckout(checkoutId, "reconcile");
+        verify(inventory, never()).releaseAll(order.orderId());
+    }
+
+    @Test
     void checkoutCreationRejectsKeysThatReconcileAndCancelWouldRefuse() {
         // 생성은 256자, reconcile·cancel 은 221자를 받던 비대칭. 222자 키로 checkout 이
         // 만들어지면, 이후 결제 상태 확인과 취소가 키 길이 때문에 막혀 복구 경로가 없다.

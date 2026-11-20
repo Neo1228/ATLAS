@@ -65,7 +65,23 @@ JDK 21 `HttpClient`로 실제 Sandbox의 `/v1/oauth2/token`에도 별도 POST를
 | downstream 500ms 지연 | HTTP 200: 1237.7ms, 1561.4ms, 1117.2ms |
 | downstream `reset_peer` | `SSLEOFError`: 18.7ms, 57.4ms, 6.4ms |
 
-이 결과는 인증된 실제 Sandbox OAuth 호출과 TCP 장애 주입을 확인한다. 단, Python HTTPS 클라이언트의 순차 호출 3회이며 ATLAS 애플리케이션·결제 요청·동시 부하를 사용하지 않았다. 요청은 토큰 발급만 수행했고 주문 생성이나 capture는 하지 않았다. 첫 실행은 reset 제거 후 복구 호출을 포함하지 않아 복구를 주장하지 않는다.
+이 결과는 인증된 실제 Sandbox OAuth 호출과 TCP 장애 주입을 확인한다. 단, Python HTTPS 클라이언트의 순차 호출 3회이며 ATLAS 애플리케이션·결제 요청·동시 부하를 사용하지 않았다. 요청은 토큰 발급만 수행했고 주문 생성이나 capture는 하지 않았다. 첫 실행은 reset 제거 후 복구 호출을 포함하지 않아 복구를 주장하지 않는다. 결제 동작을 검증하지 않는 우회 경로였으므로 이 브랜치에서 OAuth 전용 워크플로 모드와 probe 스크립트는 제거했다.
+
+## 취소 요청 뒤 capture 경쟁 정정
+
+취소 경로를 다시 점검하면서, `AUTHORIZED` 상태에서 구매자가 취소를 요청한 뒤 복구·승인 콜백이 같은 attempt의 **새 capture를 시작할 수 있는** 경쟁을 확인했다. 기존에는 checkout 상태(`CANCEL_PENDING`)만 보고 결제 모듈의 phase 예약은 이를 알지 못했다.
+
+- V58: `payment_attempt.capture_prohibited` 추가. 배포 시점에 이미 `CANCEL_PENDING`/`CANCELLED`인 checkout의 attempt에도 소급 적용한다.
+- 취소 트랜잭션은 checkout 잠금 → attempt 잠금 순서로 펜스를 같은 트랜잭션에 기록한다(`Propagation.MANDATORY`). 취소가 롤백되면 펜스도 함께 롤백된다.
+- `reservePhase`는 attempt 행 잠금 아래에서 `CAPTURE + AUTHORIZED + 펜스`인 경우에만 새 provider 호출을 거부한다. 이미 시작된 `CAPTURE_PENDING`/`UNKNOWN` capture는 provider 결과를 계속 복구하고, 그 결과가 `CAPTURED`이면 숨기지 않고 반영한다.
+
+검증: `PaymentCaptureCancellationFenceTest`(단위 2건), `CheckoutCaptureFencePostgresIntegrationTest`(PostgreSQL 18.6 Testcontainers, 롤백·행 잠금 2건), `CheckoutCancelWithoutAttemptIntegrationTest`, `CheckoutBehaviorTest`, 마이그레이션·`ModuleBoundaryTest` 통과. 실제 PayPal에서의 경쟁 재현은 하지 않았다.
+
+## 실제 결제 경로 장애 주입 하네스
+
+`load-tests/paypal-real-fault/`는 실제 ATLAS jar를 Toxiproxy 뒤의 실제 `api-m.sandbox.paypal.com`(TLS 검증 유지)에 연결하고, 상품 조회와 결제 요청을 k6로 섞어 보낸다. 명시적 opt-in, loopback 전용 DB·포트, checkout 소유자·금액(1만 원·500센트 이하)·`SYNTHETIC_FIXTURE` FX 스냅샷 사전 검증을 통과해야 실행된다. 자격 증명은 환경 변수로만 받고 출력하지 않는다.
+
+**미실행.** 로컬에 실제 Sandbox 자격 증명이 없고, capture는 Sandbox 구매자 계정의 브라우저 승인이 필요하다. 승인을 자동화하거나 가장하지 않았다. 문법 확인(`bash -n`, `k6 inspect`)만 수행했다.
 
 ## 해석과 한계
 
