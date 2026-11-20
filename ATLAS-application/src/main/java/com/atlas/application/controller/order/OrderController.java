@@ -119,6 +119,20 @@ public class OrderController {
         return orders.findBuyerOrderHistory(buyerRef, limit, cursor);
     }
 
+    /**
+     * 판매자 주문 목록.
+     *
+     * <p>이 엔드포인트가 없으면 판매자는 자기가 이행해야 할 {@code orderId} 를 API 로 알 수 없다.
+     * 배송·환불·반품 검수는 모두 {@code /sellers/{sellerId}/orders/{orderId}/...} 형태이므로,
+     * 목록 없이는 첫 호출부터 도달 불가능했다. 구매자 이력과 같은 keyset 페이지네이션을 쓴다.
+     */
+    @GetMapping("/sellers/{sellerId}/orders")
+    public OrderHistoryPageResponse sellerOrderHistory(@PathVariable UUID sellerId,
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam(value = "cursor", required = false) String cursor) {
+        return orders.findSellerOrderHistory(sellerId, limit, cursor);
+    }
+
     @GetMapping("/orders/{orderId}")
     public OrderResponse find(@PathVariable UUID orderId) {
         return orders.find(orderId);

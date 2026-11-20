@@ -1,6 +1,7 @@
 package com.atlas.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.atlas.cart.service.CartService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
@@ -75,8 +76,8 @@ class CheckoutAmountOverflowIntegrationTest {
         String buyerRef = "overflow-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, QUANTITY);
 
-        Throwable thrown = org.assertj.core.api.ThrowableAssert
-                .catchThrowable(() -> checkouts.checkout(buyerRef, "overflow-checkout-" + UUID.randomUUID()));
+        Throwable thrown = catchThrowable(
+                () -> checkouts.checkout(buyerRef, "overflow-checkout-" + UUID.randomUUID()));
 
         assertThat(thrown)
                 .as("금액 계산이 넘치면 ArithmeticException 이 아니라 도메인 오류여야 한다")

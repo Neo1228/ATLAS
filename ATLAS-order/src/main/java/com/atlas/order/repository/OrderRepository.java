@@ -78,6 +78,20 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
     List<PurchaseOrder> findAllByCheckoutIdOrderBySellerIdAsc(UUID checkoutId);
     List<PurchaseOrder> findByBuyerRefOrderByCreatedAtDescOrderIdDesc(String buyerRef, Pageable pageable);
 
+    /** 판매자 주문 목록 첫 페이지. keyset 이므로 COUNT/OFFSET 을 쓰지 않는다. */
+    List<PurchaseOrder> findBySellerIdOrderByCreatedAtDescOrderIdDesc(UUID sellerId, Pageable pageable);
+
+    /** 판매자 주문 목록 다음 페이지. (created_at, order_id) 튜플 비교로 keyset 을 구현한다. */
+    @Query("""
+            select purchaseOrder from PurchaseOrder purchaseOrder
+            where purchaseOrder.sellerId = :sellerId
+                and (purchaseOrder.createdAt < :createdAt
+                    or (purchaseOrder.createdAt = :createdAt and purchaseOrder.orderId < :orderId))
+            order by purchaseOrder.createdAt desc, purchaseOrder.orderId desc
+            """)
+    List<PurchaseOrder> findSellerOrdersBefore(@Param("sellerId") UUID sellerId,
+            @Param("createdAt") Instant createdAt, @Param("orderId") UUID orderId, Pageable pageable);
+
     @Query("""
             select purchaseOrder from PurchaseOrder purchaseOrder
             where purchaseOrder.buyerRef = :buyerRef

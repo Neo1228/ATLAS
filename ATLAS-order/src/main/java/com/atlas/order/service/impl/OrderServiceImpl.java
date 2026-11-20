@@ -362,6 +362,33 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public OrderHistoryPageResponse findSellerOrderHistory(UUID sellerId, Integer requestedLimit,
+            String cursor) {
+        if (sellerId == null) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Seller is required");
+        }
+        int limit = requestedLimit == null ? DEFAULT_HISTORY_PAGE_SIZE : requestedLimit;
+        if (limit < 1 || limit > MAX_HISTORY_PAGE_SIZE) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Order history limit is out of range");
+        }
+
+        OrderHistoryCursor position = decodeOrderHistoryCursor(cursor);
+        List<PurchaseOrder> fetched = Objects.requireNonNull(transactions.execute(status -> position == null
+                ? repository.findBySellerIdOrderByCreatedAtDescOrderIdDesc(sellerId,
+                        PageRequest.of(0, limit + 1))
+                : repository.findSellerOrdersBefore(sellerId, position.createdAt(), position.orderId(),
+                        PageRequest.of(0, limit + 1))));
+        boolean hasNext = fetched.size() > limit;
+        List<PurchaseOrder> page = hasNext ? fetched.subList(0, limit) : fetched;
+        List<OrderHistoryPageResponse.Entry> orders = page.stream()
+                .map(order -> new OrderHistoryPageResponse.Entry(order.orderId(), order.checkoutId(),
+                        order.sellerId(), order.source(), order.state(), order.createdAt()))
+                .toList();
+        String nextCursor = hasNext ? encodeOrderHistoryCursor(page.get(page.size() - 1)) : null;
+        return new OrderHistoryPageResponse(orders, nextCursor);
+    }
+
+    @Override
     public Optional<UUID> findDeliveredOrderItemId(String buyerRef, UUID productId) {
         return repository.findDeliveredOrderItemId(buyerRef, productId);
     }
@@ -550,8 +577,8 @@ public final class OrderServiceImpl implements OrderService {
         UUID paymentAttemptId = order.paymentAttemptId() != null
                 ? order.paymentAttemptId() : payment == null ? null : payment.attemptId();
         List<OrderItemResponse> itemResponses = orderItems.stream().map(item -> new OrderItemResponse(
-                item.productId(), item.sellerId(), item.skuId(), item.productName(), item.quantity(),
-                item.unitPriceWon(), item.couponDiscountWon(), item.lineTotalWon())).toList();
+                item.orderItemId(), item.productId(), item.sellerId(), item.skuId(), item.productName(),
+                item.quantity(), item.unitPriceWon(), item.couponDiscountWon(), item.lineTotalWon())).toList();
         long totalPriceWon = 0;
         for (OrderItem item : orderItems) totalPriceWon = Math.addExact(totalPriceWon, item.lineTotalWon());
         ReservationStatus inventoryState = reservations.isEmpty() ? null : reservations.get(0).status();

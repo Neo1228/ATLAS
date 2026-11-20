@@ -435,8 +435,8 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             List<ReservationResponse> reservations, List<OrderItem> orderItems) {
         PaymentState paymentState = payment == null ? PaymentState.NOT_STARTED : payment.state();
         List<OrderItemResponse> itemResponses = orderItems.stream()
-                .map(item -> new OrderItemResponse(item.productId(), item.sellerId(), item.skuId(),
-                        item.productName(), item.quantity(), item.unitPriceWon(),
+                .map(item -> new OrderItemResponse(item.orderItemId(), item.productId(), item.sellerId(),
+                        item.skuId(), item.productName(), item.quantity(), item.unitPriceWon(),
                         item.couponDiscountWon(), item.lineTotalWon()))
                 .toList();
         long total = 0;
