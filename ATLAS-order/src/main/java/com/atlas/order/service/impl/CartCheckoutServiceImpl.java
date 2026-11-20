@@ -94,8 +94,17 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                                      List<SellerCouponRequest> selections) {
         validate(buyerRef, idempotencyKey);
         Map<UUID, String> couponCodes = normalizeCouponSelections(selections);
-        UUID checkoutId = transactions.execute(status ->
-                checkoutLocked(buyerRef, idempotencyKey, couponCodes));
+        UUID checkoutId;
+        try {
+            checkoutId = transactions.execute(status ->
+                    checkoutLocked(buyerRef, idempotencyKey, couponCodes));
+        } catch (ArithmeticException overflow) {
+            // 장바구니 수량에 상한이 없으므로 가격 × 수량이 long 을 넘칠 수 있다.
+            // 이것은 클라이언트가 만든 입력 오류이며 500 이 아니라 400 이어야 한다.
+            // 카트 덧셈(CartServiceImpl)과 환불 경로도 같은 방식으로 변환한다.
+            throw new OrderException(OrderException.Code.INVALID_REQUEST,
+                    "Checkout amount exceeds the supported range");
+        }
         if (checkoutId == null) {
             throw new OrderException(OrderException.Code.CONFLICT, "Checkout transaction produced no checkout id");
         }
