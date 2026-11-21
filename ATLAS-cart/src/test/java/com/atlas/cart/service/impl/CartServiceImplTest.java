@@ -1,8 +1,11 @@
 package com.atlas.cart.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -90,6 +93,34 @@ class CartServiceImplTest {
         verify(skus, never()).find(sellerA, "sku-a");
         verify(skus, never()).find(sellerA, "sku-b");
         verify(skus, never()).find(sellerB, "sku-a");
+    }
+
+    @Test
+    void firstVisitReturnsEmptyCartWithoutCreatingDatabaseRow() {
+        String buyer = "buyer-first-visit";
+        when(carts.findByBuyerRef(buyer)).thenReturn(Optional.empty());
+
+        CartResponse response = service.find(buyer);
+
+        assertNull(response.cartId());
+        assertEquals(buyer, response.buyerRef());
+        assertTrue(response.items().isEmpty());
+        verify(carts, never()).insertIfAbsentByBuyerRef(buyer);
+    }
+
+    @Test
+    void deletesOnNeverCreatedCartAreIdempotentAndDoNotCreateIt() {
+        String buyer = "buyer-delete-before-add";
+        UUID sellerId = UUID.randomUUID();
+        when(carts.findWithLockByBuyerRef(buyer)).thenReturn(Optional.empty());
+
+        CartResponse response = service.removeItem(sellerId, buyer, "never-added");
+        service.clearItems(buyer);
+
+        assertNull(response.cartId());
+        assertTrue(response.items().isEmpty());
+        verify(carts, times(2)).findWithLockByBuyerRef(buyer);
+        verify(carts, never()).insertIfAbsentByBuyerRef(buyer);
     }
 
     @Test
