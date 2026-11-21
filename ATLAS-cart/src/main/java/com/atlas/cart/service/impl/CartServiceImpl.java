@@ -37,7 +37,7 @@ public class CartServiceImpl implements CartService {
     public CartResponse find(String buyerRef) {
         validateBuyer(buyerRef);
         return carts.findByBuyerRef(buyerRef).map(this::toResponse)
-                .orElseThrow(() -> new CartException(CartException.Code.NOT_FOUND, "Cart not found"));
+                .orElseGet(() -> CartResponse.empty(buyerRef));
     }
 
     @Override
@@ -125,7 +125,8 @@ public class CartServiceImpl implements CartService {
     @Transactional
     public CartResponse removeItem(UUID sellerId, String buyerRef, String skuId) {
         validateLine(sellerId, buyerRef, skuId);
-        Cart cart = requireLockedCart(buyerRef);
+        Cart cart = carts.findWithLockByBuyerRef(buyerRef).orElse(null);
+        if (cart == null) return CartResponse.empty(buyerRef);
         cart.removeItem(sellerId, skuId);
         return toResponse(cart);
     }
@@ -134,7 +135,7 @@ public class CartServiceImpl implements CartService {
     @Transactional
     public void clearItems(String buyerRef) {
         validateBuyer(buyerRef);
-        requireLockedCart(buyerRef).clearItems();
+        carts.findWithLockByBuyerRef(buyerRef).ifPresent(Cart::clearItems);
     }
 
     @Override

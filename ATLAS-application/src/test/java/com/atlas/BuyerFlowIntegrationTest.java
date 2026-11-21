@@ -234,10 +234,21 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"code\":\"CATALOG_RESOURCE_NOT_FOUND\""));
-        mockMvc.perform(get("/api/buyers/{buyerRef}/cart", "missing-buyer"))
-                .andExpect(status().isNotFound())
+        String emptyCartBuyer = "missing-buyer";
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shopping_cart WHERE buyer_ref = ?",
+                Integer.class, emptyCartBuyer)).isZero();
+        mockMvc.perform(get("/api/buyers/{buyerRef}/cart", emptyCartBuyer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
-                        .contains("\"code\":\"CART_NOT_FOUND\""));
+                        .contains("\"cartId\":null", "\"buyerRef\":\"missing-buyer\""));
+        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items", emptyCartBuyer))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
+                        emptyCartBuyer, UUID.randomUUID(), "never-added"))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shopping_cart WHERE buyer_ref = ?",
+                Integer.class, emptyCartBuyer)).isZero();
     }
 
     @Test
@@ -1275,9 +1286,11 @@ assertUuidV7(paymentOrderId);
 
         assertThat(cleared.items()).isEmpty();
         assertThat(otherBuyerCart.items()).extracting(item -> item.skuId()).containsExactly(secondSku);
-        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items",
-                        sellerId, "missing-" + UUID.randomUUID()))
-                .andExpect(status().isNotFound());
+        String neverCreatedBuyer = "missing-" + UUID.randomUUID();
+        mockMvc.perform(delete("/api/buyers/{buyerRef}/cart/items", neverCreatedBuyer))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM shopping_cart WHERE buyer_ref = ?",
+                Integer.class, neverCreatedBuyer)).isZero();
 
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM purchase_order WHERE seller_id IN (?, ?)",

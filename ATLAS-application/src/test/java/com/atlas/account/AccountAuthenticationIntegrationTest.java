@@ -199,9 +199,14 @@ class AccountAuthenticationIntegrationTest {
         assertThat(firstLogin.mfaRequired()).isFalse();
         assertThat(secondLogin.mfaRequired()).isFalse();
         mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + firstLogin.tokens().accessToken()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.buyerRef").value(buyerRef))
+                .andExpect(jsonPath("$.items").isEmpty());
         mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + secondLogin.tokens().accessToken()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shopping_cart WHERE buyer_ref = ?",
+                Integer.class, buyerRef)).isZero();
 
         mockMvc.perform(post("/api/auth/logout")
                         .header("Authorization", "Bearer " + firstLogin.tokens().accessToken())
@@ -212,7 +217,8 @@ class AccountAuthenticationIntegrationTest {
         mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + firstLogin.tokens().accessToken()))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get(cartPath).header("Authorization", "Bearer " + secondLogin.tokens().accessToken()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty());
 
         accounts.revokeAllRefreshFamilies(accountId, Instant.now());
 
