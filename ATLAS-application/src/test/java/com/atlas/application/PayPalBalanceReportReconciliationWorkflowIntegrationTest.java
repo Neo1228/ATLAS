@@ -10,6 +10,7 @@ import com.atlas.application.dto.response.PayPalBalanceReportDispositionResponse
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
 import com.atlas.application.service.PayPalBalanceReportOperatorService;
+import com.atlas.application.service.PayPalBalanceReportQueryRepository;
 import com.atlas.application.service.PayPalBalanceReportReconciliationService;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
 import com.atlas.payment.service.PayPalReportMatchQuery;
@@ -84,7 +85,7 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
         PayPalBalanceReportReconciliationService reconciliation =
                 new PayPalBalanceReportReconciliationService(matchQuery);
         ingestion = new PayPalBalanceReportRunIngestionService(reconciliation, store);
-        operator = new PayPalBalanceReportOperatorService(jdbc, store);
+        operator = new PayPalBalanceReportOperatorService(new PayPalBalanceReportQueryRepository(jdbc), store);
     }
 
     @Test

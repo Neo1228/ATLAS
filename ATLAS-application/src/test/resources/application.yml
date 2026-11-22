@@ -3,6 +3,9 @@ spring:
     host: localhost
 
 atlas:
+  security:
+    jwt:
+      allow-ephemeral-key: true
   payment:
     paypal:
       webhook-retry:

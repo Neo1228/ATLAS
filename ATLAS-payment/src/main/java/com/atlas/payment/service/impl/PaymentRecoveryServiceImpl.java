@@ -1,9 +1,11 @@
 package com.atlas.payment.service.impl;
 
 import com.atlas.payment.dto.response.PaymentRecoveryJob;
+import com.atlas.payment.dto.response.PaymentRecoveryRequeue;
 import com.atlas.payment.dto.response.PaymentRecoveryReviewItem;
 import com.atlas.payment.dto.response.PaymentRecoveryMetrics;
 import com.atlas.payment.persistence.projection.ClaimedPaymentRecoveryJob;
+import com.atlas.payment.persistence.projection.PaymentRecoveryRequeueRow;
 import com.atlas.payment.persistence.projection.PaymentRecoveryReviewRow;
 import com.atlas.payment.persistence.projection.RecoveryMetricsSnapshot;
 import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
@@ -15,8 +17,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
@@ -142,6 +146,21 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
+    @Transactional
+    public Optional<PaymentRecoveryRequeue> requeueNeedsReview(
+            UUID recoveryJobId, String idempotencyKey, String actor, String reason, int maxManualRequeues) {
+        Objects.requireNonNull(recoveryJobId, "recoveryJobId");
+        Objects.requireNonNull(idempotencyKey, "idempotencyKey");
+        Objects.requireNonNull(actor, "actor");
+        Objects.requireNonNull(reason, "reason");
+        if (maxManualRequeues < 1) {
+            throw new IllegalArgumentException("maxManualRequeues must be positive");
+        }
+        return recovery.requeueNeedsReview(recoveryJobId, idempotencyKey, actor, reason, maxManualRequeues)
+                .map(PaymentRecoveryServiceImpl::toRequeue);
+    }
+
+    @Override
     public List<PaymentRecoveryReviewItem> listNeedsReview(int limit, int offset) {
         return recovery.listNeedsReview(limit, offset).stream()
                 .map(PaymentRecoveryServiceImpl::toDto)
@@ -193,5 +212,10 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
                 new PaymentRecoveryMetrics.StageKey(key.stage(), key.status()),
                 new PaymentRecoveryMetrics.StageMetrics(value.total(), value.oldestDueAgeSeconds())));
         return new PaymentRecoveryMetrics(Map.copyOf(snapshot.statusCounts()), Map.copyOf(stages));
+    }
+
+    private static PaymentRecoveryRequeue toRequeue(PaymentRecoveryRequeueRow row) {
+        return new PaymentRecoveryRequeue(
+                row.recoveryJobId(), row.status(), row.manualRequeueCount(), row.acceptedAt(), row.duplicate());
     }
 }

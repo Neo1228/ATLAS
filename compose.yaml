@@ -33,10 +33,12 @@ services:
       SPRING_PROFILES_ACTIVE: observability
       ATLAS_SERVER_ADDRESS: 0.0.0.0
       MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
-      ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas
+      ATLAS_DB_URL: jdbc:postgresql://postgres:5432/atlas?options=-c%20statement_timeout%3D30000%20-c%20idle_in_transaction_session_timeout%3D60000
       ATLAS_DB_USER: atlas
       ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
       ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:-}
+      # 단일 replica 로컬 스택 전용 기본값. replica를 늘리거나 재시작 후에도 토큰을 유지하려면 ATLAS_JWT_SIGNING_SECRET을 지정하고 false로 설정.
+      ATLAS_JWT_ALLOW_EPHEMERAL_KEY: ${ATLAS_JWT_ALLOW_EPHEMERAL_KEY:-true}
       SPRING_MAIL_HOST: ${ATLAS_SMTP_HOST:-mailpit}
       SPRING_MAIL_PORT: ${ATLAS_SMTP_PORT:-1025}
       ATLAS_PAYMENT_PROVIDER: ${ATLAS_PAYMENT_PROVIDER:-disabled}

@@ -19,8 +19,7 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 public class PayPalOAuth2ClientConfiguration {
     @Bean
     ClientRegistrationRepository paypalClientRegistrationRepository(PayPalProperties properties) {
-        if (properties.getClientId() == null || properties.getClientId().isBlank()
-                || properties.getClientSecret() == null || properties.getClientSecret().isBlank()) {
+        if (!properties.credentialsConfigured()) {
             throw new IllegalStateException("PayPal provider requires PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET");
         }
         properties.validateBaseUrl();

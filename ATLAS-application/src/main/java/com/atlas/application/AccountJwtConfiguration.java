@@ -38,9 +38,14 @@ public class AccountJwtConfiguration {
     private static final Logger LOGGER = LoggerFactory.getLogger(AccountJwtConfiguration.class);
 
     @Bean
-    SecretKey accountJwtSigningKey(@Value("${atlas.security.jwt.signing-secret:}") String configuredSecret) {
+    SecretKey accountJwtSigningKey(@Value("${atlas.security.jwt.signing-secret:}") String configuredSecret,
+            @Value("${atlas.security.jwt.allow-ephemeral-key:false}") boolean allowEphemeralKey) {
         byte[] keyBytes;
         if (configuredSecret == null || configuredSecret.isBlank()) {
+            if (!allowEphemeralKey) {
+                throw new IllegalStateException("ATLAS_JWT_SIGNING_SECRET is required. "
+                        + "Set ATLAS_JWT_ALLOW_EPHEMERAL_KEY=true only for a single-instance local run.");
+            }
             keyBytes = new byte[32];
             new SecureRandom().nextBytes(keyBytes);
             LOGGER.warn("JWT signing key가 임시 값입니다. 재시작하면 기존 access token이 무효화됩니다.");

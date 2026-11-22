@@ -98,6 +98,8 @@ atlas:
   security:
     jwt:
       signing-secret: ${ATLAS_JWT_SIGNING_SECRET:}
+      # 서명 키가 없을 때 프로세스 임시 키를 허용할지 여부. 재시작/replica 간 토큰이 호환되지 않으므로 로컬 단일 인스턴스 전용.
+      allow-ephemeral-key: ${ATLAS_JWT_ALLOW_EPHEMERAL_KEY:false}
       issuer: ${ATLAS_JWT_ISSUER:http://127.0.0.1:8080}
       audience: ${ATLAS_JWT_AUDIENCE:atlas-api}
   checkout-window: PT10M

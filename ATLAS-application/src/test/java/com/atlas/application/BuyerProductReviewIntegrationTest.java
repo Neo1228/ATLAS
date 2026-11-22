@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.atlas.application.dto.response.ProductReviewResponse;
 import com.atlas.application.service.ProductReviewRepository;
 import com.atlas.application.service.ProductReviewService;
+import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.order.service.OrderService;
 import java.io.IOException;
@@ -139,5 +140,15 @@ class BuyerProductReviewIntegrationTest {
                 .isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> repository.create("buyer-2", UUID.randomUUID(), UUID.randomUUID(), 4, "valid text"))
                 .isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
+    void listingReviewsOfAnUnorderableProductUsesTheCatalogNotFoundContract() {
+        UUID productId = UUID.randomUUID();
+        when(products.isPublicOrderable(productId)).thenReturn(false);
+
+        assertThatThrownBy(() -> reviews.list(productId, 0, 0))
+                .isInstanceOfSatisfying(CatalogException.class,
+                        exception -> assertThat(exception.code()).isEqualTo(CatalogException.Code.NOT_FOUND));
     }
 }

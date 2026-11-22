@@ -199,10 +199,10 @@ public class PaymentRecoveryWorker {
             return;
         }
         if (job.workStage() == PaymentRecoveryWorkStage.APPLY
-                || (terminal(current.state()) && !current.authorizationActive())) {
+                || (current.state().isTerminal() && !current.authorizationActive())) {
             reconcilePaymentOwner(job, current);
             PaymentResponse result = payments.findByAttemptId(job.operationId());
-            settle(job, terminal(result.state()) && !result.authorizationActive(), awaitingBuyer(result));
+            settle(job, result.state().isTerminal() && !result.authorizationActive(), awaitingBuyer(result));
             return;
         }
         if (awaitingBuyer(current) && !approvalWindowExpired(current)) {
@@ -218,7 +218,7 @@ public class PaymentRecoveryWorker {
                 : current;
         reconcilePaymentOwner(job, resolved);
         PaymentResponse result = payments.findByAttemptId(job.operationId());
-        settle(job, terminal(result.state()) && !result.authorizationActive(), awaitingBuyer(result));
+        settle(job, result.state().isTerminal() && !result.authorizationActive(), awaitingBuyer(result));
     }
 
     /**
@@ -312,11 +312,6 @@ public class PaymentRecoveryWorker {
         return Counter.builder("atlas.payment.recovery." + outcome)
                 .tag("operation_type", type.name())
                 .register(meters);
-    }
-
-    private static boolean terminal(PaymentState state) {
-        return state == PaymentState.CAPTURED || state == PaymentState.DECLINED
-                || state == PaymentState.VOIDED;
     }
 
     private static boolean terminal(PaymentRefundState state) {

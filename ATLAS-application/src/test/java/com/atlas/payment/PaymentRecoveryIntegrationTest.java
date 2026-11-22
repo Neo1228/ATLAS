@@ -1,6 +1,7 @@
 package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -21,10 +22,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -215,6 +218,23 @@ class PaymentRecoveryIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM payment_recovery_operator_action WHERE recovery_job_id = ?",
                 Integer.class, exhausted.recoveryJobId())).isEqualTo(1);
+    }
+
+    @Test
+    void operatorRequeueRejectsJobsThatAreNotWaitingForReviewAndUnknownJobs() {
+        UUID attemptId = createAttempt();
+        recovery.enqueueAttempt(attemptId, Duration.ZERO);
+        PaymentRecoveryJob leased = recovery.claimDue(
+                10, UUID.randomUUID(), Duration.ofMinutes(1), 8, Duration.ofHours(24)).getFirst();
+
+        assertThatThrownBy(() -> operator.requeue(leased.recoveryJobId(), "key-not-review", "ops-user", "premature"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThatThrownBy(() -> operator.requeue(UUID.randomUUID(), "key-unknown", "ops-user", "unknown job"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_recovery_operator_action", Integer.class))
+                .isZero();
     }
 
     private UUID createAttempt() {
