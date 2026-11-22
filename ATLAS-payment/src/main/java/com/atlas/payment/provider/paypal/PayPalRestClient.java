@@ -36,6 +36,7 @@ public class PayPalRestClient {
     private final PayPalProperties properties;
     private final OAuth2AuthorizedClientManager authorizedClientManager;
     private final ObjectMapper objectMapper;
+    private final JdkClientHttpRequestFactory requestFactory;
     /**
      * 외부 호출 상한. 기본값이 없으면 PayPal 이 응답하지 않을 때 Tomcat 스레드가 무한정
      * 묶여 커넥션 풀까지 고갈된다. 연결과 응답 모두 유한 상한을 둔다.
@@ -53,6 +54,7 @@ public class PayPalRestClient {
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.connectTimeout = Objects.requireNonNull(connectTimeout);
         this.readTimeout = Objects.requireNonNull(readTimeout);
+        this.requestFactory = createRequestFactory();
     }
 
     public OrderResult createOrder(String referenceId, BigDecimal amount, String currency,
@@ -98,7 +100,7 @@ public class PayPalRestClient {
         Map<String, Object> body = Map.of("amount", Map.of("currency_code", currency,
                 "value", amount.toPlainString()), "final_capture", true);
         Map<String, Object> response = post("/v2/payments/authorizations/{id}/capture".replace("{id}", authorizationId),
-                body, requestId);
+                body, requestId, properties.getCaptureBaseUrl());
         return new CaptureResult(resourceId(response, "capture"), resourceStatus(response, "capture"),
                 resourceAmount(response, "capture"), resourceCurrency(response, "capture"));
     }
@@ -201,18 +203,24 @@ public class PayPalRestClient {
     }
 
     private Map<String, Object> post(String uri, Object body, String requestId) {
+        return post(uri, body, requestId, properties.getBaseUrl());
+    }
+
+    private Map<String, Object> post(String uri, Object body, String requestId, String baseUrl) {
         validateRequestId(requestId);
         try {
             // PayPal 기본값(return=minimal)은 capture·refund 응답에서 amount 를 빼므로, 성공한 capture 도
-            // 금액 검증에 실패해 UNKNOWN 이 된다(실제 Sandbox 확인). 전체 표현을 명시적으로 요청한다.
-            return api().post().uri(uri).header(REQUEST_ID, requestId).header(PREFER, "return=representation")
+            // 금액 검증에 실패해 UNKNOWN 된다(실제 Sandbox 확인). 전체 표현을 명시적으로 요청한다.
+            return api(baseUrl).post().uri(uri).header(REQUEST_ID, requestId).header(PREFER, "return=representation")
                     .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(mapType());
         } catch (RestClientException exception) {
             throw new PayPalUnavailableException("PayPal API request failed", exception);
         }
     }
 
-    private RestClient api() {
+    private RestClient api() { return api(properties.getBaseUrl()); }
+
+    private RestClient api(String baseUrl) {
         if (!properties.credentialsConfigured()) {
             throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_DISABLED,
                     "PayPal client credentials are not configured");
@@ -224,10 +232,9 @@ public class PayPalRestClient {
             if (authorized == null || authorized.getAccessToken() == null) {
                 throw new PayPalUnavailableException("PayPal OAuth authorization failed");
             }
-            // 호출마다 새 RestClient 를 만들지만, 요청 팩토리는 타임아웃을 공유한다.
-            // 이 상한이 없으면 응답 없는 PayPal 호출이 스레드와 커넥션을 영구 점유한다.
-            return builder.clone().baseUrl(trimSlash(properties.getBaseUrl()))
-                    .requestFactory(requestFactory())
+            // 요청별 인증 설정은 유지하되, 요청 팩토리는 이 클라이언트의 커넥션을 재사용한다.
+            return builder.clone().baseUrl(trimSlash(baseUrl))
+                    .requestFactory(requestFactory)
                     .defaultHeader("Authorization", "Bearer " + authorized.getAccessToken().getTokenValue())
                     .build();
         } catch (RestClientException exception) {
@@ -235,7 +242,7 @@ public class PayPalRestClient {
         }
     }
 
-    private JdkClientHttpRequestFactory requestFactory() {
+    private JdkClientHttpRequestFactory createRequestFactory() {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(connectTimeout)
                 .build();

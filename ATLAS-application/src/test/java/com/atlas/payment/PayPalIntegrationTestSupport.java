@@ -311,6 +311,7 @@ public abstract class PayPalIntegrationTestSupport {
         registry.add("atlas.payment.provider", () -> "paypal");
         registry.add("ATLAS_PUBLIC_BASE_URL", () -> "http://127.0.0.1:18080");
         registry.add("atlas.payment.paypal.base-url", () -> PAYPAL.url("/").toString());
+        registry.add("atlas.payment.paypal.local-proxy-enabled", () -> true);
         registry.add("atlas.payment.bok-ecos.base-url", () -> ECOS.url("/").toString());
         registry.add("BOK_ECOS_API_KEY", () -> "local-test-key");
         registry.add("atlas.payment.paypal.client-id", () -> "local-test-client");

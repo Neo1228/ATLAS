@@ -1,0 +1,6 @@
+{
+  "name": "paypal-sandbox",
+  "listen": "0.0.0.0:18443",
+  "upstream": "api-m.sandbox.paypal.com:443",
+  "enabled": true
+}

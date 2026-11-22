@@ -3,7 +3,7 @@
 - 상태: Accepted — 조사 기록 · 즉시 도입하지 않음
 - 날짜: 2026-11-20
 - 관련 결정: [ADR-0038](ADR-0038-durable-payment-recovery-workflow.md), [ADR-0046](ADR-0046-order-payment-transactional-outbox.md), [ADR-0051](ADR-0051-payment-fx-cache-single-flight.md), [EXP-038](../../03-experiments/EXP-038-scale-out-limits-and-infra.md), [EXP-041](../../03-experiments/EXP-041-payment-external-fx-dependency.md), [EXP-042](../../03-experiments/EXP-042-db-concurrency-guard-audit.md), [EXP-043](../../03-experiments/EXP-043-settlement-db-failure-atomicity.md)
-- 추적: [#434](https://github.com/Neo1228/ATLAS/issues/434)
+- [#434](https://github.com/Neo1228/ATLAS/issues/434), [D-122](../../00-governance/decision-log.md#d-122)
 
 ## 배경
 
@@ -139,10 +139,14 @@ DB 방어선이 실제로 작동한다: order/payment row lock, `PESSIMISTIC_WRI
 - **quota·운영 호출률**: 측정되지 않았다. 임계값 1 은 지금 평가 불가다.
 - **복구 큐 나이**: 대표 부하에서 측정되지 않았다.
 - **다중 replica same-owner 경합**: 측정되지 않았다.
-- **DB 연결 손실**: EXP-043 이 `pg_terminate_backend` 로 원자성을 검증했다. 별도 프록시 인프라 없이 결정적 테스트가 가능함을 확인했으므로, **Toxiproxy 는 도입하지 않는다.**
+- **DB 연결/commit 결과**: EXP-043의 `pg_terminate_backend`가 settlement application transaction의 rollback 원자성을 검증한다. EXP-050의 Testcontainers Toxiproxy probe는 두 관련 행을 쓰는 JDBC transaction에서 downstream COMMIT acknowledgment 지연과 upstream pre-commit reset을 구분해 관측하고 idempotent replay를 검증한다. 둘은 서비스 경계와 transport 경계의 별도 근거이며 Toxiproxy는 test-only다(D-122).
 
 ## 결과
 
-인프라를 추가하지 않았다. 대신 **각 후보의 도입 조건을 수치로 남겼다.** 이후 누군가 "Redis 를 넣자"고 할 때, 이 문서의 임계값을 충족하는 측정을 제시해야 한다.
+프로덕션 runtime 인프라는 추가하지 않았다. Redis·메시지 브로커·외부 락의 도입 임계값은 여전히 충족되지 않았다. 개별 후보는 이 문서의 수치 기준을 충족하는 실측이 있을 때만 재검토한다.
 
-측정되지 않은 병목에 인프라를 추가하는 것은 **복잡도를 늘리고 장애 지점을 늘리면서 이득을 증명하지 못하는 일**이다. 이 저장소는 그 선택을 하지 않는다.
+## 로컬 전용 Toxiproxy
+
+Toxiproxy는 opt-in `load-tests/compose.toxiproxy.yaml`과 test-only Testcontainers integration test에서만 사용한다. Compose overlay는 격리 project/network에 Postgres·Mailpit·Toxiproxy를 띄우고 host port를 loopback에만 binding한다. Testcontainers는 test 종료 시 사라지는 별도 ephemeral network를 사용한다. `run-local.sh`는 종료 시 Compose stack·volume·임시 비밀 파일을 제거한다. PayPal nonstandard port는 기본 거부하며 명시적 `ATLAS_PAYPAL_LOCAL_PROXY_ENABLED`와 JVM loopback-only DNS 확인이 모두 있어야 허용한다. 기본 `compose.yaml`, application runtime, production deployment에는 Toxiproxy 의존성이 없다.
+
+실제 PayPal Sandbox TLS(인증서 검증 유지)와 capture-only loopback route 결과는 [EXP-050](../../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md)에 기록했다. Fault-free capture 연결을 예열한 뒤 downstream latency 12초를 주입해 provider capture 완료·ATLAS 결과 미반영을 3/3 확인했고, recovery worker가 중복 capture 없이 3/3 자동 수렴했다. `reset_peer` 표본은 callback 시 provider capture가 없어 post-commit reset의 근거로 해석하지 않는다. OAuth/order GET/authorization 경로는 capture proxy와 분리했고 TLS 검증은 유지했다. Database proxy test는 일반 JDBC transaction의 commit acknowledgment 불명확성과 rollback을 검증하지만 settlement service 동작을 대체하지 않는다(EXP-043 참조). 이 local/test-only 도구 채택은 Redis·broker·분산 lock의 production 도입을 뜻하지 않는다.

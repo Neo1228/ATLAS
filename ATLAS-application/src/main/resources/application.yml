@@ -146,6 +146,9 @@ atlas:
         password: ${ATLAS_PAYMENT_RECOVERY_OPERATOR_PASSWORD:}
     paypal:
       base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
+      capture-base-url: ${ATLAS_PAYPAL_CAPTURE_BASE_URL:}
+      # 비표준 PayPal port는 JVM에서 loopback으로 확인된 로컬 proxy에만 허용한다.
+      local-proxy-enabled: ${ATLAS_PAYPAL_LOCAL_PROXY_ENABLED:false}
       client-id: ${PAYPAL_CLIENT_ID:}
       client-secret: ${PAYPAL_CLIENT_SECRET:}
       webhook-id: ${PAYPAL_WEBHOOK_ID:}

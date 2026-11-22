@@ -26,3 +26,4 @@ scripts/capture-grafana-panels.mjs
 # Local agent/tooling working directory
 .gjc/
 load-tests/paypal-real-fault/node_modules/
+load-tests/paypal-real-fault/results/

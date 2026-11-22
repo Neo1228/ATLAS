@@ -16,13 +16,21 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:18980';
 const MAIL = process.env.MAIL_API_URL || 'http://127.0.0.1:18025';
 const TOXI = process.env.TOXI_API_URL || 'http://127.0.0.1:18475';
 const PROXY = process.env.TOXI_PROXY_NAME || 'paypal-sandbox';
+const CAPTURE_PROXY = process.env.TOXI_CAPTURE_PROXY_NAME || 'paypal-capture';
 const PG_CONTAINER = process.env.PG_CONTAINER || 'atlas-real-pg';
 const PRIVATE = process.env.PRIVATE_DIR || '/tmp/atlas-real';
+const RESULTS_DIR = process.env.RESULTS_DIR || `${PRIVATE}/results`;
 const REPEAT = Number(process.env.REPEAT || 2);
 const UNIT_PRICE_WON = 1_000; // 1,000원 ≒ 0.71 USD, Sandbox 소액
 const SYNTHETIC_RATE = '1400.0000000000'; // 실측 환율 아님: SYNTHETIC_FIXTURE
 const RECOVERY_WAIT_MS = Number(process.env.RECOVERY_WAIT_MS || 150_000);
+const RECOVERY_WORKER_ENABLED = process.env.ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED !== 'false';
+if (!Number.isInteger(REPEAT) || REPEAT < 1 || REPEAT > 5) throw new Error('REPEAT 는 1-5 사이여야 한다');
+if (!Number.isInteger(RECOVERY_WAIT_MS) || RECOVERY_WAIT_MS < 1000 || RECOVERY_WAIT_MS > 300_000) {
+  throw new Error('RECOVERY_WAIT_MS 는 1000-300000 ms 사이여야 한다');
+}
 const RUN = `real-${Date.now().toString(36)}`;
+const activeCatalogStops = new Set();
 const log = (...xs) => console.error(new Date().toISOString().slice(11, 19), ...xs);
 
 if (process.env.REAL_SANDBOX_OPT_IN !== 'YES') throw new Error('REAL_SANDBOX_OPT_IN=YES 가 필요하다');
@@ -69,17 +77,25 @@ async function toxi(method, path, body) {
   const res = await fetch(`${TOXI}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok && !(method === 'DELETE' && res.status === 404)) throw new Error(`toxiproxy ${method} ${path}: ${res.status}`);
 }
-async function clearToxics() {
-  const res = await fetch(`${TOXI}/proxies/${PROXY}/toxics`);
-  for (const t of await res.json()) await toxi('DELETE', `/proxies/${PROXY}/toxics/${t.name}`);
+async function clearToxics(proxyName = PROXY) {
+  const res = await fetch(`${TOXI}/proxies/${proxyName}/toxics`);
+  for (const toxic of await res.json()) {
+    await toxi('DELETE', `/proxies/${proxyName}/toxics/${toxic.name}`);
+  }
 }
-async function applyToxic(toxic) {
-  await clearToxics();
-  if (toxic) await toxi('POST', `/proxies/${PROXY}/toxics`, { name: 'experiment', stream: 'downstream', toxicity: 1, ...toxic });
+async function applyToxic(toxic, proxyName = PROXY) {
+  await clearToxics(proxyName);
+  if (toxic) await toxi('POST', `/proxies/${proxyName}/toxics`, {
+    name: 'experiment', stream: 'downstream', toxicity: 1, ...toxic,
+  });
 }
 async function verifyProxyTopology() {
-  const p = await (await fetch(`${TOXI}/proxies/${PROXY}`)).json();
-  if (!p.enabled || p.upstream !== 'api-m.sandbox.paypal.com:443') throw new Error('PayPal 프록시가 Sandbox upstream 이 아니다');
+  for (const name of [PROXY, CAPTURE_PROXY]) {
+    const proxy = await (await fetch(`${TOXI}/proxies/${name}`)).json();
+    if (!proxy.enabled || proxy.upstream !== 'api-m.sandbox.paypal.com:443') {
+      throw new Error(`PayPal proxy topology is invalid: ${name}`);
+    }
+  }
 }
 
 // ---------- PostgreSQL(실험 전용 컨테이너) ----------
@@ -211,15 +227,51 @@ async function approve(approvalUrl) {
   }
 }
 
+async function prepareCaptureWarmup(catalog, counter) {
+  const buyer = await account('capture-warmup', counter.n++);
+  const item = await createCheckout(catalog, buyer, counter.n++);
+  const submit = await api('POST', `/api/checkouts/${item.checkoutId}/payment`, { token: buyer.accessToken });
+  const approvalUrl = submit.json?.paymentApprovalUrl;
+  if (submit.status !== 200 || !approvalUrl) throw new Error('capture connection warmup could not create approval');
+  return { item, returnPath: await approve(approvalUrl) };
+}
+
+async function completeCaptureWarmup(warmup) {
+  const response = await api('GET', warmup.returnPath, { timeoutMs: 60_000 });
+  const state = dbState(warmup.item.checkoutId);
+  if (response.status !== 200 || response.json?.state !== 'PAID'
+      || response.json?.paymentState !== 'CAPTURED' || state.checkout !== 'PAID'
+      || state.payment !== 'CAPTURED' || state.journals !== 1) {
+    throw new Error(`capture warmup not applied: http=${response.status} checkout=${response.json?.state ?? 'none'} payment=${response.json?.paymentState ?? 'none'} db=${state.checkout}/${state.payment} journal=${state.journals}`);
+  }
+  return {
+    returnStatus: response.status, checkoutState: response.json.state,
+    paymentState: response.json.paymentState, journals: state.journals,
+  };
+}
+
 // ---------- 상태 수집 ----------
 function dbState(checkoutId) {
   const row = sql(`SELECT c.state, a.state, a.provider_order_id,
       (SELECT count(*) FROM settlement_journal j WHERE j.checkout_id = c.checkout_id),
       (SELECT string_agg(o.state, ',' ORDER BY o.order_id) FROM purchase_order o WHERE o.checkout_id = c.checkout_id),
-      a.provider_amount_minor
-    FROM buyer_checkout c JOIN payment_attempt a ON a.checkout_id = c.checkout_id WHERE c.checkout_id = '${uuidOnly(checkoutId)}';`);
-  const [checkout, payment, providerOrderId, journals, orders, amountMinor] = row.split('\t');
-  return { checkout, payment, providerOrderId: providerOrderId || null, journals: Number(journals), orders, amountMinor: Number(amountMinor) };
+      a.provider_amount_minor, COALESCE(r.status, 'NONE'), COALESCE(r.attempt_count, -1),
+      COALESCE(r.available_at <= CURRENT_TIMESTAMP, false),
+      COALESCE(r.lease_until > CURRENT_TIMESTAMP, false)
+    FROM buyer_checkout c
+    JOIN payment_attempt a ON a.checkout_id = c.checkout_id
+    LEFT JOIN payment_recovery_job r ON r.payment_attempt_id = a.attempt_id
+    WHERE c.checkout_id = '${uuidOnly(checkoutId)}';`);
+  const [checkout, payment, providerOrderId, journals, orders, amountMinor,
+    recoveryStatus, recoveryAttemptCount, recoveryDue, recoveryLeased] = row.split('\t');
+  return {
+    checkout, payment, providerOrderId: providerOrderId || null, journals: Number(journals), orders,
+    amountMinor: Number(amountMinor),
+    recovery: {
+      status: recoveryStatus, attemptCount: Number(recoveryAttemptCount),
+      due: recoveryDue === 't', leased: recoveryLeased === 't',
+    },
+  };
 }
 const TERMINAL = new Set(['PAID', 'CANCELLED', 'EXPIRED', 'FAILED']);
 async function waitForConvergence(checkoutId) {
@@ -234,23 +286,46 @@ async function waitForConvergence(checkoutId) {
 
 // ---------- 카탈로그 동시 부하(격리 관찰) ----------
 function catalogLoad(rps) {
-  const samples = []; let stop = false;
+  const samples = [];
+  const inFlight = new Set();
+  let stopping = false;
+  let stopPromise = null;
   const loop = (async () => {
-    while (!stop) {
-      api('GET', '/api/products?limit=20', { timeoutMs: 10_000 }).then((r) => samples.push(r));
+    while (!stopping) {
+      let request;
+      request = api('GET', '/api/products?limit=20', { timeoutMs: 10_000 })
+        .then((response) => samples.push(response))
+        .finally(() => inFlight.delete(request));
+      inFlight.add(request);
       await sleep(1000 / rps);
     }
   })();
-  return async () => {
-    stop = true; await loop; await sleep(1000);
-    const ms = samples.filter((s) => s.status === 200).map((s) => s.ms).sort((a, b) => a - b);
-    const q = (p) => (ms.length ? Math.round(ms[Math.min(ms.length - 1, Math.floor(p * ms.length))]) : null);
-    return { requests: samples.length, failures: samples.filter((s) => s.status !== 200).length, p50: q(0.5), p95: q(0.95), max: ms.at(-1) ? Math.round(ms.at(-1)) : null };
+  const stop = () => {
+    if (!stopPromise) {
+      stopping = true;
+      stopPromise = (async () => {
+        await loop;
+        await Promise.allSettled([...inFlight]);
+        const ms = samples.filter((sample) => sample.status === 200)
+          .map((sample) => sample.ms).sort((a, b) => a - b);
+        const q = (p) => (ms.length ? Math.round(ms[Math.min(ms.length - 1, Math.floor(p * ms.length))]) : null);
+        const stats = {
+          requests: samples.length, failures: samples.filter((sample) => sample.status !== 200).length,
+          p50: q(0.5), p95: q(0.95), max: ms.at(-1) ? Math.round(ms.at(-1)) : null,
+        };
+        activeCatalogStops.delete(stop);
+        return stats;
+      })();
+    }
+    return stopPromise;
   };
+  activeCatalogStops.add(stop);
+  return stop;
 }
 
 // ---------- 시나리오 ----------
 // phase=submit: 주문 생성(POST /payment) 중 장애. phase=approval-return: 승인 후 첫 provider 요청(GET order) 중 장애.
+// capture-response-lost exceeds the fixed 10s client read timeout; paired warmups keep TLS handshake out of the fault window.
 const CONDITIONS = [
   { name: 'baseline', phase: null, toxic: null },
   { name: 'submit-latency-3s', phase: 'submit', toxic: { type: 'latency', attributes: { latency: 3000, jitter: 0 } } },
@@ -258,12 +333,28 @@ const CONDITIONS = [
   { name: 'approval-order-lookup-latency-3s', phase: 'approval-return', toxic: { type: 'latency', attributes: { latency: 3000, jitter: 0 } } },
   { name: 'approval-order-lookup-response-lost', phase: 'approval-return', toxic: { type: 'timeout', attributes: { timeout: 15000 } } },
   { name: 'approval-order-lookup-reset', phase: 'approval-return', toxic: { type: 'reset_peer', attributes: { timeout: 0 } } },
+  { name: 'capture-latency-3s', phase: 'capture', toxic: { type: 'latency', attributes: { latency: 3000, jitter: 0 } } },
+  { name: 'capture-response-lost', phase: 'capture', toxic: { type: 'latency', attributes: { latency: 12_000, jitter: 0 } } },
+  { name: 'capture-response-reset', phase: 'capture', toxic: { type: 'reset_peer', attributes: { timeout: 0 } } },
+  { name: 'capture-response-timeout', phase: 'capture', toxic: { type: 'timeout', attributes: { timeout: 15000 } } },
 ];
 const only = process.env.CONDITIONS ? new Set(process.env.CONDITIONS.split(',')) : null;
+if (only) {
+  const unknown = [...only].filter((name) => !CONDITIONS.some((condition) => condition.name === name));
+  if (unknown.length) throw new Error(`Unknown CONDITIONS: ${unknown.join(',')}`);
+}
 
 async function runCondition(cond, catalog, buyers, counter) {
   // access token 수명(약 15분)보다 전체 실험이 길다. 조건마다 다시 로그인한다.
   for (const [i, buyer] of buyers.entries()) buyers[i] = { ...buyer, ...(await buyer.relogin()) };
+  const warmups = [];
+  const warmupObservations = [];
+  if (cond.phase === 'capture') {
+    // Capture 전용 fault는 같은 공유 TLS pool을 fault-free capture로 데운 뒤 적용한다.
+    for (let i = 0; i < REPEAT; i += 1) {
+      warmups.push(await prepareCaptureWarmup(catalog, counter));
+    }
+  }
   const items = [];
   for (let i = 0; i < REPEAT; i += 1) items.push(await createCheckout(catalog, buyers[i % buyers.length], counter.n++));
   const stopCatalog = catalogLoad(10);
@@ -295,60 +386,157 @@ async function runCondition(cond, catalog, buyers, counter) {
   for (const r of results) returnPaths.push(r.approvalUrl ? await approve(r.approvalUrl) : null);
 
   log(cond.name, 'approved', returnPaths.filter(Boolean).length);
-  // 3) 승인 반영. toxic 은 return 처리의 첫 provider 단계(GET order)에 걸린다.
-  if (cond.phase === 'approval-return') await applyToxic(cond.toxic);
-  const returns = await Promise.all(returnPaths.map((p) => (p ? api('GET', p, { timeoutMs: 60_000 }) : null)));
-  if (cond.phase === 'approval-return') await applyToxic(null);
+  const returns = [];
+  const returnSnapshots = [];
+  if (cond.phase === 'capture') {
+    for (const [i, warmup] of warmups.entries()) {
+      warmupObservations.push(await completeCaptureWarmup(warmup));
+      await applyToxic(cond.toxic, CAPTURE_PROXY);
+      const ret = returnPaths[i]
+        ? await api('GET', returnPaths[i], { timeoutMs: 60_000 })
+        : null;
+      await applyToxic(null, CAPTURE_PROXY);
+      returns.push(ret);
+      const stateAtReturn = dbState(items[i].checkoutId);
+      const paypalAtReturn = await paypalTruth(stateAtReturn.providerOrderId);
+      returnSnapshots.push({ stateAtReturn, paypalAtReturn });
+    }
+  } else {
+    if (cond.phase === 'approval-return') await applyToxic(cond.toxic);
+    returns.push(...await Promise.all(returnPaths.map((path) => (path ? api('GET', path, { timeoutMs: 60_000 }) : null))));
+    if (cond.phase === 'approval-return') await applyToxic(null);
+  }
   const catalogStats = await stopCatalog();
 
   log(cond.name, 'returned', returns.map((r) => r?.status).join(','));
-  // 4) 복구 수렴(복구 worker 만 사용, 수동 reconcile 없음)과 PayPal 진실 비교
+  // Worker는 기본 활성화한다. disabled 관측 run에서는 API·DB·복구 job·PayPal 진실을 먼저 기록한 뒤에만 buyer reconcile을 호출한다.
   for (const [i, it] of items.entries()) {
     const ret = returns[i];
+    const snapshot = returnSnapshots[i];
+    const stateAtReturn = snapshot ? snapshot.stateAtReturn : dbState(it.checkoutId);
+    const paypalAtReturn = snapshot
+      ? snapshot.paypalAtReturn : await paypalTruth(stateAtReturn.providerOrderId);
+    let manualReconcile = null;
+    const atReturnUnknown = ret?.json?.state === 'PAYMENT_UNKNOWN'
+      && ret.json.paymentState === 'UNKNOWN'
+      && stateAtReturn.checkout === 'PAYMENT_UNKNOWN'
+      && stateAtReturn.payment === 'UNKNOWN'
+      && stateAtReturn.journals === 0;
+    const captureFaultObserved = cond.phase !== 'capture' ? null
+      : cond.name === 'capture-latency-3s'
+        ? ret?.json?.state === 'PAID' && ret.json.paymentState === 'CAPTURED'
+          && stateAtReturn.checkout === 'PAID' && stateAtReturn.payment === 'CAPTURED'
+          && stateAtReturn.journals === 1 && paypalAtReturn.completedCaptures === 1
+        : cond.name === 'capture-response-lost'
+          ? atReturnUnknown && paypalAtReturn.completedCaptures === 1
+            && stateAtReturn.recovery.status === 'PENDING'
+            && stateAtReturn.recovery.attemptCount === 0
+            && !stateAtReturn.recovery.due && !stateAtReturn.recovery.leased
+          : atReturnUnknown;
+    if (!RECOVERY_WORKER_ENABLED && ret) {
+      const response = await api('POST', `/api/checkouts/${it.checkoutId}/reconcile`, {
+        token: it.buyer.accessToken,
+        headers: { 'Idempotency-Key': `${RUN}-capture-reconcile-${counter.n++}` },
+      });
+      manualReconcile = {
+        status: response.status, checkoutState: response.json?.state ?? null,
+        paymentState: response.json?.paymentState ?? null,
+      };
+    }
     const conv = await waitForConvergence(it.checkoutId);
     const truth = await paypalTruth(conv.state.providerOrderId);
+    const orderStates = conv.state.orders ? conv.state.orders.split(',') : [];
     const r = results[i];
     delete r.approvalUrl;
     Object.assign(r, {
-      return: ret ? { status: ret.status, ms: Math.round(ret.ms), state: ret.json?.paymentState ?? ret.json?.code ?? ret.error } : null,
+      return: ret ? {
+        status: ret.status, ms: Math.round(ret.ms), checkoutState: ret.json?.state ?? null,
+        paymentState: ret.json?.paymentState ?? null,
+        state: ret.json?.paymentState ?? ret.json?.code ?? ret.error,
+      } : null,
+      manualReconcile,
+      paypalAtReturn: { orderStatus: paypalAtReturn.orderStatus, completedCaptures: paypalAtReturn.completedCaptures },
+      atlasAtReturn: {
+        checkout: stateAtReturn.checkout, payment: stateAtReturn.payment,
+        orders: stateAtReturn.orders, journals: stateAtReturn.journals,
+        recovery: stateAtReturn.recovery,
+      },
       converged: conv.converged, convergeMs: conv.ms,
       atlas: { checkout: conv.state.checkout, payment: conv.state.payment, orders: conv.state.orders, journals: conv.state.journals },
       paypal: { orderStatus: truth.orderStatus, completedCaptures: truth.completedCaptures, authorizations: truth.authorizations },
+      captureFaultObserved,
       invariants: {
         atMostOneCapture: truth.completedCaptures <= 1,
         paidIffCaptured: (conv.state.checkout === 'PAID') === (truth.completedCaptures === 1),
         capturedAmountMatchesSnapshot: truth.completedCaptures === 0 || truth.capturedMinor === conv.state.amountMinor,
+        paymentMatchesPayPalCapture: (conv.state.payment === 'CAPTURED') === (truth.completedCaptures === 1),
+        ordersMatchCheckout: conv.state.checkout === 'PAID'
+          ? orderStates.length > 0 && orderStates.every((state) => state === 'PAID')
+          : !orderStates.includes('PAID'),
         ledgerMatches: (conv.state.checkout === 'PAID') === (conv.state.journals === 1),
       },
     });
   }
-  return { condition: cond.name, catalog: catalogStats, checkouts: results };
+  return { condition: cond.name, catalog: catalogStats, warmups: warmupObservations, checkouts: results };
 }
 
 async function main() {
   await verifyProxyTopology();
   await clearToxics();
+  await clearToxics(CAPTURE_PROXY);
   const catalog = await setupCatalog();
   const buyers = [];
   for (let i = 0; i < REPEAT; i += 1) buyers.push(await account('buyer', i));
   const counter = { n: 0 };
-  const report = { run: RUN, startedAt: new Date().toISOString(), repeat: REPEAT, unitPriceWon: UNIT_PRICE_WON, fx: 'SYNTHETIC_FIXTURE 1400 KRW/USD', conditions: [] };
+  const report = {
+    run: RUN, startedAt: new Date().toISOString(), repeat: REPEAT, unitPriceWon: UNIT_PRICE_WON,
+    fx: 'SYNTHETIC_FIXTURE 1400 KRW/USD', recoveryWorkerEnabled: RECOVERY_WORKER_ENABLED, conditions: [],
+  };
   try {
     for (const cond of CONDITIONS) {
       if (only && !only.has(cond.name)) continue;
       const result = await runCondition(cond, catalog, buyers, counter);
       report.conditions.push(result);
-      console.log(JSON.stringify({ condition: result.condition, catalog: result.catalog, checkouts: result.checkouts.map((c) => ({ submit: c.submit, return: c.return, converged: c.converged, convergeMs: c.convergeMs, atlas: c.atlas.checkout, paypalCaptures: c.paypal.completedCaptures, invariants: Object.values(c.invariants).every(Boolean) })) }));
+      console.log(JSON.stringify({
+        condition: result.condition,
+        catalog: result.catalog,
+        warmups: result.warmups,
+        checkouts: result.checkouts.map((c) => ({
+          submit: c.submit,
+          return: c.return,
+          converged: c.converged,
+          convergeMs: c.convergeMs,
+          captureFaultObserved: c.captureFaultObserved,
+          manualReconcile: c.manualReconcile,
+          atlasAtReturn: c.atlasAtReturn,
+          atlas: c.atlas.checkout,
+          paypalCapturesAtReturn: c.paypalAtReturn.completedCaptures,
+          paypalCaptures: c.paypal.completedCaptures,
+          invariants: Object.values(c.invariants).every(Boolean),
+        })),
+      }));
     }
   } finally {
+    await Promise.all([...activeCatalogStops].map((stopCatalog) => stopCatalog().catch(() => {})));
     await clearToxics().catch(() => {});
+    await clearToxics(CAPTURE_PROXY).catch(() => {});
     await browser?.close();
-    mkdirSync(`${PRIVATE}/results`, { recursive: true });
-    writeFileSync(`${PRIVATE}/results/${RUN}.json`, `${JSON.stringify(report, null, 2)}\n`);
-    console.log(`결과: ${PRIVATE}/results/${RUN}.json`);
+    mkdirSync(RESULTS_DIR, { recursive: true });
+    writeFileSync(`${RESULTS_DIR}/${RUN}.json`, `${JSON.stringify(report, null, 2)}\n`);
+    console.log(`결과: ${RESULTS_DIR}/${RUN}.json`);
   }
-  const violations = report.conditions.flatMap((c) => c.checkouts).filter((c) => !Object.values(c.invariants).every(Boolean));
-  if (violations.length) { console.error(`불변식 위반 ${violations.length}건`); process.exitCode = 1; }
+  const violations = report.conditions.flatMap((condition) => condition.checkouts)
+    .filter((checkout) => !checkout.return || checkout.return.status !== 200
+        || (!report.recoveryWorkerEnabled
+            && (!checkout.manualReconcile || checkout.manualReconcile.status !== 200
+                || checkout.manualReconcile.checkoutState !== 'PAID'
+                || checkout.manualReconcile.paymentState !== 'CAPTURED'))
+        || checkout.captureFaultObserved === false
+        || !checkout.converged || !Object.values(checkout.invariants).every(Boolean));
+  if (violations.length) {
+    console.error(`검증 실패 ${violations.length}건 (callback/reconcile, 수렴 또는 불변식 위반)`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => { console.error(error.message); process.exitCode = 1; });
