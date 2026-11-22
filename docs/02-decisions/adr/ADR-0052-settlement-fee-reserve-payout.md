@@ -88,7 +88,7 @@ REQUESTED → APPROVED → SENT → CONFIRMED (또는 FAILED)
 
 ## 한계
 
-- **실제 송금은 구현하지 않았다.** `SENT`/`CONFIRMED` 전이는 운영 절차의 결과를 받아 호출하는 것이며, 이 ADR 은 상태 기계와 원장 정합성까지만 책임진다. 외부 송금 연동은 별도 결정이 필요하다.
+- **실제 송금은 이 결정 당시 구현하지 않았다.** 당시 원장은 provider 송금 결과를 가장하지 않았고 상태 기계만 정의했다. 후속 Sandbox-only provider execution과 reconciliation 계약은 [ADR-0057](ADR-0057-financial-operation-outbox-and-payout-reconciliation.md)에서 결정하며, Live/production 송금은 별도 출시 gate로 둔다.
 - 수수료율·보류율 기본값은 0 이다(기존 동작 보존). 실제 값을 정하려면 정산 정책 결정이 선행돼야 한다.
 - 지급 주기(월/주) 자동화는 없다. 기간은 호출자가 지정한다.
 - 과거 checkout journal 의 seller 귀속은 V52 가 `settlement_seller_allocation` 으로 보완하지만, 운영 데이터 규모에서의 성능은 측정하지 않았다.

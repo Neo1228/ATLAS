@@ -5,6 +5,7 @@ import com.atlas.account.domain.AccountException.Code;
 import com.atlas.account.domain.AccountActionToken;
 import com.atlas.account.domain.AccountMfaSecret;
 import com.atlas.account.domain.AccountPrincipal;
+import com.atlas.account.domain.VerifiedSellerAccount;
 import com.atlas.account.domain.RefreshTokenSession;
 import com.atlas.account.domain.ActiveRefreshFamily;
 import com.atlas.account.dto.request.LoginRequest;
@@ -418,6 +419,18 @@ public class AccountService {
     @Transactional(readOnly = true)
     public boolean ownsSeller(UUID accountId, UUID sellerId) {
         return accountId != null && sellerId != null && accounts.ownsSeller(accountId, sellerId);
+    }
+
+    /**
+     * Seller와 연결된 active account 중 이메일 검증이 완료된 identity를 조회한다.
+     * 호출 account가 해당 Seller를 소유하지 않으면 조회를 거부한다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<VerifiedSellerAccount> findVerifiedSellerAccount(UUID accountId, UUID sellerId) {
+        if (accountId == null || sellerId == null || !accounts.ownsSeller(accountId, sellerId)) {
+            throw new AccountException(Code.RESOURCE_NOT_OWNED, "Seller identity is not available");
+        }
+        return accounts.findVerifiedSellerAccount(accountId, sellerId);
     }
 
     @Transactional(readOnly = true)

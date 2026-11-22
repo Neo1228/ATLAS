@@ -11,5 +11,7 @@ public interface SettlementService {
     void recordCapture(CapturePostingRequest request);
     void recordCheckoutCapture(CheckoutSettlementPostingRequest request);
     void recordRefund(RefundPostingRequest request);
+    void reserveRefund(RefundPostingRequest request);
+    void releaseRefundReservation(RefundPostingRequest request);
     SellerSettlementStatementResponse getSellerStatement(SellerSettlementStatementRequest request);
 }

@@ -33,6 +33,7 @@ import com.atlas.settlement.persistence.projection.SellerStatementTotals;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.service.SettlementPolicy;
 import com.atlas.settlement.repository.SettlementPayoutRepository;
+import com.atlas.settlement.repository.SettlementRefundReservationRepository;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -47,11 +48,13 @@ import org.junit.jupiter.api.Test;
 class SettlementServiceImplTest {
     private final SettlementJournalRepository journals = mock(SettlementJournalRepository.class);
     private final SettlementPayoutRepository payouts = mock(SettlementPayoutRepository.class);
+    private final SettlementRefundReservationRepository refundReservations =
+            mock(SettlementRefundReservationRepository.class);
     // 이 단위 테스트는 분개 형태만 검증하므로 요율 0(기존 두 계정 구조)을 쓴다.
     private final SettlementPolicy policy = new SettlementPolicy(0, 0);
     private final Instant now = Instant.parse("2026-11-04T00:00:00Z");
     private final SettlementServiceImpl service = new SettlementServiceImpl(
-            journals, payouts, policy, Clock.fixed(now, ZoneOffset.UTC));
+            journals, payouts, refundReservations, policy, Clock.fixed(now, ZoneOffset.UTC));
     private final UUID orderId = UUID.randomUUID();
     private final UUID attemptId = UUID.randomUUID();
     private final UUID sellerId = UUID.randomUUID();
@@ -113,11 +116,81 @@ class SettlementServiceImplTest {
         UUID refundId = UUID.randomUUID();
         RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
         RefundJournalRecord original = new RefundJournalRecord(orderId, refundId, sellerId, 2_500);
+        when(refundReservations.find(refundId)).thenReturn(Optional.of(
+                new SettlementRefundReservationRepository.RefundReservation(
+                        refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
         when(journals.insertRefundIfAbsent(original, now)).thenReturn(Optional.empty());
         when(journals.findByRefundId(refundId)).thenReturn(Optional.of(
                 new RefundJournalRecord(orderId, refundId, sellerId, 2_400)));
 
         assertSettlementCode(SettlementException.Code.CONFLICT, () -> service.recordRefund(request));
+    }
+
+    @Test
+    void rejectsRefundPostingWithoutAReservation() {
+        UUID refundId = UUID.randomUUID();
+        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        when(refundReservations.find(refundId)).thenReturn(Optional.empty());
+
+        assertSettlementCode(SettlementException.Code.CONFLICT, () -> service.recordRefund(request));
+        verify(journals, never()).insertRefundIfAbsent(any(RefundJournalRecord.class), any(Instant.class));
+    }
+
+    @Test
+    void rejectsRefundPostingWhenReservationFactsDiffer() {
+        UUID refundId = UUID.randomUUID();
+        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        when(refundReservations.find(refundId)).thenReturn(Optional.of(
+                new SettlementRefundReservationRepository.RefundReservation(
+                        refundId, orderId, sellerId, 2_400, "RESERVED", now, now)));
+
+        assertSettlementCode(SettlementException.Code.CONFLICT, () -> service.recordRefund(request));
+        verify(journals, never()).insertRefundIfAbsent(any(RefundJournalRecord.class), any(Instant.class));
+    }
+
+    @Test
+    void postingAnAlreadyReservedRefundDoesNotCancelAPayoutAgain() {
+        UUID refundId = UUID.randomUUID();
+        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        when(refundReservations.find(refundId)).thenReturn(Optional.of(
+                new SettlementRefundReservationRepository.RefundReservation(
+                        refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
+        when(journals.insertRefundIfAbsent(
+                new RefundJournalRecord(orderId, refundId, sellerId, 2_500), now))
+                .thenReturn(Optional.of(UUID.randomUUID()));
+        when(refundReservations.markPosted(refundId, now)).thenReturn(true);
+
+        service.recordRefund(request);
+
+        verify(payouts, never()).cancelUnsentForRefund(any(UUID.class), any(Instant.class));
+    }
+
+    @Test
+    void replayingRefundReservationDoesNotCancelPayoutCreatedFromHeldBalance() {
+        UUID refundId = UUID.randomUUID();
+        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        when(refundReservations.find(refundId)).thenReturn(Optional.of(
+                new SettlementRefundReservationRepository.RefundReservation(
+                        refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
+
+        service.reserveRefund(request);
+
+        verify(refundReservations, never()).reserve(
+                any(UUID.class), any(UUID.class), any(UUID.class), anyLong(), any(Instant.class));
+        verify(payouts, never()).cancelUnsentForRefund(any(UUID.class), any(Instant.class));
+    }
+
+    @Test
+    void replayingDefinitiveRefundReleaseIsIdempotent() {
+        UUID refundId = UUID.randomUUID();
+        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        when(refundReservations.find(refundId)).thenReturn(Optional.of(
+                new SettlementRefundReservationRepository.RefundReservation(
+                        refundId, orderId, sellerId, 2_500, "RELEASED", now, now)));
+
+        service.releaseRefundReservation(request);
+
+        verify(refundReservations, never()).release(any(UUID.class), any(Instant.class));
     }
 
     @Test
@@ -182,7 +255,8 @@ class SettlementServiceImplTest {
         UUID sellerId = UUID.randomUUID();
         UUID journalId = UUID.randomUUID();
         Instant recordedAt = Instant.parse("2025-01-02T03:04:05Z");
-        SettlementServiceImpl checkoutService = new SettlementServiceImpl(journals, payouts, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
+        SettlementServiceImpl checkoutService = new SettlementServiceImpl(
+                journals, payouts, refundReservations, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
         SellerOrderAllocationRequest allocation = new SellerOrderAllocationRequest(orderId, sellerId, 125);
         CheckoutSettlementRecord facts = new CheckoutSettlementRecord(checkoutId, attemptId, 125,
                 List.of(stored(allocation)));
@@ -205,7 +279,8 @@ class SettlementServiceImplTest {
         UUID orderId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
         Instant recordedAt = Instant.parse("2025-01-02T03:04:05Z");
-        SettlementServiceImpl checkoutService = new SettlementServiceImpl(journals, payouts, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
+        SettlementServiceImpl checkoutService = new SettlementServiceImpl(
+                journals, payouts, refundReservations, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
         SellerOrderAllocationRequest allocation = new SellerOrderAllocationRequest(orderId, sellerId, 125);
         CheckoutSettlementRecord facts = new CheckoutSettlementRecord(checkoutId, attemptId, 125,
                 List.of(stored(allocation)));
@@ -231,7 +306,8 @@ class SettlementServiceImplTest {
         UUID originalSellerId = UUID.randomUUID();
         UUID changedSellerId = UUID.randomUUID();
         Instant recordedAt = Instant.parse("2025-01-02T03:04:05Z");
-        SettlementServiceImpl checkoutService = new SettlementServiceImpl(journals, payouts, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
+        SettlementServiceImpl checkoutService = new SettlementServiceImpl(
+                journals, payouts, refundReservations, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
         SellerOrderAllocationRequest originalAllocation = new SellerOrderAllocationRequest(orderId, originalSellerId, 125);
         CheckoutSettlementRecord originalFacts = new CheckoutSettlementRecord(checkoutId, attemptId, 125,
                 List.of(stored(originalAllocation)));
@@ -262,7 +338,8 @@ class SettlementServiceImplTest {
 
     @Test
     void sellerStatementRejectsInvalidRangeAndPageLimits() {
-        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, payouts, policy, Clock.fixed(now, ZoneOffset.UTC));
+        SettlementServiceImpl statementService = new SettlementServiceImpl(
+                journals, payouts, refundReservations, policy, Clock.fixed(now, ZoneOffset.UTC));
         UUID sellerId = UUID.randomUUID();
         Instant from = Instant.parse("2025-01-01T00:00:00Z");
         Instant to = Instant.parse("2025-02-01T00:00:00Z");
@@ -273,7 +350,8 @@ class SettlementServiceImplTest {
 
     @Test
     void sellerStatementRejectsMalformedAndWrongScopeCursors() {
-        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, payouts, policy, Clock.fixed(now, ZoneOffset.UTC));
+        SettlementServiceImpl statementService = new SettlementServiceImpl(
+                journals, payouts, refundReservations, policy, Clock.fixed(now, ZoneOffset.UTC));
         UUID sellerId = UUID.randomUUID();
         Instant from = Instant.parse("2025-01-01T00:00:00Z");
         Instant to = Instant.parse("2025-02-01T00:00:00Z");
@@ -288,8 +366,8 @@ class SettlementServiceImplTest {
 
     @Test
     void sellerStatementSurfacesPayoutRowsWithSignedAmountWithoutDoubleCountingGross() {
-        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, payouts, policy,
-                Clock.fixed(now, ZoneOffset.UTC));
+        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, payouts,
+                refundReservations, policy, Clock.fixed(now, ZoneOffset.UTC));
         UUID statementSellerId = UUID.randomUUID();
         Instant from = Instant.parse("2025-01-01T00:00:00Z");
         Instant to = Instant.parse("2025-02-01T00:00:00Z");
@@ -350,8 +428,8 @@ class SettlementServiceImplTest {
 
     @Test
     void payoutStatementPageKeepsTheV1CursorContract() {
-        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, payouts, policy,
-                Clock.fixed(now, ZoneOffset.UTC));
+        SettlementServiceImpl statementService = new SettlementServiceImpl(journals, payouts,
+                refundReservations, policy, Clock.fixed(now, ZoneOffset.UTC));
         UUID statementSellerId = UUID.randomUUID();
         Instant from = Instant.parse("2025-01-01T00:00:00Z");
         Instant to = Instant.parse("2025-02-01T00:00:00Z");

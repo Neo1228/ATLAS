@@ -11,8 +11,10 @@ public record SettlementPayoutRow(
         Instant periodStart,
         Instant periodEnd,
         long amountWon,
+        long settledAmountWon,
         SettlementPayoutState state,
         Instant requestedAt,
         Instant sentAt,
-        Instant confirmedAt) {
+        Instant confirmedAt,
+        Instant cancelledAt) {
 }

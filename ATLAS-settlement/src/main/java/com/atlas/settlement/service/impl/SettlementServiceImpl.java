@@ -15,6 +15,8 @@ import com.atlas.settlement.persistence.projection.SellerStatementRow;
 import org.springframework.transaction.annotation.Isolation;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.repository.SettlementPayoutRepository;
+import com.atlas.settlement.repository.SettlementRefundReservationRepository;
+import com.atlas.settlement.repository.SettlementRefundReservationRepository.RefundReservation;
 import com.atlas.settlement.service.SettlementPolicy;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
@@ -38,14 +40,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class SettlementServiceImpl implements SettlementService {
     private final SettlementJournalRepository journals;
     private final SettlementPayoutRepository payoutTotals;
+    private final SettlementRefundReservationRepository refundReservations;
     private final SettlementPolicy policy;
     private final Clock clock;
 
     public SettlementServiceImpl(SettlementJournalRepository journals,
             SettlementPayoutRepository payoutTotals,
+            SettlementRefundReservationRepository refundReservations,
             SettlementPolicy policy, Clock clock) {
         this.journals = Objects.requireNonNull(journals);
         this.payoutTotals = Objects.requireNonNull(payoutTotals);
+        this.refundReservations = Objects.requireNonNull(refundReservations);
         this.policy = Objects.requireNonNull(policy);
         this.clock = Objects.requireNonNull(clock);
     }
@@ -131,18 +136,76 @@ public class SettlementServiceImpl implements SettlementService {
     @Transactional
     public void recordRefund(RefundPostingRequest request) {
         validate(request);
+        journals.lockSellerPayouts(request.sellerId());
+        Instant recordedAt = clock.instant();
+        var reservation = refundReservations.find(request.refundId())
+                .orElseThrow(() -> conflict("Refund reservation must exist before posting"));
+        validateRefundReservation(reservation, request);
+        if (!"RESERVED".equals(reservation.status()) && !"POSTED".equals(reservation.status())) {
+            throw conflict("Refund reservation is not active");
+        }
         RefundJournalRecord facts = new RefundJournalRecord(
                 request.orderId(), request.refundId(), request.sellerId(), request.amountWon());
-        Instant recordedAt = clock.instant();
         Optional<UUID> journalId = journals.insertRefundIfAbsent(facts, recordedAt);
         if (journalId.isPresent()) {
             journals.insertRefundEntries(journalId.get(), request.sellerId(), request.amountWon(), recordedAt);
+            requireRefundReservationPosted(request.refundId(), recordedAt);
             return;
         }
         RefundJournalRecord existing = journals.findByRefundId(request.refundId())
                 .orElseThrow(() -> new IllegalStateException("Refund journal conflict disappeared"));
         if (!existing.equals(facts)) {
             throw conflict("Refund was posted with different facts");
+        }
+        requireRefundReservationPosted(request.refundId(), recordedAt);
+    }
+
+    @Override
+    @Transactional
+    public void reserveRefund(RefundPostingRequest request) {
+        validate(request);
+        journals.lockSellerPayouts(request.sellerId());
+        Instant now = clock.instant();
+        var existing = refundReservations.find(request.refundId());
+        if (existing.isPresent()) {
+            validateRefundReservation(existing.get(), request);
+            if ("RESERVED".equals(existing.get().status()) || "POSTED".equals(existing.get().status())) return;
+            throw conflict("Refund reservation is not active");
+        }
+        var reservation = refundReservations.reserve(
+                request.refundId(), request.orderId(), request.sellerId(), request.amountWon(), now);
+        validateRefundReservation(reservation, request);
+        if (!"RESERVED".equals(reservation.status())) throw conflict("Refund reservation is not active");
+        payoutTotals.cancelUnsentForRefund(request.sellerId(), now);
+    }
+
+    @Override
+    @Transactional
+    public void releaseRefundReservation(RefundPostingRequest request) {
+        validate(request);
+        journals.lockSellerPayouts(request.sellerId());
+        var reservation = refundReservations.find(request.refundId())
+                .orElseThrow(() -> conflict("Refund reservation was not found"));
+        validateRefundReservation(reservation, request);
+        if ("POSTED".equals(reservation.status())) throw conflict("Posted refund reservation cannot be released");
+        if ("RELEASED".equals(reservation.status())) return;
+        if (!refundReservations.release(request.refundId(), clock.instant())) {
+            throw conflict("Refund reservation changed before release");
+        }
+    }
+
+    private static void validateRefundReservation(
+            RefundReservation reservation, RefundPostingRequest request) {
+        if (!reservation.refundId().equals(request.refundId()) || !reservation.orderId().equals(request.orderId())
+                || !reservation.sellerId().equals(request.sellerId())
+                || reservation.amountWon() != request.amountWon()) {
+            throw conflict("Refund reservation facts do not match");
+        }
+    }
+
+    private void requireRefundReservationPosted(UUID refundId, Instant now) {
+        if (!refundReservations.markPosted(refundId, now)) {
+            throw conflict("Refund reservation could not be consumed");
         }
     }
 

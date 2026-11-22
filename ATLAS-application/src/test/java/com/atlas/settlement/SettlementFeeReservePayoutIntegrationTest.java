@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.payment.PayPalIntegrationTestSupport;
+import com.atlas.application.service.payout.PayoutDispatchPlan;
+import com.atlas.application.service.payout.PayoutDispatchRecord;
+import com.atlas.application.service.payout.PayoutDispatchRepository;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
@@ -12,10 +15,13 @@ import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
 import com.atlas.settlement.exception.SettlementException;
-import com.atlas.settlement.persistence.state.SettlementPayoutState;
+import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Instant;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.TreeMap;
@@ -72,15 +78,49 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Autowired private SettlementService settlement;
     @Autowired private SettlementPayoutService payouts;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private PayoutDispatchRepository dispatches;
 
     @BeforeEach
     void clearLedgerAndPayouts() {
         // seller 는 테스트마다 새 UUID 지만, 지급 row 는 누적되면 pendingAmount 가 잔액을
         // 예약된 것으로 오판한다. 각 테스트는 빈 원장에서 시작해야 한다.
+        jdbc.update("DELETE FROM settlement_payout_dispatch_outbox");
+        jdbc.update("DELETE FROM settlement_payout_operator_action");
+        jdbc.update("DELETE FROM settlement_refund_reservation");
         jdbc.update("DELETE FROM settlement_entry");
         jdbc.update("DELETE FROM settlement_seller_allocation");
         jdbc.update("DELETE FROM settlement_journal");
         jdbc.update("DELETE FROM settlement_payout");
+    }
+
+    @Test
+    void payoutOutboxEnqueueIsIdempotentAndLeaseTokensFenceStaleWorkers() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SellerPayoutResponse payout = payouts.request(sellerId,
+                Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
+                "outbox-lease-payout");
+        payouts.approve(payout.payoutId());
+        PayoutDispatchPlan plan = new PayoutDispatchPlan(payout.payoutId(), 1, "v2:active:ciphertext",
+                "US", 8_000, 584, new BigDecimal("1371.25000000"), "BOK_ECOS",
+                LocalDate.parse("2026-11-21"), 8_009, 9,
+                "sender-batch-lease", "sender-item-lease", "request-lease", "a".repeat(64));
+
+        PayoutDispatchRecord first = dispatches.enqueue(plan);
+        PayoutDispatchRecord duplicate = dispatches.enqueue(plan);
+        assertThat(first.status()).isEqualTo("PENDING");
+        assertThat(duplicate.payoutId()).isEqualTo(first.payoutId());
+
+        PayoutDispatchRecord firstLease = dispatches.claim(1, Duration.ofSeconds(30)).getFirst();
+        assertThat(firstLease.leaseToken()).isNotNull();
+        assertThat(dispatches.claim(1, Duration.ofSeconds(30))).isEmpty();
+        assertThat(dispatches.reschedule(firstLease, Duration.ZERO, "TEST_RETRY", "PENDING")).isTrue();
+
+        PayoutDispatchRecord secondLease = dispatches.claim(1, Duration.ofSeconds(30)).getFirst();
+        assertThat(secondLease.leaseToken()).isNotEqualTo(firstLease.leaseToken());
+        assertThat(dispatches.transition(firstLease, "FAILED", "STALE_WORKER")).isFalse();
+        assertThat(dispatches.transition(secondLease, "CANCELLED", "TEST_CANCELLED")).isTrue();
+        assertThat(dispatches.find(payout.payoutId()).orElseThrow().status()).isEqualTo("CANCELLED");
     }
 
     @Test
@@ -150,7 +190,9 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     void balanceReflectsCaptureRefundAndReserve() {
         UUID sellerId = createSeller();
         settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        settlement.recordRefund(new RefundPostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000));
+        RefundPostingRequest refund = new RefundPostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
+        settlement.reserveRefund(refund);
+        settlement.recordRefund(refund);
 
         var balance = payouts.balance(sellerId);
         // capture: payable 8,000 / reserve 1,000 / fee 1,000.
@@ -180,7 +222,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         SellerPayoutResponse created = payouts.request(sellerId, start, end, "payout-key-1");
         // 지급 금액은 호출자가 아니라 원장 잔액이 정한다(보류 1,000 제외).
         assertThat(created.amountWon()).isEqualTo(8_000L);
-        assertThat(created.state()).isEqualTo(SettlementPayoutState.REQUESTED);
+        assertThat(created.state()).isEqualTo(SettlementPayoutStatus.REQUESTED);
 
         // 같은 기간 재요청은 중복 지급을 만들지 않고 기존 지급을 돌려준다.
         SellerPayoutResponse duplicate = payouts.request(sellerId, start, end, "payout-key-2");
@@ -188,6 +230,203 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM settlement_payout WHERE seller_id = ?", Integer.class, sellerId))
                 .isEqualTo(1);
+    }
+
+    @Test
+    void definitiveRefundFailureReleasesItsHoldForANewPayoutRequest() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        RefundPostingRequest refund = new RefundPostingRequest(
+                UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
+        settlement.reserveRefund(refund);
+        SellerPayoutResponse first = payouts.request(sellerId,
+                Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
+                "refund-held-payout");
+        assertThat(first.amountWon()).isEqualTo(6_000);
+
+        settlement.releaseRefundReservation(refund);
+
+        SellerPayoutResponse second = payouts.request(sellerId,
+                Instant.parse("2026-12-01T00:00:00Z"), Instant.parse("2027-01-01T00:00:00Z"),
+                "refund-release-payout");
+        assertThat(second.amountWon()).isEqualTo(2_000);
+        assertThat(payouts.summary(sellerId).pendingRefundAmountWon()).isZero();
+        assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(8_000);
+    }
+
+    @Test
+    void refundCommitmentPreemptsApprovedPayoutBeforeProviderDispatch() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        Instant start = Instant.parse("2026-11-01T00:00:00Z");
+        Instant end = Instant.parse("2026-12-01T00:00:00Z");
+        SellerPayoutResponse payout = payouts.request(sellerId, start, end, "refund-preempted-payout");
+        payouts.approve(payout.payoutId());
+        RefundPostingRequest refund = new RefundPostingRequest(
+                UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
+
+        settlement.reserveRefund(refund);
+
+        SellerPayoutResponse cancelled = payouts.find(payout.payoutId());
+        assertThat(cancelled.state()).isEqualTo(SettlementPayoutStatus.CANCELLED);
+        assertThat(cancelled.cancelledAt()).isNotNull();
+        assertThat(payouts.beginDispatch(payout.payoutId())).isFalse();
+        SellerPayoutResponse replacement = payouts.request(sellerId, start, end, "replacement-payout");
+        assertThat(replacement.amountWon()).isEqualTo(6_000);
+        assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(6_000);
+        assertThat(payouts.summary(sellerId).pendingRefundAmountWon()).isEqualTo(2_000);
+        assertThat(payouts.summary(sellerId).availablePayoutAmountWon()).isZero();
+    }
+
+    @Test
+    void refundPostingPreservesPayoutCreatedFromBalanceAfterTheRefundHold() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 12_500));
+        RefundPostingRequest refund = new RefundPostingRequest(
+                UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
+        settlement.reserveRefund(refund);
+        Instant start = Instant.parse("2026-11-01T00:00:00Z");
+        Instant end = Instant.parse("2026-12-01T00:00:00Z");
+
+        SellerPayoutResponse payout = payouts.request(sellerId, start, end, "refund-covered-payout");
+        assertThat(payout.amountWon()).isEqualTo(8_000);
+        settlement.reserveRefund(refund);
+        settlement.recordRefund(refund);
+
+        assertThat(payouts.find(payout.payoutId()).state()).isEqualTo(SettlementPayoutStatus.REQUESTED);
+        assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(8_000);
+        assertThat(payouts.summary(sellerId).pendingRefundAmountWon()).isZero();
+        assertThat(payouts.balance(sellerId).payableAmountWon()).isEqualTo(9_250);
+    }
+
+    @Test
+    void refundAfterDispatchFenceKeepsPayoutReservedForProviderReconciliation() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SellerPayoutResponse payout = payouts.request(sellerId,
+                Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
+                "dispatch-wins-payout");
+        payouts.approve(payout.payoutId());
+        assertThat(payouts.beginDispatch(payout.payoutId())).isTrue();
+
+        settlement.reserveRefund(new RefundPostingRequest(
+                UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000));
+
+        assertThat(payouts.find(payout.payoutId()).state()).isEqualTo(SettlementPayoutStatus.DISPATCHING);
+        assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(8_000);
+        assertThat(payouts.summary(sellerId).pendingRefundAmountWon()).isEqualTo(2_000);
+        assertThat(payouts.summary(sellerId).availablePayoutAmountWon()).isZero();
+    }
+
+    @Test
+    void concurrentRefundReservationAndDispatchHaveOneSellerLockWinner() throws Exception {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SellerPayoutResponse payout = payouts.request(sellerId,
+                Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
+                "concurrent-refund-dispatch");
+        payouts.approve(payout.payoutId());
+        RefundPostingRequest refund = new RefundPostingRequest(
+                UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> dispatch = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Dispatch start timed out");
+                return payouts.beginDispatch(payout.payoutId());
+            });
+            Future<Void> reserveRefund = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Refund start timed out");
+                settlement.reserveRefund(refund);
+                return null;
+            });
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            boolean dispatchStarted = dispatch.get(10, TimeUnit.SECONDS);
+            reserveRefund.get(10, TimeUnit.SECONDS);
+
+            SettlementPayoutStatus finalState = payouts.find(payout.payoutId()).state();
+            assertThat(dispatchStarted).isEqualTo(finalState == SettlementPayoutStatus.DISPATCHING);
+            assertThat(finalState).isIn(SettlementPayoutStatus.CANCELLED, SettlementPayoutStatus.DISPATCHING);
+            assertThat(payouts.summary(sellerId).pendingRefundAmountWon()).isEqualTo(2_000);
+            assertThat(payouts.summary(sellerId).pendingPayoutAmountWon())
+                    .isEqualTo(dispatchStarted ? 8_000 : 0);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void successfulRefundAfterDispatchedPayoutSurfacesNegativePayableCreditExposure() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SellerPayoutResponse payout = payouts.request(sellerId,
+                Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
+                "refund-credit-exposure-payout");
+        payouts.approve(payout.payoutId());
+        assertThat(payouts.beginDispatch(payout.payoutId())).isTrue();
+        RefundPostingRequest refund = new RefundPostingRequest(
+                UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
+        settlement.reserveRefund(refund);
+
+        payouts.confirmProviderSuccess(payout.payoutId(), 8_000, 0, 0);
+        settlement.recordRefund(refund);
+
+        assertThat(payouts.balance(sellerId).payableAmountWon()).isEqualTo(-1_000);
+        assertThat(payouts.riskSnapshot().negativePayableSellerCount()).isEqualTo(1);
+        assertThat(payouts.riskSnapshot().negativePayableAmountWon()).isEqualTo(1_000);
+        assertThat(payouts.riskSnapshot().pendingRefundReservationCount()).isZero();
+        assertThat(payouts.riskSnapshot().pendingRefundReservationAmountWon()).isZero();
+    }
+
+    @Test
+    void providerSuccessPostsSellerPrincipalRoundingAndFeeAsBalancedLedgerEntries() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SellerPayoutResponse payout = payouts.request(sellerId,
+                Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
+                "provider-confirmed-payout");
+        payouts.approve(payout.payoutId());
+        payouts.beginDispatch(payout.payoutId());
+
+        SellerPayoutResponse confirmed = payouts.confirmProviderSuccess(payout.payoutId(), 8_011, 11, 25);
+        assertThat(payouts.confirmProviderSuccess(payout.payoutId(), 8_011, 11, 25).state())
+                .isEqualTo(SettlementPayoutStatus.CONFIRMED);
+        assertThatThrownBy(() -> payouts.confirmProviderSuccess(payout.payoutId(), 8_011, 11, 26))
+                .isInstanceOf(SettlementException.class);
+
+        assertThat(confirmed.state()).isEqualTo(SettlementPayoutStatus.CONFIRMED);
+        Map<String, Long> debits = entryTotals(sellerId, "DEBIT");
+        Map<String, Long> credits = entryTotals(sellerId, "CREDIT");
+        assertThat(debits).containsEntry("SELLER_PAYABLE", 8_000L)
+                .containsEntry("PLATFORM_PAYOUT_FX_ROUNDING", 11L)
+                .containsEntry("PLATFORM_PAYOUT_FEE", 25L);
+        assertThat(credits).containsEntry("PSP_CLEARING", 8_036L);
+        assertThat(sum(debits)).isEqualTo(sum(credits));
+        assertThat(payouts.balance(sellerId).payableAmountWon()).isZero();
+    }
+
+    @Test
+    void providerFailureEvidenceCanReleaseAnAttemptedPayoutReservation() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SellerPayoutResponse payout = payouts.request(sellerId,
+                Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
+                "provider-failed-payout");
+        payouts.approve(payout.payoutId());
+        payouts.beginDispatch(payout.payoutId());
+        payouts.markProviderUnknown(payout.payoutId());
+
+        SellerPayoutResponse failed = payouts.failWithProviderEvidence(
+                payout.payoutId(), "PAYOUT_ITEM_FAILED");
+
+        assertThat(failed.state()).isEqualTo(SettlementPayoutStatus.FAILED);
+        assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isZero();
+        assertThat(payouts.request(sellerId, payout.periodStart(), payout.periodEnd(),
+                "provider-failure-replacement").amountWon()).isEqualTo(8_000);
     }
 
     @Test
@@ -202,7 +441,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         payouts.markSent(requested.payoutId());
         SellerPayoutResponse confirmed = payouts.confirm(requested.payoutId());
 
-        assertThat(confirmed.state()).isEqualTo(SettlementPayoutState.CONFIRMED);
+        assertThat(confirmed.state()).isEqualTo(SettlementPayoutStatus.CONFIRMED);
         // 지급 후 지급 가능 잔액은 0 이 된다(원장 분개로 반영).
         assertThat(payouts.balance(sellerId).payableAmountWon()).isZero();
         // payout journal 도 복식부기 항등식을 만족한다.
@@ -212,7 +451,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
 
         // 확정은 멱등이다.
         assertThat(payouts.confirm(requested.payoutId()).state())
-                .isEqualTo(SettlementPayoutState.CONFIRMED);
+                .isEqualTo(SettlementPayoutStatus.CONFIRMED);
     }
 
     @Test
@@ -284,6 +523,27 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         assertThatThrownBy(() -> payouts.confirm(requested.payoutId()))
                 .isInstanceOfSatisfying(SettlementException.class,
                         error -> assertThat(error.code()).isEqualTo(SettlementException.Code.CONFLICT));
+    }
+
+    @Test
+    void sentPayoutCannotBeFailedWithoutProviderEvidence() {
+        UUID sellerId = createSeller();
+        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        Instant start = Instant.parse("2026-11-01T00:00:00Z");
+        Instant end = Instant.parse("2026-12-01T00:00:00Z");
+        SellerPayoutResponse requested = payouts.request(sellerId, start, end, "sent-unknown-key");
+        payouts.approve(requested.payoutId());
+        payouts.markSent(requested.payoutId());
+
+        assertThatThrownBy(() -> payouts.fail(requested.payoutId(), "PROVIDER_RESPONSE_UNKNOWN"))
+                .isInstanceOfSatisfying(SettlementException.class,
+                        error -> assertThat(error.code()).isEqualTo(SettlementException.Code.CONFLICT));
+        assertThat(payouts.find(requested.payoutId()).state()).isEqualTo(SettlementPayoutStatus.SENT);
+        assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(8_000L);
+
+        SellerPayoutResponse replay = payouts.request(sellerId, start, end, "sent-unknown-replay");
+        assertThat(replay.payoutId()).isEqualTo(requested.payoutId());
+        assertThat(replay.amountWon()).isEqualTo(8_000L);
     }
 
     @Test
