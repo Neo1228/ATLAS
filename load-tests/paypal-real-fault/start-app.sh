@@ -24,7 +24,10 @@ client_id=$(value PAYPAL_CLIENT_ID); client_secret=$(value PAYPAL_CLIENT_SECRET)
 [[ -n $client_id && -n $client_secret ]] || fail '.env.local 에 Sandbox 자격 증명이 없다'
 [[ $(value PAYPAL_BASE_URL) == https://api-m.sandbox.paypal.com ]] || fail 'PAYPAL_BASE_URL 은 Sandbox 여야 한다'
 
+[[ $client_id != *$'\n'* && $client_secret != *$'\n'* ]] || fail 'Sandbox 자격 증명은 한 줄이어야 한다.'
 base="https://api-m.sandbox.paypal.com:$proxy_port"
+# 자격 증명은 stdin으로 자식 shell에 전달하므로 정적 command 문자열에서만 환경변수로 확장한다.
+# shellcheck disable=SC2016
 exec env -i PATH="$PATH" HOME="$private" \
   ATLAS_SERVER_ADDRESS=127.0.0.1 ATLAS_SERVER_PORT="$app_port" \
   ATLAS_PUBLIC_BASE_URL="http://127.0.0.1:$app_port" \
@@ -33,7 +36,19 @@ exec env -i PATH="$PATH" HOME="$private" \
   ATLAS_JWT_SIGNING_SECRET="$(cat "$private/jwt")" \
   SPRING_MAIL_HOST=127.0.0.1 SPRING_MAIL_PORT="$mail_port" \
   ATLAS_PAYMENT_PROVIDER=paypal PAYPAL_BASE_URL="$base" \
-  PAYPAL_CLIENT_ID="$client_id" PAYPAL_CLIENT_SECRET="$client_secret" \
+  ATLAS_PAYPAL_CAPTURE_BASE_URL="${ATLAS_PAYPAL_CAPTURE_BASE_URL:-}" \
+  ATLAS_PAYPAL_LOCAL_PROXY_ENABLED=true \
   ATLAS_PAYPAL_WEBHOOK_RETRY_ENABLED=false \
-  java -Djdk.net.hosts.file="$private/hosts" -jar "$root/ATLAS-application/build/libs/application-module.jar" \
-  --management.endpoints.web.exposure.include=health,prometheus,metrics
+  ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED="${ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED:-true}" \
+  HOSTS_FILE="$private/hosts" \
+  APP_JAR="$root/ATLAS-application/build/libs/application-module.jar" \
+  /bin/bash -c '
+    IFS= read -r PAYPAL_CLIENT_ID || exit 1
+    IFS= read -r PAYPAL_CLIENT_SECRET || exit 1
+    export PAYPAL_CLIENT_ID PAYPAL_CLIENT_SECRET
+    exec java -Djdk.net.hosts.file="$HOSTS_FILE" -jar "$APP_JAR" \
+      --management.endpoints.web.exposure.include=health,prometheus,metrics
+  ' <<EOF
+$client_id
+$client_secret
+EOF

@@ -1,0 +1,6 @@
+{
+  "name": "paypal-capture",
+  "listen": "0.0.0.0:18444",
+  "upstream": "api-m.sandbox.paypal.com:443",
+  "enabled": true
+}

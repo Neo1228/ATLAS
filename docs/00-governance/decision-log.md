@@ -124,6 +124,8 @@
 | D-118 | ✓ #437 반품 환불 재시도 경로 복구 | 반품 환불 idempotency key 가 파생값이라 한 번 FAILED 면 재시도가 불가능했고, 일시적 provider 장애도 영구 실패로 기록됐다. 재시도 가능한 코드는 상태를 유지하고, 영구 실패는 `-r<n>` 회차 키로 새 작업을 만든다. 오류 상세 문구 노출은 기존 보안 계약(내부 메시지 비노출)을 깨므로 철회하고 기록만 남긴다. | [#437](https://github.com/Neo1228/ATLAS/issues/437), [EXP-048](../03-experiments/EXP-048-refund-retry-and-error-details.md) |
 | D-119 | ✓ #440 도메인 상태 전이·멱등성 결함 6건 | FAILED 지급 기간 재요청(V56 부분 유니크), 승격 티켓 체크아웃 창을 획득 시점부터 계산, 결제 시도 전 취소는 결제 시도 행 펜스 성공 시에만 예약 해제, FX null 을 503 으로, PAID 캠페인 주문 취소는 409, 환불 키를 주문 단위로(V57). 결제 시도 전 취소의 첫 수정은 캡처 경합에서 재고를 풀어 기존 테스트가 잡았고, checkout 이 아닌 결제 시도 행 펜스로 바꿨다. | [#440](https://github.com/Neo1228/ATLAS/issues/440), [EXP-049](../03-experiments/EXP-049-domain-consistency-batch.md) |
 | D-120 | ✓ #442 취소 요청 후 새 capture 차단 | 취소 트랜잭션에서 `payment_attempt.capture_prohibited`(V58)를 함께 기록하고, `reservePhase`는 attempt 행 잠금 아래에서 `CAPTURE`+`AUTHORIZED`+펜스일 때만 새 provider 호출을 거부한다. 진행 중 capture(`CAPTURE_PENDING`/`UNKNOWN`)는 계속 복구하고 `CAPTURED`는 그대로 반영한다. 실제 PayPal 재현은 미실행. | [#442](https://github.com/Neo1228/ATLAS/issues/442), [EXP-050](../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md) |
+| D-121 | ✓ #445 캠페인 주문 취소 capture 펜스 | D-120 checkout 경로 외에 주문이 결제를 직접 소유하는 캠페인 취소에도 `prohibitNewOrderCapture`를 동일 주문/attempt transaction에 기록하고 V59로 기존 취소 주문에 소급한다. 경쟁 테스트는 `pg_stat_clear_snapshot()`으로 대기 스냅샷을 재조회한다. | [#445](https://github.com/Neo1228/ATLAS/issues/445), [EXP-050](../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md) |
+| D-122 | ✓ #434 Toxiproxy는 fault-test 전용 | opt-in Compose overlay는 Postgres·Mailpit·Toxiproxy를 격리 network에 두고 host port를 loopback에만 binding한다. Testcontainers test는 commit-ack 유실과 pre-commit reset을 구분한다. PayPal nonstandard port는 explicit local-proxy opt-in과 loopback-only resolution 없이는 거부한다. EXP-050은 warmed capture 경로의 12s response-loss를 worker-disabled 3/3, worker-enabled automatic recovery를 3/3 확인했다. Warmed `reset_peer`는 provider capture가 0/3이므로 post-commit reset 근거가 아니다. Production Redis·broker·lock 도입 임계값은 미도달. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0053](../02-decisions/adr/ADR-0053-shared-infra-adoption-gates.md), [EXP-050](../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md), [#448](https://github.com/Neo1228/ATLAS/issues/448) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -160,6 +162,7 @@
 <a id="d-119"></a>
 <a id="d-120"></a>
 <a id="d-121"></a>
+<a id="d-122"></a>
 
 <a id="detailed-decision-records"></a>
 
