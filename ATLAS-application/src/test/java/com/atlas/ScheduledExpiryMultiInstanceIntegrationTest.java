@@ -188,9 +188,13 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
                 assertThat(workersReady.await(10, TimeUnit.SECONDS)).isTrue();
                 start.countDown();
 
-                awaitCheckoutExpiryLockWaiters();
-                assertThat(primaryExpiry.isDone()).isFalse();
-                assertThat(secondaryExpiry.isDone()).isFalse();
+                // 한 replica만 sweep을 수행해 blocked 행의 락을 기다리고, 다른 replica는 후보 조회 없이 건너뛴다.
+                String waitingInstance = awaitSingleCheckoutExpiryLockWaiter();
+                boolean primaryWaits = PRIMARY_DATABASE_APPLICATION_NAME.equals(waitingInstance);
+                Future<Integer> sweeping = primaryWaits ? primaryExpiry : secondaryExpiry;
+                Future<Integer> skipped = primaryWaits ? secondaryExpiry : primaryExpiry;
+                assertThat(sweeping.isDone()).isFalse();
+                assertThat(skipped.get(10, TimeUnit.SECONDS)).isZero();
                 assertThat(checkoutState(earlierCheckoutId)).isEqualTo("EXPIRED");
                 assertThat(orderState(earlierOrderId)).isEqualTo("EXPIRED");
                 assertReservationStatus(earlierOrderId, ReservationStatus.RELEASED);
@@ -374,7 +378,7 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
                 .satisfies(reservation -> assertThat(reservation.status()).isEqualTo(expected));
     }
 
-    private void awaitCheckoutExpiryLockWaiters() throws InterruptedException {
+    private String awaitSingleCheckoutExpiryLockWaiter() throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         List<String> waitingInstances = List.of();
         while (System.nanoTime() < deadline) {
@@ -387,15 +391,12 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
                       AND pid <> pg_backend_pid()
                     """, (rows, row) -> rows.getString(1),
                     PRIMARY_DATABASE_APPLICATION_NAME, SECONDARY_DATABASE_APPLICATION_NAME);
-            if (waitingInstances.size() == 2
-                    && waitingInstances.contains(PRIMARY_DATABASE_APPLICATION_NAME)
-                    && waitingInstances.contains(SECONDARY_DATABASE_APPLICATION_NAME)) {
-                return;
+            if (waitingInstances.size() == 1) {
+                return waitingInstances.getFirst();
             }
             TimeUnit.MILLISECONDS.sleep(50);
         }
-        assertThat(waitingInstances).containsExactlyInAnyOrder(
-                PRIMARY_DATABASE_APPLICATION_NAME, SECONDARY_DATABASE_APPLICATION_NAME);
+        throw new AssertionError("exactly one instance should wait for the row lock, but waiting=" + waitingInstances);
     }
 
     private static void awaitStart(CountDownLatch start) throws InterruptedException {
