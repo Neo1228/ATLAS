@@ -153,7 +153,7 @@ public class PaymentServiceImpl implements PaymentService {
             if (orderId != null) repository.insertInitial(orderId, amountWon, ids.get());
             else repository.insertCheckoutInitial(checkoutId, amountWon, ids.get());
             PaymentAttempt attempt = orderId != null ? requireOrder(orderId) : requireCheckout(checkoutId);
-            if (!terminal(attempt.getState())) {
+            if (!attempt.getState().isTerminal()) {
                 recovery.enqueueAttempt(attempt.getAttemptId(), recoveryInitialDelay);
             }
             return attempt;
@@ -217,7 +217,7 @@ public class PaymentServiceImpl implements PaymentService {
         validateOwnerAndKey(orderId, idempotencyKey, "orderId");
         return withOwnerLock(orderId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> requireOrder(orderId));
-            if (terminal(attempt.getState())) return toResponse(attempt);
+            if (attempt.getState().isTerminal()) return toResponse(attempt);
             return performPhase(attempt, idempotencyKey);
         });
     }
@@ -227,7 +227,7 @@ public class PaymentServiceImpl implements PaymentService {
         validateOwnerAndKey(checkoutId, idempotencyKey, "checkoutId");
         return withOwnerLock(checkoutId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> requireCheckout(checkoutId));
-            if (terminal(attempt.getState())) return toResponse(attempt);
+            if (attempt.getState().isTerminal()) return toResponse(attempt);
             return performPhase(attempt, idempotencyKey);
         });
     }
@@ -237,7 +237,7 @@ public class PaymentServiceImpl implements PaymentService {
         validateOwnerAndKey(orderId, idempotencyKey, "orderId");
         return withOwnerLock(orderId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> requireOrder(orderId));
-            if (terminal(attempt.getState())) return toResponse(attempt);
+            if (attempt.getState().isTerminal()) return toResponse(attempt);
             String phaseKey = attempt.getPaymentPhase() == PaymentPhase.VOID
                     ? idempotencyKey + ":void" : idempotencyKey + ":cancel-reconcile";
             return performPhase(attempt, phaseKey, false);
@@ -249,7 +249,7 @@ public class PaymentServiceImpl implements PaymentService {
         validateOwnerAndKey(checkoutId, idempotencyKey, "checkoutId");
         return withOwnerLock(checkoutId, () -> {
             PaymentAttempt attempt = transactions.execute(status -> requireCheckout(checkoutId));
-            if (terminal(attempt.getState())) return toResponse(attempt);
+            if (attempt.getState().isTerminal()) return toResponse(attempt);
             String phaseKey = attempt.getPaymentPhase() == PaymentPhase.VOID
                     ? idempotencyKey + ":void" : idempotencyKey + ":cancel-reconcile";
             return performPhase(attempt, phaseKey, false);
@@ -270,7 +270,7 @@ public class PaymentServiceImpl implements PaymentService {
                     repository.findWithLockByAttemptId(attemptId)
                             .orElseThrow(() -> notFound("No payment attempt: " + attemptId))));
             // 이미 확정된 결과(capture/void/decline)는 뒤집지 않는다. owner 적용만 남았다.
-            if (terminal(current.getState()) || current.getProviderOrderId() == null
+            if (current.getState().isTerminal() || current.getProviderOrderId() == null
                     || current.getState() != PaymentState.AUTHORIZATION_PENDING) {
                 return toResponse(current);
             }
@@ -280,7 +280,7 @@ public class PaymentServiceImpl implements PaymentService {
             PaymentResponse reconciled = current.getCheckoutId() == null
                     ? reconcile(current.getOrderId(), idempotencyKey + ":get")
                     : reconcileCheckout(current.getCheckoutId(), idempotencyKey + ":get");
-            if (terminal(reconciled.state()) || !reconciled.authorizationActive()
+            if (reconciled.state().isTerminal() || !reconciled.authorizationActive()
                     || reconciled.state() != PaymentState.AUTHORIZATION_PENDING) {
                 return reconciled;
             }
@@ -291,7 +291,7 @@ public class PaymentServiceImpl implements PaymentService {
             PaymentAttempt closed = Objects.requireNonNull(transactions.execute(status -> {
                 PaymentAttempt latest = repository.findWithLockByAttemptId(attemptId)
                         .orElseThrow(() -> notFound("No payment attempt: " + attemptId));
-                if (terminal(latest.getState())
+                if (latest.getState().isTerminal()
                         || latest.getState() != PaymentState.AUTHORIZATION_PENDING) {
                     return latest;
                 }
@@ -415,7 +415,7 @@ public class PaymentServiceImpl implements PaymentService {
         transactions.execute(status -> {
             PaymentAttempt attempt = repository.findWithLockByAttemptId(attemptId)
                     .orElseThrow(() -> notFound("No payment attempt: " + attemptId));
-            if (terminal(attempt.getState()) && !attempt.isAuthorizationActive()) {
+            if (attempt.getState().isTerminal() && !attempt.isAuthorizationActive()) {
                 recovery.markAttemptApplied(attemptId);
             }
             return null;
@@ -808,7 +808,7 @@ public class PaymentServiceImpl implements PaymentService {
                     && current.isCaptureProhibited()) {
                 return new PhaseStart(current, null, phase, null);
             }
-            if (current.getPaymentPhase() != phase || terminal(current.getState())
+            if (current.getPaymentPhase() != phase || current.getState().isTerminal()
                     || (!continueCapture && phase == PaymentPhase.CAPTURE
                     && current.getState() == PaymentState.AUTHORIZED)
                     || !canExecutePhase(current, phase)) {
@@ -863,7 +863,7 @@ public class PaymentServiceImpl implements PaymentService {
         return transactions.execute(status -> {
             PaymentAttempt current = repository.findWithLockByAttemptId(start.attempt().getAttemptId())
                     .orElseThrow(() -> notFound("No payment attempt: " + start.attempt().getAttemptId()));
-            if (terminal(current.getState()) || current.getPaymentPhase() != start.phase()
+            if (current.getState().isTerminal() || current.getPaymentPhase() != start.phase()
                     || !Objects.equals(start.requestId(), phaseRequestId(current, start.phase()))) {
                 return current;
             }
@@ -874,7 +874,7 @@ public class PaymentServiceImpl implements PaymentService {
                 case VOID -> voidResult(current, outcome);
             }
             repository.save(current);
-            if (terminal(current.getState()) && !current.isAuthorizationActive()) {
+            if (current.getState().isTerminal() && !current.isAuthorizationActive()) {
                 recovery.markAttemptForApplication(current.getAttemptId());
             }
             return current;
@@ -1104,9 +1104,6 @@ public class PaymentServiceImpl implements PaymentService {
                 attempt.getProviderCaptureId(), attempt.getApprovalUrl(), attempt.getApprovalExpiresAt());
     }
 
-    private static boolean terminal(PaymentState state) {
-        return state == PaymentState.CAPTURED || state == PaymentState.DECLINED || state == PaymentState.VOIDED;
-    }
 
     private static IllegalStateException invalidResult(PaymentPhase phase, PaymentProviderResult.Outcome result) {
         return new IllegalStateException("Provider result " + result + " is invalid for " + phase);

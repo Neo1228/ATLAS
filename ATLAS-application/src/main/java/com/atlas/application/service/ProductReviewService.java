@@ -2,6 +2,7 @@ package com.atlas.application.service;
 
 import com.atlas.application.dto.response.ProductReviewPage;
 import com.atlas.application.dto.response.ProductReviewResponse;
+import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.order.service.OrderService;
 import java.util.List;
@@ -54,7 +55,7 @@ public class ProductReviewService {
     public ProductReviewPage list(UUID productId, int requestedLimit, int offset) {
         Objects.requireNonNull(productId, "productId");
         if (!products.isPublicOrderable(productId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown product: " + productId);
+            throw new CatalogException(CatalogException.Code.NOT_FOUND, "Unknown product: " + productId);
         }
         int limit = requestedLimit == 0 ? DEFAULT_PAGE_SIZE : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {

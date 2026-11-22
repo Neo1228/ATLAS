@@ -1,8 +1,10 @@
 package com.atlas.application;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -174,4 +177,32 @@ class AccountJwtConfigurationTest {
         assertFalse(payload.contains("\"" + claim + "\""));
     }
 
+    @Test
+    void blankSecretFailsStartupUnlessEphemeralKeyIsExplicitlyAllowed() {
+        IllegalStateException missing = assertThrows(IllegalStateException.class,
+                () -> configuration.accountJwtSigningKey("", false));
+        assertThrows(IllegalStateException.class, () -> configuration.accountJwtSigningKey("  ", false));
+        assertThrows(IllegalStateException.class, () -> configuration.accountJwtSigningKey(null, false));
+        assertTrue(missing.getMessage().contains("ATLAS_JWT_SIGNING_SECRET"));
+    }
+
+    @Test
+    void explicitEphemeralKeyOptInProducesDistinctProcessLocalKeys() {
+        SecretKey first = configuration.accountJwtSigningKey("", true);
+        SecretKey second = configuration.accountJwtSigningKey("", true);
+
+        assertEquals(32, first.getEncoded().length);
+        assertFalse(Arrays.equals(first.getEncoded(), second.getEncoded()));
+    }
+
+    @Test
+    void configuredSecretIsUsedDeterministicallyEvenWhenEphemeralKeyIsNotAllowed() {
+        byte[] raw = new byte[32];
+        Arrays.fill(raw, (byte) 7);
+        String encoded = Base64.getEncoder().encodeToString(raw);
+
+        assertArrayEquals(raw, configuration.accountJwtSigningKey(encoded, false).getEncoded());
+        assertThrows(IllegalStateException.class,
+                () -> configuration.accountJwtSigningKey(Base64.getEncoder().encodeToString(new byte[16]), false));
+    }
 }

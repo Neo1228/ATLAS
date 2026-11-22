@@ -183,4 +183,20 @@ class PayPalPayoutsRestClientTest {
         assertThat(result.batchId()).isNull();
         assertThat(result.senderBatchId()).isEqualTo("batch-stable");
     }
+
+    @Test
+    void startupRejectsDisabledSentinelAndBlankCredentials() {
+        for (String[] pair : new String[][] {
+                {"disabled", "secret"}, {"client", "DISABLED"}, {"", "secret"}, {"client", " "}}) {
+            PayPalProperties properties = new PayPalProperties();
+            properties.setBaseUrl("https://api-m.sandbox.paypal.com");
+            properties.setClientId(pair[0]);
+            properties.setClientSecret(pair[1]);
+
+            assertThatThrownBy(() -> new PayPalOAuth2ClientConfiguration()
+                    .paypalClientRegistrationRepository(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("PAYPAL_CLIENT_ID");
+        }
+    }
 }
