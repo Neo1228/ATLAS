@@ -2,6 +2,7 @@ package com.atlas.payment.repository;
 
 import com.atlas.payment.persistence.projection.RecoveryMetricsSnapshot;
 import com.atlas.payment.persistence.projection.ClaimedPaymentRecoveryJob;
+import com.atlas.payment.persistence.projection.PaymentRecoveryRequeueRow;
 import com.atlas.payment.persistence.projection.PaymentRecoveryReviewRow;
 import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
 import com.atlas.payment.persistence.state.PaymentRecoveryOperationType;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -389,6 +391,59 @@ public class PaymentRecoveryRepository {
             throw new IllegalArgumentException("maxAttempts must be positive");
         }
         expireExhausted(maxAttempts, positiveMillis(maxAge, "maxAge"));
+    }
+
+    /**
+     * {@code NEEDS_REVIEW} job을 운영자 요청으로 다시 {@code PENDING}에 올리고 감사 기록을 남긴다.
+     *
+     * <p>같은 멱등 키는 이전 결과를 그대로 재생한다. 재큐 횟수 한도에 걸렸거나 {@code NEEDS_REVIEW}가
+     * 아니면 비어 있는 결과를 돌려준다. 호출자가 한 트랜잭션으로 묶어야 한다.
+     */
+    public Optional<PaymentRecoveryRequeueRow> requeueNeedsReview(
+            UUID recoveryJobId, String idempotencyKey, String actor, String reason, int maxManualRequeues) {
+        Optional<PaymentRecoveryRequeueRow> replay = findRequeueReplay(recoveryJobId, idempotencyKey, true);
+        if (replay.isPresent()) return replay;
+
+        int updated = jdbc.update("""
+                UPDATE payment_recovery_job
+                SET status = 'PENDING',
+                    available_at = CURRENT_TIMESTAMP,
+                    retry_window_started_at = CURRENT_TIMESTAMP,
+                    attempt_count = 0,
+                    manual_requeue_count = manual_requeue_count + 1,
+                    lease_token = NULL,
+                    lease_until = NULL,
+                    last_error_code = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE recovery_job_id = ?
+                  AND status = 'NEEDS_REVIEW'
+                  AND manual_requeue_count < ?
+                """, recoveryJobId, maxManualRequeues);
+        if (updated == 0) {
+            return findRequeueReplay(recoveryJobId, idempotencyKey, true);
+        }
+
+        jdbc.update("""
+                INSERT INTO payment_recovery_operator_action (
+                    operator_action_id, recovery_job_id, idempotency_key, actor, reason, created_at
+                ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, UUID.randomUUID(), recoveryJobId, idempotencyKey, actor, reason);
+        return findRequeueReplay(recoveryJobId, idempotencyKey, false);
+    }
+
+    private Optional<PaymentRecoveryRequeueRow> findRequeueReplay(
+            UUID recoveryJobId, String idempotencyKey, boolean duplicate) {
+        return jdbc.query("""
+                SELECT job.status, job.manual_requeue_count, action.created_at
+                FROM payment_recovery_operator_action AS action
+                JOIN payment_recovery_job AS job USING (recovery_job_id)
+                WHERE action.recovery_job_id = ? AND action.idempotency_key = ?
+                """, (result, rowNumber) -> {
+                    Timestamp acceptedAt = result.getTimestamp("created_at");
+                    return new PaymentRecoveryRequeueRow(
+                            recoveryJobId, result.getString("status"), result.getInt("manual_requeue_count"),
+                            acceptedAt == null ? null : acceptedAt.toInstant(), duplicate);
+                }, recoveryJobId, idempotencyKey).stream().findFirst();
     }
 
     /**

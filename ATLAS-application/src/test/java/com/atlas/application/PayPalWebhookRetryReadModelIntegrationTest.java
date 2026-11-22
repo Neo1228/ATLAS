@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.application.controller.PayPalWebhookRetryHistoryController;
+import com.atlas.application.service.PayPalWebhookRetryHistoryRepository;
 import com.atlas.application.service.PayPalWebhookRetryHistoryService;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -52,7 +53,7 @@ class PayPalWebhookRetryReadModelIntegrationTest {
                 + "event_id VARCHAR(128), actor VARCHAR(128), reason VARCHAR(500), "
                 + "outcome VARCHAR(16), created_at TIMESTAMPTZ)");
         mvc = MockMvcBuilders.standaloneSetup(new PayPalWebhookRetryHistoryController(
-                new PayPalWebhookRetryHistoryService(jdbc))).build();
+                new PayPalWebhookRetryHistoryService(new PayPalWebhookRetryHistoryRepository(jdbc)))).build();
     }
 
     @Test
