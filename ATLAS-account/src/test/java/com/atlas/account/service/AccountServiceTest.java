@@ -45,6 +45,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -67,8 +70,11 @@ class AccountServiceTest {
     void setUp() {
         when(passwords.encode(any())).thenReturn("dummy-encoded-password");
         when(limiter.tryAcquire(any(), any(), any(), any())).thenReturn(true);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(new SimpleTransactionStatus());
         service = new AccountService(accounts, passwords, accessTokens, emailSender, mfaSecrets,
-                Clock.fixed(NOW, ZoneOffset.UTC), suspensions, limiter);
+                Clock.fixed(NOW, ZoneOffset.UTC), suspensions, limiter, transactionManager);
     }
 
     @Test

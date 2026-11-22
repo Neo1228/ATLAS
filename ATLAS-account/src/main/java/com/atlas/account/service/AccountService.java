@@ -43,9 +43,11 @@ import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,12 +69,14 @@ public class AccountService {
     private final Clock clock;
     private final AccountSuspensionRepository suspensions;
     private final AuthAttemptLimiter limiter;
+    private final TransactionTemplate transactions;
     private final String dummyLoginPasswordHash;
 
     public AccountService(AccountRepository accounts, PasswordEncoder passwords,
             AccessTokenService accessTokens, AccountEmailSender emailSender,
             AccountMfaSecretProtector mfaSecrets, Clock clock,
-            AccountSuspensionRepository suspensions, AuthAttemptLimiter limiter) {
+            AccountSuspensionRepository suspensions, AuthAttemptLimiter limiter,
+            PlatformTransactionManager transactionManager) {
         this.accounts = accounts;
         this.passwords = passwords;
         this.accessTokens = accessTokens;
@@ -81,10 +85,10 @@ public class AccountService {
         this.clock = clock;
         this.suspensions = suspensions;
         this.limiter = Objects.requireNonNull(limiter);
+        this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.dummyLoginPasswordHash = passwords.encode(UUID.randomUUID().toString());
     }
 
-    @Transactional
     public AccountActionResponse registerBuyer(RegisterBuyerRequest request, String origin) {
         if (request == null || request.password() == null || request.password().length() < 12
                 || request.password().length() > 128) {
@@ -92,42 +96,49 @@ public class AccountService {
         }
         String email = normalizeEmail(request.email());
         // 가입도 인증 없이 호출 가능한 메일 발송 경로다. 남은 한도가 없으면 계정을 만들지 않는다.
+        // 한도 확인과 비밀번호 해시(PBKDF2)는 DB 연결을 잡지 않은 채 transaction 밖에서 한다. 한도 저장은
+        // 독립 transaction이라 바깥 transaction이 연결을 쥔 채 두 번째 연결을 요구하면 풀이 고갈된다.
         if (!limiter.tryAcquire("EMAIL", email, origin, clock.instant())) throw invalidRequest();
-        Optional<UUID> createdAccount = accounts.createAccount(email, passwords.encode(request.password()));
-        if (createdAccount.isEmpty()) return new AccountActionResponse(true);
-        UUID accountId = createdAccount.get();
-        accounts.createBuyer(accountId);
-        String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
-        sendAfterCommit(() -> emailSender.sendVerification(email, token));
-        return new AccountActionResponse(true);
+        String passwordHash = passwords.encode(request.password());
+        return transactions.execute(status -> {
+            Optional<UUID> createdAccount = accounts.createAccount(email, passwordHash);
+            if (createdAccount.isEmpty()) return new AccountActionResponse(true);
+            UUID accountId = createdAccount.get();
+            accounts.createBuyer(accountId);
+            String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
+            sendAfterCommit(() -> emailSender.sendVerification(email, token));
+            return new AccountActionResponse(true);
+        });
     }
 
     /**
      * 메일 발송형 요청. 한도를 넘으면 메일을 보내지 않지만 응답은 동일하게 유지한다.
      * 응답을 바꾸면 계정 존재 여부가 드러나므로, 남은 한도 없음도 성공처럼 보여야 한다.
      */
-    @Transactional
     public AccountActionResponse requestPasswordReset(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
         if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountActionResponse(true);
-        accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId -> {
-            String token = newActionToken(accountId, "PASSWORD_RESET", PASSWORD_RESET_LIFETIME);
-            sendAfterCommit(() -> emailSender.sendPasswordReset(email, token));
+        return transactions.execute(status -> {
+            accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId -> {
+                String token = newActionToken(accountId, "PASSWORD_RESET", PASSWORD_RESET_LIFETIME);
+                sendAfterCommit(() -> emailSender.sendPasswordReset(email, token));
+            });
+            return new AccountActionResponse(true);
         });
-        return new AccountActionResponse(true);
     }
 
-    @Transactional
     public AccountActionResponse requestEmailVerification(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
         if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountActionResponse(true);
-        accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId -> {
-            String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
-            sendAfterCommit(() -> emailSender.sendVerification(email, token));
+        return transactions.execute(status -> {
+            accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId -> {
+                String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
+                sendAfterCommit(() -> emailSender.sendVerification(email, token));
+            });
+            return new AccountActionResponse(true);
         });
-        return new AccountActionResponse(true);
     }
 
     @Transactional
@@ -158,7 +169,6 @@ public class AccountService {
     /**
      * @param origin 클라이언트 주소. 없으면 출처 축은 "unknown" 하나로 합산된다.
      */
-    @Transactional
     public AccountLoginResponse login(LoginRequest request, String origin) {
         if (request == null || request.password() == null || request.password().length() > 128) {
             throw invalidCredentials();
@@ -167,6 +177,9 @@ public class AccountService {
         Instant now = clock.instant();
         // 비밀번호 검증(PBKDF2)은 수십 ms의 CPU를 쓴다. 한도 확인은 반드시 그 앞에서 해야
         // 자원 고갈을 막을 수 있다. 응답은 실제 인증 실패와 구분되지 않게 같은 예외를 쓴다.
+        // 한도 저장은 독립 transaction이므로 바깥 transaction 없이 호출한다. 로그인 전체를 하나의
+        // transaction으로 묶으면 연결 1개를 쥔 채 두 번째 연결을 기다려, 동시 로그인이 풀 크기를
+        // 넘는 순간 모든 요청이 서로를 기다리며 실패한다. PBKDF2도 연결을 쥐지 않은 채 계산한다.
         if (!limiter.tryAcquire("LOGIN", email, origin == null ? "unknown" : origin, now)) {
             throw invalidCredentials();
         }
@@ -179,23 +192,36 @@ public class AccountService {
             limiter.recordSubjectFailure("LOGIN", email, now);
             throw invalidCredentials();
         }
-        String currentPasswordHash = accounts.lockPasswordHashForLogin(email).orElseThrow(() -> {
-            limiter.recordSubjectFailure("LOGIN", email, now);
-            return invalidCredentials();
-        });
-        if (!passwords.matches(request.password(), currentPasswordHash)) {
+        AccountLoginResponse response = transactions.execute(status ->
+                completeLogin(email, request.password(), passwordHash, account.get()));
+        if (response == null) {
             limiter.recordSubjectFailure("LOGIN", email, now);
             throw invalidCredentials();
         }
         limiter.resetSubject("LOGIN", email);
-        if (accounts.mfaEnabled(account.get().accountId())) {
+        return response;
+    }
+
+    /**
+     * 검증한 비밀번호 해시가 여전히 현재 값인지 잠금 아래에서 확인하고 토큰을 발급한다. 확인 사이에 비밀번호가
+     * 바뀌었을 때만 다시 계산한다. 같은 해시와 같은 비밀번호의 검증 결과는 같으므로 평소에는 PBKDF2를
+     * 반복하지 않는다. 인증에 실패하면 {@code null}을 돌려주고 실패 기록은 호출자가 transaction 밖에서 한다.
+     */
+    private AccountLoginResponse completeLogin(String email, String password, String verifiedHash,
+            AccountPrincipal account) {
+        Optional<String> currentPasswordHash = accounts.lockPasswordHashForLogin(email);
+        if (currentPasswordHash.isEmpty()) return null;
+        if (!currentPasswordHash.get().equals(verifiedHash) && !passwords.matches(password, currentPasswordHash.get())) {
+            return null;
+        }
+        if (accounts.mfaEnabled(account.accountId())) {
             String challenge = newRefreshToken();
             Instant challengeNow = clock.instant();
-            accounts.createMfaChallenge(hashRefreshToken(challenge), account.get().accountId(),
+            accounts.createMfaChallenge(hashRefreshToken(challenge), account.accountId(),
                     challengeNow, challengeNow.plus(MFA_CHALLENGE_LIFETIME));
             return new AccountLoginResponse(true, null, challenge);
         }
-        return new AccountLoginResponse(false, issueTokens(account.get()), null);
+        return new AccountLoginResponse(false, issueTokens(account), null);
     }
 
     @Transactional
