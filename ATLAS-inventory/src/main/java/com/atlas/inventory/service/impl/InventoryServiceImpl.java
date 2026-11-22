@@ -9,9 +9,11 @@ import com.atlas.inventory.dto.request.UpdateFulfillmentLocationRequest;
 import com.atlas.inventory.dto.response.InventoryLocationResponse;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.InventoryTransferResponse;
+import com.atlas.inventory.dto.response.LocationInventoryPageResponse;
 import com.atlas.inventory.dto.response.LocationInventoryResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.exception.InventoryException;
+import com.atlas.inventory.persistence.entity.InventoryPool;
 import com.atlas.inventory.persistence.entity.Reservation;
 import com.atlas.inventory.persistence.projection.InventoryLocationRecord;
 import com.atlas.inventory.persistence.projection.InventoryPoolSummary;
@@ -37,12 +39,15 @@ import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class InventoryServiceImpl implements InventoryService {
+    private static final int DEFAULT_INVENTORY_PAGE_SIZE = 100;
+    private static final int MAX_INVENTORY_PAGE_SIZE = 500;
     private final InventoryPoolRepository pools;
     private final ReservationRepository reservations;
     private final JdbcStockRepository stock;
@@ -95,6 +100,25 @@ public class InventoryServiceImpl implements InventoryService {
                         pool.getInitialCapacity(), pool.getAvailable(), pool.getReserved(), pool.getClaimed()))
                 .toList();
     }
+    @Override
+    public LocationInventoryPageResponse findLocationInventoryPage(
+            UUID sellerId, UUID locationId, Integer limit, String afterSkuId) {
+        validSeller(sellerId);
+        Objects.requireNonNull(locationId);
+        int pageSize = limit == null ? DEFAULT_INVENTORY_PAGE_SIZE : limit;
+        if (pageSize < 1 || pageSize > MAX_INVENTORY_PAGE_SIZE) {
+            throw invalid("inventory page limit must be between 1 and " + MAX_INVENTORY_PAGE_SIZE);
+        }
+        List<InventoryPool> fetched = pools.findByIdSellerIdAndIdLocationIdAndIdSkuIdGreaterThanOrderByIdSkuId(
+                        sellerId, locationId, afterSkuId == null ? "" : afterSkuId, Limit.of(pageSize + 1));
+        boolean hasNext = fetched.size() > pageSize;
+        List<LocationInventoryResponse> items = fetched.stream().limit(pageSize)
+                .map(pool -> new LocationInventoryResponse(sellerId, locationId, pool.getId().getSkuId(),
+                        pool.getInitialCapacity(), pool.getAvailable(), pool.getReserved(), pool.getClaimed()))
+                .toList();
+        return new LocationInventoryPageResponse(items, hasNext ? items.getLast().skuId() : null);
+    }
+
     @Override public Optional<UUID> findFulfillmentLocation(UUID sellerId,List<ReserveInventoryBatchRequest.Item> items){
         validSeller(sellerId); validateItems(sellerId,items);
         return locations.advisorySelect(sellerId, requiredQuantities(items));

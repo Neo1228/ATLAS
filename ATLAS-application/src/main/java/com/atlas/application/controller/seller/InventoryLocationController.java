@@ -5,7 +5,7 @@ import com.atlas.application.controller.dto.CreateFulfillmentLocationHttpRequest
 import com.atlas.application.controller.dto.InventoryAdjustmentHttpResponse;
 import com.atlas.application.controller.dto.InventoryLocationHttpResponse;
 import com.atlas.application.controller.dto.InventoryTransferHttpResponse;
-import com.atlas.application.controller.dto.LocationInventoryHttpResponse;
+import com.atlas.application.controller.dto.LocationInventoryPageHttpResponse;
 import com.atlas.application.controller.dto.TransferInventoryHttpRequest;
 import com.atlas.application.controller.dto.UpdateFulfillmentLocationHttpRequest;
 import com.atlas.inventory.dto.request.CreateFulfillmentLocationRequest;
@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RequiredArgsConstructor
@@ -53,10 +54,11 @@ public class InventoryLocationController {
     }
 
     @GetMapping("/inventory/locations/{locationId}")
-    public List<LocationInventoryHttpResponse> inventory(@PathVariable UUID sellerId,
-            @PathVariable UUID locationId) {
-        return inventory.findLocationInventory(sellerId, locationId).stream()
-                .map(LocationInventoryHttpResponse::from).toList();
+    public LocationInventoryPageHttpResponse inventory(@PathVariable UUID sellerId,
+            @PathVariable UUID locationId, @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String after) {
+        return LocationInventoryPageHttpResponse.from(
+                inventory.findLocationInventoryPage(sellerId, locationId, limit, after));
     }
 
     @PostMapping("/inventory/locations/{locationId}/skus/{skuId}/capacity-adjustments")
