@@ -55,6 +55,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.mockito.ArgumentCaptor;
@@ -517,7 +518,8 @@ class CheckoutBehaviorTest {
      */
     private static JdbcExpirySweepLockRepository sweepLock() {
         JdbcExpirySweepLockRepository lock = mock(JdbcExpirySweepLockRepository.class);
-        when(lock.tryAcquire(anyString())).thenReturn(true);
+        when(lock.runExclusive(anyString(), any())).thenAnswer(invocation ->
+                Optional.ofNullable(invocation.<Supplier<?>>getArgument(1).get()));
         return lock;
     }
 
