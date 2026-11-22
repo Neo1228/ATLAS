@@ -132,6 +132,59 @@ class CachingExchangeRateProviderTest {
     }
 
     @Test
+    void failureBackoffStopsRepeatedProviderCallsWhileServingTheStaleQuote() {
+        AtomicInteger calls = new AtomicInteger();
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-20T00:00:00Z"));
+        boolean[] healthy = {true};
+        CachingExchangeRateProvider provider = new CachingExchangeRateProvider(
+                delegate(calls, () -> {
+                    if (!healthy[0]) {
+                        throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
+                                "provider down");
+                    }
+                    return QUOTE;
+                }), clock, Duration.ofSeconds(60), Duration.ofMinutes(10), Duration.ofSeconds(15));
+        provider.latestUsdKrwRate();
+        healthy[0] = false;
+        clock.advance(Duration.ofSeconds(90));
+
+        // 첫 실패 뒤 backoff(최대 18초) 안에서는 요청이 몇 번이든 외부를 다시 부르지 않고 낡은 값을 바로 받는다.
+        for (int index = 0; index < 20; index++) {
+            assertThat(provider.latestUsdKrwRate()).isEqualTo(QUOTE);
+            clock.advance(Duration.ofMillis(500));
+        }
+
+        assertThat(calls).hasValue(2);
+    }
+
+    @Test
+    void providerIsCalledAgainOnceTheBackoffHasPassedAndRecoveryRefreshesTheQuote() {
+        AtomicInteger calls = new AtomicInteger();
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-20T00:00:00Z"));
+        boolean[] healthy = {true};
+        ExchangeRateQuote recovered = new ExchangeRateQuote(
+                new BigDecimal("1340.0"), "BOK_ECOS_731Y001_0000002", LocalDate.of(2026, 11, 21));
+        CachingExchangeRateProvider provider = new CachingExchangeRateProvider(
+                delegate(calls, () -> {
+                    if (!healthy[0]) {
+                        throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
+                                "provider down");
+                    }
+                    return calls.get() == 1 ? QUOTE : recovered;
+                }), clock, Duration.ofSeconds(60), Duration.ofMinutes(10), Duration.ofSeconds(15));
+        provider.latestUsdKrwRate();
+        healthy[0] = false;
+        clock.advance(Duration.ofSeconds(90));
+        provider.latestUsdKrwRate();
+
+        healthy[0] = true;
+        clock.advance(Duration.ofSeconds(20));
+
+        assertThat(provider.latestUsdKrwRate()).isEqualTo(recovered);
+        assertThat(calls).hasValue(3);
+    }
+
+    @Test
     void rejectsMisconfiguredStalenessWindow() {
         AtomicInteger calls = new AtomicInteger();
         assertThatThrownBy(() -> new CachingExchangeRateProvider(
