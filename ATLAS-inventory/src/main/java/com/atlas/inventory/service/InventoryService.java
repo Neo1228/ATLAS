@@ -9,6 +9,7 @@ import com.atlas.inventory.dto.request.UpdateFulfillmentLocationRequest;
 import com.atlas.inventory.dto.response.InventoryLocationResponse;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.InventoryTransferResponse;
+import com.atlas.inventory.dto.response.LocationInventoryPageResponse;
 import com.atlas.inventory.dto.response.LocationInventoryResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import java.util.Collection;
@@ -23,6 +24,16 @@ public interface InventoryService {
     List<InventoryLocationResponse> findLocations(UUID sellerId);
     InventoryLocationResponse updateLocation(UpdateFulfillmentLocationRequest request);
     List<LocationInventoryResponse> findLocationInventory(UUID sellerId, UUID locationId);
+
+    /**
+     * 위치별 재고를 SKU 순서의 keyset 페이지로 조회한다. 운영 API는 SKU가 많은 위치에서 전체를 한 번에 읽지
+     * 않도록 이 메서드를 쓴다.
+     *
+     * @param limit 페이지 크기. null이면 기본값, 허용 범위를 벗어나면 INVALID_REQUEST
+     * @param afterSkuId 이전 페이지의 {@code nextCursor}. null이면 첫 페이지
+     */
+    LocationInventoryPageResponse findLocationInventoryPage(
+            UUID sellerId, UUID locationId, Integer limit, String afterSkuId);
     Optional<UUID> findFulfillmentLocation(UUID sellerId, List<ReserveInventoryBatchRequest.Item> items);
     InventoryTransferResponse transfer(TransferInventoryRequest request);
     ReservationResponse reserve(ReserveInventoryRequest request);
