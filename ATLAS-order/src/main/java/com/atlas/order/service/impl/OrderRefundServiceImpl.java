@@ -154,6 +154,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             if (!isRetryableProviderFailure(exception)) {
                 transactions.execute(status -> {
                     refunds.updatePaymentStatus(reserved.refundId(), OrderRefundPaymentStatus.FAILED);
+                    settlement.releaseRefundReservation(new RefundPostingRequest(
+                            reserved.orderId(), reserved.refundId(), reserved.sellerId(),
+                            reserved.recordedAmountWon()));
                     return null;
                 });
             }
@@ -294,6 +297,8 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                                 order.checkoutId(), paymentKey, recordedAmountWon);
                 refunds.linkPaymentOperation(refundId, payment.refundOperationId());
                 refunds.updatePaymentStatus(refundId, refundStatus(payment.status()));
+                settlement.reserveRefund(new RefundPostingRequest(
+                        orderId, refundId, sellerId, recordedAmountWon));
             }
             return refunds.findByRefundId(refundId)
                     .orElseThrow(() -> new IllegalStateException("Refund request was not persisted"));
@@ -326,6 +331,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                             "Order refund request not found"));
             if (changed && currentStatus == OrderRefundPaymentStatus.COMPLETED) {
                 applyConfirmedRefund(current);
+            } else if (currentStatus == OrderRefundPaymentStatus.FAILED) {
+                settlement.releaseRefundReservation(new RefundPostingRequest(
+                        current.orderId(), current.refundId(), current.sellerId(), current.recordedAmountWon()));
             }
             if ((currentStatus == OrderRefundPaymentStatus.COMPLETED
                     || currentStatus == OrderRefundPaymentStatus.FAILED)

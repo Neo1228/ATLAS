@@ -1,6 +1,5 @@
 package com.atlas.settlement.dto.response;
 
-import com.atlas.settlement.persistence.state.SettlementPayoutState;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,8 +10,10 @@ public record SellerPayoutResponse(
         Instant periodStart,
         Instant periodEnd,
         long amountWon,
-        SettlementPayoutState state,
+        long settledAmountWon,
+        SettlementPayoutStatus state,
         Instant requestedAt,
         Instant sentAt,
-        Instant confirmedAt) {
+        Instant confirmedAt,
+        Instant cancelledAt) {
 }

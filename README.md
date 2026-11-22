@@ -86,6 +86,23 @@ docker compose up -d --wait postgres
 ./gradlew :application-module:bootRun
 ```
 
+### PayPal Payouts Sandbox (opt-in)
+
+PayPal Payouts 자동 송금은 구매자 결제와 별도 경로이며 기본 비활성화. Payouts 권한이 있는 Sandbox 앱, Seller가 연결한 verified account, operator가 검토한 수취 국가(기본 allowlist `US`), USD 지급 스냅샷과 audit reason이 필요하다. API는 임의 receiver email을 받거나 반환하지 않는다.
+
+활성화 전 PayPal Sandbox Business 계정의 Payouts 권한과 recipient profile 적격성을 확인한다. JWT/MFA와 다른 전용 32-byte recipient encryption key를 생성한다. 아래 값을 `.env.local`에 설정하고 현재 shell에만 로드한다.
+
+```sh
+ATLAS_PAYPAL_PAYOUTS_ENABLED=true
+ATLAS_PAYPAL_PAYOUT_RECIPIENT_ENCRYPTION_KEY=<base64-32-byte-key>
+ATLAS_SETTLEMENT_PAYOUT_OPERATOR_ENABLED=true
+ATLAS_SETTLEMENT_PAYOUT_OPERATOR_USERNAME=<dedicated-sandbox-operator>
+ATLAS_SETTLEMENT_PAYOUT_OPERATOR_PASSWORD=<at-least-32-characters>
+ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=false
+```
+
+먼저 worker를 끈 채 profile을 만들고 operator 검토를 통과시킨 다음, 지급 요청·operator 승인을 수행해 immutable outbox intent가 생성되는지 확인한다. Profile·국가·암호화 key·Sandbox entitlement 확인 후에만 `ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=true`로 전환한다. 적격하지 않은 profile은 자동 전송하지 않으며, 별도 manual route는 외부 증빙과 operator audit을 요구한다. Live credential이나 실계좌를 사용하지 않는다.
+
 느린 SQL 감지는 Java `DataSource` decorator로 선택 활성화.
 - `ATLAS_DB_SLOW_QUERY_THRESHOLD_MS`: 측정 근거가 있는 양의 임계값(ms). 미설정 시 감지기 비활성화.
 - 기록 항목: HTTP 요청의 `requestId`, datasource bean 이름, 경과 시간, 성공 여부, statement 수, SHA-256 statement fingerprint. SQL text·literal·bind value 기록 0건.

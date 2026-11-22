@@ -1,0 +1,162 @@
+package com.atlas.application.service.payout;
+
+import com.atlas.application.security.PayoutRecipientCipher;
+import com.atlas.settlement.dto.response.SellerPayoutResponse;
+import com.atlas.settlement.dto.response.SettlementPayoutStatus;
+import com.atlas.settlement.exception.SettlementException;
+import com.atlas.settlement.service.SettlementPayoutService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Clock;
+import java.util.Objects;
+import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/** Commits the operator decision, Seller payout state and durable provider intent atomically. */
+@Service
+@ConditionalOnProperty(prefix = "atlas.payment.paypal.payouts", name = "enabled", havingValue = "true")
+public class PayoutDispatchApprovalCommitService {
+    private final SettlementPayoutService payouts;
+    private final SellerPayoutProfileService profiles;
+    private final PayoutRecipientCipher cipher;
+    private final PayoutDispatchRepository dispatches;
+    private final PayoutOperatorActionRepository actions;
+    private final Clock clock;
+
+    public PayoutDispatchApprovalCommitService(SettlementPayoutService payouts,
+            SellerPayoutProfileService profiles, PayoutRecipientCipher cipher,
+            PayoutDispatchRepository dispatches, PayoutOperatorActionRepository actions, Clock clock) {
+        this.payouts = Objects.requireNonNull(payouts);
+        this.profiles = Objects.requireNonNull(profiles);
+        this.cipher = Objects.requireNonNull(cipher);
+        this.dispatches = Objects.requireNonNull(dispatches);
+        this.actions = Objects.requireNonNull(actions);
+        this.clock = Objects.requireNonNull(clock);
+    }
+
+    @Transactional
+    public SellerPayoutResponse approve(UUID payoutId, PayoutDispatchPlan plan,
+            SellerPayoutProfileService.ActiveRecipient expectedRecipient,
+            String idempotencyKey, String actor, String reason) {
+        if (!payoutId.equals(plan.payoutId())) throw invalid("Payout dispatch plan does not match payout");
+        SellerPayoutResponse current = payouts.find(payoutId);
+        if (current.state() != SettlementPayoutStatus.REQUESTED
+                && current.state() != SettlementPayoutStatus.APPROVED) {
+            throw conflict("Only a requested payout can be approved for provider dispatch");
+        }
+        if (current.amountWon() != plan.requestedAmountWon()
+                || !current.sellerId().equals(expectedRecipient.sellerId())) {
+            throw conflict("Payout changed while its provider dispatch plan was prepared");
+        }
+        SellerPayoutProfileService.ActiveRecipient currentRecipient =
+                profiles.requireActiveRecipient(current.sellerId());
+        if (!sameRecipient(expectedRecipient, currentRecipient)) {
+            throw conflict("Seller payout profile changed while approval was prepared");
+        }
+        SellerPayoutResponse approved = current.state() == SettlementPayoutStatus.APPROVED
+                ? current : payouts.approve(payoutId);
+        if (approved.state() != SettlementPayoutStatus.APPROVED) {
+            throw conflict("Payout approval did not reach the approved state");
+        }
+        PayoutDispatchRecord record = dispatches.enqueue(plan);
+        if (!sameDispatchFacts(plan, record)) {
+            throw conflict("Payout already has different immutable dispatch facts");
+        }
+        String storedRecipient = cipher.decrypt(record.recipientEmailCiphertext());
+        if (!MessageDigest.isEqual(storedRecipient.getBytes(StandardCharsets.UTF_8),
+                currentRecipient.verifiedEmail().getBytes(StandardCharsets.UTF_8))) {
+            throw conflict("Existing provider dispatch recipient differs from the verified Seller identity");
+        }
+        recordAction(payoutId, idempotencyKey, "PAYOUT_APPROVED", actor, reason);
+        return approved;
+    }
+
+    @Transactional
+    public SellerPayoutResponse replay(UUID payoutId, String idempotencyKey, String actor, String reason) {
+        SellerPayoutResponse payout = payouts.find(payoutId);
+        if (actions.matches(payoutId, idempotencyKey, "PAYOUT_APPROVED", actor, reason)) return payout;
+        if (payout.state() != SettlementPayoutStatus.APPROVED) {
+            throw conflict("Payout approval is already terminal or in provider reconciliation");
+        }
+        recordAction(payoutId, idempotencyKey, "PAYOUT_APPROVAL_REPLAYED", actor, reason);
+        return payout;
+    }
+
+    @Transactional
+    public SellerPayoutResponse cancel(UUID payoutId, String idempotencyKey, String actor, String reason) {
+        SellerPayoutResponse cancelled = payouts.cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED");
+        dispatches.cancelPending(payoutId);
+        recordAction(payoutId, idempotencyKey, "PAYOUT_CANCELLED", actor, reason);
+        return cancelled;
+    }
+
+    @Transactional
+    public SellerPayoutResponse requeueNeedsReview(UUID payoutId, String idempotencyKey,
+            String actor, String reason) {
+        SellerPayoutResponse payout = payouts.find(payoutId);
+        PayoutDispatchRecord record = dispatches.find(payoutId)
+                .orElseThrow(() -> conflict("Payout has no provider dispatch record"));
+        if (actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) return payout;
+        if ("NEEDS_REVIEW".equals(record.status())) {
+            if (payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) {
+                throw conflict("Payout state does not permit provider requeue");
+            }
+            if (dispatches.requeueNeedsReview(payoutId)) {
+                recordAction(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason);
+                return payout;
+            }
+            PayoutDispatchRecord latest = dispatches.find(payoutId).orElseThrow(
+                    () -> conflict("Payout dispatch record disappeared during requeue"));
+            if (("PENDING".equals(latest.status()) || "WAITING_PROVIDER".equals(latest.status()))
+                    && actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) {
+                return payout;
+            }
+            throw conflict("Payout is no longer eligible for provider requeue");
+        }
+        if (("PENDING".equals(record.status()) || "WAITING_PROVIDER".equals(record.status()))
+                && actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) {
+            return payout;
+        }
+        throw conflict("Payout is not waiting for manual provider requeue");
+    }
+
+    private static boolean sameDispatchFacts(PayoutDispatchPlan plan, PayoutDispatchRecord record) {
+        return plan.payoutId().equals(record.payoutId()) && plan.profileVersion() == record.profileVersion()
+                && plan.recipientCountryCode().equals(record.recipientCountryCode())
+                && plan.requestedAmountWon() == record.requestedAmountWon()
+                && plan.providerAmountMinor() == record.providerAmountMinor()
+                && plan.fxRateWonPerUsd().compareTo(record.fxRateWonPerUsd()) == 0
+                && plan.fxSource().equals(record.fxSource()) && plan.fxAsOfDate().equals(record.fxAsOfDate())
+                && plan.providerDebitBookValueWon() == record.providerDebitBookValueWon()
+                && plan.payoutFxRoundingExpenseWon() == record.payoutFxRoundingExpenseWon()
+                && plan.senderBatchId().equals(record.senderBatchId())
+                && plan.senderItemId().equals(record.senderItemId())
+                && plan.paypalRequestId().equals(record.paypalRequestId())
+                && plan.requestPayloadSha256().equals(record.requestPayloadSha256());
+    }
+    private void recordAction(UUID payoutId, String idempotencyKey, String action,
+            String actor, String reason) {
+        if (!actions.record(payoutId, idempotencyKey, action, actor, reason, clock.instant())) {
+            throw conflict("Payout operator idempotency key was reused for different facts");
+        }
+    }
+
+    private static boolean sameRecipient(SellerPayoutProfileService.ActiveRecipient left,
+            SellerPayoutProfileService.ActiveRecipient right) {
+        return left.sellerId().equals(right.sellerId()) && left.accountId().equals(right.accountId())
+                && left.profileVersion() == right.profileVersion()
+                && left.countryCode().equals(right.countryCode()) && left.currency().equals(right.currency())
+                && MessageDigest.isEqual(left.verifiedEmail().getBytes(StandardCharsets.UTF_8),
+                        right.verifiedEmail().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static SettlementException invalid(String message) {
+        return new SettlementException(SettlementException.Code.INVALID_REQUEST, message);
+    }
+
+    private static SettlementException conflict(String message) {
+        return new SettlementException(SettlementException.Code.CONFLICT, message);
+    }
+}

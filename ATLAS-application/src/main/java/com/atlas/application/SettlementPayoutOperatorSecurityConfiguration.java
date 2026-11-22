@@ -22,7 +22,10 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "atlas.settlement.payout.operator.enabled", havingValue = "true")
 public class SettlementPayoutOperatorSecurityConfiguration {
-    private static final String PATH = "/api/internal/settlement/payouts/**";
+    private static final String[] PATHS = {
+        "/api/internal/settlement/payouts/**",
+        "/api/internal/settlement/payout-profiles/**"
+    };
     private static final int MINIMUM_PASSWORD_LENGTH = 32;
 
     @Bean
@@ -43,7 +46,7 @@ public class SettlementPayoutOperatorSecurityConfiguration {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(users);
         provider.setPasswordEncoder(passwordEncoder);
 
-        http.securityMatcher(PATH)
+        http.securityMatcher(PATHS)
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(

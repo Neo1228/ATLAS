@@ -1,6 +1,6 @@
 package com.atlas.payment.provider.paypal;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
@@ -14,7 +14,8 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 
 @Configuration
-@ConditionalOnProperty(name = "atlas.payment.provider", havingValue = "paypal")
+@ConditionalOnExpression(
+        "'${atlas.payment.provider:disabled}' == 'paypal' || '${atlas.payment.paypal.payouts.enabled:false}' == 'true'")
 public class PayPalOAuth2ClientConfiguration {
     @Bean
     ClientRegistrationRepository paypalClientRegistrationRepository(PayPalProperties properties) {
@@ -31,7 +32,15 @@ public class PayPalOAuth2ClientConfiguration {
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
                 .tokenUri(baseUrl + "/v1/oauth2/token")
                 .build();
-        return new InMemoryClientRegistrationRepository(registration);
+        ClientRegistration payoutsRegistration = ClientRegistration.withRegistrationId("paypal-payouts")
+                .clientId(properties.getClientId())
+                .clientSecret(properties.getClientSecret())
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("https://uri.paypal.com/services/payments/payouts")
+                .tokenUri(baseUrl + "/v1/oauth2/token")
+                .build();
+        return new InMemoryClientRegistrationRepository(registration, payoutsRegistration);
     }
 
     @Bean

@@ -1,6 +1,7 @@
 package com.atlas.account.repository;
 
 import com.atlas.account.domain.AccountPrincipal;
+import com.atlas.account.domain.VerifiedSellerAccount;
 import com.atlas.account.domain.AccountActionToken;
 import com.atlas.account.domain.AccountMfaSecret;
 import com.atlas.account.domain.RefreshTokenSession;
@@ -10,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -295,6 +297,21 @@ public class AccountRepository {
         return jdbc.query("""
                         SELECT seller_id FROM seller_account WHERE account_id = ? ORDER BY seller_id
                         """, (row, number) -> row.getObject(1, UUID.class), accountId);
+    }
+
+    public Optional<VerifiedSellerAccount> findVerifiedSellerAccount(UUID accountId, UUID sellerId) {
+        Objects.requireNonNull(accountId);
+        Objects.requireNonNull(sellerId);
+        return jdbc.query("""
+                SELECT account.account_id, account.email
+                FROM seller_account AS owner
+                JOIN user_account AS account ON account.account_id = owner.account_id
+                WHERE owner.account_id = ? AND owner.seller_id = ?
+                  AND account.status = 'ACTIVE'
+                  AND account.email_verified_at IS NOT NULL
+                """, (row, number) -> new VerifiedSellerAccount(
+                row.getObject("account_id", UUID.class), row.getString("email")), accountId, sellerId)
+                .stream().findFirst();
     }
 
     public void createRefreshFamily(UUID familyId, UUID accountId, Instant createdAt, Instant expiresAt) {

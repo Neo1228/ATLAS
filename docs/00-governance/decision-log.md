@@ -126,6 +126,7 @@
 | D-120 | ✓ #442 취소 요청 후 새 capture 차단 | 취소 트랜잭션에서 `payment_attempt.capture_prohibited`(V58)를 함께 기록하고, `reservePhase`는 attempt 행 잠금 아래에서 `CAPTURE`+`AUTHORIZED`+펜스일 때만 새 provider 호출을 거부한다. 진행 중 capture(`CAPTURE_PENDING`/`UNKNOWN`)는 계속 복구하고 `CAPTURED`는 그대로 반영한다. 실제 PayPal 재현은 미실행. | [#442](https://github.com/Neo1228/ATLAS/issues/442), [EXP-050](../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md) |
 | D-121 | ✓ #445 캠페인 주문 취소 capture 펜스 | D-120 checkout 경로 외에 주문이 결제를 직접 소유하는 캠페인 취소에도 `prohibitNewOrderCapture`를 동일 주문/attempt transaction에 기록하고 V59로 기존 취소 주문에 소급한다. 경쟁 테스트는 `pg_stat_clear_snapshot()`으로 대기 스냅샷을 재조회한다. | [#445](https://github.com/Neo1228/ATLAS/issues/445), [EXP-050](../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md) |
 | D-122 | ✓ #434 Toxiproxy는 fault-test 전용 | opt-in Compose overlay는 Postgres·Mailpit·Toxiproxy를 격리 network에 두고 host port를 loopback에만 binding한다. Testcontainers test는 commit-ack 유실과 pre-commit reset을 구분한다. PayPal nonstandard port는 explicit local-proxy opt-in과 loopback-only resolution 없이는 거부한다. EXP-050은 warmed capture 경로의 12s response-loss를 worker-disabled 3/3, worker-enabled automatic recovery를 3/3 확인했다. Warmed `reset_peer`는 provider capture가 0/3이므로 post-commit reset 근거가 아니다. Production Redis·broker·lock 도입 임계값은 미도달. | [#434](https://github.com/Neo1228/ATLAS/issues/434), [ADR-0053](../02-decisions/adr/ADR-0053-shared-infra-adoption-gates.md), [EXP-050](../03-experiments/EXP-050-toxiproxy-postgres-fault-probe.md), [#448](https://github.com/Neo1228/ATLAS/issues/448) |
+| D-123 | ✓ #456 provider-aware financial operation control plane | Capture/refund의 검증된 `UNKNOWN` recovery는 유지하고 payout만 PostgreSQL durable outbox로 보강한다. 승인과 dispatch intent는 같은 transaction, PayPal call은 외부에서 실행하고 stable batch/item/request ID를 재사용한다. Refund full-amount hold와 payout reservation은 같은 Seller lock 아래 중재하며 dispatch fence 이후 결과 불명확·negative payable은 예약·risk metric으로 유지한다. Provider item success만 balancing journal을 만들고 fee/FX rounding을 명시한다. V1은 feature-off 기본값·Sandbox·operator-reviewed USD profile·≤1% rounding expense; 수동 증빙 resolution, key-ID 암호화, polling·manual review를 포함한다. Webhook 소비·KRW 자동환전·정기 송금·Kafka/Redis는 제외하고 backlog/DB 병목 실측 후 재검토한다. | [Issue #456](https://github.com/Neo1228/ATLAS/issues/456), [ADR-0057](../02-decisions/adr/ADR-0057-financial-operation-outbox-and-payout-reconciliation.md), [FR-019](../01-requirements/requirements-index.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -163,6 +164,7 @@
 <a id="d-120"></a>
 <a id="d-121"></a>
 <a id="d-122"></a>
+<a id="d-123"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -221,3 +223,4 @@
 | [ADR-0054 — 秒杀 경합 중복 직렬화 제거](../02-decisions/adr/ADR-0054-flash-sale-contention-removal.md) | #434: 실서비스 경로 실측, 중복 락 제거로 tps +40~175% | [D-112](#d-112) |
 | [ADR-0055 — 극한 부하 경계와 인프라 게이트](../02-decisions/adr/ADR-0055-extreme-load-boundaries-and-infra-gates.md) | #434: 실패 배출 속도 계산, 스레드/풀/타임아웃 경계, 인프라 도입 조건 | [D-115](#d-115) |
 | [ADR-0056 — 판매자 이행 식별자 공백](../02-decisions/adr/ADR-0056-seller-fulfillment-identifier-gaps.md) | #437: 판매자 주문 목록, orderItemId 노출, 지급 전이 API, 환불 실패 처리, 리다이렉트 401 | [D-117](#d-117) |
+| [ADR-0057 — 금융 provider 작업의 durable outbox와 대사](../02-decisions/adr/ADR-0057-financial-operation-outbox-and-payout-reconciliation.md) | PayPal payout outbox·item evidence, refund/payout seller-lock arbitration, manual review/key rotation, Sandbox/USD/ledger gates | [D-123](#d-123), [Issue #456](https://github.com/Neo1228/ATLAS/issues/456) |
