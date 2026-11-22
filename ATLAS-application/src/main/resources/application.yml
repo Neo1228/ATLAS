@@ -130,6 +130,9 @@ atlas:
     fx:
       cache-ttl: ${ATLAS_PAYMENT_FX_CACHE_TTL:PT60S}
       max-stale: ${ATLAS_PAYMENT_FX_MAX_STALE:PT10M}
+      # 조회가 실패한 뒤 이 시간 동안은 외부를 다시 부르지 않는다(±20% 무작위). 장애 중 호출이 요청률이 아니라
+      # 이 간격에 묶이게 해 replica 수가 늘어도 외부 호출이 폭주하지 않는다.
+      failure-backoff: ${ATLAS_PAYMENT_FX_FAILURE_BACKOFF:PT15S}
     recovery:
       initial-delay: ${ATLAS_PAYMENT_RECOVERY_INITIAL_DELAY:PT30S}
       initial-poll-delay: ${ATLAS_PAYMENT_RECOVERY_INITIAL_POLL_DELAY:PT2S}
