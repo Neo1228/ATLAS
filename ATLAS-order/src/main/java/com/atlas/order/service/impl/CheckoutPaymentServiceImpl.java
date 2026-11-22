@@ -388,7 +388,11 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     @Override
     public int expireDueCheckouts() {
         // Same reasoning as expireDueOrders: one replica per tick, others skip.
-        if (expirySweepLock != null && !expirySweepLock.tryAcquire("checkouts")) return 0;
+        if (expirySweepLock == null) return sweepExpiredCheckouts();
+        return expirySweepLock.runExclusive("checkouts", this::sweepExpiredCheckouts).orElse(0);
+    }
+
+    private int sweepExpiredCheckouts() {
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();
         List<UUID> due = orders.findExpiredCheckoutIds(

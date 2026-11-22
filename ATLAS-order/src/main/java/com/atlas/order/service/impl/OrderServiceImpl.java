@@ -440,7 +440,11 @@ public final class OrderServiceImpl implements OrderService {
     public int expireDueOrders() {
         // Only one replica runs this sweep per tick; the others skip instead of
         // duplicating the candidate scan and racing for the same row locks.
-        if (expirySweepLock != null && !expirySweepLock.tryAcquire("orders")) return 0;
+        if (expirySweepLock == null) return sweepExpiredOrders();
+        return expirySweepLock.runExclusive("orders", this::sweepExpiredOrders).orElse(0);
+    }
+
+    private int sweepExpiredOrders() {
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweep.timeBudget().toNanos();
         List<UUID> dueOrders = repository.findReservedOrdersExpiredBy(now, Limit.of(expirySweep.batchSize()));
