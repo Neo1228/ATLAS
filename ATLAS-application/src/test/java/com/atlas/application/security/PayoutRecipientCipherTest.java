@@ -54,8 +54,13 @@ class PayoutRecipientCipherTest {
     void rejectsTamperedCiphertextAndInvalidEncryptionKey() {
         PayoutRecipientCipher cipher = new PayoutRecipientCipher(KEY);
         String encrypted = cipher.encrypt("seller@example.test");
-        char replacement = encrypted.charAt(encrypted.length() - 1) == 'A' ? 'B' : 'A';
-        String tampered = encrypted.substring(0, encrypted.length() - 1) + replacement;
+        // 암호문 바이트 하나를 뒤집어 확실히 변조한다. base64url 문자열의 끝 글자는 쓰이지 않는 비트를 가질 수 있어
+        // 그 글자만 바꾸면 디코딩 결과가 같아 변조가 되지 않는다(이 봉투 길이에서 약 6%).
+        int envelopeStart = encrypted.lastIndexOf(':') + 1;
+        byte[] envelope = Base64.getUrlDecoder().decode(encrypted.substring(envelopeStart));
+        envelope[envelope.length - 1] ^= 0x01;
+        String tampered = encrypted.substring(0, envelopeStart)
+                + Base64.getUrlEncoder().withoutPadding().encodeToString(envelope);
 
         assertThatThrownBy(() -> cipher.decrypt(tampered)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new PayoutRecipientCipher("not-base64"))
