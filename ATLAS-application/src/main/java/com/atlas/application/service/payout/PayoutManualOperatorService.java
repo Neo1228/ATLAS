@@ -1,9 +1,9 @@
 package com.atlas.application.service.payout;
 
 import com.atlas.application.controller.dto.PayoutProviderResolutionRequest;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
-import com.atlas.application.repository.payout.PayoutOperatorActionRepository;
+import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
+import com.atlas.settlement.service.PayoutOperatorActionStore;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
@@ -20,12 +20,12 @@ import org.springframework.util.StringUtils;
 public class PayoutManualOperatorService {
     private final SettlementPayoutService payouts;
     private final PayoutFxConversionService conversions;
-    private final PayoutDispatchRepository dispatches;
-    private final PayoutOperatorActionRepository actions;
+    private final PayoutDispatchStore dispatches;
+    private final PayoutOperatorActionStore actions;
     private final Clock clock;
 
-    public PayoutManualOperatorService(SettlementPayoutService payouts, PayoutDispatchRepository dispatches,
-            PayoutOperatorActionRepository actions, PayoutFxConversionService conversions, Clock clock) {
+    public PayoutManualOperatorService(SettlementPayoutService payouts, PayoutDispatchStore dispatches,
+            PayoutOperatorActionStore actions, PayoutFxConversionService conversions, Clock clock) {
         this.payouts = Objects.requireNonNull(payouts);
         this.dispatches = Objects.requireNonNull(dispatches);
         this.actions = Objects.requireNonNull(actions);

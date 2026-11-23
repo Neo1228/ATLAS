@@ -5,8 +5,8 @@ import com.atlas.account.service.AccountService;
 import com.atlas.application.controller.dto.SellerPayoutProfileRequest;
 import com.atlas.application.controller.dto.SellerPayoutProfileResponse;
 import com.atlas.application.controller.dto.VerifySellerPayoutProfileRequest;
-import com.atlas.application.persistence.projection.SellerPayoutProfile;
-import com.atlas.application.repository.payout.SellerPayoutProfileRepository;
+import com.atlas.settlement.service.SellerPayoutProfile;
+import com.atlas.settlement.service.SellerPayoutProfileStore;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;
 import java.nio.charset.StandardCharsets;
@@ -28,12 +28,12 @@ import org.springframework.util.StringUtils;
 @Service
 public class SellerPayoutProfileService {
     private static final String USD = "USD";
-    private final SellerPayoutProfileRepository profiles;
+    private final SellerPayoutProfileStore profiles;
     private final AccountService accounts;
     private final PayPalPayoutsProperties payoutsProperties;
     private final Clock clock;
 
-    public SellerPayoutProfileService(SellerPayoutProfileRepository profiles, AccountService accounts,
+    public SellerPayoutProfileService(SellerPayoutProfileStore profiles, AccountService accounts,
             PayPalPayoutsProperties payoutsProperties, Clock clock) {
         this.profiles = Objects.requireNonNull(profiles);
         this.accounts = Objects.requireNonNull(accounts);

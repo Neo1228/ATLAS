@@ -1,4 +1,4 @@
-package com.atlas.application.persistence.projection;
+package com.atlas.settlement.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

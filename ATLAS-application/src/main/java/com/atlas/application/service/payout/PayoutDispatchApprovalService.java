@@ -1,8 +1,8 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.application.persistence.projection.PayoutDispatchPlan;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
+import com.atlas.settlement.service.PayoutDispatchPlan;
+import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.application.controller.dto.PayoutDispatchStatusResponse;
 import com.atlas.application.controller.dto.PayoutDispatchReviewPage;
@@ -33,12 +33,12 @@ public class PayoutDispatchApprovalService {
     private final ExchangeRateProvider exchangeRates;
     private final PayoutFxConversionService conversions;
     private final PayoutRecipientCipher cipher;
-    private final PayoutDispatchRepository dispatches;
+    private final PayoutDispatchStore dispatches;
     private final PayoutDispatchApprovalCommitService committer;
 
     public PayoutDispatchApprovalService(SettlementPayoutService payouts, SellerPayoutProfileService profiles,
             ExchangeRateProvider exchangeRates, PayoutFxConversionService conversions,
-            PayoutRecipientCipher cipher, PayoutDispatchRepository dispatches,
+            PayoutRecipientCipher cipher, PayoutDispatchStore dispatches,
             PayoutDispatchApprovalCommitService committer) {
         this.payouts = Objects.requireNonNull(payouts);
         this.profiles = Objects.requireNonNull(profiles);

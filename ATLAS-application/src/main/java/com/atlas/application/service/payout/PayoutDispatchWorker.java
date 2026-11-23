@@ -1,8 +1,8 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.application.persistence.projection.PayoutDispatchMetrics;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
+import com.atlas.settlement.service.PayoutDispatchMetrics;
+import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutException;
@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(prefix = "atlas.payment.paypal.payouts.worker", name = "enabled", havingValue = "true")
 @ConditionalOnProperty(prefix = "atlas.payment.paypal.payouts", name = "enabled", havingValue = "true")
 public class PayoutDispatchWorker {
-    private final PayoutDispatchRepository repository;
+    private final PayoutDispatchStore repository;
     private final PayoutDispatchOutcomeService outcomes;
     private final SettlementPayoutService payouts;
     private final PayPalPayoutsProvider provider;
@@ -42,7 +42,7 @@ public class PayoutDispatchWorker {
     private final Duration leaseDuration, maxUnknownAge, maxWaitingAge;
     private final int maxAttempts;
 
-    public PayoutDispatchWorker(PayoutDispatchRepository repository, PayoutDispatchOutcomeService outcomes,
+    public PayoutDispatchWorker(PayoutDispatchStore repository, PayoutDispatchOutcomeService outcomes,
             SettlementPayoutService payouts, PayPalPayoutsProvider provider, PayoutRecipientCipher cipher,
             PayoutFxConversionService conversions, Clock clock, MeterRegistry metrics,
             @Value("${atlas.payment.paypal.payouts.worker.batch-size:1}") int batchSize,

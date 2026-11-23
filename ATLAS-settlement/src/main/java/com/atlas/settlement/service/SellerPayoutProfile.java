@@ -1,4 +1,4 @@
-package com.atlas.application.persistence.projection;
+package com.atlas.settlement.service;
 
 import java.time.Instant;
 import java.util.UUID;

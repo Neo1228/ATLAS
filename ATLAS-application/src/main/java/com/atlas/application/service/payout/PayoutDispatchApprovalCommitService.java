@@ -1,9 +1,9 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.application.persistence.projection.PayoutDispatchPlan;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
-import com.atlas.application.repository.payout.PayoutOperatorActionRepository;
+import com.atlas.settlement.service.PayoutDispatchPlan;
+import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
+import com.atlas.settlement.service.PayoutOperatorActionStore;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
@@ -25,13 +25,13 @@ public class PayoutDispatchApprovalCommitService {
     private final SettlementPayoutService payouts;
     private final SellerPayoutProfileService profiles;
     private final PayoutRecipientCipher cipher;
-    private final PayoutDispatchRepository dispatches;
-    private final PayoutOperatorActionRepository actions;
+    private final PayoutDispatchStore dispatches;
+    private final PayoutOperatorActionStore actions;
     private final Clock clock;
 
     public PayoutDispatchApprovalCommitService(SettlementPayoutService payouts,
             SellerPayoutProfileService profiles, PayoutRecipientCipher cipher,
-            PayoutDispatchRepository dispatches, PayoutOperatorActionRepository actions, Clock clock) {
+            PayoutDispatchStore dispatches, PayoutOperatorActionStore actions, Clock clock) {
         this.payouts = Objects.requireNonNull(payouts);
         this.profiles = Objects.requireNonNull(profiles);
         this.cipher = Objects.requireNonNull(cipher);

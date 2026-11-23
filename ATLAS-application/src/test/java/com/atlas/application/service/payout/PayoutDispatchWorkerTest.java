@@ -10,9 +10,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.persistence.projection.PayoutDispatchMetrics;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
+import com.atlas.settlement.service.PayoutDispatchMetrics;
+import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsProvider;
@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test;
 class PayoutDispatchWorkerTest {
     private static final Instant NOW = Instant.parse("2026-11-22T00:00:00Z");
     private static final String KEY = Base64.getEncoder().encodeToString(new byte[32]);
-    private final PayoutDispatchRepository repository = mock(PayoutDispatchRepository.class);
+    private final PayoutDispatchStore repository = mock(PayoutDispatchStore.class);
     private final PayoutDispatchOutcomeService outcomes = mock(PayoutDispatchOutcomeService.class);
     private final SettlementPayoutService payouts = mock(SettlementPayoutService.class);
     private final PayPalPayoutsProvider provider = mock(PayPalPayoutsProvider.class);

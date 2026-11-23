@@ -3,10 +3,10 @@ package com.atlas.settlement;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.application.persistence.projection.PayoutDispatchPlan;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchPlan;
+import com.atlas.settlement.service.PayoutDispatchRecord;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
@@ -78,7 +78,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Autowired private SettlementService settlement;
     @Autowired private SettlementPayoutService payouts;
     @Autowired private JdbcTemplate jdbc;
-    @Autowired private PayoutDispatchRepository dispatches;
+    @Autowired private PayoutDispatchStore dispatches;
 
     @BeforeEach
     void clearLedgerAndPayouts() {
