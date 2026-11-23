@@ -3,11 +3,12 @@ package com.atlas.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.Status;
+import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.settlement.exception.SettlementException;
+import com.atlas.settlement.service.PayPalBalanceReportParser;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,7 +36,8 @@ class PayPalBalanceReportReconciliationServiceTest {
     private final Map<String, List<PayPalReportMatchCandidateResponse>> candidatesByRecordId = new HashMap<>();
     private final PayPalBalanceReportReconciliationService service = new PayPalBalanceReportReconciliationService(
             recordIds -> recordIds.stream().flatMap(id -> candidatesByRecordId
-                    .getOrDefault(id, List.of()).stream()).toList());
+                    .getOrDefault(id, List.of()).stream()).toList(),
+            new PayPalBalanceReportParser());
 
     @Test
     void matchesCaptureAndRefundByExactProviderIdsAndTransactionFacts() {

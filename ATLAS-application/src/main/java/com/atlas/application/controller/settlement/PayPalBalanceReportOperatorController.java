@@ -1,12 +1,12 @@
 package com.atlas.application.controller.settlement;
 
 import com.atlas.application.dto.request.PayPalBalanceReportDispositionRequest;
-import com.atlas.application.dto.response.PayPalBalanceReportDispositionResponse;
-import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary;
-import com.atlas.application.dto.response.PayPalBalanceReportPage;
-import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.application.dto.response.PayPalBalanceReportRunResponse;
-import com.atlas.application.service.PayPalBalanceReportOperatorService;
+import com.atlas.settlement.dto.response.PayPalBalanceReportDispositionResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary;
+import com.atlas.settlement.dto.response.PayPalBalanceReportPage;
+import com.atlas.settlement.dto.response.PayPalBalanceReportRowResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportRunResponse;
+import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.time.LocalDate;
