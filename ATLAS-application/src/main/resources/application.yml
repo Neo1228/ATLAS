@@ -125,7 +125,10 @@ atlas:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
     # 승인 화면 이탈에도 결제 대기가 무기한 남지 않도록 하는 deadline. PayPal approval 유효기간보다 짧게 둔다.
     approval-ttl: ${ATLAS_PAYMENT_APPROVAL_TTL:PT30M}
-    # 외부 환율 API(BOK ECOS)는 일 단위 고시다. 결제마다 호출하지 않고 짧게 재사용한다.
+    # 원화→USD 환율 공급자. bok-ecos(기본, BOK_ECOS_API_KEY 필요) 또는 frankfurter(가입·key 없는 ECB 기준환율).
+    exchange-rate:
+      provider: ${ATLAS_EXCHANGE_RATE_PROVIDER:bok-ecos}
+    # 외부 환율 API는 일 단위 고시다. 결제마다 호출하지 않고 짧게 재사용한다.
     # max-stale 은 외부 장애 시 마지막 정상값을 허용하는 시간이다. 넘으면 결제를 막는다.
     fx:
       cache-ttl: ${ATLAS_PAYMENT_FX_CACHE_TTL:PT60S}
