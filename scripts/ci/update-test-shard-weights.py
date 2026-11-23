@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """테스트 shard 가중치 파일을 최근 실행 결과로 갱신한다.
 
-사용법: 전체 테스트를 한 번 실행한 뒤(./gradlew :application-module:test) 저장소 루트에서 실행한다.
-    python3 scripts/ci/update-test-shard-weights.py
+사용법(저장소 루트에서 실행):
+    python3 scripts/ci/update-test-shard-weights.py            # 로컬 전체 실행 결과(XML) 사용
+    python3 scripts/ci/update-test-shard-weights.py --run <id> # Backend CI 실행 로그의 CLASSTIME 줄 사용(권장)
+
+로컬 값은 runner와 CPU가 달라 클래스별 상대 비용이 어긋날 수 있으므로 CI 실행 값을 권장한다.
 
 ATLAS-application/build/test-results/test/TEST-*.xml의 클래스별 실행 시간(초)을 합산해
 ATLAS-application/src/test/resources/ci/test-shard-weights.properties에 쓴다.
@@ -17,14 +20,20 @@ RESULTS = "ATLAS-application/build/test-results/test/TEST-*.xml"
 TARGET = "ATLAS-application/src/test/resources/ci/test-shard-weights.properties"
 
 weights = defaultdict(float)
-for path in glob.glob(RESULTS):
-    head = open(path, encoding="utf-8").read(1200)
-    match = re.search(r'name="([^"]+)" tests="\d+".*?time="([\d.]+)"', head)
-    if match:
+if len(sys.argv) == 3 and sys.argv[1] == "--run":
+    import subprocess
+    log = subprocess.run(["gh", "run", "view", sys.argv[2], "--log"], capture_output=True, text=True).stdout
+    for match in re.finditer(r"CLASSTIME (\S+) ([\d.]+)", log):
         weights[match.group(1).split("$")[0]] += float(match.group(2))
+else:
+    for path in glob.glob(RESULTS):
+        head = open(path, encoding="utf-8").read(1200)
+        match = re.search(r'name="([^"]+)" tests="\d+".*?time="([\d.]+)"', head)
+        if match:
+            weights[match.group(1).split("$")[0]] += float(match.group(2))
 
 if not weights:
-    sys.exit("테스트 결과 XML이 없습니다. 먼저 ./gradlew :application-module:test 를 실행하세요.")
+    sys.exit("가중치로 쓸 실행 결과가 없습니다. ./gradlew :application-module:test 를 먼저 실행하거나 --run <id>를 쓰세요.")
 
 lines = [
     "# 테스트 shard 배정용 가중치(초). scripts/ci/update-test-shard-weights.py로 생성한다.",

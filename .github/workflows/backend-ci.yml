@@ -116,13 +116,18 @@ jobs:
           python3 - <<'PY'
           import glob, re
           total = failed = 0
+          times = []
           for path in glob.glob('ATLAS-application/build/test-results/test/TEST-*.xml'):
               head = open(path, encoding='utf-8').read(1500)
-              m = re.search(r'tests="(\d+)" skipped="(\d+)" failures="(\d+)" errors="(\d+)"', head)
+              m = re.search(r'name="([^"]+)" tests="(\d+)" skipped="(\d+)" failures="(\d+)" errors="(\d+)".*?time="([\d.]+)"', head)
               if m:
-                  total += int(m.group(1))
-                  failed += int(m.group(3)) + int(m.group(4))
+                  total += int(m.group(2))
+                  failed += int(m.group(4)) + int(m.group(5))
+                  times.append((m.group(1), float(m.group(6))))
           print(f'shard ${{ matrix.shard }}/${{ strategy.job-total }}: tests={total} failed={failed}')
+          # scripts/ci/update-test-shard-weights.py --run <id> 가 읽는 줄. 가중치를 runner 실측으로 갱신하는 데 쓴다.
+          for name, seconds in sorted(times):
+              print(f'CLASSTIME {name} {seconds:.1f}')
           PY
       - name: Upload test reports on failure
         if: failure()
