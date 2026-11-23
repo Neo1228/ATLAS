@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.atlas.account.domain.AccountException;
+import com.atlas.account.exception.AccountException;
 import com.atlas.account.service.AccountService;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.campaign.dto.response.CampaignResponse;

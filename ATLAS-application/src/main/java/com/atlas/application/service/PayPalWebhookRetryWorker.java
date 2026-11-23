@@ -1,7 +1,7 @@
 package com.atlas.application.service;
 
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import java.util.List;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
@@ -59,7 +59,7 @@ public class PayPalWebhookRetryWorker {
             for (PayPalWebhookRetryRepository.ClaimedRetry retry : claimed) {
                 Timer.Sample attemptSample = Timer.start(meters);
                 try {
-                    PaymentWebhookResult result;
+                    PaymentWebhookResponse result;
                     try {
                         result = webhooks.processVerified(retry.event());
                     } catch (RuntimeException failure) {

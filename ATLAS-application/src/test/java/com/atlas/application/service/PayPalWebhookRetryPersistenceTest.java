@@ -15,7 +15,7 @@ import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import com.atlas.payment.service.PaymentService;
@@ -37,9 +37,9 @@ class PayPalWebhookRetryPersistenceTest {
         when(transactions.getTransaction(any(TransactionDefinition.class))).thenReturn(new SimpleTransactionStatus());
         when(payments.verifyPayPalWebhook(any(), eq("body"))).thenReturn(event);
         when(payments.withPayPalWebhookOwnerLock(eq(event), any())).thenAnswer(invocation ->
-                invocation.<Supplier<PaymentWebhookResult>>getArgument(1).get());
+                invocation.<Supplier<PaymentWebhookResponse>>getArgument(1).get());
         when(payments.processVerifiedPayPalWebhook(event))
-                .thenReturn(new PaymentWebhookResult(false, false, null, null, null, false, true));
+                .thenReturn(new PaymentWebhookResponse(false, false, null, null, null, false, true));
         return new PayPalWebhookService(transactions, payments, mock(OrderService.class),
                 mock(CheckoutPaymentService.class), mock(OrderRefundService.class), retries);
     }

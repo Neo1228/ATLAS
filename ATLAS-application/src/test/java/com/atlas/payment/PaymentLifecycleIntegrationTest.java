@@ -21,7 +21,7 @@ import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.persistence.state.PaymentRefundState;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
@@ -387,9 +387,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(verificationRequest.getBody().readUtf8())
                 .contains("\"webhook_id\":\"local-test-webhook\"")
                 .contains("\"id\":\"" + eventId + "\"");
-        PaymentWebhookResult accepted = payments.processVerifiedPayPalWebhook(event);
+        PaymentWebhookResponse accepted = payments.processVerifiedPayPalWebhook(event);
         assertThat(accepted.accepted()).isTrue();
-        PaymentWebhookResult duplicate = payments.processVerifiedPayPalWebhook(event);
+        PaymentWebhookResponse duplicate = payments.processVerifiedPayPalWebhook(event);
         assertThat(duplicate.duplicate()).isTrue();
         assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
         assertThat(payments.find(orderId).providerCaptureId()).isEqualTo(captureId);
@@ -750,7 +750,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
         PaymentWebhookEvent rejectedEvent = payments.verifyPayPalWebhook(signature, rawBody);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
-        PaymentWebhookResult duplicate = payments.processVerifiedPayPalWebhook(rejectedEvent);
+        PaymentWebhookResponse duplicate = payments.processVerifiedPayPalWebhook(rejectedEvent);
         assertThat(duplicate.duplicate()).isTrue();
         assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.AUTHORIZED);
     }
@@ -772,7 +772,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
         PaymentWebhookEvent unmatched = payments.verifyPayPalWebhook(signature, unmatchedRawBody);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
-        PaymentWebhookResult retryable = payments.processVerifiedPayPalWebhook(unmatched);
+        PaymentWebhookResponse retryable = payments.processVerifiedPayPalWebhook(unmatched);
         assertThat(retryable.accepted()).isFalse();
         assertThat(retryable.retryable()).isTrue();
         assertThat(retryable.duplicate()).isFalse();

@@ -1,6 +1,6 @@
 package com.atlas.application.exception;
 
-import com.atlas.account.domain.AccountException;
+import com.atlas.account.exception.AccountException;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.campaign.exception.CampaignException;
 import com.atlas.cart.exception.CartException;

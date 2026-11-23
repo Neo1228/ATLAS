@@ -5,7 +5,7 @@ import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
@@ -39,17 +39,17 @@ public class PayPalWebhookService {
         PaymentWebhookEvent event = payments.verifyPayPalWebhook(signature, rawBody);
         if (event == null) throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
                 "PayPal webhook verification returned no event");
-        PaymentWebhookResult result = processVerified(event);
+        PaymentWebhookResponse result = processVerified(event);
         if (result.retryable()) {
             // 최소한의 재시도 레코드를 commit한 뒤에만 성공 응답을 반환한다.
             retries.enqueue(event);
         }
     }
 
-    PaymentWebhookResult processVerified(PaymentWebhookEvent event) {
-        PaymentWebhookResult result = payments.withPayPalWebhookOwnerLock(event,
+    PaymentWebhookResponse processVerified(PaymentWebhookEvent event) {
+        PaymentWebhookResponse result = payments.withPayPalWebhookOwnerLock(event,
                 () -> transactions.execute(status -> {
-                    PaymentWebhookResult webhookResult = payments.processVerifiedPayPalWebhook(event);
+                    PaymentWebhookResponse webhookResult = payments.processVerifiedPayPalWebhook(event);
                     if (webhookResult.duplicate() || !webhookResult.accepted()) return webhookResult;
                     if (webhookResult.refundOperationId() != null)
                         refunds.reconcilePayPalRefund(webhookResult.refundOperationId());

@@ -6,7 +6,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
@@ -157,7 +157,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
                 "provider-order-id", null, BigDecimal.ONE, "USD");
     }
 
-    private static PaymentWebhookResult result(boolean duplicate, boolean accepted, boolean retryable) {
-        return new PaymentWebhookResult(duplicate, accepted, null, null, null, false, retryable);
+    private static PaymentWebhookResponse result(boolean duplicate, boolean accepted, boolean retryable) {
+        return new PaymentWebhookResponse(duplicate, accepted, null, null, null, false, retryable);
     }
 }

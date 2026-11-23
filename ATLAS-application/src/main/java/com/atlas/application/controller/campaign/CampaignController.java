@@ -1,7 +1,5 @@
 package com.atlas.application.controller.campaign;
 
-import com.atlas.account.domain.AccountException;
-import com.atlas.account.domain.AccountException.Code;
 import com.atlas.account.service.AccountService;
 import com.atlas.application.controller.dto.CreateCampaignHttpRequest;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
@@ -37,9 +35,7 @@ public class CampaignController {
     public CampaignResponse create(@AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody CreateCampaignHttpRequest request) {
         UUID accountId = UUID.fromString(jwt.getSubject());
-        if (!accounts.ownsSeller(accountId, request.sellerId())) {
-            throw new AccountException(Code.RESOURCE_NOT_OWNED, "Seller profile is not available to this account");
-        }
+        accounts.requireSellerOwnership(accountId, request.sellerId());
         return campaigns.create(new CreateCampaignRequest(request.sellerId(), request.skuId(),
                 Duration.ofSeconds(request.queueTicketTtlSeconds())));
     }

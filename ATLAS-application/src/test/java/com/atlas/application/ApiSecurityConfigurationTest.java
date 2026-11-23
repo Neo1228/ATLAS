@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.application.config.ApiSecurityConfiguration;
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import securityprobe.SecurityProbeController;
 import org.junit.jupiter.api.BeforeEach;

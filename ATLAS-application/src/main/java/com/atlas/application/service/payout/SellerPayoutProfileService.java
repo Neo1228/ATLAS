@@ -1,6 +1,6 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.account.domain.VerifiedSellerAccount;
+import com.atlas.account.dto.response.VerifiedSellerAccountResponse;
 import com.atlas.account.service.AccountService;
 import com.atlas.application.controller.dto.SellerPayoutProfileRequest;
 import com.atlas.application.controller.dto.SellerPayoutProfileResponse;
@@ -50,7 +50,7 @@ public class SellerPayoutProfileService {
         }
         String countryCode = normalizeCountry(request.countryCode());
         requireSupportedCountry(countryCode);
-        VerifiedSellerAccount account = accounts.findVerifiedSellerAccount(accountId, sellerId)
+        VerifiedSellerAccountResponse account = accounts.findVerifiedSellerAccount(accountId, sellerId)
                 .orElseThrow(() -> conflict("An active Seller account with a verified email is required"));
         String requestHash = hash("profile|" + account.accountId() + "|" + sellerId + "|" + countryCode + "|USD");
         Optional<String> priorHash = profiles.findRequestHash(sellerId, idempotencyKey);
@@ -110,7 +110,7 @@ public class SellerPayoutProfileService {
             throw conflict("Only a payout profile pending review can be verified");
         }
         requireSupportedCountry(profile.countryCode());
-        VerifiedSellerAccount account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
+        VerifiedSellerAccountResponse account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
                 .orElseThrow(() -> conflict("The linked Seller account is not active or email-verified"));
         Instant now = clock.instant();
         Optional<SellerPayoutProfile> verifiedProfile =
@@ -152,7 +152,7 @@ public class SellerPayoutProfileService {
             throw conflict("Seller payout profile is not active");
         }
         requireSupportedCountry(profile.countryCode());
-        VerifiedSellerAccount account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
+        VerifiedSellerAccountResponse account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
                 .orElseThrow(() -> conflict("The linked Seller account is not active or email-verified"));
         return new ActiveRecipient(sellerId, profile.recipientAccountId(), profile.profileVersion(),
                 profile.countryCode(), profile.payoutCurrency(), account.email());

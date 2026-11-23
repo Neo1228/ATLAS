@@ -6,8 +6,14 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Service;
 
 class ModuleBoundaryTest {
 
@@ -40,7 +46,7 @@ class ModuleBoundaryTest {
                 "com.atlas.cart.service", "com.atlas.cart.dto.request",
                 "com.atlas.cart.dto.response", "com.atlas.cart.exception",
                 "com.atlas.account.service", "com.atlas.account.dto.request",
-                "com.atlas.account.dto.response", "com.atlas.account.domain",
+                "com.atlas.account.dto.response", "com.atlas.account.exception",
                 "net.ttddyy.dsproxy..",
                 "com.nimbusds..",
                 "org.apache.commons.csv..",
@@ -132,6 +138,80 @@ class ModuleBoundaryTest {
                 .that().areAnnotatedWith(Repository.class)
                 .or().haveSimpleNameEndingWith("Repository")
                 .should().resideInAPackage("com.atlas..repository..")
+                .check(source);
+    }
+
+    @Test
+    void moduleRootPackagesContainOnlyApplicationEntryPoints() {
+        // 모듈 루트에 설정, 보안, 헬스 같은 클래스가 혼자 놓이면 어느 계층인지 알 수 없다.
+        JavaClasses source = productionClasses();
+        classes()
+                .that().resideInAnyPackage("com.atlas", "com.atlas.*", "com.atlas.inventory.location")
+                .should().haveSimpleNameEndingWith("Application")
+                .check(source);
+    }
+
+    @Test
+    void configurationsResideInConfigPackages() {
+        JavaClasses source = productionClasses();
+        classes()
+                .that().areAnnotatedWith(Configuration.class)
+                .or().haveSimpleNameEndingWith("Configuration")
+                .should().resideInAPackage("..config..")
+                .check(source);
+    }
+
+    @Test
+    void persistenceApisAreUsedOnlyByRepositoriesAndPersistenceTypes() {
+        // SQL과 영속 API는 저장소 계층이 소유한다. 서비스가 직접 쓰면 위치 규칙과 DTO 의존 규칙을 피한다.
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideOutsideOfPackages("..repository..", "..persistence..")
+                .should().dependOnClassesThat().areAssignableTo(JdbcTemplate.class)
+                .orShould().dependOnClassesThat().areAssignableTo(NamedParameterJdbcTemplate.class)
+                .orShould().dependOnClassesThat().areAssignableTo(JdbcClient.class)
+                .orShould().dependOnClassesThat().areAssignableTo(EntityManager.class)
+                .check(source);
+    }
+
+    @Test
+    void dtoTypesAreNamedAsRequestsResponsesOrPages() {
+        JavaClasses source = productionClasses();
+        classes()
+                .that().resideInAnyPackage("..dto.request..", "..dto.response..")
+                .and().areTopLevelClasses()
+                .and().areNotEnums()
+                .should().haveSimpleNameEndingWith("Request")
+                .orShould().haveSimpleNameEndingWith("Response")
+                .orShould().haveSimpleNameEndingWith("Page")
+                .orShould().haveSimpleNameEndingWith("Summary")
+                .check(source);
+    }
+
+    @Test
+    void serviceImplementationsFollowTheImplNamingConvention() {
+        JavaClasses source = productionClasses();
+        classes()
+                .that().haveSimpleNameEndingWith("ServiceImpl")
+                .should().resideInAPackage("..service.impl")
+                .check(source);
+        classes()
+                .that().resideInAPackage("..service.impl")
+                .and().areAnnotatedWith(Service.class)
+                .should().haveSimpleNameEndingWith("Impl")
+                .check(source);
+    }
+
+    @Test
+    void classNamesDoNotUseCatchAllSuffixes() {
+        JavaClasses source = productionClasses();
+        noClasses()
+                .should().haveSimpleNameEndingWith("Helper")
+                .orShould().haveSimpleNameEndingWith("Util")
+                .orShould().haveSimpleNameEndingWith("Utils")
+                .orShould().haveSimpleNameEndingWith("Manager")
+                .orShould().haveSimpleNameEndingWith("Support")
+                .orShould().haveSimpleNameEndingWith("Common")
                 .check(source);
     }
 

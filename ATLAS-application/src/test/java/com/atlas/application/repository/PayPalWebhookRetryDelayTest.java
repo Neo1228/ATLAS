@@ -2,7 +2,6 @@ package com.atlas.application.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.application.repository.PayPalWebhookRetryRepository;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;

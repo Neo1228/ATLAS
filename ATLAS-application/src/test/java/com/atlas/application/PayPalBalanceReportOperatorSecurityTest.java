@@ -5,7 +5,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.account.security.AccountSecurityConfiguration;
+import com.atlas.account.config.AccountSecurityConfiguration;
+import com.atlas.application.config.PayPalReportOperatorSecurityConfiguration;
 import com.atlas.application.controller.settlement.PayPalBalanceReportOperatorController;
 import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary;
 import com.atlas.application.service.PayPalBalanceReportOperatorService;

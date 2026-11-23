@@ -9,7 +9,7 @@ import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.service.PaymentService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -283,7 +283,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
             return action.get();
         }).when(payments).withPayPalWebhookOwnerLock(Mockito.any(), Mockito.any());
         Mockito.when(payments.processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEvent.class)))
-                .thenReturn(new PaymentWebhookResult(true, false, null, null, null, false, false));
+                .thenReturn(new PaymentWebhookResponse(true, false, null, null, null, false, false));
         PayPalWebhookService recreatedWebhookService = new PayPalWebhookService(
                 new DataSourceTransactionManager(dataSource), payments,
                 Mockito.mock(OrderService.class), Mockito.mock(CheckoutPaymentService.class),

@@ -1,8 +1,8 @@
 package com.atlas.payment.service.impl;
 
-import static com.atlas.payment.service.impl.PaymentSupport.invalidRequest;
-import static com.atlas.payment.service.impl.PaymentSupport.notFound;
-import static com.atlas.payment.service.impl.PaymentSupport.validateOwnerAndKey;
+import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest;
+import static com.atlas.payment.service.impl.PaymentPreconditions.notFound;
+import static com.atlas.payment.service.impl.PaymentPreconditions.validateOwnerAndKey;
 
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.exception.PaymentException;
@@ -256,10 +256,10 @@ final class PaymentRefundWorkflow {
     }
 
     private PaymentAttempt requireOrder(UUID orderId) {
-        return PaymentSupport.requireOrder(repository, orderId);
+        return PaymentPreconditions.requireOrder(repository, orderId);
     }
 
     private PaymentAttempt requireCheckout(UUID checkoutId) {
-        return PaymentSupport.requireCheckout(repository, checkoutId);
+        return PaymentPreconditions.requireCheckout(repository, checkoutId);
     }
 }

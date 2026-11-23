@@ -1,8 +1,8 @@
 package com.atlas.payment.service.impl;
 
-import static com.atlas.payment.service.impl.PaymentSupport.invalidRequest;
-import static com.atlas.payment.service.impl.PaymentSupport.notFound;
-import static com.atlas.payment.service.impl.PaymentSupport.validateOwnerAndKey;
+import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest;
+import static com.atlas.payment.service.impl.PaymentPreconditions.notFound;
+import static com.atlas.payment.service.impl.PaymentPreconditions.validateOwnerAndKey;
 
 import com.atlas.payment.provider.PaymentProviderResult;
 import com.atlas.payment.provider.PaymentOperation;
@@ -17,7 +17,7 @@ import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.service.FxConversionService;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
 import com.atlas.payment.repository.PaymentRefundRepository;
@@ -526,7 +526,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public PaymentWebhookResult processVerifiedPayPalWebhook(PaymentWebhookEvent event) {
+    public PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEvent event) {
         return webhookProcessor.processVerifiedPayPalWebhook(event);
     }
 
@@ -810,11 +810,11 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private PaymentAttempt requireOrder(UUID orderId) {
-        return PaymentSupport.requireOrder(repository, orderId);
+        return PaymentPreconditions.requireOrder(repository, orderId);
     }
 
     private PaymentAttempt requireCheckout(UUID checkoutId) {
-        return PaymentSupport.requireCheckout(repository, checkoutId);
+        return PaymentPreconditions.requireCheckout(repository, checkoutId);
     }
 
     private static PaymentResponse toResponse(PaymentAttempt attempt) {

@@ -1,8 +1,7 @@
 package com.atlas.application.service;
 
-import com.atlas.application.dto.response.PaymentRecoveryRequeueResponse;
 import com.atlas.application.dto.response.PaymentRecoveryReviewPage;
-import com.atlas.payment.dto.response.PaymentRecoveryRequeue;
+import com.atlas.payment.dto.response.PaymentRecoveryRequeueResponse;
 import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
 import com.atlas.payment.service.PaymentRecoveryService;
 import java.util.Objects;
@@ -44,13 +43,10 @@ public class PaymentRecoveryOperatorService {
     public PaymentRecoveryRequeueResponse requeue(
             UUID recoveryJobId, String idempotencyKey, String actor, String reason) {
         validate(recoveryJobId, idempotencyKey, actor, reason);
-        PaymentRecoveryRequeue requeued = recovery.requeueNeedsReview(
+        return recovery.requeueNeedsReview(
                         recoveryJobId, idempotencyKey.trim(), actor.trim(), reason.trim(), MAX_MANUAL_REQUEUES)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.CONFLICT, "Recovery work is not eligible for operator requeue"));
-        return new PaymentRecoveryRequeueResponse(
-                requeued.recoveryJobId(), requeued.status(), requeued.manualRequeueCount(),
-                requeued.acceptedAt(), requeued.duplicate());
     }
 
     private static void validate(UUID recoveryJobId, String idempotencyKey, String actor, String reason) {

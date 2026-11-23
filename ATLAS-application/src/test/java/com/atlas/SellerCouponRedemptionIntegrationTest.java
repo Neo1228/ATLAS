@@ -25,7 +25,6 @@ import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.impl.CheckoutPaymentServiceImpl;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.payment.persistence.state.PaymentState;
-import com.atlas.PostgresLockWaitProbe;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

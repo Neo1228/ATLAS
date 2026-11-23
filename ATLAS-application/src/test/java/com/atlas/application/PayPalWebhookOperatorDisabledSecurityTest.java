@@ -6,7 +6,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.account.security.AccountSecurityConfiguration;
+import com.atlas.account.config.AccountSecurityConfiguration;
+import com.atlas.application.config.ApiSecurityConfiguration;
 import com.atlas.application.controller.PayPalWebhookOperatorController;
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import org.junit.jupiter.api.BeforeEach;

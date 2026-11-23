@@ -1,7 +1,7 @@
 package com.atlas.application.security;
 
-import com.atlas.account.domain.AccountException;
-import com.atlas.account.domain.AccountException.Code;
+import com.atlas.account.exception.AccountException;
+import com.atlas.account.exception.AccountException.Code;
 import com.atlas.account.service.AccountService;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.service.AdmissionService;

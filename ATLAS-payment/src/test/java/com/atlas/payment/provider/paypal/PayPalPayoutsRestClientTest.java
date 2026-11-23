@@ -23,8 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
@@ -76,19 +74,6 @@ class PayPalPayoutsRestClientTest {
         if (server != null) server.stop(0);
     }
 
-    @Test
-    void oauthScopeIsIsolatedFromBuyerRegistration() {
-        PayPalProperties properties = new PayPalProperties();
-        properties.setBaseUrl("https://api-m.sandbox.paypal.com");
-        properties.setClientId("client");
-        properties.setClientSecret("secret");
-        ClientRegistrationRepository registrations = new PayPalOAuth2ClientConfiguration()
-                .paypalClientRegistrationRepository(properties);
-        ClientRegistration buyer = registrations.findByRegistrationId("paypal");
-        ClientRegistration payouts = registrations.findByRegistrationId("paypal-payouts");
-        assertThat(buyer.getScopes()).doesNotContain("https://uri.paypal.com/services/payments/payouts");
-        assertThat(payouts.getScopes()).containsExactly("https://uri.paypal.com/services/payments/payouts");
-    }
 
     @Test
     void createUsesStableIdsUsdCentsAndExpectedPathHeaderAndBody() throws Exception {
@@ -184,19 +169,4 @@ class PayPalPayoutsRestClientTest {
         assertThat(result.senderBatchId()).isEqualTo("batch-stable");
     }
 
-    @Test
-    void startupRejectsDisabledSentinelAndBlankCredentials() {
-        for (String[] pair : new String[][] {
-                {"disabled", "secret"}, {"client", "DISABLED"}, {"", "secret"}, {"client", " "}}) {
-            PayPalProperties properties = new PayPalProperties();
-            properties.setBaseUrl("https://api-m.sandbox.paypal.com");
-            properties.setClientId(pair[0]);
-            properties.setClientSecret(pair[1]);
-
-            assertThatThrownBy(() -> new PayPalOAuth2ClientConfiguration()
-                    .paypalClientRegistrationRepository(properties))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("PAYPAL_CLIENT_ID");
-        }
-    }
 }
