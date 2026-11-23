@@ -1,7 +1,7 @@
-package com.atlas.application.repository;
+package com.atlas.payment.repository;
 
-import com.atlas.application.persistence.projection.ExhaustedRetryRow;
-import com.atlas.application.persistence.projection.RequeueRecord;
+import com.atlas.payment.persistence.projection.ExhaustedRetryRow;
+import com.atlas.payment.persistence.projection.RequeueRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;

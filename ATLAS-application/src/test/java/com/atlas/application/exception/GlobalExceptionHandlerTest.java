@@ -117,6 +117,19 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void paymentNotFoundAndConflictKeepTheStatusAndCodeTheOperatorServicesUsedToReturn() {
+        var missing = handler.moduleException(new PaymentException(
+                PaymentException.Code.NOT_FOUND, "retry event not found"));
+        assertThat(missing.getStatusCode().value()).isEqualTo(404);
+        assertThat(missing.getBody().getProperties()).containsEntry("code", "RESOURCE_NOT_FOUND");
+
+        var conflict = handler.moduleException(new PaymentException(
+                PaymentException.Code.CONFLICT, "requeue limit"));
+        assertThat(conflict.getStatusCode().value()).isEqualTo(409);
+        assertThat(conflict.getBody().getProperties()).containsEntry("code", "CONFLICT");
+    }
+
+    @Test
     void moduleExceptionCodesMapToStableClientStatuses() {
         var invalid = handler.moduleException(new AdmissionException(
                 AdmissionException.Code.INVALID_REQUEST, "invalid ticket request"));

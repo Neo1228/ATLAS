@@ -1,4 +1,4 @@
-package com.atlas.application.repository;
+package com.atlas.payment.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

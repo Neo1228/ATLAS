@@ -2,8 +2,8 @@ package com.atlas.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.application.dto.response.PayPalWebhookPendingRetryPage;
-import com.atlas.application.dto.response.PayPalWebhookRetrySummary;
+import com.atlas.payment.dto.response.PayPalWebhookPendingRetryPage;
+import com.atlas.payment.dto.response.PayPalWebhookRetrySummary;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;

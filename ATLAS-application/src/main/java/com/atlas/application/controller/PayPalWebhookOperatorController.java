@@ -1,8 +1,8 @@
 package com.atlas.application.controller;
 
-import com.atlas.application.dto.response.PayPalWebhookExhaustedRetryPage;
-import com.atlas.application.dto.response.PayPalWebhookRequeueResponse;
-import com.atlas.application.service.PayPalWebhookOperatorService;
+import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage;
+import com.atlas.payment.dto.response.PayPalWebhookRequeueResponse;
+import com.atlas.payment.service.PayPalWebhookOperatorService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

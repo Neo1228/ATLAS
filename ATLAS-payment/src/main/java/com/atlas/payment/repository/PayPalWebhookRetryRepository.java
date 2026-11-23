@@ -1,8 +1,9 @@
-package com.atlas.application.repository;
+package com.atlas.payment.repository;
 
-import com.atlas.application.persistence.projection.ClaimedRetry;
-import com.atlas.application.persistence.projection.PollResult;
-import com.atlas.application.persistence.projection.WebhookRetryEvent;
+import com.atlas.payment.persistence.projection.ClaimedRetry;
+import com.atlas.payment.persistence.projection.PollResult;
+import com.atlas.payment.persistence.projection.WebhookRetryEvent;
+import com.atlas.payment.persistence.state.WebhookRetryFailure;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -166,10 +167,9 @@ public class PayPalWebhookRetryRepository {
         return changed != null && changed == 1;
     }
 
-    public enum RetryFailure { CORRELATION_MISS, TRANSIENT_ERROR }
 
     /** 일시적 실패를 재예약하고 시도 한도에 도달하면 EXHAUSTED 이력을 기록합니다. */
-    public boolean reschedule(String eventId, int attempt, String leaseOwner, RetryFailure failure, String reason) {
+    public boolean reschedule(String eventId, int attempt, String leaseOwner, WebhookRetryFailure failure, String reason) {
         Objects.requireNonNull(failure, "failure");
         int delaySeconds = jitteredDelaySeconds(baseDelaySeconds(attempt), ThreadLocalRandom.current()::nextInt);
         return finishFailure(eventId, attempt, leaseOwner, failure.name(), reason, false, delaySeconds);

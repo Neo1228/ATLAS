@@ -9,13 +9,20 @@ public final class PaymentException extends RuntimeException {
         ATTEMPT_NOT_FOUND,
         INVALID_REQUEST,
         PAYMENT_PROVIDER_DISABLED,
-        PAYMENT_PROVIDER_UNAVAILABLE
+        PAYMENT_PROVIDER_UNAVAILABLE,
+        NOT_FOUND,
+        CONFLICT
     }
 
     private final Code code;
 
     public PaymentException(Code code, String message) {
         super(message);
+        this.code = Objects.requireNonNull(code, "code");
+    }
+
+    public PaymentException(Code code, String message, Throwable cause) {
+        super(message, cause);
         this.code = Objects.requireNonNull(code, "code");
     }
 

@@ -135,6 +135,8 @@ public class GlobalExceptionHandler {
                         response(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_PROVIDER_DISABLED", payment.getMessage());
                 case PAYMENT_PROVIDER_UNAVAILABLE ->
                         response(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_PROVIDER_UNAVAILABLE", payment.getMessage());
+                case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", payment.getMessage());
+                case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", payment.getMessage());
             };
         }
 
