@@ -216,3 +216,16 @@ atlas:
       max-backoff: PT1M
       minimum-reservation-remaining: PT10S
       max-attempts: 8
+
+    # 예약 workflow 상태 변경 이벤트 로그를 Kafka로 내보내는 relay. 기본은 꺼져 있다.
+    # 소비자(정산 원장, 가용 재고 projection, 감사)는 각자 cursor로 order DB의 로그를 직접 읽을 수도 있다.
+    event-relay:
+      enabled: false
+      bootstrap-servers: localhost:9092
+      topic: atlas.order-inventory.events
+      batch-size: 500
+      poll-interval: PT0.2S
+      # 한 묶음 전송의 한도. 넘기면 cursor를 옮기지 않고 같은 묶음을 다시 보낸다.
+      send-timeout: PT10S
+      # relay replica 하나만 전송하게 하는 cursor lease. send-timeout보다 5초 이상 길어야 한다.
+      lease-duration: PT30S

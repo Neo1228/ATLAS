@@ -60,7 +60,7 @@
 | `BuyerFlowIntegrationTest` | 50 |
 | `PaymentWorkflowCrashWindowIntegrationTest` | 3 |
 
-같은 2026-11-23 no-cache `clean check` 전체는 11개 모듈 **743개 테스트**이며 skipped·failure·error가 모두 0이다. 모듈별 수는 `ATLAS-account` 29, `ATLAS-admission` 19, `ATLAS-application` 504, `ATLAS-campaign` 10, `ATLAS-cart` 7, `ATLAS-catalog` 37, `ATLAS-inventory` 5, `ATLAS-inventory-location` 20, `ATLAS-order` 48, `ATLAS-payment` 38, `ATLAS-settlement` 26이다(합 743).
+같은 2026-11-23 no-cache `clean check` 전체는 11개 모듈 **746개 테스트**이며 skipped·failure·error가 모두 0이다. 모듈별 수는 `ATLAS-account` 29, `ATLAS-admission` 19, `ATLAS-application` 507, `ATLAS-campaign` 10, `ATLAS-cart` 7, `ATLAS-catalog` 37, `ATLAS-inventory` 5, `ATLAS-inventory-location` 20, `ATLAS-order` 48, `ATLAS-payment` 38, `ATLAS-settlement` 26이다(합 746).
 
 이 ADR 이후 분산 이행 단계(ADR-0059~0064)에서 추가하거나 바꾼 테스트 클래스의 같은 실행 기준 테스트 수는 다음과 같다. 위 6개 클래스와 별개이며, 단일 실행 기준 수이므로 이후 변경으로 달라질 수 있다.
 

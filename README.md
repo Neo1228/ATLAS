@@ -402,3 +402,30 @@ GATE=redis REDIS_KILL_AFTER=<초> load-tests/run-hot-sku-coordinator.sh
 | `OUT` | `.local/hot-sku-coordinator/<timestamp>` | 결과 디렉터리 |
 
 위 결과는 모두 **단일 호스트 탐색적 측정**이며 운영 처리량·SLO·용량 보장이 아니다. Redis 지연·장애 격리는 같은 호스트 안 container 사이의 조건에서만 관찰했다.
+
+## 이벤트 로그와 Kafka relay (선택)
+
+예약 workflow의 상태 전이는 V75 trigger가 `order_inventory_event`에 남긴다. 외부 consumer가 필요할 때만 relay를 켠다([ADR-0067](docs/02-decisions/adr/ADR-0067-event-log-kafka-relay.md)). 환경 변수 이름은 `atlas.order-inventory-reservation.event-relay.*` 속성에서 위와 같은 규칙으로 만든다.
+
+| 환경 변수 | 기본값 | 의미 |
+|---|---|---|
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_ENABLED` | `false` | relay 활성화 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka 주소 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_TOPIC` | `atlas.order-inventory.events` | Kafka 토픽 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BATCH_SIZE` | `500` | 한 번에 보내는 이벤트 수 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_POLL_INTERVAL` | `PT0.2S` | relay poll 간격 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_SEND_TIMEOUT` | `PT10S` | 한 묶음 전송의 한도(1초 이상 5분 이하). 넘기면 cursor를 옮기지 않고 같은 묶음을 다시 보낸다 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_LEASE_DURATION` | `PT30S` | relay 단일 실행 lease. `SEND_TIMEOUT`보다 5초 이상 길어야 한다 |
+
+DB 안 consumer는 `tx_id < pg_snapshot_xmin(pg_current_snapshot())` 아래만 읽는 cursor를 쓴다. 장기 트랜잭션이 consumer를 멈추게 하는지는 `atlas.order.inventory.event.relay.stalled_seconds`로 보고, relay 진행은 `atlas.order.inventory.event.relay.lag_events`·`published`·`failed`로 본다. 정확성은 `load-tests/event-log-gap-check.sh`로 확인한다. 쓰기 8개가 400건씩 총 3,200건을 쓴 1회 실행에서 현행 방식(`event_seq > cursor`)은 1,013건을 놓쳤고 xmin 안전 방식은 0건을 놓쳤다([EXP-061](docs/03-experiments/EXP-061-event-log-fanout-and-replay.md)).
+
+측정은 아래 스크립트로 재현한다. 결과는 git-ignore된 `.local/` 아래에만 쓴다.
+
+```sh
+# 이벤트 로그 fan-out·replay. 기본값은 RATE=500, DURATION=60(초 단위 정수), CONSUMERS=3, BATCH=500, POLL_MS=200이다.
+load-tests/run-event-log-fanout.sh
+# EXP-061의 10,000/s·consumer 12개 조건
+RATE=10000 CONSUMERS=12 BATCH=5000 POLL_MS=100 DURATION=30 load-tests/run-event-log-fanout.sh
+```
+
+이벤트 로그 fan-out 측정은 [EXP-061](docs/03-experiments/EXP-061-event-log-fanout-and-replay.md), 그 결과로 Kafka를 기본 경로에 도입하지 않은 판단은 [ADR-0067](docs/02-decisions/adr/ADR-0067-event-log-kafka-relay.md)에 있다.
