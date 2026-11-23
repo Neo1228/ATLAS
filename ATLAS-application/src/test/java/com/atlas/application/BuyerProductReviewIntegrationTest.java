@@ -6,14 +6,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.dto.response.ProductReviewResponse;
-import com.atlas.application.exception.ApplicationException.Code;
-import com.atlas.application.exception.ApplicationException;
-import com.atlas.application.repository.ProductReviewRepository;
-import com.atlas.application.service.ProductReviewService;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
+import com.atlas.order.dto.response.ProductReviewResponse;
+import com.atlas.order.exception.OrderException;
+import com.atlas.order.repository.ProductReviewRepository;
 import com.atlas.order.service.OrderService;
+import com.atlas.order.service.ProductReviewService;
+import com.atlas.order.service.impl.ProductReviewServiceImpl;
 import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,7 +65,7 @@ class BuyerProductReviewIntegrationTest {
         products = mock(ProductService.class);
         when(products.isPublicOrderable(any())).thenReturn(true);
         orders = mock(OrderService.class);
-        reviews = new ProductReviewService(repository, products, orders);
+        reviews = new ProductReviewServiceImpl(repository, products, orders);
     }
 
     @Test
@@ -94,13 +94,13 @@ class BuyerProductReviewIntegrationTest {
         jdbc.update("INSERT INTO order_item (order_item_id) VALUES (?)", orderItemId);
         when(orders.findDeliveredOrderItemId("buyer-1", productId)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> reviews.create("buyer-1", productId, 4, "Review"))
-                .isInstanceOf(ApplicationException.class);
+                .isInstanceOf(OrderException.class);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM product_review", Integer.class)).isZero();
 
         when(orders.findDeliveredOrderItemId("buyer-1", productId)).thenReturn(Optional.of(orderItemId));
         reviews.create("buyer-1", productId, 4, "Review");
         assertThatThrownBy(() -> reviews.create("buyer-1", productId, 5, "Another review"))
-                .isInstanceOf(ApplicationException.class);
+                .isInstanceOf(OrderException.class);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM product_review", Integer.class)).isEqualTo(1);
     }
 
@@ -136,11 +136,11 @@ class BuyerProductReviewIntegrationTest {
 
         when(orders.findDeliveredOrderItemId("buyer-3", productId)).thenReturn(Optional.of(orderItemId));
         assertThatThrownBy(() -> reviews.create("buyer-3", productId, 0, "body"))
-                .isInstanceOf(ApplicationException.class);
+                .isInstanceOf(OrderException.class);
         assertThatThrownBy(() -> reviews.create("buyer-3", productId, 5, "   "))
-                .isInstanceOf(ApplicationException.class);
+                .isInstanceOf(OrderException.class);
         assertThatThrownBy(() -> reviews.create("buyer-3", productId, 5, "x".repeat(2001)))
-                .isInstanceOf(ApplicationException.class);
+                .isInstanceOf(OrderException.class);
 
         assertThatThrownBy(() -> repository.create("buyer-1", productId, orderItemId, 6, "bad rating"))
                 .isInstanceOf(DataAccessException.class);

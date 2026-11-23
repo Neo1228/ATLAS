@@ -1,4 +1,4 @@
-package com.atlas.application.dto.response;
+package com.atlas.order.dto.response;
 
 import java.math.BigDecimal;
 import java.util.List;

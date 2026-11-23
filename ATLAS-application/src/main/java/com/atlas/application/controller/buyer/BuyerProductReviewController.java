@@ -1,9 +1,9 @@
 package com.atlas.application.controller.buyer;
 
-import com.atlas.application.dto.request.CreateProductReviewRequest;
-import com.atlas.application.dto.response.ProductReviewPage;
-import com.atlas.application.dto.response.ProductReviewResponse;
-import com.atlas.application.service.ProductReviewService;
+import com.atlas.application.controller.dto.CreateProductReviewRequest;
+import com.atlas.order.dto.response.ProductReviewPage;
+import com.atlas.order.dto.response.ProductReviewResponse;
+import com.atlas.order.service.ProductReviewService;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
