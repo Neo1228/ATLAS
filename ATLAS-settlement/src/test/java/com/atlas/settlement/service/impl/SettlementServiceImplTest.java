@@ -27,6 +27,7 @@ import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.persistence.projection.RefundJournalRecord;
+import com.atlas.settlement.persistence.projection.RefundReservation;
 import com.atlas.settlement.persistence.projection.SellerBalance;
 import com.atlas.settlement.persistence.projection.SellerStatementRow;
 import com.atlas.settlement.persistence.projection.SellerStatementTotals;
@@ -117,7 +118,7 @@ class SettlementServiceImplTest {
         RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
         RefundJournalRecord original = new RefundJournalRecord(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
-                new SettlementRefundReservationRepository.RefundReservation(
+                new RefundReservation(
                         refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
         when(journals.insertRefundIfAbsent(original, now)).thenReturn(Optional.empty());
         when(journals.findByRefundId(refundId)).thenReturn(Optional.of(
@@ -141,7 +142,7 @@ class SettlementServiceImplTest {
         UUID refundId = UUID.randomUUID();
         RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
-                new SettlementRefundReservationRepository.RefundReservation(
+                new RefundReservation(
                         refundId, orderId, sellerId, 2_400, "RESERVED", now, now)));
 
         assertSettlementCode(SettlementException.Code.CONFLICT, () -> service.recordRefund(request));
@@ -153,7 +154,7 @@ class SettlementServiceImplTest {
         UUID refundId = UUID.randomUUID();
         RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
-                new SettlementRefundReservationRepository.RefundReservation(
+                new RefundReservation(
                         refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
         when(journals.insertRefundIfAbsent(
                 new RefundJournalRecord(orderId, refundId, sellerId, 2_500), now))
@@ -170,7 +171,7 @@ class SettlementServiceImplTest {
         UUID refundId = UUID.randomUUID();
         RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
-                new SettlementRefundReservationRepository.RefundReservation(
+                new RefundReservation(
                         refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
 
         service.reserveRefund(request);
@@ -185,7 +186,7 @@ class SettlementServiceImplTest {
         UUID refundId = UUID.randomUUID();
         RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
-                new SettlementRefundReservationRepository.RefundReservation(
+                new RefundReservation(
                         refundId, orderId, sellerId, 2_500, "RELEASED", now, now)));
 
         service.releaseRefundReservation(request);

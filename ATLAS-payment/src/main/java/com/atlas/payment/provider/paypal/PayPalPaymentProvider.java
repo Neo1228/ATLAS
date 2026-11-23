@@ -1,14 +1,13 @@
 package com.atlas.payment.provider.paypal;
 
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.provider.PaymentProviderResult;
-import com.atlas.payment.provider.PaymentRequest;
-import com.atlas.payment.provider.PaymentRefundProviderResult;
-import com.atlas.payment.provider.PaymentRefundRequest;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentProviderResponse;
+import com.atlas.payment.dto.request.PaymentRequest;
+import com.atlas.payment.dto.response.PaymentRefundProviderResponse;
+import com.atlas.payment.dto.request.PaymentRefundRequest;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import java.math.BigDecimal;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -37,7 +36,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
     public boolean requiresFxSnapshot() { return true; }
 
     @Override
-    public PaymentProviderResult perform(PaymentRequest request) {
+    public PaymentProviderResponse perform(PaymentRequest request) {
         try {
             return switch (request.operation()) {
                 case AUTHORIZATION -> createOrAuthorize(request);
@@ -50,7 +49,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
     }
 
     @Override
-    public PaymentProviderResult completeApproval(PaymentRequest request, String returnedOrderId) {
+    public PaymentProviderResponse completeApproval(PaymentRequest request, String returnedOrderId) {
         try {
             if (returnedOrderId == null || returnedOrderId.isBlank()
                     || !returnedOrderId.equals(request.providerOrderId())) {
@@ -67,7 +66,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
 
 
     @Override
-    public PaymentRefundProviderResult refund(PaymentRefundRequest request) {
+    public PaymentRefundProviderResponse refund(PaymentRefundRequest request) {
         try {
             PayPalRestClient.RefundResult refund = client.refundCapture(request.captureId(),
                     BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
@@ -79,7 +78,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
     }
 
     @Override
-    public PaymentRefundProviderResult getRefund(String refundId) {
+    public PaymentRefundProviderResponse getRefund(String refundId) {
         try {
             PayPalRestClient.RefundResult refund = client.getRefund(refundId);
             return refundResult(refund.id(), refund.status(), refund.amount(), refund.currency());
@@ -89,7 +88,7 @@ public class PayPalPaymentProvider implements PaymentProvider {
     }
 
     @Override
-    public PaymentWebhookEvent verifyWebhook(PaymentWebhookSignature signature, String rawBody) {
+    public PaymentWebhookEventResponse verifyWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
         try {
             if (!client.verifyWebhook(signature, rawBody).verified()) {
                 throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
@@ -101,20 +100,20 @@ public class PayPalPaymentProvider implements PaymentProvider {
         }
     }
 
-    private static PaymentRefundProviderResult refundResult(
+    private static PaymentRefundProviderResponse refundResult(
             String refundId, String status, BigDecimal amount, String currency) {
-        PaymentRefundProviderResult.Outcome outcome = switch (status == null ? "" : status) {
-            case "COMPLETED" -> PaymentRefundProviderResult.Outcome.COMPLETED;
-            case "PENDING", "CREATED" -> PaymentRefundProviderResult.Outcome.PENDING;
-            case "FAILED", "DENIED", "CANCELLED" -> PaymentRefundProviderResult.Outcome.FAILED;
-            default -> PaymentRefundProviderResult.Outcome.UNKNOWN;
+        PaymentRefundProviderResponse.Outcome outcome = switch (status == null ? "" : status) {
+            case "COMPLETED" -> PaymentRefundProviderResponse.Outcome.COMPLETED;
+            case "PENDING", "CREATED" -> PaymentRefundProviderResponse.Outcome.PENDING;
+            case "FAILED", "DENIED", "CANCELLED" -> PaymentRefundProviderResponse.Outcome.FAILED;
+            default -> PaymentRefundProviderResponse.Outcome.UNKNOWN;
         };
-        if (refundId == null && outcome != PaymentRefundProviderResult.Outcome.FAILED) {
-            outcome = PaymentRefundProviderResult.Outcome.UNKNOWN;
+        if (refundId == null && outcome != PaymentRefundProviderResponse.Outcome.FAILED) {
+            outcome = PaymentRefundProviderResponse.Outcome.UNKNOWN;
         }
-        return new PaymentRefundProviderResult(outcome, refundId, status, amount, currency);
+        return new PaymentRefundProviderResponse(outcome, refundId, status, amount, currency);
     }
-    private PaymentProviderResult createOrAuthorize(PaymentRequest request) {
+    private PaymentProviderResponse createOrAuthorize(PaymentRequest request) {
         if (request.providerOrderId() == null) {
             PayPalRestClient.OrderResult order = client.createOrder(request.ownerId().toString(),
                     BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
@@ -129,11 +128,11 @@ public class PayPalPaymentProvider implements PaymentProvider {
                 return orderStatusResult(withOrder, current);
             }
             if ("VOIDED".equals(status)) {
-                return result(PaymentProviderResult.Outcome.VOIDED, order.id(), null, null, null);
+                return result(PaymentProviderResponse.Outcome.VOIDED, order.id(), null, null, null);
             }
             if (isAwaitingPayer(status)) {
                 return order.approvalUrl() == null ? unknown(withOrder)
-                        : result(PaymentProviderResult.Outcome.PENDING, order.id(), null, null, order.approvalUrl());
+                        : result(PaymentProviderResponse.Outcome.PENDING, order.id(), null, null, order.approvalUrl());
             }
             return unknown(withOrder);
         }
@@ -143,41 +142,41 @@ public class PayPalPaymentProvider implements PaymentProvider {
         return orderStatusResult(request, order);
     }
 
-    private PaymentProviderResult orderStatusResult(PaymentRequest request, PayPalRestClient.OrderStatus order) {
+    private PaymentProviderResponse orderStatusResult(PaymentRequest request, PayPalRestClient.OrderStatus order) {
         if (order.id() == null || !order.id().equals(request.providerOrderId())) return unknown(request);
         String status = order.status() == null ? "" : order.status();
         return switch (status) {
             case "APPROVED" -> authorizeApproved(request);
             case "CREATED", "SAVED", "PAYER_ACTION_REQUIRED" -> pending(request);
-            case "VOIDED" -> result(PaymentProviderResult.Outcome.VOIDED, order.id(),
+            case "VOIDED" -> result(PaymentProviderResponse.Outcome.VOIDED, order.id(),
                     order.authorizationId(), order.captureId(), null);
             case "COMPLETED" -> completedOrderResult(request, order);
             default -> unknown(request);
         };
     }
 
-    private static PaymentProviderResult completedOrderResult(
+    private static PaymentProviderResponse completedOrderResult(
             PaymentRequest request, PayPalRestClient.OrderStatus order) {
         if (order.captureId() != null) {
             return switch (order.captureStatus() == null ? "" : order.captureStatus()) {
                 case "COMPLETED" -> providerAmountMatches(request, order.captureAmount(), order.captureCurrency())
-                        ? result(PaymentProviderResult.Outcome.CAPTURED, order.id(),
+                        ? result(PaymentProviderResponse.Outcome.CAPTURED, order.id(),
                                 order.authorizationId(), order.captureId(), null)
                         : unknown(request);
-                case "DECLINED", "FAILED", "DENIED" -> result(PaymentProviderResult.Outcome.DECLINED,
+                case "DECLINED", "FAILED", "DENIED" -> result(PaymentProviderResponse.Outcome.DECLINED,
                         order.id(), order.authorizationId(), order.captureId(), null);
                 default -> unknown(request);
             };
         }
         if (order.authorizationId() == null) return unknown(request);
         return switch (order.authorizationStatus() == null ? "" : order.authorizationStatus()) {
-            case "CREATED" -> result(PaymentProviderResult.Outcome.AUTHORIZED, order.id(),
+            case "CREATED" -> result(PaymentProviderResponse.Outcome.AUTHORIZED, order.id(),
                     order.authorizationId(), null, null);
-            case "PENDING" -> result(PaymentProviderResult.Outcome.PENDING, order.id(),
+            case "PENDING" -> result(PaymentProviderResponse.Outcome.PENDING, order.id(),
                     order.authorizationId(), null, null);
-            case "DENIED" -> result(PaymentProviderResult.Outcome.DECLINED, order.id(),
+            case "DENIED" -> result(PaymentProviderResponse.Outcome.DECLINED, order.id(),
                     order.authorizationId(), null, null);
-            case "VOIDED" -> result(PaymentProviderResult.Outcome.VOIDED, order.id(),
+            case "VOIDED" -> result(PaymentProviderResponse.Outcome.VOIDED, order.id(),
                     order.authorizationId(), null, null);
             default -> unknown(request);
         };
@@ -203,41 +202,41 @@ public class PayPalPaymentProvider implements PaymentProvider {
         }
     }
 
-    private PaymentProviderResult authorizeApproved(PaymentRequest request) {
+    private PaymentProviderResponse authorizeApproved(PaymentRequest request) {
         PayPalRestClient.AuthorizationResult authorization = client.authorizeOrder(
                 request.providerOrderId(), request.authorizationRequestId());
         if (authorization.id() == null) return unknown(request);
-        PaymentProviderResult.Outcome outcome = switch (authorization.status()) {
-            case "CREATED" -> PaymentProviderResult.Outcome.AUTHORIZED;
-            case "PENDING" -> PaymentProviderResult.Outcome.PENDING;
-            case "DENIED" -> PaymentProviderResult.Outcome.DECLINED;
-            case "VOIDED" -> PaymentProviderResult.Outcome.VOIDED;
+        PaymentProviderResponse.Outcome outcome = switch (authorization.status()) {
+            case "CREATED" -> PaymentProviderResponse.Outcome.AUTHORIZED;
+            case "PENDING" -> PaymentProviderResponse.Outcome.PENDING;
+            case "DENIED" -> PaymentProviderResponse.Outcome.DECLINED;
+            case "VOIDED" -> PaymentProviderResponse.Outcome.VOIDED;
             // Authorization 응답만으로 capture ID를 확정할 수 없어 order GET으로 후속 확인.
-            case "CAPTURED", "PARTIALLY_CAPTURED" -> PaymentProviderResult.Outcome.UNKNOWN;
-            default -> PaymentProviderResult.Outcome.UNKNOWN;
+            case "CAPTURED", "PARTIALLY_CAPTURED" -> PaymentProviderResponse.Outcome.UNKNOWN;
+            default -> PaymentProviderResponse.Outcome.UNKNOWN;
         };
         return result(outcome, request.providerOrderId(), authorization.id(), null, null);
     }
 
-    private PaymentProviderResult capture(PaymentRequest request) {
+    private PaymentProviderResponse capture(PaymentRequest request) {
         if (request.providerAuthorizationId() == null) return unknown(request);
         PayPalRestClient.CaptureResult capture = client.captureAuthorization(request.providerAuthorizationId(),
                 BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
                 request.captureRequestId());
         if (!providerAmountMatches(request, capture.amount(), capture.currency())) return unknown(request);
-        PaymentProviderResult.Outcome outcome = "COMPLETED".equals(capture.status())
-                ? PaymentProviderResult.Outcome.CAPTURED
-                : "PENDING".equals(capture.status()) ? PaymentProviderResult.Outcome.PENDING
-                : PaymentProviderResult.Outcome.UNKNOWN;
+        PaymentProviderResponse.Outcome outcome = "COMPLETED".equals(capture.status())
+                ? PaymentProviderResponse.Outcome.CAPTURED
+                : "PENDING".equals(capture.status()) ? PaymentProviderResponse.Outcome.PENDING
+                : PaymentProviderResponse.Outcome.UNKNOWN;
         return result(outcome, request.providerOrderId(), request.providerAuthorizationId(), capture.id(), null);
     }
 
-    private PaymentProviderResult voidAuthorization(PaymentRequest request) {
+    private PaymentProviderResponse voidAuthorization(PaymentRequest request) {
         if (request.providerAuthorizationId() == null) {
-            return result(PaymentProviderResult.Outcome.VOIDED, request.providerOrderId(), null, null, null);
+            return result(PaymentProviderResponse.Outcome.VOIDED, request.providerOrderId(), null, null, null);
         }
         client.voidAuthorization(request.providerAuthorizationId(), request.voidRequestId());
-        return result(PaymentProviderResult.Outcome.VOIDED, request.providerOrderId(),
+        return result(PaymentProviderResponse.Outcome.VOIDED, request.providerOrderId(),
                 request.providerAuthorizationId(), null, null);
     }
 
@@ -249,19 +248,19 @@ public class PayPalPaymentProvider implements PaymentProvider {
                 request.returnUrl(), request.cancelUrl());
     }
 
-    private static PaymentProviderResult pending(PaymentRequest request) {
-        return result(PaymentProviderResult.Outcome.PENDING, request.providerOrderId(),
+    private static PaymentProviderResponse pending(PaymentRequest request) {
+        return result(PaymentProviderResponse.Outcome.PENDING, request.providerOrderId(),
                 request.providerAuthorizationId(), null, null);
     }
 
-    private static PaymentProviderResult unknown(PaymentRequest request) {
-        return result(PaymentProviderResult.Outcome.UNKNOWN, request.providerOrderId(),
+    private static PaymentProviderResponse unknown(PaymentRequest request) {
+        return result(PaymentProviderResponse.Outcome.UNKNOWN, request.providerOrderId(),
                 request.providerAuthorizationId(), null, null);
     }
 
-    private static PaymentProviderResult result(PaymentProviderResult.Outcome outcome, String orderId,
+    private static PaymentProviderResponse result(PaymentProviderResponse.Outcome outcome, String orderId,
             String authorizationId, String captureId, String approvalUrl) {
-        return new PaymentProviderResult(outcome, orderId, authorizationId, captureId, approvalUrl);
+        return new PaymentProviderResponse(outcome, orderId, authorizationId, captureId, approvalUrl);
     }
 
     private static PaymentException unavailable(String stage, RuntimeException cause) {

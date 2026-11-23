@@ -4,9 +4,10 @@ import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest
 import static com.atlas.payment.service.impl.PaymentPreconditions.notFound;
 import static com.atlas.payment.service.impl.PaymentPreconditions.validateOwnerAndKey;
 
-import com.atlas.payment.provider.PaymentProviderResult;
+import com.atlas.payment.dto.response.FxConversionResponse;
+import com.atlas.payment.dto.response.PaymentProviderResponse;
 import com.atlas.payment.provider.PaymentOperation;
-import com.atlas.payment.provider.PaymentRequest;
+import com.atlas.payment.dto.request.PaymentRequest;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -18,8 +19,8 @@ import com.atlas.payment.service.FxConversionService;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
@@ -203,12 +204,12 @@ public class PaymentServiceImpl implements PaymentService {
                         phaseRequestId(current, PaymentPhase.AUTHORIZATION));
             });
             if (start.request() == null) return toResponse(start.attempt());
-            PaymentProviderResult result;
+            PaymentProviderResponse result;
             try {
                 result = psp.completeApproval(start.request(), providerOrderId);
             } catch (PaymentException exception) {
                 if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
-                return toResponse(finalizePhase(start, null, PaymentProviderResult.Outcome.UNKNOWN));
+                return toResponse(finalizePhase(start, null, PaymentProviderResponse.Outcome.UNKNOWN));
             }
             return toResponse(finalizePhase(start, result, result.outcome()));
         });
@@ -456,7 +457,7 @@ public class PaymentServiceImpl implements PaymentService {
             throw invalidRequest("A saved FX snapshot is required for this PayPal operation");
         }
 
-        FxConversionService.Conversion conversion;
+        FxConversionResponse conversion;
         try {
             conversion = fxConversionService.convertKrwToUsdCents(attempt.getTotalWon());
         } catch (IllegalArgumentException | ArithmeticException invalidAmount) {
@@ -516,17 +517,17 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public PaymentWebhookEvent verifyPayPalWebhook(PaymentWebhookSignature signature, String rawBody) {
+    public PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
         return webhookProcessor.verifyPayPalWebhook(signature, rawBody);
     }
 
     @Override
-    public <T> T withPayPalWebhookOwnerLock(PaymentWebhookEvent event, Supplier<T> action) {
+    public <T> T withPayPalWebhookOwnerLock(PaymentWebhookEventResponse event, Supplier<T> action) {
         return webhookProcessor.withPayPalWebhookOwnerLock(event, action);
     }
 
     @Override
-    public PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEvent event) {
+    public PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEventResponse event) {
         return webhookProcessor.processVerifiedPayPalWebhook(event);
     }
 
@@ -593,8 +594,8 @@ public class PaymentServiceImpl implements PaymentService {
         };
     }
 
-    private PaymentAttempt finalizePhase(PhaseStart start, PaymentProviderResult result,
-            PaymentProviderResult.Outcome outcome) {
+    private PaymentAttempt finalizePhase(PhaseStart start, PaymentProviderResponse result,
+            PaymentProviderResponse.Outcome outcome) {
         return transactions.execute(status -> {
             PaymentAttempt current = repository.findWithLockByAttemptId(start.attempt().getAttemptId())
                     .orElseThrow(() -> notFound("No payment attempt: " + start.attempt().getAttemptId()));
@@ -635,11 +636,11 @@ public class PaymentServiceImpl implements PaymentService {
         if (start.request() == null) return toResponse(start.attempt());
         boolean reconcileUnknownCapture = attempt.getPaymentPhase() == PaymentPhase.CAPTURE
                 && attempt.getState() == PaymentState.UNKNOWN && psp.requiresFxSnapshot();
-        PaymentProviderResult result;
+        PaymentProviderResponse result;
         try {
             if (reconcileUnknownCapture) {
                 result = psp.completeApproval(start.request(), start.request().providerOrderId());
-                if (result.outcome() == PaymentProviderResult.Outcome.AUTHORIZED) {
+                if (result.outcome() == PaymentProviderResponse.Outcome.AUTHORIZED) {
                     result = psp.perform(start.request());
                 }
             } else {
@@ -647,7 +648,7 @@ public class PaymentServiceImpl implements PaymentService {
             }
         } catch (PaymentException exception) {
             if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
-            return toResponse(finalizePhase(start, null, PaymentProviderResult.Outcome.UNKNOWN));
+            return toResponse(finalizePhase(start, null, PaymentProviderResponse.Outcome.UNKNOWN));
         }
         PaymentAttempt current = finalizePhase(start, result, result.outcome());
         if (continueCapture && current.getPaymentPhase() == PaymentPhase.CAPTURE
@@ -656,7 +657,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
         return toResponse(current);
     }
-    private void authorizationResult(PaymentAttempt attempt, PaymentProviderResult.Outcome result) {
+    private void authorizationResult(PaymentAttempt attempt, PaymentProviderResponse.Outcome result) {
         switch (result) {
             case AUTHORIZED -> {
                 attempt.setState(PaymentState.AUTHORIZED);
@@ -692,7 +693,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    private void captureResult(PaymentAttempt attempt, PaymentProviderResult.Outcome result) {
+    private void captureResult(PaymentAttempt attempt, PaymentProviderResponse.Outcome result) {
         switch (result) {
             case CAPTURED -> {
                 attempt.setState(PaymentState.CAPTURED);
@@ -718,7 +719,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    private void voidResult(PaymentAttempt attempt, PaymentProviderResult.Outcome result) {
+    private void voidResult(PaymentAttempt attempt, PaymentProviderResponse.Outcome result) {
         switch (result) {
             case VOIDED -> {
                 attempt.setState(PaymentState.VOIDED);
@@ -787,7 +788,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .getBytes(StandardCharsets.UTF_8)).toString();
     }
 
-    private static void applyProviderResult(PaymentAttempt attempt, PaymentProviderResult result) {
+    private static void applyProviderResult(PaymentAttempt attempt, PaymentProviderResponse result) {
         if (result.orderId() != null) attempt.setProviderOrderId(result.orderId());
         if (result.authorizationId() != null) attempt.setProviderAuthorizationId(result.authorizationId());
         if (result.captureId() != null) attempt.setProviderCaptureId(result.captureId());
@@ -824,7 +825,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
 
-    private static IllegalStateException invalidResult(PaymentPhase phase, PaymentProviderResult.Outcome result) {
+    private static IllegalStateException invalidResult(PaymentPhase phase, PaymentProviderResponse.Outcome result) {
         return new IllegalStateException("Provider result " + result + " is invalid for " + phase);
     }
 }

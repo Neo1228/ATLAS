@@ -1,5 +1,7 @@
 package com.atlas.payment.service.impl;
 
+import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
+import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.payment.persistence.projection.PayPalReportMatchFacts;
 import com.atlas.payment.repository.PayPalReportMatchRepository;
 import com.atlas.payment.service.PayPalReportMatchQuery;
@@ -19,14 +21,14 @@ public class PayPalReportMatchQueryImpl implements PayPalReportMatchQuery {
 
     @Override
     @Transactional(readOnly = true)
-    public List<Candidate> findByRecordIds(Collection<String> recordIds) {
+    public List<PayPalReportMatchCandidateResponse> findByRecordIds(Collection<String> recordIds) {
         return repository.findByRecordIds(recordIds).stream()
                 .map(PayPalReportMatchQueryImpl::toCandidate)
                 .toList();
     }
 
-    private static Candidate toCandidate(PayPalReportMatchFacts facts) {
-        return new Candidate(facts.recordId(), Kind.valueOf(facts.matchKind()), facts.confirmed(), facts.captureId(),
+    private static PayPalReportMatchCandidateResponse toCandidate(PayPalReportMatchFacts facts) {
+        return new PayPalReportMatchCandidateResponse(facts.recordId(), PayPalReportMatchKind.valueOf(facts.matchKind()), facts.confirmed(), facts.captureId(),
                 facts.providerAmountMinor(), facts.providerCurrency());
     }
 }

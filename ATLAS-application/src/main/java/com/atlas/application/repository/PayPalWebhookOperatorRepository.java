@@ -1,5 +1,7 @@
 package com.atlas.application.repository;
 
+import com.atlas.application.persistence.projection.ExhaustedRetryRow;
+import com.atlas.application.persistence.projection.RequeueRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -102,9 +104,4 @@ public class PayPalWebhookOperatorRepository {
     private static Instant instant(Timestamp value) {
         return value == null ? null : value.toInstant();
     }
-
-    public record ExhaustedRetryRow(
-            String eventId, String eventType, int attemptCount, Instant createdAt, Instant finishedAt) { }
-
-    public record RequeueRecord(String eventId, String actor, String reason, String outcome) { }
 }

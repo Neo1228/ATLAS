@@ -34,7 +34,7 @@ import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderShipmentService;
 import com.atlas.order.repository.LocationRestockRepository;
-import com.atlas.order.repository.LocationRestockRepository.Restock;
+import com.atlas.order.persistence.projection.LocationRestock;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.io.IOException;
 import java.time.Instant;
@@ -418,11 +418,11 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
 
         // 앞선 worker의 lease가 만료된 뒤 뒤 worker가 같은 항목을 claim한 장면이다.
         makeRestockDue(refund.refundId());
-        List<Restock> stale = restockRepository.claimDue(Instant.now(),
+        List<LocationRestock> stale = restockRepository.claimDue(Instant.now(),
                 Instant.now().plusSeconds(30), 10, null);
         assertThat(stale).hasSize(1);
         makeRestockDue(refund.refundId());
-        List<Restock> current = restockRepository.claimDue(Instant.now(),
+        List<LocationRestock> current = restockRepository.claimDue(Instant.now(),
                 Instant.now().plusSeconds(30), 10, null);
         assertThat(current).hasSize(1);
 

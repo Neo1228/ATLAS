@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -135,7 +135,7 @@ public class PayPalRestClient {
         }
     }
 
-    public WebhookVerificationResult verifyWebhook(PaymentWebhookSignature signature, String eventJson) {
+    public WebhookVerificationResult verifyWebhook(PaymentWebhookSignatureRequest signature, String eventJson) {
         if (!properties.credentialsConfigured() || !properties.webhookConfigured()) {
             throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_DISABLED,
                     "PayPal webhook credentials are not configured");
@@ -156,7 +156,7 @@ public class PayPalRestClient {
         return new WebhookVerificationResult("SUCCESS".equals(text(response, "verification_status")));
     }
 
-    public PaymentWebhookEvent parseWebhook(String rawBody) {
+    public PaymentWebhookEventResponse parseWebhook(String rawBody) {
         try {
             Map<String, Object> event = objectMapper.readValue(rawBody,
                     new TypeReference<Map<String, Object>>() { });
@@ -179,7 +179,7 @@ public class PayPalRestClient {
             Object providerOrderId = relatedIds.get("order_id");
             Object relatedCaptureId = resource.get("capture_id");
             if (relatedCaptureId == null) relatedCaptureId = relatedIds.get("capture_id");
-            return new PaymentWebhookEvent(
+            return new PaymentWebhookEventResponse(
                     eventId instanceof String value ? value : null,
                     eventType instanceof String value ? value : null,
                     resourceId instanceof String value ? value : null,

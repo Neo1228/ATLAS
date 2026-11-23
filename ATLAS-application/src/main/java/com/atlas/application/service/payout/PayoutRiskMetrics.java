@@ -1,7 +1,7 @@
 package com.atlas.application.service.payout;
 
 import com.atlas.settlement.service.SettlementPayoutService;
-import com.atlas.settlement.service.SettlementPayoutService.PayoutRiskSnapshot;
+import com.atlas.settlement.dto.response.PayoutRiskSnapshotResponse;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
 public class PayoutRiskMetrics {
     private final SettlementPayoutService payouts;
     private final MeterRegistry meters;
-    private final AtomicReference<PayoutRiskSnapshot> snapshot = new AtomicReference<>(
-            new PayoutRiskSnapshot(0, 0, 0, 0));
+    private final AtomicReference<PayoutRiskSnapshotResponse> snapshot = new AtomicReference<>(
+            new PayoutRiskSnapshotResponse(0, 0, 0, 0));
 
     public PayoutRiskMetrics(SettlementPayoutService payouts, MeterRegistry meters) {
         this.payouts = Objects.requireNonNull(payouts);

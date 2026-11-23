@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.order.service.LocationClient;
-import com.atlas.order.service.StockAdmissionService.Claim;
+import com.atlas.order.dto.request.StockClaimRequest;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -46,7 +46,7 @@ class RedisStockAdmissionServiceTest {
         when(inventory.availableStock(any(), any(), anyString())).thenReturn(100L);
         RedisStockAdmissionService gate = gate("redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort(), inventory);
         String sku = "hot-" + UUID.randomUUID();
-        List<Claim> claim = List.of(new Claim(LOCATION, SELLER, sku, 1));
+        List<StockClaimRequest> claim = List.of(new StockClaimRequest(LOCATION, SELLER, sku, 1));
 
         AtomicInteger admitted = new AtomicInteger();
         ExecutorService pool = Executors.newFixedThreadPool(64);
@@ -81,7 +81,7 @@ class RedisStockAdmissionServiceTest {
         LocationClient inventory = mock(LocationClient.class);
         when(inventory.availableStock(any(), any(), anyString())).thenReturn(2L);
         RedisStockAdmissionService gate = gate("redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort(), inventory);
-        List<Claim> one = List.of(new Claim(LOCATION, SELLER, "ret-" + UUID.randomUUID(), 1));
+        List<StockClaimRequest> one = List.of(new StockClaimRequest(LOCATION, SELLER, "ret-" + UUID.randomUUID(), 1));
 
         assertThat(gate.admit("a", one)).isTrue();
         assertThat(gate.admit("b", one)).isTrue();
@@ -106,7 +106,7 @@ class RedisStockAdmissionServiceTest {
         RedisStockAdmissionService gate = gate("redis://127.0.0.1:1", inventory);
 
         // 판단할 수 없으면 거절하지 않는다. 정본 검증(location의 조건부 UPDATE)이 뒤에 남아 있다.
-        List<Claim> claim = List.of(new Claim(LOCATION, SELLER, "sku", 1));
+        List<StockClaimRequest> claim = List.of(new StockClaimRequest(LOCATION, SELLER, "sku", 1));
         assertThat(gate.admit("order-x", claim)).isTrue();
         // 한 번 실패하면 cool-down 동안은 Redis를 건드리지 않으므로 요청마다 timeout을 기다리지 않는다.
         long started = System.nanoTime();

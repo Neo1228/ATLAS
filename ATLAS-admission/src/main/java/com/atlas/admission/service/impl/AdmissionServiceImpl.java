@@ -1,5 +1,7 @@
 package com.atlas.admission.service.impl;
 
+import com.atlas.admission.persistence.projection.DueTicketCandidate;
+import com.atlas.admission.persistence.projection.DueTicketCursor;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.service.AdmissionExpirySweepPolicy;
 import com.atlas.admission.exception.AdmissionException;
@@ -51,7 +53,7 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final Clock clock;
     private final PlatformTransactionManager transactionManager;
     private final AdmissionExpirySweepPolicy expirySweepPolicy;
-    private QueueRepository.DueTicketCursor expiryCursor;
+    private DueTicketCursor expiryCursor;
 
     public AdmissionServiceImpl(TicketRepository tickets, QueueRepository queueRepository,
             CampaignService campaigns, AdmissionPolicyRepository policies, SellerSkuService sellerSkus,
@@ -223,7 +225,7 @@ public class AdmissionServiceImpl implements AdmissionService {
     public synchronized int expireDueTickets() {
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweepPolicy.timeBudget().toNanos();
-        List<QueueRepository.DueTicketCandidate> candidates;
+        List<DueTicketCandidate> candidates;
         candidates = queueRepository.findDueTicketCandidates(
                 now, expiryCursor, expirySweepPolicy.candidateWindowSize(), expirySweepPolicy.timeBudget());
         if (candidates.isEmpty()) {
@@ -237,8 +239,8 @@ public class AdmissionServiceImpl implements AdmissionService {
         int attemptedPairs = 0;
         int consumedRows = 0;
         int expired = 0;
-        QueueRepository.DueTicketCursor lastConsumed = expiryCursor;
-        for (QueueRepository.DueTicketCandidate candidate : candidates) {
+        DueTicketCursor lastConsumed = expiryCursor;
+        for (DueTicketCandidate candidate : candidates) {
             if (System.nanoTime() >= deadline && consumedRows > 0) break;
             SellerSkuKey pair = new SellerSkuKey(candidate.sellerId(), candidate.skuId());
             if (visitedPairs.add(pair)) {
@@ -258,7 +260,7 @@ public class AdmissionServiceImpl implements AdmissionService {
                                 candidates.stream()
                                         .filter(dueCandidate -> dueCandidate.sellerId().equals(pair.sellerId())
                                                 && dueCandidate.skuId().equals(pair.skuId()))
-                                        .map(QueueRepository.DueTicketCandidate::ticketId)
+                                        .map(DueTicketCandidate::ticketId)
                                         .toList(),
                                 now);
                     });

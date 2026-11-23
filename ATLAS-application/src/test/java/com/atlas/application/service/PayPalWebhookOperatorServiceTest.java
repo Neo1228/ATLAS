@@ -11,7 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.application.repository.PayPalWebhookOperatorRepository;
-import com.atlas.application.repository.PayPalWebhookOperatorRepository.RequeueRecord;
+import com.atlas.application.persistence.projection.RequeueRecord;
 import java.util.Optional;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;

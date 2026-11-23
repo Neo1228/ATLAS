@@ -11,8 +11,8 @@ import com.atlas.payment.persistence.entity.PaymentRefundOperation;
 import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.provider.PaymentRefundProviderResult;
-import com.atlas.payment.provider.PaymentRefundRequest;
+import com.atlas.payment.dto.response.PaymentRefundProviderResponse;
+import com.atlas.payment.dto.request.PaymentRefundRequest;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
@@ -197,7 +197,7 @@ final class PaymentRefundWorkflow {
             recovery.markRefundForApplication(operation.refundOperationId());
             return refundResponse(operation, operation.state(), operation.providerRefundId(), operation.updatedAt());
         }
-        PaymentRefundProviderResult result;
+        PaymentRefundProviderResponse result;
         try {
             result = operation.providerRefundId() == null
                     ? psp.refund(new PaymentRefundRequest(operation.captureId(), operation.providerAmountMinor(),
@@ -205,17 +205,17 @@ final class PaymentRefundWorkflow {
                     : psp.getRefund(operation.providerRefundId());
         } catch (PaymentException exception) {
             if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;
-            result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
+            result = new PaymentRefundProviderResponse(PaymentRefundProviderResponse.Outcome.UNKNOWN,
                     operation.providerRefundId(), operation.providerStatus());
         }
-        if (result.outcome() != PaymentRefundProviderResult.Outcome.FAILED
+        if (result.outcome() != PaymentRefundProviderResponse.Outcome.FAILED
                 && (result.amount() == null
                 || result.amount().compareTo(BigDecimal.valueOf(operation.providerAmountMinor(), 2)) != 0
                 || !operation.providerCurrency().equalsIgnoreCase(result.currency()))) {
-            result = new PaymentRefundProviderResult(PaymentRefundProviderResult.Outcome.UNKNOWN,
+            result = new PaymentRefundProviderResponse(PaymentRefundProviderResponse.Outcome.UNKNOWN,
                     result.refundId(), result.providerStatus(), result.amount(), result.currency());
         }
-        PaymentRefundProviderResult recordedResult = result;
+        PaymentRefundProviderResponse recordedResult = result;
         PaymentRefundState state = switch (result.outcome()) {
             case COMPLETED -> PaymentRefundState.COMPLETED;
             case PENDING -> PaymentRefundState.PENDING;

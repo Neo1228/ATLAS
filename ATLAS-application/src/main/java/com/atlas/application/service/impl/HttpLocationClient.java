@@ -1,5 +1,7 @@
 package com.atlas.application.service.impl;
 
+import com.atlas.order.dto.request.LocationReservationItemRequest;
+import com.atlas.order.dto.response.RemoteReservationResponse;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.service.LocationClient;
 import java.net.URI;
@@ -47,8 +49,8 @@ public class HttpLocationClient implements LocationClient {
     }
 
     @Override
-    public RemoteReservation reserve(UUID fulfillmentLocationId, UUID orderId, String idempotencyKey,
-            List<ReservationItem> items) {
+    public RemoteReservationResponse reserve(UUID fulfillmentLocationId, UUID orderId, String idempotencyKey,
+            List<LocationReservationItemRequest> items) {
         ReserveRequest request = new ReserveRequest(orderId,
                 items.stream().map(item -> new RequestItem(item.sellerId(), item.skuId(), item.quantity())).toList());
         try {
@@ -62,7 +64,7 @@ public class HttpLocationClient implements LocationClient {
                 throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_RESPONSE", "Inventory service returned no reservation identity or expiry");
             }
-            return new RemoteReservation(response.reservationId(), response.status(), response.expiresAt());
+            return new RemoteReservationResponse(response.reservationId(), response.status(), response.expiresAt());
         } catch (RestClientResponseException exception) {
             throw clientFailure(exception);
         } catch (ResourceAccessException exception) {
@@ -95,24 +97,24 @@ public class HttpLocationClient implements LocationClient {
     }
 
     @Override
-    public RemoteReservation claim(UUID fulfillmentLocationId, UUID reservationId) {
+    public RemoteReservationResponse claim(UUID fulfillmentLocationId, UUID reservationId) {
         return transition(fulfillmentLocationId, reservationId, "claim", Set.of("CLAIMED"));
     }
 
     @Override
-    public RemoteReservation release(UUID fulfillmentLocationId, UUID reservationId) {
+    public RemoteReservationResponse release(UUID fulfillmentLocationId, UUID reservationId) {
         return transition(fulfillmentLocationId, reservationId, "release",
                 Set.of("RELEASED", "EXPIRED", "CANCELLED"));
     }
 
     @Override
-    public RemoteReservation restore(UUID fulfillmentLocationId, UUID reservationId) {
+    public RemoteReservationResponse restore(UUID fulfillmentLocationId, UUID reservationId) {
         return transition(fulfillmentLocationId, reservationId, "restore", Set.of("RELEASED"));
     }
 
     @Override
-    public RemoteReservation restock(UUID fulfillmentLocationId, UUID reservationId, String restockKey,
-            List<ReservationItem> items) {
+    public RemoteReservationResponse restock(UUID fulfillmentLocationId, UUID reservationId, String restockKey,
+            List<LocationReservationItemRequest> items) {
         RestockRequest request = new RestockRequest(
                 items.stream().map(item -> new RequestItem(item.sellerId(), item.skuId(), item.quantity())).toList());
         try {
@@ -127,7 +129,7 @@ public class HttpLocationClient implements LocationClient {
                 throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_OR_UNEXPECTED_RESPONSE", "Inventory restock result is unknown");
             }
-            return new RemoteReservation(response.reservationId(), response.status(), response.expiresAt());
+            return new RemoteReservationResponse(response.reservationId(), response.status(), response.expiresAt());
         } catch (RestClientResponseException exception) {
             throw clientFailure(exception);
         } catch (RestClientException exception) {
@@ -158,7 +160,7 @@ public class HttpLocationClient implements LocationClient {
         }
     }
 
-    private RemoteReservation transition(UUID fulfillmentLocationId, UUID reservationId,
+    private RemoteReservationResponse transition(UUID fulfillmentLocationId, UUID reservationId,
             String operation, Set<String> acceptedStates) {
         try {
             InventoryResponse response = client(fulfillmentLocationId).post()
@@ -172,7 +174,7 @@ public class HttpLocationClient implements LocationClient {
                         LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_OR_UNEXPECTED_RESPONSE", "Inventory location transition result is unknown");
             }
-            return new RemoteReservation(response.reservationId(), response.status(), response.expiresAt());
+            return new RemoteReservationResponse(response.reservationId(), response.status(), response.expiresAt());
         } catch (RestClientResponseException exception) {
             throw clientFailure(exception);
         } catch (ResourceAccessException exception) {

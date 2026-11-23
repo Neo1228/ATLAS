@@ -10,9 +10,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.application.persistence.projection.PayoutDispatchMetrics;
+import com.atlas.application.persistence.projection.PayoutDispatchRecord;
 import com.atlas.application.repository.payout.PayoutDispatchRepository;
 import com.atlas.application.security.PayoutRecipientCipher;
-import com.atlas.payment.provider.paypal.payouts.PayPalPayoutBatch;
+import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsProvider;
 import com.atlas.settlement.service.SettlementPayoutService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -44,7 +46,7 @@ class PayoutDispatchWorkerTest {
     void createsBatchOnlyAfterFenceAndUsesEncryptedRecipientSnapshot() {
         PayoutDispatchRecord record = leasedRecord();
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(1, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(1, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(true);
         when(provider.createBatch(any())).thenReturn(batch("PENDING", List.of()));
         when(outcomes.accepted(eq(record), eq("provider-batch"), eq("PENDING"), isNull(), isNull(),
@@ -65,7 +67,7 @@ class PayoutDispatchWorkerTest {
     void cancelledPayoutNeverReachesProvider() {
         PayoutDispatchRecord record = leasedRecord();
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(false);
 
         worker.dispatchDue();
@@ -77,9 +79,9 @@ class PayoutDispatchWorkerTest {
     @Test
     void batchSuccessDoesNotOverrideUnclaimedItemStatus() {
         PayoutDispatchRecord record = leasedRecord();
-        PayPalPayoutBatch.Item item = item("UNCLAIMED", null, null);
+        PayPalPayoutBatchResponse.Item item = item("UNCLAIMED", null, null);
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(true);
         when(provider.createBatch(any())).thenReturn(batch("SUCCESS", List.of(item)));
 
@@ -93,9 +95,9 @@ class PayoutDispatchWorkerTest {
     @Test
     void successfulItemPostsFeeUsingTheStoredFxRate() {
         PayoutDispatchRecord record = leasedRecord();
-        PayPalPayoutBatch.Item item = item("SUCCESS", new BigDecimal("0.25"), "USD");
+        PayPalPayoutBatchResponse.Item item = item("SUCCESS", new BigDecimal("0.25"), "USD");
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(true);
         when(provider.createBatch(any())).thenReturn(batch("SUCCESS", List.of(item)));
         when(outcomes.complete(eq(record), eq("provider-batch"), eq("SUCCESS"), eq("provider-item"),
@@ -110,11 +112,11 @@ class PayoutDispatchWorkerTest {
     @Test
     void successfulItemWithNonUsdRecipientConversionIsHeldForReview() {
         PayoutDispatchRecord record = leasedRecord();
-        PayPalPayoutBatch.Item item = new PayPalPayoutBatch.Item("provider-item", "sender-item", "SUCCESS",
+        PayPalPayoutBatchResponse.Item item = new PayPalPayoutBatchResponse.Item("provider-item", "sender-item", "SUCCESS",
                 new BigDecimal("7.30"), "USD", new BigDecimal("0.25"), "USD",
                 new BigDecimal("7.30"), "USD", new BigDecimal("10.00"), "CAD", new BigDecimal("1.3698"), true);
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(true);
         when(provider.createBatch(any())).thenReturn(batch("SUCCESS", List.of(item)));
 
@@ -128,11 +130,11 @@ class PayoutDispatchWorkerTest {
     @Test
     void successfulItemWithEmptyRecipientConversionObjectIsHeldForReview() {
         PayoutDispatchRecord record = leasedRecord();
-        PayPalPayoutBatch.Item item = new PayPalPayoutBatch.Item("provider-item", "sender-item", "SUCCESS",
+        PayPalPayoutBatchResponse.Item item = new PayPalPayoutBatchResponse.Item("provider-item", "sender-item", "SUCCESS",
                 new BigDecimal("7.30"), "USD", new BigDecimal("0.25"), "USD",
                 null, null, null, null, null, true);
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(true);
         when(provider.createBatch(any())).thenReturn(batch("SUCCESS", List.of(item)));
 
@@ -146,9 +148,9 @@ class PayoutDispatchWorkerTest {
     @Test
     void returnedItemMovesToReviewInsteadOfReleasingTheReservation() {
         PayoutDispatchRecord record = leasedRecord();
-        PayPalPayoutBatch.Item item = item("RETURNED", new BigDecimal("0.25"), "USD");
+        PayPalPayoutBatchResponse.Item item = item("RETURNED", new BigDecimal("0.25"), "USD");
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(true);
         when(provider.createBatch(any())).thenReturn(batch("SUCCESS", List.of(item)));
 
@@ -162,9 +164,9 @@ class PayoutDispatchWorkerTest {
     @Test
     void failedItemWithNonzeroProviderFeeRequiresReviewBeforeReleasingPayout() {
         PayoutDispatchRecord record = leasedRecord();
-        PayPalPayoutBatch.Item item = item("FAILED", new BigDecimal("0.25"), "USD");
+        PayPalPayoutBatchResponse.Item item = item("FAILED", new BigDecimal("0.25"), "USD");
         when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
-        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         when(payouts.beginDispatch(payoutId)).thenReturn(true);
         when(provider.createBatch(any())).thenReturn(batch("FAILED", List.of(item)));
 
@@ -182,13 +184,13 @@ class PayoutDispatchWorkerTest {
                 null, null, null, null, "LEASED", NOW, NOW, 1, NOW, null, UUID.randomUUID(), NOW.plusSeconds(60));
     }
 
-    private static PayPalPayoutBatch batch(String batchStatus, List<PayPalPayoutBatch.Item> items) {
-        return new PayPalPayoutBatch("provider-batch", "sender-batch", batchStatus,
+    private static PayPalPayoutBatchResponse batch(String batchStatus, List<PayPalPayoutBatchResponse.Item> items) {
+        return new PayPalPayoutBatchResponse("provider-batch", "sender-batch", batchStatus,
                 new BigDecimal("7.30"), "USD", null, null, items);
     }
 
-    private static PayPalPayoutBatch.Item item(String status, BigDecimal fee, String feeCurrency) {
-        return new PayPalPayoutBatch.Item("provider-item", "sender-item", status,
+    private static PayPalPayoutBatchResponse.Item item(String status, BigDecimal fee, String feeCurrency) {
+        return new PayPalPayoutBatchResponse.Item("provider-item", "sender-item", status,
                 new BigDecimal("7.30"), "USD", fee, feeCurrency, null, null, null, null, null, false);
     }
 }

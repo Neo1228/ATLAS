@@ -4,8 +4,8 @@ import com.atlas.application.dto.response.PayPalBalanceReportReconciliationRespo
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.RowResult;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.Status;
 import com.atlas.payment.service.PayPalReportMatchQuery;
-import com.atlas.payment.service.PayPalReportMatchQuery.Candidate;
-import com.atlas.payment.service.PayPalReportMatchQuery.Kind;
+import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
+import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -38,7 +38,7 @@ public class PayPalBalanceReportReconciliationService {
     public PayPalBalanceReportReconciliationResponse reconcile(byte[] reportContent) {
         PayPalBalanceReportParser.ParsedReport report = parser.parse(reportContent);
         List<PayPalBalanceReportParser.ReportRow> rows = report.rows();
-        Map<String, List<Candidate>> providerFacts = providerFacts(rows);
+        Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts = providerFacts(rows);
         Map<String, List<Integer>> occurrences = new HashMap<>();
         for (int index = 0; index < rows.size(); index++) {
             occurrences.computeIfAbsent(rows.get(index).recordId(), ignored -> new ArrayList<>()).add(index);
@@ -70,7 +70,7 @@ public class PayPalBalanceReportReconciliationService {
                         mismatch), results);
     }
 
-    private Map<String, List<Candidate>> providerFacts(List<PayPalBalanceReportParser.ReportRow> rows) {
+    private Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts(List<PayPalBalanceReportParser.ReportRow> rows) {
         Set<String> recordIds = new HashSet<>();
         for (PayPalBalanceReportParser.ReportRow row : rows) {
             String type = normalize(row.recordType());
@@ -79,8 +79,8 @@ public class PayPalBalanceReportReconciliationService {
         }
         if (recordIds.isEmpty()) return Map.of();
 
-        Map<String, List<Candidate>> factsById = new HashMap<>();
-        for (Candidate candidate : matchQuery.findByRecordIds(recordIds)) {
+        Map<String, List<PayPalReportMatchCandidateResponse>> factsById = new HashMap<>();
+        for (PayPalReportMatchCandidateResponse candidate : matchQuery.findByRecordIds(recordIds)) {
             factsById.computeIfAbsent(candidate.recordId(), ignored -> new ArrayList<>()).add(candidate);
         }
         return factsById;
@@ -117,7 +117,7 @@ public class PayPalBalanceReportReconciliationService {
     }
 
     private static RowResult classify(PayPalBalanceReportParser.ReportRow row, int rowNumber,
-            Map<String, List<Candidate>> providerFacts) {
+            Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts) {
         String type = normalize(row.recordType());
         if (SALE.equals(type)) return classifySale(row, rowNumber, providerFacts);
         if (REFUND.equals(type)) return classifyRefund(row, rowNumber, providerFacts);
@@ -128,16 +128,16 @@ public class PayPalBalanceReportReconciliationService {
     }
 
     private static RowResult classifySale(PayPalBalanceReportParser.ReportRow row, int rowNumber,
-            Map<String, List<Candidate>> providerFacts) {
-        List<Candidate> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
+            Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts) {
+        List<PayPalReportMatchCandidateResponse> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
         if (candidates.isEmpty()) {
             return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_CAPTURE_ID_NOT_FOUND");
         }
         if (candidates.size() != 1) {
             return result(row, rowNumber, Status.MISMATCH, "AMBIGUOUS_PROVIDER_RECORD_ID");
         }
-        Candidate candidate = candidates.getFirst();
-        if (candidate.kind() != Kind.CAPTURE) {
+        PayPalReportMatchCandidateResponse candidate = candidates.getFirst();
+        if (candidate.kind() != PayPalReportMatchKind.CAPTURE) {
             return result(row, rowNumber, Status.MISMATCH, "PROVIDER_ID_TYPE_CONFLICT");
         }
         if (!candidate.confirmed()) {
@@ -150,16 +150,16 @@ public class PayPalBalanceReportReconciliationService {
     }
 
     private static RowResult classifyRefund(PayPalBalanceReportParser.ReportRow row, int rowNumber,
-            Map<String, List<Candidate>> providerFacts) {
-        List<Candidate> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
+            Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts) {
+        List<PayPalReportMatchCandidateResponse> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
         if (candidates.isEmpty()) {
             return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_REFUND_ID_NOT_FOUND");
         }
         if (candidates.size() != 1) {
             return result(row, rowNumber, Status.MISMATCH, "AMBIGUOUS_PROVIDER_RECORD_ID");
         }
-        Candidate refund = candidates.getFirst();
-        if (refund.kind() != Kind.REFUND) {
+        PayPalReportMatchCandidateResponse refund = candidates.getFirst();
+        if (refund.kind() != PayPalReportMatchKind.REFUND) {
             return result(row, rowNumber, Status.MISMATCH, "PROVIDER_ID_TYPE_CONFLICT");
         }
         if (!refund.confirmed()) {
@@ -171,8 +171,8 @@ public class PayPalBalanceReportReconciliationService {
         if (!Objects.equals(row.relatedRecordId(), refund.captureId())) {
             return result(row, rowNumber, Status.MISMATCH, "REFUND_CAPTURE_ID_CONFLICT");
         }
-        List<Candidate> captures = providerFacts.getOrDefault(refund.captureId(), List.of()).stream()
-                .filter(candidate -> candidate.kind() == Kind.CAPTURE)
+        List<PayPalReportMatchCandidateResponse> captures = providerFacts.getOrDefault(refund.captureId(), List.of()).stream()
+                .filter(candidate -> candidate.kind() == PayPalReportMatchKind.CAPTURE)
                 .toList();
         if (captures.isEmpty()) {
             return result(row, rowNumber, Status.UNMATCHED, "REFUND_CAPTURE_ID_NOT_FOUND");
@@ -187,7 +187,7 @@ public class PayPalBalanceReportReconciliationService {
     }
 
     private static RowResult validateFacts(PayPalBalanceReportParser.ReportRow row, int rowNumber,
-            Candidate candidate, boolean refund, String matchedReason) {
+            PayPalReportMatchCandidateResponse candidate, boolean refund, String matchedReason) {
         if (candidate.providerAmountMinor() == null || candidate.providerAmountMinor() <= 0
                 || candidate.providerCurrency() == null || candidate.providerCurrency().isBlank()) {
             return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_AMOUNT_CURRENCY_FACTS_UNAVAILABLE");

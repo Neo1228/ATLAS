@@ -1,5 +1,6 @@
 package com.atlas.application.service;
 
+import com.atlas.application.persistence.projection.WebhookRetryEvent;
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
@@ -7,8 +8,8 @@ import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.service.PaymentService;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
@@ -35,18 +36,18 @@ public class PayPalWebhookService {
         this.retries = Objects.requireNonNull(retries);
     }
 
-    public void handle(PaymentWebhookSignature signature, String rawBody) {
-        PaymentWebhookEvent event = payments.verifyPayPalWebhook(signature, rawBody);
+    public void handle(PaymentWebhookSignatureRequest signature, String rawBody) {
+        PaymentWebhookEventResponse event = payments.verifyPayPalWebhook(signature, rawBody);
         if (event == null) throw new PaymentException(PaymentException.Code.INVALID_REQUEST,
                 "PayPal webhook verification returned no event");
         PaymentWebhookResponse result = processVerified(event);
         if (result.retryable()) {
             // 최소한의 재시도 레코드를 commit한 뒤에만 성공 응답을 반환한다.
-            retries.enqueue(event);
+            retries.enqueue(toRetryEvent(event));
         }
     }
 
-    PaymentWebhookResponse processVerified(PaymentWebhookEvent event) {
+    PaymentWebhookResponse processVerified(PaymentWebhookEventResponse event) {
         PaymentWebhookResponse result = payments.withPayPalWebhookOwnerLock(event,
                 () -> transactions.execute(status -> {
                     PaymentWebhookResponse webhookResult = payments.processVerifiedPayPalWebhook(event);
@@ -63,5 +64,10 @@ public class PayPalWebhookService {
             if (payment.orderId() != null) orders.reconcilePayment(payment.orderId(), event.eventId());
         }
         return result;
+    }
+
+    private static WebhookRetryEvent toRetryEvent(PaymentWebhookEventResponse event) {
+        return new WebhookRetryEvent(event.eventId(), event.eventType(), event.resourceId(), event.resourceStatus(),
+                event.providerOrderId(), event.relatedCaptureId(), event.resourceAmount(), event.resourceCurrency());
     }
 }

@@ -1,11 +1,13 @@
 package com.atlas.application.service.payout;
 
+import com.atlas.application.persistence.projection.PayoutDispatchMetrics;
+import com.atlas.application.persistence.projection.PayoutDispatchRecord;
 import com.atlas.application.repository.payout.PayoutDispatchRepository;
 import com.atlas.application.security.PayoutRecipientCipher;
-import com.atlas.payment.provider.paypal.payouts.PayPalPayoutBatch;
+import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutException;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutException.Classification;
-import com.atlas.payment.provider.paypal.payouts.PayPalPayoutRequest;
+import com.atlas.payment.dto.request.PayPalPayoutRequest;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsProvider;
 import com.atlas.settlement.service.SettlementPayoutService;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -14,7 +16,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -36,7 +37,7 @@ public class PayoutDispatchWorker {
     private final PayoutFxConversionService conversions;
     private final Clock clock;
     private final MeterRegistry metrics;
-    private final AtomicReference<PayoutDispatchRepository.MetricsSnapshot> metricSnapshot;
+    private final AtomicReference<PayoutDispatchMetrics> metricSnapshot;
     private final int batchSize;
     private final Duration leaseDuration, maxUnknownAge, maxWaitingAge;
     private final int maxAttempts;
@@ -67,7 +68,7 @@ public class PayoutDispatchWorker {
         this.maxAttempts = maxAttempts;
         this.maxUnknownAge = maxUnknownAge;
         this.maxWaitingAge = maxWaitingAge;
-        metricSnapshot = new AtomicReference<>(new PayoutDispatchRepository.MetricsSnapshot(0, 0, 0, 0, 0, 0));
+        metricSnapshot = new AtomicReference<>(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
         metrics.gauge("payout.dispatch.backlog", metricSnapshot, value -> value.get().backlog());
         metrics.gauge("payout.dispatch.leased", metricSnapshot, value -> value.get().leased());
         metrics.gauge("payout.dispatch.needs_review", metricSnapshot, value -> value.get().needsReview());
@@ -99,7 +100,7 @@ public class PayoutDispatchWorker {
             return;
         }
         try {
-            PayPalPayoutBatch batch;
+            PayPalPayoutBatchResponse batch;
             if (r.providerBatchId() == null) {
                 // Linearization fence prevents a payout already cancelled from reaching PayPal.
                 if (!payouts.beginDispatch(r.payoutId())) { outcomes.cancel(r); outcome("cancelled"); return; }
@@ -129,7 +130,7 @@ public class PayoutDispatchWorker {
         }
     }
 
-    private void handleBatch(PayoutDispatchRecord r, PayPalPayoutBatch batch) {
+    private void handleBatch(PayoutDispatchRecord r, PayPalPayoutBatchResponse batch) {
         if (batch == null || !safeProviderId(batch.batchId())) {
             review(r, "INVALID_BATCH_ID");
             return;
@@ -143,7 +144,7 @@ public class PayoutDispatchWorker {
             return;
         }
         String batchStatus = safe(batch.batchStatus(), "UNKNOWN");
-        List<PayPalPayoutBatch.Item> items = batch.items().stream()
+        List<PayPalPayoutBatchResponse.Item> items = batch.items().stream()
                 .filter(item -> r.senderItemId().equals(item.senderItemId())).toList();
         if (items.size() > 1) {
             outcomes.reviewWithEvidence(r, batch.batchId(), batchStatus, null, null, "ITEM_MISMATCH");
@@ -160,7 +161,7 @@ public class PayoutDispatchWorker {
             }
             return;
         }
-        PayPalPayoutBatch.Item item = items.getFirst();
+        PayPalPayoutBatchResponse.Item item = items.getFirst();
         String itemStatus = safe(item.transactionStatus(), "UNKNOWN");
         String providerItemId = safeProviderId(item.itemId()) ? item.itemId() : null;
         if (hasUnsupportedRecipientConversion(item, r.providerAmountMinor())) {
@@ -270,7 +271,7 @@ public class PayoutDispatchWorker {
         return List.of("FAILED", "DENIED").contains(status);
     }
 
-    private static boolean hasUnsupportedRecipientConversion(PayPalPayoutBatch.Item item, long payoutAmountMinor) {
+    private static boolean hasUnsupportedRecipientConversion(PayPalPayoutBatchResponse.Item item, long payoutAmountMinor) {
         boolean hasConversionFacts = item.currencyConversionPresent() || item.conversionFromAmount() != null
                 || item.conversionFromCurrency() != null || item.conversionToAmount() != null
                 || item.conversionToCurrency() != null || item.conversionRate() != null;

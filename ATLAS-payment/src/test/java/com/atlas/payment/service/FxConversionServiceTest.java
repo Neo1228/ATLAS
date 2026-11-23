@@ -3,7 +3,8 @@ package com.atlas.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.payment.provider.exchange.ExchangeRateQuote;
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
+import com.atlas.payment.dto.response.FxConversionResponse;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -11,11 +12,11 @@ import org.junit.jupiter.api.Test;
 class FxConversionServiceTest {
     @Test
     void convertsKrwToUsdCentsUsingHalfUpAndReturnsTheRateSnapshot() {
-        ExchangeRateQuote quote = new ExchangeRateQuote(
+        ExchangeRateQuoteResponse quote = new ExchangeRateQuoteResponse(
                 new BigDecimal("1332.4"), "BOK_ECOS_731Y001_0000001", LocalDate.of(2026, 11, 13));
         FxConversionService service = new FxConversionService(() -> quote);
 
-        FxConversionService.Conversion conversion = service.convertKrwToUsdCents(1_000);
+        FxConversionResponse conversion = service.convertKrwToUsdCents(1_000);
 
         assertThat(conversion.usdCents()).isEqualTo(75);
         assertThat(conversion.quote()).isSameAs(quote);

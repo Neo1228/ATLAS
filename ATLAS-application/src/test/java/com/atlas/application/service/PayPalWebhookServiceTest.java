@@ -31,8 +31,8 @@ import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.persistence.state.PaymentState;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
@@ -62,7 +62,7 @@ class PayPalWebhookServiceTest {
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         PaymentService payments = mock(PaymentService.class);
         OrderService orders = mock(OrderService.class);
-        PaymentWebhookEvent event = captureEvent("event-1", "order-1", "capture-1");
+        PaymentWebhookEventResponse event = captureEvent("event-1", "order-1", "capture-1");
         UUID orderId = UUID.randomUUID();
         UUID attemptId = UUID.randomUUID();
         AtomicBoolean ownerLockHeld = new AtomicBoolean();
@@ -105,7 +105,7 @@ class PayPalWebhookServiceTest {
     void checkoutCaptureRedeliveryRetriesReconciliationAfterFailure() {
         UUID checkoutId = UUID.randomUUID();
         UUID attemptId = UUID.randomUUID();
-        PaymentWebhookEvent event = captureEvent("event-checkout-retry", "provider-order", "capture-checkout-retry");
+        PaymentWebhookEventResponse event = captureEvent("event-checkout-retry", "provider-order", "capture-checkout-retry");
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenAnswer(invocation -> new SimpleTransactionStatus());
@@ -152,7 +152,7 @@ class PayPalWebhookServiceTest {
     void orderCaptureRedeliveryRetriesReconciliationAfterFailure() {
         UUID orderId = UUID.randomUUID();
         UUID attemptId = UUID.randomUUID();
-        PaymentWebhookEvent event = captureEvent("event-order-retry", "provider-order", "capture-order-retry");
+        PaymentWebhookEventResponse event = captureEvent("event-order-retry", "provider-order", "capture-order-retry");
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenAnswer(invocation -> new SimpleTransactionStatus());
@@ -199,7 +199,7 @@ class PayPalWebhookServiceTest {
     void webhookAndRealOrderOwnerLockCompleteWithoutPaymentToOrderLockCycle() throws Exception {
         UUID orderId = UUID.randomUUID();
         UUID attemptId = UUID.randomUUID();
-        PaymentWebhookEvent event = captureEvent("event-lock-cycle", "provider-order", "capture-lock-cycle");
+        PaymentWebhookEventResponse event = captureEvent("event-lock-cycle", "provider-order", "capture-lock-cycle");
         PaymentResponse unknown = new PaymentResponse(orderId, null, attemptId, PaymentState.UNKNOWN, false);
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
@@ -308,13 +308,13 @@ class PayPalWebhookServiceTest {
         }
     }
 
-    private static PaymentWebhookEvent captureEvent(String eventId, String providerOrderId, String captureId) {
-        return new PaymentWebhookEvent(eventId, "PAYMENT.CAPTURE.COMPLETED", captureId,
+    private static PaymentWebhookEventResponse captureEvent(String eventId, String providerOrderId, String captureId) {
+        return new PaymentWebhookEventResponse(eventId, "PAYMENT.CAPTURE.COMPLETED", captureId,
                 "COMPLETED", providerOrderId, null, null, null);
     }
 
-    private static PaymentWebhookSignature signature() {
-        return new PaymentWebhookSignature(null, null, null, null, null);
+    private static PaymentWebhookSignatureRequest signature() {
+        return new PaymentWebhookSignatureRequest(null, null, null, null, null);
     }
 
     private static void lockInterruptibly(ReentrantLock lock) {

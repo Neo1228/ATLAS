@@ -1,4 +1,4 @@
-package com.atlas.payment.provider.paypal.payouts;
+package com.atlas.payment.dto.request;
 
 import java.util.Locale;
 

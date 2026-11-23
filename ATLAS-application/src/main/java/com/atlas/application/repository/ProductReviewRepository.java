@@ -1,7 +1,7 @@
 package com.atlas.application.repository;
 
-import java.math.BigDecimal;
-import java.time.Instant;
+import com.atlas.application.persistence.projection.ProductReview;
+import com.atlas.application.persistence.projection.ReviewSummary;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -11,8 +11,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class ProductReviewRepository {
-    private static final RowMapper<Review> REVIEW_MAPPER = (rs, rowNum) ->
-            new Review(
+    private static final RowMapper<ProductReview> REVIEW_MAPPER = (rs, rowNum) ->
+            new ProductReview(
                     rs.getObject("review_id", UUID.class), rs.getInt("rating"), rs.getString("body"),
                     rs.getTimestamp("created_at").toInstant());
 
@@ -22,7 +22,7 @@ public class ProductReviewRepository {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
     }
 
-    public Review create(String buyerRef, UUID productId, UUID orderItemId, int rating, String body) {
+    public ProductReview create(String buyerRef, UUID productId, UUID orderItemId, int rating, String body) {
         return jdbc.queryForObject("""
                 INSERT INTO product_review (buyer_ref, product_id, order_item_id, rating, body)
                 VALUES (?, ?, ?, ?, ?)
@@ -39,7 +39,7 @@ public class ProductReviewRepository {
                 rs.getLong("review_count"), rs.getBigDecimal("average_rating")), productId);
     }
 
-    public List<Review> list(UUID productId, int limit, int offset) {
+    public List<ProductReview> list(UUID productId, int limit, int offset) {
         return jdbc.query("""
                 SELECT review_id, rating, body, created_at
                 FROM product_review
@@ -47,11 +47,5 @@ public class ProductReviewRepository {
                 ORDER BY created_at DESC, review_id DESC
                 LIMIT ? OFFSET ?
                 """, REVIEW_MAPPER, productId, limit, offset);
-    }
-
-    public record ReviewSummary(long reviewCount, BigDecimal averageRating) {
-    }
-
-    public record Review(UUID reviewId, int rating, String body, Instant createdAt) {
     }
 }

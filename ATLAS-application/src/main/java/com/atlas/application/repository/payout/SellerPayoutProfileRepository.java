@@ -1,6 +1,6 @@
 package com.atlas.application.repository.payout;
 
-import com.atlas.application.service.payout.SellerPayoutProfile;
+import com.atlas.application.persistence.projection.SellerPayoutProfile;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;

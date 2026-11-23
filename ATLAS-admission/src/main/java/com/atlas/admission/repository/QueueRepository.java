@@ -1,5 +1,7 @@
 package com.atlas.admission.repository;
 
+import com.atlas.admission.persistence.projection.DueTicketCandidate;
+import com.atlas.admission.persistence.projection.DueTicketCursor;
 import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -23,14 +25,6 @@ public class QueueRepository {
     public void createCounterIfAbsent(UUID sellerId, String skuId) {
         jdbc.update("INSERT INTO admission_counter (seller_id, sku_id, last_sequence) VALUES (?, ?, 0) ON CONFLICT (seller_id, sku_id) DO NOTHING", sellerId, skuId);
     }
-
-    public record DueTicketCandidate(UUID ticketId, UUID sellerId, String skuId, Instant expiresAt) {
-        public DueTicketCursor cursor() {
-            return new DueTicketCursor(expiresAt, ticketId);
-        }
-    }
-
-    public record DueTicketCursor(Instant expiresAt, UUID ticketId) { }
 
     /** Reads a keyset-bounded window of due tickets from the expiry index. */
     public List<DueTicketCandidate> findDueTicketCandidates(

@@ -5,9 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.Status;
-import com.atlas.payment.service.PayPalReportMatchQuery;
-import com.atlas.payment.service.PayPalReportMatchQuery.Candidate;
-import com.atlas.payment.service.PayPalReportMatchQuery.Kind;
+import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
+import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.settlement.exception.SettlementException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -33,16 +32,16 @@ class PayPalBalanceReportReconciliationServiceTest {
             RF,1,,7,1,,,,,7
             """;
 
-    private final Map<String, List<Candidate>> candidatesByRecordId = new HashMap<>();
+    private final Map<String, List<PayPalReportMatchCandidateResponse>> candidatesByRecordId = new HashMap<>();
     private final PayPalBalanceReportReconciliationService service = new PayPalBalanceReportReconciliationService(
             recordIds -> recordIds.stream().flatMap(id -> candidatesByRecordId
                     .getOrDefault(id, List.of()).stream()).toList());
 
     @Test
     void matchesCaptureAndRefundByExactProviderIdsAndTransactionFacts() {
-        addCandidate("capture-1", Kind.CAPTURE, true, "capture-1", 10_000L, "USD");
-        addCandidate("refund-1", Kind.REFUND, true, "capture-1", 1_000L, "USD");
-        addCandidate("capture-mismatch", Kind.CAPTURE, true, "capture-mismatch", 5_000L, "USD");
+        addCandidate("capture-1", PayPalReportMatchKind.CAPTURE, true, "capture-1", 10_000L, "USD");
+        addCandidate("refund-1", PayPalReportMatchKind.REFUND, true, "capture-1", 1_000L, "USD");
+        addCandidate("capture-mismatch", PayPalReportMatchKind.CAPTURE, true, "capture-mismatch", 5_000L, "USD");
 
         PayPalBalanceReportReconciliationResponse response = service.reconcile(REPORT.getBytes(StandardCharsets.UTF_8));
 
@@ -69,7 +68,7 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void doesNotMatchOrderIdInPlaceOfCaptureId() {
-        addCandidate("order-1", Kind.CAPTURE, true, "capture-1", 10_000L, "USD");
+        addCandidate("order-1", PayPalReportMatchKind.CAPTURE, true, "capture-1", 10_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Record type,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,capture-1,Sale,USD,100.00\n"
@@ -85,8 +84,8 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void requiresRefundRecordAndRelatedCaptureIdsToMatchPersistedFacts() {
-        addCandidate("refund-2", Kind.REFUND, true, "capture-2", 1_000L, "USD");
-        addCandidate("capture-2", Kind.CAPTURE, true, "capture-2", 10_000L, "USD");
+        addCandidate("refund-2", PayPalReportMatchKind.REFUND, true, "capture-2", 1_000L, "USD");
+        addCandidate("capture-2", PayPalReportMatchKind.CAPTURE, true, "capture-2", 10_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Related Record ID,Record type,Record subtype,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,refund-2,another-capture,Refund,Referenced,USD,-10.00\n"
@@ -102,8 +101,8 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void rejectsCurrencyMismatchAndRefundRowsWithoutRelatedCaptureId() {
-        addCandidate("capture-currency", Kind.CAPTURE, true, "capture-currency", 10_000L, "USD");
-        addCandidate("refund-no-link", Kind.REFUND, true, "capture-no-link", 1_000L, "USD");
+        addCandidate("capture-currency", PayPalReportMatchKind.CAPTURE, true, "capture-currency", 10_000L, "USD");
+        addCandidate("refund-no-link", PayPalReportMatchKind.REFUND, true, "capture-no-link", 1_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Record type,Record subtype,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,capture-currency,Sale,,EUR,100.00\n"
@@ -120,9 +119,9 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void leavesUnconfirmedAndAmbiguousProviderIdentifiersUnmatchedOrMismatched() {
-        addCandidate("pending-capture", Kind.CAPTURE, false, "pending-capture", 1_000L, "USD");
-        addCandidate("ambiguous-capture", Kind.CAPTURE, true, "ambiguous-capture", 1_000L, "USD");
-        addCandidate("ambiguous-capture", Kind.REFUND, true, "another-capture", 1_000L, "USD");
+        addCandidate("pending-capture", PayPalReportMatchKind.CAPTURE, false, "pending-capture", 1_000L, "USD");
+        addCandidate("ambiguous-capture", PayPalReportMatchKind.CAPTURE, true, "ambiguous-capture", 1_000L, "USD");
+        addCandidate("ambiguous-capture", PayPalReportMatchKind.REFUND, true, "another-capture", 1_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Record type,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,pending-capture,Sale,USD,10.00\n"
@@ -259,9 +258,9 @@ class PayPalBalanceReportReconciliationServiceTest {
                 exception -> assertThat(exception.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
     }
 
-    private void addCandidate(String recordId, Kind kind, boolean confirmed, String captureId,
+    private void addCandidate(String recordId, PayPalReportMatchKind kind, boolean confirmed, String captureId,
             Long amountMinor, String currency) {
         candidatesByRecordId.computeIfAbsent(recordId, ignored -> new ArrayList<>())
-                .add(new Candidate(recordId, kind, confirmed, captureId, amountMinor, currency));
+                .add(new PayPalReportMatchCandidateResponse(recordId, kind, confirmed, captureId, amountMinor, currency));
     }
 }

@@ -1,6 +1,6 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.payment.provider.exchange.ExchangeRateQuote;
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -14,7 +14,7 @@ public class PayoutFxConversionService {
     private static final BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
     private static final BigDecimal MAX_ROUNDING_RATIO = new BigDecimal("0.01");
 
-    public Conversion convert(long amountWon, ExchangeRateQuote quote) {
+    public Conversion convert(long amountWon, ExchangeRateQuoteResponse quote) {
         if (amountWon <= 0) throw new IllegalArgumentException("A positive Seller payable is required");
         Objects.requireNonNull(quote, "quote");
         BigDecimal rate = quote.wonPerUsd().setScale(RATE_SCALE, RoundingMode.HALF_UP);

@@ -1,5 +1,10 @@
 package com.atlas.order.repository;
 
+import com.atlas.order.persistence.projection.WorkflowItemRecord;
+import com.atlas.order.persistence.projection.WorkflowLease;
+import com.atlas.order.persistence.projection.WorkflowLocationPlan;
+import com.atlas.order.persistence.projection.WorkflowLocationSnapshot;
+import com.atlas.order.persistence.projection.WorkflowSnapshot;
 import com.atlas.order.persistence.state.LocationReservationState;
 import com.atlas.order.persistence.state.LocationReservationWorkflowState;
 import java.sql.ResultSet;
@@ -29,7 +34,7 @@ public class LocationReservationRepository {
 
     @Transactional
     public WorkflowSnapshot save(UUID workflowId, UUID orderId, String idempotencyKey,
-            List<LocationPlan> plans, Instant now) {
+            List<WorkflowLocationPlan> plans, Instant now) {
         int inserted = jdbc.update("""
                 INSERT INTO order_inventory_reservation_workflow (
                     workflow_id, order_id, idempotency_key, workflow_state, attempt_count,
@@ -42,7 +47,7 @@ public class LocationReservationRepository {
             WorkflowHeader existing = findHeaderByIdempotencyKeyForUpdate(idempotencyKey);
             return existing == null ? null : withLocations(existing);
         }
-        for (LocationPlan plan : plans) {
+        for (WorkflowLocationPlan plan : plans) {
             String locationKey = locationIdempotencyKey(workflowId, plan.fulfillmentLocationId());
             jdbc.update("""
                     INSERT INTO order_inventory_location_command (
@@ -50,7 +55,7 @@ public class LocationReservationRepository {
                         command_state, updated_at
                     ) VALUES (?, ?, ?, 'PENDING', ?)
                     """, workflowId, plan.fulfillmentLocationId(), locationKey, Timestamp.from(now));
-            for (ItemRecord item : plan.items()) {
+            for (WorkflowItemRecord item : plan.items()) {
                 jdbc.update("""
                         INSERT INTO order_inventory_location_item (
                             workflow_id, fulfillment_location_id, seller_id, sku_id, quantity
@@ -191,7 +196,7 @@ public class LocationReservationRepository {
 
     /** 한 번에 한 workflow만 원자적으로 claim해 대기열의 lease 만료를 방지한다. */
     @Transactional
-    public WorkLease claimNextDue(Instant dueThrough, Instant now, Instant leaseUntil) {
+    public WorkflowLease claimNextDue(Instant dueThrough, Instant now, Instant leaseUntil) {
         UUID leaseToken = UUID.randomUUID();
         List<UUID> claims = jdbc.query("""
                 WITH next_due AS (
@@ -213,7 +218,7 @@ public class LocationReservationRepository {
                 """, (resultSet, rowNum) -> resultSet.getObject("workflow_id", UUID.class),
                 Timestamp.from(dueThrough), Timestamp.from(now), leaseToken,
                 Timestamp.from(leaseUntil), Timestamp.from(now));
-        return claims.isEmpty() ? null : new WorkLease(claims.getFirst(), leaseToken, leaseUntil);
+        return claims.isEmpty() ? null : new WorkflowLease(claims.getFirst(), leaseToken, leaseUntil);
     }
 
     @Transactional
@@ -319,9 +324,9 @@ public class LocationReservationRepository {
                         resultSet.getObject("seller_id", UUID.class), resultSet.getString("sku_id"),
                 resultSet.getObject("quantity", Integer.class)),
                 header.workflowId());
-        List<LocationSnapshot> locations = new ArrayList<>();
+        List<WorkflowLocationSnapshot> locations = new ArrayList<>();
         UUID currentLocation = null;
-        List<ItemRecord> items = null;
+        List<WorkflowItemRecord> items = null;
         LocationItemRow currentLocationRow = null;
         for (LocationItemRow row : rows) {
             if (!row.locationId().equals(currentLocation)) {
@@ -330,7 +335,7 @@ public class LocationReservationRepository {
                 currentLocationRow = row;
                 items = new ArrayList<>();
             }
-            if (row.skuId() != null) items.add(new ItemRecord(row.sellerId(), row.skuId(), row.quantity()));
+            if (row.skuId() != null) items.add(new WorkflowItemRecord(row.sellerId(), row.skuId(), row.quantity()));
         }
         if (currentLocationRow != null) locations.add(toSnapshot(currentLocationRow, items));
         return new WorkflowSnapshot(header.workflowId(), header.orderId(), header.idempotencyKey(),
@@ -342,8 +347,8 @@ public class LocationReservationRepository {
         return workflowId + ":" + locationId;
     }
 
-    private static LocationSnapshot toSnapshot(LocationItemRow row, List<ItemRecord> items) {
-        return new LocationSnapshot(row.locationId(), row.idempotencyKey(), row.state(), row.reservationId(),
+    private static WorkflowLocationSnapshot toSnapshot(LocationItemRow row, List<WorkflowItemRecord> items) {
+        return new WorkflowLocationSnapshot(row.locationId(), row.idempotencyKey(), row.state(), row.reservationId(),
                 row.remoteExpiresAt(), row.lastErrorCode(), row.updatedAt(), List.copyOf(items));
     }
 
@@ -365,28 +370,9 @@ public class LocationReservationRepository {
                 resultSet.getTimestamp("updated_at").toInstant());
     }
 
-    public record ItemRecord(UUID sellerId, String skuId, int quantity) {
-    }
-
-    public record LocationPlan(UUID fulfillmentLocationId, List<ItemRecord> items) {
-    }
     private record LocationItemRow(UUID locationId, String idempotencyKey, String state, UUID reservationId,
                                    Instant remoteExpiresAt, String lastErrorCode, Instant updatedAt,
                                    UUID sellerId, String skuId, Integer quantity) {
-    }
-
-
-    public record LocationSnapshot(UUID fulfillmentLocationId, String idempotencyKey, String state,
-                                   UUID reservationId, Instant remoteExpiresAt, String lastErrorCode,
-                                   Instant updatedAt, List<ItemRecord> items) {
-    }
-
-    public record WorkflowSnapshot(UUID workflowId, UUID orderId, String idempotencyKey, String state,
-                                   int attemptCount, Instant nextAttemptAt, Instant createdAt,
-                                   Instant updatedAt, String lastErrorCode, List<LocationSnapshot> locations) {
-    }
-
-    public record WorkLease(UUID workflowId, UUID leaseToken, Instant leaseUntil) {
     }
 
     private record WorkflowHeader(UUID workflowId, UUID orderId, String idempotencyKey, String state,

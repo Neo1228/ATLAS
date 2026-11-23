@@ -1,13 +1,14 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.order.dto.request.LocationReservationItemRequest;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.LocationReservationWorkflowState;
-import com.atlas.order.repository.LocationReservationRepository.ItemRecord;
-import com.atlas.order.repository.LocationReservationRepository.LocationSnapshot;
-import com.atlas.order.repository.LocationReservationRepository.WorkflowSnapshot;
+import com.atlas.order.persistence.projection.WorkflowItemRecord;
+import com.atlas.order.persistence.projection.WorkflowLocationSnapshot;
+import com.atlas.order.persistence.projection.WorkflowSnapshot;
 import com.atlas.order.repository.LocationReservationRepository;
-import com.atlas.order.repository.LocationRestockRepository.Restock;
+import com.atlas.order.persistence.projection.LocationRestock;
 import com.atlas.order.repository.LocationRestockRepository;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.LocationRestockService;
@@ -77,14 +78,14 @@ public class LocationRestockServiceImpl implements LocationRestockService {
         }
         Map<String, Integer> remaining = new LinkedHashMap<>(quantitiesBySku);
         Instant now = clock.instant();
-        for (LocationSnapshot location : workflow.locations()) {
-            List<ItemRecord> items = new ArrayList<>();
-            for (ItemRecord sold : location.items()) {
+        for (WorkflowLocationSnapshot location : workflow.locations()) {
+            List<WorkflowItemRecord> items = new ArrayList<>();
+            for (WorkflowItemRecord sold : location.items()) {
                 if (!sold.sellerId().equals(sellerId)) continue;
                 int wanted = remaining.getOrDefault(sold.skuId(), 0);
                 int take = Math.min(wanted, sold.quantity());
                 if (take < 1) continue;
-                items.add(new ItemRecord(sellerId, sold.skuId(), take));
+                items.add(new WorkflowItemRecord(sellerId, sold.skuId(), take));
                 remaining.put(sold.skuId(), wanted - take);
             }
             if (!items.isEmpty()) {
@@ -120,10 +121,10 @@ public class LocationRestockServiceImpl implements LocationRestockService {
             });
         }
         Instant now = clock.instant();
-        for (LocationSnapshot location : workflow.locations()) {
+        for (WorkflowLocationSnapshot location : workflow.locations()) {
             Map<String, Integer> requested = remaining.remove(location.fulfillmentLocationId());
             if (requested == null) continue;
-            List<ItemRecord> items = new ArrayList<>();
+            List<WorkflowItemRecord> items = new ArrayList<>();
             for (Map.Entry<String, Integer> entry : requested.entrySet()) {
                 if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null
                         || entry.getValue() < 1) {
@@ -131,13 +132,13 @@ public class LocationRestockServiceImpl implements LocationRestockService {
                 }
                 int claimed = location.items().stream()
                         .filter(item -> item.sellerId().equals(sellerId) && item.skuId().equals(entry.getKey()))
-                        .mapToInt(ItemRecord::quantity)
+                        .mapToInt(WorkflowItemRecord::quantity)
                         .sum();
                 if (entry.getValue() > claimed) {
                     throw new OrderException(OrderException.Code.CONFLICT,
                             "Refund quantity exceeds shipment location allocation");
                 }
-                items.add(new ItemRecord(sellerId, entry.getKey(), entry.getValue()));
+                items.add(new WorkflowItemRecord(sellerId, entry.getKey(), entry.getValue()));
             }
             restocks.insert(restockKey(refundId), location.fulfillmentLocationId(), refundId, orderId,
                     workflowId, location.reservationId(), items, now);
@@ -151,7 +152,7 @@ public class LocationRestockServiceImpl implements LocationRestockService {
     @Override
     public void dispatch(UUID refundId) {
         Instant now = clock.instant();
-        for (Restock restock : restocks.claimDue(now, now.plus(leaseDuration), 100, restockKey(refundId))) {
+        for (LocationRestock restock : restocks.claimDue(now, now.plus(leaseDuration), 100, restockKey(refundId))) {
             process(restock);
         }
     }
@@ -165,15 +166,15 @@ public class LocationRestockServiceImpl implements LocationRestockService {
     public int recoverDue(int batchSize) {
         if (batchSize < 1 || batchSize > 1000) throw new IllegalArgumentException("Invalid restock recovery batch size");
         Instant now = clock.instant();
-        List<Restock> due = restocks.claimDue(now, now.plus(leaseDuration), batchSize, null);
+        List<LocationRestock> due = restocks.claimDue(now, now.plus(leaseDuration), batchSize, null);
         due.forEach(this::process);
         return due.size();
     }
 
-    private void process(Restock restock) {
+    private void process(LocationRestock restock) {
         try {
             inventory.restock(restock.fulfillmentLocationId(), restock.reservationId(), restock.restockKey(),
-                    restock.items().stream().map(item -> new LocationClient.ReservationItem(
+                    restock.items().stream().map(item -> new LocationReservationItemRequest(
                             item.sellerId(), item.skuId(), item.quantity())).toList());
             restocks.finish(restock.restockKey(), restock.fulfillmentLocationId(), restock.attemptCount(), "COMPLETED", null,
                     clock.instant(), clock.instant());

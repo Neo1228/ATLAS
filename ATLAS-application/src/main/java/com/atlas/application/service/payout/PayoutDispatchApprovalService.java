@@ -1,12 +1,14 @@
 package com.atlas.application.service.payout;
 
+import com.atlas.application.persistence.projection.PayoutDispatchPlan;
+import com.atlas.application.persistence.projection.PayoutDispatchRecord;
 import com.atlas.application.repository.payout.PayoutDispatchRepository;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.application.controller.dto.PayoutDispatchStatusResponse;
 import com.atlas.application.controller.dto.PayoutDispatchReviewPage;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
-import com.atlas.payment.provider.exchange.ExchangeRateQuote;
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
@@ -62,7 +64,7 @@ public class PayoutDispatchApprovalService {
         }
         SellerPayoutProfileService.ActiveRecipient recipient = profiles.requireActiveRecipient(payout.sellerId());
         if (!"USD".equals(recipient.currency())) throw conflict("Only USD payout profiles can be dispatched");
-        ExchangeRateQuote quote = exchangeRates.latestUsdKrwRate();
+        ExchangeRateQuoteResponse quote = exchangeRates.latestUsdKrwRate();
         if (quote == null) {
             throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
                     "Payout FX quote is unavailable");

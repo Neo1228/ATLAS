@@ -1,6 +1,8 @@
 package com.atlas.application.repository;
 
-import com.atlas.payment.provider.PaymentWebhookEvent;
+import com.atlas.application.persistence.projection.ClaimedRetry;
+import com.atlas.application.persistence.projection.PollResult;
+import com.atlas.application.persistence.projection.WebhookRetryEvent;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -24,7 +26,7 @@ public class PayPalWebhookRetryRepository {
         this.jdbc = jdbc;
     }
 
-    public void enqueue(PaymentWebhookEvent event) {
+    public void enqueue(WebhookRetryEvent event) {
         jdbc.update("""
                 INSERT INTO paypal_webhook_retry
                     (event_id, event_type, resource_id, resource_status, provider_order_id,
@@ -128,7 +130,7 @@ public class PayPalWebhookRetryRepository {
 
     private ClaimedRetry mapClaim(ResultSet rs, int rowNum) throws SQLException {
         BigDecimal amount = rs.getBigDecimal("resource_amount");
-        PaymentWebhookEvent event = new PaymentWebhookEvent(rs.getString("event_id"), rs.getString("event_type"),
+        WebhookRetryEvent event = new WebhookRetryEvent(rs.getString("event_id"), rs.getString("event_type"),
                 rs.getString("resource_id"), rs.getString("resource_status"), rs.getString("provider_order_id"),
                 rs.getString("related_capture_id"), amount, rs.getString("resource_currency"));
         return new ClaimedRetry(event, rs.getInt("attempt_count"), rs.getString("lease_owner"));
@@ -250,8 +252,4 @@ public class PayPalWebhookRetryRepository {
                 WHERE state = 'PENDING' AND attempt_count < ?
                 """, Double.class, MAX_ATTEMPTS);
     }
-
-    public record PollResult(List<ClaimedRetry> claimed, int reapedCount) { }
-
-    public record ClaimedRetry(PaymentWebhookEvent event, int attempt, String leaseOwner) { }
 }

@@ -5,6 +5,7 @@ import com.atlas.account.service.AccountService;
 import com.atlas.application.controller.dto.SellerPayoutProfileRequest;
 import com.atlas.application.controller.dto.SellerPayoutProfileResponse;
 import com.atlas.application.controller.dto.VerifySellerPayoutProfileRequest;
+import com.atlas.application.persistence.projection.SellerPayoutProfile;
 import com.atlas.application.repository.payout.SellerPayoutProfileRepository;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;

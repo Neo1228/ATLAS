@@ -9,9 +9,9 @@ import com.atlas.inventory.location.dto.request.LocationStockRequest;
 import com.atlas.inventory.location.dto.response.InventoryReservationResponse;
 import com.atlas.inventory.location.dto.response.InventoryStockResponse;
 import com.atlas.inventory.location.repository.InventoryReservationRepository;
-import com.atlas.inventory.location.repository.InventoryReservationRepository.ItemRecord;
-import com.atlas.inventory.location.repository.InventoryReservationRepository.ReservationRecord;
-import com.atlas.inventory.location.repository.InventoryReservationRepository.StockRecord;
+import com.atlas.inventory.location.persistence.projection.LocationReservationItemRecord;
+import com.atlas.inventory.location.persistence.projection.LocationReservationRecord;
+import com.atlas.inventory.location.persistence.projection.LocationStockRecord;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,7 +66,7 @@ public class InventoryReservationService {
         validateLocation(fulfillmentLocationId);
         if (sellerId == null) throw invalid("Seller id is required");
         validateSku(skuId);
-        StockRecord stock = repository.findStock(fulfillmentLocationId, sellerId, skuId);
+        LocationStockRecord stock = repository.findStock(fulfillmentLocationId, sellerId, skuId);
         if (stock == null) throw notFound("Stock not found");
         return stockResponse(stock);
     }
@@ -76,7 +76,7 @@ public class InventoryReservationService {
         validateLocation(fulfillmentLocationId);
         if (sellerId == null) throw invalid("Seller id is required");
         validateSku(skuId);
-        StockRecord stock = repository.findStock(fulfillmentLocationId, sellerId, skuId);
+        LocationStockRecord stock = repository.findStock(fulfillmentLocationId, sellerId, skuId);
         return stock == null ? 0 : stock.availableQuantity();
     }
 
@@ -86,13 +86,13 @@ public class InventoryReservationService {
         validateLocation(fulfillmentLocationId);
         validateIdempotencyKey(idempotencyKey);
         if (request == null || request.orderId() == null) throw invalid("Order id is required");
-        List<ItemRecord> items = normalize(request.items());
+        List<LocationReservationItemRecord> items = normalize(request.items());
         Instant now = clock.instant();
         UUID reservationId = UUID.randomUUID();
         int inserted = repository.insertReservation(reservationId, fulfillmentLocationId, request.orderId(),
                 idempotencyKey, now, now.plus(reservationTtl));
         if (inserted == 0) {
-            ReservationRecord prior = repository.findByIdempotencyKeyForUpdate(
+            LocationReservationRecord prior = repository.findByIdempotencyKeyForUpdate(
                     fulfillmentLocationId, idempotencyKey);
             if (prior == null) throw new IllegalStateException("Conflicting reservation disappeared");
             if (!prior.orderId().equals(request.orderId())) {
@@ -110,16 +110,16 @@ public class InventoryReservationService {
             return response(prior, true);
         }
 
-        for (ItemRecord item : items) {
+        for (LocationReservationItemRecord item : items) {
             if (repository.reserveAvailable(fulfillmentLocationId, item.sellerId(), item.skuId(), item.quantity()) != 1) {
                 throw new InventoryLocationException(InventoryLocationException.Code.INSUFFICIENT_STOCK,
                         "Insufficient available stock for SKU " + item.skuId());
             }
         }
-        for (ItemRecord item : items) {
+        for (LocationReservationItemRecord item : items) {
             repository.insertItem(reservationId, item.sellerId(), item.skuId(), item.quantity());
         }
-        ReservationRecord created = repository.find(fulfillmentLocationId, reservationId);
+        LocationReservationRecord created = repository.find(fulfillmentLocationId, reservationId);
         if (created == null) throw new IllegalStateException("Created reservation disappeared");
         return response(created, false);
     }
@@ -130,7 +130,7 @@ public class InventoryReservationService {
         validateLocation(fulfillmentLocationId);
         validateIdempotencyKey(idempotencyKey);
         if (request == null || request.orderId() == null) throw invalid("Order id is required");
-        ReservationRecord reservation = repository.findByIdempotencyKeyForUpdate(
+        LocationReservationRecord reservation = repository.findByIdempotencyKeyForUpdate(
                 fulfillmentLocationId, idempotencyKey);
         if (reservation == null) {
             Instant now = clock.instant();
@@ -138,7 +138,7 @@ public class InventoryReservationService {
             int inserted = repository.insertCancellationTombstone(tombstoneId, fulfillmentLocationId,
                     request.orderId(), idempotencyKey, now, now.plus(reservationTtl));
             if (inserted == 1) {
-                ReservationRecord tombstone = repository.find(fulfillmentLocationId, tombstoneId);
+                LocationReservationRecord tombstone = repository.find(fulfillmentLocationId, tombstoneId);
                 if (tombstone == null) throw new IllegalStateException("Cancellation tombstone disappeared");
                 return response(tombstone, false);
             }
@@ -157,7 +157,7 @@ public class InventoryReservationService {
         if (!"RESERVED".equals(reservation.status())) {
             throw invalidState("Claimed stock cannot be cancelled; use the refund workflow");
         }
-        for (ItemRecord item : reservation.items()) {
+        for (LocationReservationItemRecord item : reservation.items()) {
             if (repository.releaseReserved(fulfillmentLocationId, item.sellerId(), item.skuId(), item.quantity()) != 1) {
                 throw new IllegalStateException("Reserved stock is inconsistent with its reservation");
             }
@@ -170,7 +170,7 @@ public class InventoryReservationService {
     @Transactional(readOnly = true)
     public InventoryReservationResponse findReservation(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
-        ReservationRecord reservation = repository.find(fulfillmentLocationId, reservationId);
+        LocationReservationRecord reservation = repository.find(fulfillmentLocationId, reservationId);
         if (reservation == null) throw notFound("Reservation not found");
         return response(reservation, false);
     }
@@ -178,7 +178,7 @@ public class InventoryReservationService {
     @Transactional
     public InventoryReservationResponse claim(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
-        ReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
+        LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
         if ("CLAIMED".equals(reservation.status())) return response(reservation, true);
         if (!"RESERVED".equals(reservation.status())) {
             throw invalidState("Only reserved stock can be claimed");
@@ -187,7 +187,7 @@ public class InventoryReservationService {
             throw new InventoryLocationException(InventoryLocationException.Code.RESERVATION_EXPIRED,
                     "Reservation has expired");
         }
-        for (ItemRecord item : reservation.items()) {
+        for (LocationReservationItemRecord item : reservation.items()) {
             if (repository.claimReserved(fulfillmentLocationId, item.sellerId(), item.skuId(), item.quantity()) != 1) {
                 throw new IllegalStateException("Reserved stock is inconsistent with its reservation");
             }
@@ -203,17 +203,17 @@ public class InventoryReservationService {
     @Transactional
     public InventoryReservationResponse restore(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
-        ReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
+        LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
         if ("RELEASED".equals(reservation.status())) return response(reservation, true);
         if (!"CLAIMED".equals(reservation.status())) {
             throw invalidState("Only claimed stock can be restored");
         }
-        for (ItemRecord item : reservation.items()) {
+        for (LocationReservationItemRecord item : reservation.items()) {
             if (repository.restockedQuantity(reservationId, item.sellerId(), item.skuId()) > 0) {
                 throw invalidState("Partially restocked reservations cannot be restored as a whole");
             }
         }
-        for (ItemRecord item : reservation.items()) {
+        for (LocationReservationItemRecord item : reservation.items()) {
             if (repository.restoreClaimed(fulfillmentLocationId, item.sellerId(), item.skuId(), item.quantity()) != 1) {
                 throw new IllegalStateException("Claimed stock is inconsistent with its reservation");
             }
@@ -234,8 +234,8 @@ public class InventoryReservationService {
                                                 List<Item> requestedItems) {
         validateLocation(fulfillmentLocationId);
         validateIdempotencyKey(restockKey);
-        List<ItemRecord> requested = normalize(requestedItems);
-        ReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
+        List<LocationReservationItemRecord> requested = normalize(requestedItems);
+        LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
         UUID existingReservation = repository.findRestockReservation(restockKey);
         if (existingReservation != null) {
             if (!existingReservation.equals(reservationId)
@@ -246,11 +246,11 @@ public class InventoryReservationService {
             return response(reservation, true);
         }
         if (!"CLAIMED".equals(reservation.status())) throw invalidState("Only claimed stock can be restocked");
-        Map<String, ItemRecord> sold = new TreeMap<>();
-        for (ItemRecord item : reservation.items()) sold.put(item.sellerId() + ":" + item.skuId(), item);
+        Map<String, LocationReservationItemRecord> sold = new TreeMap<>();
+        for (LocationReservationItemRecord item : reservation.items()) sold.put(item.sellerId() + ":" + item.skuId(), item);
         Instant now = clock.instant();
-        for (ItemRecord item : requested) {
-            ItemRecord soldItem = sold.get(item.sellerId() + ":" + item.skuId());
+        for (LocationReservationItemRecord item : requested) {
+            LocationReservationItemRecord soldItem = sold.get(item.sellerId() + ":" + item.skuId());
             if (soldItem == null) throw invalid("Restock item is not part of the reservation");
             int already = repository.restockedQuantity(reservationId, item.sellerId(), item.skuId());
             if (already + item.quantity() > soldItem.quantity()) {
@@ -264,18 +264,18 @@ public class InventoryReservationService {
         return response(reservation, false);
     }
 
-    private static boolean sameItems(List<ItemRecord> stored, List<ItemRecord> requested) {
+    private static boolean sameItems(List<LocationReservationItemRecord> stored, List<LocationReservationItemRecord> requested) {
         Map<String, Integer> left = new TreeMap<>();
-        for (ItemRecord item : stored) left.put(item.sellerId() + ":" + item.skuId(), item.quantity());
+        for (LocationReservationItemRecord item : stored) left.put(item.sellerId() + ":" + item.skuId(), item.quantity());
         Map<String, Integer> right = new TreeMap<>();
-        for (ItemRecord item : requested) right.put(item.sellerId() + ":" + item.skuId(), item.quantity());
+        for (LocationReservationItemRecord item : requested) right.put(item.sellerId() + ":" + item.skuId(), item.quantity());
         return left.equals(right);
     }
 
     @Transactional
     public InventoryReservationResponse release(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
-        ReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
+        LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
         if ("RELEASED".equals(reservation.status()) || "EXPIRED".equals(reservation.status())
                 || "CANCELLED".equals(reservation.status())) {
             return response(reservation, true);
@@ -283,7 +283,7 @@ public class InventoryReservationService {
         if (!"RESERVED".equals(reservation.status())) {
             throw invalidState("Only reserved stock can be released");
         }
-        for (ItemRecord item : reservation.items()) {
+        for (LocationReservationItemRecord item : reservation.items()) {
             if (repository.releaseReserved(fulfillmentLocationId, item.sellerId(), item.skuId(), item.quantity()) != 1) {
                 throw new IllegalStateException("Reserved stock is inconsistent with its reservation");
             }
@@ -295,10 +295,10 @@ public class InventoryReservationService {
     @Transactional
     public int expireDue(int limit) {
         if (limit < 1 || limit > 1000) throw invalid("Expiry batch size must be between 1 and 1000");
-        List<ReservationRecord> due = repository.findDueForUpdate(
+        List<LocationReservationRecord> due = repository.findDueForUpdate(
                 ownedFulfillmentLocationId, clock.instant(), limit);
-        for (ReservationRecord reservation : due) {
-            for (ItemRecord item : reservation.items()) {
+        for (LocationReservationRecord reservation : due) {
+            for (LocationReservationItemRecord item : reservation.items()) {
                 if (repository.releaseReserved(reservation.fulfillmentLocationId(), item.sellerId(), item.skuId(),
                         item.quantity()) != 1) {
                     throw new IllegalStateException("Reserved stock is inconsistent with an expired reservation");
@@ -309,8 +309,8 @@ public class InventoryReservationService {
         return due.size();
     }
 
-    private ReservationRecord requireForUpdate(UUID fulfillmentLocationId, UUID reservationId) {
-        ReservationRecord reservation = repository.findForUpdate(fulfillmentLocationId, reservationId);
+    private LocationReservationRecord requireForUpdate(UUID fulfillmentLocationId, UUID reservationId) {
+        LocationReservationRecord reservation = repository.findForUpdate(fulfillmentLocationId, reservationId);
         if (reservation == null) throw notFound("Reservation not found");
         return reservation;
     }
@@ -321,21 +321,21 @@ public class InventoryReservationService {
         }
     }
 
-    private List<ItemRecord> normalize(List<Item> requestedItems) {
+    private List<LocationReservationItemRecord> normalize(List<Item> requestedItems) {
  if (requestedItems == null || requestedItems.isEmpty()) throw invalid("At least one item is required");
- Map<String, ItemRecord> sorted = new TreeMap<>();
+ Map<String, LocationReservationItemRecord> sorted = new TreeMap<>();
  for (Item item : requestedItems) {
   if (item == null || item.sellerId() == null || item.quantity() < 1) throw invalid("Seller id and positive quantity are required");
   validateSku(item.skuId());
   String key = item.sellerId() + ":" + item.skuId();
-  if (sorted.putIfAbsent(key, new ItemRecord(item.sellerId(), item.skuId(), item.quantity())) != null) {
+  if (sorted.putIfAbsent(key, new LocationReservationItemRecord(item.sellerId(), item.skuId(), item.quantity())) != null) {
    throw invalid("Duplicate seller/SKU lines are not allowed");
   }
  }
  return List.copyOf(sorted.values());
  }
 
- private InventoryReservationResponse response(ReservationRecord reservation, boolean replayed) {
+ private InventoryReservationResponse response(LocationReservationRecord reservation, boolean replayed) {
         List<InventoryReservationResponse.Item> items = reservation.items().stream()
                 .map(item -> new InventoryReservationResponse.Item(item.sellerId(), item.skuId(), item.quantity())).toList();
         return new InventoryReservationResponse(reservation.reservationId(), reservation.fulfillmentLocationId(),
@@ -343,7 +343,7 @@ public class InventoryReservationService {
                 reservation.createdAt(), reservation.expiresAt(), replayed);
     }
 
-    private InventoryStockResponse stockResponse(StockRecord stock) {
+    private InventoryStockResponse stockResponse(LocationStockRecord stock) {
         return new InventoryStockResponse(stock.fulfillmentLocationId(), stock.sellerId(), stock.skuId(), stock.initialCapacity(),
                 stock.availableQuantity(), stock.reservedQuantity(), stock.claimedQuantity());
     }

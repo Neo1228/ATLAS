@@ -2,15 +2,16 @@ package com.atlas.migration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.application.persistence.projection.PollResult;
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
-import com.atlas.application.repository.PayPalWebhookRetryRepository.ClaimedRetry;
+import com.atlas.application.persistence.projection.ClaimedRetry;
 import com.atlas.application.service.PayPalWebhookRetryWorker;
 import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.provider.PaymentWebhookEvent;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.service.PaymentService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -224,13 +225,13 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
         });
         assertThat(plan).anyMatch(line -> line.contains("paypal_webhook_retry_reaper_idx"));
 
-        PayPalWebhookRetryRepository.PollResult first = repository.pollDue();
+        PollResult first = repository.pollDue();
         assertThat(first.reapedCount()).isEqualTo(8);
         assertThat(first.claimed()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE state = 'EXHAUSTED'",
                 Integer.class)).isEqualTo(8);
 
-        PayPalWebhookRetryRepository.PollResult second = repository.pollDue();
+        PollResult second = repository.pollDue();
         assertThat(second.reapedCount()).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE state = 'EXHAUSTED'",
                 Integer.class)).isEqualTo(rowCount);
@@ -282,7 +283,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
             Supplier<?> action = invocation.getArgument(1);
             return action.get();
         }).when(payments).withPayPalWebhookOwnerLock(Mockito.any(), Mockito.any());
-        Mockito.when(payments.processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEvent.class)))
+        Mockito.when(payments.processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEventResponse.class)))
                 .thenReturn(new PaymentWebhookResponse(true, false, null, null, null, false, false));
         PayPalWebhookService recreatedWebhookService = new PayPalWebhookService(
                 new DataSourceTransactionManager(dataSource), payments,
@@ -293,7 +294,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
 
         recreatedWorker.retryDueEvents();
 
-        Mockito.verify(payments).processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEvent.class));
+        Mockito.verify(payments).processVerifiedPayPalWebhook(Mockito.any(PaymentWebhookEventResponse.class));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?",
                 Integer.class, "evt-worker-recreation")).isZero();
         assertThat(historyCount("evt-worker-recreation")).isEqualTo(2);

@@ -1,6 +1,5 @@
 package com.atlas.payment.repository;
 
-import com.atlas.payment.provider.PaymentWebhookEvent;
 import java.sql.Timestamp;
 import java.time.Instant;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,13 +13,13 @@ public class PaymentWebhookEventRepository {
         this.jdbc = jdbc;
     }
 
-    public boolean insertReceived(PaymentWebhookEvent event, Instant receivedAt) {
+    public boolean insertReceived(String eventId, String eventType, String resourceId, Instant receivedAt) {
         return jdbc.update("""
                 INSERT INTO payment_provider_webhook_event
                     (event_id, event_type, resource_id, received_at, processing_status)
                 VALUES (?, ?, ?, ?, 'RECEIVED')
                 ON CONFLICT (event_id) DO NOTHING
-                """, event.eventId(), event.eventType(), event.resourceId(), Timestamp.from(receivedAt)) == 1;
+                """, eventId, eventType, resourceId, Timestamp.from(receivedAt)) == 1;
     }
 
     public void markProcessed(String eventId, Instant processedAt) {

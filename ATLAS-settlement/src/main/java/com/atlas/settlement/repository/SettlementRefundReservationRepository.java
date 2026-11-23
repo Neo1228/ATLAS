@@ -1,5 +1,7 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.persistence.projection.RefundReservation;
+import com.atlas.settlement.persistence.projection.RefundReservationMetrics;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -52,11 +54,11 @@ public class SettlementRefundReservationRepository {
         return amount == null ? 0 : amount;
     }
 
-    public ReservationMetrics metricsSnapshot() {
+    public RefundReservationMetrics metricsSnapshot() {
         return jdbc.queryForObject("""
                 SELECT count(*) AS reservation_count, COALESCE(SUM(amount_won), 0) AS amount_won
                 FROM settlement_refund_reservation WHERE status = 'RESERVED'
-                """, (row, number) -> new ReservationMetrics(
+                """, (row, number) -> new RefundReservationMetrics(
                 row.getLong("reservation_count"), row.getLong("amount_won")));
     }
 
@@ -86,9 +88,4 @@ public class SettlementRefundReservationRepository {
                 row.getLong("amount_won"), row.getString("status"),
                 row.getTimestamp("created_at").toInstant(), row.getTimestamp("updated_at").toInstant());
     }
-
-    public record RefundReservation(UUID refundId, UUID orderId, UUID sellerId,
-            long amountWon, String status, Instant createdAt, Instant updatedAt) { }
-
-    public record ReservationMetrics(long reservationCount, long amountWon) { }
 }

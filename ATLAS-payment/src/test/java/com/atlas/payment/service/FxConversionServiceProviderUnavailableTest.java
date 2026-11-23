@@ -5,10 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.atlas.payment.dto.response.FxConversionResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.exchange.BokEcosExchangeRateProvider;
 import com.atlas.payment.provider.exchange.CachingExchangeRateProvider;
-import com.atlas.payment.provider.exchange.ExchangeRateQuote;
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -24,7 +25,7 @@ import org.junit.jupiter.api.Test;
  * {@code PAYMENT_PROVIDER_UNAVAILABLE}(503 + 재시도 안내)로 드러나는지 고정한다.
  */
 class FxConversionServiceProviderUnavailableTest {
-    private static final ExchangeRateQuote QUOTE = new ExchangeRateQuote(
+    private static final ExchangeRateQuoteResponse QUOTE = new ExchangeRateQuoteResponse(
             new BigDecimal("1332.4"), "BOK_ECOS_731Y001_0000001", LocalDate.of(2026, 11, 20));
     private static final Instant NOW = Instant.parse("2026-11-20T00:00:00Z");
 
@@ -48,21 +49,21 @@ class FxConversionServiceProviderUnavailableTest {
 
     @Test
     void coldCacheWithEmptyUpstreamAnswerSurfacesAsProviderUnavailableAndRecoversOnRetry() {
-        ExchangeRateQuote[] upstream = {null};
+        ExchangeRateQuoteResponse[] upstream = {null};
         FxConversionService service = new FxConversionService(caching(() -> upstream[0], new MutableClock(NOW)));
 
         assertProviderUnavailable(service);
 
         // 빈 응답을 캐시하지 않으므로 upstream 이 회복되면 같은 요청을 재시도해 바로 환산된다.
         upstream[0] = QUOTE;
-        FxConversionService.Conversion conversion = service.convertKrwToUsdCents(1_000);
+        FxConversionResponse conversion = service.convertKrwToUsdCents(1_000);
         assertThat(conversion.quote()).isEqualTo(QUOTE);
         assertThat(conversion.usdCents()).isEqualTo(75);
     }
 
     @Test
     void emptyUpstreamAnswerAfterTtlServesLastGoodQuoteWithinMaxStale() {
-        ExchangeRateQuote[] upstream = {QUOTE};
+        ExchangeRateQuoteResponse[] upstream = {QUOTE};
         MutableClock clock = new MutableClock(NOW);
         FxConversionService service = new FxConversionService(caching(() -> upstream[0], clock));
         service.convertKrwToUsdCents(1_000);
@@ -71,7 +72,7 @@ class FxConversionServiceProviderUnavailableTest {
         clock.advance(Duration.ofSeconds(61));
 
         // 빈 응답은 조회 실패와 같게 취급되어 허용 범위 안의 직전 고시값을 쓴다.
-        FxConversionService.Conversion conversion = service.convertKrwToUsdCents(1_000);
+        FxConversionResponse conversion = service.convertKrwToUsdCents(1_000);
         assertThat(conversion.quote()).isEqualTo(QUOTE);
         assertThat(conversion.usdCents()).isEqualTo(75);
 
@@ -84,7 +85,7 @@ class FxConversionServiceProviderUnavailableTest {
     void freshQuoteStillConverts() {
         FxConversionService service = new FxConversionService(caching(() -> QUOTE, new MutableClock(NOW)));
 
-        FxConversionService.Conversion conversion = service.convertKrwToUsdCents(1_000);
+        FxConversionResponse conversion = service.convertKrwToUsdCents(1_000);
 
         assertThat(conversion.quote()).isEqualTo(QUOTE);
         assertThat(conversion.usdCents()).isEqualTo(75);
@@ -96,7 +97,7 @@ class FxConversionServiceProviderUnavailableTest {
                         .isEqualTo(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE));
     }
 
-    private static CachingExchangeRateProvider caching(Supplier<ExchangeRateQuote> upstream, Clock clock) {
+    private static CachingExchangeRateProvider caching(Supplier<ExchangeRateQuoteResponse> upstream, Clock clock) {
         BokEcosExchangeRateProvider delegate = mock(BokEcosExchangeRateProvider.class);
         when(delegate.latestUsdKrwRate()).thenAnswer(invocation -> upstream.get());
         return new CachingExchangeRateProvider(delegate, clock, Duration.ofSeconds(60), Duration.ofMinutes(10));

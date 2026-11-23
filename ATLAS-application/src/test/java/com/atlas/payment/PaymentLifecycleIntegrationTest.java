@@ -9,6 +9,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.atlas.application.persistence.projection.ClaimedRetry;
+import com.atlas.application.persistence.projection.WebhookRetryEvent;
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
 import com.atlas.cart.service.CartService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
@@ -23,17 +25,17 @@ import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.service.FxConversionService;
-import com.atlas.payment.provider.PaymentProviderResult;
-import com.atlas.payment.provider.PaymentRefundProviderResult;
-import com.atlas.payment.provider.PaymentRefundRequest;
-import com.atlas.payment.provider.PaymentRequest;
+import com.atlas.payment.dto.response.PaymentProviderResponse;
+import com.atlas.payment.dto.response.PaymentRefundProviderResponse;
+import com.atlas.payment.dto.request.PaymentRefundRequest;
+import com.atlas.payment.dto.request.PaymentRequest;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
@@ -373,9 +375,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         String eventId = "WH-" + UUID.randomUUID();
         String captureId = captured.providerCaptureId();
         String rawEvent = captureWebhook(eventId, captured.providerOrderId(), captureId, "12.91", "USD");
-        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+        PaymentWebhookSignatureRequest signature = new PaymentWebhookSignatureRequest(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local", "2026-11-09T00:00:00Z");
-        PaymentWebhookEvent event = payments.verifyPayPalWebhook(signature, rawEvent);
+        PaymentWebhookEventResponse event = payments.verifyPayPalWebhook(signature, rawEvent);
         assertThat(event.eventId()).isEqualTo(eventId);
         assertThat(event.providerOrderId()).isEqualTo(captured.providerOrderId());
         assertThat(event.resourceId()).isEqualTo(captureId);
@@ -415,7 +417,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
         String amount = BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2).toPlainString();
         String eventId = "WH-" + UUID.randomUUID();
-        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+        PaymentWebhookSignatureRequest signature = new PaymentWebhookSignatureRequest(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
                 "2026-11-09T00:00:00Z");
         String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
@@ -466,7 +468,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         String eventId = "WH-RECONCILE-RETRY-" + UUID.randomUUID();
         String captureId = "CAPTURE-RECONCILE-RETRY-" + UUID.randomUUID();
         String amount = BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2).toPlainString();
-        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+        PaymentWebhookSignatureRequest signature = new PaymentWebhookSignatureRequest(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
                 "2026-11-09T00:00:00Z");
         String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
@@ -518,7 +520,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         String eventId = "WH-CHECKOUT-RECONCILE-RETRY-" + UUID.randomUUID();
         String captureId = "CAPTURE-" + UUID.randomUUID();
         String amount = BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2).toPlainString();
-        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+        PaymentWebhookSignatureRequest signature = new PaymentWebhookSignatureRequest(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
                 "2026-11-09T00:00:00Z");
         String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId,
@@ -600,7 +602,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
         String eventId = "WH-LEASE-RACE-" + UUID.randomUUID();
         String captureId = "CAPTURE-LEASE-RACE-" + UUID.randomUUID();
-        PaymentWebhookEvent event = new PaymentWebhookEvent(eventId, "PAYMENT.CAPTURE.COMPLETED",
+        PaymentWebhookEventResponse event = new PaymentWebhookEventResponse(eventId, "PAYMENT.CAPTURE.COMPLETED",
                 captureId, "COMPLETED", providerOrderId, null,
                 BigDecimal.valueOf(attempt.getProviderAmountMinor(), 2), attempt.getProviderCurrency());
         CountDownLatch firstWorkerAtPostPaymentTransaction = new CountDownLatch(1);
@@ -627,7 +629,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 return completed;
             }
         };
-        retryRepository.enqueue(event);
+        retryRepository.enqueue(retryEvent(event));
         PayPalWebhookService retryWebhookService = new PayPalWebhookService(transactionManager, payments,
                 mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class), retryRepository);
         PayPalWebhookRetryWorker workerA =
@@ -733,7 +735,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
         String eventId = "WH-" + UUID.randomUUID();
         String captureId = "CAPTURE-WH-" + UUID.randomUUID();
-        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+        PaymentWebhookSignatureRequest signature = new PaymentWebhookSignatureRequest(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
                 "2026-11-09T00:00:00Z");
         String rawBody = captureWebhook(eventId, authorized.providerOrderId(), captureId, amount, currency);
@@ -748,7 +750,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(unchanged.state()).isEqualTo(PaymentState.AUTHORIZED);
         assertThat(unchanged.providerCaptureId()).isNull();
 
-        PaymentWebhookEvent rejectedEvent = payments.verifyPayPalWebhook(signature, rawBody);
+        PaymentWebhookEventResponse rejectedEvent = payments.verifyPayPalWebhook(signature, rawBody);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
         PaymentWebhookResponse duplicate = payments.processVerifiedPayPalWebhook(rejectedEvent);
         assertThat(duplicate.duplicate()).isTrue();
@@ -761,7 +763,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
         String eventId = "WH-" + UUID.randomUUID();
         String captureId = "CAPTURE-WH-" + UUID.randomUUID();
-        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+        PaymentWebhookSignatureRequest signature = new PaymentWebhookSignatureRequest(
                 "SHA256withRSA", "https://local.test/cert", "tx-local", "signature-local",
                 "2026-11-09T00:00:00Z");
         String unmatchedRawBody = captureWebhook(
@@ -770,7 +772,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?", Integer.class, eventId)).isEqualTo(1);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
-        PaymentWebhookEvent unmatched = payments.verifyPayPalWebhook(signature, unmatchedRawBody);
+        PaymentWebhookEventResponse unmatched = payments.verifyPayPalWebhook(signature, unmatchedRawBody);
         assertThat(nextPayPalRequestAtPath("/v1/notifications/verify-webhook-signature")).isNotNull();
         PaymentWebhookResponse retryable = payments.processVerifiedPayPalWebhook(unmatched);
         assertThat(retryable.accepted()).isFalse();
@@ -904,7 +906,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         public boolean requiresFxSnapshot() { return delegate.requiresFxSnapshot(); }
 
         @Override
-        public PaymentProviderResult perform(PaymentRequest request) {
+        public PaymentProviderResponse perform(PaymentRequest request) {
             if (request.operation() == PaymentOperation.CAPTURE) {
                 int call = captureCalls.incrementAndGet();
                 captureRequestIds.add(request.captureRequestId());
@@ -924,22 +926,22 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         }
 
         @Override
-        public PaymentProviderResult completeApproval(PaymentRequest request, String returnedProviderOrderId) {
+        public PaymentProviderResponse completeApproval(PaymentRequest request, String returnedProviderOrderId) {
             return delegate.completeApproval(request, returnedProviderOrderId);
         }
 
         @Override
-        public PaymentRefundProviderResult refund(PaymentRefundRequest request) {
+        public PaymentRefundProviderResponse refund(PaymentRefundRequest request) {
             return delegate.refund(request);
         }
 
         @Override
-        public PaymentRefundProviderResult getRefund(String refundId) {
+        public PaymentRefundProviderResponse getRefund(String refundId) {
             return delegate.getRefund(refundId);
         }
 
         @Override
-        public PaymentWebhookEvent verifyWebhook(PaymentWebhookSignature signature, String rawBody) {
+        public PaymentWebhookEventResponse verifyWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
             return delegate.verifyWebhook(signature, rawBody);
         }
 
@@ -974,32 +976,32 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         public boolean requiresFxSnapshot() { return delegate.requiresFxSnapshot(); }
 
         @Override
-        public PaymentProviderResult perform(PaymentRequest request) {
+        public PaymentProviderResponse perform(PaymentRequest request) {
             if (request.operation() != PaymentOperation.CAPTURE) return delegate.perform(request);
             captureCalls.incrementAndGet();
             captureStarted.countDown();
             BarrierPaymentProvider.await(releaseCapture);
-            return new PaymentProviderResult(PaymentProviderResult.Outcome.CAPTURED,
+            return new PaymentProviderResponse(PaymentProviderResponse.Outcome.CAPTURED,
                     request.providerOrderId(), request.providerAuthorizationId(), captureId, null);
         }
 
         @Override
-        public PaymentProviderResult completeApproval(PaymentRequest request, String returnedProviderOrderId) {
+        public PaymentProviderResponse completeApproval(PaymentRequest request, String returnedProviderOrderId) {
             return delegate.completeApproval(request, returnedProviderOrderId);
         }
 
         @Override
-        public PaymentRefundProviderResult refund(PaymentRefundRequest request) {
+        public PaymentRefundProviderResponse refund(PaymentRefundRequest request) {
             return delegate.refund(request);
         }
 
         @Override
-        public PaymentRefundProviderResult getRefund(String refundId) {
+        public PaymentRefundProviderResponse getRefund(String refundId) {
             return delegate.getRefund(refundId);
         }
 
         @Override
-        public PaymentWebhookEvent verifyWebhook(PaymentWebhookSignature signature, String rawBody) {
+        public PaymentWebhookEventResponse verifyWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
             return delegate.verifyWebhook(signature, rawBody);
         }
     }
@@ -1020,7 +1022,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         }
 
         @Override
-        public <T> T withPayPalWebhookOwnerLock(PaymentWebhookEvent event, Supplier<T> action) {
+        public <T> T withPayPalWebhookOwnerLock(PaymentWebhookEventResponse event, Supplier<T> action) {
             webhookLockThread.set(Thread.currentThread());
             webhookLockAttempted.countDown();
             return super.withPayPalWebhookOwnerLock(event, action);
@@ -1031,16 +1033,16 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PayPalWebhookRetryRepository retryRepository =
                 new PayPalWebhookRetryRepository(jdbc);
         String eventId = "retry-integration-" + UUID.randomUUID();
-        PaymentWebhookEvent event = new PaymentWebhookEvent(eventId, "PAYMENT.CAPTURE.COMPLETED",
+        PaymentWebhookEventResponse event = new PaymentWebhookEventResponse(eventId, "PAYMENT.CAPTURE.COMPLETED",
                 "capture-" + UUID.randomUUID(), "COMPLETED", "unmatched-order", null,
                 new BigDecimal("12.91"), "USD");
-        retryRepository.enqueue(event);
+        retryRepository.enqueue(retryEvent(event));
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            Callable<List<PayPalWebhookRetryRepository.ClaimedRetry>> claim = () -> {
+            Callable<List<ClaimedRetry>> claim = () -> {
                 ready.countDown();
                 start.await();
                 return retryRepository.claimDue();
@@ -1052,7 +1054,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             int claims = ((List<?>) first.get()).size() + ((List<?>) second.get()).size();
             assertThat(claims).isEqualTo(1);
 
-            PayPalWebhookRetryRepository.ClaimedRetry claimed =
+            ClaimedRetry claimed =
                     retryRepository.claimDue().stream().findFirst().orElse(null);
             assertThat(claimed).isNull();
             String leaseOwner = jdbc.queryForObject(
@@ -1084,7 +1086,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                     .isEqualTo("Attempt limit reached");
             assertThat(retryRepository.claimDue()).isEmpty();
             String crashedEventId = "retry-crashed-" + UUID.randomUUID();
-            retryRepository.enqueue(new PaymentWebhookEvent(crashedEventId, "PAYMENT.CAPTURE.COMPLETED",
+            retryRepository.enqueue(new WebhookRetryEvent(crashedEventId, "PAYMENT.CAPTURE.COMPLETED",
                     "capture-" + UUID.randomUUID(), "COMPLETED", "unmatched-order", null,
                     new BigDecimal("12.91"), "USD"));
             jdbc.update("""
@@ -1236,4 +1238,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                         .isEqualTo(409));
     }
 
+
+    private static WebhookRetryEvent retryEvent(PaymentWebhookEventResponse e) {
+        return new WebhookRetryEvent(e.eventId(), e.eventType(), e.resourceId(), e.resourceStatus(),
+                e.providerOrderId(), e.relatedCaptureId(), e.resourceAmount(), e.resourceCurrency());
+    }
 }

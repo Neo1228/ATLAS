@@ -1,7 +1,7 @@
 package com.atlas.application.controller.payment;
 
 import com.atlas.application.service.PayPalWebhookService;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import java.util.Objects;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,7 +27,7 @@ public class PayPalWebhookController {
             @RequestHeader("paypal-transmission-sig") String transmissionSignature,
             @RequestHeader("paypal-transmission-time") String transmissionTime,
             @RequestBody String rawBody) {
-        webhooks.handle(new PaymentWebhookSignature(authAlgorithm, certificateUrl, transmissionId,
+        webhooks.handle(new PaymentWebhookSignatureRequest(authAlgorithm, certificateUrl, transmissionId,
                 transmissionSignature, transmissionTime), rawBody);
         return ResponseEntity.noContent().build();
     }

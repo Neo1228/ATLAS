@@ -11,7 +11,7 @@ import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.provider.PaymentProviderResult;
+import com.atlas.payment.dto.response.PaymentProviderResponse;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
@@ -61,8 +61,8 @@ class PaymentCaptureCancellationFenceTest {
                     .thenAnswer(inv -> new SimpleTransactionStatus());
             PaymentProvider provider = mock(PaymentProvider.class);
             when(provider.providerCurrency()).thenReturn("KRW");
-            when(provider.perform(any())).thenReturn(new PaymentProviderResult(
-                    PaymentProviderResult.Outcome.CAPTURED, null, null, "captured", null));
+            when(provider.perform(any())).thenReturn(new PaymentProviderResponse(
+                    PaymentProviderResponse.Outcome.CAPTURED, null, null, "captured", null));
             PaymentServiceImpl service = service(repository, transactions, provider);
 
             service.prohibitNewCheckoutCapture(checkoutId);

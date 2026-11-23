@@ -1,5 +1,6 @@
 package com.atlas.application.controller.seller;
 
+import com.atlas.settlement.dto.response.PayoutSummaryResponse;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.time.Instant;
@@ -38,7 +39,7 @@ public class SellerPayoutController {
     }
 
     @GetMapping("/balance")
-    public SettlementPayoutService.PayoutSummary balance(@PathVariable UUID sellerId) {
+    public PayoutSummaryResponse balance(@PathVariable UUID sellerId) {
         return payouts.summary(sellerId);
     }
 
