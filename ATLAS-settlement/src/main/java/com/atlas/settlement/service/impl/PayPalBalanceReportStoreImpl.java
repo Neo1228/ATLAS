@@ -1,11 +1,13 @@
 package com.atlas.settlement.service.impl;
 
+import com.atlas.settlement.repository.PayPalBalanceReportRunRepository;
+import com.atlas.settlement.service.PayPalBalanceReportDailyTrend;
 import com.atlas.settlement.service.PayPalBalanceReportDisposition;
+import com.atlas.settlement.service.PayPalBalanceReportExceptionRow;
 import com.atlas.settlement.service.PayPalBalanceReportRow;
 import com.atlas.settlement.service.PayPalBalanceReportRun;
-import com.atlas.settlement.service.PayPalBalanceReportRunSummary;
-import com.atlas.settlement.repository.PayPalBalanceReportRunRepository;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -36,13 +38,8 @@ public class PayPalBalanceReportStoreImpl implements PayPalBalanceReportStore {
     }
 
     @Override
-    public List<PayPalBalanceReportRunSummary> listRunSummaries(int limit) {
-        return repository.listRunSummaries(limit);
-    }
-
-    @Override
-    public List<PayPalBalanceReportRow> listRows(UUID runId, int limit) {
-        return repository.listRows(runId, limit);
+    public List<PayPalBalanceReportRun> listRuns(int limit, int offset) {
+        return repository.listRuns(limit, offset);
     }
 
     @Override
@@ -61,7 +58,34 @@ public class PayPalBalanceReportStoreImpl implements PayPalBalanceReportStore {
     }
 
     @Override
-    public List<PayPalBalanceReportDisposition> findDispositionHistory(UUID runId, int rowNumber) {
-        return repository.findDispositionHistory(runId, rowNumber);
+    public List<PayPalBalanceReportDisposition> findDispositionHistory(UUID runId, int rowNumber, int limit) {
+        return repository.findDispositionHistory(runId, rowNumber, limit);
+    }
+
+    @Override
+    public List<PayPalBalanceReportDailyTrend> dailyTrend() {
+        return repository.dailyTrend();
+    }
+
+    @Override
+    public long countPendingExceptions() {
+        return repository.countPendingExceptions();
+    }
+
+    @Override
+    public List<PayPalBalanceReportExceptionRow> listExceptions(String status, LocalDate from, LocalDate to,
+            String recordId, int limit, int offset) {
+        return repository.listExceptions(status, from, to, recordId, limit, offset);
+    }
+
+    @Override
+    public List<PayPalBalanceReportExceptionRow> listRunRows(UUID runId, String status, String recordId, int limit,
+            int offset) {
+        return repository.listRunRows(runId, status, recordId, limit, offset);
+    }
+
+    @Override
+    public Optional<String> findRowStatus(UUID runId, int rowNumber) {
+        return repository.findRowStatus(runId, rowNumber);
     }
 }
