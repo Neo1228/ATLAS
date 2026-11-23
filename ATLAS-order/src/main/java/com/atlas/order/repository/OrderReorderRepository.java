@@ -1,6 +1,6 @@
 package com.atlas.order.repository;
 
-import com.atlas.order.persistence.projection.ExistingReorderRequest;
+import com.atlas.order.persistence.projection.ExistingReorder;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcOrderReorderRepository {
+public class OrderReorderRepository {
     private static final String INSERT_IF_ABSENT = """
             INSERT INTO order_reorder_request
                 (seller_id, buyer_ref, idempotency_key, source_order_id, confirm_merge, created_at)
@@ -21,16 +21,16 @@ public class JdbcOrderReorderRepository {
 
     private final JdbcTemplate jdbc;
 
-    public JdbcOrderReorderRepository(JdbcTemplate jdbc) {
+    public OrderReorderRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    public Optional<ExistingReorderRequest> find(UUID sellerId, String buyerRef, String idempotencyKey) {
-        List<ExistingReorderRequest> rows = jdbc.query("""
+    public Optional<ExistingReorder> find(UUID sellerId, String buyerRef, String idempotencyKey) {
+        List<ExistingReorder> rows = jdbc.query("""
                 SELECT source_order_id, confirm_merge
                 FROM order_reorder_request
                 WHERE seller_id = ? AND buyer_ref = ? AND idempotency_key = ?
-                """, (result, row) -> new ExistingReorderRequest(
+                """, (result, row) -> new ExistingReorder(
                 result.getObject("source_order_id", UUID.class), result.getBoolean("confirm_merge")),
                 sellerId, buyerRef, idempotencyKey);
         return rows.stream().findFirst();

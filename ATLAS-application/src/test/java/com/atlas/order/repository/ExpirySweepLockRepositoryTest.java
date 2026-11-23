@@ -41,7 +41,7 @@ class JdbcExpirySweepLockRepositoryTest extends PayPalIntegrationTestSupport {
         registry.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
     }
 
-    @Autowired JdbcExpirySweepLockRepository locks;
+    @Autowired ExpirySweepLockRepository locks;
 
     @Test
     void concurrentSweepOfTheSameWorkflowIsSkippedWhileAnotherRunsOutsideAnyTransaction() throws Exception {

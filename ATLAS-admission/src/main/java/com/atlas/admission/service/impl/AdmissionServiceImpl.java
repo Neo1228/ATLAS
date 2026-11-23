@@ -10,7 +10,7 @@ import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.persistence.entity.QueueTicket;
 import com.atlas.admission.repository.TicketRepository;
-import com.atlas.admission.repository.JdbcQueueRepository;
+import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.AdmissionPolicyRepository;
 import com.atlas.admission.persistence.entity.AdmissionPolicy;
 import com.atlas.campaign.exception.CampaignException;
@@ -44,16 +44,16 @@ import org.slf4j.LoggerFactory;
 public class AdmissionServiceImpl implements AdmissionService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AdmissionServiceImpl.class);
     private final TicketRepository tickets;
-    private final JdbcQueueRepository queueRepository;
+    private final QueueRepository queueRepository;
     private final CampaignService campaigns;
     private final AdmissionPolicyRepository policies;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
     private final PlatformTransactionManager transactionManager;
     private final AdmissionExpirySweepPolicy expirySweepPolicy;
-    private JdbcQueueRepository.DueTicketCursor expiryCursor;
+    private QueueRepository.DueTicketCursor expiryCursor;
 
-    public AdmissionServiceImpl(TicketRepository tickets, JdbcQueueRepository queueRepository,
+    public AdmissionServiceImpl(TicketRepository tickets, QueueRepository queueRepository,
             CampaignService campaigns, AdmissionPolicyRepository policies, SellerSkuService sellerSkus,
             Clock clock, PlatformTransactionManager transactionManager,
             @Value("${atlas.admission.expiry-sweep-batch-size:100}") int expiryBatchSize,
@@ -223,7 +223,7 @@ public class AdmissionServiceImpl implements AdmissionService {
     public synchronized int expireDueTickets() {
         Instant now = clock.instant();
         long deadline = System.nanoTime() + expirySweepPolicy.timeBudget().toNanos();
-        List<JdbcQueueRepository.DueTicketCandidate> candidates;
+        List<QueueRepository.DueTicketCandidate> candidates;
         candidates = queueRepository.findDueTicketCandidates(
                 now, expiryCursor, expirySweepPolicy.candidateWindowSize(), expirySweepPolicy.timeBudget());
         if (candidates.isEmpty()) {
@@ -237,8 +237,8 @@ public class AdmissionServiceImpl implements AdmissionService {
         int attemptedPairs = 0;
         int consumedRows = 0;
         int expired = 0;
-        JdbcQueueRepository.DueTicketCursor lastConsumed = expiryCursor;
-        for (JdbcQueueRepository.DueTicketCandidate candidate : candidates) {
+        QueueRepository.DueTicketCursor lastConsumed = expiryCursor;
+        for (QueueRepository.DueTicketCandidate candidate : candidates) {
             if (System.nanoTime() >= deadline && consumedRows > 0) break;
             SellerSkuKey pair = new SellerSkuKey(candidate.sellerId(), candidate.skuId());
             if (visitedPairs.add(pair)) {
@@ -247,10 +247,10 @@ public class AdmissionServiceImpl implements AdmissionService {
                 try {
                     transactionTemplate.setTimeout(timeoutSecondsUntil(deadline));
                     Integer changed = transactionTemplate.execute(status -> {
-                        JdbcQueueRepository.CounterLockResult lockResult = queueRepository
+                        QueueRepository.CounterLockResult lockResult = queueRepository
                                 .tryLockCounter(pair.sellerId(), pair.skuId());
-                        if (lockResult == JdbcQueueRepository.CounterLockResult.BUSY) return -1;
-                        if (lockResult == JdbcQueueRepository.CounterLockResult.MISSING) {
+                        if (lockResult == QueueRepository.CounterLockResult.BUSY) return -1;
+                        if (lockResult == QueueRepository.CounterLockResult.MISSING) {
                             throw new MissingAdmissionCounterException();
                         }
                         return expireDueTicketCandidates(
@@ -258,7 +258,7 @@ public class AdmissionServiceImpl implements AdmissionService {
                                 candidates.stream()
                                         .filter(dueCandidate -> dueCandidate.sellerId().equals(pair.sellerId())
                                                 && dueCandidate.skuId().equals(pair.skuId()))
-                                        .map(JdbcQueueRepository.DueTicketCandidate::ticketId)
+                                        .map(QueueRepository.DueTicketCandidate::ticketId)
                                         .toList(),
                                 now);
                     });

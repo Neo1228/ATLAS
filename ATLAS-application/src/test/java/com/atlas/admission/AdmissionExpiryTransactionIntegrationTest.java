@@ -7,7 +7,7 @@ import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.TicketStatus;
-import com.atlas.admission.repository.JdbcQueueRepository;
+import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.TicketRepository;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.service.impl.AdmissionServiceImpl;
@@ -68,7 +68,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
     @Autowired private CampaignService campaigns;
     @Autowired private AdmissionService admission;
     @Autowired private AdmissionServiceImpl admissionService;
-    @Autowired private JdbcQueueRepository queueRepository;
+    @Autowired private QueueRepository queueRepository;
     @Autowired private TicketRepository tickets;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DataSource dataSource;
@@ -82,9 +82,9 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
         DueTicket first = createDueTicket(seller.sellerId(), product, "first");
         DueTicket second = createDueTicket(seller.sellerId(), product, "second");
 
-        List<JdbcQueueRepository.DueTicketCandidate> candidates = queueRepository.findDueTicketCandidates(
+        List<QueueRepository.DueTicketCandidate> candidates = queueRepository.findDueTicketCandidates(
                 Instant.now(), null, 10, Duration.ofSeconds(2));
-        assertThat(candidates).extracting(JdbcQueueRepository.DueTicketCandidate::skuId)
+        assertThat(candidates).extracting(QueueRepository.DueTicketCandidate::skuId)
                 .containsExactlyInAnyOrder(first.skuId(), second.skuId());
         DueTicket visibleBeforeRelease = Map.of(first.skuId(), first, second.skuId(), second)
                 .get(candidates.get(0).skuId());
@@ -287,7 +287,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
         jdbc.update("UPDATE admission_ticket SET expires_at = ? WHERE seller_id = ? AND sku_id = ?",
                 Timestamp.from(dueAt), seller.sellerId(), skuId);
 
-        List<JdbcQueueRepository.DueTicketCandidate> page = queueRepository.findDueTicketCandidates(
+        List<QueueRepository.DueTicketCandidate> page = queueRepository.findDueTicketCandidates(
                 Instant.now(), null, 201, Duration.ofSeconds(2));
         assertThat(page).hasSize(201);
         UUID ticketIdOutsidePage = page.get(200).ticketId();

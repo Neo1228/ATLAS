@@ -613,7 +613,7 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
         }
     }
 
-    /** location 계약의 메모리 모델. 실제 서비스(InventoryReservationServiceImpl)의 멱등·tombstone·전이 규칙을 따른다. */
+    /** location 계약의 메모리 모델. 실제 서비스(InventoryReservationService)의 멱등·tombstone·전이 규칙을 따른다. */
     private static final class LocationModel extends Dispatcher {
         private record Reservation(UUID id, UUID orderId, String key, int quantity) {
         }

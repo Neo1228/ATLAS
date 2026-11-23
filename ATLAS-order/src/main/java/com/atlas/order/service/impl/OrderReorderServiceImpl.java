@@ -13,9 +13,9 @@ import com.atlas.order.exception.OrderException;
 import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
-import com.atlas.order.persistence.projection.ExistingReorderRequest;
+import com.atlas.order.persistence.projection.ExistingReorder;
 import com.atlas.order.persistence.state.OrderSource;
-import com.atlas.order.repository.JdbcOrderReorderRepository;
+import com.atlas.order.repository.OrderReorderRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.OrderReorderService;
@@ -35,12 +35,12 @@ public class OrderReorderServiceImpl implements OrderReorderService {
     private final InventoryService inventory;
     private final CartService carts;
     private final SellerSkuService sellerSkus;
-    private final JdbcOrderReorderRepository reorderRequests;
+    private final OrderReorderRepository reorderRequests;
     private final Clock clock;
 
     public OrderReorderServiceImpl(OrderRepository orders, OrderItemRepository items,
                                    InventoryService inventory, CartService carts,
-                                   JdbcOrderReorderRepository reorderRequests, SellerSkuService sellerSkus,
+                                   OrderReorderRepository reorderRequests, SellerSkuService sellerSkus,
                                    Clock clock) {
         this.orders = Objects.requireNonNull(orders);
         this.items = Objects.requireNonNull(items);
@@ -64,7 +64,7 @@ public class OrderReorderServiceImpl implements OrderReorderService {
         if (sourceOrder.source() != OrderSource.CART || !sourceOrder.state().isTerminal())
             throw conflict("Only terminal Cart orders can be reordered");
 
-        ExistingReorderRequest previous = reorderRequests
+        ExistingReorder previous = reorderRequests
                 .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElse(null);
         if (previous != null) {
             if (!previous.sourceOrderId().equals(orderId) || previous.confirmMerge() != confirmMerge)
@@ -98,7 +98,7 @@ public class OrderReorderServiceImpl implements OrderReorderService {
 
     private CartResponse replayOrConflict(PurchaseOrder sourceOrder, UUID orderId,
                                            String idempotencyKey, boolean confirmMerge) {
-        ExistingReorderRequest existing = reorderRequests
+        ExistingReorder existing = reorderRequests
                 .find(sourceOrder.sellerId(), sourceOrder.buyerRef(), idempotencyKey).orElseThrow(() ->
                         new IllegalStateException("Reorder idempotency row disappeared"));
         if (!existing.sourceOrderId().equals(orderId) || existing.confirmMerge() != confirmMerge)

@@ -15,10 +15,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcLocationRepository {
+public class LocationRepository {
     private final JdbcTemplate jdbc;
 
-    public JdbcLocationRepository(JdbcTemplate jdbc) {
+    public LocationRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
@@ -28,7 +28,7 @@ public class JdbcLocationRepository {
                 VALUES (?, ?, ?, ?, TRUE)
                 ON CONFLICT (seller_id, location_code) DO NOTHING
                 RETURNING location_id, seller_id, location_code, name, priority, active
-                """, JdbcLocationRepository::location, sellerId, code, name, priority).stream().findFirst();
+                """, LocationRepository::location, sellerId, code, name, priority).stream().findFirst();
     }
 
     public List<InventoryLocationRecord> find(UUID sellerId) {
@@ -37,7 +37,7 @@ public class JdbcLocationRepository {
                 FROM inventory_location
                 WHERE seller_id = ?
                 ORDER BY priority, location_id
-                """, JdbcLocationRepository::location, sellerId);
+                """, LocationRepository::location, sellerId);
     }
 
     public Optional<InventoryLocationRecord> update(
@@ -47,7 +47,7 @@ public class JdbcLocationRepository {
                 SET name = ?, priority = ?, active = ?
                 WHERE seller_id = ? AND location_id = ?
                 RETURNING location_id, seller_id, location_code, name, priority, active
-                """, JdbcLocationRepository::location, name, priority, active, sellerId, locationId).stream().findFirst();
+                """, LocationRepository::location, name, priority, active, sellerId, locationId).stream().findFirst();
     }
 
     public Optional<UUID> advisorySelect(UUID sellerId, Map<String, Integer> requiredQuantities) {
@@ -123,7 +123,7 @@ public class JdbcLocationRepository {
                        idempotency_key, quantity, reason, created_at
                 FROM inventory_transfer
                 WHERE seller_id = ? AND sku_id = ? AND idempotency_key = ?
-                """, JdbcLocationRepository::transfer, sellerId, skuId, idempotencyKey);
+                """, LocationRepository::transfer, sellerId, skuId, idempotencyKey);
         if (!prior.isEmpty()) {
             InventoryTransferRecord existing = prior.getFirst();
             if (!existing.sourceLocationId().equals(sourceLocationId)
@@ -185,7 +185,7 @@ public class JdbcLocationRepository {
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 RETURNING transfer_id, seller_id, sku_id, source_location_id, destination_location_id,
                           idempotency_key, quantity, reason, created_at
-                """, JdbcLocationRepository::transfer, sellerId, skuId, sourceLocationId,
+                """, LocationRepository::transfer, sellerId, skuId, sourceLocationId,
                 destinationLocationId, idempotencyKey, quantity, reason);
         return InventoryTransferResult.success(transfer);
     }

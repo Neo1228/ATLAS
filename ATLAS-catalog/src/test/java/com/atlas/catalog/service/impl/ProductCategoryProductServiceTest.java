@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ProductCategoryProductServiceTest {

@@ -2,5 +2,5 @@ package com.atlas.application.controller.dto;
 
 import jakarta.validation.constraints.Positive;
 
-public record UpdateSkuPriceHttpRequest(@Positive long priceWon) {
+public record UpdateSkuPriceRequest(@Positive long priceWon) {
 }
