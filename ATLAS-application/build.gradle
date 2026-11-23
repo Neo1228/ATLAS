@@ -38,12 +38,15 @@ dependencies {
     testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.testcontainers:testcontainers-kafka'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.security:spring-security-test'
 }
 
 tasks.named('test') {
+    // CI가 테스트 클래스를 여러 runner에 나누어 실행할 때만 지정한다(예: 1/4). 비어 있으면 전부 실행한다.
+    systemProperty 'atlas.test.shard', System.getenv('ATLAS_TEST_SHARD') ?: ''
     // 로컬 coordinator 시나리오만 이 flag를 export한다. 일반 test suite는 실제 HTTP 연결 설정을 상속하지 않는다.
     systemProperty 'atlas.order-inventory-reservation.enabled', 'false'
 }
