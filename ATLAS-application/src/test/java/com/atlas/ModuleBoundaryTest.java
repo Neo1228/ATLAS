@@ -44,6 +44,8 @@ class ModuleBoundaryTest {
                 "com.nimbusds..",
                 "org.apache.commons.csv..",
                 "io.micrometer..",
+            // Redis admission gate의 client. 이 모듈 밖으로 퍼지지 않도록 application 패키지에서만 허용한다.
+            "io.lettuce..",
                 "java..", "javax..", "jakarta..", "org.springframework..", "org.slf4j.."
         };
         enforceAllowedDependencies(source, "com.atlas.application..", applicationDependencies);

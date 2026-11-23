@@ -329,3 +329,76 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 
 - `GET /needs-review?limit=50`: 오래된 순으로 조회한다. `limit` 기본값은 50이다.
 - `POST /{workflowId}/release`: 보상을 다시 실행해 원격 예약을 해제한다(`CLAIMED`는 복원). 시도 횟수를 0으로 되돌리고, `NEEDS_REVIEW`가 아니면 현재 상태를 그대로 돌려줘 반복 호출해도 안전하다. 원격 재고를 풀기 때문에 주문을 계속 진행하려는 경우에는 쓰지 않는다.
+
+## 핫 SKU admission gate (선택)
+
+한 SKU에 요청이 몰리면 품절 요청도 order DB에 reservation workflow 행을 만들어, 승인될 수 없는 요청이 DB 쓰기와 CPU를 먼저 소모한다. 로컬 격리 측정(재고 100인 SKU 1개, 주문 1건 = SKU 1줄, 측정 20초, 단일 호스트)에서 PostgreSQL만 쓰는 기준선은 500/s까지 dropped 0으로 요청률을 따라갔다. 1,000/s에서는 completed/s가 383.0~525.0(n=3)으로 꺾였고 거절 주문당 order DB transaction은 약 5.6~5.9개였다. 이를 줄이려고 workflow를 만들기 전에 요청을 앞단에서 거절하는 선택 기능을 두었다. 측정 요약은 아래 표에, 조건과 해석 한계는 [EXP-060](docs/03-experiments/EXP-060-hot-sku-admission-gate.md)·[EXP-062](docs/03-experiments/EXP-062-admission-gate-paired-comparison.md)·[EXP-063](docs/03-experiments/EXP-063-redis-gate-failopen-and-paired-rerun.md)에, 결정 근거는 [ADR-0066](docs/02-decisions/adr/ADR-0066-redis-admission-gate.md)에 있다. gate는 거절 비용을 앞으로 옮길 뿐이며 재고 정합성의 정본은 계속 inventory-location의 조건부 UPDATE다. 기본값은 모두 비활성화다.
+
+환경 변수 이름은 `atlas.order-inventory-reservation.admission-gate.*` 속성에서 `.`과 `-`를 `_`로 바꾸고 대문자로 쓴 것이다.
+
+| 환경 변수 | 기본값 | 의미 |
+|---|---|---|
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_ENABLED` | `false` | Redis gate 활성화(`RedisStockAdmissionService`) |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_REDIS_URI` | 없음(활성화 시 필수) | Redis 접속 URI. 인증 정보는 secret manager나 environment에서만 공급한다 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_COMMAND_TIMEOUT` | `PT0.2S` | Redis 명령 timeout |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_STOCK_TTL` | `PT5S` | SKU별 재고 카운터 key TTL. 만료되면 location의 실제 판매 가능 수량으로 다시 채운다 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_DECISION_TTL` | `PT10M` | 요청별 판정 key TTL. 같은 admission key의 재시도는 다시 차감하지 않는다 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_BREAKER_COOLDOWN` | `PT2S` | Redis 오류 뒤 gate를 건너뛰는 시간 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_PRECHECK_ENABLED` | `false` | Redis 없는 대안 활성화(`PrecheckStockAdmissionService`) |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_PRECHECK_SOLD_OUT_TTL` | `PT1S` | precheck가 품절로 판정한 key를 기억하는 시간. `PT0S`이면 캐시를 끈다 |
+
+- Redis 없는 대안은 workflow 행을 만들기 전에 location의 판매 가능 수량을 읽어, 요청 수량보다 적으면 거절한다. 품절로 판정한 key는 `PRECHECK_SOLD_OUT_TTL` 동안 기억하므로 그 시간에는 location을 다시 읽지 않는다. 차감하지 않는 읽기라 동시 요청은 같은 수량을 보고 통과할 수 있으며, 그 요청은 뒤의 정본 경로에서 거절된다. 이 대안은 별도 metric을 내지 않는다.
+- 두 gate는 **동시에 켜지 않고** 한 가지만 선택한다. [ADR-0066](docs/02-decisions/adr/ADR-0066-redis-admission-gate.md)은 기본 gate 후보를 precheck로, Redis gate를 location 읽기를 더 줄여야 하는 규모를 위한 옵션으로 둔다.
+- **fail-open**: Redis 호출이 실패하거나 재고를 확인하지 못하면 거절하지 않고 정본 경로로 통과시킨다. 실패하면 `BREAKER_COOLDOWN` 동안 Redis를 호출하지 않고 통과시켜 요청마다 timeout을 기다리지 않는다. Redis 연결은 첫 사용 때 만들어, 기동 시점의 Redis 장애가 애플리케이션 기동을 막지 않는다. precheck 대안도 읽기에 실패하면 통과시킨다.
+- Metric `atlas.order.admission.gate{result}`의 `result`는 `admitted`, `rejected`, `fail_open`이다. `fail_open`이 늘면 gate가 우회되고 있다는 신호다.
+
+측정 요약(재고 100인 SKU 1개, 주문 1건 = SKU 1줄, location 1개, 단일 호스트, n = 구성당 반복 횟수):
+
+| 구성 | 도착률 | n | completed/s | dropped | 근거 |
+|---|---|---|---|---|---|
+| gate 끈 기준선 | 1,000/s | 3 | 383.0~525.0 | 7,912~10,239 | EXP-060, 측정 20초 |
+| gate 끈 기준선 | 2,000/s | 3 | 456.0~1,041.9 | 17,351~28,498 | EXP-060, 측정 20초 |
+| Redis gate | 1,000/s | 2 | 991.3~992.2 | 140~152 | EXP-060, 측정 20초 |
+| Redis gate | 2,000/s | 2 | 1,938.1~1,959.2 | 779~1,096 | EXP-060, 측정 20초 |
+| Redis 중지, breaker 없음 | 1,000/s | 1 | 355 | 7,299 | EXP-060, 오버셀 없음 |
+| Redis 중지, breaker 적용 | 1,000/s | 2 | 707~730 | 3,472~3,774 | EXP-060, 오버셀 없음 |
+| precheck | 1,000/s | 6 | 중앙값 988(937~996) | 중앙값 314(95~1,826) | EXP-062, 측정 30초 |
+| Redis gate | 1,000/s | 6 | 중앙값 996(982~999) | 중앙값 60(3~448) | EXP-062, 측정 30초 |
+| precheck | 2,000/s | 3 | 중앙값 1,964(1,956~1,974) | 중앙값 1,023(727~1,274) | EXP-062, 측정 30초 |
+| Redis gate | 2,000/s | 3 | 중앙값 1,683(1,501~1,944) | 중앙값 9,384(1,550~14,864) | EXP-062, 측정 30초, `fail_open` 2회 동반 |
+| precheck(보강 jar) | 2,000/s | 4 | 중앙값 1,974(1,965~1,982) | 중앙값 746(497~998) | EXP-063, 측정 30초 |
+| Redis gate(보강 jar) | 2,000/s | 4 | 중앙값 1,964(1,931~1,979) | 중앙값 998(510~1,989) | EXP-063, 측정 30초, `fail_open` 0회 |
+
+- 기준선과 gate 실행은 세션이 달라 퍼센트 개선이나 절대 처리량을 근거로 쓰지 않는다. 기준선의 1,000/s 반복 범위 자체가 383.0~525.0이다. 방어 가능한 결론은 "거절 주문이 durable 쓰기를 만든다"와 "그 쓰기를 없애면 포화 지점이 크게 밀린다"는 자릿수 수준이다.
+- 같은 세션 교차 비교(EXP-062·063)에서 precheck와 Redis gate의 처리량은 1,000/s와 보강 jar의 2,000/s에서 run 간 잡음(A/A 대조 4.2%) 안이었다. EXP-062의 Redis 팔 2회(1,501/s, 1,683/s)는 `fail_open`을 동반했으나, 보강 jar에서는 13회 모두 `fail_open` 0회라 재현하지 못했다(원인은 확정하지 못했다).
+- EXP-062·063은 Apple M3 Pro, Colima VM 8 vCPU에서 컨테이너 CPU 한도 합이 vCPU를 넘는 과할당 조건이다. 모든 구성요소가 한 호스트에 있다.
+
+재현에는 Docker, JDK 25, `python3`가 필요하고 두 JAR을 먼저 만들어야 한다(compose가 `build/libs`의 JAR을 bind mount한다). 스크립트는 격리된 임시 container/network만 쓰며 종료 시 정리한다. 결과는 git-ignore된 `.local/` 아래에만 쓰므로 저장소에서 원본 결과를 내려받을 수는 없다.
+
+```sh
+./gradlew --no-daemon :inventory-location-module:bootJar :application-module:bootJar
+# gate를 끈 기준선. 도착률마다 새 compose 프로젝트를 만든다.
+load-tests/run-hot-sku-coordinator.sh
+# 도착률과 재고를 지정한다.
+RATES="500 1000" STOCK=100 load-tests/run-hot-sku-coordinator.sh
+# Redis 없는 대안(GATE=precheck)과 Redis gate(GATE=redis). 아래는 EXP-062·063의 2,000/s 조건이다(EXP-063은 K6_CPUS=2를 추가로 지정했다).
+GATE=precheck RATES=2000 DURATION=30s LOCATION_CPUS=2 load-tests/run-hot-sku-coordinator.sh
+GATE=redis RATES=2000 DURATION=30s LOCATION_CPUS=2 load-tests/run-hot-sku-coordinator.sh
+# Redis 장애 주입. GATE=redis에서만 허용되며 측정 시작 <초> 뒤 Redis container를 중지한다.
+GATE=redis REDIS_KILL_AFTER=<초> load-tests/run-hot-sku-coordinator.sh
+```
+
+| 변수 | 기본값 | 의미 |
+|---|---|---|
+| `RATES` | `100 300 500 1000 2000` | 도착률(주문/초) 목록. 공백으로 구분하며 값마다 새 compose 스택을 만든다 |
+| `DURATION` | `20s` | 측정 구간. `<초>s` 형식만 받는다 |
+| `STOCK` | `100` | 시드할 SKU 재고 |
+| `GATE` | `off` | `off`, `redis`, `precheck` 중 하나 |
+| `REDIS_KILL_AFTER` | 없음 | 측정 시작 뒤 Redis를 중지할 시점(정수 초). `GATE=redis`에서만 허용한다 |
+| `K6_CPUS` | `1` | k6 container CPU 한도 |
+| `LOCATION_CPUS` | `1` | inventory-location container CPU 한도 |
+| `APP_POOL_SIZE` | `10` | 애플리케이션 Hikari 최대 pool 크기(`SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE`) |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_COMMAND_TIMEOUT`, `ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_BREAKER_COOLDOWN` | 설정하지 않으면 애플리케이션 기본값(`PT0.2S`, `PT2S`) | 환경에 설정하면 Redis gate에 그대로 전달한다 |
+| `OUT` | `.local/hot-sku-coordinator/<timestamp>` | 결과 디렉터리 |
+
+위 결과는 모두 **단일 호스트 탐색적 측정**이며 운영 처리량·SLO·용량 보장이 아니다. Redis 지연·장애 격리는 같은 호스트 안 container 사이의 조건에서만 관찰했다.
