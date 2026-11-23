@@ -29,11 +29,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -59,7 +59,9 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             Duration baseRetryDelay,
             Duration maxRetryDelay,
             Duration minimumReservationRemaining,
-            int maxAttempts) {
+            int maxAttempts,
+            Optional<StockAdmissionService> stockAdmission) {
+        this.stockAdmission = stockAdmission;
         this.repository = repository;
         this.inventory = inventory;
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
@@ -127,23 +129,19 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         return workflow;
     }
 
-    private StockAdmissionService stockAdmission;
+    private final Optional<StockAdmissionService> stockAdmission;
 
     /** 선택 구성요소다. 없으면 모든 요청이 기존 경로를 그대로 탄다. */
-    @Autowired(required = false)
-    public void setStockAdmission(StockAdmissionService stockAdmission) {
-        this.stockAdmission = stockAdmission;
-    }
 
     private void rejectIfAdmissionExhausted(String idempotencyKey, LocationReservationRequest request) {
-        if (stockAdmission == null || idempotencyKey == null || request == null || request.allocations() == null) {
+        if (stockAdmission.isEmpty() || idempotencyKey == null || request == null || request.allocations() == null) {
             return;
         }
         List<StockClaimRequest> claims = request.allocations().stream()
                 .flatMap(allocation -> allocation.items().stream().map(item -> new StockClaimRequest(
                         allocation.fulfillmentLocationId(), item.sellerId(), item.skuId(), item.quantity())))
                 .toList();
-        if (!claims.isEmpty() && !stockAdmission.admit(idempotencyKey, claims)) {
+        if (!claims.isEmpty() && !stockAdmission.get().admit(idempotencyKey, claims)) {
             // 확실히 소진된 SKU다. workflow 행도 원격 호출도 만들지 않고 즉시 재고 부족으로 답한다.
             throw conflict("Inventory appears exhausted at the admission gate; the reservation was not attempted");
         }
@@ -610,21 +608,21 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     /** 종결 상태가 되면 gate에 알려 승인 때 잡아 둔 수량을 정리하거나 돌려준다. gate 오류는 workflow를 막지 않는다. */
     private void settleAdmission(WorkflowSnapshot workflow, LocationReservationWorkflowState state,
             String errorCode) {
-        if (stockAdmission == null) {
+        if (stockAdmission.isEmpty()) {
             return;
         }
         try {
             switch (state) {
-                case RESERVED, CLAIMED -> stockAdmission.confirm(workflow.idempotencyKey());
+                case RESERVED, CLAIMED -> stockAdmission.get().confirm(workflow.idempotencyKey());
                 // 재고 부족으로 끝난 건은 돌려줄 재고가 없다. 승인 때 낙관적으로 잡았던 수량만 정리한다.
                 case FAILED -> {
                     if ("INSUFFICIENT_STOCK".equals(errorCode)) {
-                        stockAdmission.confirm(workflow.idempotencyKey());
+                        stockAdmission.get().confirm(workflow.idempotencyKey());
                     } else {
-                        stockAdmission.release(workflow.idempotencyKey());
+                        stockAdmission.get().release(workflow.idempotencyKey());
                     }
                 }
-                case CANCELLED -> stockAdmission.release(workflow.idempotencyKey());
+                case CANCELLED -> stockAdmission.get().release(workflow.idempotencyKey());
                 default -> { }
             }
         } catch (RuntimeException exception) {

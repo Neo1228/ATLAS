@@ -27,9 +27,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,16 +41,14 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
     private final OrderFulfillmentRepository fulfillments;
     private final OrderRefundRepository refunds;
     private final Clock clock;
-    private LocationReservationRepository reservationWorkflows;
+    private final Optional<LocationReservationRepository> reservationWorkflows;
 
-    @Autowired(required = false)
-    public void setReservationWorkflows(LocationReservationRepository reservationWorkflows) {
-        this.reservationWorkflows = reservationWorkflows;
-    }
 
     public OrderShipmentServiceImpl(OrderRepository orders, OrderItemRepository orderItems,
                                     OrderShipmentRepository shipments, OrderFulfillmentRepository fulfillments,
-                                    OrderRefundRepository refunds, Clock clock) {
+                                    OrderRefundRepository refunds, Clock clock,
+            Optional<LocationReservationRepository> reservationWorkflows) {
+        this.reservationWorkflows = reservationWorkflows;
         this.orders = Objects.requireNonNull(orders);
         this.orderItems = Objects.requireNonNull(orderItems);
         this.shipments = Objects.requireNonNull(shipments);
@@ -194,13 +192,13 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
      */
     private UUID shipmentLocation(PurchaseOrder order, Normalized facts, Map<UUID, OrderItem> byId) {
         UUID requested = facts.fulfillmentLocationId();
-        if (order.reservationWorkflowId() == null || reservationWorkflows == null) {
+        if (order.reservationWorkflowId() == null || reservationWorkflows.isEmpty()) {
             if (requested != null && !requested.equals(order.fulfillmentLocationId())) {
                 throw invalid("Shipment location does not match the order fulfillment location");
             }
             return order.fulfillmentLocationId();
         }
-        WorkflowSnapshot workflow = reservationWorkflows.findByWorkflowId(order.reservationWorkflowId());
+        WorkflowSnapshot workflow = reservationWorkflows.get().findByWorkflowId(order.reservationWorkflowId());
         if (workflow == null) throw conflict("Order inventory allocation not found");
         List<WorkflowLocationSnapshot> locations = workflow.locations();
         if (locations.size() == 1) {

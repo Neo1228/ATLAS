@@ -41,9 +41,9 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -66,17 +66,15 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     private final OrderReturnRepository returns;
     private final Clock clock;
     private final TransactionTemplate transactions;
-    private LocationRestockService restockService;
+    private final Optional<LocationRestockService> restockService;
 
-    @Autowired(required = false)
-    public void setRestockService(LocationRestockService restockService) {
-        this.restockService = restockService;
-    }
 
     public OrderRefundServiceImpl(PlatformTransactionManager transactionManager, OrderRepository orders,
                                   OrderItemRepository items, OrderFulfillmentRepository fulfillments,
                                   OrderRefundRepository refunds, OrderReturnRepository returns, InventoryService inventory,
-                                  SettlementService settlement, PaymentService payments, Clock clock) {
+                                  SettlementService settlement, PaymentService payments, Clock clock,
+            Optional<LocationRestockService> restockService) {
+        this.restockService = restockService;
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.orders = Objects.requireNonNull(orders);
         this.items = Objects.requireNonNull(items);
@@ -183,7 +181,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         return Objects.requireNonNull(transactions.execute(transaction -> {
             if (returnId != null) {
                 PurchaseOrder returnOrder = lockOrder(orderId);
-                if (returnOrder.reservationWorkflowId() != null && restockService == null) {
+                if (returnOrder.reservationWorkflowId() != null && restockService.isEmpty()) {
                     throw conflict("Remote inventory restock is unavailable for this order");
                 }
                 if (!returnOrder.sellerId().equals(sellerId) || returnOrder.state() != OrderState.PAID)
@@ -223,7 +221,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             if (!order.sellerId().equals(sellerId)) {
                 throw conflict("Seller does not own order");
             }
-            if (order.reservationWorkflowId() != null && restockService == null) {
+            if (order.reservationWorkflowId() != null && restockService.isEmpty()) {
                 throw conflict("Remote inventory restock is unavailable for this order");
             }
             if (order.state() != OrderState.PAID) {
@@ -357,7 +355,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             RefundRecord updated = refunds.findByRefundId(reserved.refundId()).orElse(current);
             return response(updated, currentStatus, payment.providerRefundId());
         }));
-        if (restockService != null) restockService.dispatch(reserved.refundId());
+        if (restockService.isPresent()) restockService.get().dispatch(reserved.refundId());
         return applied;
     }
 
@@ -377,7 +375,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             quantitiesBySku.merge(item.skuId(), line.quantity(), Math::addExact);
         }
         if (order.reservationWorkflowId() != null) {
-            if (restockService == null) throw conflict("Remote inventory restock is unavailable for this order");
+            if (restockService.isEmpty()) throw conflict("Remote inventory restock is unavailable for this order");
             long returnItemCount = returns.countItemsByRefundId(refund.refundId());
             if (returnItemCount > 0) {
                 List<OrderReturnRepository.ReturnRestockAllocation> sourceAllocations =
@@ -400,10 +398,10 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                     if (missing > 0) unlocated.put(sku, missing);
                 });
                 if (!unlocated.isEmpty()) quantitiesByLocation.put(null, unlocated);
-                restockService.stageAtLocations(refund.refundId(), order.orderId(),
+                restockService.get().stageAtLocations(refund.refundId(), order.orderId(),
                         order.reservationWorkflowId(), refund.sellerId(), quantitiesByLocation);
             } else {
-                restockService.stage(refund.refundId(), order.orderId(), order.reservationWorkflowId(),
+                restockService.get().stage(refund.refundId(), order.orderId(), order.reservationWorkflowId(),
                         refund.sellerId(), quantitiesBySku);
             }
         } else {

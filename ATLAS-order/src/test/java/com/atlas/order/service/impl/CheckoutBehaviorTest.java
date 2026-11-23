@@ -94,7 +94,7 @@ class CheckoutBehaviorTest {
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(),
                 checkouts, orders, mock(OrderItemRepository.class), inventory,
                 mock(OrderFulfillmentService.class), payments, mock(SettlementService.class),
-                mock(SellerCouponService.class), fixedClock(), 100, Duration.ofSeconds(2), sweepLock());
+                mock(SellerCouponService.class), fixedClock(), 100, Duration.ofSeconds(2), sweepLock(), Optional.empty());
 
         service.reconcile(checkoutId, "reconcile");
 
@@ -111,7 +111,7 @@ class CheckoutBehaviorTest {
                 mock(CartService.class), mock(SellerSkuService.class), mock(SellerCouponService.class),
                 mock(InventoryService.class), mock(BuyerCheckoutRepository.class), mock(OrderRepository.class),
                 mock(OrderItemRepository.class), mock(OrderService.class), transactionManager(),
-                fixedClock(), Duration.ofMinutes(10));
+                fixedClock(), Duration.ofMinutes(10), Optional.empty(), Optional.empty(), Optional.empty());
         String keyAcceptedByCreateButNotByReconcile = "k".repeat(222);
 
         OrderException exception = assertThrows(OrderException.class,
@@ -353,7 +353,7 @@ class CheckoutBehaviorTest {
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
                 orders, items, inventory, fulfillment, payments, settlement, mock(SellerCouponService.class),
                 fixedClock(), 100, Duration.ofSeconds(2),
-                sweepLock());
+                sweepLock(), Optional.empty());
         AtomicReference<BuyerCheckoutState> cancellationState = new AtomicReference<>();
         when(payments.submitCheckout(eq(checkoutId), any())).thenAnswer(invocation -> {
             cancellationState.set(service.cancel(checkoutId, "cancel-racing-submit").state());
@@ -422,7 +422,7 @@ class CheckoutBehaviorTest {
                 orders, items, inventory, mock(OrderFulfillmentService.class), payments,
                 mock(SettlementService.class), mock(SellerCouponService.class),
                 fixedClock(), 100, Duration.ofSeconds(2),
-                sweepLock());
+                sweepLock(), Optional.empty());
 
         service.find(checkoutId);
 

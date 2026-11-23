@@ -73,7 +73,7 @@ class OrderRefundServiceImplTest {
         OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders,
                 mock(OrderItemRepository.class), fulfillments, refunds,
                 mock(OrderReturnRepository.class), mock(InventoryService.class), mock(SettlementService.class),
-                mock(PaymentService.class), Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC));
+                mock(PaymentService.class), Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC), Optional.empty());
 
         OrderRefundResponse response = service.refund(new OrderRefundRequest(sellerId, orderId, idempotencyKey,
                 List.of(new OrderRefundRequest.Item(javaSecond, 1), new OrderRefundRequest.Item(javaFirst, 1))));
@@ -87,7 +87,7 @@ class OrderRefundServiceImplTest {
                 mock(PlatformTransactionManager.class), mock(OrderRepository.class), mock(OrderItemRepository.class),
                 mock(OrderFulfillmentRepository.class), mock(OrderRefundRepository.class),
                 mock(OrderReturnRepository.class), mock(InventoryService.class),
-                mock(SettlementService.class), mock(PaymentService.class), Clock.systemUTC());
+                mock(SettlementService.class), mock(PaymentService.class), Clock.systemUTC(), Optional.empty());
 
         OrderException exception = assertThrows(OrderException.class, () -> service.refund(null));
 
@@ -136,7 +136,7 @@ class OrderRefundServiceImplTest {
 
         OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders, items, fulfillments,
                 refunds, returns, mock(InventoryService.class), mock(SettlementService.class),
-                mock(PaymentService.class), Clock.systemUTC());
+                mock(PaymentService.class), Clock.systemUTC(), Optional.empty());
             OrderException exception = assertThrows(OrderException.class, () -> service.refund(
                     new OrderRefundRequest(sellerId, orderId, "direct-refund-" + returnStatus,
                             List.of(new OrderRefundRequest.Item(orderItemId, 2)))));
