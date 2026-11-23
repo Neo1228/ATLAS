@@ -6,7 +6,7 @@ import com.atlas.account.dto.request.LoginRequest;
 import com.atlas.account.dto.request.MfaChallengeRequest;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountService;
-import com.zaxxer.hikari.HikariDataSource;
+import com.atlas.application.SingleConnectionPool;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -47,7 +47,7 @@ class LoginConnectionPoolIntegrationTest {
         registry.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.payment.recovery.worker.enabled", () -> "false");
-        registry.add("atlas.paypal.webhook-retry.worker.enabled", () -> "false");
+        registry.add("atlas.payment.paypal.webhook-retry.worker.enabled", () -> "false");
     }
 
     @Autowired DataSource dataSource;
@@ -58,10 +58,7 @@ class LoginConnectionPoolIntegrationTest {
     @Test
     void loginSucceedsWithASingleConnectionPool() throws Exception {
         // 시작 단계(Flyway, Hibernate)는 연결이 둘 이상 필요하므로 기동한 뒤에 풀을 1개로 줄인다.
-        HikariDataSource pool = dataSource.unwrap(HikariDataSource.class);
-        pool.setMinimumIdle(1);
-        pool.setMaximumPoolSize(1);
-        pool.getHikariPoolMXBean().softEvictConnections();
+        SingleConnectionPool.shrink(dataSource);
 
         String email = "pool1-" + UUID.randomUUID() + "@example.com";
         String password = "long-enough-password-123";
@@ -76,10 +73,7 @@ class LoginConnectionPoolIntegrationTest {
 
     @Test
     void mfaChallengeCompletionSucceedsWithASingleConnectionPool() throws Exception {
-        HikariDataSource pool = dataSource.unwrap(HikariDataSource.class);
-        pool.setMinimumIdle(1);
-        pool.setMaximumPoolSize(1);
-        pool.getHikariPoolMXBean().softEvictConnections();
+        SingleConnectionPool.shrink(dataSource);
 
         String email = "pool1-mfa-" + UUID.randomUUID() + "@example.com";
         String password = "long-enough-password-123";
