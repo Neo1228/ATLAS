@@ -42,7 +42,6 @@ class ModuleBoundaryTest {
                 "com.atlas.account.dto.response", "com.atlas.account.exception",
                 "net.ttddyy.dsproxy..",
                 "com.nimbusds..",
-                "org.apache.commons.csv..",
                 "io.micrometer..",
             // Redis admission gate의 client. 이 모듈 밖으로 퍼지지 않도록 application 패키지에서만 허용한다.
             "io.lettuce..",
@@ -81,7 +80,7 @@ class ModuleBoundaryTest {
         enforceAllowedDependencies(source, "com.atlas.payment..",
                 append(javaAndPersistence, "com.atlas.payment..", "tools.jackson.."));
         enforceAllowedDependencies(source, "com.atlas.settlement..",
-                append(javaAndPersistence, "com.atlas.settlement.."));
+                append(javaAndPersistence, "com.atlas.settlement..", "org.apache.commons.csv.."));
         enforceAllowedDependencies(source, "com.atlas.account..",
                 append(javaAndPersistence, "com.atlas.account..", "com.bastiaanjansen.otp.."));
         noClasses().that().resideInAPackage("com.atlas..")

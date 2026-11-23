@@ -6,19 +6,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.dto.response.PayPalBalanceReportDispositionResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
-import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.application.exception.ApplicationException.Code;
-import com.atlas.application.exception.ApplicationException;
-import com.atlas.application.service.PayPalBalanceReportOperatorService;
 import com.atlas.application.service.PayPalBalanceReportReconciliationService;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
 import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.payment.service.PayPalReportMatchQuery;
 import com.atlas.schema.BaselineSchema;
+import com.atlas.settlement.dto.response.PayPalBalanceReportDispositionResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportRowResponse;
+import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.repository.PayPalBalanceReportRunRepository;
+import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
+import com.atlas.settlement.service.PayPalBalanceReportParser;
+import com.atlas.settlement.service.impl.PayPalBalanceReportOperatorServiceImpl;
 import com.atlas.settlement.service.impl.PayPalBalanceReportStoreImpl;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -79,9 +80,9 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                         true, "capture-mismatch", 5_000L, "USD")));
         PayPalBalanceReportStoreImpl store = new PayPalBalanceReportStoreImpl(new PayPalBalanceReportRunRepository(jdbc));
         PayPalBalanceReportReconciliationService reconciliation =
-                new PayPalBalanceReportReconciliationService(matchQuery);
+                new PayPalBalanceReportReconciliationService(matchQuery, new PayPalBalanceReportParser());
         ingestion = new PayPalBalanceReportRunIngestionService(reconciliation, store);
-        operator = new PayPalBalanceReportOperatorService(store);
+        operator = new PayPalBalanceReportOperatorServiceImpl(store);
     }
 
     @Test
@@ -114,8 +115,8 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                 .findFirst().orElseThrow();
         assertThatThrownBy(() -> operator.recordDisposition(run.runId(), matched.rowNumber(), "DEFERRED",
                 "settlement-operator", "not an exception", "matched-row-key"))
-                .isInstanceOfSatisfying(ApplicationException.class,
-                        error -> assertThat(error.code()).isEqualTo(Code.CONFLICT));
+                .isInstanceOfSatisfying(SettlementException.class,
+                        error -> assertThat(error.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
         var first = operator.recordDisposition(run.runId(), exception.rowNumber(), "DEFERRED",
                 "settlement-operator", "Awaiting external evidence", "disposition-key-1");
@@ -124,8 +125,8 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
         assertThat(replay.dispositionId()).isEqualTo(first.dispositionId());
         assertThatThrownBy(() -> operator.recordDisposition(run.runId(), exception.rowNumber(), "DEFERRED",
                 "settlement-operator", "different reason", "disposition-key-1"))
-                .isInstanceOfSatisfying(ApplicationException.class,
-                        error -> assertThat(error.code()).isEqualTo(Code.CONFLICT));
+                .isInstanceOfSatisfying(SettlementException.class,
+                        error -> assertThat(error.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
         var history = operator.dispositionHistory(run.runId(), exception.rowNumber());
         assertThat(history).hasSize(1);
@@ -175,11 +176,11 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     void rejectsUnsupportedStatusAndClampsOperatorPages() {
         assertThat(operator.listRuns(101, 0).limit()).isEqualTo(100);
         assertThatThrownBy(() -> operator.listExceptions("MATCHED", null, null, null, 20, 0))
-                .isInstanceOfSatisfying(ApplicationException.class,
-                        error -> assertThat(error.code()).isEqualTo(Code.INVALID_REQUEST));
+                .isInstanceOfSatisfying(SettlementException.class,
+                        error -> assertThat(error.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
         assertThat(operator.listExceptions("UNMATCHED", null, null, null, 101, 0).limit()).isEqualTo(100);
         assertThatThrownBy(() -> operator.listExceptions("UNMATCHED", null, null, null, 20, 10_001))
-                .isInstanceOfSatisfying(ApplicationException.class,
-                        error -> assertThat(error.code()).isEqualTo(Code.INVALID_REQUEST));
+                .isInstanceOfSatisfying(SettlementException.class,
+                        error -> assertThat(error.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
     }
 }

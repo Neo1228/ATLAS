@@ -1,30 +1,28 @@
-package com.atlas.application.service;
+package com.atlas.settlement.service.impl;
 
-import com.atlas.application.dto.response.PayPalBalanceReportDispositionResponse;
-import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary;
-import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary.DailyTrend;
-import com.atlas.application.dto.response.PayPalBalanceReportPage;
-import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.application.dto.response.PayPalBalanceReportRunResponse;
-import com.atlas.application.exception.ApplicationException.Code;
-import com.atlas.application.exception.ApplicationException;
+import com.atlas.settlement.dto.response.PayPalBalanceReportDispositionResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary.DailyTrend;
+import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary;
+import com.atlas.settlement.dto.response.PayPalBalanceReportPage;
+import com.atlas.settlement.dto.response.PayPalBalanceReportRowResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportRunResponse;
+import com.atlas.settlement.exception.SettlementException.Code;
+import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.service.PayPalBalanceReportDisposition;
 import com.atlas.settlement.service.PayPalBalanceReportExceptionRow;
+import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import com.atlas.settlement.service.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
-public class PayPalBalanceReportOperatorService {
-    public static final int DEFAULT_PAGE_SIZE = 20;
-    public static final int MAX_PAGE_SIZE = 100;
-    public static final int MAX_PAGE_OFFSET = 10_000;
+public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceReportOperatorService {
 
     private static final int MAX_ROW_NUMBER = 10_000;
     private static final int MAX_ACTOR_LENGTH = 128;
@@ -35,10 +33,11 @@ public class PayPalBalanceReportOperatorService {
 
     private final PayPalBalanceReportStore store;
 
-    public PayPalBalanceReportOperatorService(PayPalBalanceReportStore store) {
+    public PayPalBalanceReportOperatorServiceImpl(PayPalBalanceReportStore store) {
         this.store = Objects.requireNonNull(store, "store");
     }
 
+    @Override
     public PayPalBalanceReportOperatorSummary summary() {
         List<DailyTrend> trend = store.dailyTrend().stream()
                 .map(day -> new DailyTrend(day.date(), day.unmatched(), day.mismatch())).toList();
@@ -47,22 +46,25 @@ public class PayPalBalanceReportOperatorService {
         return new PayPalBalanceReportOperatorSummary(trend, unmatched, mismatch, store.countPendingExceptions());
     }
 
+    @Override
     public PayPalBalanceReportPage<PayPalBalanceReportRunResponse> listRuns(int requestedLimit, int offset) {
         int limit = boundedLimit(requestedLimit);
         boundedOffset(offset);
         return page(store.listRuns(limit + 1, offset).stream()
-                .map(PayPalBalanceReportOperatorService::runResponse).toList(), limit, offset);
+                .map(PayPalBalanceReportOperatorServiceImpl::runResponse).toList(), limit, offset);
     }
 
+    @Override
     public PayPalBalanceReportRunResponse search(String reportSha256) {
         if (reportSha256 == null || !reportSha256.matches("[0-9a-f]{64}")) {
             throw badRequest("reportSha256 must be a lowercase SHA-256 digest");
         }
         return store.findRunBySha256(reportSha256)
-                .map(PayPalBalanceReportOperatorService::runResponse)
+                .map(PayPalBalanceReportOperatorServiceImpl::runResponse)
                 .orElseThrow(() -> notFound("Report run not found"));
     }
 
+    @Override
     public PayPalBalanceReportPage<PayPalBalanceReportRowResponse> listExceptions(String status, LocalDate from,
             LocalDate to, String recordId, int requestedLimit, int offset) {
         int limit = boundedLimit(requestedLimit);
@@ -72,9 +74,10 @@ public class PayPalBalanceReportOperatorService {
         }
         validateDateRange(from, to);
         return page(store.listExceptions(status, from, to, recordId, limit + 1, offset).stream()
-                .map(PayPalBalanceReportOperatorService::rowResponse).toList(), limit, offset);
+                .map(PayPalBalanceReportOperatorServiceImpl::rowResponse).toList(), limit, offset);
     }
 
+    @Override
     public PayPalBalanceReportPage<PayPalBalanceReportRowResponse> listRunRows(UUID runId, String status,
             String recordId, int requestedLimit, int offset) {
         requireRun(runId);
@@ -84,26 +87,28 @@ public class PayPalBalanceReportOperatorService {
             throw badRequest("Unsupported row status");
         }
         return page(store.listRunRows(runId, status, recordId, limit + 1, offset).stream()
-                .map(PayPalBalanceReportOperatorService::rowResponse).toList(), limit, offset);
+                .map(PayPalBalanceReportOperatorServiceImpl::rowResponse).toList(), limit, offset);
     }
 
+    @Override
     public List<PayPalBalanceReportDispositionResponse> dispositionHistory(UUID runId, int rowNumber) {
         requireRun(runId);
         requireRow(runId, rowNumber);
         return store.findDispositionHistory(runId, rowNumber, MAX_PAGE_SIZE).stream()
-                .map(PayPalBalanceReportOperatorService::toResponse).toList();
+                .map(PayPalBalanceReportOperatorServiceImpl::toResponse).toList();
     }
 
+    @Override
     public PayPalBalanceReportDispositionResponse recordDisposition(UUID runId, int rowNumber, String disposition,
             String actor, String reason, String idempotencyKey) {
         requireRun(runId);
         String cleanReason = validateDispositionInput(rowNumber, disposition, actor, reason, idempotencyKey);
         String rowStatus = rowStatus(runId, rowNumber);
         if ("MATCHED".equals(rowStatus)) {
-            throw new ApplicationException(Code.CONFLICT, "Matched rows cannot be dispositioned");
+            throw new SettlementException(Code.CONFLICT, "Matched rows cannot be dispositioned");
         }
         if (!EXCEPTION_STATUSES.contains(rowStatus)) {
-            throw new ApplicationException(Code.CONFLICT, "Only exception rows can be dispositioned");
+            throw new SettlementException(Code.CONFLICT, "Only exception rows can be dispositioned");
         }
 
         PayPalBalanceReportDisposition candidate = new PayPalBalanceReportDisposition(UUID.randomUUID(), runId,
@@ -112,14 +117,14 @@ public class PayPalBalanceReportOperatorService {
             return toResponse(candidate);
         }
         PayPalBalanceReportDispositionResponse existing = store.findDispositionByIdempotencyKey(idempotencyKey)
-                .map(PayPalBalanceReportOperatorService::toResponse)
-                .orElseThrow(() -> new ApplicationException(Code.CONFLICT, "Idempotency key conflict"));
+                .map(PayPalBalanceReportOperatorServiceImpl::toResponse)
+                .orElseThrow(() -> new SettlementException(Code.CONFLICT, "Idempotency key conflict"));
         if (existing.runId().equals(runId) && existing.rowNumber() == rowNumber
                 && existing.disposition().equals(disposition) && existing.actor().equals(actor)
                 && existing.reason().equals(cleanReason)) {
             return existing;
         }
-        throw new ApplicationException(Code.CONFLICT,
+        throw new SettlementException(Code.CONFLICT,
                 "Idempotency key was already used for a different disposition");
     }
 
@@ -204,11 +209,11 @@ public class PayPalBalanceReportOperatorService {
                 row.relatedRecordId(), row.recordType(), row.status(), row.reasonCode());
     }
 
-    private static ApplicationException badRequest(String message) {
-        return new ApplicationException(Code.INVALID_REQUEST, message);
+    private static SettlementException badRequest(String message) {
+        return new SettlementException(Code.INVALID_REQUEST, message);
     }
 
-    private static ApplicationException notFound(String message) {
-        return new ApplicationException(Code.NOT_FOUND, message);
+    private static SettlementException notFound(String message) {
+        return new SettlementException(Code.NOT_FOUND, message);
     }
 }

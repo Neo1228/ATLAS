@@ -1,4 +1,4 @@
-package com.atlas.application.dto.response;
+package com.atlas.settlement.dto.response;
 
 import java.util.List;
 

@@ -130,6 +130,23 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void settlementCodesMapToTheStatusAndCodeTheBalanceReportOperatorReturns() {
+        var invalid = handler.moduleException(new SettlementException(SettlementException.Code.INVALID_REQUEST, "bad"));
+        assertThat(invalid.getStatusCode().value()).isEqualTo(400);
+        assertThat(invalid.getBody().getProperties()).containsEntry("code", "INVALID_REQUEST");
+
+        var conflict = handler.moduleException(new SettlementException(SettlementException.Code.CONFLICT, "dup"));
+        assertThat(conflict.getStatusCode().value()).isEqualTo(409);
+        assertThat(conflict.getBody().getProperties()).containsEntry("code", "CONFLICT");
+
+        // 이전에는 운영자 서비스가 ApplicationException(NOT_FOUND)으로 RESOURCE_NOT_FOUND를 냈다.
+        // 모듈 예외로 옮기면서 같은 정산 예외를 쓰는 지급 운영 API와 같은 NOT_FOUND code를 쓴다.
+        var missing = handler.moduleException(new SettlementException(SettlementException.Code.NOT_FOUND, "none"));
+        assertThat(missing.getStatusCode().value()).isEqualTo(404);
+        assertThat(missing.getBody().getProperties()).containsEntry("code", "NOT_FOUND");
+    }
+
+    @Test
     void moduleExceptionCodesMapToStableClientStatuses() {
         var invalid = handler.moduleException(new AdmissionException(
                 AdmissionException.Code.INVALID_REQUEST, "invalid ticket request"));

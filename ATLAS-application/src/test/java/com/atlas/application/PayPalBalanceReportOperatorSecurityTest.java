@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.atlas.account.config.AccountSecurityConfiguration;
 import com.atlas.application.config.PayPalReportOperatorSecurityConfiguration;
 import com.atlas.application.controller.settlement.PayPalBalanceReportOperatorController;
-import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary;
-import com.atlas.application.service.PayPalBalanceReportOperatorService;
+import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary;
+import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
