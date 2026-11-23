@@ -3,9 +3,11 @@ package com.atlas.payment.service.impl;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import org.springframework.stereotype.Component;
 
 /** 소유자별 작업만 직렬화하고, 사용이 끝난 잠금 항목은 회수합니다. */
-final class OwnerLockRegistry {
+@Component
+public final class OwnerLockRegistry {
     private final ConcurrentHashMap<UUID, Entry> entries = new ConcurrentHashMap<>();
 
     <T> T withLock(UUID ownerId, Supplier<T> action) {

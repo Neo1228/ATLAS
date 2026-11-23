@@ -21,13 +21,15 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * PayPal webhook 검증과 처리. webhook은 provider가 보내는 사실 통지이므로, 저장된 결제·환불의 금액·통화·ID가
  * 일치할 때만 내부 상태에 반영하고 어긋나면 반영하지 않고 거절 기록만 남긴다.
  */
-final class PaymentWebhookProcessor {
+@Component
+public final class PaymentWebhookProcessor {
     private final OwnerLockRegistry ownerLocks;
     private final PaymentAttemptRepository repository;
     private final PaymentRefundRepository refunds;
@@ -36,7 +38,7 @@ final class PaymentWebhookProcessor {
     private final TransactionTemplate transactions;
     private final PaymentProvider psp;
 
-    PaymentWebhookProcessor(OwnerLockRegistry ownerLocks, PaymentAttemptRepository repository,
+    public PaymentWebhookProcessor(OwnerLockRegistry ownerLocks, PaymentAttemptRepository repository,
             PaymentRefundRepository refunds, PaymentWebhookEventRepository webhookEvents,
             PaymentRecoveryRepository recovery, TransactionTemplate transactions, PaymentProvider psp) {
         this.ownerLocks = Objects.requireNonNull(ownerLocks);

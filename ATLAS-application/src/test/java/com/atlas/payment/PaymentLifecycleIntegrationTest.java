@@ -51,9 +51,13 @@ import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.FxConversionService;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.payment.service.impl.OwnerLockRegistry;
+import com.atlas.payment.service.impl.PaymentRefundWorkflow;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
+import com.atlas.payment.service.impl.PaymentWebhookProcessor;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -78,6 +82,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.JdkIdGenerator;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -410,9 +415,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         LockOrderPaymentProvider provider = new LockOrderPaymentProvider(paymentProvider, captureId);
         CountDownLatch webhookLockAttempted = new CountDownLatch(1);
         AtomicReference<Thread> webhookLockThread = new AtomicReference<>();
-        PaymentServiceImpl payments = new ObservedPaymentService(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, paymentRecovery, transactionManager, provider, fxConversionService, publicBaseUrl,
-                webhookLockAttempted, webhookLockThread);
+        PaymentServiceImpl payments = observedPaymentService(provider, webhookLockAttempted, webhookLockThread);
         PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(17200));
         PaymentResponse authorized = payments.completeApproval(orderId, pending.providerOrderId());
         PaymentAttempt attempt = paymentAttempts.findById(authorized.attemptId()).orElseThrow();
@@ -799,10 +802,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         UUID orderId = UUID.randomUUID();
         BigDecimal amountWon = BigDecimal.valueOf(12900);
         BarrierPaymentProvider barrier = new BarrierPaymentProvider(paymentProvider);
-        PaymentServiceImpl first = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, paymentRecovery, transactionManager, barrier, fxConversionService, publicBaseUrl);
-        PaymentServiceImpl second = new PaymentServiceImpl(paymentAttempts, paymentRefunds,
-                paymentWebhookEvents, paymentRecovery, transactionManager, barrier, fxConversionService, publicBaseUrl);
+        PaymentServiceImpl first = paymentService(barrier);
+        PaymentServiceImpl second = paymentService(barrier);
         ExecutorService executor = Executors.newFixedThreadPool(3);
         try {
             PaymentResponse pending = first.submitInitial(orderId, amountWon);
@@ -1011,13 +1012,14 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         private final CountDownLatch webhookLockAttempted;
         private final AtomicReference<Thread> webhookLockThread;
 
-        private ObservedPaymentService(PaymentAttemptRepository attempts, PaymentRefundRepository refunds,
-                PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
+        private ObservedPaymentService(PaymentAttemptRepository attempts, PaymentRecoveryRepository recovery,
                 PlatformTransactionManager transactionManager, PaymentProvider provider,
-                FxConversionService fxConversionService, String publicBaseUrl,
-                CountDownLatch webhookLockAttempted, AtomicReference<Thread> webhookLockThread) {
-            super(attempts, refunds, webhookEvents, recovery, transactionManager, provider, fxConversionService,
-                    publicBaseUrl);
+                FxConversionService fxConversionService, OwnerLockRegistry locks,
+                PaymentRefundWorkflow refundWorkflow, PaymentWebhookProcessor webhookProcessor, JdkIdGenerator ids,
+                String publicBaseUrl, CountDownLatch webhookLockAttempted,
+                AtomicReference<Thread> webhookLockThread) {
+            super(attempts, recovery, transactionManager, provider, fxConversionService, locks, refundWorkflow,
+                    webhookProcessor, ids, publicBaseUrl, Duration.ofSeconds(30), Duration.ofMinutes(30));
             this.webhookLockAttempted = webhookLockAttempted;
             this.webhookLockThread = webhookLockThread;
         }
@@ -1241,5 +1243,34 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private static WebhookRetryEvent retryEvent(PaymentWebhookEventResponse e) {
         return new WebhookRetryEvent(e.eventId(), e.eventType(), e.resourceId(), e.resourceStatus(),
                 e.providerOrderId(), e.relatedCaptureId(), e.resourceAmount(), e.resourceCurrency());
+    }
+
+    private PaymentServiceImpl observedPaymentService(PaymentProvider provider, CountDownLatch webhookLockAttempted,
+            AtomicReference<Thread> webhookLockThread) {
+        OwnerLockRegistry locks = new OwnerLockRegistry();
+        JdkIdGenerator ids = new JdkIdGenerator();
+        TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+        Duration recoveryDelay = Duration.ofSeconds(30);
+        PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, paymentAttempts, paymentRefunds,
+                paymentRecovery, transactions, provider, recoveryDelay, ids);
+        PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, paymentAttempts,
+                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider);
+        return new ObservedPaymentService(paymentAttempts, paymentRecovery, transactionManager, provider,
+                fxConversionService, locks, refundWorkflow, webhookProcessor, ids, publicBaseUrl,
+                webhookLockAttempted, webhookLockThread);
+    }
+
+    private PaymentServiceImpl paymentService(PaymentProvider provider) {
+        OwnerLockRegistry locks = new OwnerLockRegistry();
+        JdkIdGenerator ids = new JdkIdGenerator();
+        TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+        Duration recoveryDelay = Duration.ofSeconds(30);
+        PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, paymentAttempts, paymentRefunds,
+                paymentRecovery, transactions, provider, recoveryDelay, ids);
+        PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, paymentAttempts,
+                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider);
+        return new PaymentServiceImpl(paymentAttempts, paymentRecovery, transactionManager, provider,
+                fxConversionService, locks, refundWorkflow, webhookProcessor, ids, publicBaseUrl, recoveryDelay,
+                Duration.ofMinutes(30));
     }
 }

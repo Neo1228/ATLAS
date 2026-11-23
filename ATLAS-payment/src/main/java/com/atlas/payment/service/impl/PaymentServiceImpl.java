@@ -21,8 +21,6 @@ import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
-import com.atlas.payment.repository.PaymentRefundRepository;
-import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,11 +37,12 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.IdGenerator;
 
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
-    private final OwnerLockRegistry ownerLocks = new OwnerLockRegistry();
+    private final OwnerLockRegistry ownerLocks;
     private final PaymentRefundWorkflow refundWorkflow;
     private final PaymentWebhookProcessor webhookProcessor;
 
@@ -55,38 +54,24 @@ public class PaymentServiceImpl implements PaymentService {
     private final String publicBaseUrl;
     private final Duration recoveryInitialDelay;
     private final Duration approvalTtl;
-    private final Supplier<UUID> ids;
+    private final IdGenerator ids;
 
     @Autowired
-    public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
-            PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
+    public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRecoveryRepository recovery,
             PlatformTransactionManager transactionManager, PaymentProvider psp,
-            FxConversionService fxConversionService,
+            FxConversionService fxConversionService, OwnerLockRegistry ownerLocks,
+            PaymentRefundWorkflow refundWorkflow, PaymentWebhookProcessor webhookProcessor, IdGenerator ids,
             @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}") String publicBaseUrl,
             @Value("${atlas.payment.recovery.initial-delay:PT30S}") Duration recoveryInitialDelay,
             @Value("${atlas.payment.approval-ttl:PT30M}") Duration approvalTtl) {
-        this(repository, refunds, webhookEvents, recovery, transactionManager, psp, fxConversionService,
-                publicBaseUrl, recoveryInitialDelay, approvalTtl, UUID::randomUUID);
-    }
-
-    public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
-            PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
-            PlatformTransactionManager transactionManager, PaymentProvider psp,
-            FxConversionService fxConversionService, String publicBaseUrl) {
-        this(repository, refunds, webhookEvents, recovery, transactionManager, psp, fxConversionService,
-                publicBaseUrl, Duration.ofSeconds(30), Duration.ofMinutes(30), UUID::randomUUID);
-    }
-
-    PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRefundRepository refunds,
-            PaymentWebhookEventRepository webhookEvents, PaymentRecoveryRepository recovery,
-            PlatformTransactionManager transactionManager, PaymentProvider psp,
-            FxConversionService fxConversionService, String publicBaseUrl, Duration recoveryInitialDelay,
-            Duration approvalTtl, Supplier<UUID> ids) {
         this.repository = Objects.requireNonNull(repository);
         this.recovery = Objects.requireNonNull(recovery);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.psp = Objects.requireNonNull(psp);
         this.fxConversionService = Objects.requireNonNull(fxConversionService);
+        this.ownerLocks = Objects.requireNonNull(ownerLocks);
+        this.refundWorkflow = Objects.requireNonNull(refundWorkflow);
+        this.webhookProcessor = Objects.requireNonNull(webhookProcessor);
         String baseUrl = Objects.requireNonNull(publicBaseUrl).trim();
         if (baseUrl.isBlank()) throw new IllegalStateException("ATLAS_PUBLIC_BASE_URL is required");
         this.publicBaseUrl = baseUrl.replaceAll("/+$", "");
@@ -99,10 +84,6 @@ public class PaymentServiceImpl implements PaymentService {
         if (this.approvalTtl.isZero() || this.approvalTtl.isNegative()) {
             throw new IllegalArgumentException("approvalTtl must be positive");
         }
-        this.refundWorkflow = new PaymentRefundWorkflow(ownerLocks, this.repository, refunds, this.recovery,
-                this.transactions, this.psp, this.recoveryInitialDelay, this.ids);
-        this.webhookProcessor = new PaymentWebhookProcessor(ownerLocks, this.repository, refunds, webhookEvents,
-                this.recovery, this.transactions, this.psp);
     }
     @Override
     public PaymentResponse prepareInitial(UUID orderId, BigDecimal amount) {
@@ -152,8 +133,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     private PaymentAttempt preparePaymentAttempt(UUID orderId, UUID checkoutId, long amountWon) {
         return Objects.requireNonNull(transactions.execute(status -> {
-            if (orderId != null) repository.insertInitial(orderId, amountWon, ids.get());
-            else repository.insertCheckoutInitial(checkoutId, amountWon, ids.get());
+            if (orderId != null) repository.insertInitial(orderId, amountWon, ids.generateId());
+            else repository.insertCheckoutInitial(checkoutId, amountWon, ids.generateId());
             PaymentAttempt attempt = orderId != null ? requireOrder(orderId) : requireCheckout(checkoutId);
             if (!attempt.getState().isTerminal()) {
                 recovery.enqueueAttempt(attempt.getAttemptId(), recoveryInitialDelay);
