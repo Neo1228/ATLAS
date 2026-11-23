@@ -4,7 +4,6 @@ import com.atlas.payment.persistence.entity.PaymentRefundOperation;
 import com.atlas.payment.persistence.state.PaymentRefundState;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -93,14 +92,6 @@ public class PaymentRefundRepository {
                 WHERE refund_operation_id = ?
                 """, state.name(), providerRefundId, providerStatus, Timestamp.from(updatedAt), refundOperationId);
         if (updated != 1) throw new IllegalStateException("Refund operation disappeared during update");
-    }
-
-    public List<PaymentRefundOperation> findPendingForAttempt(UUID attemptId) {
-        return jdbc.query("""
-                SELECT * FROM payment_refund_operation
-                WHERE attempt_id = ? AND refund_state IN ('PENDING', 'UNKNOWN')
-                ORDER BY created_at, refund_operation_id
-                """, ROW_MAPPER, attemptId);
     }
 
     public long refundedAmountForAttempt(UUID attemptId) {

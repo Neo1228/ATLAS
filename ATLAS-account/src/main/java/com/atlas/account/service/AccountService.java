@@ -559,7 +559,6 @@ public class AccountService {
         accounts.revokeRefreshFamily(accountId, familyId, clock.instant());
     }
 
-
     private AccountTokenResponse issueTokens(AccountPrincipal account) {
         Instant now = clock.instant();
         UUID familyId = UUID.randomUUID();
@@ -656,10 +655,6 @@ public class AccountService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
-    }
-
-    private static String normalizeEmailAndCheck(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     private static AccountException invalidCredentials() {

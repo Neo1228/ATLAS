@@ -8,7 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ProductCategoryAssignmentRepository
         extends JpaRepository<ProductCategoryAssignment, ProductCategoryAssignmentId> {
-    List<ProductCategoryAssignment> findAllByProductIdInOrderByProductIdAscCategoryIdAsc(List<UUID> productIds);
     List<ProductCategoryAssignment> findAllBySellerIdAndProductIdOrderByCategoryIdAsc(UUID sellerId, UUID productId);
     void deleteAllBySellerIdAndProductId(UUID sellerId, UUID productId);
 }

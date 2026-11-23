@@ -13,13 +13,11 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
-    boolean existsByProductIdAndSellerId(UUID productId, UUID sellerId);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select product from Product product where product.productId = :productId and product.sellerId = :sellerId")
     Optional<Product> findByProductIdAndSellerIdForUpdate(@Param("productId") UUID productId,
             @Param("sellerId") UUID sellerId);
     List<Product> findAllByProductIdIn(List<UUID> productIds);
-
 
     @Query(value = """
             SELECT product_id AS "productId", sales_channel AS "salesChannel"
