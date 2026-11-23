@@ -22,3 +22,6 @@ dependencies {
 tasks.named('bootJar') {
     archiveFileName = 'atlas-inventory-location.jar'
 }
+
+// 모든 모듈이 공유하는 패키지 구조 규칙(config/archunit)을 이 모듈의 테스트로도 실행한다.
+sourceSets.test.java.srcDir rootProject.file('config/archunit')
