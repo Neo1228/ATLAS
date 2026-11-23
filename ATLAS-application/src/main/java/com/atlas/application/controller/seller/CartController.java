@@ -2,8 +2,8 @@ package com.atlas.application.controller.seller;
 
 import com.atlas.application.controller.dto.CartCheckoutRequest;
 import com.atlas.application.controller.dto.SetCartItemQuantityHttpRequest;
-import com.atlas.cart.dto.response.CartResponse;
-import com.atlas.cart.service.CartService;
+import com.atlas.order.dto.response.CartResponse;
+import com.atlas.order.service.CartService;
 import com.atlas.order.dto.request.SellerCouponRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.service.CartCheckoutService;

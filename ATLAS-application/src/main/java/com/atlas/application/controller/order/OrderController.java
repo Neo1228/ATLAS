@@ -5,7 +5,7 @@ import com.atlas.application.controller.dto.OrderReturnHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnInspectionHttpRequest;
 import com.atlas.application.controller.dto.PaymentRecoveryStatusResponse;
 import com.atlas.application.controller.dto.ReorderRequest;
-import com.atlas.cart.dto.response.CartResponse;
+import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.dto.response.OrderHistoryPageResponse;
 import com.atlas.order.dto.response.SellerOrderDetailResponse;

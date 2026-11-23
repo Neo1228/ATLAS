@@ -8,13 +8,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.cart.dto.request.ReorderCartRequest;
-import com.atlas.cart.dto.response.CartResponse;
+import com.atlas.order.dto.request.ReorderCartRequest;
+import com.atlas.order.dto.response.CartResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.persistence.state.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
-import com.atlas.cart.service.CartService;
+import com.atlas.order.service.CartService;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.request.OrderReorderRequest;

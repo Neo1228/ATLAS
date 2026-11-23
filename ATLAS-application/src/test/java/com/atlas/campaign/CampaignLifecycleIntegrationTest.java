@@ -1,4 +1,4 @@
-package com.atlas.campaign;
+package com.atlas.admission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -7,11 +7,11 @@ import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.campaign.dto.request.CreateCampaignRequest;
-import com.atlas.campaign.dto.response.CampaignResponse;
-import com.atlas.campaign.exception.CampaignException;
-import com.atlas.campaign.persistence.state.CampaignStatus;
-import com.atlas.campaign.service.CampaignService;
+import com.atlas.admission.dto.request.CreateCampaignRequest;
+import com.atlas.admission.dto.response.CampaignResponse;
+import com.atlas.admission.exception.CampaignException;
+import com.atlas.admission.persistence.state.CampaignStatus;
+import com.atlas.admission.service.CampaignService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.dto.response.ProductResponse;

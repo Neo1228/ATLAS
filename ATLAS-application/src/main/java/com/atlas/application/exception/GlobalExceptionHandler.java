@@ -2,8 +2,8 @@ package com.atlas.application.exception;
 
 import com.atlas.account.exception.AccountException;
 import com.atlas.admission.exception.AdmissionException;
-import com.atlas.campaign.exception.CampaignException;
-import com.atlas.cart.exception.CartException;
+import com.atlas.admission.exception.CampaignException;
+import com.atlas.order.exception.CartException;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.order.exception.OrderException;

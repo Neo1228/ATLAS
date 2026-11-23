@@ -6,7 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.admission.exception.AdmissionException;
-import com.atlas.cart.exception.CartException;
+import com.atlas.order.exception.CartException;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.order.exception.OrderException;

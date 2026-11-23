@@ -3,14 +3,12 @@ plugins {
 }
 
 dependencies {
-    implementation project(':campaign-module')
     implementation project(':admission-module')
     implementation project(':inventory-module')
     implementation project(':order-module')
     implementation project(':payment-module')
     implementation project(':settlement-module')
     implementation project(':catalog-module')
-    implementation project(':cart-module')
 
     implementation project(':account-module')
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'

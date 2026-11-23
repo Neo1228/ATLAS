@@ -14,7 +14,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
-import com.atlas.cart.service.CartService;
+import com.atlas.order.service.CartService;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.persistence.state.TicketStatus;

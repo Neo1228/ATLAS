@@ -7,7 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 
-import com.atlas.cart.service.CartService;
+import com.atlas.order.service.CartService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
