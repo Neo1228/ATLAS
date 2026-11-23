@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -230,6 +231,103 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
         assertThat(MODEL_B.availableQuantity()).isEqualTo(STOCK_PER_LOCATION);
     }
 
+    /**
+     * 같은 workflow에 claim과 cancel(그리고 중복 cancel)을 동시에 보낸다. 어느 쪽이 먼저 이기든 두 쪽 상태가
+     * 어긋나지 않고, 재고가 한 번만 움직이며, claim이 이긴 경우에도 cancel이 재고를 되돌려야 한다.
+     * 기존 테스트는 이 호출들을 순차로만 확인했다. faulty=true이면 장애 폭풍을 함께 섞는다.
+     */
+    @ParameterizedTest(name = "faulty={0}")
+    @ValueSource(booleans = {false, true})
+    void concurrentClaimAndCancelOnTheSameWorkflowNeverDiverge(boolean faulty) throws Exception {
+        int orders = 40;
+        Map<String, UUID> orderByKey = new HashMap<>();
+        List<String> keys = new ArrayList<>();
+        for (int i = 0; i < orders; i++) {
+            String key = "race-" + faulty + "-" + i;
+            keys.add(key);
+            orderByKey.put(key, UUID.randomUUID());
+        }
+        runConcurrently(keys, key -> coordinator.submit(key, request(orderByKey.get(key))));
+        Map<String, UUID> workflowByKey = workflowIds();
+        assertThat(countState("RESERVED")).as("all submitted before the race starts").isEqualTo(orders);
+
+        if (faulty) {
+            MODEL_A.faults.start(901);
+            MODEL_B.faults.start(902);
+        }
+        List<RaceCall> attempts = new ArrayList<>();
+        for (UUID workflowId : workflowByKey.values()) {
+            attempts.add(new RaceCall(workflowId, true));
+            attempts.add(new RaceCall(workflowId, false));
+            attempts.add(new RaceCall(workflowId, false));
+        }
+        Collections.shuffle(attempts, new Random(7));
+        AtomicInteger thrown = new AtomicInteger();
+        Map<UUID, AtomicInteger> claimedOutcome = new ConcurrentHashMap<>();
+        runConcurrently(attempts, call -> {
+            try {
+                // 같은 workflow에 claim 1건과 cancel 2건이 섞여 동시에 들어간다.
+                if (call.claim()) {
+                    ClaimOutcome outcome = coordinator.claim(call.workflowId());
+                    if (outcome == ClaimOutcome.CLAIMED) {
+                        claimedOutcome.computeIfAbsent(call.workflowId(), id -> new AtomicInteger())
+                                .incrementAndGet();
+                    }
+                } else {
+                    coordinator.cancel(call.workflowId());
+                }
+            } catch (RuntimeException exception) {
+                thrown.incrementAndGet();
+            }
+        });
+        MODEL_A.faults.stop();
+        MODEL_B.faults.stop();
+
+        for (int round = 0; round < 400 && countInFlight() > 0; round++) {
+            coordinator.recoverDue(200);
+            Thread.sleep(25);
+        }
+        int inFlight = countInFlight();
+        Audit audit = audit(orderByKey, workflowByKey);
+        for (UUID workflowId : needsReviewIds()) {
+            coordinator.releaseNeedsReview(workflowId);
+        }
+        for (int round = 0; round < 100 && countInFlight() > 0; round++) {
+            coordinator.recoverDue(200);
+            Thread.sleep(25);
+        }
+        Audit afterOperator = audit(orderByKey, workflowByKey);
+
+        String summary = "faulty=%s orders=%d thrown=%d in_flight_after_recovery=%d states=%s dangling=%d orphan=%d "
+                .formatted(faulty, orders, thrown.get(), inFlight, audit.states(), audit.dangling(),
+                        audit.orphanHolds())
+                + "claim_reported_claimed=%d after_operator(dangling=%d,orphan=%d,held_a=%d,held_b=%d)".formatted(
+                        claimedOutcome.size(), afterOperator.dangling(), afterOperator.orphanHolds(),
+                        MODEL_A.heldQuantity(), MODEL_B.heldQuantity());
+        System.out.println("FAULT_CONVERGENCE_RACE " + summary);
+
+        assertThat(thrown.get()).as("races must not surface exceptions").isZero();
+        assertThat(inFlight).as("no workflow is stuck in flight").isZero();
+        assertThat(audit.dangling()).as("order holds stock the location does not").isZero();
+        assertThat(audit.orphanHolds()).as("location holds stock no order owns").isZero();
+        assertThat(MODEL_A.conservationViolations() + MODEL_B.conservationViolations())
+                .as("stock conserved").isZero();
+        assertThat(afterOperator.dangling() + afterOperator.orphanHolds()).isZero();
+        // claim을 보낸 workflow가 CLAIMED로 끝났다면 cancel이 졌다는 뜻이고, 그 경우 두 location 모두 CLAIMED여야 한다.
+        for (Map.Entry<String, UUID> entry : workflowByKey.entrySet()) {
+            String state = stateOf(entry.getValue());
+            UUID orderId = orderByKey.get(entry.getKey());
+            String a = MODEL_A.statusOf(orderId);
+            String b = MODEL_B.statusOf(orderId);
+            if ("CLAIMED".equals(state)) {
+                assertThat(List.of(a, b)).as("claimed workflow").containsOnly("CLAIMED");
+            } else if ("CANCELLED".equals(state)) {
+                assertThat(List.of(a, b)).as("cancelled workflow holds nothing")
+                        .doesNotContain("RESERVED").doesNotContain("CLAIMED");
+            }
+        }
+    }
+
     private Outcome runStorm(long seed) throws Exception {
         clearData();
         Random random = new Random(seed);
@@ -320,6 +418,9 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
     }
 
     private record Outcome(int thrown, Audit before, Audit after) {
+    }
+
+    private record RaceCall(UUID workflowId, boolean claim) {
     }
 
     private int countState(String state) {
