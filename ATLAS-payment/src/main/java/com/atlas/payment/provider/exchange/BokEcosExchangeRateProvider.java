@@ -13,11 +13,14 @@ import java.util.Comparator;
 import java.util.Objects;
 import java.util.stream.StreamSupport;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Component
+@ConditionalOnProperty(name = "atlas.payment.exchange-rate.provider", havingValue = "bok-ecos",
+        matchIfMissing = true)
 public class BokEcosExchangeRateProvider implements ExchangeRateProvider {
     private static final String SOURCE = "BOK_ECOS_731Y001_0000001";
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
