@@ -111,7 +111,7 @@ class CheckoutBehaviorTest {
                 mock(CartService.class), mock(SellerSkuService.class), mock(SellerCouponService.class),
                 mock(InventoryService.class), mock(BuyerCheckoutRepository.class), mock(OrderRepository.class),
                 mock(OrderItemRepository.class), mock(OrderService.class), transactionManager(),
-                fixedClock(), Duration.ofMinutes(10), Optional.empty(), Optional.empty(), Optional.empty());
+                fixedClock(), Duration.ofMinutes(10), false, Optional.empty(), Optional.empty(), Optional.empty());
         String keyAcceptedByCreateButNotByReconcile = "k".repeat(222);
 
         OrderException exception = assertThrows(OrderException.class,
