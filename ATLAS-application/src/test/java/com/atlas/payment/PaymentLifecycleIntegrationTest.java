@@ -57,6 +57,7 @@ import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.payment.service.impl.PaymentWebhookProcessor;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -1019,7 +1020,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 String publicBaseUrl, CountDownLatch webhookLockAttempted,
                 AtomicReference<Thread> webhookLockThread) {
             super(attempts, recovery, transactionManager, provider, fxConversionService, locks, refundWorkflow,
-                    webhookProcessor, ids, publicBaseUrl, Duration.ofSeconds(30), Duration.ofMinutes(30));
+                    webhookProcessor, ids, Clock.systemUTC(), publicBaseUrl, Duration.ofSeconds(30), Duration.ofMinutes(30));
             this.webhookLockAttempted = webhookLockAttempted;
             this.webhookLockThread = webhookLockThread;
         }
@@ -1252,9 +1253,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         TransactionTemplate transactions = new TransactionTemplate(transactionManager);
         Duration recoveryDelay = Duration.ofSeconds(30);
         PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, paymentAttempts, paymentRefunds,
-                paymentRecovery, transactions, provider, recoveryDelay, ids);
+                paymentRecovery, transactions, provider, recoveryDelay, ids, Clock.systemUTC());
         PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, paymentAttempts,
-                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider);
+                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider, Clock.systemUTC());
         return new ObservedPaymentService(paymentAttempts, paymentRecovery, transactionManager, provider,
                 fxConversionService, locks, refundWorkflow, webhookProcessor, ids, publicBaseUrl,
                 webhookLockAttempted, webhookLockThread);
@@ -1266,11 +1267,11 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         TransactionTemplate transactions = new TransactionTemplate(transactionManager);
         Duration recoveryDelay = Duration.ofSeconds(30);
         PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, paymentAttempts, paymentRefunds,
-                paymentRecovery, transactions, provider, recoveryDelay, ids);
+                paymentRecovery, transactions, provider, recoveryDelay, ids, Clock.systemUTC());
         PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, paymentAttempts,
-                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider);
+                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider, Clock.systemUTC());
         return new PaymentServiceImpl(paymentAttempts, paymentRecovery, transactionManager, provider,
-                fxConversionService, locks, refundWorkflow, webhookProcessor, ids, publicBaseUrl, recoveryDelay,
+                fxConversionService, locks, refundWorkflow, webhookProcessor, ids, Clock.systemUTC(), publicBaseUrl, recoveryDelay,
                 Duration.ofMinutes(30));
     }
 }

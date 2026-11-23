@@ -8,8 +8,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.application.config.AdmissionGateRedisConfiguration;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.dto.request.StockClaimRequest;
+import io.lettuce.core.RedisClient;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -19,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -35,9 +38,19 @@ class RedisStockAdmissionServiceTest {
     static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
             .withExposedPorts(6379);
 
-    private static RedisStockAdmissionService gate(String uri, LocationClient inventory) {
-        return new RedisStockAdmissionService(inventory, new SimpleMeterRegistry(), uri,
-                Duration.ofMillis(200), Duration.ofMinutes(5), Duration.ofMinutes(5), Duration.ofSeconds(2));
+    private final List<RedisClient> clients = new ArrayList<>();
+
+    @AfterEach
+    void shutdownClients() {
+        clients.forEach(RedisClient::shutdown);
+        clients.clear();
+    }
+
+    private RedisStockAdmissionService gate(String uri, LocationClient inventory) {
+        RedisClient client = new AdmissionGateRedisConfiguration().admissionGateRedisClient(uri, Duration.ofMillis(200));
+        clients.add(client);
+        return new RedisStockAdmissionService(inventory, new SimpleMeterRegistry(), client,
+                Duration.ofMinutes(5), Duration.ofMinutes(5), Duration.ofSeconds(2));
     }
 
     @Test

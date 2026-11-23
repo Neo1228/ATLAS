@@ -22,6 +22,7 @@ import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.math.BigDecimal;
@@ -55,12 +56,13 @@ public class PaymentServiceImpl implements PaymentService {
     private final Duration recoveryInitialDelay;
     private final Duration approvalTtl;
     private final IdGenerator ids;
+    private final Clock clock;
 
     @Autowired
     public PaymentServiceImpl(PaymentAttemptRepository repository, PaymentRecoveryRepository recovery,
             PlatformTransactionManager transactionManager, PaymentProvider psp,
             FxConversionService fxConversionService, OwnerLockRegistry ownerLocks,
-            PaymentRefundWorkflow refundWorkflow, PaymentWebhookProcessor webhookProcessor, IdGenerator ids,
+            PaymentRefundWorkflow refundWorkflow, PaymentWebhookProcessor webhookProcessor, IdGenerator ids, Clock clock,
             @Value("${ATLAS_PUBLIC_BASE_URL:http://127.0.0.1:8080}") String publicBaseUrl,
             @Value("${atlas.payment.recovery.initial-delay:PT30S}") Duration recoveryInitialDelay,
             @Value("${atlas.payment.approval-ttl:PT30M}") Duration approvalTtl) {
@@ -76,6 +78,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (baseUrl.isBlank()) throw new IllegalStateException("ATLAS_PUBLIC_BASE_URL is required");
         this.publicBaseUrl = baseUrl.replaceAll("/+$", "");
         this.ids = Objects.requireNonNull(ids);
+        this.clock = Objects.requireNonNull(clock);
         this.recoveryInitialDelay = Objects.requireNonNull(recoveryInitialDelay);
         if (this.recoveryInitialDelay.isNegative()) {
             throw new IllegalArgumentException("recoveryInitialDelay must not be negative");
@@ -539,7 +542,7 @@ public class PaymentServiceImpl implements PaymentService {
                         // 승인 화면 이탈 시에도 deadline이 남도록 대기 시작 시점에 기록한다.
                         // 구매자가 callback을 보내지 않아도 이 시각 이후 worker가 확정한다.
                         if (current.getApprovalExpiresAt() == null) {
-                            current.setApprovalExpiresAt(Instant.now().plus(approvalTtl));
+                            current.setApprovalExpiresAt(clock.instant().plus(approvalTtl));
                         }
                     }
                     current.setAuthorizationActive(true);
