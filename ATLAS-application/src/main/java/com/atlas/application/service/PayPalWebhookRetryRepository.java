@@ -7,6 +7,8 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.IntUnaryOperator;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -167,8 +169,24 @@ public class PayPalWebhookRetryRepository {
     /** 일시적 실패를 재예약하고 시도 한도에 도달하면 EXHAUSTED 이력을 기록합니다. */
     public boolean reschedule(String eventId, int attempt, String leaseOwner, RetryFailure failure, String reason) {
         Objects.requireNonNull(failure, "failure");
-        int delaySeconds = Math.min(300, 1 << Math.min(Math.max(attempt - 1, 0), 8));
+        int delaySeconds = jitteredDelaySeconds(baseDelaySeconds(attempt), ThreadLocalRandom.current()::nextInt);
         return finishFailure(eventId, attempt, leaseOwner, failure.name(), reason, false, delaySeconds);
+    }
+
+    /** 시도 횟수에 따라 두 배씩 늘어나는 기본 지연(초)이다. 상한은 300초다. */
+    static int baseDelaySeconds(int attempt) {
+        return Math.min(300, 1 << Math.min(Math.max(attempt - 1, 0), 8));
+    }
+
+    /**
+     * 같은 시각에 실패한 이벤트가 같은 시각에 다시 시도되면 공급자가 복구되는 순간 요청이 한꺼번에
+     * 몰린다. 지연을 [기본/2, 기본] 초 사이로 흩뜨려 재시도 시각을 분산한다. 최소 1초는 보장한다.
+     *
+     * @param randomBelow 0 이상 인자 미만의 정수를 돌려주는 난수 공급자
+     */
+    static int jitteredDelaySeconds(int baseSeconds, IntUnaryOperator randomBelow) {
+        int floor = Math.max(1, baseSeconds / 2);
+        return floor + randomBelow.applyAsInt(Math.max(1, baseSeconds - floor + 1));
     }
 
     /** 영구 거부 결과를 기록하며 다음 시도를 예약하지 않습니다. */

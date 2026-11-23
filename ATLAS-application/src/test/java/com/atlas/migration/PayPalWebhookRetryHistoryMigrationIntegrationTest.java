@@ -15,7 +15,9 @@ import com.atlas.payment.service.PaymentService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -74,6 +76,30 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
         return jdbc.queryForObject(
                 "SELECT COUNT(*) FROM paypal_webhook_retry_attempt_history WHERE event_id = ?",
                 Integer.class, eventId);
+    }
+
+    @Test
+    void transientFailuresAreRescheduledAtSpreadOutTimes() throws IOException {
+        // 같은 시각에 실패한 이벤트가 모두 같은 시각에 재시도되면 공급자가 복구되는 순간 한꺼번에 몰린다.
+        // 시도 5의 기본 지연은 16초이고, 재시도 시각은 8~16초 사이로 흩어져야 한다.
+        apply("V33__paypal_webhook_retry_attempt_history.sql");
+        Set<Long> offsets = new HashSet<>();
+        for (int index = 0; index < 16; index++) {
+            String eventId = "evt-spread-" + index;
+            insertQueueRow(eventId, 4);
+            var claimed = repository.claimDue().get(0);
+            assertThat(claimed.attempt()).isEqualTo(5);
+            assertThat(repository.reschedule(eventId, claimed.attempt(), claimed.leaseOwner(),
+                    PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR, "provider unavailable")).isTrue();
+            Double delay = jdbc.queryForObject("""
+                    SELECT EXTRACT(EPOCH FROM (next_attempt_at - clock_timestamp()))
+                    FROM paypal_webhook_retry WHERE event_id = ?
+                    """, Double.class, eventId);
+            assertThat(delay).isBetween(7.0, 16.5);
+            offsets.add(Math.round(delay));
+        }
+
+        assertThat(offsets).hasSizeGreaterThanOrEqualTo(3);
     }
 
     @Test
