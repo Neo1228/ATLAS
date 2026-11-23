@@ -42,7 +42,11 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Overwrite, never append: ClientOrigin trusts the first X-Forwarded-For value as the
+        # client address for auth throttling, so a client-supplied value must not reach the app.
+        # This assumes this nginx is the outermost proxy; a trusted proxy in front of it needs
+        # its own client-address restoration (e.g. the realip module) instead of $remote_addr.
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
 
         # Nginx caches GET/HEAD by default; state it explicitly for review.
