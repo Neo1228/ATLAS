@@ -78,7 +78,7 @@ export JAVA_HOME="<JDK 25 home>"
 export PATH="$JAVA_HOME/bin:$PATH"
 if [ ! -f .env.local ]; then cp .env.example .env.local; fi
 chmod 600 .env.local
-# .env.local에 SMTP host·발신자, PayPal Sandbox Business 자격 증명과 BOK_ECOS_API_KEY를 설정한 뒤 현재 shell에 로드
+# `.env.local`에 SMTP host·발신자와 PayPal Sandbox Business 자격 증명을 설정한다. 환율은 기본 BOK ECOS(API key 필요) 또는 무가입 Frankfurter(`ATLAS_EXCHANGE_RATE_PROVIDER=frankfurter`)를 선택한 뒤 현재 shell에 로드한다.
 set -a
 . ./.env.local
 set +a
@@ -164,7 +164,7 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 ### PayPal Sandbox
 
 사전 조건:
-- Business app credentials, `BOK_ECOS_API_KEY`, Sandbox Buyer 계정.
+- Business app credentials, BOK_ECOS_API_KEY (기본 provider 사용 시) 또는 무가입 Frankfurter provider 선택, Sandbox Buyer 계정.
 - `.env.local`: `ATLAS_PAYMENT_PROVIDER=paypal`, Sandbox `PAYPAL_BASE_URL`, `ATLAS_PUBLIC_BASE_URL=http://127.0.0.1:18080`, `ATLAS_PAYMENT_RETURN_PORT=18080`.
 - 승인 callback 준비: `docker compose --env-file .env.local up -d --build --wait application` (host `18080` → container `8080`).
 - `bootRun` 사용 시 `ATLAS_PUBLIC_BASE_URL`을 실제로 열어 둔 app port와 일치.
@@ -203,6 +203,7 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 #### 검증 기록 (2026-11-13)
 
 - KRW 2,000 → PayPal USD 1.50 (BOK 기준환율 1,332.4 KRW/USD, 기준일 2026-11-13).
+- 무가입 FX source는 `.env.local`에 `ATLAS_EXCHANGE_RATE_PROVIDER=frankfurter`를 지정해 선택한다. ECB 일별 USD/KRW 기준환율을 사용하며 source·기준일을 payment snapshot에 저장한다. 7일 초과·유효하지 않은 값은 거부한다. 실시간 PayPal 환율이나 은행 체결률이 아니므로 local/Sandbox용이며 기본 provider는 BOK ECOS다([ADR-0065](docs/02-decisions/adr/ADR-0065-frankfurter-sandbox-fx-provider.md)).
 - Sandbox Buyer 승인·capture 완료. Unknown capture는 PayPal order GET으로 복구; K6 결과 `CAPTURED` · `PAID` · `CLAIMED`.
 - Settlement journal: `PSP_CLEARING` debit / `SELLER_PAYABLE` credit, 각각 KRW 2,000. [Issue #254](https://github.com/Neo1228/ATLAS/issues/254).
 
