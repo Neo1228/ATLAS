@@ -19,7 +19,7 @@
 - PayPal return/cancel URL은 `ATLAS_PUBLIC_BASE_URL` 기준. Compose host port와 callback URL의 일치 필수.
 - Capture 결과가 `UNKNOWN`이면 PayPal order 재조회. Capture ID·금액·통화가 저장된 스냅샷과 일치할 때만 `CAPTURED` 반영.
 - 승인 상태 확인 후에만 기존 PayPal request ID로 capture 재시도. 불명확한 결과는 `UNKNOWN` 유지.
-- `BOK_ECOS_API_KEY`는 환경 변수로만 제공한다. BOK ECOS 선택 시 key가 없으면 실패하며 Frankfurter로 자동 fallback하지 않는다. no-key Sandbox 옵션은 provider를 명시적으로 선택한다([ADR-0065](ADR-0065-frankfurter-sandbox-fx-provider.md)).
+- `BOK_ECOS_API_KEY`는 환경 변수로만 제공한다. BOK ECOS 선택 시 key가 없으면 실패하며 Frankfurter로 자동 fallback하지 않는다. no-key Sandbox 옵션은 provider를 명시적으로 선택한다(ADR-0065).
 - BOK 기준환율은 가격 산정 참고값이지 PayPal FXaaS 또는 실현환율 회계가 아니다. 환차손익 원장은 없다.
 
 ## 흐름
