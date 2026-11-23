@@ -25,14 +25,17 @@ public class OrderReturnItem {
     @JoinColumn(name = "return_id", nullable = false) private OrderReturn orderReturn;
     @Column(name = "order_item_id", nullable = false) private UUID orderItemId;
     @Column(name = "quantity", nullable = false) private int quantity;
+    @Column(name = "shipment_id") private UUID shipmentId;
     @Enumerated(EnumType.STRING) @Column(name = "inspection_result", length = 16)
     private OrderReturnInspectionResult inspectionResult;
     @Column(name = "refund_id") private UUID refundId;
     @Column(name = "refund_amount_won") private Long refundAmountWon;
     @Column(name = "inspected_at") private Instant inspectedAt;
-
     protected OrderReturnItem() { }
-    public OrderReturnItem(UUID orderItemId, int quantity) { this.orderItemId = orderItemId; this.quantity = quantity; }
+    public OrderReturnItem(UUID orderItemId, int quantity) { this(orderItemId, quantity, null); }
+    public OrderReturnItem(UUID orderItemId, int quantity, UUID shipmentId) {
+        this.orderItemId = orderItemId; this.quantity = quantity; this.shipmentId = shipmentId;
+    }
     void setOrderReturn(OrderReturn orderReturn) { this.orderReturn = orderReturn; }
     public void inspect(OrderReturnInspectionResult result, UUID refundId, Long amount, Instant at) {
         this.inspectionResult = result; this.refundId = refundId; this.refundAmountWon = amount; this.inspectedAt = at;
@@ -40,6 +43,7 @@ public class OrderReturnItem {
     public UUID returnItemId() { return returnItemId; }
     public UUID orderItemId() { return orderItemId; }
     public int quantity() { return quantity; }
+    public UUID shipmentId() { return shipmentId; }
     public OrderReturnInspectionResult inspectionResult() { return inspectionResult; }
     public UUID refundId() { return refundId; }
     public Long refundAmountWon() { return refundAmountWon; }

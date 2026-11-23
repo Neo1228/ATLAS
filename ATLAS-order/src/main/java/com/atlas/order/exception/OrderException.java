@@ -9,7 +9,8 @@ public final class OrderException extends RuntimeException {
         NOT_FOUND,
         SHIPMENT_NOT_FOUND,
         CONFLICT,
-        INVALID_REQUEST
+        INVALID_REQUEST,
+        INVENTORY_UNAVAILABLE
     }
 
     private final Code code;

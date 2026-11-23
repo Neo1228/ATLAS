@@ -26,6 +26,13 @@ public interface PaymentService {
 
     /** 호출자가 제공한 멱등성 키로 기존 checkout 결제 시도의 결과를 대조한다. */
     PaymentResponse reconcileCheckout(UUID checkoutId, String idempotencyKey);
+    /**
+     * 승인 단계까지만 진행하고 매입하지 않는다. 원격 재고 claim을 매입 전에 끝내야 하는 checkout이 사용한다.
+     * 이미 승인됐으면 그대로 {@code AUTHORIZED}를 반환한다.
+     */
+    PaymentResponse submitCheckoutAuthorization(UUID checkoutId, BigDecimal amount);
+    /** {@link #reconcileCheckout}과 같지만 {@code AUTHORIZED}에서 매입을 시작하지 않는다. */
+    PaymentResponse reconcileCheckoutAuthorization(UUID checkoutId, String idempotencyKey);
     PaymentResponse completeCheckoutApproval(UUID checkoutId, String providerOrderId);
     PaymentResponse reconcileCheckoutForCancellation(UUID checkoutId, String idempotencyKey);
 

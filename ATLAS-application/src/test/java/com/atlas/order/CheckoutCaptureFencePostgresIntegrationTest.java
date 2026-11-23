@@ -55,7 +55,7 @@ class CheckoutCaptureFencePostgresIntegrationTest extends PayPalIntegrationTestS
         new TransactionTemplate(manager).executeWithoutResult(status -> {
             jdbc.queryForObject("SELECT checkout_id FROM buyer_checkout WHERE checkout_id = ? FOR UPDATE", UUID.class, checkout);
             payments.prohibitNewCheckoutCapture(checkout);
-            jdbc.update("UPDATE buyer_checkout SET state = 'CANCEL_PENDING' WHERE checkout_id = ?", checkout);
+            jdbc.update("UPDATE buyer_checkout SET state = 'CANCEL_PENDING', cancellation_requested_at = now() WHERE checkout_id = ?", checkout);
             status.setRollbackOnly();
         });
         assertThat(jdbc.queryForObject("SELECT capture_prohibited FROM payment_attempt WHERE checkout_id = ?", Boolean.class, checkout)).isFalse();
@@ -70,7 +70,7 @@ class CheckoutCaptureFencePostgresIntegrationTest extends PayPalIntegrationTestS
             var result = new TransactionTemplate(manager).execute(status -> {
                 jdbc.queryForObject("SELECT checkout_id FROM buyer_checkout WHERE checkout_id = ? FOR UPDATE", UUID.class, checkout);
                 payments.prohibitNewCheckoutCapture(checkout);
-                jdbc.update("UPDATE buyer_checkout SET state = 'CANCEL_PENDING' WHERE checkout_id = ?", checkout);
+                jdbc.update("UPDATE buyer_checkout SET state = 'CANCEL_PENDING', cancellation_requested_at = now() WHERE checkout_id = ?", checkout);
                 var future = executor.submit(() -> {
                     started.countDown();
                     return payments.reconcileCheckout(checkout, "racing-capture");

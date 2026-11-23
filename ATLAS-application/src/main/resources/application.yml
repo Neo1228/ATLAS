@@ -123,12 +123,12 @@ atlas:
     expiry-sweep-time-budget: ${ATLAS_ORDERS_EXPIRY_SWEEP_TIME_BUDGET:PT2S}
   payment:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
-    # 승인 화면 이탈에도 결제 대기가 무기한 남지 않도록 하는 deadline. PayPal approval 유효기간보다 짧게 둔다.
-    approval-ttl: ${ATLAS_PAYMENT_APPROVAL_TTL:PT30M}
     # 원화→USD 환율 공급자. bok-ecos(기본, BOK_ECOS_API_KEY 필요) 또는 frankfurter(가입·key 없는 ECB 기준환율).
     exchange-rate:
       provider: ${ATLAS_EXCHANGE_RATE_PROVIDER:bok-ecos}
-    # 외부 환율 API는 일 단위 고시다. 결제마다 호출하지 않고 짧게 재사용한다.
+    # 승인 화면 이탈에도 결제 대기가 무기한 남지 않도록 하는 deadline. PayPal approval 유효기간보다 짧게 둔다.
+    approval-ttl: ${ATLAS_PAYMENT_APPROVAL_TTL:PT30M}
+    # 외부 환율 API(BOK ECOS)는 일 단위 고시다. 결제마다 호출하지 않고 짧게 재사용한다.
     # max-stale 은 외부 장애 시 마지막 정상값을 허용하는 시간이다. 넘으면 결제를 막는다.
     fx:
       cache-ttl: ${ATLAS_PAYMENT_FX_CACHE_TTL:PT60S}
@@ -197,3 +197,36 @@ atlas:
         enabled: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_ENABLED:false}
         username: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_USERNAME:}
         password: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_PASSWORD:}
+  order-inventory-reservation:
+    enabled: false
+    # 단일 location으로 처리할 수 없는 SellerOrder를 여러 location에 나눠 예약한다(분할 출고).
+    split-allocation-enabled: false
+    api-token: ${ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN:}
+    service-token: ${INVENTORY_LOCATION_SERVICE_TOKEN:}
+    location-endpoints: ${ATLAS_ORDER_INVENTORY_RESERVATION_LOCATION_ENDPOINTS:}
+    connect-timeout: 250ms
+    read-timeout: PT2S
+    recovery:
+      poll-interval: PT1S
+      worker-enabled: true
+      batch-size: 100
+      # Lease half-life must exceed connect/read timeouts plus the configured one-second safety margin.
+      lease-duration: PT30S
+      base-backoff: PT1S
+      max-backoff: PT1M
+      minimum-reservation-remaining: PT10S
+
+      max-attempts: 8
+
+    # 예약 workflow 상태 변경 이벤트 로그를 Kafka로 내보내는 relay. 기본은 꺼져 있다.
+    # 소비자(정산 원장, 가용 재고 projection, 감사)는 각자 cursor로 order DB의 로그를 직접 읽을 수도 있다.
+    event-relay:
+      enabled: false
+      bootstrap-servers: ${ATLAS_ORDER_INVENTORY_EVENT_RELAY_BOOTSTRAP_SERVERS:localhost:9092}
+      topic: atlas.order-inventory.events
+      batch-size: 500
+      poll-interval: PT0.2S
+      # 한 묶음 전송의 한도. 넘기면 cursor를 옮기지 않고 같은 묶음을 다시 보낸다.
+      send-timeout: PT10S
+      # relay replica 하나만 전송하게 하는 cursor lease. send-timeout보다 5초 이상 길어야 한다.
+      lease-duration: PT30S

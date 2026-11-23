@@ -3,9 +3,8 @@ package com.atlas.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.Status;
-import com.atlas.payment.service.PayPalReportMatchQuery;
+import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.payment.service.PayPalReportMatchQuery.Candidate;
 import com.atlas.payment.service.PayPalReportMatchQuery.Kind;
 import com.atlas.settlement.exception.SettlementException;

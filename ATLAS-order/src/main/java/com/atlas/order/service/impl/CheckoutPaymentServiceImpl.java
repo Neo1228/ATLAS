@@ -12,6 +12,7 @@ import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.persistence.state.LocationReservationWorkflowState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.OrderItemRepository;
@@ -20,6 +21,7 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.ExpirySweepPolicy;
 import com.atlas.order.service.OrderFulfillmentService;
+import com.atlas.order.service.LocationReservationService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -38,6 +40,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -57,6 +60,13 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private final Clock clock;
     private final ExpirySweepPolicy expirySweep;
     private final JdbcExpirySweepLockRepository expirySweepLock;
+    private LocationReservationService locationReservations;
+
+
+    @Autowired(required = false)
+    public void setLocationReservations(LocationReservationService coordinator) {
+        this.locationReservations = coordinator;
+    }
 
     public CheckoutPaymentServiceImpl(PlatformTransactionManager transactionManager,
             BuyerCheckoutRepository checkouts, OrderRepository orders, OrderItemRepository items,
@@ -84,6 +94,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         if (checkoutId == null) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "checkoutId required");
         }
+        // 원격 재고 checkout은 승인까지만 진행한 뒤 claim을 확인하고 매입한다. 매입 뒤 재고 부족이 드러나면
+        // 실제 청구 후 환불이 필요해지므로, 자금 이동 전에 재고를 판매 확정 상태로 만든다.
+        boolean remote = checkoutHasRemoteReservation(checkoutId);
         BuyerCheckout prepared = transactions.execute(status -> {
             BuyerCheckout checkout = checkouts.findWithLockByCheckoutId(checkoutId)
                     .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found"));
@@ -133,7 +146,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         }
         PaymentResponse payment;
         try {
-            payment = payments.submitCheckout(checkoutId, BigDecimal.valueOf(prepared.totalWon()));
+            payment = remote
+                    ? payments.submitCheckoutAuthorization(checkoutId, BigDecimal.valueOf(prepared.totalWon()))
+                    : payments.submitCheckout(checkoutId, BigDecimal.valueOf(prepared.totalWon()));
         } catch (PaymentException exception) {
             if (exception.code() == PaymentException.Code.PAYMENT_PROVIDER_DISABLED) {
                 PaymentResponse attempt = payments.findCheckout(checkoutId);
@@ -165,6 +180,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 || (payment.state() == PaymentState.DECLINED && payment.authorizationActive())) {
             payment = payments.voidCheckoutAuthorization(checkoutId, "submit-void:" + checkoutId);
         }
+        if (remote) payment = claimBeforeCapture(checkoutId, payment, "submit:" + checkoutId, cancellationRequested);
         return applyPaymentResult(checkoutId, payment);
     }
 
@@ -185,6 +201,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 221) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "Idempotency-Key is required");
         }
+        boolean remote = checkoutHasRemoteReservation(checkoutId);
         BuyerCheckout current = transactions.execute(status -> checkouts.findById(checkoutId)
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found")));
         boolean cancellationRequested = current.state() == BuyerCheckoutState.CANCEL_PENDING
@@ -200,12 +217,63 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         }
         PaymentResponse payment = cancellationRequested
                 ? payments.reconcileCheckoutForCancellation(checkoutId, idempotencyKey)
-                : payments.reconcileCheckout(checkoutId, idempotencyKey);
+                : remote
+                        ? payments.reconcileCheckoutAuthorization(checkoutId, idempotencyKey)
+                        : payments.reconcileCheckout(checkoutId, idempotencyKey);
         if ((cancellationRequested && payment.state() == PaymentState.AUTHORIZED)
                 || (payment.state() == PaymentState.DECLINED && payment.authorizationActive())) {
             payment = payments.voidCheckoutAuthorization(checkoutId, idempotencyKey + ":void");
         }
+        if (remote) payment = claimBeforeCapture(checkoutId, payment, idempotencyKey, cancellationRequested);
         return applyPaymentResult(checkoutId, payment);
+    }
+
+    /**
+     * 승인된 원격 재고 checkout을 claim → 매입 순서로 진행한다. 모든 workflow가 claim돼야 매입하고,
+     * claim이 만료·취소로 확정 거절되면 매입 대신 승인을 void해 자금 이동 없이 실패로 끝낸다. claim 결과가
+     * 불확실하면 승인 상태를 유지하고 payment recovery가 같은 reservation ID로 다시 claim한다.
+     */
+    private PaymentResponse claimBeforeCapture(UUID checkoutId, PaymentResponse payment, String idempotencyKey,
+                                               boolean cancellationRequested) {
+        if (cancellationRequested) return payment;
+        if (payment.state() == PaymentState.CAPTURED) {
+            // 매입이 먼저 확정된 경우(이전 버전의 흐름 등)도 claim을 보장해야 PAID로 확정할 수 있다.
+            claimRemoteInventory(checkoutId);
+            return payment;
+        }
+        if (payment.state() != PaymentState.AUTHORIZED) return payment;
+        return switch (claimRemoteInventory(checkoutId)) {
+            case CLAIMED -> payments.reconcileCheckout(checkoutId, idempotencyKey + ":capture");
+            case REJECTED -> payments.voidCheckoutAuthorization(checkoutId, idempotencyKey + ":claim-rejected-void");
+            case PENDING -> payment;
+        };
+    }
+
+    private LocationReservationService.ClaimOutcome claimRemoteInventory(UUID checkoutId) {
+        LocationReservationService coordinator = locationReservations;
+        if (coordinator == null) return LocationReservationService.ClaimOutcome.PENDING;
+        List<PurchaseOrder> children = transactions.execute(status ->
+                orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId));
+        boolean pending = false;
+        for (PurchaseOrder order : children) {
+            if (order.reservationWorkflowId() == null) continue;
+            LocationReservationService.ClaimOutcome outcome = coordinator.claim(order.reservationWorkflowId());
+            if (outcome == LocationReservationService.ClaimOutcome.REJECTED) return outcome;
+            if (outcome == LocationReservationService.ClaimOutcome.PENDING) pending = true;
+        }
+        return pending ? LocationReservationService.ClaimOutcome.PENDING
+                : LocationReservationService.ClaimOutcome.CLAIMED;
+    }
+
+    private boolean remoteInventoryClaimed(List<PurchaseOrder> children) {
+        LocationReservationService coordinator = locationReservations;
+        if (coordinator == null) return false;
+        for (PurchaseOrder order : children) {
+            if (order.reservationWorkflowId() == null) continue;
+            if (!LocationReservationWorkflowState.CLAIMED.name()
+                    .equals(coordinator.find(order.reservationWorkflowId()).status())) return false;
+        }
+        return true;
     }
 
     @Override
@@ -222,8 +290,16 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 throw new OrderException(OrderException.Code.CONFLICT,
                         "Paid checkouts use the Seller order refund path");
             }
-            if (checkout.state() == BuyerCheckoutState.RESERVED) {
+            if (checkout.state() == BuyerCheckoutState.RESERVED
+                    || checkout.state() == BuyerCheckoutState.RESERVATION_PENDING) {
                 List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
+                if (children.stream().anyMatch(order -> order.reservationWorkflowId() != null)) {
+                    for (PurchaseOrder order : children) {
+                        order.updateState(OrderState.CANCEL_PENDING, order.paymentAttemptId(), clock.instant());
+                    }
+                    checkout.update(BuyerCheckoutState.CANCEL_PENDING, checkout.totalWon(), clock.instant());
+                    return checkout;
+                }
                 for (PurchaseOrder order : children) {
                     inventory.releaseAll(order.orderId());
                     releaseCouponReservation(order, clock.instant());
@@ -252,6 +328,13 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 || marked.state() == BuyerCheckoutState.FAILED
                 || marked.state() == BuyerCheckoutState.EXPIRED) {
             return toResponse(marked);
+        }
+        if (checkoutHasRemoteReservation(checkoutId)) {
+            PaymentResponse currentPayment = payments.findCheckout(checkoutId);
+            if (currentPayment == null || currentPayment.state() == PaymentState.NOT_STARTED) {
+                return finishRemoteCancellation(
+                        checkoutId, BuyerCheckoutState.CANCELLED, OrderState.CANCELLED);
+            }
         }
         PaymentResponse currentPayment = payments.findCheckout(checkoutId);
         if (noProviderWork(currentPayment)) {
@@ -299,12 +382,17 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         if (payment == null || !checkoutId.equals(payment.checkoutId())) {
             throw new OrderException(OrderException.Code.CONFLICT, "Payment result does not match checkout");
         }
+        boolean[] cancellationRequestedForRemoteCleanup = {false};
+        boolean[] remoteReservationForCleanup = {false};
         BuyerCheckout updated = transactions.execute(status -> {
             BuyerCheckout checkout = checkouts.findWithLockByCheckoutId(checkoutId)
                     .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found"));
             List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
             if (children.isEmpty()) throw new OrderException(OrderException.Code.CONFLICT, "Checkout has no orders");
-            boolean cancellationRequested = (checkout.state() == BuyerCheckoutState.CANCEL_PENDING || checkout.state() == BuyerCheckoutState.CANCELLED);
+            boolean cancellationRequested = checkout.state() == BuyerCheckoutState.CANCEL_PENDING
+                    || checkout.state() == BuyerCheckoutState.CANCELLED;
+            cancellationRequestedForRemoteCleanup[0] = cancellationRequested;
+            remoteReservationForCleanup[0] = children.stream().anyMatch(order -> order.reservationWorkflowId() != null);
             var now = clock.instant();
             if (payment.state() == PaymentState.CAPTURED) {
                 List<SellerOrderAllocationRequest> allocations = new ArrayList<>();
@@ -323,15 +411,25 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 if (total != checkout.totalWon()) throw new OrderException(OrderException.Code.CONFLICT, "Checkout item total mismatch");
                 settlement.recordCheckoutCapture(
                         new CheckoutSettlementPostingRequest(checkoutId, payment.attemptId(), total, allocations));
-                for (PurchaseOrder order : children) {
-                    if (order.state() != OrderState.PAID) {
-                        inventory.claimAll(order.orderId());
-                        redeemCouponReservation(order, now);
-                        order.updateState(OrderState.PAID, payment.attemptId(), now);
-                        fulfillment.initialize(order.orderId());
+                boolean remoteCheckout = children.stream().anyMatch(order -> order.reservationWorkflowId() != null);
+                if (remoteCheckout && !remoteInventoryClaimed(children)) {
+                    // 매입은 확정됐지만 원격 claim이 기록되지 않았다. 판매 확정 전까지 PAID로 올리지 않는다.
+                    for (PurchaseOrder order : children) {
+                        order.updateState(OrderState.INVENTORY_CLAIM_PENDING, payment.attemptId(), now);
                     }
+                    checkout.update(BuyerCheckoutState.INVENTORY_CLAIM_PENDING, checkout.totalWon(), now);
+                } else {
+                    for (PurchaseOrder order : children) {
+                        if (order.state() != OrderState.PAID) {
+                            // 원격 재고는 매입 전에 claim했으므로 로컬 재고를 다시 claim하지 않는다.
+                            if (order.reservationWorkflowId() == null) inventory.claimAll(order.orderId());
+                            redeemCouponReservation(order, now);
+                            order.updateState(OrderState.PAID, payment.attemptId(), now);
+                            fulfillment.initialize(order.orderId());
+                        }
+                    }
+                    checkout.update(BuyerCheckoutState.PAID, checkout.totalWon(), now);
                 }
-                checkout.update(BuyerCheckoutState.PAID, checkout.totalWon(), now);
             } else if (payment.state() == PaymentState.DECLINED || payment.state() == PaymentState.VOIDED) {
                 if (payment.authorizationActive()) {
                     for (PurchaseOrder order : children) {
@@ -340,18 +438,25 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                     checkout.update(cancellationRequested ? BuyerCheckoutState.CANCEL_PENDING
                             : BuyerCheckoutState.PAYMENT_PENDING, checkout.totalWon(), now);
                 } else {
-                    OrderState terminalOrderState = cancellationRequested
-                            ? OrderState.CANCELLED : OrderState.FAILED;
-                    BuyerCheckoutState terminalCheckoutState = cancellationRequested
-                            ? BuyerCheckoutState.CANCELLED : BuyerCheckoutState.FAILED;
-                    for (PurchaseOrder order : children) {
-                        if (order.state() != OrderState.CANCELLED && order.state() != OrderState.FAILED) {
-                            inventory.releaseAll(order.orderId());
-                            releaseCouponReservation(order, now);
-                            order.updateState(terminalOrderState, payment.attemptId(), now);
+                    if (remoteReservationForCleanup[0]) {
+                        for (PurchaseOrder order : children) {
+                            order.updateState(OrderState.CANCEL_PENDING, payment.attemptId(), now);
                         }
+                        checkout.update(BuyerCheckoutState.CANCEL_PENDING, checkout.totalWon(), now);
+                    } else {
+                        OrderState terminalOrderState = cancellationRequested
+                                ? OrderState.CANCELLED : OrderState.FAILED;
+                        BuyerCheckoutState terminalCheckoutState = cancellationRequested
+                                ? BuyerCheckoutState.CANCELLED : BuyerCheckoutState.FAILED;
+                        for (PurchaseOrder order : children) {
+                            if (order.state() != OrderState.CANCELLED && order.state() != OrderState.FAILED) {
+                                inventory.releaseAll(order.orderId());
+                                releaseCouponReservation(order, now);
+                                order.updateState(terminalOrderState, payment.attemptId(), now);
+                            }
+                        }
+                        checkout.update(terminalCheckoutState, checkout.totalWon(), now);
                     }
-                    checkout.update(terminalCheckoutState, checkout.totalWon(), now);
                 }
             } else {
                 OrderState childState;
@@ -382,6 +487,15 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             }
             return checkout;
         });
+        if (remoteReservationForCleanup[0]
+                && (payment.state() == PaymentState.DECLINED || payment.state() == PaymentState.VOIDED)
+                && !payment.authorizationActive() && updated.state() == BuyerCheckoutState.CANCEL_PENDING) {
+            BuyerCheckoutState terminalCheckout = cancellationRequestedForRemoteCleanup[0]
+                    ? BuyerCheckoutState.CANCELLED : BuyerCheckoutState.FAILED;
+            OrderState terminalOrder = cancellationRequestedForRemoteCleanup[0]
+                    ? OrderState.CANCELLED : OrderState.FAILED;
+            return finishRemoteCancellation(checkoutId, terminalCheckout, terminalOrder);
+        }
         return toResponse(updated);
     }
 
@@ -412,6 +526,14 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                         || order.checkoutExpiresAt() == null || sweepNow.isBefore(order.checkoutExpiresAt()))) {
                     return 0;
                 }
+                if (children.stream().anyMatch(order -> order.reservationWorkflowId() != null)) {
+                checkout.markExpiryCancellation();
+                    for (PurchaseOrder order : children) {
+                        order.updateState(OrderState.CANCEL_PENDING, order.paymentAttemptId(), sweepNow);
+                    }
+                    checkout.update(BuyerCheckoutState.CANCEL_PENDING, checkout.totalWon(), sweepNow);
+                    return 2;
+                }
                 for (PurchaseOrder order : children) {
                     inventory.releaseAll(order.orderId());
                     releaseCouponReservation(order, clock.instant());
@@ -420,11 +542,59 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 checkout.update(BuyerCheckoutState.EXPIRED, checkout.totalWon(), clock.instant());
                 return 1;
             });
-            expired += changed == null ? 0 : changed;
+            if (changed != null && changed == 2) {
+                finishRemoteCancellation(checkoutId, BuyerCheckoutState.EXPIRED, OrderState.EXPIRED);
+            }
+            expired += changed == null ? 0 : (changed == 2 ? 1 : changed);
         }
         return expired;
     }
 
+    private boolean checkoutHasRemoteReservation(UUID checkoutId) {
+        List<PurchaseOrder> children = transactions.execute(status ->
+                orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId));
+        return children != null && children.stream().anyMatch(order -> order.reservationWorkflowId() != null);
+    }
+    private CheckoutResponse finishRemoteCancellation(UUID checkoutId,
+                                                      BuyerCheckoutState terminalCheckout,
+                                                      OrderState terminalOrder) {
+        LocationReservationService coordinator = locationReservations;
+        if (coordinator == null) return find(checkoutId);
+        List<PurchaseOrder> children = transactions.execute(status ->
+                orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId));
+        if (children == null || children.isEmpty()
+                || children.stream().anyMatch(order -> order.reservationWorkflowId() == null)) {
+            return find(checkoutId);
+        }
+        boolean released = true;
+        for (PurchaseOrder order : children) {
+            var response = coordinator.cancel(order.reservationWorkflowId());
+            boolean terminal = "FAILED".equals(response.status()) || "CANCELLED".equals(response.status());
+            boolean allReleased = !response.locations().isEmpty()
+                    && response.locations().stream().allMatch(location -> "RELEASED".equals(location.status()));
+            if (!terminal && !allReleased) released = false;
+        }
+        if (!released) return find(checkoutId);
+        transactions.execute(status -> {
+            BuyerCheckout checkout = checkouts.findWithLockByCheckoutId(checkoutId)
+                    .orElseThrow(() -> new OrderException(
+                            OrderException.Code.NOT_FOUND, "Checkout not found"));
+            if (checkout.state() != BuyerCheckoutState.CANCEL_PENDING) return null;
+            boolean expired = checkout.cancellationTarget() == BuyerCheckoutState.EXPIRED;
+            Instant now = clock.instant();
+            List<PurchaseOrder> current = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
+            for (PurchaseOrder order : current) {
+                if (order.state() != OrderState.CANCELLED && order.state() != OrderState.FAILED
+                        && order.state() != OrderState.EXPIRED) {
+                    releaseCouponReservation(order, now);
+                    order.updateState(expired ? OrderState.EXPIRED : terminalOrder, order.paymentAttemptId(), now);
+                }
+            }
+            checkout.update(expired ? BuyerCheckoutState.EXPIRED : terminalCheckout, checkout.totalWon(), now);
+            return null;
+        });
+        return find(checkoutId);
+    }
     private void redeemCouponReservation(PurchaseOrder order, Instant at) {
         if (order.sellerCouponId() != null) {
             sellerCoupons.redeemRedemption(order.sellerId(), order.sellerCouponId(), order.orderId(), at);

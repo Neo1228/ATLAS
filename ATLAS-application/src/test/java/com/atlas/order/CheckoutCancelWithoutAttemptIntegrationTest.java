@@ -109,7 +109,7 @@ class CheckoutCancelWithoutAttemptIntegrationTest extends PayPalIntegrationTestS
     @Test
     void reconcileOfCancelPendingCheckoutWithoutProviderWorkDoesNotCreateProviderOrder() {
         Fixture fixture = checkoutAwaitingProviderCall();
-        jdbc.update("UPDATE buyer_checkout SET state = 'CANCEL_PENDING' WHERE checkout_id = ?",
+        jdbc.update("UPDATE buyer_checkout SET state = 'CANCEL_PENDING', cancellation_requested_at = now() WHERE checkout_id = ?",
                 fixture.checkoutId());
         jdbc.update("UPDATE purchase_order SET state = 'CANCEL_PENDING' WHERE checkout_id = ?",
                 fixture.checkoutId());

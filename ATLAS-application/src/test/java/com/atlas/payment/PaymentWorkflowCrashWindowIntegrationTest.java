@@ -14,9 +14,11 @@ import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.service.InventoryService;
+import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
@@ -216,6 +218,69 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
         assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
         assertThat(captureRequestCount()).isEqualTo(1);
     }
+    @Test
+    void lostRefundResponseIsRecoveredAndAppliedExactlyOnce() {
+        CheckoutResponse reserved = reservedCheckout();
+        UUID checkoutId = reserved.checkoutId();
+        OrderResponse reservedOrder = reserved.orders().getFirst();
+        UUID orderId = reservedOrder.orderId();
+        UUID sellerId = reservedOrder.items().getFirst().sellerId();
+        String skuId = reservedOrder.items().getFirst().skuId();
+        UUID orderItemId = jdbc.queryForObject("""
+                SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?
+                """, UUID.class, orderId, skuId);
+
+        CheckoutResponse pending = checkouts.submit(checkoutId);
+        CheckoutResponse paid = checkouts.completeApproval(
+                checkoutId, approvalToken(pending.paymentApprovalUrl()));
+        assertThat(paid.orders().getFirst().state()).isEqualTo(OrderState.PAID);
+        assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
+
+        String idempotencyKey = "crash-window-refund-" + UUID.randomUUID();
+        OrderRefundRequest request = new OrderRefundRequest(
+                sellerId, orderId, idempotencyKey, List.of(new OrderRefundRequest.Item(orderItemId, 1)));
+        disconnectNextRefundResponse();
+        var unknown = refunds.refund(request);
+
+        assertThat(unknown.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
+        UUID refundOperationId = jdbc.queryForObject("""
+                SELECT payment_refund_operation_id FROM order_refund_request WHERE refund_id = ?
+                """, UUID.class, unknown.refundId());
+        UUID providerRequestId = jdbc.queryForObject("""
+                SELECT provider_request_id FROM payment_refund_operation WHERE refund_operation_id = ?
+                """, UUID.class, refundOperationId);
+        assertThat(job("payment_refund_operation_id", refundOperationId))
+                .containsEntry("work_stage", PaymentRecoveryWorkStage.PROVIDER.name())
+                .containsEntry("status", PaymentRecoveryJobStatus.PENDING.name());
+        assertThat(inventory.find(sellerId, skuId)).satisfies(pool -> {
+            assertThat(pool.available()).isZero();
+            assertThat(pool.reserved()).isZero();
+            assertThat(pool.claimed()).isEqualTo(1);
+        });
+        assertThat(refundJournalCount(unknown.refundId())).isZero();
+
+        pollUntilSettled();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT payment_refund_status FROM order_refund_request WHERE refund_id = ?
+                """, String.class, unknown.refundId()))
+                .isEqualTo(OrderRefundPaymentStatus.COMPLETED.name());
+        assertThat(jdbc.queryForObject("""
+                SELECT refund_status FROM order_refund_request WHERE refund_id = ?
+                """, String.class, unknown.refundId())).isEqualTo("FULLY_RECORDED");
+        assertThat(inventory.find(sellerId, skuId)).satisfies(pool -> {
+            assertThat(pool.available()).isEqualTo(1);
+            assertThat(pool.reserved()).isZero();
+            assertThat(pool.claimed()).isZero();
+        });
+        assertThat(refundJournalCount(unknown.refundId())).isEqualTo(1);
+        assertThat(refundRequestIds()).hasSizeGreaterThanOrEqualTo(2)
+                .containsOnly(providerRequestId.toString());
+        assertThat(job("payment_refund_operation_id", refundOperationId))
+                .containsEntry("work_stage", PaymentRecoveryWorkStage.APPLY.name())
+                .containsEntry("status", PaymentRecoveryJobStatus.COMPLETED.name());
+    }
+
 
     private CheckoutResponse reservedCheckout() {
         UUID sellerId = sellers.createSeller().sellerId();
@@ -240,6 +305,12 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
                 SELECT COUNT(*) FROM settlement_journal WHERE checkout_id = ?
                 """, Integer.class, checkoutId);
     }
+    private int refundJournalCount(UUID refundId) {
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FROM settlement_journal WHERE source_refund_id = ?
+                """, Integer.class, refundId);
+    }
+
 
     private void pollUntilSettled() {
         for (int attempt = 0; attempt < 6; attempt++) {

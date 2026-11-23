@@ -4,13 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
