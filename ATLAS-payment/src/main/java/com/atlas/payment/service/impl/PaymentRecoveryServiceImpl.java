@@ -1,9 +1,9 @@
 package com.atlas.payment.service.impl;
 
-import com.atlas.payment.dto.response.PaymentRecoveryJob;
-import com.atlas.payment.dto.response.PaymentRecoveryRequeue;
-import com.atlas.payment.dto.response.PaymentRecoveryReviewItem;
-import com.atlas.payment.dto.response.PaymentRecoveryMetrics;
+import com.atlas.payment.dto.response.PaymentRecoveryJobResponse;
+import com.atlas.payment.dto.response.PaymentRecoveryRequeueResponse;
+import com.atlas.payment.dto.response.PaymentRecoveryReviewItemResponse;
+import com.atlas.payment.dto.response.PaymentRecoveryMetricsResponse;
 import com.atlas.payment.persistence.projection.ClaimedPaymentRecoveryJob;
 import com.atlas.payment.persistence.projection.PaymentRecoveryRequeueRow;
 import com.atlas.payment.persistence.projection.PaymentRecoveryReviewRow;
@@ -36,7 +36,7 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
 
     private final PaymentRecoveryRepository recovery;
 
-    private volatile PaymentRecoveryMetrics metricsSnapshot;
+    private volatile PaymentRecoveryMetricsResponse metricsSnapshot;
     private volatile long metricsFetchedAtNanos = Long.MIN_VALUE;
 
     public PaymentRecoveryServiceImpl(PaymentRecoveryRepository recovery) {
@@ -50,13 +50,13 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
      * 이 경로는 초당 소수 회만 호출되므로 경합 비용은 무시할 수 있다.
      */
     @Override
-    public synchronized PaymentRecoveryMetrics metricsSnapshot() {
+    public synchronized PaymentRecoveryMetricsResponse metricsSnapshot() {
         long now = System.nanoTime();
         if (metricsSnapshot != null
                 && now - metricsFetchedAtNanos < METRICS_CACHE_TTL.toNanos()) {
             return metricsSnapshot;
         }
-        PaymentRecoveryMetrics fresh = toMetrics(recovery.metricsSnapshot());
+        PaymentRecoveryMetricsResponse fresh = toMetrics(recovery.metricsSnapshot());
         metricsSnapshot = fresh;
         metricsFetchedAtNanos = now;
         return fresh;
@@ -108,7 +108,7 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
-    public List<PaymentRecoveryJob> claimDue(
+    public List<PaymentRecoveryJobResponse> claimDue(
             int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge) {
         return recovery.claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAge).stream()
                 .map(PaymentRecoveryServiceImpl::toDto)
@@ -116,7 +116,7 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
-    public List<PaymentRecoveryJob> claimNextDue(
+    public List<PaymentRecoveryJobResponse> claimNextDue(
             int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge) {
         return recovery.claimNextDue(limit, leaseToken, leaseDuration, maxAttempts, maxAge).stream()
                 .map(PaymentRecoveryServiceImpl::toDto)
@@ -124,30 +124,30 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
-    public boolean complete(PaymentRecoveryJob job) {
+    public boolean complete(PaymentRecoveryJobResponse job) {
         return recovery.complete(toProjection(job));
     }
 
     @Override
-    public boolean waitForBuyer(PaymentRecoveryJob job) {
+    public boolean waitForBuyer(PaymentRecoveryJobResponse job) {
         return recovery.waitForBuyer(toProjection(job));
     }
 
     @Override
     public boolean reschedule(
-            PaymentRecoveryJob job, Duration delay, int maxAttempts,
+            PaymentRecoveryJobResponse job, Duration delay, int maxAttempts,
             Duration maxAge, String errorCode) {
         return recovery.reschedule(toProjection(job), delay, maxAttempts, maxAge, errorCode);
     }
 
     @Override
-    public boolean markNeedsReview(PaymentRecoveryJob job, String errorCode) {
+    public boolean markNeedsReview(PaymentRecoveryJobResponse job, String errorCode) {
         return recovery.markNeedsReview(toProjection(job), errorCode);
     }
 
     @Override
     @Transactional
-    public Optional<PaymentRecoveryRequeue> requeueNeedsReview(
+    public Optional<PaymentRecoveryRequeueResponse> requeueNeedsReview(
             UUID recoveryJobId, String idempotencyKey, String actor, String reason, int maxManualRequeues) {
         Objects.requireNonNull(recoveryJobId, "recoveryJobId");
         Objects.requireNonNull(idempotencyKey, "idempotencyKey");
@@ -161,7 +161,7 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
-    public List<PaymentRecoveryReviewItem> listNeedsReview(int limit, int offset) {
+    public List<PaymentRecoveryReviewItemResponse> listNeedsReview(int limit, int offset) {
         return recovery.listNeedsReview(limit, offset).stream()
                 .map(PaymentRecoveryServiceImpl::toDto)
                 .toList();
@@ -187,35 +187,35 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
         return recovery.oldestDueAgeSeconds(stage);
     }
 
-    private static PaymentRecoveryJob toDto(ClaimedPaymentRecoveryJob job) {
-        return new PaymentRecoveryJob(job.recoveryJobId(), job.operationType(), job.workStage(),
+    private static PaymentRecoveryJobResponse toDto(ClaimedPaymentRecoveryJob job) {
+        return new PaymentRecoveryJobResponse(job.recoveryJobId(), job.operationType(), job.workStage(),
                 job.operationId(), job.attemptCount(), job.firstEnqueuedAt(), job.leaseToken());
     }
 
-    private static ClaimedPaymentRecoveryJob toProjection(PaymentRecoveryJob job) {
+    private static ClaimedPaymentRecoveryJob toProjection(PaymentRecoveryJobResponse job) {
         return new ClaimedPaymentRecoveryJob(
                 job.recoveryJobId(), job.operationType(), job.workStage(), job.operationId(),
                 job.attemptCount(), job.firstEnqueuedAt(), job.leaseToken());
     }
 
-    private static PaymentRecoveryReviewItem toDto(PaymentRecoveryReviewRow item) {
-        return new PaymentRecoveryReviewItem(item.recoveryJobId(), item.operationType(), item.workStage(),
+    private static PaymentRecoveryReviewItemResponse toDto(PaymentRecoveryReviewRow item) {
+        return new PaymentRecoveryReviewItemResponse(item.recoveryJobId(), item.operationType(), item.workStage(),
                 item.operationId(), item.paymentAttemptId(), item.orderId(), item.checkoutId(), item.attemptCount(),
                 item.manualRequeueCount(), item.firstEnqueuedAt(), item.lastAttemptAt(), item.lastErrorCode());
     }
 
-    private static PaymentRecoveryMetrics toMetrics(
+    private static PaymentRecoveryMetricsResponse toMetrics(
             RecoveryMetricsSnapshot snapshot) {
-        Map<PaymentRecoveryMetrics.StageKey, PaymentRecoveryMetrics.StageMetrics> stages =
+        Map<PaymentRecoveryMetricsResponse.StageKey, PaymentRecoveryMetricsResponse.StageMetrics> stages =
                 new HashMap<>();
         snapshot.stages().forEach((key, value) -> stages.put(
-                new PaymentRecoveryMetrics.StageKey(key.stage(), key.status()),
-                new PaymentRecoveryMetrics.StageMetrics(value.total(), value.oldestDueAgeSeconds())));
-        return new PaymentRecoveryMetrics(Map.copyOf(snapshot.statusCounts()), Map.copyOf(stages));
+                new PaymentRecoveryMetricsResponse.StageKey(key.stage(), key.status()),
+                new PaymentRecoveryMetricsResponse.StageMetrics(value.total(), value.oldestDueAgeSeconds())));
+        return new PaymentRecoveryMetricsResponse(Map.copyOf(snapshot.statusCounts()), Map.copyOf(stages));
     }
 
-    private static PaymentRecoveryRequeue toRequeue(PaymentRecoveryRequeueRow row) {
-        return new PaymentRecoveryRequeue(
+    private static PaymentRecoveryRequeueResponse toRequeue(PaymentRecoveryRequeueRow row) {
+        return new PaymentRecoveryRequeueResponse(
                 row.recoveryJobId(), row.status(), row.manualRequeueCount(), row.acceptedAt(), row.duplicate());
     }
 }

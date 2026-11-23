@@ -3,9 +3,10 @@ package com.atlas.account;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.account.domain.AccountException;
 import com.atlas.account.dto.request.LoginRequest;
+import com.atlas.account.exception.AccountException;
 import com.atlas.account.repository.AccountRepository;
+import com.atlas.account.repository.AuthThrottleRepository;
 import com.atlas.account.service.AccountService;
 import com.atlas.account.service.AuthAttemptLimiter;
 import java.time.Duration;
@@ -136,7 +137,7 @@ class AuthAttemptLimiterIntegrationTest {
 
     @Test
     void originLimitIsSharedAcrossSubjectsSoOneSourceCannotSprayManyAccounts() {
-        AuthAttemptLimiter strict = new AuthAttemptLimiter(jdbc, transactionManager, Duration.ofMinutes(15), 100, 2);
+        AuthAttemptLimiter strict = new AuthAttemptLimiter(new AuthThrottleRepository(jdbc), transactionManager, Duration.ofMinutes(15), 100, 2);
         Instant now = Instant.now();
         String origin = "203.0.113." + UUID.randomUUID().toString().substring(0, 8);
 
@@ -149,7 +150,7 @@ class AuthAttemptLimiterIntegrationTest {
 
     @Test
     void mailRequestsStopSendingOnceTheOriginBudgetIsSpent() {
-        AuthAttemptLimiter strict = new AuthAttemptLimiter(jdbc, transactionManager, Duration.ofMinutes(15), 100, 1);
+        AuthAttemptLimiter strict = new AuthAttemptLimiter(new AuthThrottleRepository(jdbc), transactionManager, Duration.ofMinutes(15), 100, 1);
         Instant now = Instant.now();
         String origin = "192.0.2." + UUID.randomUUID().toString().substring(0, 8);
 

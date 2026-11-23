@@ -29,7 +29,7 @@ import com.atlas.order.service.OrderService;
 import com.atlas.order.service.impl.OrderServiceImpl;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.payment.dto.response.PaymentResponse;
-import com.atlas.payment.dto.response.PaymentWebhookResult;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import com.atlas.payment.provider.PaymentWebhookSignature;
@@ -81,7 +81,7 @@ class PayPalWebhookServiceTest {
         });
         when(payments.processVerifiedPayPalWebhook(event)).thenAnswer(invocation -> {
             assertThat(ownerLockHeld).isTrue();
-            return new PaymentWebhookResult(false, true, null, null, attemptId, true);
+            return new PaymentWebhookResponse(false, true, null, null, attemptId, true);
         });
         when(payments.findByAttemptId(attemptId)).thenAnswer(invocation -> {
             assertThat(ownerLockHeld).isFalse();
@@ -123,8 +123,8 @@ class PayPalWebhookServiceTest {
             }
         }).when(payments).withPayPalWebhookOwnerLock(eq(event), any());
         when(payments.processVerifiedPayPalWebhook(event)).thenReturn(
-                new PaymentWebhookResult(false, true, null, null, attemptId, true),
-                new PaymentWebhookResult(true, true, null, null, attemptId, true));
+                new PaymentWebhookResponse(false, true, null, null, attemptId, true),
+                new PaymentWebhookResponse(true, true, null, null, attemptId, true));
         when(payments.findByAttemptId(attemptId)).thenReturn(
                 new PaymentResponse(null, checkoutId, attemptId, PaymentState.CAPTURED, false));
 
@@ -170,8 +170,8 @@ class PayPalWebhookServiceTest {
             }
         }).when(payments).withPayPalWebhookOwnerLock(eq(event), any());
         when(payments.processVerifiedPayPalWebhook(event)).thenReturn(
-                new PaymentWebhookResult(false, true, null, null, attemptId, true),
-                new PaymentWebhookResult(true, true, null, null, attemptId, true));
+                new PaymentWebhookResponse(false, true, null, null, attemptId, true),
+                new PaymentWebhookResponse(true, true, null, null, attemptId, true));
         when(payments.findByAttemptId(attemptId)).thenReturn(
                 new PaymentResponse(orderId, null, attemptId, PaymentState.CAPTURED, false));
 
@@ -248,7 +248,7 @@ class PayPalWebhookServiceTest {
             }
         }).when(payments).withPayPalWebhookOwnerLock(eq(event), any());
         when(payments.processVerifiedPayPalWebhook(event))
-                .thenReturn(new PaymentWebhookResult(false, true, null, null, attemptId, true));
+                .thenReturn(new PaymentWebhookResponse(false, true, null, null, attemptId, true));
         when(payments.findByAttemptId(attemptId)).thenReturn(
                 new PaymentResponse(orderId, null, attemptId, PaymentState.CAPTURED, false));
         when(payments.find(orderId)).thenAnswer(invocation -> {

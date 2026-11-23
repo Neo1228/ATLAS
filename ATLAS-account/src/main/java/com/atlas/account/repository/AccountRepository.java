@@ -1,11 +1,11 @@
 package com.atlas.account.repository;
 
-import com.atlas.account.domain.AccountPrincipal;
-import com.atlas.account.domain.VerifiedSellerAccount;
-import com.atlas.account.domain.AccountActionToken;
-import com.atlas.account.domain.AccountMfaSecret;
-import com.atlas.account.domain.RefreshTokenSession;
-import com.atlas.account.domain.ActiveRefreshFamily;
+import com.atlas.account.persistence.projection.AccountActionToken;
+import com.atlas.account.persistence.projection.AccountMfaSecret;
+import com.atlas.account.persistence.projection.AccountPrincipal;
+import com.atlas.account.persistence.projection.ActiveRefreshFamily;
+import com.atlas.account.persistence.projection.RefreshTokenSession;
+import com.atlas.account.persistence.projection.VerifiedSellerAccount;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;

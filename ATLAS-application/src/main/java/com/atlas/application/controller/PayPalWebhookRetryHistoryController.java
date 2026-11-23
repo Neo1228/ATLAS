@@ -1,7 +1,7 @@
 package com.atlas.application.controller;
 
 import com.atlas.application.dto.response.PayPalWebhookPendingRetryPage;
-import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistory;
+import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
 import com.atlas.application.dto.response.PayPalWebhookRetrySummary;
 import com.atlas.application.service.PayPalWebhookRetryHistoryService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,7 +34,7 @@ public class PayPalWebhookRetryHistoryController {
     }
 
     @GetMapping("/{eventId}/history")
-    public PayPalWebhookRetryAttemptHistory history(@PathVariable String eventId,
+    public PayPalWebhookRetryAttemptHistoryResponse history(@PathVariable String eventId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return service.history(eventId, page, size);

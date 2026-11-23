@@ -1,13 +1,5 @@
 package com.atlas.account.service;
 
-import com.atlas.account.domain.AccountException;
-import com.atlas.account.domain.AccountException.Code;
-import com.atlas.account.domain.AccountActionToken;
-import com.atlas.account.domain.AccountMfaSecret;
-import com.atlas.account.domain.AccountPrincipal;
-import com.atlas.account.domain.VerifiedSellerAccount;
-import com.atlas.account.domain.RefreshTokenSession;
-import com.atlas.account.domain.ActiveRefreshFamily;
 import com.atlas.account.dto.request.LoginRequest;
 import com.atlas.account.dto.request.MfaChallengeRequest;
 import com.atlas.account.dto.request.RefreshTokenRequest;
@@ -19,6 +11,14 @@ import com.atlas.account.dto.response.MfaEnrollmentResponse;
 import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
 import com.atlas.account.dto.response.AccountSessionResponse;
 import com.atlas.account.dto.response.AccountSessionPage;
+import com.atlas.account.dto.response.VerifiedSellerAccountResponse;
+import com.atlas.account.exception.AccountException;
+import com.atlas.account.exception.AccountException.Code;
+import com.atlas.account.persistence.projection.AccountActionToken;
+import com.atlas.account.persistence.projection.AccountMfaSecret;
+import com.atlas.account.persistence.projection.AccountPrincipal;
+import com.atlas.account.persistence.projection.ActiveRefreshFamily;
+import com.atlas.account.persistence.projection.RefreshTokenSession;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.repository.AccountSuspensionRepository;
 import com.atlas.account.dto.response.AccountSuspensionActionResponse;
@@ -496,11 +496,35 @@ public class AccountService {
      * 호출 account가 해당 Seller를 소유하지 않으면 조회를 거부한다.
      */
     @Transactional(readOnly = true)
-    public Optional<VerifiedSellerAccount> findVerifiedSellerAccount(UUID accountId, UUID sellerId) {
+    public Optional<VerifiedSellerAccountResponse> findVerifiedSellerAccount(UUID accountId, UUID sellerId) {
         if (accountId == null || sellerId == null || !accounts.ownsSeller(accountId, sellerId)) {
             throw new AccountException(Code.RESOURCE_NOT_OWNED, "Seller identity is not available");
         }
-        return accounts.findVerifiedSellerAccount(accountId, sellerId);
+        return accounts.findVerifiedSellerAccount(accountId, sellerId)
+                .map(account -> new VerifiedSellerAccountResponse(account.accountId(), account.email()));
+    }
+
+    /**
+     * 요청 본문이 가리킨 Seller를 호출 account가 소유하는지 확인한다. 경로 변수로 알 수 있는 소유권은
+     * {@code AccountOwnershipInterceptor}가 검사하고, 본문에만 있는 값은 이 메서드로 검사한다.
+     */
+    @Transactional(readOnly = true)
+    public void requireSellerOwnership(UUID accountId, UUID sellerId) {
+        if (!ownsSeller(accountId, sellerId)) {
+            throw new AccountException(Code.RESOURCE_NOT_OWNED, "Seller profile is not available to this account");
+        }
+    }
+
+    /**
+     * 호출 account의 Buyer 식별자를 돌려주되, 요청 본문이 다른 Buyer를 가리키면 거부한다.
+     */
+    @Transactional(readOnly = true)
+    public String requireOwnBuyerRef(UUID accountId, String requestedBuyerRef) {
+        String buyerRef = buyerRef(accountId);
+        if (!buyerRef.equals(requestedBuyerRef)) {
+            throw new AccountException(Code.RESOURCE_NOT_OWNED, "Buyer identity is not available to this account");
+        }
+        return buyerRef;
     }
 
     @Transactional(readOnly = true)

@@ -1,9 +1,9 @@
 package com.atlas.application.controller;
 
 import com.atlas.application.dto.request.PaymentRecoveryRequeueRequest;
-import com.atlas.application.dto.response.PaymentRecoveryRequeueResponse;
 import com.atlas.application.dto.response.PaymentRecoveryReviewPage;
 import com.atlas.application.service.PaymentRecoveryOperatorService;
+import com.atlas.payment.dto.response.PaymentRecoveryRequeueResponse;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.util.UUID;

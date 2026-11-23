@@ -75,6 +75,29 @@ PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환�
 - 락은 보호할 invariant와 재현 가능한 경쟁 조건이 있을 때만 추가. lock scope/order, transaction boundary, retry 및 failure recovery를 PostgreSQL 통합 테스트로 검증.
 - DDD, CQRS, hexagonal architecture 등 패턴을 전제하지 않음. 기존 계층 구조를 유지하고, 구조 변경은 구체적인 문제·근거가 있을 때만 수행.
 
+## 패키지 구조와 명명
+
+세부 결정은 [ADR-0069](docs/02-decisions/adr/ADR-0069-layered-naming-and-runtime-configuration.md). 아래 규칙은 `ModuleBoundaryTest`가 강제.
+
+- 모든 모듈이 같은 패키지 어휘 사용: `controller`, `dto.request`, `dto.response`, `exception`, `repository`, `service`, `service.impl`, `persistence.entity|projection|state`, `config`, `security`, `provider`(외부 연동), `health`. `domain` 같은 모듈 고유 어휘 금지.
+- 계층 패키지는 클래스가 1개여도 상위로 합치지 않음. 모듈마다 같은 자리에 같은 종류가 있어야 탐색 비용이 줄고 패키지 이름으로 규칙을 걸 수 있음. 어휘에 없는 새 패키지는 모든 모듈에 적용할 수 있는지 먼저 확인.
+- 모듈 루트(`com.atlas.<module>`)에는 `*Application` 진입점만 둠.
+
+|대상|위치와 이름|
+|---|---|
+|`*Controller`|`controller[.<도메인>]`|
+|`*Repository`, `@Repository`|`repository`. `JdbcTemplate`, `EntityManager` 같은 영속 API는 `repository`와 `persistence`에서만 사용|
+|`*ServiceImpl`|`service.impl`. 이름은 `<인터페이스>Impl`|
+|`*Configuration`|`config`. 보안 필터·인터셉터·암호화는 `security`|
+|`*Request`, `*Response`|`dto.request`, `dto.response`. `*Page`, `*Summary`, enum은 허용. HTTP 바인딩 전용은 `controller.dto`|
+|예외|`exception`|
+|DB에서 읽은 값|`persistence.projection`. 모듈 밖으로 내보낼 때 서비스가 응답 DTO로 변환|
+
+- 인터페이스와 `*Impl`은 다른 Gradle 모듈이 쓰는 계약에만 사용. 한 모듈 안의 순수 계산은 구체 클래스로 유지. 같은 필드를 복사만 하는 DTO 사본을 만들지 않고 소유 모듈의 응답 DTO를 그대로 사용.
+- `Helper`, `Util`, `Manager`, `Support`, `Common` 같은 뭉뚱그린 이름 금지. 역할을 이름에 드러냄.
+- 40줄 안팎의 package-private 보조 클래스는 모듈마다 두는 것을 허용. 공유하려면 모듈 간 의존이 새로 생기므로 두 번째 사본이 생길 때 비용을 비교.
+- `ATLAS-application`은 진입점, HTTP, 보안, 스케줄러 조립이 책임. 도메인 규칙과 SQL은 도메인 모듈이 소유.
+
 ## 테스트와 품질 확인
 
 - JUnit Platform과 Spring Boot Test 사용. 단순 로직은 unit test, SQL·transaction·locking 동작은 PostgreSQL integration test로 확인.

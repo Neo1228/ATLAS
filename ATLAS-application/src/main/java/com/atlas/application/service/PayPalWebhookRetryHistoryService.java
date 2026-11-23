@@ -1,7 +1,7 @@
 package com.atlas.application.service;
 
 import com.atlas.application.dto.response.PayPalWebhookPendingRetryPage;
-import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistory;
+import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
 import com.atlas.application.dto.response.PayPalWebhookRetrySummary;
 import com.atlas.application.repository.PayPalWebhookRetryHistoryRepository;
 import java.util.List;
@@ -38,17 +38,17 @@ public class PayPalWebhookRetryHistoryService {
         return new PayPalWebhookPendingRetryPage(total, page, size, items);
     }
 
-    public PayPalWebhookRetryAttemptHistory history(String eventId, int page, int size) {
+    public PayPalWebhookRetryAttemptHistoryResponse history(String eventId, int page, int size) {
         long offset = offset(page, size);
         if (!retries.eventKnown(eventId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Retry event not found");
         }
         long total = retries.countTimeline(eventId);
-        List<PayPalWebhookRetryAttemptHistory.Entry> entries = retries.timeline(eventId, size, offset).stream()
-                .map(entry -> new PayPalWebhookRetryAttemptHistory.Entry(entry.category(), entry.recordedAt(),
+        List<PayPalWebhookRetryAttemptHistoryResponse.Entry> entries = retries.timeline(eventId, size, offset).stream()
+                .map(entry -> new PayPalWebhookRetryAttemptHistoryResponse.Entry(entry.category(), entry.recordedAt(),
                         entry.attemptNumber()))
                 .toList();
-        return new PayPalWebhookRetryAttemptHistory(eventId, total, page, size, entries);
+        return new PayPalWebhookRetryAttemptHistoryResponse(eventId, total, page, size, entries);
     }
 
     private static long offset(int page, int size) {

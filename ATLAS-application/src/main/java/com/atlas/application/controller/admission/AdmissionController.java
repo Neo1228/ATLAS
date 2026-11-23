@@ -1,7 +1,5 @@
 package com.atlas.application.controller.admission;
 
-import com.atlas.account.domain.AccountException;
-import com.atlas.account.domain.AccountException.Code;
 import com.atlas.account.service.AccountService;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
@@ -38,10 +36,7 @@ public class AdmissionController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody JoinQueueHttpRequest request) {
         UUID accountId = UUID.fromString(jwt.getSubject());
-        String buyerRef = accounts.buyerRef(accountId);
-        if (!buyerRef.equals(request.buyerRef())) {
-            throw new AccountException(Code.RESOURCE_NOT_OWNED, "Buyer identity is not available to this account");
-        }
+        String buyerRef = accounts.requireOwnBuyerRef(accountId, request.buyerRef());
         return admission.join(new JoinQueueRequest(campaignId, request.skuId(), buyerRef, idempotencyKey));
     }
 

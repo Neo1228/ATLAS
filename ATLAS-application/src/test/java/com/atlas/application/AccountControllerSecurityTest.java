@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.atlas.account.dto.response.AccountActionResponse;
 import com.atlas.account.service.AccountService;
+import com.atlas.application.config.ApiSecurityConfiguration;
 import com.atlas.application.controller.account.AccountController;
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import org.junit.jupiter.api.BeforeEach;

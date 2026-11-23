@@ -7,7 +7,7 @@ import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
-import com.atlas.payment.dto.response.PaymentRecoveryJob;
+import com.atlas.payment.dto.response.PaymentRecoveryJobResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.exception.PaymentException;
@@ -149,7 +149,7 @@ public class PaymentRecoveryWorker {
             return;
         }
         for (int index = 0; index < batchSize; index++) {
-            List<PaymentRecoveryJob> claimed;
+            List<PaymentRecoveryJobResponse> claimed;
             try {
                 claimed = recovery.claimNextDue(1, UUID.randomUUID(), leaseDuration, maxAttempts, maxAge);
             } catch (RuntimeException exception) {
@@ -157,13 +157,13 @@ public class PaymentRecoveryWorker {
                 return;
             }
             if (claimed.isEmpty()) return;
-            PaymentRecoveryJob job = claimed.getFirst();
+            PaymentRecoveryJobResponse job = claimed.getFirst();
             counter("claimed", job.operationType()).increment();
             process(job);
         }
     }
 
-    private void process(PaymentRecoveryJob job) {
+    private void process(PaymentRecoveryJobResponse job) {
         Timer.Sample sample = Timer.start(meters);
         try {
             if (job.operationType() == PaymentRecoveryOperationType.PAYMENT_ATTEMPT) {
@@ -191,7 +191,7 @@ public class PaymentRecoveryWorker {
         }
     }
 
-    private void recoverPayment(PaymentRecoveryJob job) {
+    private void recoverPayment(PaymentRecoveryJobResponse job) {
         PaymentResponse current = payments.findByAttemptId(job.operationId());
         if (current == null) {
             recovery.markNeedsReview(job, "PAYMENT_ATTEMPT_MISSING");
@@ -235,7 +235,7 @@ public class PaymentRecoveryWorker {
                     || !Instant.now().isBefore(payment.approvalExpiresAt()));
     }
 
-    private void reconcilePaymentOwner(PaymentRecoveryJob job, PaymentResponse payment) {
+    private void reconcilePaymentOwner(PaymentRecoveryJobResponse job, PaymentResponse payment) {
         String idempotencyKey = "payment-recovery-" + job.operationId();
         if (payment.orderId() != null) {
             orders.reconcilePayment(payment.orderId(), idempotencyKey);
@@ -247,7 +247,7 @@ public class PaymentRecoveryWorker {
         }
     }
 
-    private void recoverRefund(PaymentRecoveryJob job) {
+    private void recoverRefund(PaymentRecoveryJobResponse job) {
         PaymentRefundResponse current = payments.findRefundOperation(job.operationId());
         if (current == null) {
             recovery.markNeedsReview(job, "REFUND_OPERATION_MISSING");
@@ -262,7 +262,7 @@ public class PaymentRecoveryWorker {
         settle(job, terminal(result.status()), false);
     }
 
-    private void settle(PaymentRecoveryJob job, boolean terminal, boolean awaitingBuyer) {
+    private void settle(PaymentRecoveryJobResponse job, boolean terminal, boolean awaitingBuyer) {
         if (terminal) {
             recordCompletion(job);
         } else if (awaitingBuyer) {
@@ -278,7 +278,7 @@ public class PaymentRecoveryWorker {
      * false를 반환한다(provider 호출 중에는 60초 lease가 갱신되지 않는다).
      * 무조건 집계하면 실제 job 수보다 많은 완료를 보고하게 된다.
      */
-    private void recordCompletion(PaymentRecoveryJob job) {
+    private void recordCompletion(PaymentRecoveryJobResponse job) {
         if (recovery.complete(job)) {
             counter("completed", job.operationType()).increment();
         } else {

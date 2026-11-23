@@ -9,10 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.atlas.account.dto.request.LoginRequest;
-import com.atlas.account.domain.AccountException;
 import com.atlas.account.dto.request.RefreshTokenRequest;
 import com.atlas.account.dto.response.AccountLoginResponse;
 import com.atlas.account.dto.response.AccountTokenResponse;
+import com.atlas.account.exception.AccountException;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountEmailSender;
 import com.atlas.account.service.AccountService;
