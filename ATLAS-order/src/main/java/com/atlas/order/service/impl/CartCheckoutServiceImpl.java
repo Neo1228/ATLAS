@@ -75,13 +75,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     private final Optional<LocationReservationService> locationReservations;
     private final Optional<CheckoutFinalizationService> reservationFinalizer;
 
-    @Value("${atlas.order-inventory-reservation.enabled:false}")
-    private boolean locationReservationEnabled;
-
-    // 단일 location으로 SellerOrder를 처리할 수 없을 때 여러 location으로 나눠 예약할지 여부(EXP-054).
-    @Value("${atlas.order-inventory-reservation.split-allocation-enabled:false}")
-    private boolean splitAllocationEnabled;
-
+    private final boolean splitAllocationEnabled;
     private final Optional<LocationClient> locationClient;
 
 
@@ -93,6 +87,8 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                                   OrderItemRepository orderItems, OrderService orderService,
                                   PlatformTransactionManager transactionManager, Clock clock,
                                   @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow,
+            // 단일 location으로 SellerOrder를 처리할 수 없을 때 여러 location으로 나눠 예약할지 여부(EXP-054).
+            @Value("${atlas.order-inventory-reservation.split-allocation-enabled:false}") boolean splitAllocationEnabled,
             Optional<LocationClient> locationClient,
             Optional<LocationReservationService> locationReservations,
             Optional<CheckoutFinalizationService> reservationFinalizer) {
@@ -110,6 +106,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.clock = Objects.requireNonNull(clock);
         this.checkoutWindow = Objects.requireNonNull(checkoutWindow);
+        this.splitAllocationEnabled = splitAllocationEnabled;
         if (checkoutWindow.isZero() || checkoutWindow.isNegative()) {
             throw new IllegalArgumentException("checkoutWindow must be positive");
         }
@@ -126,7 +123,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         validate(buyerRef, idempotencyKey);
         Map<UUID, String> couponCodes = normalizeCouponSelections(selections);
         UUID checkoutId;
-        RemoteStock stock = locationReservationEnabled ? remoteCandidates(buyerRef) : RemoteStock.NONE;
+        RemoteStock stock = locationReservationEnabled() ? remoteCandidates(buyerRef) : RemoteStock.NONE;
         try {
             checkoutId = transactions.execute(status ->
                     checkoutLocked(buyerRef, idempotencyKey, couponCodes, stock));
@@ -140,7 +137,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         if (checkoutId == null) {
             throw new OrderException(OrderException.Code.CONFLICT, "Checkout transaction produced no checkout id");
         }
-        if (locationReservationEnabled) {
+        if (locationReservationEnabled()) {
             finishLocationReservation(checkoutId);
         }
         return toResponse(checkoutId);
@@ -217,12 +214,12 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         }
 
         BuyerCheckout checkout = checkouts.save(new BuyerCheckout(buyerRef, idempotencyKey,
-                locationReservationEnabled ? BuyerCheckoutState.RESERVATION_PENDING : BuyerCheckoutState.RESERVED,
+                locationReservationEnabled() ? BuyerCheckoutState.RESERVATION_PENDING : BuyerCheckoutState.RESERVED,
                 checkoutTotal, now, now));
         UUID checkoutId = checkout.checkoutId();
         for (SellerLines seller : snapshotsBySeller) {
             PurchaseOrder childOrder = new PurchaseOrder(seller.sellerId(), buyerRef, idempotencyKey,
-                    locationReservationEnabled ? OrderState.RESERVATION_PENDING : OrderState.RESERVED,
+                    locationReservationEnabled() ? OrderState.RESERVATION_PENDING : OrderState.RESERVED,
                     now.plus(checkoutWindow), now, now);
             childOrder.setCheckoutId(checkoutId);
             if (seller.coupon() != null) {
@@ -241,7 +238,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                             line.sku().skuId(), line.cartItem().quantity()))
                     .toList();
             UUID locationId;
-            if (locationReservationEnabled) {
+            if (locationReservationEnabled()) {
                 Map<String, Integer> required = new TreeMap<>();
                 for (ReserveInventoryBatchRequest.Item item : reservations) {
                     required.merge(item.skuId(), item.quantity(), Math::addExact);
@@ -287,7 +284,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                         savedChild.orderId(), now);
             }
         }
-        if (!locationReservationEnabled) {
+        if (!locationReservationEnabled()) {
             carts.clearForCheckout(buyerRef);
         }
         return checkoutId;
@@ -498,5 +495,13 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     private record RemoteStock(Map<UUID, List<LocationAllocationPolicy.Candidate>> candidates,
             Set<UUID> unreachableSellers) {
         static final RemoteStock NONE = new RemoteStock(Map.of(), Set.of());
+    }
+
+    /**
+     * 분산 예약 경로를 쓰는지 여부. 같은 property(`atlas.order-inventory-reservation.enabled`)가 예약 빈들의 생성 조건이므로
+     * 빈의 유무가 곧 설정 값이다. 별도 boolean 필드를 두면 둘이 어긋날 수 있다.
+     */
+    private boolean locationReservationEnabled() {
+        return locationReservations.isPresent();
     }
 }
