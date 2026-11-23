@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 import com.atlas.application.dto.response.PayPalBalanceReportDispositionResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
+import com.atlas.application.exception.ApplicationException.Code;
+import com.atlas.application.exception.ApplicationException;
 import com.atlas.application.service.PayPalBalanceReportOperatorService;
 import com.atlas.application.service.PayPalBalanceReportReconciliationService;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
@@ -30,7 +32,6 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.util.StreamUtils;
-import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -119,8 +120,8 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                 .findFirst().orElseThrow();
         assertThatThrownBy(() -> operator.recordDisposition(run.runId(), matched.rowNumber(), "DEFERRED",
                 "settlement-operator", "not an exception", "matched-row-key"))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("409");
+                .isInstanceOfSatisfying(ApplicationException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.CONFLICT));
 
         var first = operator.recordDisposition(run.runId(), exception.rowNumber(), "DEFERRED",
                 "settlement-operator", "Awaiting external evidence", "disposition-key-1");
@@ -129,8 +130,8 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
         assertThat(replay.dispositionId()).isEqualTo(first.dispositionId());
         assertThatThrownBy(() -> operator.recordDisposition(run.runId(), exception.rowNumber(), "DEFERRED",
                 "settlement-operator", "different reason", "disposition-key-1"))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("409");
+                .isInstanceOfSatisfying(ApplicationException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.CONFLICT));
 
         var history = operator.dispositionHistory(run.runId(), exception.rowNumber());
         assertThat(history).hasSize(1);
@@ -180,11 +181,11 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     void rejectsUnsupportedStatusAndClampsOperatorPages() {
         assertThat(operator.listRuns(101, 0).limit()).isEqualTo(100);
         assertThatThrownBy(() -> operator.listExceptions("MATCHED", null, null, null, 20, 0))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("400");
+                .isInstanceOfSatisfying(ApplicationException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.INVALID_REQUEST));
         assertThat(operator.listExceptions("UNMATCHED", null, null, null, 101, 0).limit()).isEqualTo(100);
         assertThatThrownBy(() -> operator.listExceptions("UNMATCHED", null, null, null, 20, 10_001))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("400");
+                .isInstanceOfSatisfying(ApplicationException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.INVALID_REQUEST));
     }
 }

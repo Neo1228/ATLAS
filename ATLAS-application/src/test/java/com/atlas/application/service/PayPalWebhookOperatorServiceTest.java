@@ -10,17 +10,17 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.application.exception.ApplicationException.Code;
+import com.atlas.application.exception.ApplicationException;
 import com.atlas.application.repository.PayPalWebhookOperatorRepository;
 import com.atlas.application.persistence.projection.RequeueRecord;
 import java.util.Optional;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 class PayPalWebhookOperatorServiceTest {
     private static final String EVENT = "event-1";
@@ -88,8 +88,8 @@ class PayPalWebhookOperatorServiceTest {
 
         when(events.exists(EVENT)).thenReturn(false);
         assertThatThrownBy(() -> service.requeue(EVENT, KEY, ACTOR, REASON))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+                .isInstanceOfSatisfying(ApplicationException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.NOT_FOUND));
 
         when(events.exists(EVENT)).thenReturn(true);
         assertConflict(() -> service.requeue(EVENT, KEY, ACTOR, REASON));
@@ -108,7 +108,7 @@ class PayPalWebhookOperatorServiceTest {
 
     private static void assertConflict(ThrowingCallable call) {
         assertThatThrownBy(call)
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+                .isInstanceOfSatisfying(ApplicationException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.CONFLICT));
     }
 }
