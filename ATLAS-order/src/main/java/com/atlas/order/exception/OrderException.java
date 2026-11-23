@@ -20,6 +20,11 @@ public final class OrderException extends RuntimeException {
         this.code = Objects.requireNonNull(code, "code");
     }
 
+    public OrderException(Code code, String message, Throwable cause) {
+        super(message, cause);
+        this.code = Objects.requireNonNull(code, "code");
+    }
+
     public Code code() {
         return code;
     }

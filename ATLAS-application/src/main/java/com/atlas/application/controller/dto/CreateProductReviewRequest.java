@@ -1,4 +1,4 @@
-package com.atlas.application.dto.request;
+package com.atlas.application.controller.dto;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

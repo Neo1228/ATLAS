@@ -1,7 +1,7 @@
-package com.atlas.application.repository;
+package com.atlas.order.repository;
 
-import com.atlas.application.persistence.projection.ProductReview;
-import com.atlas.application.persistence.projection.ReviewSummary;
+import com.atlas.order.persistence.projection.ProductReview;
+import com.atlas.order.persistence.projection.ReviewSummary;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
