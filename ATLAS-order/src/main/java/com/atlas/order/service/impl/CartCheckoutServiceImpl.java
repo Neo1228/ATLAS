@@ -48,12 +48,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -72,8 +72,8 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final Duration checkoutWindow;
-    private LocationReservationService locationReservations;
-    private CheckoutFinalizationService reservationFinalizer;
+    private final Optional<LocationReservationService> locationReservations;
+    private final Optional<CheckoutFinalizationService> reservationFinalizer;
 
     @Value("${atlas.order-inventory-reservation.enabled:false}")
     private boolean locationReservationEnabled;
@@ -82,29 +82,23 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     @Value("${atlas.order-inventory-reservation.split-allocation-enabled:false}")
     private boolean splitAllocationEnabled;
 
-    private LocationClient locationClient;
+    private final Optional<LocationClient> locationClient;
 
-    @Autowired(required = false)
-    public void setLocationClient(LocationClient locationClient) {
-        this.locationClient = locationClient;
-    }
 
-    @Autowired(required = false)
-    public void setLocationReservations(LocationReservationService coordinator) {
-        this.locationReservations = coordinator;
-    }
 
-    @Autowired(required = false)
-    public void setReservationFinalizer(CheckoutFinalizationService finalizer) {
-        this.reservationFinalizer = finalizer;
-    }
 
     public CartCheckoutServiceImpl(CartService carts, SellerSkuService sellerSkus,
                                   SellerCouponService sellerCoupons, InventoryService inventory,
                                   BuyerCheckoutRepository checkouts, OrderRepository orders,
                                   OrderItemRepository orderItems, OrderService orderService,
                                   PlatformTransactionManager transactionManager, Clock clock,
-                                  @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow) {
+                                  @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow,
+            Optional<LocationClient> locationClient,
+            Optional<LocationReservationService> locationReservations,
+            Optional<CheckoutFinalizationService> reservationFinalizer) {
+        this.locationClient = locationClient;
+        this.locationReservations = locationReservations;
+        this.reservationFinalizer = reservationFinalizer;
         this.carts = Objects.requireNonNull(carts);
         this.sellerSkus = Objects.requireNonNull(sellerSkus);
         this.sellerCoupons = Objects.requireNonNull(sellerCoupons);
@@ -450,7 +444,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
      * 로컬 inventory_pool은 원격 모드에서 판매량을 반영하지 못한다. 조회 실패 location은 이번 계획에서 제외한다.
      */
     private RemoteStock remoteCandidates(String buyerRef) {
-        if (locationClient == null) return RemoteStock.NONE;
+        if (locationClient.isEmpty()) return RemoteStock.NONE;
         Map<UUID, Set<String>> skusBySeller = new TreeMap<>();
         for (CartItemResponse item : carts.find(buyerRef).items()) {
             skusBySeller.computeIfAbsent(item.sellerId(), ignored -> new TreeSet<>()).add(item.skuId());
@@ -464,7 +458,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                 Map<String, Long> available = new TreeMap<>();
                 try {
                     for (String sku : skus) {
-                        available.put(sku, locationClient.availableStock(location.locationId(), sellerId, sku));
+                        available.put(sku, locationClient.get().availableStock(location.locationId(), sellerId, sku));
                     }
                 } catch (LocationClientException unavailable) {
                     // 엔드포인트가 없는 위치(PERMANENT)는 원격 관리 대상이 아니므로 건너뛴다. 일시 장애만 가용 수량 미확인으로 기록한다.
@@ -482,19 +476,19 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     }
 
     private void finishLocationReservation(UUID checkoutId) {
-        if (reservationFinalizer == null) {
+        if (reservationFinalizer.isEmpty()) {
             throw new OrderException(OrderException.Code.CONFLICT,
                     "Inventory location reservation is enabled but its finalizer is unavailable");
         }
-        reservationFinalizer.finalizeCheckout(checkoutId);
+        reservationFinalizer.get().finalizeCheckout(checkoutId);
     }
 
     private LocationReservationService requireLocationReservations() {
-        if (locationReservations == null) {
+        if (locationReservations.isEmpty()) {
             throw new OrderException(OrderException.Code.CONFLICT,
                     "Inventory location reservation is enabled but its coordinator is unavailable");
         }
-        return locationReservations;
+        return locationReservations.get();
     }
 
     private static String reservationKey(UUID orderId) {

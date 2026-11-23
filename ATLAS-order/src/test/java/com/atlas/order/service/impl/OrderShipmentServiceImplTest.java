@@ -37,7 +37,7 @@ class OrderShipmentServiceImplTest {
         OrderFulfillmentRepository fulfillments = mock(OrderFulfillmentRepository.class);
         OrderRefundRepository refunds = mock(OrderRefundRepository.class);
         OrderShipmentServiceImpl service = new OrderShipmentServiceImpl(orders, items, shipments, fulfillments,
-                refunds, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+                refunds, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), Optional.empty());
         UUID seller = UUID.randomUUID();
         UUID order = UUID.randomUUID();
         UUID item = UUID.randomUUID();
@@ -55,7 +55,7 @@ class OrderShipmentServiceImplTest {
         OrderShipmentServiceImpl service = new OrderShipmentServiceImpl(mock(OrderRepository.class),
                 mock(OrderItemRepository.class), mock(OrderShipmentRepository.class),
                 mock(OrderFulfillmentRepository.class), mock(OrderRefundRepository.class),
-                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), Optional.empty());
         OrderShipmentRequest request = new OrderShipmentRequest(UUID.randomUUID(), UUID.randomUUID(), "key",
                 null, null, null);
 
@@ -91,7 +91,7 @@ class OrderShipmentServiceImplTest {
 
         OrderShipmentServiceImpl service = new OrderShipmentServiceImpl(
                 orders, orderItems, shipments, fulfillments, refunds,
-                Clock.fixed(Instant.EPOCH.plusSeconds(2), ZoneOffset.UTC));
+                Clock.fixed(Instant.EPOCH.plusSeconds(2), ZoneOffset.UTC), Optional.empty());
         OrderShipmentRequest request = new OrderShipmentRequest(sellerId, orderId, "foreign-item", null, null,
                 List.of(new OrderShipmentRequest.Item(orderItemId, 1)));
 

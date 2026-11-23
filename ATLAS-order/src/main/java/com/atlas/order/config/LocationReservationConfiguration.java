@@ -3,9 +3,11 @@ package com.atlas.order.config;
 import com.atlas.order.repository.LocationReservationRepository;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.LocationReservationService;
+import com.atlas.order.service.StockAdmissionService;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -21,6 +23,7 @@ public class LocationReservationConfiguration {
             LocationClient inventory,
             Clock clock,
             PlatformTransactionManager transactionManager,
+            Optional<StockAdmissionService> stockAdmission,
             @Value("${atlas.order-inventory-reservation.recovery.lease-duration:PT30S}") Duration leaseDuration,
             @Value("${atlas.order-inventory-reservation.recovery.base-backoff:PT1S}") Duration baseBackoff,
             @Value("${atlas.order-inventory-reservation.recovery.max-backoff:PT1M}") Duration maxBackoff,
@@ -31,7 +34,7 @@ public class LocationReservationConfiguration {
             @Value("${atlas.order-inventory-reservation.read-timeout:PT2S}") Duration readTimeout) {
         validateLeaseTiming(leaseDuration, connectTimeout, readTimeout);
         return new LocationReservationServiceImpl(repository, inventory, clock, transactionManager,
-                leaseDuration, baseBackoff, maxBackoff, minimumReservationRemaining, maxAttempts);
+                leaseDuration, baseBackoff, maxBackoff, minimumReservationRemaining, maxAttempts, stockAdmission);
     }
 
     static void validateLeaseTiming(Duration leaseDuration, Duration connectTimeout, Duration readTimeout) {

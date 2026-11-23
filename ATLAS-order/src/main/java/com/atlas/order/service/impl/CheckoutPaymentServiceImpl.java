@@ -37,10 +37,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -60,13 +60,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private final Clock clock;
     private final ExpirySweepPolicy expirySweep;
     private final ExpirySweepLockRepository expirySweepLock;
-    private LocationReservationService locationReservations;
+    private final Optional<LocationReservationService> locationReservations;
 
 
-    @Autowired(required = false)
-    public void setLocationReservations(LocationReservationService coordinator) {
-        this.locationReservations = coordinator;
-    }
 
     public CheckoutPaymentServiceImpl(PlatformTransactionManager transactionManager,
             BuyerCheckoutRepository checkouts, OrderRepository orders, OrderItemRepository items,
@@ -74,7 +70,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             SettlementService settlement, SellerCouponService sellerCoupons, Clock clock,
             @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
             @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget,
-            ExpirySweepLockRepository expirySweepLock) {
+            ExpirySweepLockRepository expirySweepLock,
+            Optional<LocationReservationService> locationReservations) {
+        this.locationReservations = locationReservations;
         this.transactions = new TransactionTemplate(transactionManager);
         this.checkouts = Objects.requireNonNull(checkouts);
         this.orders = Objects.requireNonNull(orders);
@@ -250,7 +248,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     }
 
     private LocationReservationService.ClaimOutcome claimRemoteInventory(UUID checkoutId) {
-        LocationReservationService coordinator = locationReservations;
+        LocationReservationService coordinator = locationReservations.orElse(null);
         if (coordinator == null) return LocationReservationService.ClaimOutcome.PENDING;
         List<PurchaseOrder> children = transactions.execute(status ->
                 orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId));
@@ -266,7 +264,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     }
 
     private boolean remoteInventoryClaimed(List<PurchaseOrder> children) {
-        LocationReservationService coordinator = locationReservations;
+        LocationReservationService coordinator = locationReservations.orElse(null);
         if (coordinator == null) return false;
         for (PurchaseOrder order : children) {
             if (order.reservationWorkflowId() == null) continue;
@@ -558,7 +556,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private CheckoutResponse finishRemoteCancellation(UUID checkoutId,
                                                       BuyerCheckoutState terminalCheckout,
                                                       OrderState terminalOrder) {
-        LocationReservationService coordinator = locationReservations;
+        LocationReservationService coordinator = locationReservations.orElse(null);
         if (coordinator == null) return find(checkoutId);
         List<PurchaseOrder> children = transactions.execute(status ->
                 orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId));

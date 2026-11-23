@@ -1,5 +1,6 @@
 package com.atlas.order;
 
+import com.atlas.order.service.StockAdmissionService;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -20,6 +21,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -226,21 +228,20 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
 
     @Test
     void gateRejectionLeavesNoWorkflowRowAndMakesNoRemoteCall() throws Exception {
-        coordinator.setStockAdmission((key, claims) -> false);
-        try {
-            String key = "gated-" + UUID.randomUUID();
-            assertThatThrownBy(() -> coordinator.submit(key,
-                    request(UUID.randomUUID(), allocation(LOCATION_A, "sku-a"))))
-                    .isInstanceOf(OrderException.class);
+        // 재고 admission을 거절하도록 생성자로 주입한 별도 coordinator를 쓴다(공유 빈을 바꾸지 않는다).
+        LocationReservationService gated = new LocationReservationServiceImpl(repository, inventoryClient, clock,
+                transactionManager, Duration.ofSeconds(30), Duration.ofMillis(1), Duration.ofSeconds(1),
+                Duration.ofSeconds(10), 8, Optional.of((StockAdmissionService) (key, claims) -> false));
+        String key = "gated-" + UUID.randomUUID();
+        assertThatThrownBy(() -> gated.submit(key,
+                request(UUID.randomUUID(), allocation(LOCATION_A, "sku-a"))))
+                .isInstanceOf(OrderException.class);
 
-            // 확실히 거절될 요청은 durable 쓰기도 원격 호출도 만들지 않는다.
-            assertThat(jdbc.queryForObject(
-                    "SELECT count(*) FROM order_inventory_reservation_workflow WHERE idempotency_key = ?",
-                    Integer.class, key)).isZero();
-            assertThat(INVENTORY_A.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
-        } finally {
-            coordinator.setStockAdmission(null);
-        }
+        // 확실히 거절될 요청은 durable 쓰기도 원격 호출도 만들지 않는다.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM order_inventory_reservation_workflow WHERE idempotency_key = ?",
+                Integer.class, key)).isZero();
+        assertThat(INVENTORY_A.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
     }
 
     @Test
@@ -313,7 +314,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         LocationReservationService restartedCoordinator =
                 new LocationReservationServiceImpl(repository, inventoryClient, clock, transactionManager,
                         Duration.ofSeconds(30), Duration.ofMillis(1), Duration.ofSeconds(1),
-                        Duration.ofSeconds(10), 8);
+                        Duration.ofSeconds(10), 8, Optional.empty());
         LocationReservationResponse recovered = restartedCoordinator.retry(pending.workflowId());
         RecordedRequest retriedRequest = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
 
@@ -413,7 +414,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         LocationReservationService shortLeaseCoordinator =
                 new LocationReservationServiceImpl(repository, inventoryClient, clock, transactionManager,
                         Duration.ofMillis(2500), Duration.ofMillis(1), Duration.ofSeconds(1),
-                        Duration.ofSeconds(10), 8);
+                        Duration.ofSeconds(10), 8, Optional.empty());
 
         try (ExecutorService submitter = Executors.newSingleThreadExecutor()) {
             Future<LocationReservationResponse> submission = submitter.submit(() ->
