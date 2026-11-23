@@ -1,4 +1,4 @@
-package com.atlas.application.repository.payout;
+package com.atlas.settlement.repository;
 
 import java.sql.Timestamp;
 import java.time.Instant;

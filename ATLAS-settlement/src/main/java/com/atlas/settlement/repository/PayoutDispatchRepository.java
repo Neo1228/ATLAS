@@ -1,8 +1,8 @@
-package com.atlas.application.repository.payout;
+package com.atlas.settlement.repository;
 
-import com.atlas.application.persistence.projection.PayoutDispatchMetrics;
-import com.atlas.application.persistence.projection.PayoutDispatchPlan;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchMetrics;
+import com.atlas.settlement.service.PayoutDispatchPlan;
+import com.atlas.settlement.service.PayoutDispatchRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;

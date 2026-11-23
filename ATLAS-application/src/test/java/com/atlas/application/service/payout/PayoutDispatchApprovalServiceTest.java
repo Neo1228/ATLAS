@@ -10,8 +10,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.persistence.projection.PayoutDispatchPlan;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
+import com.atlas.settlement.service.PayoutDispatchPlan;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
 import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
@@ -34,7 +34,7 @@ class PayoutDispatchApprovalServiceTest {
     private final SettlementPayoutService payouts = mock(SettlementPayoutService.class);
     private final SellerPayoutProfileService profiles = mock(SellerPayoutProfileService.class);
     private final ExchangeRateProvider exchangeRates = mock(ExchangeRateProvider.class);
-    private final PayoutDispatchRepository dispatches = mock(PayoutDispatchRepository.class);
+    private final PayoutDispatchStore dispatches = mock(PayoutDispatchStore.class);
     private final PayoutDispatchApprovalCommitService committer = mock(PayoutDispatchApprovalCommitService.class);
     private final PayoutRecipientCipher cipher = new PayoutRecipientCipher(KEY);
     private final PayoutDispatchApprovalService service = new PayoutDispatchApprovalService(

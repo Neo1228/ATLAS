@@ -1,7 +1,7 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
+import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.time.Duration;
 import org.springframework.stereotype.Service;
@@ -9,10 +9,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PayoutDispatchOutcomeService {
-    private final PayoutDispatchRepository repository;
+    private final PayoutDispatchStore repository;
     private final SettlementPayoutService payouts;
 
-    public PayoutDispatchOutcomeService(PayoutDispatchRepository repository, SettlementPayoutService payouts) {
+    public PayoutDispatchOutcomeService(PayoutDispatchStore repository, SettlementPayoutService payouts) {
         this.repository = repository;
         this.payouts = payouts;
     }

@@ -10,9 +10,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.application.controller.dto.PayoutProviderResolutionRequest;
-import com.atlas.application.persistence.projection.PayoutDispatchRecord;
-import com.atlas.application.repository.payout.PayoutDispatchRepository;
-import com.atlas.application.repository.payout.PayoutOperatorActionRepository;
+import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
+import com.atlas.settlement.service.PayoutOperatorActionStore;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 class PayoutManualOperatorServiceTest {
     private static final Instant NOW = Instant.parse("2026-11-22T00:00:00Z");
     private final SettlementPayoutService payouts = mock(SettlementPayoutService.class);
-    private final PayoutDispatchRepository dispatches = mock(PayoutDispatchRepository.class);
-    private final PayoutOperatorActionRepository actions = mock(PayoutOperatorActionRepository.class);
+    private final PayoutDispatchStore dispatches = mock(PayoutDispatchStore.class);
+    private final PayoutOperatorActionStore actions = mock(PayoutOperatorActionStore.class);
     private final PayoutManualOperatorService service = new PayoutManualOperatorService(
             payouts, dispatches, actions, new PayoutFxConversionService(), Clock.fixed(NOW, ZoneOffset.UTC));
     private final UUID payoutId = UUID.randomUUID();

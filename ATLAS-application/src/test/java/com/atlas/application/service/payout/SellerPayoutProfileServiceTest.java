@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.account.service.AccountService;
-import com.atlas.application.repository.payout.SellerPayoutProfileRepository;
+import com.atlas.settlement.service.SellerPayoutProfileStore;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;
 import java.time.Clock;
@@ -16,7 +16,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class SellerPayoutProfileServiceTest {
-    private final SellerPayoutProfileRepository repository = mock(SellerPayoutProfileRepository.class);
+    private final SellerPayoutProfileStore repository = mock(SellerPayoutProfileStore.class);
     private final AccountService accounts = mock(AccountService.class);
     private final SellerPayoutProfileService service = new SellerPayoutProfileService(
             repository, accounts, new PayPalPayoutsProperties(), Clock.systemUTC());
