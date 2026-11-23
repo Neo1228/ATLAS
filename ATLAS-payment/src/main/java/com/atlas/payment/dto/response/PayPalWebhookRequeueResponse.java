@@ -1,3 +1,3 @@
-package com.atlas.application.dto.response;
+package com.atlas.payment.dto.response;
 
 public record PayPalWebhookRequeueResponse(String eventId, String outcome) { }

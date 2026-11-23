@@ -2,17 +2,19 @@ package com.atlas.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.application.persistence.projection.PollResult;
-import com.atlas.application.repository.PayPalWebhookRetryRepository;
-import com.atlas.application.persistence.projection.ClaimedRetry;
 import com.atlas.application.service.PayPalWebhookRetryWorker;
 import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
-import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
+import com.atlas.payment.persistence.projection.ClaimedRetry;
+import com.atlas.payment.persistence.projection.PollResult;
+import com.atlas.payment.persistence.state.WebhookRetryFailure;
+import com.atlas.payment.repository.PayPalWebhookRetryRepository;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.payment.service.impl.PayPalWebhookRetryServiceImpl;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.HashSet;
 import java.util.List;
@@ -79,7 +81,7 @@ class PayPalWebhookRetrySchemaIntegrationTest {
             var claimed = repository.claimDue().get(0);
             assertThat(claimed.attempt()).isEqualTo(5);
             assertThat(repository.reschedule(eventId, claimed.attempt(), claimed.leaseOwner(),
-                    PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR, "provider unavailable")).isTrue();
+                    WebhookRetryFailure.TRANSIENT_ERROR, "provider unavailable")).isTrue();
             Double delay = jdbc.queryForObject("""
                     SELECT EXTRACT(EPOCH FROM (next_attempt_at - clock_timestamp()))
                     FROM paypal_webhook_retry WHERE event_id = ?
@@ -127,7 +129,7 @@ class PayPalWebhookRetrySchemaIntegrationTest {
         assertThat(historyCount("evt-lease")).isEqualTo(2);
 
         assertThat(repository.reschedule("evt-lease", first.attempt(), first.leaseOwner(),
-                PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR, "stale failure")).isFalse();
+                WebhookRetryFailure.TRANSIENT_ERROR, "stale failure")).isFalse();
         assertThat(repository.complete("evt-lease", first.leaseOwner())).isFalse();
         assertThat(jdbc.queryForObject("SELECT lease_owner FROM paypal_webhook_retry WHERE event_id = ?",
                 String.class, "evt-lease")).isEqualTo(second.leaseOwner());
@@ -249,7 +251,7 @@ class PayPalWebhookRetrySchemaIntegrationTest {
         ClaimedRetry initial = repository.claimDue().get(0);
         assertThat(initial.attempt()).isEqualTo(1);
         assertThat(repository.reschedule("evt-worker-recreation", initial.attempt(), initial.leaseOwner(),
-                PayPalWebhookRetryRepository.RetryFailure.TRANSIENT_ERROR,
+                WebhookRetryFailure.TRANSIENT_ERROR,
                 "initial transient failure")).isTrue();
         assertThat(historyCount("evt-worker-recreation")).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?",
@@ -269,9 +271,9 @@ class PayPalWebhookRetrySchemaIntegrationTest {
         PayPalWebhookService recreatedWebhookService = new PayPalWebhookService(
                 new DataSourceTransactionManager(dataSource), payments,
                 Mockito.mock(OrderService.class), Mockito.mock(CheckoutPaymentService.class),
-                Mockito.mock(OrderRefundService.class), recreatedRepository);
+                Mockito.mock(OrderRefundService.class), new PayPalWebhookRetryServiceImpl(recreatedRepository));
         PayPalWebhookRetryWorker recreatedWorker = new PayPalWebhookRetryWorker(
-                recreatedRepository, recreatedWebhookService, new SimpleMeterRegistry());
+                new PayPalWebhookRetryServiceImpl(recreatedRepository), recreatedWebhookService, new SimpleMeterRegistry());
 
         recreatedWorker.retryDueEvents();
 

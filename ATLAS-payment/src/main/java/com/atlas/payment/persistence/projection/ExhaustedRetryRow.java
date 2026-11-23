@@ -1,4 +1,4 @@
-package com.atlas.application.persistence.projection;
+package com.atlas.payment.persistence.projection;
 
 import java.time.Instant;
 

@@ -1,4 +1,4 @@
-package com.atlas.application.dto.response;
+package com.atlas.payment.dto.response;
 
 import java.time.Instant;
 import java.util.List;

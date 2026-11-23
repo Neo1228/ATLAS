@@ -1,8 +1,8 @@
-package com.atlas.application.repository;
+package com.atlas.payment.repository;
 
-import com.atlas.application.persistence.projection.PendingRetry;
-import com.atlas.application.persistence.projection.RetrySummary;
-import com.atlas.application.persistence.projection.TimelineEntry;
+import com.atlas.payment.persistence.projection.PendingRetry;
+import com.atlas.payment.persistence.projection.RetrySummary;
+import com.atlas.payment.persistence.projection.TimelineEntry;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.LinkedHashMap;

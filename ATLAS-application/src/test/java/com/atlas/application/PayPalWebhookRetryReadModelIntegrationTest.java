@@ -7,10 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.atlas.application.controller.PayPalWebhookRetryHistoryController;
 import com.atlas.application.exception.GlobalExceptionHandler;
-import com.atlas.application.repository.PayPalWebhookRetryHistoryRepository;
-import com.atlas.application.service.PayPalWebhookRetryHistoryService;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.atlas.payment.repository.PayPalWebhookRetryHistoryRepository;
+import com.atlas.payment.service.impl.PayPalWebhookRetryHistoryServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,6 +18,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Testcontainers
 class PayPalWebhookRetryReadModelIntegrationTest {
@@ -54,7 +54,7 @@ class PayPalWebhookRetryReadModelIntegrationTest {
                 + "event_id VARCHAR(128), actor VARCHAR(128), reason VARCHAR(500), "
                 + "outcome VARCHAR(16), created_at TIMESTAMPTZ)");
         mvc = MockMvcBuilders.standaloneSetup(new PayPalWebhookRetryHistoryController(
-                new PayPalWebhookRetryHistoryService(new PayPalWebhookRetryHistoryRepository(jdbc))))
+                new PayPalWebhookRetryHistoryServiceImpl(new PayPalWebhookRetryHistoryRepository(jdbc))))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
 

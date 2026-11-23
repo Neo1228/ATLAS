@@ -9,12 +9,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import com.atlas.application.exception.ApplicationException.Code;
-import com.atlas.application.exception.ApplicationException;
-import com.atlas.application.persistence.projection.ClaimedRetry;
-import com.atlas.application.persistence.projection.WebhookRetryEvent;
-import com.atlas.application.repository.PayPalWebhookRetryRepository;
-import com.atlas.application.service.PayPalWebhookOperatorService;
 import com.atlas.application.service.PayPalWebhookRetryWorker;
 import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
@@ -41,17 +35,23 @@ import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
+import com.atlas.payment.persistence.projection.ClaimedRetry;
+import com.atlas.payment.persistence.projection.WebhookRetryEvent;
 import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.persistence.state.WebhookRetryFailure;
 import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.provider.PaymentProvider;
+import com.atlas.payment.repository.PayPalWebhookRetryRepository;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.FxConversionService;
+import com.atlas.payment.service.PayPalWebhookOperatorService;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.service.impl.OwnerLockRegistry;
+import com.atlas.payment.service.impl.PayPalWebhookRetryServiceImpl;
 import com.atlas.payment.service.impl.PaymentRefundWorkflow;
 import com.atlas.payment.service.impl.PaymentServiceImpl;
 import com.atlas.payment.service.impl.PaymentWebhookProcessor;
@@ -435,7 +435,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         }).when(orders).reconcilePayment(eq(orderId), anyString());
         PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
                 mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
-                new PayPalWebhookRetryRepository(jdbc));
+                new PayPalWebhookRetryServiceImpl(new PayPalWebhookRetryRepository(jdbc)));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             Future<PaymentResponse> capture = executor.submit(
@@ -486,7 +486,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         }).when(orders).reconcilePayment(eq(orderId), eq(eventId));
         PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments, orders,
                 mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
-                new PayPalWebhookRetryRepository(jdbc));
+                new PayPalWebhookRetryServiceImpl(new PayPalWebhookRetryRepository(jdbc)));
 
         assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
         assertThat(jdbc.queryForObject(
@@ -540,7 +540,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         }).when(checkoutPaymentsProbe).reconcile(eq(checkoutId), eq(eventId));
         PayPalWebhookService webhook = new PayPalWebhookService(transactionManager, payments,
                 mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class),
-                new PayPalWebhookRetryRepository(jdbc));
+                new PayPalWebhookRetryServiceImpl(new PayPalWebhookRetryRepository(jdbc)));
 
         assertThatThrownBy(() -> webhook.handle(signature, rawBody)).isSameAs(firstReconciliationFailure);
         assertThat(jdbc.queryForObject(
@@ -635,11 +635,11 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         };
         retryRepository.enqueue(retryEvent(event));
         PayPalWebhookService retryWebhookService = new PayPalWebhookService(transactionManager, payments,
-                mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class), retryRepository);
+                mock(OrderService.class), checkoutPaymentsProbe, mock(OrderRefundService.class), new PayPalWebhookRetryServiceImpl(retryRepository));
         PayPalWebhookRetryWorker workerA =
-                new PayPalWebhookRetryWorker(retryRepository, retryWebhookService, new SimpleMeterRegistry());
+                new PayPalWebhookRetryWorker(new PayPalWebhookRetryServiceImpl(retryRepository), retryWebhookService, new SimpleMeterRegistry());
         PayPalWebhookRetryWorker workerB =
-                new PayPalWebhookRetryWorker(retryRepository, retryWebhookService, new SimpleMeterRegistry());
+                new PayPalWebhookRetryWorker(new PayPalWebhookRetryServiceImpl(retryRepository), retryWebhookService, new SimpleMeterRegistry());
         ExecutorService workers = Executors.newFixedThreadPool(2);
         try {
             Future<?> firstWorker = workers.submit(workerA::retryDueEvents);
@@ -788,9 +788,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 authorized.providerOrderId() + "-unknown", authorized.attemptId());
         PayPalWebhookService retryWebhookService = new PayPalWebhookService(transactionManager, payments,
                 mock(OrderService.class), mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
-                new PayPalWebhookRetryRepository(jdbc));
+                new PayPalWebhookRetryServiceImpl(new PayPalWebhookRetryRepository(jdbc)));
         new PayPalWebhookRetryWorker(
-                new PayPalWebhookRetryRepository(jdbc), retryWebhookService, new SimpleMeterRegistry()).retryDueEvents();
+                new PayPalWebhookRetryServiceImpl(new PayPalWebhookRetryRepository(jdbc)), retryWebhookService, new SimpleMeterRegistry()).retryDueEvents();
         assertThat(payments.find(orderId).state()).isEqualTo(PaymentState.CAPTURED);
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM paypal_webhook_retry WHERE event_id = ?", Integer.class, eventId)).isZero();
@@ -1063,7 +1063,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             String leaseOwner = jdbc.queryForObject(
                     "SELECT lease_owner FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId);
             retryRepository.reschedule(eventId, 1, leaseOwner,
-                    PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS, "Still unmatched");
+                    WebhookRetryFailure.CORRELATION_MISS, "Still unmatched");
             assertThat(jdbc.queryForObject(
                     "SELECT next_attempt_at > CURRENT_TIMESTAMP FROM paypal_webhook_retry WHERE event_id = ?",
                     Boolean.class, eventId)).isTrue();
@@ -1080,7 +1080,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             claimed = retryRepository.claimDue().get(0);
             assertThat(claimed.attempt()).isEqualTo(8);
             retryRepository.reschedule(eventId, claimed.attempt(), claimed.leaseOwner(),
-                    PayPalWebhookRetryRepository.RetryFailure.CORRELATION_MISS, "Attempt limit reached");
+                    WebhookRetryFailure.CORRELATION_MISS, "Attempt limit reached");
             assertThat(jdbc.queryForObject(
                     "SELECT state FROM paypal_webhook_retry WHERE event_id = ?", String.class, eventId))
                     .isEqualTo("EXHAUSTED");
@@ -1218,7 +1218,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             try {
                 webhookOperator.requeue(eventId, key, "race-operator", "concurrent review");
                 return true;
-            } catch (ApplicationException conflict) {
+            } catch (PaymentException conflict) {
                 return false;
             }
         };
@@ -1235,8 +1235,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     private void assertConflict(Runnable request) {
         assertThatThrownBy(request::run)
-                .isInstanceOfSatisfying(ApplicationException.class,
-                        error -> assertThat(error.code()).isEqualTo(Code.CONFLICT));
+                .isInstanceOfSatisfying(PaymentException.class,
+                        error -> assertThat(error.code()).isEqualTo(PaymentException.Code.CONFLICT));
     }
 
 

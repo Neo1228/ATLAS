@@ -1,15 +1,14 @@
 package com.atlas.application.service;
 
-import com.atlas.application.persistence.projection.WebhookRetryEvent;
-import com.atlas.application.repository.PayPalWebhookRetryRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.dto.response.PaymentResponse;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
-import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.service.PayPalWebhookRetryService;
 import com.atlas.payment.service.PaymentService;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
@@ -22,12 +21,12 @@ public class PayPalWebhookService {
     private final OrderService orders;
     private final CheckoutPaymentService checkoutPayments;
     private final OrderRefundService refunds;
-    private final PayPalWebhookRetryRepository retries;
+    private final PayPalWebhookRetryService retries;
     private final TransactionTemplate transactions;
 
     public PayPalWebhookService(PlatformTransactionManager transactionManager, PaymentService payments,
             OrderService orders, CheckoutPaymentService checkoutPayments, OrderRefundService refunds,
-            PayPalWebhookRetryRepository retries) {
+            PayPalWebhookRetryService retries) {
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.payments = Objects.requireNonNull(payments);
         this.orders = Objects.requireNonNull(orders);
@@ -43,7 +42,7 @@ public class PayPalWebhookService {
         PaymentWebhookResponse result = processVerified(event);
         if (result.retryable()) {
             // 최소한의 재시도 레코드를 commit한 뒤에만 성공 응답을 반환한다.
-            retries.enqueue(toRetryEvent(event));
+            retries.enqueue(event);
         }
     }
 
@@ -66,8 +65,4 @@ public class PayPalWebhookService {
         return result;
     }
 
-    private static WebhookRetryEvent toRetryEvent(PaymentWebhookEventResponse event) {
-        return new WebhookRetryEvent(event.eventId(), event.eventType(), event.resourceId(), event.resourceStatus(),
-                event.providerOrderId(), event.relatedCaptureId(), event.resourceAmount(), event.resourceCurrency());
-    }
 }

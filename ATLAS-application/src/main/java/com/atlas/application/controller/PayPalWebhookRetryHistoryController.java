@@ -1,9 +1,9 @@
 package com.atlas.application.controller;
 
-import com.atlas.application.dto.response.PayPalWebhookPendingRetryPage;
-import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
-import com.atlas.application.dto.response.PayPalWebhookRetrySummary;
-import com.atlas.application.service.PayPalWebhookRetryHistoryService;
+import com.atlas.payment.dto.response.PayPalWebhookPendingRetryPage;
+import com.atlas.payment.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
+import com.atlas.payment.dto.response.PayPalWebhookRetrySummary;
+import com.atlas.payment.service.PayPalWebhookRetryHistoryService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

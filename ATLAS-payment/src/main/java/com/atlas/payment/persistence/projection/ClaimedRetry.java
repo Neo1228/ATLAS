@@ -1,3 +1,3 @@
-package com.atlas.application.persistence.projection;
+package com.atlas.payment.persistence.projection;
 
 public record ClaimedRetry(WebhookRetryEvent event, int attempt, String leaseOwner) { }
