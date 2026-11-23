@@ -12,34 +12,151 @@ concurrency:
   group: backend-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# 구조: changes -> (verify, app-tests 1..N 병렬) -> backend(필수 체크 이름을 유지하는 판정 job)
+# 필수 체크 "Java 25 and PostgreSQL integration checks"는 마지막 backend job이 제공한다.
+# 그래서 문서만 바꾼 PR처럼 무거운 job을 건너뛰어도 필수 체크가 대기 상태로 남지 않는다.
+# 설계 근거와 측정은 docs/02-decisions/adr/ADR-0070-parallel-backend-ci.md 참고.
 jobs:
-  backend:
-    name: Java 25 and PostgreSQL integration checks
+  changes:
+    name: Detect code changes
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # push(main)는 항상 전체 검사를 한다.
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # pull_request의 checkout은 base와 병합한 커밋이라 base와의 차이가 곧 PR의 변경이다.
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          changed=$(git diff --name-only "$BASE_SHA" HEAD)
+          echo "$changed"
+          # docs/ 아래와 Markdown만 바뀐 경우에만 Java 검사를 건너뛴다. 워크플로·빌드·소스는 모두 코드로 본다.
+          other=$(echo "$changed" | grep -v -E '^(docs/|.*\.md$)' || true)
+          if [ -z "$changed" ] || [ -n "$other" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "문서만 변경되어 Java 검사를 건너뜁니다."
+          fi
+
+  verify:
+    name: Static checks and module tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
-          # 워크플로가 바뀌지 않는 한 캐시를 재사용하고, PR에서는 main 캐시를 읽기 전용으로 쓴다.
+          # main에서 실행한 결과만 캐시에 쓰고, PR은 읽기만 해 캐시가 PR마다 오염되지 않게 한다.
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Verify Docker is available for PostgreSQL integration tests
         run: docker info
-      - name: Run Gradle checks
+      # application 모듈의 테스트는 아래 app-tests가 나누어 실행한다. 나머지 모든 검사는 여기서 한다.
+      - name: Run checkstyle, compile and the other modules' tests
         env:
           ATLAS_TEST_FORKS: '2'
-        run: ./gradlew --no-daemon check
+        run: ./gradlew --no-daemon check -x :application-module:test
       - name: Upload test reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: test-results
+          name: test-results-verify
           path: |
             **/build/reports/tests/test
             **/build/test-results/test
           retention-days: 7
           if-no-files-found: ignore
+
+  app-tests:
+    name: Application tests (${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # 한 shard가 실패해도 나머지 결과를 끝까지 보여 준다.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          # shard 여러 개가 같은 캐시 키에 동시에 쓰지 않도록 항상 읽기만 한다. 캐시는 verify가 main에서 갱신한다.
+          cache-read-only: true
+      - name: Verify Docker is available for PostgreSQL integration tests
+        run: docker info
+      - name: Run application tests for this shard
+        env:
+          ATLAS_TEST_FORKS: '2'
+          ATLAS_TEST_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: ./gradlew --no-daemon :application-module:test
+      - name: Summarize executed tests
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, re
+          total = failed = 0
+          for path in glob.glob('ATLAS-application/build/test-results/test/TEST-*.xml'):
+              head = open(path, encoding='utf-8').read(1500)
+              m = re.search(r'tests="(\d+)" skipped="(\d+)" failures="(\d+)" errors="(\d+)"', head)
+              if m:
+                  total += int(m.group(1))
+                  failed += int(m.group(3)) + int(m.group(4))
+          print(f'shard ${{ matrix.shard }}/${{ strategy.job-total }}: tests={total} failed={failed}')
+          PY
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results-app-${{ matrix.shard }}
+          path: |
+            **/build/reports/tests/test
+            **/build/test-results/test
+          retention-days: 7
+          if-no-files-found: ignore
+
+  backend:
+    name: Java 25 and PostgreSQL integration checks
+    needs: [changes, verify, app-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Evaluate results
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          CHANGES: ${{ needs.changes.result }}
+          VERIFY: ${{ needs.verify.result }}
+          APP_TESTS: ${{ needs.app-tests.result }}
+        run: |
+          echo "code=$CODE changes=$CHANGES verify=$VERIFY app-tests=$APP_TESTS"
+          if [ "$CHANGES" != "success" ]; then
+            echo "변경 감지가 실패했습니다."; exit 1
+          fi
+          if [ "$CODE" = "true" ]; then
+            if [ "$VERIFY" != "success" ] || [ "$APP_TESTS" != "success" ]; then
+              echo "Java 검사가 성공하지 않았습니다."; exit 1
+            fi
+          else
+            echo "문서만 변경되어 Java 검사를 건너뛰었습니다."
+          fi
