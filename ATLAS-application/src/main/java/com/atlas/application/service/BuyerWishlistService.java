@@ -2,15 +2,15 @@ package com.atlas.application.service;
 
 import com.atlas.application.dto.response.BuyerWishlistItemResponse;
 import com.atlas.application.dto.response.BuyerWishlistPage;
+import com.atlas.application.exception.ApplicationException.Code;
+import com.atlas.application.exception.ApplicationException;
 import com.atlas.application.persistence.projection.SavedProduct;
 import com.atlas.application.repository.BuyerWishlistRepository;
 import com.atlas.catalog.service.ProductService;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class BuyerWishlistService {
@@ -31,7 +31,7 @@ public class BuyerWishlistService {
         requireBuyerRef(buyerRef);
         Objects.requireNonNull(productId, "productId");
         if (!products.isPublicOrderable(productId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown product: " + productId);
+            throw new ApplicationException(Code.NOT_FOUND, "Unknown product: " + productId);
         }
         wishlist.saveIfAbsent(buyerRef, productId);
         return wishlist.find(buyerRef, productId)
@@ -43,10 +43,10 @@ public class BuyerWishlistService {
         requireBuyerRef(buyerRef);
         int limit = requestedLimit == 0 ? DEFAULT_LIMIT : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit must be between 1 and 100");
+            throw new ApplicationException(Code.INVALID_REQUEST, "limit must be between 1 and 100");
         }
         if (offset < 0 || offset > MAX_OFFSET) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be between 0 and 10000");
+            throw new ApplicationException(Code.INVALID_REQUEST, "offset must be between 0 and 10000");
         }
         List<SavedProduct> fetched = wishlist.list(buyerRef, limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
@@ -65,7 +65,7 @@ public class BuyerWishlistService {
 
     private static void requireBuyerRef(String buyerRef) {
         if (buyerRef == null || buyerRef.isBlank() || buyerRef.length() > MAX_BUYER_REF_LENGTH) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid buyerRef");
+            throw new ApplicationException(Code.INVALID_REQUEST, "Invalid buyerRef");
         }
     }
 }

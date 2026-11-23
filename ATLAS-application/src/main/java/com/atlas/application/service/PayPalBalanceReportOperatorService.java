@@ -6,6 +6,8 @@ import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary.Dai
 import com.atlas.application.dto.response.PayPalBalanceReportPage;
 import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportRunResponse;
+import com.atlas.application.exception.ApplicationException.Code;
+import com.atlas.application.exception.ApplicationException;
 import com.atlas.settlement.service.PayPalBalanceReportDisposition;
 import com.atlas.settlement.service.PayPalBalanceReportExceptionRow;
 import com.atlas.settlement.service.PayPalBalanceReportRun;
@@ -16,9 +18,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class PayPalBalanceReportOperatorService {
@@ -100,10 +100,10 @@ public class PayPalBalanceReportOperatorService {
         String cleanReason = validateDispositionInput(rowNumber, disposition, actor, reason, idempotencyKey);
         String rowStatus = rowStatus(runId, rowNumber);
         if ("MATCHED".equals(rowStatus)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Matched rows cannot be dispositioned");
+            throw new ApplicationException(Code.CONFLICT, "Matched rows cannot be dispositioned");
         }
         if (!EXCEPTION_STATUSES.contains(rowStatus)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only exception rows can be dispositioned");
+            throw new ApplicationException(Code.CONFLICT, "Only exception rows can be dispositioned");
         }
 
         PayPalBalanceReportDisposition candidate = new PayPalBalanceReportDisposition(UUID.randomUUID(), runId,
@@ -113,13 +113,13 @@ public class PayPalBalanceReportOperatorService {
         }
         PayPalBalanceReportDispositionResponse existing = store.findDispositionByIdempotencyKey(idempotencyKey)
                 .map(PayPalBalanceReportOperatorService::toResponse)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Idempotency key conflict"));
+                .orElseThrow(() -> new ApplicationException(Code.CONFLICT, "Idempotency key conflict"));
         if (existing.runId().equals(runId) && existing.rowNumber() == rowNumber
                 && existing.disposition().equals(disposition) && existing.actor().equals(actor)
                 && existing.reason().equals(cleanReason)) {
             return existing;
         }
-        throw new ResponseStatusException(HttpStatus.CONFLICT,
+        throw new ApplicationException(Code.CONFLICT,
                 "Idempotency key was already used for a different disposition");
     }
 
@@ -204,11 +204,11 @@ public class PayPalBalanceReportOperatorService {
                 row.relatedRecordId(), row.recordType(), row.status(), row.reasonCode());
     }
 
-    private static ResponseStatusException badRequest(String message) {
-        return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+    private static ApplicationException badRequest(String message) {
+        return new ApplicationException(Code.INVALID_REQUEST, message);
     }
 
-    private static ResponseStatusException notFound(String message) {
-        return new ResponseStatusException(HttpStatus.NOT_FOUND, message);
+    private static ApplicationException notFound(String message) {
+        return new ApplicationException(Code.NOT_FOUND, message);
     }
 }

@@ -95,6 +95,28 @@ class GlobalExceptionHandlerTest {
 
 
     @Test
+    void applicationExceptionKeepsTheStatusAndCodeThatTheHttpExceptionUsedToProduce() {
+        // 서비스가 던지던 ResponseStatusException(400/404/409)의 응답 계약(상태와 code)을 그대로 지킨다.
+        var invalid = handler.moduleException(new ApplicationException(ApplicationException.Code.INVALID_REQUEST, "bad"));
+        assertThat(invalid.getStatusCode().value()).isEqualTo(400);
+        assertThat(invalid.getBody().getProperties()).containsEntry("code", "INVALID_REQUEST");
+
+        var missing = handler.moduleException(new ApplicationException(ApplicationException.Code.NOT_FOUND, "none"));
+        assertThat(missing.getStatusCode().value()).isEqualTo(404);
+        assertThat(missing.getBody().getProperties()).containsEntry("code", "RESOURCE_NOT_FOUND");
+
+        var conflict = handler.moduleException(new ApplicationException(ApplicationException.Code.CONFLICT, "dup"));
+        assertThat(conflict.getStatusCode().value()).isEqualTo(409);
+        assertThat(conflict.getBody().getProperties()).containsEntry("code", "CONFLICT");
+        assertThat(conflict.getBody().getDetail()).doesNotContain("dup");
+
+        // 같은 입력을 예전 방식(ResponseStatusException)으로 던졌을 때와 상태와 code가 같다.
+        var legacy = handler.handleUnexpected(new ResponseStatusException(HttpStatus.NOT_FOUND, "none"));
+        assertThat(legacy.getStatusCode()).isEqualTo(missing.getStatusCode());
+        assertThat(legacy.getBody().getProperties().get("code")).isEqualTo(missing.getBody().getProperties().get("code"));
+    }
+
+    @Test
     void moduleExceptionCodesMapToStableClientStatuses() {
         var invalid = handler.moduleException(new AdmissionException(
                 AdmissionException.Code.INVALID_REQUEST, "invalid ticket request"));

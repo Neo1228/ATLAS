@@ -3,13 +3,13 @@ package com.atlas.application.service;
 import com.atlas.application.dto.response.PayPalWebhookPendingRetryPage;
 import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
 import com.atlas.application.dto.response.PayPalWebhookRetrySummary;
+import com.atlas.application.exception.ApplicationException.Code;
+import com.atlas.application.exception.ApplicationException;
 import com.atlas.application.persistence.projection.RetrySummary;
 import com.atlas.application.repository.PayPalWebhookRetryHistoryRepository;
 import java.util.List;
 import java.util.Objects;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class PayPalWebhookRetryHistoryService {
@@ -42,7 +42,7 @@ public class PayPalWebhookRetryHistoryService {
     public PayPalWebhookRetryAttemptHistoryResponse history(String eventId, int page, int size) {
         long offset = offset(page, size);
         if (!retries.eventKnown(eventId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Retry event not found");
+            throw new ApplicationException(Code.NOT_FOUND, "Retry event not found");
         }
         long total = retries.countTimeline(eventId);
         List<PayPalWebhookRetryAttemptHistoryResponse.Entry> entries = retries.timeline(eventId, size, offset).stream()
@@ -54,12 +54,12 @@ public class PayPalWebhookRetryHistoryService {
 
     private static long offset(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+            throw new ApplicationException(Code.INVALID_REQUEST,
                     "page must be non-negative and size must be between 1 and " + MAX_PAGE_SIZE);
         }
         long offset = (long) page * size;
         if (offset > MAX_PAGE_OFFSET) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page offset is too large");
+            throw new ApplicationException(Code.INVALID_REQUEST, "page offset is too large");
         }
         return offset;
     }

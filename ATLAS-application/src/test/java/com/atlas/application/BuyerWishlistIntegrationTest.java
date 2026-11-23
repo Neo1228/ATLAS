@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.application.dto.response.BuyerWishlistItemResponse;
+import com.atlas.application.exception.ApplicationException;
 import com.atlas.application.repository.BuyerWishlistRepository;
 import com.atlas.application.service.BuyerWishlistService;
 import com.atlas.catalog.service.ProductService;
@@ -25,7 +26,6 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.util.StreamUtils;
-import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -114,8 +114,8 @@ class BuyerWishlistIntegrationTest {
     @Test
     void listRejectsUnboundedPageRequests() {
         assertThatThrownBy(() -> wishlist.list("buyer-4", 101, 0))
-                .isInstanceOf(ResponseStatusException.class);
+                .isInstanceOf(ApplicationException.class);
         assertThatThrownBy(() -> wishlist.list("buyer-4", 20, 10_001))
-                .isInstanceOf(ResponseStatusException.class);
+                .isInstanceOf(ApplicationException.class);
     }
 }

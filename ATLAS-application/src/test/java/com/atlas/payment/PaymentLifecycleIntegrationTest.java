@@ -9,77 +9,78 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.atlas.application.exception.ApplicationException.Code;
+import com.atlas.application.exception.ApplicationException;
 import com.atlas.application.persistence.projection.ClaimedRetry;
 import com.atlas.application.persistence.projection.WebhookRetryEvent;
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
-import com.atlas.order.service.CartService;
+import com.atlas.application.service.PayPalWebhookOperatorService;
+import com.atlas.application.service.PayPalWebhookRetryWorker;
+import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.payment.dto.response.PaymentResponse;
-import com.atlas.payment.dto.response.PaymentRefundResponse;
-import com.atlas.payment.persistence.state.PaymentState;
-import com.atlas.payment.persistence.state.PaymentRefundState;
-import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
-import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
-import com.atlas.payment.service.PaymentService;
-import com.atlas.payment.persistence.entity.PaymentAttempt;
-import com.atlas.payment.provider.PaymentOperation;
-import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.service.FxConversionService;
-import com.atlas.payment.dto.response.PaymentProviderResponse;
-import com.atlas.payment.dto.response.PaymentRefundProviderResponse;
-import com.atlas.payment.dto.request.PaymentRefundRequest;
-import com.atlas.payment.dto.request.PaymentRequest;
-import com.atlas.payment.repository.PaymentAttemptRepository;
-import com.atlas.payment.repository.PaymentRefundRepository;
-import com.atlas.payment.repository.PaymentWebhookEventRepository;
-import com.atlas.payment.repository.PaymentRecoveryRepository;
-import com.atlas.payment.service.impl.PaymentServiceImpl;
-import com.atlas.application.service.PayPalWebhookService;
-import com.atlas.application.service.PayPalWebhookOperatorService;
-import com.atlas.application.service.PayPalWebhookRetryWorker;
-import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.service.CartCheckoutService;
+import com.atlas.order.service.CartService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
+import com.atlas.payment.dto.request.PaymentRefundRequest;
+import com.atlas.payment.dto.request.PaymentRequest;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.dto.response.PaymentProviderResponse;
+import com.atlas.payment.dto.response.PaymentRefundProviderResponse;
+import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.dto.response.PaymentResponse;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.response.PaymentWebhookResponse;
+import com.atlas.payment.exception.PaymentException;
+import com.atlas.payment.persistence.entity.PaymentAttempt;
+import com.atlas.payment.persistence.state.PaymentRefundState;
+import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.provider.PaymentOperation;
+import com.atlas.payment.provider.PaymentProvider;
+import com.atlas.payment.repository.PaymentAttemptRepository;
+import com.atlas.payment.repository.PaymentRecoveryRepository;
+import com.atlas.payment.repository.PaymentRefundRepository;
+import com.atlas.payment.repository.PaymentWebhookEventRepository;
+import com.atlas.payment.service.FxConversionService;
+import com.atlas.payment.service.PaymentService;
+import com.atlas.payment.service.impl.PaymentServiceImpl;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessException;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
-import okhttp3.mockwebserver.RecordedRequest;
 
 @Testcontainers
 @SpringBootTest
@@ -1215,7 +1216,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             try {
                 webhookOperator.requeue(eventId, key, "race-operator", "concurrent review");
                 return true;
-            } catch (ResponseStatusException conflict) {
+            } catch (ApplicationException conflict) {
                 return false;
             }
         };
@@ -1232,10 +1233,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     private void assertConflict(Runnable request) {
         assertThatThrownBy(request::run)
-                .isInstanceOf(ResponseStatusException.class)
-                .satisfies(error -> assertThat(
-                        ((ResponseStatusException) error).getStatusCode().value())
-                        .isEqualTo(409));
+                .isInstanceOfSatisfying(ApplicationException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.CONFLICT));
     }
 
 

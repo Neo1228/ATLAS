@@ -43,6 +43,7 @@ public class GlobalExceptionHandler {
             LOGGER, Clock.systemUTC(), Duration.ofMinutes(1));
 
     @ExceptionHandler({
+            ApplicationException.class,
             AccountException.class,
             CampaignException.class,
             AdmissionException.class,
@@ -54,6 +55,13 @@ public class GlobalExceptionHandler {
             SettlementException.class
     })
     ResponseEntity<ProblemDetail> moduleException(RuntimeException exception) {
+        if (exception instanceof ApplicationException application) {
+            return switch (application.code()) {
+                case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", application.getMessage());
+                case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", application.getMessage());
+                case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", application.getMessage());
+            };
+        }
         if (exception instanceof AccountException account) {
             return switch (account.code()) {
                 case INVALID_CREDENTIALS, INVALID_REFRESH_TOKEN, REFRESH_TOKEN_REUSED, ACCOUNT_DISABLED ->
