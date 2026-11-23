@@ -188,4 +188,4 @@ GATE=redis RATES=2000 DURATION=30s \
 #       ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_BREAKER_COOLDOWN=PT2S      (기본값)
 ```
 
-결과 원본은 `.local/redis-failopen/exp061/<라벨>/`(`analysis.json`, `series.csv`, `app.log`, `redis-slowlog.last`)와 각 run의 k6 요약에 있고 git에서 제외되어 저장소만으로는 재현·검증할 수 없다. 디렉터리 이름 `exp061`은 작업 당시 이름이며 EXP-061과 무관하다. 집계 도구는 `load-tests/redis-gate/`의 `aggregate.py`·`analyze.py`·`sampler.py`다.
+결과 원본은 `.local/redis-failopen/exp061/<라벨>/`(`analysis.json`, `series.csv`, `app.log`, `redis-slowlog.last`)와 각 run의 k6 요약에 있고 git에서 제외되어 저장소만으로는 재현·검증할 수 없다. 디렉터리 이름 `exp061`은 작업 당시 이름이며 [EXP-061](EXP-061-event-log-fanout-and-replay.md)과 무관하다. 집계 도구는 `load-tests/redis-gate/`의 `aggregate.py`·`analyze.py`·`sampler.py`다.

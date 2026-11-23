@@ -25,6 +25,8 @@ dependencies {
     implementation 'org.apache.commons:commons-csv:1.14.1'
     // Redis 자동구성(health indicator 등)을 끌어오지 않고 admission gate만 쓰려고 client 라이브러리만 추가한다. 버전은 Boot BOM이 관리한다.
     implementation 'io.lettuce:lettuce-core'
+    // 예약 이벤트 relay의 Kafka producer. 자동구성(starter)은 쓰지 않고 relay를 켠 경우에만 직접 구성한다. 버전은 Boot BOM이 관리한다.
+    implementation 'org.springframework.kafka:spring-kafka'
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
     compileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
@@ -36,6 +38,7 @@ dependencies {
     testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-kafka'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.security:spring-security-test'
 }
