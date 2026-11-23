@@ -46,7 +46,7 @@ Backend CI가 한 job에서 직렬로 돌아 최근 성공 26회 기준 중앙�
 
 - 장애 수렴 PR(#500)이 새 CI로 처음 실행됐다. 전체 wall 182초, shard 테스트 합계 521건(107+173+128+113)이 통과했다. 가중치에 없던 새 테스트 클래스(`LocationFaultConvergenceIntegrationTest`)도 이름 해시로 배정되어 실행됐다.
 - 기대값 520건과 1건 달랐다. 원인은 같은 시기에 병합된 다른 PR(#503)이 `@Test` 1건을 추가한 것이다. 기준을 507이 아닌 508로 보면 508 + 7 + 6 = 521건으로 맞는다. 누락·중복은 없다.
-- 문서 전용 변경이 Java 검사를 건너뛰는 경로는 이 문서를 바꾸는 PR로 확인한다. 앞선 실행들은 워크플로와 Java 파일을 포함한 PR이라 항상 코드 변경으로 판정되어 이 경로를 검증하지 못했다.
+- 문서 전용 경로는 문서 한 개만 바꾼 PR(#505)로 검증했다. `Detect code changes` 6초, `Static checks and module tests`와 `Application tests` 4개는 skipped, 필수 체크 `Java 25 and PostgreSQL integration checks`는 3초에 success였고 전체 wall은 12초였다. 병합 상태는 CLEAN이었다. 앞선 실행들은 워크플로와 Java 파일을 포함한 PR이라 항상 코드 변경으로 판정되어 이 경로를 검증하지 못했으므로 문서 전용 PR에서 처음 확인했다. 표본은 한 번이다.
 
 ## 한계
 
