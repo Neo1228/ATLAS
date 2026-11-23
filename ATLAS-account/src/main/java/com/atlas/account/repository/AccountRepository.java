@@ -251,6 +251,15 @@ public class AccountRepository {
                 """, challengeHash, accountId, Timestamp.from(createdAt), Timestamp.from(expiresAt));
     }
 
+    /** 잠금 없이 유효한 챌린지의 계정을 읽는다. 한도 확인처럼 행 잠금을 쥐면 안 되는 단계에서 쓴다. */
+    public Optional<UUID> findMfaChallengeAccount(String challengeHash, Instant now) {
+        return jdbc.query("""
+                SELECT account_id FROM account_mfa_challenge
+                WHERE challenge_hash = ? AND consumed_at IS NULL AND expires_at > ?
+                """, (row, number) -> row.getObject(1, UUID.class), challengeHash, Timestamp.from(now))
+                .stream().findFirst();
+    }
+
     public Optional<UUID> findMfaChallengeForUpdate(String challengeHash, Instant now) {
         List<UUID> accountIds = jdbc.query("""
                 SELECT account_id FROM account_mfa_challenge

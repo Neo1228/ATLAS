@@ -3,10 +3,15 @@ package com.atlas.account;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.account.dto.request.LoginRequest;
+import com.atlas.account.dto.request.MfaChallengeRequest;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountService;
 import com.zaxxer.hikari.HikariDataSource;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
@@ -67,5 +72,36 @@ class LoginConnectionPoolIntegrationTest {
         var response = accountService.login(new LoginRequest(email, password), "198.51.100.7");
 
         assertThat(response.tokens()).isNotNull();
+    }
+
+    @Test
+    void mfaChallengeCompletionSucceedsWithASingleConnectionPool() throws Exception {
+        HikariDataSource pool = dataSource.unwrap(HikariDataSource.class);
+        pool.setMinimumIdle(1);
+        pool.setMaximumPoolSize(1);
+        pool.getHikariPoolMXBean().softEvictConnections();
+
+        String email = "pool1-mfa-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        Instant now = Instant.now();
+        accounts.savePendingMfaSecret(accountId, "unused-for-recovery-codes", now);
+        // MFA 활성화는 TOTP 단계 사용 기록이 있어야 하므로 확인 절차를 거친 것처럼 기록한다.
+        assertThat(accounts.markMfaStepUsed(accountId, 1L)).isTrue();
+        assertThat(accounts.enableMfa(accountId, now)).isTrue();
+        String recoveryCode = "recovery-" + UUID.randomUUID();
+        accounts.replaceMfaRecoveryCodes(accountId, List.of(sha256Hex(recoveryCode)), now);
+        String challenge = accountService.login(new LoginRequest(email, password), "198.51.100.8").challengeToken();
+
+        var tokens = accountService.completeMfaLogin(new MfaChallengeRequest(challenge, null, recoveryCode));
+
+        assertThat(tokens.accessToken()).isNotBlank();
+    }
+
+    private static String sha256Hex(String value) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 }
