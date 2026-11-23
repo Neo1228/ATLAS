@@ -1,7 +1,7 @@
 package com.atlas.application.controller.seller;
 
-import com.atlas.campaign.dto.response.CampaignResponse;
-import com.atlas.campaign.service.CampaignService;
+import com.atlas.admission.dto.response.CampaignResponse;
+import com.atlas.admission.service.CampaignService;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;

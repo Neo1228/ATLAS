@@ -12,7 +12,7 @@ import static org.mockito.Mockito.verify;
 import com.atlas.application.persistence.projection.ClaimedRetry;
 import com.atlas.application.persistence.projection.WebhookRetryEvent;
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
-import com.atlas.cart.service.CartService;
+import com.atlas.order.service.CartService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;

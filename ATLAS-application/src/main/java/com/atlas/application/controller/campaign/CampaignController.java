@@ -2,9 +2,9 @@ package com.atlas.application.controller.campaign;
 
 import com.atlas.account.service.AccountService;
 import com.atlas.application.controller.dto.CreateCampaignHttpRequest;
-import com.atlas.campaign.dto.request.CreateCampaignRequest;
-import com.atlas.campaign.dto.response.CampaignResponse;
-import com.atlas.campaign.service.CampaignService;
+import com.atlas.admission.dto.request.CreateCampaignRequest;
+import com.atlas.admission.dto.response.CampaignResponse;
+import com.atlas.admission.service.CampaignService;
 import jakarta.validation.Valid;
 import java.time.Duration;
 import java.util.UUID;

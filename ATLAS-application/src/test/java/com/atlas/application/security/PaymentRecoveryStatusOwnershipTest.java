@@ -8,7 +8,7 @@ import static org.mockito.Mockito.when;
 import com.atlas.account.exception.AccountException;
 import com.atlas.account.service.AccountService;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.campaign.service.CampaignService;
+import com.atlas.admission.service.CampaignService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderService;
 import java.util.Map;

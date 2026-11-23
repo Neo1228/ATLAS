@@ -12,12 +12,10 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 | `ATLAS-application/` | Spring Boot 실행, HTTP API/controller, 보안·공통 오류·scheduler 설정, Flyway migration |
 | `ATLAS-account/` | Buyer account, Seller profile, JWT access token과 rotating refresh session, family 기반 즉시 revoke 및 기기별 session 관리 |
 | `ATLAS-catalog/` | Seller, Product·category·SKU, 가격, 판매 상태와 channel별 판매 가능 여부 |
-| `ATLAS-cart/` | Buyer cart와 cart item |
-| `ATLAS-campaign/` | Campaign과 구매 자격 |
-| `ATLAS-admission/` | FIFO queue, ticket, checkout slot과 queue policy |
+| `ATLAS-admission/` | FIFO queue, ticket, checkout slot과 queue policy, Campaign과 구매 자격 |
 | `ATLAS-inventory/` | Stock pool, reservation, fulfillment location, capacity 조정과 transfer |
 | `ATLAS-inventory-location/` | Inventory bounded context의 독립 Spring Boot runtime. process당 fulfillment location 하나와 별도 PostgreSQL을 사용하며 예약·claim·release·만료를 처리 |
-| `ATLAS-order/` | Seller별 주문·항목, Buyer 주문 내역(cursor), 배송·반품·환불 |
+| `ATLAS-order/` | Seller별 주문·항목, Buyer 주문 내역(cursor), 배송·반품·환불, Buyer cart와 cart item |
 | `ATLAS-payment/` | PayPal Sandbox authorization/capture/refund, webhook과 payment recovery |
 | `ATLAS-settlement/` | Capture/refund 내부 ledger, Seller별 allocation과 statement |
 

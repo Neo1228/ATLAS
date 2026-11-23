@@ -18,8 +18,8 @@ class ModuleBoundaryTest {
         String[] javaAndPersistence = append(javaAndFramework, "org.hibernate.annotations..", "org.hibernate.id.uuid..");
         String[] applicationDependencies = {
                 "com.atlas.application..", "com.atlas",
-                "com.atlas.campaign.service", "com.atlas.campaign.dto.request",
-                "com.atlas.campaign.dto.response", "com.atlas.campaign.persistence.state", "com.atlas.campaign.exception",
+                "com.atlas.admission.service", "com.atlas.admission.dto.request",
+                "com.atlas.admission.dto.response", "com.atlas.admission.persistence.state", "com.atlas.admission.exception",
                 "com.atlas.admission.service", "com.atlas.admission.dto.request",
                 "com.atlas.admission.dto.response", "com.atlas.admission.persistence.state", "com.atlas.admission.exception",
                 "com.atlas.inventory.service", "com.atlas.inventory.dto.request",
@@ -36,8 +36,8 @@ class ModuleBoundaryTest {
                 "com.atlas.settlement.dto.response", "com.atlas.settlement.exception",
                 "com.atlas.catalog.service", "com.atlas.catalog.persistence.state", "com.atlas.catalog.dto.request",
                 "com.atlas.catalog.dto.response", "com.atlas.catalog.exception",
-                "com.atlas.cart.service", "com.atlas.cart.dto.request",
-                "com.atlas.cart.dto.response", "com.atlas.cart.exception",
+                "com.atlas.order.service", "com.atlas.order.dto.request",
+                "com.atlas.order.dto.response", "com.atlas.order.exception",
                 "com.atlas.account.service", "com.atlas.account.dto.request",
                 "com.atlas.account.dto.response", "com.atlas.account.exception",
                 "net.ttddyy.dsproxy..",
@@ -53,14 +53,10 @@ class ModuleBoundaryTest {
         enforceAllowedDependencies(source, "com.atlas.application..", applicationDependencies);
         enforceAllowedDependencies(source, "com.atlas", applicationDependencies);
 
-        enforceAllowedDependencies(source, "com.atlas.campaign..",
-                append(javaAndPersistence, "com.atlas.campaign..",
-                        "com.atlas.catalog.service", "com.atlas.catalog.persistence.state",
-                        "com.atlas.catalog.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.admission..",
                 append(javaAndPersistence, "com.atlas.admission..",
-                        "com.atlas.campaign.service", "com.atlas.campaign.dto.response",
-                        "com.atlas.campaign.persistence.state", "com.atlas.campaign.exception",
+                        "com.atlas.admission.service", "com.atlas.admission.dto.response",
+                        "com.atlas.admission.persistence.state", "com.atlas.admission.exception",
                         "com.atlas.catalog.service", "com.atlas.catalog.persistence.state",
                         "com.atlas.catalog.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.inventory..",
@@ -68,10 +64,6 @@ class ModuleBoundaryTest {
         enforceAllowedDependencies(source, "com.atlas.catalog..",
                 append(javaAndPersistence, "com.atlas.catalog..",
                         "com.atlas.inventory.service", "com.atlas.inventory.dto.request"));
-        enforceAllowedDependencies(source, "com.atlas.cart..",
-                append(javaAndPersistence, "com.atlas.cart..",
-                        "com.atlas.catalog.service", "com.atlas.catalog.persistence.state",
-                        "com.atlas.catalog.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.order..",
                 append(javaAndPersistence, "com.atlas.order..",
                         "com.atlas.admission.service", "com.atlas.admission.dto.request",
@@ -85,7 +77,7 @@ class ModuleBoundaryTest {
                         "com.atlas.catalog.service", "com.atlas.catalog.persistence.state",
                         "com.atlas.catalog.dto.request", "com.atlas.catalog.dto.response",
                         "com.atlas.catalog.exception",
-                        "com.atlas.cart.service", "com.atlas.cart.dto.request", "com.atlas.cart.dto.response"));
+                        "com.atlas.order.service", "com.atlas.order.dto.request", "com.atlas.order.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.payment..",
                 append(javaAndPersistence, "com.atlas.payment..", "tools.jackson.."));
         enforceAllowedDependencies(source, "com.atlas.settlement..",

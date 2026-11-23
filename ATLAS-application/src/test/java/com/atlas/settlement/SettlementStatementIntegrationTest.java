@@ -9,10 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.campaign.dto.request.CreateCampaignRequest;
-import com.atlas.campaign.dto.response.CampaignResponse;
-import com.atlas.campaign.service.CampaignService;
-import com.atlas.cart.service.CartService;
+import com.atlas.admission.dto.request.CreateCampaignRequest;
+import com.atlas.admission.dto.response.CampaignResponse;
+import com.atlas.admission.service.CampaignService;
+import com.atlas.order.service.CartService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;

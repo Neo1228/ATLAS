@@ -3,7 +3,7 @@ package com.atlas.payment;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.application.service.PaymentRecoveryWorker;
-import com.atlas.cart.service.CartService;
+import com.atlas.order.service.CartService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
