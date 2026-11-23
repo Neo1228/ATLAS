@@ -1,0 +1,147 @@
+# Isolated stack for the hot-SKU order-coordinator baseline (run-hot-sku-coordinator.sh).
+# One order Postgres, one inventory-location service (+ its Postgres), the application JVM with
+# the PostgreSQL-only order coordinator enabled, and a k6 runner on the same network.
+# Every secret is required from the environment (the runner generates throwaway values).
+# Publish ports are bound to 127.0.0.1 and chosen by the runner so they never clash with other stacks.
+
+services:
+  order-postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: atlas_order
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - order-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_order"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    cpus: 2
+    mem_limit: 2g
+
+  order-mailpit:
+    image: axllent/mailpit:v1.34.0
+    cpus: 0.25
+    mem_limit: 128m
+
+  location-postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: atlas_inventory
+      POSTGRES_USER: atlas_inventory
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - location-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas_inventory -d atlas_inventory"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    cpus: 1
+    mem_limit: 1g
+
+  location:
+    image: eclipse-temurin:25-jre
+    command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/atlas-inventory-location.jar"]
+    depends_on:
+      location-postgres:
+        condition: service_healthy
+    environment:
+      INVENTORY_LOCATION_PORT: 8090
+      INVENTORY_LOCATION_DB_URL: jdbc:postgresql://location-postgres:5432/atlas_inventory
+      INVENTORY_LOCATION_DB_USER: atlas_inventory
+      INVENTORY_LOCATION_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
+      FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000001
+    volumes:
+      - ../ATLAS-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8090 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    cpus: ${LOCATION_CPUS:-1}
+    mem_limit: 1g
+
+  # Optional Redis admission gate (GATE=redis in run-hot-sku-coordinator.sh); not started by default.
+  redis:
+    profiles: ["gate"]
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    cpus: 1
+    mem_limit: 512m
+
+  app:
+    image: eclipse-temurin:25-jre
+    command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/application-module.jar"]
+    depends_on:
+      order-postgres:
+        condition: service_healthy
+      location:
+        condition: service_healthy
+    environment:
+      ATLAS_SERVER_ADDRESS: 0.0.0.0
+      ATLAS_SERVER_PORT: 8080
+      # 'observability' exposes /actuator/prometheus (hikaricp_*, process_cpu_usage) on the management port 8081.
+      SPRING_PROFILES_ACTIVE: observability
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      ATLAS_DB_URL: jdbc:postgresql://order-postgres:5432/atlas_order
+      ATLAS_DB_USER: atlas
+      ATLAS_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:?Set ATLAS_JWT_SIGNING_SECRET}
+      ATLAS_PAYMENT_PROVIDER: disabled
+      SPRING_MAIL_HOST: order-mailpit
+      SPRING_MAIL_PORT: 1025
+      ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED: "true"
+      ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN: ${ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN:?Set ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
+      ATLAS_ORDER_INVENTORY_RESERVATION_LOCATION_ENDPOINTS: "00000000-0000-0000-0000-000000000001=http://location:8090"
+      ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_WORKER_ENABLED: "true"
+      # Admission gate is off unless the runner sets ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_ENABLED=true (GATE=redis).
+      ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_ENABLED:
+      # GATE=precheck: Redis-free availability pre-check gate; ENABLED (Redis gate) stays false in that mode.
+      ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_PRECHECK_ENABLED:
+      ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_REDIS_URI: redis://redis:6379
+      # Redis gate hardening knobs; the defaults equal the application defaults.
+      ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_COMMAND_TIMEOUT:
+      ATLAS_ORDER_INVENTORY_RESERVATION_ADMISSION_GATE_BREAKER_COOLDOWN:
+      # Spring Boot default is 10; set APP_POOL_SIZE to override for a pool-size sensitivity run.
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${APP_POOL_SIZE:-10}
+    volumes:
+      - ../ATLAS-application/build/libs/application-module.jar:/app/application-module.jar:ro
+    ports:
+      - "127.0.0.1::8080"
+      - "127.0.0.1::8081"
+    cpus: 3
+    mem_limit: 2g
+
+  k6:
+    profiles: ["load"]
+    image: grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
+    environment:
+      COORDINATOR_URL: http://app:8080/api/internal/order-inventory/reservations
+      INVENTORY_LOCATION_BASE_URL: http://location:8090
+      FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000001
+      ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN: ${ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN:-}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:-}
+      RUN_ID: ${RUN_ID:-}
+      STOCK: ${STOCK:-100}
+      RATE: ${RATE:-100}
+      DURATION: ${DURATION:-20s}
+      SUMMARY_FILE: ${SUMMARY_FILE:-/results/summary.json}
+    volumes:
+      - ./hot-sku-coordinator.js:/scenario.js:ro
+      - ${RESULTS_DIR:?Set RESULTS_DIR}:/results
+    cpus: ${K6_CPUS:-1}
+    mem_limit: 1g
+
+volumes:
+  order-data:
+  location-data:

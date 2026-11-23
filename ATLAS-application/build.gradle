@@ -23,6 +23,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.apache.commons:commons-csv:1.14.1'
+    // Redis 자동구성(health indicator 등)을 끌어오지 않고 admission gate만 쓰려고 client 라이브러리만 추가한다. 버전은 Boot BOM이 관리한다.
+    implementation 'io.lettuce:lettuce-core'
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
     compileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"

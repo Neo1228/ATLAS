@@ -134,6 +134,7 @@
 | D-128 | ✓ no-key Frankfurter Sandbox provider 선택 가능; 단위 테스트 1건 통과·live endpoint 검증 전 | `ATLAS_EXCHANGE_RATE_PROVIDER=frankfurter`를 명시하면 가입/API key 없는 ECB 일별 USD/KRW reference quote를 사용한다. Default BOK ECOS는 유지하고 자동 fallback은 금지; quote source/date를 payment snapshot에 저장하며 7일 초과·잘못된 quote는 fail-closed. 테스트는 최신 quote 파싱과 30일 지난 quote 거부만 확인하고 HTTP 오류·누락 필드 경로는 테스트가 없다. | 사용자 요청, 2026-11-22; [ADR-0065](../02-decisions/adr/ADR-0065-frankfurter-sandbox-fx-provider.md), [FR-002](../01-requirements/requirements-index.md), [ADR-0030](../02-decisions/adr/ADR-0030-paypal-currency-boundary.md) |
 | D-129 | ✓ main 통합 뒤 결함 3건 수정 | claim 응답 유실 뒤 취소, 위치 조회 실패와 재고 0 구분, restock 늦은 worker 덮어쓰기를 실패 회귀 테스트로 재현해 고쳤다. main #443 capture fence는 취소 경로에만 쓰고 claim-before-capture 순서는 유지했다. | 사용자 요청, 2026-11-23; [ADR-0060](../02-decisions/adr/ADR-0060-order-inventory-reservation-workflow.md) |
 | D-130 | ✓ 곁가지 제거 | Buyer NFR 러너와 Compose, 운영 jar에 들어 있던 loadtest 결제 provider, 로컬 Playwright 안내를 제거했다. 분산 이행 1~4단계 근거와 무관했고 test double이 운영 소스에 있었다. NFR-002는 별도 요구사항으로 남는다. | 사용자 요청, 2026-11-23; [NFR-002](../01-requirements/requirements-index.md) |
+| D-131 | ✓ Redis admission gate 구현·측정(옵트인) | 거절될 주문도 workflow 행과 주문당 DB 트랜잭션 약 5.6~5.9개를 남겨 PostgreSQL만으로는 약 1,000 주문/초에서 completed/s가 383.0~525.0(기준선 n=3)으로 포화했다. 앞단 Redis gate로 거절 주문의 durable 쓰기를 없애 같은 입력에서 991.3~992.2/s(n=2)를 처리했고 오버셀은 없었다. Redis 중지 시 fail-open이며 중지 후 완료 속도는 breaker 없이 189/s(n=1), breaker 적용 시 595~626/s(n=2)였다. 재고 100, 1,000/s는 20초 측정, 단일 호스트. 이후 보강·재비교 결과는 D-134. | 사용자 요청, 2026-11-23; [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [EXP-060](../03-experiments/EXP-060-hot-sku-admission-gate.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -179,6 +180,7 @@
 <a id="d-128"></a>
 <a id="d-129"></a>
 <a id="d-130"></a>
+<a id="d-131"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -246,3 +248,4 @@
 | [ADR-0063 — 주문 재고 예약 workflow의 lease-fenced write batching](../02-decisions/adr/ADR-0063-order-inventory-write-batching.md) | submit intent·lease 병합, all-pending 결과의 lease-fenced 원자 저장, 실측 한계 | [D-126](#d-126) |
 | [ADR-0064 — 주문 재고 recovery lease를 작업 직전에 부여·연장한다](../02-decisions/adr/ADR-0064-order-inventory-just-in-time-lease-claims.md) | poll cutoff, one-at-a-time `SKIP LOCKED` claim, active token renewal, timeout safety guard와 용량 절충 | [D-127](#d-127) |
 | [ADR-0065 — 무가입 Frankfurter Sandbox 환율 provider](../02-decisions/adr/ADR-0065-frankfurter-sandbox-fx-provider.md) | BOK ECOS 기본 유지, Sandbox용 no-key ECB reference source 선택과 fail-closed snapshot validation | [D-128](#d-128) |
+| [ADR-0066 — 소진된 SKU 주문을 Redis admission gate에서 거절](../02-decisions/adr/ADR-0066-redis-admission-gate.md) | Redis 원자 gate는 정본이 아니고 fail-open + breaker, 옵트인. 기본 gate 후보는 품절 음성 캐시 precheck | [D-131](#d-131) |
