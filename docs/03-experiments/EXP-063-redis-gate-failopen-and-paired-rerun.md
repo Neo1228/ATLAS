@@ -1,7 +1,7 @@
 # EXP-063: Redis gate fail-open 진단과 보강 빌드 짝 비교
 
 - 질문: [EXP-062](EXP-062-admission-gate-paired-comparison.md)의 Redis 팔에서 2,000/s의 두 run이 gate `fail_open`으로 느려졌다. 반환 경로(`confirm`/`release`)와 pending 반영 재시드를 넣은 현재 jar에서도 재현되는가? 재현되지 않는다면 `fail_open`은 어떤 조건에서 나는가? 보강 jar의 Redis gate와 precheck는 같은 조건에서 얼마나 다른가?
-- 관련: [EXP-062](EXP-062-admission-gate-paired-comparison.md), [EXP-060](EXP-060-hot-sku-admission-gate.md), [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), 점검표
+- 관련: [EXP-062](EXP-062-admission-gate-paired-comparison.md), [EXP-060](EXP-060-hot-sku-admission-gate.md), [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [점검표](experiment-checklist.md)
 - 상태: 탐색 실험(단일 호스트, 조건당 n=1~4). 수치는 모두 이 문서의 run에서 직접 측정했다. 측정하지 않은 것은 **미측정**으로 적었다.
 - 날짜: 2026-11-23(보강 jar 빌드 10:19 이후 실행, 분석 파일 11:05)
 
