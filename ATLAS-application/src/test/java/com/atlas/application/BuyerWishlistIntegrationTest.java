@@ -8,11 +8,12 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.dto.response.BuyerWishlistItemResponse;
-import com.atlas.application.exception.ApplicationException;
-import com.atlas.application.repository.BuyerWishlistRepository;
-import com.atlas.application.service.BuyerWishlistService;
+import com.atlas.catalog.dto.response.BuyerWishlistItemResponse;
+import com.atlas.catalog.exception.CatalogException;
+import com.atlas.catalog.repository.BuyerWishlistRepository;
+import com.atlas.catalog.service.BuyerWishlistService;
 import com.atlas.catalog.service.ProductService;
+import com.atlas.catalog.service.impl.BuyerWishlistServiceImpl;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -58,7 +59,7 @@ class BuyerWishlistIntegrationTest {
         repository = new BuyerWishlistRepository(jdbc);
         products = mock(ProductService.class);
         when(products.isPublicOrderable(any())).thenReturn(true);
-        wishlist = new BuyerWishlistService(repository, products);
+        wishlist = new BuyerWishlistServiceImpl(repository, products);
     }
 
     @Test
@@ -117,8 +118,19 @@ class BuyerWishlistIntegrationTest {
     @Test
     void listRejectsUnboundedPageRequests() {
         assertThatThrownBy(() -> wishlist.list("buyer-4", 101, 0))
-                .isInstanceOf(ApplicationException.class);
+                .isInstanceOf(CatalogException.class);
         assertThatThrownBy(() -> wishlist.list("buyer-4", 20, 10_001))
-                .isInstanceOf(ApplicationException.class);
+                .isInstanceOf(CatalogException.class);
+    }
+
+    @Test
+    void savingAnUnorderableProductIsReportedAsCatalogNotFound() {
+        when(products.isPublicOrderable(any())).thenReturn(false);
+        UUID productId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> wishlist.save("buyer-5", productId))
+                .isInstanceOfSatisfying(CatalogException.class,
+                        error -> assertThat(error.code()).isEqualTo(CatalogException.Code.NOT_FOUND));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM buyer_wishlist_item", Integer.class)).isZero();
     }
 }
