@@ -1,6 +1,6 @@
-package com.atlas.application.repository;
+package com.atlas.catalog.repository;
 
-import com.atlas.application.persistence.projection.SavedProduct;
+import com.atlas.catalog.persistence.projection.SavedProduct;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;

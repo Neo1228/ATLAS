@@ -1,8 +1,8 @@
 package com.atlas.application.controller.buyer;
 
-import com.atlas.application.dto.response.BuyerWishlistItemResponse;
-import com.atlas.application.dto.response.BuyerWishlistPage;
-import com.atlas.application.service.BuyerWishlistService;
+import com.atlas.catalog.dto.response.BuyerWishlistItemResponse;
+import com.atlas.catalog.dto.response.BuyerWishlistPage;
+import com.atlas.catalog.service.BuyerWishlistService;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
