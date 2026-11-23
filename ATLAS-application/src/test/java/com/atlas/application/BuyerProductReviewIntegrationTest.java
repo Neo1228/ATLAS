@@ -14,18 +14,14 @@ import com.atlas.application.service.ProductReviewService;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.order.service.OrderService;
-import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -42,18 +38,29 @@ class BuyerProductReviewIntegrationTest {
     private ProductReviewService reviews;
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("DROP SCHEMA public CASCADE");
         jdbc.execute("CREATE SCHEMA public");
-        jdbc.execute("CREATE TABLE product (product_id UUID PRIMARY KEY)");
+                        jdbc.execute("CREATE TABLE product (product_id UUID PRIMARY KEY)");
         jdbc.execute("CREATE TABLE order_item (order_item_id UUID PRIMARY KEY)");
-        ClassPathResource migration = new ClassPathResource("db/migration/V36__verified_buyer_product_reviews.sql");
-        try (var input = migration.getInputStream()) {
-            jdbc.execute(StreamUtils.copyToString(input, StandardCharsets.UTF_8));
-        }
+        jdbc.execute("""
+                CREATE TABLE product_review (
+                    review_id UUID PRIMARY KEY DEFAULT uuidv7(),
+                    buyer_ref VARCHAR(256) NOT NULL,
+                    product_id UUID NOT NULL REFERENCES product (product_id) ON DELETE CASCADE,
+                    order_item_id UUID NOT NULL UNIQUE REFERENCES order_item (order_item_id) ON DELETE RESTRICT,
+                    rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                    body VARCHAR(2000) NOT NULL CHECK (length(btrim(body)) BETWEEN 1 AND 2000),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT product_review_buyer_nonblank CHECK (length(btrim(buyer_ref)) > 0),
+                    CONSTRAINT product_review_buyer_product_unique UNIQUE (buyer_ref, product_id)
+                )
+                """);
+        jdbc.execute("CREATE INDEX idx_product_review_product_created "
+                + "ON product_review (product_id, created_at DESC, review_id DESC)");
         repository = new ProductReviewRepository(jdbc);
         products = mock(ProductService.class);
         when(products.isPublicOrderable(any())).thenReturn(true);

@@ -17,9 +17,9 @@ import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
 import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.payment.service.PayPalReportMatchQuery;
+import com.atlas.schema.BaselineSchema;
 import com.atlas.settlement.repository.PayPalBalanceReportRunRepository;
 import com.atlas.settlement.service.impl.PayPalBalanceReportStoreImpl;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -28,10 +28,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -63,17 +61,13 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     private PayPalBalanceReportOperatorService operator;
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("DROP SCHEMA public CASCADE");
         jdbc.execute("CREATE SCHEMA public");
-        ClassPathResource migration = new ClassPathResource(
-                "db/migration/V34__paypal_balance_report_reconciliation_runs.sql");
-        try (var input = migration.getInputStream()) {
-            jdbc.execute(StreamUtils.copyToString(input, StandardCharsets.UTF_8));
-        }
+        jdbc.execute(BaselineSchema.script());
 
         PayPalReportMatchQuery matchQuery = mock(PayPalReportMatchQuery.class);
         when(matchQuery.findByRecordIds(any())).thenReturn(List.of(

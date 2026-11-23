@@ -1,32 +1,27 @@
-package com.atlas.migration;
+package com.atlas.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers(disabledWithoutDocker = true)
-class AdmissionExpiryCandidateIndexMigrationIntegrationTest {
+class AdmissionExpiryIndexIntegrationTest {
     @Container
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 
     private JdbcTemplate jdbc;
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
@@ -43,10 +38,8 @@ class AdmissionExpiryCandidateIndexMigrationIntegrationTest {
                 """);
         jdbc.execute("CREATE INDEX admission_ticket_expiry_idx ON admission_ticket (expires_at) "
                 + "WHERE status IN ('WAITING', 'CHECKOUT_ACTIVE')");
-        ClassPathResource resource = new ClassPathResource("db/migration/V41__admission_expiry_keyset_index.sql");
-        try (var input = resource.getInputStream()) {
-            jdbc.execute(StreamUtils.copyToString(input, StandardCharsets.UTF_8));
-        }
+        jdbc.execute("DROP INDEX admission_ticket_expiry_idx");
+        jdbc.execute(BaselineSchema.createIndex("admission_ticket_expiry_idx"));
     }
 
     @Test

@@ -1,23 +1,19 @@
-package com.atlas.migration;
+package com.atlas.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers(disabledWithoutDocker = true)
-class SellerStatementIndexMigrationIntegrationTest {
+class SellerStatementIndexIntegrationTest {
 
     @Container
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
@@ -35,8 +31,8 @@ class SellerStatementIndexMigrationIntegrationTest {
     }
 
     @Test
-    void createsSellerScopedStatementIndexes() throws IOException {
-        jdbc.execute(migrationScript());
+    void createsSellerScopedStatementIndexes() {
+        jdbc.execute(BaselineSchema.createIndex("settlement_journal_seller_recorded_idx"));
 
         assertThat(indexDefinition("settlement_journal_seller_recorded_idx"))
                 .isEqualTo("CREATE INDEX settlement_journal_seller_recorded_idx "
@@ -50,8 +46,8 @@ class SellerStatementIndexMigrationIntegrationTest {
     }
 
     @Test
-    void sellerStatementRangeQueryUsesTheSellerScopedIndexInsteadOfSequentialScan() throws IOException {
-        jdbc.execute(migrationScript());
+    void sellerStatementRangeQueryUsesTheSellerScopedIndexInsteadOfSequentialScan() {
+        jdbc.execute(BaselineSchema.createIndex("settlement_journal_seller_recorded_idx"));
         UUID sellerId = UUID.randomUUID();
         UUID otherSeller = UUID.randomUUID();
         jdbc.update("""
@@ -112,12 +108,5 @@ class SellerStatementIndexMigrationIntegrationTest {
                 CREATE INDEX settlement_seller_allocation_seller_journal_idx
                     ON settlement_seller_allocation (seller_id, journal_id)
                 """);
-    }
-
-    private static String migrationScript() throws IOException {
-        ClassPathResource resource = new ClassPathResource("db/migration/V39__seller_statement_indexes.sql");
-        try (var input = resource.getInputStream()) {
-            return StreamUtils.copyToString(input, StandardCharsets.UTF_8);
-        }
     }
 }

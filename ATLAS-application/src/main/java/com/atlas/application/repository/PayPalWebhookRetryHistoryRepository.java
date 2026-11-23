@@ -27,7 +27,7 @@ public class PayPalWebhookRetryHistoryRepository {
      * <p>{@code recorded_at} 은 {@code COALESCE(finished_at, claimed_at)} 인 생성 컬럼이다.
      * 원래 술어가 COALESCE 를 직접 쓰면 인덱스를 못 타 이력 테이블 전체를 스캔했다
      * (200,000행에서 2,705 버퍼). 생성 컬럼 + (recorded_at, outcome) 인덱스로
-     * Index Only Scan 31 버퍼가 됐다(V54, EXP-047).
+     * Index Only Scan 31 버퍼가 됐다(EXP-047).
      */
     public RetrySummary summary() {
         Map<String, Long> outcomeCounts = new LinkedHashMap<>();

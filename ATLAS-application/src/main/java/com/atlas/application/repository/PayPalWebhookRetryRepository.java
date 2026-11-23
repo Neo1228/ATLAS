@@ -53,7 +53,7 @@ public class PayPalWebhookRetryRepository {
                 WITH expired AS MATERIALIZED (
                     SELECT event_id, attempt_count, lease_owner
                     FROM paypal_webhook_retry
-                    -- 8 is the schema ceiling (V31 CHECK constraint) and matches MAX_ATTEMPTS; the
+                    -- 8 is the schema ceiling (CHECK constraint) and matches MAX_ATTEMPTS; the
                     -- literal keeps the partial reaper index predicate provable to the planner.
                     WHERE state = 'PENDING' AND attempt_count = 8
                       AND (lease_until IS NULL OR lease_until <= clock_timestamp())

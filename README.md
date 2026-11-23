@@ -85,6 +85,8 @@ docker compose up -d --wait postgres
 ./gradlew :application-module:bootRun
 ```
 
+DB 스키마는 `ATLAS-application/src/main/resources/db/migration/V1__baseline.sql` 하나로 시작한다. 아직 배포하지 않아 이전 증분 마이그레이션(V1~V75)을 같은 최종 스키마를 만드는 기준 마이그레이션으로 대체했다. 이전 버전으로 만든 로컬 DB는 Flyway 이력이 맞지 않으므로 `docker compose down -v`로 볼륨을 지우고 다시 올린다. 이후 변경은 `V2__...`부터 추가한다.
+
 ### PayPal Payouts Sandbox (opt-in)
 
 PayPal Payouts 자동 송금은 구매자 결제와 별도 경로이며 기본 비활성화. Payouts 권한이 있는 Sandbox 앱, Seller가 연결한 verified account, operator가 검토한 수취 국가(기본 allowlist `US`), USD 지급 스냅샷과 audit reason이 필요하다. API는 임의 receiver email을 받거나 반환하지 않는다.
