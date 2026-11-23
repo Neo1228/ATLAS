@@ -151,11 +151,29 @@ public class AccountService {
         accounts.verifyEmail(token.accountId(), now);
     }
 
-    @Transactional
+    /**
+     * 비밀번호를 재설정한다. 재설정 토큰은 메일함 소유를 증명하므로, 성공하면 잠금 상태였을 수 있는
+     * 로그인 실패 카운터도 함께 비운다. 그러지 않으면 비밀번호를 되찾은 사용자가 남은 창(기본 15분)
+     * 동안 새 비밀번호로도 로그인하지 못한다. MFA 카운터는 메일함만으로 풀 수 없으므로 건드리지 않는다.
+     *
+     * <p>카운터 삭제는 독립 transaction이라 재설정 transaction이 끝난 뒤에 한다. 이미 커밋된 재설정은
+     * 토큰이 소비돼 다시 시도할 수 없으므로, 삭제가 실패해도 오류로 돌려주지 않고 창이 지나 풀리게 둔다.
+     */
     public void resetPassword(String presentedToken, String newPassword) {
         if (newPassword == null || newPassword.length() < 12 || newPassword.length() > 128) {
             throw invalidRequest();
         }
+        String email = transactions.execute(status -> applyPasswordReset(presentedToken, newPassword));
+        if (email == null) return;
+        try {
+            limiter.resetSubject("LOGIN", normalizeEmail(email));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Login lockout counter was not cleared after password reset: failureType={}",
+                    exception.getClass().getSimpleName());
+        }
+    }
+
+    private String applyPasswordReset(String presentedToken, String newPassword) {
         AccountActionToken token = requireActionToken(presentedToken, "PASSWORD_RESET");
         Instant now = clock.instant();
         if (!now.isBefore(token.expiresAt()) || !accounts.consumeActionToken(token.tokenId(), now)) {
@@ -164,6 +182,7 @@ public class AccountService {
         accounts.updatePassword(token.accountId(), passwords.encode(newPassword), now);
         accounts.revokeAllRefreshFamilies(token.accountId(), now);
         accounts.revokeMfaChallenges(token.accountId(), now);
+        return accounts.findActiveById(token.accountId()).map(AccountPrincipal::email).orElse(null);
     }
 
     /**

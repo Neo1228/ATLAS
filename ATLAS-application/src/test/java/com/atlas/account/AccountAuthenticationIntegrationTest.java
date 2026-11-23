@@ -477,6 +477,33 @@ class AccountAuthenticationIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void passwordResetLiftsTheLoginLockoutOnlyAfterTheMailboxIsProven() {
+        // 비밀번호를 되찾은 사용자가 잠금 창이 끝날 때까지 새 비밀번호로도 못 들어가면 안 된다.
+        // 잠금은 실패 횟수로만 걸리므로, 메일함 소유를 증명한 재설정이 끝나야만 풀려야 한다.
+        String email = "lockout-reset-" + UUID.randomUUID() + "@example.com";
+        String password = "long-enough-password-123";
+        String newPassword = "new-long-enough-password-456";
+        String origin = "203.0.113." + (1 + (int) (Math.random() * 200));
+        UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
+        accounts.createBuyer(accountId);
+        accounts.verifyEmail(accountId, Instant.now());
+        for (int attempt = 0; attempt < 10; attempt++) {
+            assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password-123"), origin)).isInstanceOf(AccountException.class);
+        }
+        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, password), origin)).isInstanceOf(AccountException.class);
+
+        accountService.requestPasswordReset(email, origin);
+        String resetToken = testEmailSender.passwordResetTokens.poll();
+        assertThat(resetToken).isNotBlank();
+        assertThatThrownBy(() -> accountService.resetPassword("not-a-real-token", newPassword)).isInstanceOf(AccountException.class);
+        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, password), origin)).isInstanceOf(AccountException.class);
+
+        accountService.resetPassword(resetToken, newPassword);
+
+        assertThat(accountService.login(new LoginRequest(email, newPassword), origin).tokens()).isNotNull();
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Login test lock timed out");
