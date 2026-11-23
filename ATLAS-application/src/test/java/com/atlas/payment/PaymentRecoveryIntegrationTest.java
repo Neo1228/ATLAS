@@ -58,7 +58,7 @@ class PaymentRecoveryIntegrationTest {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
-        properties.add("atlas.paypal.webhook-retry.worker.enabled", () -> "false");
+        properties.add("atlas.payment.paypal.webhook-retry.worker.enabled", () -> "false");
         properties.add("atlas.payment.recovery.worker.enabled", () -> "false");
         properties.add("atlas.payment.recovery.operator.enabled", () -> "true");
         properties.add("atlas.payment.recovery.operator.username", () -> "recovery-operator");
