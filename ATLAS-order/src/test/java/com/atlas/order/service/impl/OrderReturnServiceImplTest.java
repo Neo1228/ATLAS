@@ -27,6 +27,7 @@ import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.repository.OrderReturnRepository;
+import com.atlas.order.repository.OrderShipmentRepository;
 import com.atlas.order.service.OrderRefundService;
 import java.time.Clock;
 import java.time.Instant;
@@ -109,8 +110,8 @@ class OrderReturnServiceImplTest {
         });
 
         OrderReturnServiceImpl service = new OrderReturnServiceImpl(transactionManager, orders, items,
-                mock(OrderFulfillmentRepository.class), refundRecords, returns, refunds,
-                Clock.fixed(now, ZoneOffset.UTC));
+                mock(OrderFulfillmentRepository.class), refundRecords, returns, mock(OrderShipmentRepository.class),
+                refunds, Clock.fixed(now, ZoneOffset.UTC));
         OrderReturnInspectionRequest request = new OrderReturnInspectionRequest(List.of(
                 new OrderReturnInspectionRequest.Item(orderItemId, OrderReturnInspectionRequest.Result.PASSED)));
 

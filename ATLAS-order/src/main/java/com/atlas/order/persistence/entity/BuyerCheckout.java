@@ -31,6 +31,10 @@ public class BuyerCheckout {
     @Column(name = "state", nullable = false, length = 32)
     private BuyerCheckoutState state;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cancellation_target", length = 32)
+    private BuyerCheckoutState cancellationTarget;
+
     @Column(name = "total_won", nullable = false)
     private long totalWon;
 
@@ -39,6 +43,9 @@ public class BuyerCheckout {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @Column(name = "cancellation_requested_at")
+    private Instant cancellationRequestedAt;
 
     protected BuyerCheckout() {
     }
@@ -57,6 +64,7 @@ public class BuyerCheckout {
         this.totalWon = totalWon;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        if (state == BuyerCheckoutState.CANCEL_PENDING) this.cancellationRequestedAt = updatedAt;
     }
 
     public UUID checkoutId() {
@@ -87,9 +95,24 @@ public class BuyerCheckout {
         return updatedAt;
     }
 
+    public Instant cancellationRequestedAt() {
+        return cancellationRequestedAt;
+    }
+
+    public BuyerCheckoutState cancellationTarget() {
+        return cancellationTarget;
+    }
+
+    public void markExpiryCancellation() {
+        cancellationTarget = BuyerCheckoutState.EXPIRED;
+    }
+
     public void update(BuyerCheckoutState state, long totalWon, Instant updatedAt) {
         if (state == null || totalWon < 0 || updatedAt == null) {
             throw new IllegalArgumentException("Invalid checkout update");
+        }
+        if (state == BuyerCheckoutState.CANCEL_PENDING && cancellationRequestedAt == null) {
+            cancellationRequestedAt = updatedAt;
         }
         this.state = state;
         this.totalWon = totalWon;

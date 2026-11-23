@@ -41,7 +41,8 @@ public class PayPalWebhookRetryWorker {
     }
 
     @Scheduled(initialDelayString = "${atlas.payment.paypal.webhook-retry.worker.initial-delay:PT1S}",
-            fixedDelayString = "${atlas.payment.paypal.webhook-retry.worker.poll-interval:PT1S}")
+            fixedDelayString = "${atlas.payment.paypal.webhook-retry.worker.poll-interval:PT1S}",
+            scheduler = "paypalWebhookRetryTaskScheduler")
     public void retryDueEvents() {
         Timer.Sample sample = Timer.start(meters);
         String outcome = "success";

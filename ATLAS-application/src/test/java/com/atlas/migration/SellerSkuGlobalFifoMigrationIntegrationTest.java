@@ -86,6 +86,8 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(tableExists(jdbc, "settlement_entry")).isTrue();
         assertThat(tableExists(jdbc, "buyer_checkout")).isTrue();
         assertThat(tableExists(jdbc, "settlement_seller_allocation")).isTrue();
+        assertThat(tableExists(jdbc, "order_inventory_restock")).isTrue();
+        assertThat(tableExists(jdbc, "order_inventory_restock_item")).isTrue();
         assertThat(tableExists(jdbc, "seller_payout_profile")).isTrue();
         assertThat(tableExists(jdbc, "seller_payout_profile_action")).isTrue();
         assertThat(tableExists(jdbc, "settlement_refund_reservation")).isTrue();
@@ -94,6 +96,7 @@ class SellerSkuGlobalFifoMigrationIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
                 Integer.class, schema)).isEqualTo(68); // 애플리케이션 테이블 67개와 Flyway 이력 테이블
+                Integer.class, schema)).isEqualTo(75); // 애플리케이션 테이블 67개와 Flyway 이력 테이블
     }
 
 

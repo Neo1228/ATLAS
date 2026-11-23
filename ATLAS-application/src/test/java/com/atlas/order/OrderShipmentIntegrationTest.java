@@ -219,6 +219,48 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
         shipments.deliver(fixture.sellerId(), fixture.orderId(), second.shipmentId());
         mockMvc.perform(get("/api/orders/{orderId}/fulfillment", fixture.orderId()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DELIVERED"));
+
+        String buyerRef = buyerRef(fixture.orderId());
+        mockMvc.perform(post("/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, fixture.orderId())
+                        .header("Idempotency-Key", "ambiguous-source-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1}]}
+                                """.formatted(fixture.orderItemId())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        mockMvc.perform(post("/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, fixture.orderId())
+                        .header("Idempotency-Key", "first-source-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1,"shipmentId":"%s"}]}
+                                """.formatted(fixture.orderItemId(), first.shipmentId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].shipmentId").value(first.shipmentId().toString()));
+
+        mockMvc.perform(post("/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, fixture.orderId())
+                        .header("Idempotency-Key", "repeat-source-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1,"shipmentId":"%s"}]}
+                                """.formatted(fixture.orderItemId(), first.shipmentId())))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, fixture.orderId())
+                        .header("Idempotency-Key", "foreign-source-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1,"shipmentId":"%s"}]}
+                                """.formatted(fixture.orderItemId(), UUID.randomUUID())))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, fixture.orderId())
+                        .header("Idempotency-Key", "second-source-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"orderItemId":"%s","quantity":1,"shipmentId":"%s"}]}
+                                """.formatted(fixture.orderItemId(), second.shipmentId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].shipmentId").value(second.shipmentId().toString()));
     }
 
     @Test

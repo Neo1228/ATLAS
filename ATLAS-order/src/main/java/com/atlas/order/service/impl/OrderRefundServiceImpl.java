@@ -64,6 +64,12 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     private final OrderReturnRepository returns;
     private final Clock clock;
     private final TransactionTemplate transactions;
+    private OrderInventoryRestockService restockService;
+
+    @Autowired(required = false)
+    public void setRestockService(OrderInventoryRestockService restockService) {
+        this.restockService = restockService;
+    }
 
     public OrderRefundServiceImpl(PlatformTransactionManager transactionManager, OrderRepository orders,
                                   OrderItemRepository items, OrderFulfillmentRepository fulfillments,
@@ -175,6 +181,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         return Objects.requireNonNull(transactions.execute(transaction -> {
             if (returnId != null) {
                 PurchaseOrder returnOrder = lockOrder(orderId);
+                if (returnOrder.reservationWorkflowId() != null && restockService == null) {
+                    throw conflict("Remote inventory restock is unavailable for this order");
+                }
                 if (!returnOrder.sellerId().equals(sellerId) || returnOrder.state() != OrderState.PAID)
                     throw conflict("Seller does not own paid order");
                 FulfillmentStatus returnFulfillment = fulfillments.findById(orderId)
@@ -211,6 +220,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             PurchaseOrder order = lockOrder(orderId);
             if (!order.sellerId().equals(sellerId)) {
                 throw conflict("Seller does not own order");
+            }
+            if (order.reservationWorkflowId() != null && restockService == null) {
+                throw conflict("Remote inventory restock is unavailable for this order");
             }
             if (order.state() != OrderState.PAID) {
                 throw conflict("Only paid orders can be refunded");
@@ -343,6 +355,8 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             RefundRecord updated = refunds.findByRefundId(reserved.refundId()).orElse(current);
             return response(updated, currentStatus, payment.providerRefundId());
         }));
+        if (restockService != null) restockService.dispatch(reserved.refundId());
+        return applied;
     }
 
     private void applyConfirmedRefund(RefundRecord refund) {

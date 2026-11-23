@@ -27,6 +27,11 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutIdempotencyKeys;
 import com.atlas.order.service.OrderService;
+import com.atlas.order.dto.request.OrderInventoryReservationRequest;
+import com.atlas.order.dto.request.OrderInventoryReservationRequest.Item;
+import com.atlas.order.dto.request.OrderInventoryReservationRequest.LocationAllocation;
+import com.atlas.order.dto.response.OrderInventoryReservationResponse;
+import com.atlas.order.service.OrderInventoryReservationCoordinator;
 import java.math.BigInteger;
 import java.time.Clock;
 import java.time.Duration;
@@ -44,6 +49,7 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -61,6 +67,15 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final Duration checkoutWindow;
+    private OrderInventoryReservationCoordinator locationReservations;
+
+    @Value("${atlas.order-inventory-reservation.enabled:false}")
+    private boolean locationReservationEnabled;
+
+    @Autowired(required = false)
+    public void setLocationReservations(OrderInventoryReservationCoordinator coordinator) {
+        this.locationReservations = coordinator;
+    }
 
     public CartCheckoutServiceImpl(CartService carts, SellerSkuService sellerSkus,
                                   SellerCouponService sellerCoupons, InventoryService inventory,
@@ -107,6 +122,9 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         }
         if (checkoutId == null) {
             throw new OrderException(OrderException.Code.CONFLICT, "Checkout transaction produced no checkout id");
+        }
+        if (locationReservationEnabled) {
+            finishLocationReservation(checkoutId);
         }
         return toResponse(checkoutId);
     }
@@ -181,11 +199,13 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         }
 
         BuyerCheckout checkout = checkouts.save(new BuyerCheckout(buyerRef, idempotencyKey,
-                BuyerCheckoutState.RESERVED, checkoutTotal, now, now));
+                locationReservationEnabled ? BuyerCheckoutState.RESERVATION_PENDING : BuyerCheckoutState.RESERVED,
+                checkoutTotal, now, now));
         UUID checkoutId = checkout.checkoutId();
         for (SellerLines seller : snapshotsBySeller) {
             PurchaseOrder childOrder = new PurchaseOrder(seller.sellerId(), buyerRef, idempotencyKey,
-                    OrderState.RESERVED, now.plus(checkoutWindow), now, now);
+                    locationReservationEnabled ? OrderState.RESERVATION_PENDING : OrderState.RESERVED,
+                    now.plus(checkoutWindow), now, now);
             childOrder.setCheckoutId(checkoutId);
             if (seller.coupon() != null) {
                 childOrder.applyCoupon(seller.coupon().couponId(), seller.coupon().code(),
@@ -219,7 +239,9 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                         savedChild.orderId(), now);
             }
         }
-        carts.clearForCheckout(buyerRef);
+        if (!locationReservationEnabled) {
+            carts.clearForCheckout(buyerRef);
+        }
         return checkoutId;
     }
 
@@ -369,4 +391,23 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         }
     }
     private record SellerLines(UUID sellerId, List<Line> lines, SellerCouponResponse coupon) { }
+    private void finishLocationReservation(UUID checkoutId) {
+        if (reservationFinalizer == null) {
+            throw new OrderException(OrderException.Code.CONFLICT,
+                    "Inventory location reservation is enabled but its finalizer is unavailable");
+        }
+        reservationFinalizer.finalizeCheckout(checkoutId);
+    }
+
+    private OrderInventoryReservationCoordinator requireLocationReservations() {
+        if (locationReservations == null) {
+            throw new OrderException(OrderException.Code.CONFLICT,
+                    "Inventory location reservation is enabled but its coordinator is unavailable");
+        }
+        return locationReservations;
+    }
+
+    private static String reservationKey(UUID orderId) {
+        return "buyer-checkout-location-v1:" + orderId;
+    }
 }

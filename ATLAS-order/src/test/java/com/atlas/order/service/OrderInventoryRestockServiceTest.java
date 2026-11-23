@@ -1,0 +1,98 @@
+package com.atlas.order.service;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import com.atlas.order.exception.OrderException;
+import com.atlas.order.persistence.state.OrderInventoryReservationWorkflowState;
+import com.atlas.order.repository.OrderInventoryReservationRepository;
+import com.atlas.order.repository.OrderInventoryReservationRepository.ItemRecord;
+import com.atlas.order.repository.OrderInventoryReservationRepository.LocationSnapshot;
+import com.atlas.order.repository.OrderInventoryReservationRepository.WorkflowSnapshot;
+import com.atlas.order.repository.OrderInventoryRestockRepository;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+
+class OrderInventoryRestockServiceTest {
+    private static final Instant NOW = Instant.parse("2026-11-09T12:00:00Z");
+
+    @Test
+    void stagesReturnRestockAtTheShipmentLocationAndItsReservation() {
+        OrderInventoryReservationRepository workflows = mock(OrderInventoryReservationRepository.class);
+        OrderInventoryRestockRepository restocks = mock(OrderInventoryRestockRepository.class);
+        InventoryLocationReservationClient inventory = mock(InventoryLocationReservationClient.class);
+        UUID orderId = UUID.randomUUID();
+        UUID workflowId = UUID.randomUUID();
+        UUID refundId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        UUID locationA = UUID.randomUUID();
+        UUID locationB = UUID.randomUUID();
+        UUID reservationA = UUID.randomUUID();
+        UUID reservationB = UUID.randomUUID();
+        WorkflowSnapshot workflow = workflow(orderId,
+                location(locationA, reservationA, sellerId, "sku-a", 2),
+                location(locationB, reservationB, sellerId, "sku-a", 1));
+        when(workflows.findByWorkflowId(workflowId)).thenReturn(workflow);
+        OrderInventoryRestockService service = service(workflows, restocks, inventory);
+
+        service.stageAtLocations(refundId, orderId, workflowId, sellerId,
+                Map.of(locationA, Map.of("sku-a", 1), locationB, Map.of("sku-a", 1)));
+
+        verify(restocks).insert(OrderInventoryRestockService.restockKey(refundId), locationA, refundId, orderId,
+                workflowId, reservationA, List.of(new ItemRecord(sellerId, "sku-a", 1)), NOW);
+        verify(restocks).insert(OrderInventoryRestockService.restockKey(refundId), locationB, refundId, orderId,
+                workflowId, reservationB, List.of(new ItemRecord(sellerId, "sku-a", 1)), NOW);
+    }
+
+    @Test
+    void rejectsRestockQuantityAboveTheSourceLocationClaim() {
+        OrderInventoryReservationRepository workflows = mock(OrderInventoryReservationRepository.class);
+        OrderInventoryRestockRepository restocks = mock(OrderInventoryRestockRepository.class);
+        InventoryLocationReservationClient inventory = mock(InventoryLocationReservationClient.class);
+        UUID orderId = UUID.randomUUID();
+        UUID workflowId = UUID.randomUUID();
+        UUID refundId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        UUID location = UUID.randomUUID();
+        WorkflowSnapshot workflow = workflow(orderId, location(location, UUID.randomUUID(), sellerId, "sku-a", 1));
+        when(workflows.findByWorkflowId(workflowId)).thenReturn(workflow);
+
+        assertThatThrownBy(() -> service(workflows, restocks, inventory).stageAtLocations(refundId, orderId,
+                workflowId, sellerId, Map.of(location, Map.of("sku-a", 2))))
+                .isInstanceOf(OrderException.class);
+
+        verifyNoInteractions(restocks);
+    }
+
+    private static OrderInventoryRestockService service(OrderInventoryReservationRepository workflows,
+            OrderInventoryRestockRepository restocks, InventoryLocationReservationClient inventory) {
+        return new OrderInventoryRestockService(workflows, restocks, inventory, Clock.fixed(NOW, ZoneOffset.UTC),
+                Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMinutes(1), 4);
+    }
+
+    private static WorkflowSnapshot workflow(UUID orderId, LocationSnapshot... locations) {
+        WorkflowSnapshot workflow = mock(WorkflowSnapshot.class);
+        when(workflow.orderId()).thenReturn(orderId);
+        when(workflow.state()).thenReturn(OrderInventoryReservationWorkflowState.CLAIMED.name());
+        when(workflow.locations()).thenReturn(List.of(locations));
+        return workflow;
+    }
+
+    private static LocationSnapshot location(UUID locationId, UUID reservationId, UUID sellerId, String skuId,
+            int quantity) {
+        LocationSnapshot location = mock(LocationSnapshot.class);
+        when(location.fulfillmentLocationId()).thenReturn(locationId);
+        when(location.reservationId()).thenReturn(reservationId);
+        when(location.items()).thenReturn(List.of(new ItemRecord(sellerId, skuId, quantity)));
+        return location;
+    }
+}

@@ -44,6 +44,8 @@ class ModuleBoundaryTest {
                 "com.nimbusds..",
                 "org.apache.commons.csv..",
                 "io.micrometer..",
+            // 예약 이벤트 relay의 Kafka producer와 payload JSON. 이 모듈 밖으로 퍼지지 않도록 application 패키지에서만 허용한다.
+            "org.apache.kafka..", "tools.jackson..",
                 "java..", "javax..", "jakarta..", "org.springframework..", "org.slf4j.."
         };
         enforceAllowedDependencies(source, "com.atlas.application..", applicationDependencies);
