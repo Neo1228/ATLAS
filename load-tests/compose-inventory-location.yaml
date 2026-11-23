@@ -1,0 +1,74 @@
+services:
+  inventory-postgres-a:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: atlas_inventory_a
+      POSTGRES_USER: atlas_inventory
+      POSTGRES_PASSWORD: ${INVENTORY_LOCATION_DB_PASSWORD:-atlas-inventory-local-only}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - atlas-inventory-location-a-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas_inventory -d atlas_inventory_a"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  inventory-postgres-b:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: atlas_inventory_b
+      POSTGRES_USER: atlas_inventory
+      POSTGRES_PASSWORD: ${INVENTORY_LOCATION_DB_PASSWORD:-atlas-inventory-local-only}
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - atlas-inventory-location-b-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas_inventory -d atlas_inventory_b"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  inventory-location-a:
+    image: eclipse-temurin:25-jre
+    depends_on:
+      inventory-postgres-a:
+        condition: service_healthy
+    command: ["java", "-jar", "/app/atlas-inventory-location.jar"]
+    environment:
+      INVENTORY_LOCATION_PORT: 8090
+      INVENTORY_LOCATION_DB_URL: jdbc:postgresql://inventory-postgres-a:5432/atlas_inventory_a
+      INVENTORY_LOCATION_DB_USER: atlas_inventory
+      INVENTORY_LOCATION_DB_PASSWORD: ${INVENTORY_LOCATION_DB_PASSWORD:-atlas-inventory-local-only}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN to a random value of at least 32 characters}
+      FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000001
+    volumes:
+      - ../ATLAS-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
+    ports:
+      - "127.0.0.1:8090:8090"
+    restart: unless-stopped
+
+  inventory-location-b:
+    image: eclipse-temurin:25-jre
+    depends_on:
+      inventory-postgres-b:
+        condition: service_healthy
+    command: ["java", "-jar", "/app/atlas-inventory-location.jar"]
+    environment:
+      INVENTORY_LOCATION_PORT: 8090
+      INVENTORY_LOCATION_DB_URL: jdbc:postgresql://inventory-postgres-b:5432/atlas_inventory_b
+      INVENTORY_LOCATION_DB_USER: atlas_inventory
+      INVENTORY_LOCATION_DB_PASSWORD: ${INVENTORY_LOCATION_DB_PASSWORD:-atlas-inventory-local-only}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN to a random value of at least 32 characters}
+      FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000002
+    volumes:
+      - ../ATLAS-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
+    ports:
+      - "127.0.0.1:8091:8090"
+    restart: unless-stopped
+
+volumes:
+  atlas-inventory-location-a-data:
+  atlas-inventory-location-b-data:
