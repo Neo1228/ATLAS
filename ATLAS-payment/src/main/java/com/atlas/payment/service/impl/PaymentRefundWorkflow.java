@@ -18,6 +18,7 @@ import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.service.FxConversionService;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -42,12 +43,13 @@ public final class PaymentRefundWorkflow {
     private final PaymentProvider psp;
     private final Duration recoveryInitialDelay;
     private final IdGenerator ids;
+    private final Clock clock;
 
     public PaymentRefundWorkflow(OwnerLockRegistry ownerLocks, PaymentAttemptRepository repository,
             PaymentRefundRepository refunds, PaymentRecoveryRepository recovery, TransactionTemplate transactions,
             PaymentProvider psp,
             @Value("${atlas.payment.recovery.initial-delay:PT30S}") Duration recoveryInitialDelay,
-            IdGenerator ids) {
+            IdGenerator ids, Clock clock) {
         this.ownerLocks = Objects.requireNonNull(ownerLocks);
         this.repository = Objects.requireNonNull(repository);
         this.refunds = Objects.requireNonNull(refunds);
@@ -59,6 +61,7 @@ public final class PaymentRefundWorkflow {
             throw new IllegalArgumentException("recoveryInitialDelay must not be negative");
         }
         this.ids = Objects.requireNonNull(ids);
+        this.clock = Objects.requireNonNull(clock);
     }
 
     void markRefundApplied(UUID refundOperationId) {
@@ -125,7 +128,7 @@ public final class PaymentRefundWorkflow {
                 || (psp.requiresFxSnapshot() && !attempt.hasFxSnapshot())) {
             throw invalidRequest("Only a captured PayPal payment can be refunded");
         }
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         return Objects.requireNonNull(transactions.execute(status -> {
             refunds.lockAttempt(attempt.getAttemptId());
             var existing = refunds.findByAttemptIdAndIdempotencyKeyForUpdate(
@@ -231,7 +234,7 @@ public final class PaymentRefundWorkflow {
             case FAILED -> PaymentRefundState.FAILED;
             case UNKNOWN -> PaymentRefundState.UNKNOWN;
         };
-        Instant updatedAt = Instant.now();
+        Instant updatedAt = clock.instant();
         PaymentRefundOperation persisted = Objects.requireNonNull(transactions.execute(status -> {
             refunds.updateResult(operation.refundOperationId(), state, recordedResult.refundId(),
                     recordedResult.providerStatus(), updatedAt);

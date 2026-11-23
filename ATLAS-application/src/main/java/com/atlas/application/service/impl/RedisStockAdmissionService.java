@@ -4,7 +4,6 @@ import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.StockAdmissionService;
 import io.lettuce.core.RedisClient;
-import io.lettuce.core.RedisURI;
 import io.lettuce.core.ScriptOutputType;
 import io.lettuce.core.SetArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -15,6 +14,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
@@ -104,8 +104,7 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
     private volatile long breakerOpenUntilNanos;
 
     public RedisStockAdmissionService(LocationClient inventory, MeterRegistry meters,
-            @Value("${atlas.order-inventory-reservation.admission-gate.redis-uri}") String redisUri,
-            @Value("${atlas.order-inventory-reservation.admission-gate.command-timeout:PT0.2S}") Duration commandTimeout,
+            RedisClient client,
             @Value("${atlas.order-inventory-reservation.admission-gate.stock-ttl:PT5S}") Duration stockTtl,
             @Value("${atlas.order-inventory-reservation.admission-gate.decision-ttl:PT10M}") Duration decisionTtl,
             @Value("${atlas.order-inventory-reservation.admission-gate.breaker-cooldown:PT2S}") Duration breakerCooldown) {
@@ -116,9 +115,7 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
         this.stockTtlMillis = stockTtl.toMillis();
         this.decisionTtlMillis = decisionTtl.toMillis();
         this.breakerCooldownNanos = breakerCooldown.toNanos();
-        RedisURI uri = RedisURI.create(redisUri);
-        uri.setTimeout(commandTimeout);
-        this.client = RedisClient.create(uri);
+        this.client = Objects.requireNonNull(client, "client");
         this.admitted = Counter.builder("atlas.order.admission.gate").tag("result", "admitted").register(meters);
         this.rejected = Counter.builder("atlas.order.admission.gate").tag("result", "rejected").register(meters);
         this.failedOpen = Counter.builder("atlas.order.admission.gate").tag("result", "fail_open").register(meters);
@@ -247,6 +244,5 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
         if (current != null) {
             current.close();
         }
-        client.shutdown();
     }
 }

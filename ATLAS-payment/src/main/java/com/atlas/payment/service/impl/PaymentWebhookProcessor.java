@@ -16,6 +16,7 @@ import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -37,10 +38,12 @@ public final class PaymentWebhookProcessor {
     private final PaymentRecoveryRepository recovery;
     private final TransactionTemplate transactions;
     private final PaymentProvider psp;
+    private final Clock clock;
 
     public PaymentWebhookProcessor(OwnerLockRegistry ownerLocks, PaymentAttemptRepository repository,
             PaymentRefundRepository refunds, PaymentWebhookEventRepository webhookEvents,
-            PaymentRecoveryRepository recovery, TransactionTemplate transactions, PaymentProvider psp) {
+            PaymentRecoveryRepository recovery, TransactionTemplate transactions, PaymentProvider psp,
+            Clock clock) {
         this.ownerLocks = Objects.requireNonNull(ownerLocks);
         this.repository = Objects.requireNonNull(repository);
         this.refunds = Objects.requireNonNull(refunds);
@@ -48,6 +51,7 @@ public final class PaymentWebhookProcessor {
         this.recovery = Objects.requireNonNull(recovery);
         this.transactions = Objects.requireNonNull(transactions);
         this.psp = Objects.requireNonNull(psp);
+        this.clock = Objects.requireNonNull(clock);
     }
 
     PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
@@ -78,7 +82,7 @@ public final class PaymentWebhookProcessor {
 
     PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEventResponse event) {
         if (event == null) throw invalidRequest("Verified PayPal webhook event is required");
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         return Objects.requireNonNull(transactions.execute(status -> {
             if ("PAYMENT.CAPTURE.COMPLETED".equals(event.eventType())) {
                 Optional<PaymentAttempt> attempt = event.providerOrderId() == null

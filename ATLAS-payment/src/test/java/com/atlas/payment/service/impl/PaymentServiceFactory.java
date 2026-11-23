@@ -6,6 +6,7 @@ import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import com.atlas.payment.service.FxConversionService;
+import java.time.Clock;
 import java.time.Duration;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -27,10 +28,10 @@ final class PaymentServiceFactory {
         JdkIdGenerator ids = new JdkIdGenerator();
         TransactionTemplate transactions = new TransactionTemplate(transactionManager);
         PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, attempts, refunds, recovery,
-                transactions, psp, RECOVERY_INITIAL_DELAY, ids);
+                transactions, psp, RECOVERY_INITIAL_DELAY, ids, Clock.systemUTC());
         PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, attempts, refunds,
-                webhookEvents, recovery, transactions, psp);
+                webhookEvents, recovery, transactions, psp, Clock.systemUTC());
         return new PaymentServiceImpl(attempts, recovery, transactionManager, psp, fxConversionService, locks,
-                refundWorkflow, webhookProcessor, ids, publicBaseUrl, RECOVERY_INITIAL_DELAY, APPROVAL_TTL);
+                refundWorkflow, webhookProcessor, ids, Clock.systemUTC(), publicBaseUrl, RECOVERY_INITIAL_DELAY, APPROVAL_TTL);
     }
 }
