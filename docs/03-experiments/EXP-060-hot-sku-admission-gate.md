@@ -5,7 +5,7 @@
 - 날짜: 2026-11-23(결과 파일 시각 02:52~03:39와 06:54~07:13)
 - 관련: [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [EXP-053](EXP-053-inventory-location-failure-load.md), [ADR-0053](../02-decisions/adr/ADR-0053-shared-infra-adoption-gates.md)(도입 조건)
 
-> 해석 주의(2026-11-23, ADR-0068): 기준선과 gate는 서로 다른 시각에 돌린 실행이고, 도착률당 기준선은 1~3회, gate는 1~2회다. 기준선의 반복 변동만으로도 1,000/s에서 383.0~525.0(최대/최소 1.37배), 2,000/s에서 456.0~1,041.9(2.28배)라 퍼센트 개선과 절대 처리량은 근거로 쓰지 않는다. 방어 가능한 결론은 "거절 주문이 durable 쓰기를 만든다"와 "그 쓰기를 없애면 포화 지점이 크게 밀린다"는 자릿수 수준이다. 같은 세션 짝 반복 비교와 gate 변형(Redis·precheck) 비교는 [EXP-062](EXP-062-admission-gate-paired-comparison.md)와 [EXP-063](EXP-063-redis-gate-failopen-and-paired-rerun.md)에서 했다.
+> 해석 주의(2026-11-23, [ADR-0068](../02-decisions/adr/ADR-0068-external-research-direction-review.md)): 기준선과 gate는 서로 다른 시각에 돌린 실행이고, 도착률당 기준선은 1~3회, gate는 1~2회다. 기준선의 반복 변동만으로도 1,000/s에서 383.0~525.0(최대/최소 1.37배), 2,000/s에서 456.0~1,041.9(2.28배)라 퍼센트 개선과 절대 처리량은 근거로 쓰지 않는다. 방어 가능한 결론은 "거절 주문이 durable 쓰기를 만든다"와 "그 쓰기를 없애면 포화 지점이 크게 밀린다"는 자릿수 수준이다. 같은 세션 짝 반복 비교와 gate 변형(Redis·precheck) 비교는 [EXP-062](EXP-062-admission-gate-paired-comparison.md)와 [EXP-063](EXP-063-redis-gate-failopen-and-paired-rerun.md)에서 했다.
 
 ## 환경과 입력
 

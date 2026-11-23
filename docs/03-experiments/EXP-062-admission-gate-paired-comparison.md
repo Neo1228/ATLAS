@@ -1,7 +1,7 @@
 # EXP-062: 품절 음성 캐시 precheck와 Redis gate의 같은 세션 교차 비교
 
 - 질문: 거절될 주문을 앞단에서 거르는 두 방식, Redis 없는 precheck(품절 음성 캐시)와 Redis gate는 같은 조건에서 얼마나 다른가? 이 호스트의 run 간 잡음은 어느 정도인가?
-- 관련: [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [EXP-060](EXP-060-hot-sku-admission-gate.md), 점검표, ADR-0068
+- 관련: [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [EXP-060](EXP-060-hot-sku-admission-gate.md), [점검표](experiment-checklist.md), [ADR-0068](../02-decisions/adr/ADR-0068-external-research-direction-review.md)
 - 상태: 탐색 실험(팔당 3~6회, 단일 호스트). [EXP-060](EXP-060-hot-sku-admission-gate.md)의 약점(세션이 다른 기준선, gate 실행이 도착률당 1~2회)을 점검표대로 보강한 설계다.
 - 날짜: 2026-11-23(결과 파일 시각 09:46까지)
 

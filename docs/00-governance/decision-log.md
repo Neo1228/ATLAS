@@ -136,7 +136,9 @@
 | D-130 | ✓ 곁가지 제거 | Buyer NFR 러너와 Compose, 운영 jar에 들어 있던 loadtest 결제 provider, 로컬 Playwright 안내를 제거했다. 분산 이행 1~4단계 근거와 무관했고 test double이 운영 소스에 있었다. NFR-002는 별도 요구사항으로 남는다. | 사용자 요청, 2026-11-23; [NFR-002](../01-requirements/requirements-index.md) |
 | D-131 | ✓ Redis admission gate 구현·측정(옵트인) | 거절될 주문도 workflow 행과 주문당 DB 트랜잭션 약 5.6~5.9개를 남겨 PostgreSQL만으로는 약 1,000 주문/초에서 completed/s가 383.0~525.0(기준선 n=3)으로 포화했다. 앞단 Redis gate로 거절 주문의 durable 쓰기를 없애 같은 입력에서 991.3~992.2/s(n=2)를 처리했고 오버셀은 없었다. Redis 중지 시 fail-open이며 중지 후 완료 속도는 breaker 없이 189/s(n=1), breaker 적용 시 595~626/s(n=2)였다. 재고 100, 1,000/s는 20초 측정, 단일 호스트. 이후 보강·재비교 결과는 D-134. | 사용자 요청, 2026-11-23; [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [EXP-060](../03-experiments/EXP-060-hot-sku-admission-gate.md) |
 | D-132 | 대체됨(D-134)·역사 기록 | 초기 판단: 소비자 3개·500건/s·재생 요구를 PostgreSQL 이벤트 로그+cursor로 재현했고 10,000건/s·소비자 12개에서도 lag 최대 1,229건(합성 이벤트, 구성당 1~2회)이라 Kafka를 도입하지 않고 로그 테이블도 소비자가 생길 때까지 만들지 않기로 했다. 이후 EXP-061이 무손실을 검증하지 않았음이 드러나(3,200건 중 1,013건 손실 재현) D-134에서 xmin 안전 로그·cursor·trigger와 옵트인 Kafka relay를 구현하는 것으로 바뀌었다. 지금도 유효한 것은 Kafka를 기본 경로로 올리지 않는 측정 근거와 도입 조건 3가지다. | 사용자 요청, 2026-11-23; [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md), [EXP-061](../03-experiments/EXP-061-event-log-fanout-and-replay.md) |
+| D-133 | ✓ 외부 조사로 방향 점검 | Redis gate는 반환 경로 부재·근사 카운터 결함과 더 단순한 품절 음성 캐시 대안이 확인돼 조건부로 낮췄다. EXP-061에서 이벤트 손실(3,200건 중 1,013건, n=1)이 재현돼 D-132의 "Kafka 미도입·로그 미구현"을 낮췄고 D-134에서 구현으로 보강했다. saga 구조는 유지하고 NEEDS_REVIEW 관측 공백(gauge 2개 추가)을 메웠다. 부하 수치는 정성 결론으로만 읽는다. | 사용자 요청, 2026-11-23; [ADR-0068](../02-decisions/adr/ADR-0068-external-research-direction-review.md) |
 | D-134 | ✓ 약점을 보강해 구현·측정 | xmin 안전 이벤트 로그(V75)와 lease 기반 Kafka relay를 구현했고 relay는 옵트인(기본 꺼짐)이다(손실 1,013/3,200 재현 → 안전 방식 0건, 통합 테스트 3건). 10,000건/s·소비자 12개에서 lag 최대는 968~1,229건(EXP-061, 구성당 2회). Redis gate에 반환 경로·pending 반영을 넣고 품절 음성 캐시 precheck를 만들었다. 같은 세션 교차 비교(EXP-062, 팔당 n=3~6)에서 1,000/s는 잡음 안에서 같았고(처리량 비 중앙값 1.007, 범위 0.986~1.066) 2,000/s는 precheck가 안정적이었다(precheck 1,894~1,977/s, Redis 1,501~1,944/s). 보강 jar의 재비교(EXP-063, 2,000/s, 팔당 n=4)는 처리량이 구분되지 않았고(Redis 1,964/s, precheck 1,974/s) location 호출은 요청당 Redis 0.0042, precheck 0.0133이었다. 기본 gate 후보는 precheck, Redis는 옵션. | 사용자 요청, 2026-11-23; [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md), [EXP-061](../03-experiments/EXP-061-event-log-fanout-and-replay.md), [EXP-062](../03-experiments/EXP-062-admission-gate-paired-comparison.md), [EXP-063](../03-experiments/EXP-063-redis-gate-failopen-and-paired-rerun.md) |
+| D-135 | ✓ 계층형 명명과 설정 audit | 기존 Order 모듈의 service/impl·repository·request/response 계약에 맞춰 신규 클래스와 패키지를 정리한다. worker별 poll/batch 중복 설정은 공용 값으로 합치고, 측정·배포 경계가 있는 설정은 유지한다. DB/API/metric 계약은 바꾸지 않는다. 최종 no-cache 전체 검증은 746 tests, 실패 0이며 이 변경은 성능 개선을 주장하지 않는다. | 사용자 요청, 2026-11-23; [ADR-0069](../02-decisions/adr/ADR-0069-layered-naming-and-runtime-configuration.md) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -184,7 +186,9 @@
 <a id="d-130"></a>
 <a id="d-131"></a>
 <a id="d-132"></a>
+<a id="d-133"></a>
 <a id="d-134"></a>
+<a id="d-135"></a>
 
 <a id="detailed-decision-records"></a>
 
@@ -254,3 +258,5 @@
 | [ADR-0065 — 무가입 Frankfurter Sandbox 환율 provider](../02-decisions/adr/ADR-0065-frankfurter-sandbox-fx-provider.md) | BOK ECOS 기본 유지, Sandbox용 no-key ECB reference source 선택과 fail-closed snapshot validation | [D-128](#d-128) |
 | [ADR-0066 — 소진된 SKU 주문을 Redis admission gate에서 거절](../02-decisions/adr/ADR-0066-redis-admission-gate.md) | Redis 원자 gate는 정본이 아니고 fail-open + breaker, 옵트인. 기본 gate 후보는 품절 음성 캐시 precheck | [D-131](#d-131), [D-134](#d-134) |
 | [ADR-0067 — xmin 안전 이벤트 로그와 Kafka relay](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md) | xmin 안전 이벤트 로그·cursor를 기본 경로로 구현하고 Kafka relay는 옵트인(기본 꺼짐). 초기 "Kafka·로그 미도입"은 D-134로 대체 | [D-134](#d-134), [D-132](#d-132)(대체됨) |
+| [ADR-0068 — 외부 조사로 점검한 방향](../02-decisions/adr/ADR-0068-external-research-direction-review.md) | 틀렸던 것(이벤트 손실, Redis gate 결함), 유지할 것(saga 구조), 만들지 않을 것 | [D-133](#d-133) |
+| [ADR-0069 — 계층형 명명과 불필요한 런타임 설정 축소](../02-decisions/adr/ADR-0069-layered-naming-and-runtime-configuration.md) | 기존 모듈의 계층·패키지 규약을 따르고, 측정 근거 없는 중복 poll/batch knobs를 줄임 | [D-135](#d-135) |
