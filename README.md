@@ -16,6 +16,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 | `ATLAS-campaign/` | Campaign과 구매 자격 |
 | `ATLAS-admission/` | FIFO queue, ticket, checkout slot과 queue policy |
 | `ATLAS-inventory/` | Stock pool, reservation, fulfillment location, capacity 조정과 transfer |
+| `ATLAS-inventory-location/` | Inventory bounded context의 독립 Spring Boot runtime. process당 fulfillment location 하나와 별도 PostgreSQL을 사용하며 예약·claim·release·만료를 처리 |
 | `ATLAS-order/` | Seller별 주문·항목, Buyer 주문 내역(cursor), 배송·반품·환불 |
 | `ATLAS-payment/` | PayPal Sandbox authorization/capture/refund, webhook과 payment recovery |
 | `ATLAS-settlement/` | Capture/refund 내부 ledger, Seller별 allocation과 statement |
@@ -102,6 +103,79 @@ ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=false
 ```
 
 먼저 worker를 끈 채 profile을 만들고 operator 검토를 통과시킨 다음, 지급 요청·operator 승인을 수행해 immutable outbox intent가 생성되는지 확인한다. Profile·국가·암호화 key·Sandbox entitlement 확인 후에만 `ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=true`로 전환한다. 적격하지 않은 profile은 자동 전송하지 않으며, 별도 manual route는 외부 증빙과 operator audit을 요구한다. Live credential이나 실계좌를 사용하지 않는다.
+### 독립 inventory-location 실행
+
+분리된 inventory runtime은 기존 `application-module`과 독립 실행된다. 필요 도구는 JDK 25와 Docker Compose이며, Compose가 `build/libs`의 JAR을 bind mount하므로 아래 `bootJar` 단계를 먼저 실행해야 한다. location A/B는 PostgreSQL을 각각 사용한다. coordinator PostgreSQL과 loopback-only Mailpit SMTP는 추적되는 [`load-tests/compose-order-coordinator.yaml`](load-tests/compose-order-coordinator.yaml)에서 함께 제공한다. Compose 정의는 저장소에 두고, service token 같은 비밀값을 담는 `inventory.env`만 git-ignore된 `.local`에 둔다. 기존 root `postgres` volume은 사용하지 않으며 internal API와 모든 host port는 loopback에만 bind한다.
+
+```sh
+mkdir -p .local/distributed-fulfillment
+if [ ! -f .env.local ]; then cp .env.example .env.local; fi
+chmod 600 .env.local
+set -a
+. ./.env.local
+set +a
+if [ -z "${ATLAS_JWT_SIGNING_SECRET:-}" ]; then
+  export ATLAS_JWT_SIGNING_SECRET="$(openssl rand -base64 32)"
+fi
+export INVENTORY_LOCATION_SERVICE_TOKEN="$(openssl rand -hex 32)"
+export ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN="$(openssl rand -hex 32)"
+export ATLAS_SERVER_PORT=8082
+location_a=00000000-0000-0000-0000-000000000001
+location_b=00000000-0000-0000-0000-000000000002
+{
+  printf 'INVENTORY_LOCATION_SERVICE_TOKEN=%s\n' "$INVENTORY_LOCATION_SERVICE_TOKEN"
+  printf 'ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED=true\n'
+  printf 'ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN=%s\n' "$ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN"
+  printf 'ATLAS_ORDER_INVENTORY_RESERVATION_LOCATION_ENDPOINTS="%s=http://127.0.0.1:8090;%s=http://127.0.0.1:8091"\n' \
+    "$location_a" "$location_b"
+  printf 'ATLAS_DB_URL=jdbc:postgresql://127.0.0.1:5435/atlas_order\nATLAS_DB_USER=atlas\n'
+  printf 'ATLAS_DB_PASSWORD=atlas-order-local-only\nATLAS_ORDER_DB_PASSWORD=atlas-order-local-only\n'
+  printf 'SPRING_MAIL_HOST=127.0.0.1\nSPRING_MAIL_PORT=1025\n'
+  printf 'ATLAS_SERVER_PORT=%s\nATLAS_JWT_SIGNING_SECRET=%s\n' \
+    "$ATLAS_SERVER_PORT" "$ATLAS_JWT_SIGNING_SECRET"
+} > .local/distributed-fulfillment/inventory.env
+chmod 600 .local/distributed-fulfillment/inventory.env
+./gradlew --no-daemon :inventory-location-module:bootJar :application-module:bootJar
+# JAR는 bind mount이므로 다시 빌드한 JAR을 적용하려면 container를 재생성한다(`--force-recreate`). DB volume은 유지된다.
+docker compose --env-file .local/distributed-fulfillment/inventory.env \
+  -p atlas-inventory -f load-tests/compose-inventory-location.yaml -f load-tests/compose-order-coordinator.yaml up -d --wait --force-recreate
+```
+
+분리된 inventory runtime을 사용하는 order-side coordinator API는 선택형이다. Internal service token은 `.local` env에만 보관한다. 기본 feature flag가 꺼져 있으면 Buyer cart checkout은 monolith inventory path를 사용하며, flag를 켜면 아래와 같이 remote reservation workflow에 연결된다. Internal coordinator route는 remote reservation·location별 상태·부분 실패 보상·재조정을 별도로 검증하는 경계다.
+
+```sh
+set -a
+. ./.local/distributed-fulfillment/inventory.env
+set +a
+java -jar ATLAS-application/build/libs/application-module.jar
+```
+
+`POST /api/internal/order-inventory/reservations`는 `Idempotency-Key`, order UUID와 location별 Seller·SKU allocation을 받는다. `RESERVED`는 모든 원격 예약 응답과 잔여 TTL 확인이 끝났다는 뜻이며, 다음 업무 단계는 각 location의 `expiresAt` 전에 시작해야 한다. `RETRY_PENDING`/`COMPENSATION_REQUIRED`는 `202` 상태 조회 대상으로 응답한다. `GET /api/internal/order-inventory/reservations/{workflowId}`로 복구 상태를 확인한다. `POST /api/internal/order-inventory/reservations/{workflowId}/cancel`은 모든 location을 해제하면 `200`(`CANCELLED`), 결과가 불확실하면 `202`(`CANCEL_PENDING`, recovery worker가 재시도), 자동 해제가 불가능하면 `409`(`NEEDS_REVIEW`)로 응답한다.
+
+같은 flag가 켜지면 Buyer cart checkout도 이 workflow를 사용한다. checkout은 `RESERVATION_PENDING`으로 저장된 뒤 원격 예약이 모두 확인되면 `RESERVED`가 된다. 결제는 PayPal 승인까지만 진행한 뒤 모든 원격 예약을 claim하고 나서 매입한다. claim이 만료·취소로 거절되면 매입하지 않고 승인을 void하며, claim 결과가 불확실하면 승인 상태로 두고 payment recovery가 다시 확인한다. 세부 근거는 [ADR-0060](docs/02-decisions/adr/ADR-0060-order-inventory-reservation-workflow.md).
+
+```sh
+curl -X POST http://127.0.0.1:8082/api/internal/order-inventory/reservations \
+  -H "X-Atlas-Service-Token: $ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN" \
+  -H "Idempotency-Key: order-reservation-00000000-0000-0000-0000-000000000101" \
+  -H 'Content-Type: application/json' \
+  -d '{"orderId":"00000000-0000-0000-0000-000000000101","allocations":[{"fulfillmentLocationId":"00000000-0000-0000-0000-000000000001","items":[{"sellerId":"00000000-0000-0000-0000-000000000011","skuId":"SKU-A","quantity":1}]},{"fulfillmentLocationId":"00000000-0000-0000-0000-000000000002","items":[{"sellerId":"00000000-0000-0000-0000-000000000012","skuId":"SKU-B","quantity":1}]}]}'
+```
+
+저장소에 추적되는 [`load-tests/distributed-coordinator.js`](load-tests/distributed-coordinator.js) profile은 기본값이 `RATE=1000`(order/s), `DURATION=30s`, `LOCATIONS=2`, `MAX_VUS=1000`이다. order당 SKU line 3개를 location 2개에 나누므로 초당 최대 2,000건의 remote reservation call을 만든다. 두 service token은 각각 32자 이상이어야 한다. K6는 unique `RUN_ID`로 seller-scoped stock을 seed하고 HTTP status별 응답, p95/p99, reserved/pending/rejected 수, stock conservation을 기록한다. `DB_CONTAINER`를 설정하면 실제 iteration 수와 DB workflow 수를 대조하고, backlog가 모두 `RESERVED`로 수렴할 때까지 기다린다. Dropped iteration은 별도로 보고하며 `K6_CPUS`·`K6_MEMORY`로 부하 생성기 자원을 제한할 수 있다. 합성 profile이며 production capacity나 SLO가 아니다. 측정 결과는 [EXP-059](docs/03-experiments/EXP-059-order-reservation-load-and-idempotent-replay.md)에 있고, JSON은 `.local/distributed-fulfillment/k6/`에만 남는다.
+
+`TRANSPORT_RETRIES=1`을 별도 실행에 지정하면 HTTP status 0 또는 5xx 뒤에 같은 요청 본문과 `Idempotency-Key`로 최대 한 번 재시도한다. 최대 2회까지 설정할 수 있고 기본값은 0이며, 기본 capacity profile 결과와 분리해 해석한다. 재시도 횟수·회복 여부·status별 응답을 요약에 기록해 응답 유실 후에도 workflow가 단일 건으로 수렴하는지 확인한다.
+
+```sh
+set -a
+. ./.local/distributed-fulfillment/inventory.env
+set +a
+DB_CONTAINER=atlas-inventory-order-coordinator-postgres-1 RATE=250 DURATION=30s ./load-tests/run-distributed-coordinator.sh
+DB_CONTAINER=atlas-inventory-order-coordinator-postgres-1 RATE=1000 DURATION=30s ./load-tests/run-distributed-coordinator.sh
+DB_CONTAINER=atlas-inventory-order-coordinator-postgres-1 RATE=1000 DURATION=30s TRANSPORT_RETRIES=1 ./load-tests/run-distributed-coordinator.sh
+```
+
+Location A/B API는 각각 `http://127.0.0.1:8090`·`http://127.0.0.1:8091`이다. K6 scenario·runner와 Compose 정의는 추적되는 `load-tests/`에 두고, 실행 JSON과 service token만 git-ignore된 `.local/distributed-fulfillment/`에 보관한다. Inventory 경계와 수치는 [ADR-0059](docs/02-decisions/adr/ADR-0059-independent-inventory-location-service.md)·[EXP-053](docs/03-experiments/EXP-053-inventory-location-failure-load.md), coordinator/lease 정책은 [ADR-0060](docs/02-decisions/adr/ADR-0060-order-inventory-reservation-workflow.md)·[ADR-0064](docs/02-decisions/adr/ADR-0064-order-inventory-just-in-time-lease-claims.md) 참조.
 
 느린 SQL 감지는 Java `DataSource` decorator로 선택 활성화.
 - `ATLAS_DB_SLOW_QUERY_THRESHOLD_MS`: 측정 근거가 있는 양의 임계값(ms). 미설정 시 감지기 비활성화.
@@ -164,10 +238,12 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 ### PayPal Sandbox
 
 사전 조건:
-- Business app credentials, BOK_ECOS_API_KEY (기본 provider 사용 시) 또는 무가입 Frankfurter provider 선택, Sandbox Buyer 계정.
+- Business app credentials, BOK ECOS API key (기본 provider 사용 시) 또는 무가입 Frankfurter provider 선택, Sandbox Buyer 계정.
 - `.env.local`: `ATLAS_PAYMENT_PROVIDER=paypal`, Sandbox `PAYPAL_BASE_URL`, `ATLAS_PUBLIC_BASE_URL=http://127.0.0.1:18080`, `ATLAS_PAYMENT_RETURN_PORT=18080`.
 - 승인 callback 준비: `docker compose --env-file .env.local up -d --build --wait application` (host `18080` → container `8080`).
 - `bootRun` 사용 시 `ATLAS_PUBLIC_BASE_URL`을 실제로 열어 둔 app port와 일치.
+
+회원가입/API key가 없는 FX source가 필요하면 `.env.local`에 `ATLAS_EXCHANGE_RATE_PROVIDER=frankfurter`를 명시한다. ECB 일별 USD/KRW 기준환율을 사용하며 source·기준일을 payment snapshot에 저장한다. 7일 초과·유효하지 않은 값은 거부한다. 실시간 PayPal 환율이나 은행 체결률이 아니므로 local/Sandbox용이며 기본 provider는 BOK ECOS다([ADR-0065](docs/02-decisions/adr/ADR-0065-frankfurter-sandbox-fx-provider.md)).
 
 `paypal-sandbox-order-smoke`는 order를 1회 생성. approval URL은 `PAYPAL_SHOW_APPROVAL_URL=true`일 때만 출력되며, 한 번만 사용하는 민감 링크. 로컬 외부 로그·PR에 복사 금지.
 
@@ -203,7 +279,6 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 #### 검증 기록 (2026-11-13)
 
 - KRW 2,000 → PayPal USD 1.50 (BOK 기준환율 1,332.4 KRW/USD, 기준일 2026-11-13).
-- 무가입 FX source는 `.env.local`에 `ATLAS_EXCHANGE_RATE_PROVIDER=frankfurter`를 지정해 선택한다. ECB 일별 USD/KRW 기준환율을 사용하며 source·기준일을 payment snapshot에 저장한다. 7일 초과·유효하지 않은 값은 거부한다. 실시간 PayPal 환율이나 은행 체결률이 아니므로 local/Sandbox용이며 기본 provider는 BOK ECOS다([ADR-0065](docs/02-decisions/adr/ADR-0065-frankfurter-sandbox-fx-provider.md)).
 - Sandbox Buyer 승인·capture 완료. Unknown capture는 PayPal order GET으로 복구; K6 결과 `CAPTURED` · `PAID` · `CLAIMED`.
 - Settlement journal: `PSP_CLEARING` debit / `SELLER_PAYABLE` credit, 각각 KRW 2,000. [Issue #254](https://github.com/Neo1228/ATLAS/issues/254).
 
@@ -230,13 +305,27 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 - Prometheus metric prefix: `atlas.payment.recovery.*` (status별 backlog, stage별 `work_stage`+`status` backlog와 `oldest_due_age_seconds`, operation별 claim/retry/failure/completion, `operation_type`+`work_stage` 처리 duration). `work_stage=APPLY`의 pending count/age가 provider 결과 확정 후 owner 반영까지의 지연을 나타냅니다. `UNKNOWN` 또는 `NEEDS_REVIEW`를 성공/실패로 수동 간주하지 않습니다. 승인 대기 재개는 `atlas.payment.recovery.approval.resumed`로 관측합니다.
 - 자세한 단계·crash window·검증은 [ADR-0046](docs/02-decisions/adr/ADR-0046-order-payment-transactional-outbox.md)에 정리했습니다.
 
-## 만료 sweep 운영
+## 주문 재고 recovery 운영
 
-`RESERVED` 주문과 buyer checkout의 만료 처리는 1초 주기 scheduler가 담당합니다. 한 tick은 후보를 최대 `ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE`(기본 100)건까지만 조회하고, 경과 시간이 `ATLAS_ORDERS_EXPIRY_SWEEP_TIME_BUDGET`(기본 `PT2S`)을 넘으면 남은 후보를 다음 tick으로 넘깁니다. 후보별 개별 transaction·잠금 순서·상태 전이는 기존과 동일합니다.
+분산 inventory feature가 활성화된 환경에서는 예약 workflow, checkout 확정, 환불 재입고를 세 worker가 각각 bounded poll한다. 세 worker는 poll 간격(`atlas.order-inventory-reservation.recovery.poll-interval`, 기본 `PT1S`)과 batch 크기(`recovery.batch-size`, 기본 100)를 공유하며 `ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_POLL_INTERVAL`, `ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_BATCH_SIZE`로 조정한다. 이 값을 worker별로 따로 바꾼 실험이 없어 개별 설정은 두지 않았다. 기능은 기본 비활성화(`ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED=false`)이고, worker만 끄려면 `recovery.worker-enabled=false`(기본 `true`)로 설정한다.
 
-- 만료가 지연되면 해당 주문의 재고 reservation이 계속 점유되어 다른 구매자에게 품절로 보일 수 있으므로, backlog가 지속되면 batch를 키우거나 [ADR-0039](docs/02-decisions/adr/ADR-0039-bounded-expiry-sweep.md)의 후속 검토를 따릅니다.
-- 상한 적용 전후 후보 조회 비용은 [EXP-026](docs/03-experiments/EXP-026-expiry-sweep-bound.md)에 기록했습니다(로컬 합성 데이터, 운영 SLA 아님).
+> 이 섹션의 설정 키는 Spring 규칙대로 환경 변수로 덮어쓸 수 있다. `.`과 `-`를 `_`로 바꾸고 대문자로 쓴다. 예를 들어 `atlas.order-inventory-reservation.recovery.lease-duration`은 `ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_LEASE_DURATION`이 된다. 그래서 `application.yml`에는 비밀값과 배포마다 달라지는 주소만 `${ENV}`로 두고, 나머지는 기본값을 그대로 적었다.
 
-### Admission queue 만료
+- `atlas.order.inventory.recovery.polls{stage,result}`와 `atlas.order.inventory.recovery.duration{stage}`는 stage별 poll 성공·실패와 처리 시간을 나타낸다.
+- `atlas.order.inventory.recovery.oldest_due_age_seconds{stage}`는 reservation/restock의 due 대기 시간을, `atlas.order.inventory.recovery.oldest_pending_age_seconds{stage="checkout-finalization",state}`는 remote reservation checkout의 대기 연령을 나타낸다. 취소 대기는 재시도마다 갱신되는 `updated_at` 대신 최초 `CANCEL_PENDING` 요청 시각을 사용한다.
+- V73 index는 예약 pending bounded poll의 `(state, created_at, checkout_id)` 조회에 쓰인다. V74는 `CANCEL_PENDING` 최초 진입 시각을 `cancellation_requested_at`에 한 번 저장해 재시도로 age가 초기화되지 않게 하고, 기존 행은 `updated_at`으로 근사 backfill한다. `buyer_checkout_cancel_pending_age_idx`는 취소 age query용 sparse partial index다.
+- [EXP-057](docs/03-experiments/EXP-057-checkout-recovery-index.md): 합성 checkout 100,000건(`RESERVATION_PENDING` 100, `CANCEL_PENDING` 50,000, `PAID` 49,900)에서 5회 median 기준으로 예약 조회는 4.174 ms에서 0.049 ms로(78.0~85.2배), 취소 age 조회는 20.163 ms에서 19.114 ms로(5.2~12.5% 감소) 바뀌었다. 같은 호스트에서 두 번 실행한 로컬 관측이며 운영 처리량 보장이나 worker 설정 기준이 아니다.
 
-Admission `WAITING`/`CHECKOUT_ACTIVE` ticket은 1초 poll에서 `(expires_at, ticket_id)` keyset으로 due rows를 이어 읽습니다. `ATLAS_ADMISSION_EXPIRY_SWEEP_BATCH_SIZE`(기본 100, 후보 window 2×)와 `ATLAS_ADMISSION_EXPIRY_SWEEP_TIME_BUDGET`(기본 `PT2S`, 정수초만 허용)으로 batch/work를 제한합니다. Candidate query timeout 후 성공한 page는 deadline이 지나도 첫 pair를 처리/skip해 cursor progress를 보장하며, 이때 pair transaction의 정수초 timeout 때문에 tick은 budget보다 최대 약 1초 더 걸릴 수 있습니다. Query timeout/error는 cursor를 보존해 다음 tick에 재시도하고 WARN은 분당 1회로 제한합니다. Counter가 다른 instance에 잠겨 있으면 `SKIP LOCKED`로 기다리지 않고 cursor를 전진시킵니다. V41 composite index가 first/cursor read를 정렬된 index scan으로 지원합니다. 세부 한계와 측정은 [ADR-0041](docs/02-decisions/adr/ADR-0041-bounded-admission-expiry-sweep.md), [EXP-029](docs/03-experiments/EXP-029-admission-expiry-candidates.md)에 기록했습니다.
+### 예약 NEEDS_REVIEW 운영
+
+보상 재시도를 모두 쓴 예약 workflow(`recovery.max-attempts`, 기본 8회)는 `NEEDS_REVIEW`가 된다. 원격 재고가 `CLAIMED`로 남은 건은 TTL이 풀어 주지 않으므로 아래 gauge로 먼저 본다.
+
+| 지표 | 의미 |
+|---|---|
+| `atlas.order.inventory.needs_review{stage="reservation"}` | 사람이 봐야 하는 workflow 수 |
+| `atlas.order.inventory.needs_review_claimed{stage="reservation"}` | 그중 원격 재고가 `CLAIMED`로 남은 수(자동으로 풀리지 않음) |
+
+내부 API(`X-Atlas-Service-Token` header 필요, 기존 `/api/internal/order-inventory/reservations` 아래):
+
+- `GET /needs-review?limit=50`: 오래된 순으로 조회한다. `limit` 기본값은 50이다.
+- `POST /{workflowId}/release`: 보상을 다시 실행해 원격 예약을 해제한다(`CLAIMED`는 복원). 시도 횟수를 0으로 되돌리고, `NEEDS_REVIEW`가 아니면 현재 상태를 그대로 돌려줘 반복 호출해도 안전하다. 원격 재고를 풀기 때문에 주문을 계속 진행하려는 경우에는 쓰지 않는다.

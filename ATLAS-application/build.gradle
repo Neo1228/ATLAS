@@ -37,3 +37,8 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.security:spring-security-test'
 }
+
+tasks.named('test') {
+    // 로컬 coordinator 시나리오만 이 flag를 export한다. 일반 test suite는 실제 HTTP 연결 설정을 상속하지 않는다.
+    systemProperty 'atlas.order-inventory-reservation.enabled', 'false'
+}

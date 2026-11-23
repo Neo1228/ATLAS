@@ -149,7 +149,8 @@ public class OrderController {
     public OrderReturnResponse requestReturn(@PathVariable String buyerRef, @PathVariable UUID orderId,
             @RequestHeader("Idempotency-Key") String idempotencyKey, @Valid @RequestBody OrderReturnHttpRequest request) {
         OrderReturnRequest command = new OrderReturnRequest(buyerRef, orderId, idempotencyKey,
-                request.items().stream().map(item -> new OrderReturnRequest.Item(item.orderItemId(), item.quantity())).toList());
+                request.items().stream().map(item -> new OrderReturnRequest.Item(
+                        item.orderItemId(), item.quantity(), item.shipmentId())).toList());
         return returns.request(command);
     }
 

@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record OrderShipmentHttpRequest(String carrierCode, String trackingNumber,
-                                       @NotEmpty List<@Valid Item> items) {
+                                       @NotEmpty List<@Valid Item> items, UUID fulfillmentLocationId) {
     public record Item(@NotNull UUID orderItemId, @Positive int quantity) {
     }
 }

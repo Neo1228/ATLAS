@@ -1,51 +1,39 @@
 package com.atlas.application.config;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Instant;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import com.atlas.application.service.CheckoutFinalizationWorker;
+import com.atlas.application.service.LocationReservationWorker;
+import com.atlas.application.service.LocationRestockWorker;
+import com.atlas.application.service.PayPalWebhookRetryWorker;
+
 import org.junit.jupiter.api.Test;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.scheduling.annotation.Scheduled;
 
 class SchedulingConfigurationTest {
     @Test
-    void schedulerRunsOverlappingTasksConcurrently() throws InterruptedException {
-        ThreadPoolTaskScheduler scheduler = new SchedulingConfiguration().taskScheduler();
-        CountDownLatch firstTaskStarted = new CountDownLatch(1);
-        CountDownLatch releaseFirstTask = new CountDownLatch(1);
-        CountDownLatch secondTaskStarted = new CountDownLatch(1);
-        try {
-            scheduler.initialize();
-            assertEquals(4, scheduler.getScheduledThreadPoolExecutor().getCorePoolSize());
-            scheduler.schedule(() -> {
-                firstTaskStarted.countDown();
-                try {
-                    releaseFirstTask.await(5, TimeUnit.SECONDS);
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                }
-            }, Instant.now());
-            assertTrue(firstTaskStarted.await(2, TimeUnit.SECONDS));
+    void longRunningRecoveryQueuesHaveSeparateBoundedSchedulers() throws Exception {
+        SchedulingConfiguration configuration = new SchedulingConfiguration();
+        var expiry = configuration.taskScheduler();
+        var payment = configuration.paymentRecoveryTaskScheduler();
+        var orderInventory = configuration.orderInventoryRecoveryTaskScheduler();
+        var webhook = configuration.paypalWebhookRetryTaskScheduler();
 
-            scheduler.schedule(secondTaskStarted::countDown, Instant.now());
-
-            assertTrue(secondTaskStarted.await(2, TimeUnit.SECONDS));
-        } finally {
-            releaseFirstTask.countDown();
-            scheduler.shutdown();
-        }
-    }
-
-    @Test
-    void paymentRecoverySchedulerHasItsOwnBoundedThread() {
-        ThreadPoolTaskScheduler scheduler = new SchedulingConfiguration().paymentRecoveryTaskScheduler();
-        try {
-            scheduler.initialize();
-            assertEquals(1, scheduler.getScheduledThreadPoolExecutor().getCorePoolSize());
-        } finally {
-            scheduler.shutdown();
-        }
+        assertThat(expiry.getPoolSize()).isEqualTo(4);
+        assertThat(payment.getPoolSize()).isEqualTo(1);
+        assertThat(orderInventory.getPoolSize()).isEqualTo(3);
+        assertThat(webhook.getPoolSize()).isEqualTo(1);
+        assertThat(LocationReservationWorker.class.getMethod("poll")
+                .getAnnotation(Scheduled.class).scheduler()).isEqualTo("orderInventoryRecoveryTaskScheduler");
+        assertThat(CheckoutFinalizationWorker.class.getMethod("poll")
+                .getAnnotation(Scheduled.class).scheduler()).isEqualTo("orderInventoryRecoveryTaskScheduler");
+        assertThat(LocationRestockWorker.class.getMethod("poll")
+                .getAnnotation(Scheduled.class).scheduler()).isEqualTo("orderInventoryRecoveryTaskScheduler");
+        assertThat(PayPalWebhookRetryWorker.class.getMethod("retryDueEvents")
+                .getAnnotation(Scheduled.class).scheduler()).isEqualTo("paypalWebhookRetryTaskScheduler");
+        expiry.shutdown();
+        payment.shutdown();
+        orderInventory.shutdown();
+        webhook.shutdown();
     }
 }

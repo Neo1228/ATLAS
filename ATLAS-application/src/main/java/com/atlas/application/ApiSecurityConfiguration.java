@@ -53,6 +53,8 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
                                 "/api/products/*/reviews", "/api/campaigns/*", "/actuator/health",
                                 "/actuator/health/**", "/actuator/prometheus")
                         .permitAll()
+                        .requestMatchers("/api/internal/order-inventory/**")
+                        .permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> { }))
                 .headers(headers -> headers

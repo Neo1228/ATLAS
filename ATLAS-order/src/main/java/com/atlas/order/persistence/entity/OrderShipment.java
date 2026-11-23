@@ -45,6 +45,8 @@ public class OrderShipment {
     private Instant shippedAt;
     @Column(name = "delivered_at")
     private Instant deliveredAt;
+    @Column(name = "fulfillment_location_id")
+    private UUID fulfillmentLocationId;
     @OneToMany(mappedBy = "shipment", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("orderItem ASC")
     private List<OrderShipmentItem> items = new ArrayList<>();
@@ -59,6 +61,8 @@ public class OrderShipment {
         this.status = OrderShipmentStatus.SHIPPED;
         this.shippedAt = Objects.requireNonNull(shippedAt, "shippedAt");
     }
+    public void assignFulfillmentLocation(UUID fulfillmentLocationId) { this.fulfillmentLocationId = fulfillmentLocationId; }
+    public UUID fulfillmentLocationId() { return fulfillmentLocationId; }
     public void addItem(OrderItem item, int quantity) { items.add(new OrderShipmentItem(this, item, quantity)); }
     public void deliver(Instant now) {
         if (status == OrderShipmentStatus.DELIVERED) return;
