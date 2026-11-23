@@ -6,9 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.atlas.payment.provider.paypal.payouts.PayPalPayoutBatch;
+import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutException;
-import com.atlas.payment.provider.paypal.payouts.PayPalPayoutRequest;
+import com.atlas.payment.dto.request.PayPalPayoutRequest;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsRestClient;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -78,7 +78,7 @@ class PayPalPayoutsRestClientTest {
     @Test
     void createUsesStableIdsUsdCentsAndExpectedPathHeaderAndBody() throws Exception {
         responseBody.set("{\"batch_header\":{\"payout_batch_id\":\"PAYOUT-1\",\"sender_batch_id\":\"batch-stable\",\"batch_status\":\"PENDING\",\"amount\":{\"value\":\"12.34\",\"currency\":\"USD\"}},\"items\":[{\"payout_item\":{\"sender_item_id\":\"item-stable\",\"amount\":{\"value\":\"12.34\",\"currency\":\"USD\"}},\"transaction_status\":\"UNCLAIMED\"}]}");
-        PayPalPayoutBatch result = client.createBatch(new PayPalPayoutRequest(
+        PayPalPayoutBatchResponse result = client.createBatch(new PayPalPayoutRequest(
                 "batch-stable", "item-stable", "request-stable", "payee@example.com", 1234, "USD"));
         JsonNode sent = objectMapper.readTree(receivedBody.get());
         assertThat(receivedPath.get()).isEqualTo("/v1/payments/payouts");
@@ -97,7 +97,7 @@ class PayPalPayoutsRestClientTest {
     @Test
     void getBatchNormalizesFinalSuccessAndDoesNotFollowProviderLinks() {
         responseBody.set("{\"batch_header\":{\"payout_batch_id\":\"PAYOUT-2\",\"sender_batch_id\":\"PAYOUT-2\",\"batch_status\":\"SUCCESS\"},\"items\":[{\"payout_item_id\":\"ITEM-2\",\"payout_item\":{\"sender_item_id\":\"item-2\",\"amount\":{\"value\":\"4.50\",\"currency\":\"USD\"}},\"transaction_status\":\"SUCCESS\",\"payout_item_fee\":{\"value\":\"0.25\",\"currency\":\"USD\"},\"currency_conversion\":{\"from_amount\":{\"value\":\"4.50\",\"currency\":\"USD\"},\"to_amount\":{\"value\":\"6.12\",\"currency\":\"CAD\"},\"exchange_rate\":\"1.36\"}}]}");
-        PayPalPayoutBatch result = client.getBatch("PAYOUT-2");
+        PayPalPayoutBatchResponse result = client.getBatch("PAYOUT-2");
         assertThat(receivedPath.get()).isEqualTo("/v1/payments/payouts/PAYOUT-2");
         assertThat(receivedRequestId.get()).isNull();
         assertThat(result.items().getFirst().isFinalSuccess()).isTrue();
@@ -115,7 +115,7 @@ class PayPalPayoutsRestClientTest {
     void preservesAnEmptyCurrencyConversionObjectAsPresent() {
         responseBody.set("{\"batch_header\":{\"payout_batch_id\":\"PAYOUT-3\",\"sender_batch_id\":\"PAYOUT-3\",\"batch_status\":\"SUCCESS\"},\"items\":[{\"payout_item_id\":\"ITEM-3\",\"payout_item\":{\"sender_item_id\":\"item-3\",\"amount\":{\"value\":\"1.00\",\"currency\":\"USD\"}},\"transaction_status\":\"SUCCESS\",\"currency_conversion\":{}}]}");
 
-        PayPalPayoutBatch result = client.getBatch("PAYOUT-3");
+        PayPalPayoutBatchResponse result = client.getBatch("PAYOUT-3");
 
         assertThat(result.items().getFirst().currencyConversionPresent()).isTrue();
         assertThat(result.items().getFirst().conversionFromAmount()).isNull();
@@ -163,7 +163,7 @@ class PayPalPayoutsRestClientTest {
     @Test
     void missingProviderBatchIdIsNotConfusedWithSenderBatchId() {
         responseBody.set("{\"batch_header\":{\"sender_batch_id\":\"batch-stable\",\"batch_status\":\"PENDING\"}}");
-        PayPalPayoutBatch result = client.createBatch(new PayPalPayoutRequest(
+        PayPalPayoutBatchResponse result = client.createBatch(new PayPalPayoutRequest(
                 "batch-stable", "item-stable", "request-stable", "payee@example.com", 100, "USD"));
         assertThat(result.batchId()).isNull();
         assertThat(result.senderBatchId()).isEqualTo("batch-stable");

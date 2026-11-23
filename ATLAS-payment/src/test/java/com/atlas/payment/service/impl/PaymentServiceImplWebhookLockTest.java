@@ -10,7 +10,7 @@ import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.provider.PaymentWebhookEvent;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
@@ -52,7 +52,7 @@ class PaymentServiceImplWebhookLockTest {
                 transactionManager,
                 mock(PaymentProvider.class),
                 mock(FxConversionService.class), "https://example.test");
-        PaymentWebhookEvent event = new PaymentWebhookEvent("event-1", "PAYMENT.CAPTURE.COMPLETED",
+        PaymentWebhookEventResponse event = new PaymentWebhookEventResponse("event-1", "PAYMENT.CAPTURE.COMPLETED",
                 "provider-capture", "COMPLETED", "provider-order", null, null, null);
         CountDownLatch webhookLockEntered = new CountDownLatch(1);
         CountDownLatch releaseWebhook = new CountDownLatch(1);
@@ -109,7 +109,7 @@ class PaymentServiceImplWebhookLockTest {
                 transactionManager,
                 mock(PaymentProvider.class),
                 mock(FxConversionService.class), "https://example.test");
-        PaymentWebhookEvent event = new PaymentWebhookEvent("event-1", "PAYMENT.CAPTURE.COMPLETED",
+        PaymentWebhookEventResponse event = new PaymentWebhookEventResponse("event-1", "PAYMENT.CAPTURE.COMPLETED",
                 "provider-capture", "COMPLETED", null, null, null, null);
         CountDownLatch webhookLockEntered = new CountDownLatch(1);
         CountDownLatch releaseWebhook = new CountDownLatch(1);
@@ -151,10 +151,10 @@ class PaymentServiceImplWebhookLockTest {
                 mock(PaymentRecoveryRepository.class),
                 mock(PlatformTransactionManager.class), mock(PaymentProvider.class), mock(FxConversionService.class),
                 "https://example.test");
-        PaymentWebhookEvent unmatchedCapture = new PaymentWebhookEvent("event-unmatched",
+        PaymentWebhookEventResponse unmatchedCapture = new PaymentWebhookEventResponse("event-unmatched",
                 "PAYMENT.CAPTURE.COMPLETED", "capture-unmatched", "COMPLETED", "order-unmatched",
                 null, null, null);
-        PaymentWebhookEvent refund = new PaymentWebhookEvent("event-refund", "PAYMENT.CAPTURE.REFUNDED",
+        PaymentWebhookEventResponse refund = new PaymentWebhookEventResponse("event-refund", "PAYMENT.CAPTURE.REFUNDED",
                 "refund-1", "COMPLETED", null, null, null, null);
         Object unmatchedResult = new Object();
         Object refundResult = new Object();

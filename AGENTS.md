@@ -91,7 +91,7 @@ PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환�
 |`*Configuration`|`config`. 보안 필터·인터셉터·암호화는 `security`|
 |`*Request`, `*Response`|`dto.request`, `dto.response`. `*Page`, `*Summary`, enum은 허용. HTTP 바인딩 전용은 `controller.dto`|
 |예외|`exception`|
-|DB에서 읽은 값|`persistence.projection`. 모듈 밖으로 내보낼 때 서비스가 응답 DTO로 변환|
+|DB에서 읽은 값|`persistence.projection`. 저장소 클래스 안에 record를 선언하지 않음. 모듈 밖으로 내보낼 때 서비스가 응답 DTO로 변환|
 
 - 인터페이스와 `*Impl`은 다른 Gradle 모듈이 쓰는 계약에만 사용. 한 모듈 안의 순수 계산은 구체 클래스로 유지. 같은 필드를 복사만 하는 DTO 사본을 만들지 않고 소유 모듈의 응답 DTO를 그대로 사용.
 - `Helper`, `Util`, `Manager`, `Support`, `Common` 같은 뭉뚱그린 이름 금지. 역할을 이름에 드러냄.

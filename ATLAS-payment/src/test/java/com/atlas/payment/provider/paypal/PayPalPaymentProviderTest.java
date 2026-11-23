@@ -12,7 +12,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.PaymentOperation;
-import com.atlas.payment.provider.PaymentRequest;
+import com.atlas.payment.dto.request.PaymentRequest;
 import java.net.ConnectException;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;

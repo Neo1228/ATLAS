@@ -12,7 +12,7 @@ import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.ProductCategoryAssignment;
 import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.persistence.entity.SellerSku;
-import com.atlas.catalog.persistence.projection.ProductChannelAvailability;
+import com.atlas.catalog.persistence.projection.ProductListingRow;
 import com.atlas.catalog.repository.ProductCategoryRepository;
 import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
 import com.atlas.catalog.repository.ProductListingProjectionRepository;
@@ -279,7 +279,7 @@ public class ProductServiceImpl implements ProductService {
         // 목록은 준실시간이면 충분하고, 상세·주문 가능 판정은 원본을 계속 본다.
         Map<UUID, List<ProductSalesChannel>> availableChannelsByProductId = new HashMap<>();
         Map<UUID, List<UUID>> categoryIdsByProductId = new HashMap<>();
-        for (ProductListingProjectionRepository.Row row : listingProjections.findPage(productIds)) {
+        for (ProductListingRow row : listingProjections.findPage(productIds)) {
             // 응답 계약은 enum 선언 순서(ONLINE_STORE, CAMPAIGN)를 따른다.
             // 투영에는 이름순으로 저장되므로, 노출 순서를 enum 순서로 맞춘다.
             availableChannelsByProductId.put(row.productId(),

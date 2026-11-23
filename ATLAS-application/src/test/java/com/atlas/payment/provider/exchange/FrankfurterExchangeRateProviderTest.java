@@ -3,6 +3,7 @@ package com.atlas.payment.provider.exchange;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import com.atlas.payment.exception.PaymentException;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -40,7 +41,7 @@ class FrankfurterExchangeRateProviderTest {
         server.enqueue(json("{\"date\":\"" + LocalDate.now(ZoneOffset.UTC).minusDays(30)
                 + "\",\"rates\":{\"KRW\":1300}}"));
 
-        ExchangeRateQuote quote = provider.latestUsdKrwRate();
+        ExchangeRateQuoteResponse quote = provider.latestUsdKrwRate();
 
         assertThat(quote.wonPerUsd()).isEqualByComparingTo(new BigDecimal("1328.45"));
         assertThat(quote.asOfDate()).isEqualTo(fresh);

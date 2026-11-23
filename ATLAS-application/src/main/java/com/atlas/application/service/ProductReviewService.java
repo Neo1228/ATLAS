@@ -2,6 +2,8 @@ package com.atlas.application.service;
 
 import com.atlas.application.dto.response.ProductReviewPage;
 import com.atlas.application.dto.response.ProductReviewResponse;
+import com.atlas.application.persistence.projection.ProductReview;
+import com.atlas.application.persistence.projection.ReviewSummary;
 import com.atlas.application.repository.ProductReviewRepository;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
@@ -65,8 +67,8 @@ public class ProductReviewService {
         if (offset < 0 || offset > MAX_PAGE_OFFSET) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be between 0 and 10000");
         }
-        ProductReviewRepository.ReviewSummary summary = reviews.summary(productId);
-        List<ProductReviewRepository.Review> fetched = reviews.list(productId, limit + 1, offset);
+        ReviewSummary summary = reviews.summary(productId);
+        List<ProductReview> fetched = reviews.list(productId, limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
         List<ProductReviewResponse> items = fetched.stream().limit(limit)
                 .map(ProductReviewService::toResponse).toList();
@@ -74,7 +76,7 @@ public class ProductReviewService {
                 hasMore);
     }
 
-    private static ProductReviewResponse toResponse(ProductReviewRepository.Review review) {
+    private static ProductReviewResponse toResponse(ProductReview review) {
         return new ProductReviewResponse(review.reviewId(), review.rating(), review.body(), review.createdAt());
     }
 

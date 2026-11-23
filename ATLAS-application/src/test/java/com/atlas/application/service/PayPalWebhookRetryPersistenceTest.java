@@ -10,14 +10,15 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.application.persistence.projection.WebhookRetryEvent;
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.service.PaymentService;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ class PayPalWebhookRetryPersistenceTest {
     private final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
     private final PaymentService payments = mock(PaymentService.class);
     private final PayPalWebhookRetryRepository retries = mock(PayPalWebhookRetryRepository.class);
-    private final PaymentWebhookEvent event = new PaymentWebhookEvent(
+    private final PaymentWebhookEventResponse event = new PaymentWebhookEventResponse(
             "event-retry", "PAYMENT.CAPTURE.COMPLETED", "capture-1", "COMPLETED",
             "provider-order-1", null, null, "USD");
 
@@ -47,7 +48,7 @@ class PayPalWebhookRetryPersistenceTest {
     @Test
     void persistsRetryableVerifiedEventBeforeReturningSuccess() {
         service().handle(signature(), "body");
-        verify(retries).enqueue(event);
+        verify(retries).enqueue(retryEvent(event));
     }
 
     @Test
@@ -64,12 +65,17 @@ class PayPalWebhookRetryPersistenceTest {
     @Test
     void persistenceFailurePropagatesSoWebhookIsNotAcknowledged() {
         doThrow(new IllegalStateException("database unavailable"))
-                .when(retries).enqueue(event);
+                .when(retries).enqueue(retryEvent(event));
         assertThatThrownBy(() -> service().handle(signature(), "body"))
                 .isInstanceOf(IllegalStateException.class);
     }
 
-    private static PaymentWebhookSignature signature() {
-        return new PaymentWebhookSignature("alg", "cert", "transmission", "signature", "time");
+    private static PaymentWebhookSignatureRequest signature() {
+        return new PaymentWebhookSignatureRequest("alg", "cert", "transmission", "signature", "time");
+    }
+
+    private static WebhookRetryEvent retryEvent(PaymentWebhookEventResponse e) {
+        return new WebhookRetryEvent(e.eventId(), e.eventType(), e.resourceId(), e.resourceStatus(),
+                e.providerOrderId(), e.relatedCaptureId(), e.resourceAmount(), e.resourceCurrency());
     }
 }

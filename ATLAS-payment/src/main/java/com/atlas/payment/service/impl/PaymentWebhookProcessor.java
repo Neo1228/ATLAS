@@ -9,8 +9,8 @@ import com.atlas.payment.persistence.state.PaymentPhase;
 import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.persistence.state.PaymentState;
 import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
@@ -48,14 +48,14 @@ final class PaymentWebhookProcessor {
         this.psp = Objects.requireNonNull(psp);
     }
 
-    PaymentWebhookEvent verifyPayPalWebhook(PaymentWebhookSignature signature, String rawBody) {
+    PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
         if (signature == null || rawBody == null || rawBody.isBlank()) {
             throw invalidRequest("PayPal webhook signature and body are required");
         }
         return psp.verifyWebhook(signature, rawBody);
     }
 
-    <T> T withPayPalWebhookOwnerLock(PaymentWebhookEvent event, Supplier<T> action) {
+    <T> T withPayPalWebhookOwnerLock(PaymentWebhookEventResponse event, Supplier<T> action) {
         Objects.requireNonNull(event);
         Objects.requireNonNull(action);
         if (!"PAYMENT.CAPTURE.COMPLETED".equals(event.eventType())) {
@@ -74,7 +74,7 @@ final class PaymentWebhookProcessor {
         return withOwnerLock(ownerId, action);
     }
 
-    PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEvent event) {
+    PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEventResponse event) {
         if (event == null) throw invalidRequest("Verified PayPal webhook event is required");
         Instant now = Instant.now();
         return Objects.requireNonNull(transactions.execute(status -> {
@@ -101,7 +101,7 @@ final class PaymentWebhookProcessor {
                         && !event.resourceId().equals(current.getProviderCaptureId()))) {
                     return rejectedWebhook(event, now);
                 }
-                if (!webhookEvents.insertReceived(event, now)) {
+                if (!webhookEvents.insertReceived(event.eventId(), event.eventType(), event.resourceId(), now)) {
                     // 캡처 이벤트가 이미 commit된 경우에도 이전 주문 조정 실패 후 재시도 필요
                     return new PaymentWebhookResponse(true, true, null, null, current.getAttemptId(), true);
                 }
@@ -140,7 +140,7 @@ final class PaymentWebhookProcessor {
                         && !current.captureId().equals(event.relatedCaptureId()))) {
                     return rejectedWebhook(event, now);
                 }
-                if (!webhookEvents.insertReceived(event, now)) {
+                if (!webhookEvents.insertReceived(event.eventId(), event.eventType(), event.resourceId(), now)) {
                     return new PaymentWebhookResponse(true, true, null, null, null, false);
                 }
                 refunds.updateResult(current.refundOperationId(), refundState, event.resourceId(),
@@ -153,7 +153,7 @@ final class PaymentWebhookProcessor {
                         refundState, null, false);
             }
 
-            if (!webhookEvents.insertReceived(event, now)) {
+            if (!webhookEvents.insertReceived(event.eventId(), event.eventType(), event.resourceId(), now)) {
                 return new PaymentWebhookResponse(true, true, null, null, null, false);
             }
             webhookEvents.markProcessed(event.eventId(), now);
@@ -161,8 +161,8 @@ final class PaymentWebhookProcessor {
         }));
     }
 
-    private PaymentWebhookResponse rejectedWebhook(PaymentWebhookEvent event, Instant now) {
-        if (!webhookEvents.insertReceived(event, now)) {
+    private PaymentWebhookResponse rejectedWebhook(PaymentWebhookEventResponse event, Instant now) {
+        if (!webhookEvents.insertReceived(event.eventId(), event.eventType(), event.resourceId(), now)) {
             return new PaymentWebhookResponse(true, true, null, null, null, false);
         }
         webhookEvents.markFailed(event.eventId(), now);

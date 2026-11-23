@@ -10,10 +10,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.application.persistence.projection.PayoutDispatchPlan;
 import com.atlas.application.repository.payout.PayoutDispatchRepository;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
-import com.atlas.payment.provider.exchange.ExchangeRateQuote;
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
@@ -52,7 +53,7 @@ class PayoutDispatchApprovalServiceTest {
         when(dispatches.find(payoutId)).thenReturn(Optional.empty());
         when(payouts.find(payoutId)).thenReturn(requested);
         when(profiles.requireActiveRecipient(sellerId)).thenReturn(recipient);
-        when(exchangeRates.latestUsdKrwRate()).thenReturn(new ExchangeRateQuote(
+        when(exchangeRates.latestUsdKrwRate()).thenReturn(new ExchangeRateQuoteResponse(
                 new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-11-21")));
         SellerPayoutResponse approved = new SellerPayoutResponse(payoutId, sellerId, requestedAt,
                 requestedAt.plusSeconds(60), 10_000, 0, SettlementPayoutStatus.APPROVED,
@@ -88,7 +89,7 @@ class PayoutDispatchApprovalServiceTest {
                 now.plusSeconds(60), 1, 0, SettlementPayoutStatus.REQUESTED, now, null, null, null));
         when(profiles.requireActiveRecipient(sellerId)).thenReturn(new SellerPayoutProfileService.ActiveRecipient(
                 sellerId, UUID.randomUUID(), 1, "US", "USD", "seller@example.test"));
-        when(exchangeRates.latestUsdKrwRate()).thenReturn(new ExchangeRateQuote(
+        when(exchangeRates.latestUsdKrwRate()).thenReturn(new ExchangeRateQuoteResponse(
                 new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-11-21")));
 
         assertThatThrownBy(() -> service.approve(payoutId, "approval-2", "operator-1", "manual small amount"))

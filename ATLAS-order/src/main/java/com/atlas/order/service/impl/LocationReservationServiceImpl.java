@@ -1,19 +1,22 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.order.dto.request.LocationReservationItemRequest;
 import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
 import com.atlas.order.dto.request.LocationReservationRequest;
+import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.dto.response.LocationReservationResponse.LocationResult;
 import com.atlas.order.dto.response.LocationReservationResponse;
+import com.atlas.order.dto.response.RemoteReservationResponse;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.LocationReservationState;
 import com.atlas.order.persistence.state.LocationReservationWorkflowState;
-import com.atlas.order.repository.LocationReservationRepository.ItemRecord;
-import com.atlas.order.repository.LocationReservationRepository.LocationPlan;
-import com.atlas.order.repository.LocationReservationRepository.LocationSnapshot;
-import com.atlas.order.repository.LocationReservationRepository.WorkLease;
-import com.atlas.order.repository.LocationReservationRepository.WorkflowSnapshot;
+import com.atlas.order.persistence.projection.WorkflowItemRecord;
+import com.atlas.order.persistence.projection.WorkflowLocationPlan;
+import com.atlas.order.persistence.projection.WorkflowLocationSnapshot;
+import com.atlas.order.persistence.projection.WorkflowLease;
+import com.atlas.order.persistence.projection.WorkflowSnapshot;
 import com.atlas.order.repository.LocationReservationRepository;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.LocationReservationService.ClaimOutcome;
@@ -96,13 +99,13 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             Instant now = clock.instant();
             Instant leaseUntil = now.plus(leaseDuration);
             UUID leaseToken = repository.claimWorkflow(workflow.workflowId(), now, leaseUntil);
-            WorkLease lease = leaseToken == null ? null
-                    : new WorkLease(workflow.workflowId(), leaseToken, leaseUntil);
+            WorkflowLease lease = leaseToken == null ? null
+                    : new WorkflowLease(workflow.workflowId(), leaseToken, leaseUntil);
             return new SubmissionAttempt(workflow, lease, replayed);
         });
         WorkflowSnapshot workflow = attempt.workflow();
         if (terminal(workflow.state())) return response(workflow, true);
-        WorkLease lease = attempt.lease();
+        WorkflowLease lease = attempt.lease();
         if (lease == null) return response(repository.findByWorkflowId(workflow.workflowId()), true);
         process(lease);
         return response(repository.findByWorkflowId(workflow.workflowId()), attempt.replayed());
@@ -112,7 +115,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             LocationReservationRequest request) {
         validateIdempotencyKey(idempotencyKey);
         if (request == null || request.orderId() == null) throw invalid("Order id is required");
-        List<LocationPlan> plans = normalize(request.allocations());
+        List<WorkflowLocationPlan> plans = normalize(request.allocations());
         if (plans.isEmpty()) throw invalid("At least one fulfillment location is required");
 
         WorkflowSnapshot workflow = repository.save(
@@ -136,8 +139,8 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         if (stockAdmission == null || idempotencyKey == null || request == null || request.allocations() == null) {
             return;
         }
-        List<StockAdmissionService.Claim> claims = request.allocations().stream()
-                .flatMap(allocation -> allocation.items().stream().map(item -> new StockAdmissionService.Claim(
+        List<StockClaimRequest> claims = request.allocations().stream()
+                .flatMap(allocation -> allocation.items().stream().map(item -> new StockClaimRequest(
                         allocation.fulfillmentLocationId(), item.sellerId(), item.skuId(), item.quantity())))
                 .toList();
         if (!claims.isEmpty() && !stockAdmission.admit(idempotencyKey, claims)) {
@@ -163,7 +166,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         Instant now = clock.instant();
         Instant leaseUntil = now.plus(leaseDuration);
         UUID leaseToken = repository.claimWorkflowForRetry(workflowId, now, leaseUntil);
-        if (leaseToken != null) process(new WorkLease(workflowId, leaseToken, leaseUntil));
+        if (leaseToken != null) process(new WorkflowLease(workflowId, leaseToken, leaseUntil));
         return response(repository.findByWorkflowId(workflowId), true);
     }
 
@@ -181,7 +184,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         Instant now = clock.instant();
         if (repository.requeueNeedsReviewForCompensation(workflowId, now)) {
             UUID leaseToken = repository.claimWorkflowForRetry(workflowId, now, now.plus(leaseDuration));
-            if (leaseToken != null) process(new WorkLease(workflowId, leaseToken, now.plus(leaseDuration)));
+            if (leaseToken != null) process(new WorkflowLease(workflowId, leaseToken, now.plus(leaseDuration)));
         }
         return response(repository.findByWorkflowId(workflowId), true);
     }
@@ -203,7 +206,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         repository.requestCancellation(workflowId, now);
         Instant leaseUntil = now.plus(leaseDuration);
         UUID leaseToken = repository.claimWorkflow(workflowId, now, leaseUntil);
-        if (leaseToken != null) process(new WorkLease(workflowId, leaseToken, leaseUntil));
+        if (leaseToken != null) process(new WorkflowLease(workflowId, leaseToken, leaseUntil));
         return response(repository.findByWorkflowId(workflowId), true);
     }
 
@@ -221,13 +224,13 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         Instant leaseUntil = now.plus(leaseDuration);
         UUID leaseToken = repository.leaseForClaim(workflowId, now, leaseUntil);
         if (leaseToken == null) return ClaimOutcome.PENDING;
-        WorkLease lease = new WorkLease(workflowId, leaseToken, leaseUntil);
-        for (LocationSnapshot location : workflow.locations()) {
+        WorkflowLease lease = new WorkflowLease(workflowId, leaseToken, leaseUntil);
+        for (WorkflowLocationSnapshot location : workflow.locations()) {
             if (location.state().equals(LocationReservationState.CLAIMED.name())) continue;
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return ClaimOutcome.PENDING;
             try {
-                LocationClient.RemoteReservation claimed =
+                RemoteReservationResponse claimed =
                         inventory.claim(location.fulfillmentLocationId(), location.reservationId());
                 if (!"CLAIMED".equals(claimed.status())) {
                     finish(workflow, lease.leaseToken(), LocationReservationWorkflowState.RESERVED,
@@ -248,7 +251,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         return ClaimOutcome.CLAIMED;
     }
 
-    private record SubmissionAttempt(WorkflowSnapshot workflow, WorkLease lease, boolean replayed) {}
+    private record SubmissionAttempt(WorkflowSnapshot workflow, WorkflowLease lease, boolean replayed) {}
     private record LocationTransition(
             UUID fulfillmentLocationId,
             LocationReservationState state,
@@ -273,7 +276,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         int processed = 0;
         while (processed < batchSize) {
             Instant now = clock.instant();
-            WorkLease lease = repository.claimNextDue(dueThrough, now, now.plus(leaseDuration));
+            WorkflowLease lease = repository.claimNextDue(dueThrough, now, now.plus(leaseDuration));
             if (lease == null) break;
             process(lease);
             processed++;
@@ -281,15 +284,15 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         return processed;
     }
 
-    private WorkLease renewLeaseIfNeeded(WorkLease lease) {
+    private WorkflowLease renewLeaseIfNeeded(WorkflowLease lease) {
         Instant now = clock.instant();
         if (lease.leaseUntil().isAfter(now.plus(leaseRenewalThreshold))) return lease;
         Instant leaseUntil = now.plus(leaseDuration);
         return repository.renewLease(lease.workflowId(), lease.leaseToken(), now, leaseUntil)
-                ? new WorkLease(lease.workflowId(), lease.leaseToken(), leaseUntil) : null;
+                ? new WorkflowLease(lease.workflowId(), lease.leaseToken(), leaseUntil) : null;
     }
 
-    private void process(WorkLease lease) {
+    private void process(WorkflowLease lease) {
         WorkflowSnapshot workflow = repository.findByWorkflowId(lease.workflowId());
         if (workflow == null) return;
         if (workflow.state().equals(LocationReservationWorkflowState.COMPENSATING.name())
@@ -315,7 +318,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             return;
         }
 
-        for (LocationSnapshot location : workflow.locations()) {
+        for (WorkflowLocationSnapshot location : workflow.locations()) {
             if (location.state().equals(LocationReservationState.RESERVED.name())) {
                 if (reservationUsable(location, clock.instant())) continue;
                 repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
@@ -332,9 +335,9 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return;
             try {
-                LocationClient.RemoteReservation reserved = inventory.reserve(
+                RemoteReservationResponse reserved = inventory.reserve(
                         location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey(),
-                        location.items().stream().map(item -> new LocationClient.ReservationItem(
+                        location.items().stream().map(item -> new LocationReservationItemRequest(
                                 item.sellerId(), item.skuId(), item.quantity())).toList());
                 if (!"RESERVED".equals(reserved.status())) {
                     boolean terminal = "EXPIRED".equals(reserved.status()) || "RELEASED".equals(reserved.status())
@@ -373,7 +376,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             }
         }
         WorkflowSnapshot current = repository.findByWorkflowId(workflow.workflowId());
-        for (LocationSnapshot location : current.locations()) {
+        for (WorkflowLocationSnapshot location : current.locations()) {
             if (location.state().equals(LocationReservationState.RESERVED.name())
                     && !reservationUsable(location, clock.instant())) {
                 repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
@@ -385,15 +388,15 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         }
         finish(current, lease.leaseToken(), LocationReservationWorkflowState.RESERVED, null, clock.instant());
     }
-    private void processPendingWorkflow(WorkflowSnapshot workflow, WorkLease lease) {
+    private void processPendingWorkflow(WorkflowSnapshot workflow, WorkflowLease lease) {
         List<LocationTransition> transitions = new ArrayList<>(workflow.locations().size());
-        for (LocationSnapshot location : workflow.locations()) {
+        for (WorkflowLocationSnapshot location : workflow.locations()) {
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return;
             try {
-                LocationClient.RemoteReservation reserved = inventory.reserve(
+                RemoteReservationResponse reserved = inventory.reserve(
                         location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey(),
-                        location.items().stream().map(item -> new LocationClient.ReservationItem(
+                        location.items().stream().map(item -> new LocationReservationItemRequest(
                                 item.sellerId(), item.skuId(), item.quantity())).toList());
                 if (!"RESERVED".equals(reserved.status())) {
                     boolean definitive = "EXPIRED".equals(reserved.status()) || "RELEASED".equals(reserved.status())
@@ -463,7 +466,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 LocationReservationWorkflowState.RESERVED, null, now, true);
     }
 
-    private void compensateAfterBatch(WorkflowSnapshot workflow, WorkLease lease,
+    private void compensateAfterBatch(WorkflowSnapshot workflow, WorkflowLease lease,
             List<LocationTransition> transitions, String errorCode) {
         Instant now = clock.instant();
         if (!persistLocationTransitions(workflow, lease, transitions,
@@ -471,7 +474,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         compensate(repository.findByWorkflowId(workflow.workflowId()), lease);
     }
 
-    private boolean persistLocationTransitions(WorkflowSnapshot workflow, WorkLease lease,
+    private boolean persistLocationTransitions(WorkflowSnapshot workflow, WorkflowLease lease,
             List<LocationTransition> transitions, LocationReservationWorkflowState state,
             String errorCode, Instant nextAttemptAt, boolean finishLease) {
         Instant now = clock.instant();
@@ -501,16 +504,16 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         }
         return done;
     }
-    private void startCompensation(WorkflowSnapshot workflow, WorkLease lease, String errorCode) {
+    private void startCompensation(WorkflowSnapshot workflow, WorkflowLease lease, String errorCode) {
         Instant now = clock.instant();
         if (!repository.updateWorkflowInFlight(workflow.workflowId(), lease.leaseToken(),
                 LocationReservationWorkflowState.COMPENSATING, errorCode, now, now)) return;
         compensate(repository.findByWorkflowId(workflow.workflowId()), lease);
     }
 
-    private void compensate(WorkflowSnapshot workflow, WorkLease lease) {
+    private void compensate(WorkflowSnapshot workflow, WorkflowLease lease) {
         if (workflow == null) return;
-        for (LocationSnapshot location : workflow.locations()) {
+        for (WorkflowLocationSnapshot location : workflow.locations()) {
             if (location.state().equals(LocationReservationState.FAILED.name())
                     || location.state().equals(LocationReservationState.RELEASED.name())) continue;
             lease = renewLeaseIfNeeded(lease);
@@ -547,7 +550,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
      * 되돌린다. 매입 전이라 판매가 확정되지 않았다는 점은 CLAIMED 위치의 보상과 같다. restore 역시 CLAIMED가
      * 아니면 거부하므로 그 외 상태는 여전히 NEEDS_REVIEW로 드러난다.
      */
-    private void cancelOrRestoreClaimed(WorkflowSnapshot workflow, LocationSnapshot location) {
+    private void cancelOrRestoreClaimed(WorkflowSnapshot workflow, WorkflowLocationSnapshot location) {
         try {
             inventory.cancel(location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey());
         } catch (LocationClientException exception) {
@@ -559,7 +562,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         }
     }
 
-    private void retry(WorkflowSnapshot workflow, LocationSnapshot location, UUID leaseToken, String errorCode) {
+    private void retry(WorkflowSnapshot workflow, WorkflowLocationSnapshot location, UUID leaseToken, String errorCode) {
         Instant now = clock.instant();
         if (workflow.attemptCount() >= maxAttempts) {
             repository.updateLocation(workflow.workflowId(), leaseToken, location.fulfillmentLocationId(),
@@ -575,7 +578,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         finish(workflow, leaseToken, LocationReservationWorkflowState.RETRY_PENDING, errorCode, retryAt);
     }
 
-    private void retryCompensation(WorkflowSnapshot workflow, LocationSnapshot location,
+    private void retryCompensation(WorkflowSnapshot workflow, WorkflowLocationSnapshot location,
             UUID leaseToken, String errorCode) {
         Instant now = clock.instant();
         repository.updateLocation(workflow.workflowId(), leaseToken, location.fulfillmentLocationId(),
@@ -629,7 +632,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         }
     }
 
-    private boolean reservationUsable(LocationSnapshot location, Instant now) {
+    private boolean reservationUsable(WorkflowLocationSnapshot location, Instant now) {
         return reservationUsable(location.remoteExpiresAt(), now);
     }
 
@@ -647,7 +650,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         return delay.plusMillis(jitterMillis);
     }
 
-    private List<LocationPlan> normalize(List<LocationAllocation> allocations) {
+    private List<WorkflowLocationPlan> normalize(List<LocationAllocation> allocations) {
         if (allocations == null || allocations.isEmpty()) {
             throw invalid("At least one fulfillment location is required");
         }
@@ -671,19 +674,19 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 }
             }
         }
-        List<LocationPlan> plans = new ArrayList<>(grouped.size());
+        List<WorkflowLocationPlan> plans = new ArrayList<>(grouped.size());
         grouped.forEach((locationId, sellerItems) -> {
-            List<ItemRecord> items = new ArrayList<>();
+            List<WorkflowItemRecord> items = new ArrayList<>();
             sellerItems.forEach((sellerId, skuItems) -> skuItems.forEach((skuId, quantity) ->
-                    items.add(new ItemRecord(sellerId, skuId, quantity))));
-            plans.add(new LocationPlan(locationId, List.copyOf(items)));
+                    items.add(new WorkflowItemRecord(sellerId, skuId, quantity))));
+            plans.add(new WorkflowLocationPlan(locationId, List.copyOf(items)));
         });
         return List.copyOf(plans);
     }
-    private boolean samePlans(WorkflowSnapshot workflow, List<LocationPlan> plans) {
+    private boolean samePlans(WorkflowSnapshot workflow, List<WorkflowLocationPlan> plans) {
         if (workflow.locations().size() != plans.size()) return false;
-        List<LocationPlan> existing = workflow.locations().stream()
-                .map(location -> new LocationPlan(location.fulfillmentLocationId(), location.items()))
+        List<WorkflowLocationPlan> existing = workflow.locations().stream()
+                .map(location -> new WorkflowLocationPlan(location.fulfillmentLocationId(), location.items()))
                 .toList();
         return existing.equals(plans);
     }

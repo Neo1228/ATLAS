@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Isolation;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.repository.SettlementPayoutRepository;
 import com.atlas.settlement.repository.SettlementRefundReservationRepository;
-import com.atlas.settlement.repository.SettlementRefundReservationRepository.RefundReservation;
+import com.atlas.settlement.persistence.projection.RefundReservation;
 import com.atlas.settlement.service.SettlementPolicy;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;

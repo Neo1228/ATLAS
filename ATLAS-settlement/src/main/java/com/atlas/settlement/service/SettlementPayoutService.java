@@ -1,5 +1,7 @@
 package com.atlas.settlement.service;
 
+import com.atlas.settlement.dto.response.PayoutRiskSnapshotResponse;
+import com.atlas.settlement.dto.response.PayoutSummaryResponse;
 import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
@@ -334,23 +336,23 @@ public class SettlementPayoutService {
     }
 
     /** 아직 확정되지 않은 지급과 이미 확정된 지급을 함께 돌려준다. */
-    public PayoutSummary summary(UUID sellerId) {
+    public PayoutSummaryResponse summary(UUID sellerId) {
         SellerBalance balance = balance(sellerId);
         long pendingPayout = payouts.pendingAmount(sellerId);
         long pendingRefund = refundReservations.pendingAmount(sellerId);
         BigInteger available = balance.payableAmountWon()
                 .subtract(BigInteger.valueOf(pendingPayout).add(BigInteger.valueOf(pendingRefund)))
                 .max(BigInteger.ZERO);
-        return new PayoutSummary(balance.payableAmountWon().longValueExact(), available.longValueExact(),
+        return new PayoutSummaryResponse(balance.payableAmountWon().longValueExact(), available.longValueExact(),
                 balance.reserveAmountWon().longValueExact(), balance.feeAmountWon().longValueExact(),
                 pendingPayout, pendingRefund, payouts.confirmedAmount(sellerId));
     }
 
     /** Global risk view for refund holds and Seller credit exposure after an in-flight payout. */
-    public PayoutRiskSnapshot riskSnapshot() {
+    public PayoutRiskSnapshotResponse riskSnapshot() {
         var exposure = payouts.negativePayableExposure();
         var refunds = refundReservations.metricsSnapshot();
-        return new PayoutRiskSnapshot(exposure.sellerCount(), exposure.exposureAmountWon(),
+        return new PayoutRiskSnapshotResponse(exposure.sellerCount(), exposure.exposureAmountWon(),
                 refunds.reservationCount(), refunds.amountWon());
     }
 
@@ -461,17 +463,6 @@ public class SettlementPayoutService {
         }
         return prior;
     }
-
-    /** 판매자 지급 현황. 금액 의미를 응답에서 바로 읽을 수 있게 나눈다. */
-    public record PayoutSummary(long payableAmountWon, long availablePayoutAmountWon,
-            long reserveAmountWon, long feeAmountWon, long pendingPayoutAmountWon,
-            long pendingRefundAmountWon, long confirmedPayoutAmountWon) {
-    }
-
-    public record PayoutRiskSnapshot(long negativePayableSellerCount, long negativePayableAmountWon,
-            long pendingRefundReservationCount, long pendingRefundReservationAmountWon) {
-    }
-
 
     private static void validateFailureCode(String failureCode) {
         if (failureCode == null || !failureCode.matches("[A-Za-z0-9_-]{1,64}")) {

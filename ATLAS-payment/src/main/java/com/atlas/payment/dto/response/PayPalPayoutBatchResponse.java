@@ -1,9 +1,9 @@
-package com.atlas.payment.provider.paypal.payouts;
+package com.atlas.payment.dto.response;
 
 import java.math.BigDecimal;
 import java.util.List;
 
-public record PayPalPayoutBatch(
+public record PayPalPayoutBatchResponse(
         String batchId,
         String senderBatchId,
         String batchStatus,
@@ -12,7 +12,7 @@ public record PayPalPayoutBatch(
         BigDecimal fees,
         String feeCurrency,
         List<Item> items) {
-    public PayPalPayoutBatch { items = items == null ? List.of() : List.copyOf(items); }
+    public PayPalPayoutBatchResponse { items = items == null ? List.of() : List.copyOf(items); }
 
     public record Item(
             String itemId,

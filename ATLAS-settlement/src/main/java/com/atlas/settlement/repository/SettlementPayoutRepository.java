@@ -1,5 +1,6 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.persistence.projection.NegativePayableExposure;
 import com.atlas.settlement.persistence.projection.SettlementPayoutRow;
 import com.atlas.settlement.persistence.state.SettlementPayoutState;
 import java.sql.ResultSet;
@@ -233,6 +234,4 @@ public class SettlementPayoutRepository {
                 confirmedAt == null ? null : confirmedAt.toInstant(),
                 cancelledAt == null ? null : cancelledAt.toInstant());
     }
-
-    public record NegativePayableExposure(long sellerCount, long exposureAmountWon) { }
 }

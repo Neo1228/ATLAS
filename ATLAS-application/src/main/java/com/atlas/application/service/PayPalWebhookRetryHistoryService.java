@@ -3,6 +3,7 @@ package com.atlas.application.service;
 import com.atlas.application.dto.response.PayPalWebhookPendingRetryPage;
 import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
 import com.atlas.application.dto.response.PayPalWebhookRetrySummary;
+import com.atlas.application.persistence.projection.RetrySummary;
 import com.atlas.application.repository.PayPalWebhookRetryHistoryRepository;
 import java.util.List;
 import java.util.Objects;
@@ -23,7 +24,7 @@ public class PayPalWebhookRetryHistoryService {
 
     /** 최근 24시간 재시도 outcome 요약. */
     public PayPalWebhookRetrySummary summary() {
-        PayPalWebhookRetryHistoryRepository.RetrySummary summary = retries.summary();
+        RetrySummary summary = retries.summary();
         return new PayPalWebhookRetrySummary(summary.pending(), summary.exhausted(), summary.oldestPendingSince(),
                 summary.oldestExhaustedSince(), summary.expiredLeaseCount(), summary.last24HoursOutcomeCounts());
     }

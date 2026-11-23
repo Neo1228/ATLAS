@@ -1,4 +1,4 @@
-package com.atlas.payment.provider;
+package com.atlas.payment.dto.request;
 
 public record PaymentRefundRequest(String captureId, long providerAmountMinor, String providerCurrency,
         String requestId) {

@@ -1,11 +1,11 @@
 package com.atlas.application.repository.payout;
 
-import com.atlas.application.service.payout.PayoutDispatchPlan;
-import com.atlas.application.service.payout.PayoutDispatchRecord;
+import com.atlas.application.persistence.projection.PayoutDispatchMetrics;
+import com.atlas.application.persistence.projection.PayoutDispatchPlan;
+import com.atlas.application.persistence.projection.PayoutDispatchRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -68,7 +68,6 @@ public class PayoutDispatchRepository {
                 """, (rs, row) -> map(rs), limit, leaseDuration.toMillis());
     }
 
-
     @Transactional
     public boolean reschedule(PayoutDispatchRecord r, Duration delay, String safeCode, String resultingStatus) {
         if (!List.of("PENDING", "WAITING_PROVIDER", "NEEDS_REVIEW").contains(resultingStatus))
@@ -130,7 +129,6 @@ public class PayoutDispatchRepository {
                 safeCode, payoutId) == 1;
     }
 
-
     @Transactional
     public boolean recordProviderEvidence(PayoutDispatchRecord r, String batchId, String batchStatus,
                                           String itemId, String itemStatus, Long feeMinor,
@@ -144,7 +142,7 @@ public class PayoutDispatchRepository {
                 r.payoutId(), r.leaseToken()) == 1;
     }
 
-    public MetricsSnapshot metricsSnapshot() {
+    public PayoutDispatchMetrics metricsSnapshot() {
         return jdbc.queryForObject("""
                 SELECT count(*) FILTER (WHERE status IN ('PENDING','WAITING_PROVIDER')) backlog,
                   count(*) FILTER (WHERE status='LEASED') leased,
@@ -155,7 +153,7 @@ public class PayoutDispatchRepository {
                     now() - MIN(first_enqueued_at) FILTER (
                       WHERE status IN ('PENDING','WAITING_PROVIDER','LEASED')))), 0) oldest_age_seconds
                 FROM settlement_payout_dispatch_outbox
-                """, (rs, n) -> new MetricsSnapshot(rs.getLong("backlog"), rs.getLong("leased"),
+                """, (rs, n) -> new PayoutDispatchMetrics(rs.getLong("backlog"), rs.getLong("leased"),
                 rs.getLong("needs_review"), rs.getLong("completed"), rs.getLong("failed"),
                 rs.getDouble("oldest_age_seconds")));
     }
@@ -185,7 +183,4 @@ public class PayoutDispatchRepository {
                 rs.getString("last_error_code"), rs.getObject("lease_token", UUID.class),
                 rs.getTimestamp("lease_until") == null ? null : rs.getTimestamp("lease_until").toInstant());
     }
-
-    public record MetricsSnapshot(long backlog, long leased, long needsReview, long completed,
-            long failed, double oldestAgeSeconds) { }
 }

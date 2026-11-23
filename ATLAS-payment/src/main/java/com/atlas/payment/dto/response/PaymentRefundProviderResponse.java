@@ -1,13 +1,13 @@
-package com.atlas.payment.provider;
+package com.atlas.payment.dto.response;
 
 import java.math.BigDecimal;
 
-public record PaymentRefundProviderResult(
+public record PaymentRefundProviderResponse(
         Outcome outcome, String refundId, String providerStatus, BigDecimal amount, String currency) {
-    public PaymentRefundProviderResult(Outcome outcome, String refundId, String providerStatus) {
+    public PaymentRefundProviderResponse(Outcome outcome, String refundId, String providerStatus) {
         this(outcome, refundId, providerStatus, null, null);
     }
-    public PaymentRefundProviderResult {
+    public PaymentRefundProviderResponse {
         if (outcome == null) throw new IllegalArgumentException("Refund outcome is required");
     }
 

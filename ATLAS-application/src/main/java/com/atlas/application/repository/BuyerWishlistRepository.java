@@ -1,6 +1,6 @@
 package com.atlas.application.repository;
 
-import java.time.Instant;
+import com.atlas.application.persistence.projection.SavedProduct;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -48,8 +48,5 @@ public class BuyerWishlistRepository {
 
     public void remove(String buyerRef, UUID productId) {
         jdbc.update("DELETE FROM buyer_wishlist_item WHERE buyer_ref = ? AND product_id = ?", buyerRef, productId);
-    }
-
-    public record SavedProduct(UUID productId, Instant savedAt) {
     }
 }

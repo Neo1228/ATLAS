@@ -1,5 +1,6 @@
 package com.atlas.account.repository;
 
+import com.atlas.account.persistence.projection.SuspensionAction;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -79,10 +80,5 @@ public class AccountSuspensionRepository {
                         rs.getString("actor"),
                         rs.getString("reason"),
                         rs.getTimestamp("created_at").toInstant()), accountId, limit);
-    }
-
-    /** 감사 기록 한 건입니다. */
-    public record SuspensionAction(String action, String idempotencyKey, String actor, String reason,
-            Instant createdAt) {
     }
 }

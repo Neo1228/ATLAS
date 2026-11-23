@@ -1,5 +1,8 @@
 package com.atlas.inventory.location.repository;
 
+import com.atlas.inventory.location.persistence.projection.LocationReservationItemRecord;
+import com.atlas.inventory.location.persistence.projection.LocationReservationRecord;
+import com.atlas.inventory.location.persistence.projection.LocationStockRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -13,7 +16,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class InventoryReservationRepository {
-    private static final RowMapper<StockRecord> STOCK_MAPPER = (rs, row) -> new StockRecord(
+    private static final RowMapper<LocationStockRecord> STOCK_MAPPER = (rs, row) -> new LocationStockRecord(
             rs.getObject("fulfillment_location_id", UUID.class), rs.getObject("seller_id", UUID.class),
             rs.getString("sku_id"), rs.getLong("initial_capacity"), rs.getLong("available_quantity"),
             rs.getLong("reserved_quantity"), rs.getLong("claimed_quantity"));
@@ -33,8 +36,8 @@ public class InventoryReservationRepository {
                 """, locationId, sellerId, skuId, capacity, capacity);
     }
 
-    public StockRecord findStock(UUID locationId, UUID sellerId, String skuId) {
-        List<StockRecord> rows = jdbc.query("""
+    public LocationStockRecord findStock(UUID locationId, UUID sellerId, String skuId) {
+        List<LocationStockRecord> rows = jdbc.query("""
                 SELECT fulfillment_location_id, seller_id, sku_id, initial_capacity, available_quantity, reserved_quantity, claimed_quantity
                 FROM inventory_location_stock WHERE fulfillment_location_id = ? AND seller_id = ? AND sku_id = ?
                 """, STOCK_MAPPER, locationId, sellerId, skuId);
@@ -59,30 +62,30 @@ public class InventoryReservationRepository {
                 """, reservationId, locationId, orderId, idempotencyKey, Timestamp.from(createdAt), Timestamp.from(expiresAt));
     }
 
-    public ReservationRecord findByIdempotencyKeyForUpdate(UUID locationId, String key) {
+    public LocationReservationRecord findByIdempotencyKeyForUpdate(UUID locationId, String key) {
         List<ReservationHeader> rows = jdbc.query("""
                 SELECT * FROM inventory_reservation
                 WHERE fulfillment_location_id = ? AND idempotency_key = ? FOR UPDATE""", RESERVATION_MAPPER, locationId, key);
         return rows.isEmpty() ? null : withItems(rows.getFirst());
     }
-    public ReservationRecord findForUpdate(UUID locationId, UUID reservationId) {
+    public LocationReservationRecord findForUpdate(UUID locationId, UUID reservationId) {
         List<ReservationHeader> rows = jdbc.query("""
                 SELECT * FROM inventory_reservation
                 WHERE fulfillment_location_id = ? AND reservation_id = ? FOR UPDATE""", RESERVATION_MAPPER, locationId, reservationId);
         return rows.isEmpty() ? null : withItems(rows.getFirst());
     }
-    public ReservationRecord find(UUID locationId, UUID reservationId) {
+    public LocationReservationRecord find(UUID locationId, UUID reservationId) {
         List<ReservationHeader> rows = jdbc.query("""
                 SELECT * FROM inventory_reservation
                 WHERE fulfillment_location_id = ? AND reservation_id = ?""", RESERVATION_MAPPER, locationId, reservationId);
         return rows.isEmpty() ? null : withItems(rows.getFirst());
     }
-    public List<ReservationRecord> findDueForUpdate(UUID locationId, Instant now, int limit) {
+    public List<LocationReservationRecord> findDueForUpdate(UUID locationId, Instant now, int limit) {
         List<ReservationHeader> rows = jdbc.query("""
                 SELECT * FROM inventory_reservation
                 WHERE fulfillment_location_id = ? AND status = 'RESERVED' AND expires_at <= ?
                 ORDER BY expires_at LIMIT ? FOR UPDATE SKIP LOCKED""", RESERVATION_MAPPER, locationId, Timestamp.from(now), limit);
-        List<ReservationRecord> result = new ArrayList<>(rows.size());
+        List<LocationReservationRecord> result = new ArrayList<>(rows.size());
         for (ReservationHeader row : rows) result.add(withItems(row));
         return result;
     }
@@ -92,11 +95,11 @@ public class InventoryReservationRepository {
                 INSERT INTO inventory_reservation_item (reservation_id, seller_id, sku_id, quantity)
                 VALUES (?, ?, ?, ?)""", reservationId, sellerId, skuId, quantity);
     }
-    private List<ItemRecord> findItems(UUID reservationId) {
+    private List<LocationReservationItemRecord> findItems(UUID reservationId) {
         return jdbc.query("""
                 SELECT seller_id, sku_id, quantity FROM inventory_reservation_item
                 WHERE reservation_id = ? ORDER BY seller_id, sku_id""",
-                (rs, row) -> new ItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"), rs.getInt("quantity")), reservationId);
+                (rs, row) -> new LocationReservationItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"), rs.getInt("quantity")), reservationId);
     }
     public int reserveAvailable(UUID locationId, UUID sellerId, String skuId, int quantity) {
         return jdbc.update("""
@@ -133,11 +136,11 @@ public class InventoryReservationRepository {
                 VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
                 """, restockKey, reservationId, sellerId, skuId, quantity, Timestamp.from(createdAt));
     }
-    public List<ItemRecord> findRestock(String restockKey) {
+    public List<LocationReservationItemRecord> findRestock(String restockKey) {
         return jdbc.query("""
                 SELECT seller_id, sku_id, quantity FROM inventory_reservation_restock
                 WHERE restock_key = ? ORDER BY seller_id, sku_id
-                """, (rs, row) -> new ItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"),
+                """, (rs, row) -> new LocationReservationItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"),
                 rs.getInt("quantity")), restockKey);
     }
     public UUID findRestockReservation(String restockKey) {
@@ -155,8 +158,8 @@ public class InventoryReservationRepository {
     public int transitionReserved(UUID reservationId, String status) {
         return jdbc.update("UPDATE inventory_reservation SET status = ? WHERE reservation_id = ? AND status = 'RESERVED'", status, reservationId);
     }
-    private ReservationRecord withItems(ReservationHeader h) {
-        return new ReservationRecord(h.reservationId(), h.fulfillmentLocationId(), h.orderId(), h.idempotencyKey(),
+    private LocationReservationRecord withItems(ReservationHeader h) {
+        return new LocationReservationRecord(h.reservationId(), h.fulfillmentLocationId(), h.orderId(), h.idempotencyKey(),
                 h.status(), h.createdAt(), h.expiresAt(), findItems(h.reservationId()));
     }
     private static ReservationHeader mapReservation(ResultSet rs, int row) throws SQLException {
@@ -165,11 +168,7 @@ public class InventoryReservationRepository {
                 rs.getString("idempotency_key"), rs.getString("status"), rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("expires_at").toInstant());
     }
-    public record StockRecord(UUID fulfillmentLocationId, UUID sellerId, String skuId, long initialCapacity,
-                              long availableQuantity, long reservedQuantity, long claimedQuantity) { }
-    public record ItemRecord(UUID sellerId, String skuId, int quantity) { }
-    public record ReservationRecord(UUID reservationId, UUID fulfillmentLocationId, UUID orderId, String idempotencyKey,
-                                    String status, Instant createdAt, Instant expiresAt, List<ItemRecord> items) { }
+
     private record ReservationHeader(UUID reservationId, UUID fulfillmentLocationId, UUID orderId, String idempotencyKey,
                                      String status, Instant createdAt, Instant expiresAt) { }
 }

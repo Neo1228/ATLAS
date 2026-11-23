@@ -1,5 +1,6 @@
 package com.atlas.catalog.repository;
 
+import com.atlas.catalog.persistence.projection.ProductListingRow;
 import java.time.Instant;
 import java.sql.Array;
 import java.sql.Timestamp;
@@ -66,13 +67,13 @@ public class ProductListingProjectionRepository {
     }
 
     /** 한 페이지의 채널·카테고리를 한 번에 읽습니다. */
-    public List<Row> findPage(List<UUID> productIds) {
+    public List<ProductListingRow> findPage(List<UUID> productIds) {
         if (productIds == null || productIds.isEmpty()) return List.of();
         return jdbc.query("""
                 SELECT product_id, channels, categories
                 FROM product_listing_projection
                 WHERE product_id = ANY (?)
-                """, (rs, row) -> new Row(
+                """, (rs, row) -> new ProductListingRow(
                         rs.getObject("product_id", UUID.class),
                         // TEXT[] 는 String[] 로, UUID[] 는 PGobject[] 로 돌아올 수 있다.
                         // 배열 원소를 문자열로 정규화한 뒤 필요한 타입으로 변환한다.
@@ -113,9 +114,5 @@ public class ProductListingProjectionRepository {
         } catch (SQLException exception) {
             throw new IllegalStateException("목록 투영의 카테고리 배열을 읽지 못했습니다", exception);
         }
-    }
-
-    /** 목록에 필요한 투영 한 행입니다. */
-    public record Row(UUID productId, List<String> channels, List<UUID> categories) {
     }
 }

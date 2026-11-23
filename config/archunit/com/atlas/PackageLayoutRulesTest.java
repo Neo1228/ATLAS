@@ -115,6 +115,19 @@ class PackageLayoutRulesTest {
                 .check(source);
     }
 
+    @Test
+    void repositoriesDoNotDeclareRecords() {
+        // 저장소가 돌려주는 값은 persistence.projection에 둔다. 저장소 안의 record는 서비스가 저장소 클래스에
+        // 의존하게 만들고 계층 간 전달 값의 위치를 흐린다.
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideInAPackage("..repository..")
+                .and().arePublic()
+                .should().beRecords()
+                .allowEmptyShould(true)
+                .check(source);
+    }
+
     private static JavaClasses productionClasses() {
         return new ClassFileImporter()
                 .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)

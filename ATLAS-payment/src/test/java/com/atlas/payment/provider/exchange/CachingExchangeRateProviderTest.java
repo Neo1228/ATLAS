@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import com.atlas.payment.exception.PaymentException;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -24,7 +25,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 class CachingExchangeRateProviderTest {
-    private static final ExchangeRateQuote QUOTE = new ExchangeRateQuote(
+    private static final ExchangeRateQuoteResponse QUOTE = new ExchangeRateQuoteResponse(
             new BigDecimal("1332.4"), "BOK_ECOS_731Y001_0000001", LocalDate.of(2026, 11, 20));
 
     @Test
@@ -73,12 +74,12 @@ class CachingExchangeRateProviderTest {
 
         int threads = 8;
         try (var executor = Executors.newFixedThreadPool(threads)) {
-            List<Future<ExchangeRateQuote>> futures = new ArrayList<>();
+            List<Future<ExchangeRateQuoteResponse>> futures = new ArrayList<>();
             for (int index = 0; index < threads; index++) {
                 futures.add(executor.submit(provider::latestUsdKrwRate));
             }
             assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
-            for (Future<ExchangeRateQuote> future : futures) {
+            for (Future<ExchangeRateQuoteResponse> future : futures) {
                 assertThat(future.get(5, TimeUnit.SECONDS)).isEqualTo(QUOTE);
             }
         }
@@ -162,7 +163,7 @@ class CachingExchangeRateProviderTest {
         AtomicInteger calls = new AtomicInteger();
         MutableClock clock = new MutableClock(Instant.parse("2026-11-20T00:00:00Z"));
         boolean[] healthy = {true};
-        ExchangeRateQuote recovered = new ExchangeRateQuote(
+        ExchangeRateQuoteResponse recovered = new ExchangeRateQuoteResponse(
                 new BigDecimal("1340.0"), "BOK_ECOS_731Y001_0000002", LocalDate.of(2026, 11, 21));
         CachingExchangeRateProvider provider = new CachingExchangeRateProvider(
                 delegate(calls, () -> {
@@ -194,13 +195,13 @@ class CachingExchangeRateProviderTest {
     }
 
     private static CachingExchangeRateProvider provider(AtomicInteger calls,
-            Supplier<ExchangeRateQuote> supplier, Instant now) {
+            Supplier<ExchangeRateQuoteResponse> supplier, Instant now) {
         return new CachingExchangeRateProvider(delegate(calls, supplier),
                 Clock.fixed(now, ZoneOffset.UTC), Duration.ofSeconds(60), Duration.ofMinutes(10));
     }
 
     private static BokEcosExchangeRateProvider delegate(AtomicInteger calls,
-            Supplier<ExchangeRateQuote> supplier) {
+            Supplier<ExchangeRateQuoteResponse> supplier) {
         BokEcosExchangeRateProvider delegate = mock(BokEcosExchangeRateProvider.class);
         when(delegate.latestUsdKrwRate()).thenAnswer(invocation -> {
             calls.incrementAndGet();

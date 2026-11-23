@@ -1,5 +1,7 @@
 package com.atlas.payment.provider.paypal.payouts;
 
+import com.atlas.payment.dto.request.PayPalPayoutRequest;
+import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.PayPalProperties;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import java.io.IOException;
@@ -65,7 +67,7 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
     }
 
     @Override
-    public PayPalPayoutBatch createBatch(PayPalPayoutRequest request) {
+    public PayPalPayoutBatchResponse createBatch(PayPalPayoutRequest request) {
         Objects.requireNonNull(request, "request");
         validateId(request.senderBatchId());
         validateId(request.senderItemId());
@@ -82,14 +84,14 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
     }
 
     @Override
-    public PayPalPayoutBatch getBatch(String payoutBatchId) {
+    public PayPalPayoutBatchResponse getBatch(String payoutBatchId) {
         validateId(payoutBatchId);
         String path = "/v1/payments/payouts/" + UriUtils.encodePathSegment(payoutBatchId, StandardCharsets.UTF_8);
         // 불명확한 재시도도 durable batch ID를 재사용하며 새 ID를 발급하지 않는다.
         return execute(HttpMethod.GET, path, null, null, null);
     }
 
-    private PayPalPayoutBatch execute(HttpMethod method, String path, String senderBatchId,
+    private PayPalPayoutBatchResponse execute(HttpMethod method, String path, String senderBatchId,
             String requestId, Map<String, Object> body) {
         try {
             var request = api().method(method).uri(path);
@@ -129,7 +131,7 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
         }
     }
 
-    private PayPalPayoutBatch parse(byte[] bytes, String fallbackBatchId) {
+    private PayPalPayoutBatchResponse parse(byte[] bytes, String fallbackBatchId) {
         try {
             JsonNode root = objectMapper.readTree(bytes);
             JsonNode header = root.path("batch_header");
@@ -137,11 +139,11 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
             String senderBatchId = text(header, "sender_batch_id");
             JsonNode batchAmount = header.path("amount");
             JsonNode batchFees = header.path("fees");
-            List<PayPalPayoutBatch.Item> items = new ArrayList<>();
+            List<PayPalPayoutBatchResponse.Item> items = new ArrayList<>();
             JsonNode entries = root.path("items");
             if (entries.isArray()) for (JsonNode item : entries) items.add(parseItem(item));
             // Batch 상태만으로 payout item 완료를 추정하지 않는다.
-            return new PayPalPayoutBatch(batchId,
+            return new PayPalPayoutBatchResponse(batchId,
                     senderBatchId == null ? fallbackBatchId : senderBatchId,
                     text(header, "batch_status"), decimal(batchAmount, "value"), text(batchAmount, "currency"),
                     decimal(batchFees, "value"), text(batchFees, "currency"), items);
@@ -151,12 +153,12 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
         }
     }
 
-    private PayPalPayoutBatch.Item parseItem(JsonNode item) {
+    private PayPalPayoutBatchResponse.Item parseItem(JsonNode item) {
         JsonNode payoutItem = item.path("payout_item");
         JsonNode amount = payoutItem.path("amount");
         JsonNode fee = item.path("payout_item_fee");
         JsonNode conversion = item.path("currency_conversion");
-        return new PayPalPayoutBatch.Item(text(item, "payout_item_id"), text(payoutItem, "sender_item_id"),
+        return new PayPalPayoutBatchResponse.Item(text(item, "payout_item_id"), text(payoutItem, "sender_item_id"),
                 text(item, "transaction_status"), decimal(amount, "value"), text(amount, "currency"),
                 decimal(fee, "value"), text(fee, "currency"),
                 decimal(conversion.path("from_amount"), "value"),

@@ -1,5 +1,6 @@
-package com.atlas.payment.provider;
+package com.atlas.payment.dto.request;
 
+import com.atlas.payment.provider.PaymentOperation;
 import java.util.UUID;
 
 public record PaymentRequest(PaymentOperation operation, UUID ownerId, UUID attemptId,

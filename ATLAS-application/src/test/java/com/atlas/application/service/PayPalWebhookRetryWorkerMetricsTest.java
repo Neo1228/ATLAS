@@ -5,9 +5,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
+import com.atlas.application.persistence.projection.ClaimedRetry;
+import com.atlas.application.persistence.projection.PollResult;
+import com.atlas.application.persistence.projection.WebhookRetryEvent;
 import com.atlas.application.repository.PayPalWebhookRetryRepository;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.provider.PaymentWebhookEvent;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.util.List;
@@ -30,7 +33,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsSuccessfulEmptyPollAsZeroClaims() {
-        when(retries.pollDue()).thenReturn(new PayPalWebhookRetryRepository.PollResult(List.of(), 0));
+        when(retries.pollDue()).thenReturn(new PollResult(List.of(), 0));
 
         worker.retryDueEvents();
 
@@ -43,7 +46,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void publishesOldestPendingRetryAgeAndStaysSilentWhenTheQueueIsEmpty() {
-        when(retries.pollDue()).thenReturn(new PayPalWebhookRetryRepository.PollResult(List.of(), 0));
+        when(retries.pollDue()).thenReturn(new PollResult(List.of(), 0));
         when(retries.oldestPendingAgeSeconds()).thenReturn(42.5, (Double) null);
 
         worker.retryDueEvents();
@@ -56,8 +59,8 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsReapedTerminalRowsInOneTaglessSeries() {
-        when(retries.pollDue()).thenReturn(new PayPalWebhookRetryRepository.PollResult(List.of(), 3),
-                new PayPalWebhookRetryRepository.PollResult(List.of(), 2));
+        when(retries.pollDue()).thenReturn(new PollResult(List.of(), 3),
+                new PollResult(List.of(), 2));
 
         worker.retryDueEvents();
         worker.retryDueEvents();
@@ -70,15 +73,15 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsAcceptedDuplicateRescheduledAndRejectedOutcomes() {
-        PaymentWebhookEvent accepted = event("accepted");
-        PaymentWebhookEvent duplicate = event("duplicate");
-        PaymentWebhookEvent rescheduled = event("rescheduled");
-        PaymentWebhookEvent rejected = event("rejected");
+        PaymentWebhookEventResponse accepted = event("accepted");
+        PaymentWebhookEventResponse duplicate = event("duplicate");
+        PaymentWebhookEventResponse rescheduled = event("rescheduled");
+        PaymentWebhookEventResponse rejected = event("rejected");
         doReturn(
-                new PayPalWebhookRetryRepository.PollResult(List.of(claim(accepted, "lease-1")), 0),
-                new PayPalWebhookRetryRepository.PollResult(List.of(claim(duplicate, "lease-2")), 0),
-                new PayPalWebhookRetryRepository.PollResult(List.of(claim(rescheduled, "lease-3")), 0),
-                new PayPalWebhookRetryRepository.PollResult(
+                new PollResult(List.of(claim(accepted, "lease-1")), 0),
+                new PollResult(List.of(claim(duplicate, "lease-2")), 0),
+                new PollResult(List.of(claim(rescheduled, "lease-3")), 0),
+                new PollResult(
                         List.of(claim(rejected, "lease-4")), 0)).when(retries).pollDue();
         when(webhooks.processVerified(accepted)).thenReturn(result(false, true, false));
         when(webhooks.processVerified(duplicate)).thenReturn(result(true, true, false));
@@ -112,10 +115,10 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsTransientFailureAndStaleLeaseOutcomes() {
-        PaymentWebhookEvent transientFailure = event("transient");
-        PaymentWebhookEvent staleLease = event("stale");
-        doReturn(new PayPalWebhookRetryRepository.PollResult(List.of(claim(transientFailure, "lease-1")), 0),
-                new PayPalWebhookRetryRepository.PollResult(List.of(claim(staleLease, "lease-2")), 0))
+        PaymentWebhookEventResponse transientFailure = event("transient");
+        PaymentWebhookEventResponse staleLease = event("stale");
+        doReturn(new PollResult(List.of(claim(transientFailure, "lease-1")), 0),
+                new PollResult(List.of(claim(staleLease, "lease-2")), 0))
                 .when(retries).pollDue();
         when(webhooks.processVerified(transientFailure)).thenThrow(new IllegalStateException("provider unavailable"));
         when(retries.reschedule(transientFailure.eventId(), 1, "lease-1",
@@ -148,16 +151,21 @@ class PayPalWebhookRetryWorkerMetricsTest {
         return meters.counter(OUTCOMES_METRIC, "outcome", outcome).count();
     }
 
-    private static PayPalWebhookRetryRepository.ClaimedRetry claim(PaymentWebhookEvent event, String leaseOwner) {
-        return new PayPalWebhookRetryRepository.ClaimedRetry(event, 1, leaseOwner);
+    private static ClaimedRetry claim(PaymentWebhookEventResponse event, String leaseOwner) {
+        return new ClaimedRetry(retryEvent(event), 1, leaseOwner);
     }
 
-    private static PaymentWebhookEvent event(String id) {
-        return new PaymentWebhookEvent(id, "PAYMENT.CAPTURE.COMPLETED", "resource-id", "COMPLETED",
+    private static PaymentWebhookEventResponse event(String id) {
+        return new PaymentWebhookEventResponse(id, "PAYMENT.CAPTURE.COMPLETED", "resource-id", "COMPLETED",
                 "provider-order-id", null, BigDecimal.ONE, "USD");
     }
 
     private static PaymentWebhookResponse result(boolean duplicate, boolean accepted, boolean retryable) {
         return new PaymentWebhookResponse(duplicate, accepted, null, null, null, false, retryable);
+    }
+
+    private static WebhookRetryEvent retryEvent(PaymentWebhookEventResponse e) {
+        return new WebhookRetryEvent(e.eventId(), e.eventType(), e.resourceId(), e.resourceStatus(),
+                e.providerOrderId(), e.relatedCaptureId(), e.resourceAmount(), e.resourceCurrency());
     }
 }

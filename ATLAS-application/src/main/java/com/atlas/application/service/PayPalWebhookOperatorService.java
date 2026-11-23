@@ -4,7 +4,7 @@ import com.atlas.application.dto.response.PayPalWebhookExhaustedRetryPage;
 import com.atlas.application.dto.response.PayPalWebhookExhaustedRetryPage.Item;
 import com.atlas.application.dto.response.PayPalWebhookRequeueResponse;
 import com.atlas.application.repository.PayPalWebhookOperatorRepository;
-import com.atlas.application.repository.PayPalWebhookOperatorRepository.RequeueRecord;
+import com.atlas.application.persistence.projection.RequeueRecord;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;

@@ -2,6 +2,7 @@ package com.atlas.application.service;
 
 import com.atlas.application.dto.response.BuyerWishlistItemResponse;
 import com.atlas.application.dto.response.BuyerWishlistPage;
+import com.atlas.application.persistence.projection.SavedProduct;
 import com.atlas.application.repository.BuyerWishlistRepository;
 import com.atlas.catalog.service.ProductService;
 import java.util.List;
@@ -47,7 +48,7 @@ public class BuyerWishlistService {
         if (offset < 0 || offset > MAX_OFFSET) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be between 0 and 10000");
         }
-        List<BuyerWishlistRepository.SavedProduct> fetched = wishlist.list(buyerRef, limit + 1, offset);
+        List<SavedProduct> fetched = wishlist.list(buyerRef, limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
         List<BuyerWishlistItemResponse> items = fetched.stream()
                 .limit(limit)

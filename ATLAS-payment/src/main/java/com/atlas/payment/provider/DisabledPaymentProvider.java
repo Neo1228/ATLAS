@@ -1,5 +1,11 @@
 package com.atlas.payment.provider;
 
+import com.atlas.payment.dto.request.PaymentRefundRequest;
+import com.atlas.payment.dto.request.PaymentRequest;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.dto.response.PaymentProviderResponse;
+import com.atlas.payment.dto.response.PaymentRefundProviderResponse;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.exception.PaymentException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -8,27 +14,27 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "atlas.payment.provider", havingValue = "disabled", matchIfMissing = true)
 public class DisabledPaymentProvider implements PaymentProvider {
     @Override
-    public PaymentProviderResult perform(PaymentRequest request) {
+    public PaymentProviderResponse perform(PaymentRequest request) {
         throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_DISABLED,
                 "No payment provider is configured");
     }
 
     @Override
-    public PaymentProviderResult completeApproval(PaymentRequest request, String returnedProviderOrderId) {
+    public PaymentProviderResponse completeApproval(PaymentRequest request, String returnedProviderOrderId) {
         throw unavailable();
     }
     @Override
-    public PaymentRefundProviderResult refund(PaymentRefundRequest request) {
-        throw unavailable();
-    }
-
-    @Override
-    public PaymentRefundProviderResult getRefund(String refundId) {
+    public PaymentRefundProviderResponse refund(PaymentRefundRequest request) {
         throw unavailable();
     }
 
     @Override
-    public PaymentWebhookEvent verifyWebhook(PaymentWebhookSignature signature, String rawBody) {
+    public PaymentRefundProviderResponse getRefund(String refundId) {
+        throw unavailable();
+    }
+
+    @Override
+    public PaymentWebhookEventResponse verifyWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
         throw unavailable();
     }
 

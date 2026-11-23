@@ -1,5 +1,6 @@
 package com.atlas.payment.provider.exchange;
 
+import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import com.atlas.payment.exception.PaymentException;
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
@@ -40,7 +41,7 @@ public class FrankfurterExchangeRateProvider implements ExchangeRateProvider {
     }
 
     @Override
-    public ExchangeRateQuote latestUsdKrwRate() {
+    public ExchangeRateQuoteResponse latestUsdKrwRate() {
         try {
             JsonNode response = client.get()
                     .uri("/v1/latest?base=USD&symbols=KRW")
@@ -54,7 +55,7 @@ public class FrankfurterExchangeRateProvider implements ExchangeRateProvider {
                     || ChronoUnit.DAYS.between(asOfDate, today) > MAX_RATE_AGE_DAYS) {
                 throw unavailable();
             }
-            return new ExchangeRateQuote(wonPerUsd, SOURCE, asOfDate);
+            return new ExchangeRateQuoteResponse(wonPerUsd, SOURCE, asOfDate);
         } catch (RuntimeException exception) {
             if (exception instanceof PaymentException paymentException) throw paymentException;
             throw unavailable();

@@ -1,6 +1,7 @@
 package com.atlas.order.repository;
 
-import com.atlas.order.repository.LocationReservationRepository.ItemRecord;
+import com.atlas.order.persistence.projection.LocationRestock;
+import com.atlas.order.persistence.projection.WorkflowItemRecord;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -21,7 +22,7 @@ public class LocationRestockRepository {
     /** 호출자의 transaction에 참여한다. 같은 key·location 재기록은 무시한다. */
     @Transactional
     public void insert(String restockKey, UUID locationId, UUID refundId, UUID orderId, UUID workflowId,
-                       UUID reservationId, List<ItemRecord> items, Instant now) {
+                       UUID reservationId, List<WorkflowItemRecord> items, Instant now) {
         int inserted = jdbc.update("""
                 INSERT INTO order_inventory_restock
                     (restock_key, fulfillment_location_id, refund_id, order_id, workflow_id, remote_reservation_id,
@@ -31,7 +32,7 @@ public class LocationRestockRepository {
                 """, restockKey, locationId, refundId, orderId, workflowId, reservationId,
                 Timestamp.from(now), Timestamp.from(now), Timestamp.from(now));
         if (inserted == 0) return;
-        for (ItemRecord item : items) {
+        for (WorkflowItemRecord item : items) {
             jdbc.update("""
                     INSERT INTO order_inventory_restock_item
                         (restock_key, fulfillment_location_id, seller_id, sku_id, quantity)
@@ -42,8 +43,8 @@ public class LocationRestockRepository {
 
     /** 처리할 PENDING 의도를 고르고 next_attempt_at을 lease 만료 시각으로 미뤄 다른 worker의 중복 선택을 줄인다. */
     @Transactional
-    public List<Restock> claimDue(Instant now, Instant leaseUntil, int limit, String onlyRestockKey) {
-        List<Restock> due = jdbc.query("""
+    public List<LocationRestock> claimDue(Instant now, Instant leaseUntil, int limit, String onlyRestockKey) {
+        List<LocationRestock> due = jdbc.query("""
                 SELECT restock_key, fulfillment_location_id, refund_id, order_id, workflow_id,
                        remote_reservation_id, attempt_count
                 FROM order_inventory_restock
@@ -51,7 +52,7 @@ public class LocationRestockRepository {
                   AND (CAST(? AS VARCHAR) IS NULL OR restock_key = ?)
                 ORDER BY next_attempt_at, restock_key
                 LIMIT ? FOR UPDATE SKIP LOCKED
-                """, (rs, row) -> new Restock(rs.getString("restock_key"),
+                """, (rs, row) -> new LocationRestock(rs.getString("restock_key"),
                 rs.getObject("fulfillment_location_id", UUID.class), rs.getObject("refund_id", UUID.class),
                 rs.getObject("order_id", UUID.class), rs.getObject("workflow_id", UUID.class),
                 rs.getObject("remote_reservation_id", UUID.class), rs.getInt("attempt_count"), List.of()),
@@ -63,7 +64,7 @@ public class LocationRestockRepository {
                     WHERE restock_key = ? AND fulfillment_location_id = ?
                     """, Timestamp.from(leaseUntil), Timestamp.from(now), restock.restockKey(),
                     restock.fulfillmentLocationId());
-            return new Restock(restock.restockKey(), restock.fulfillmentLocationId(), restock.refundId(),
+            return new LocationRestock(restock.restockKey(), restock.fulfillmentLocationId(), restock.refundId(),
                     restock.orderId(), restock.workflowId(), restock.reservationId(), restock.attemptCount() + 1,
                     items(restock.restockKey(), restock.fulfillmentLocationId()));
         }).toList();
@@ -102,15 +103,11 @@ public void finish(String restockKey, UUID locationId, int attemptCount, String 
         return ageSeconds == null ? 0 : Math.max(0, ageSeconds);
     }
 
-    private List<ItemRecord> items(String restockKey, UUID locationId) {
+    private List<WorkflowItemRecord> items(String restockKey, UUID locationId) {
         return jdbc.query("""
                 SELECT seller_id, sku_id, quantity FROM order_inventory_restock_item
                 WHERE restock_key = ? AND fulfillment_location_id = ? ORDER BY seller_id, sku_id
-                """, (rs, row) -> new ItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"),
+                """, (rs, row) -> new WorkflowItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"),
                 rs.getInt("quantity")), restockKey, locationId);
-    }
-
-    public record Restock(String restockKey, UUID fulfillmentLocationId, UUID refundId, UUID orderId,
-                          UUID workflowId, UUID reservationId, int attemptCount, List<ItemRecord> items) {
     }
 }

@@ -12,6 +12,8 @@ import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
 import com.atlas.application.service.PayPalBalanceReportOperatorService;
 import com.atlas.application.service.PayPalBalanceReportReconciliationService;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
+import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
+import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.payment.service.PayPalReportMatchQuery;
 import com.atlas.settlement.repository.PayPalBalanceReportRunRepository;
 import com.atlas.settlement.service.impl.PayPalBalanceReportStoreImpl;
@@ -74,11 +76,11 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
 
         PayPalReportMatchQuery matchQuery = mock(PayPalReportMatchQuery.class);
         when(matchQuery.findByRecordIds(any())).thenReturn(List.of(
-                new PayPalReportMatchQuery.Candidate("capture-1", PayPalReportMatchQuery.Kind.CAPTURE,
+                new PayPalReportMatchCandidateResponse("capture-1", PayPalReportMatchKind.CAPTURE,
                         true, "capture-1", 10_000L, "USD"),
-                new PayPalReportMatchQuery.Candidate("refund-1", PayPalReportMatchQuery.Kind.REFUND,
+                new PayPalReportMatchCandidateResponse("refund-1", PayPalReportMatchKind.REFUND,
                         true, "capture-1", 1_000L, "USD"),
-                new PayPalReportMatchQuery.Candidate("capture-mismatch", PayPalReportMatchQuery.Kind.CAPTURE,
+                new PayPalReportMatchCandidateResponse("capture-mismatch", PayPalReportMatchKind.CAPTURE,
                         true, "capture-mismatch", 5_000L, "USD")));
         PayPalBalanceReportStoreImpl store = new PayPalBalanceReportStoreImpl(new PayPalBalanceReportRunRepository(jdbc));
         PayPalBalanceReportReconciliationService reconciliation =

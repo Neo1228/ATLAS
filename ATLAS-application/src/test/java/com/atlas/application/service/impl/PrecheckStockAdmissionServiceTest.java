@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.order.service.LocationClient;
-import com.atlas.order.service.StockAdmissionService.Claim;
+import com.atlas.order.dto.request.StockClaimRequest;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -23,7 +23,7 @@ class PrecheckStockAdmissionServiceTest {
     void rejectsOnlyWhenConfirmedStockIsShortAndNeverOnUncertainty() {
         LocationClient inventory = mock(LocationClient.class);
         PrecheckStockAdmissionService gate = new PrecheckStockAdmissionService(inventory, Duration.ZERO);
-        List<Claim> two = List.of(new Claim(LOCATION, SELLER, "sku", 2));
+        List<StockClaimRequest> two = List.of(new StockClaimRequest(LOCATION, SELLER, "sku", 2));
 
         when(inventory.availableStock(any(), any(), any())).thenReturn(1L);
         assertThat(gate.admit("k1", two)).isFalse();
@@ -40,7 +40,7 @@ class PrecheckStockAdmissionServiceTest {
     void confirmedSoldOutIsRememberedSoRepeatedRejectionsMakeNoRemoteCall() {
         LocationClient inventory = mock(LocationClient.class);
         PrecheckStockAdmissionService gate = new PrecheckStockAdmissionService(inventory, Duration.ofMinutes(1));
-        List<Claim> one = List.of(new Claim(LOCATION, SELLER, "sku", 1));
+        List<StockClaimRequest> one = List.of(new StockClaimRequest(LOCATION, SELLER, "sku", 1));
         when(inventory.availableStock(any(), any(), any())).thenReturn(0L);
 
         for (int i = 0; i < 50; i++) {

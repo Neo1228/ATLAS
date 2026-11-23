@@ -1,8 +1,8 @@
-package com.atlas.payment.provider;
+package com.atlas.payment.dto.response;
 
-public record PaymentProviderResult(Outcome outcome, String orderId, String authorizationId,
+public record PaymentProviderResponse(Outcome outcome, String orderId, String authorizationId,
         String captureId, String approvalUrl) {
-    public PaymentProviderResult {
+    public PaymentProviderResponse {
         if (outcome == null) throw new IllegalArgumentException("Provider outcome is required");
     }
 

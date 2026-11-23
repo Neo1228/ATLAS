@@ -62,7 +62,7 @@ import com.atlas.order.service.impl.CheckoutPaymentServiceImpl;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.payment.dto.response.PaymentResponse;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.persistence.state.PaymentState;
 import tools.jackson.databind.ObjectMapper;
@@ -93,7 +93,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -2574,7 +2573,7 @@ assertUuidV7(paymentOrderId);
         String rawBody = "{\"id\":\"" + eventId
                 + "\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"id\":\""
                 + captured.providerCaptureId() + "\",\"status\":\"COMPLETED\"}}";
-        PaymentWebhookSignature signature = new PaymentWebhookSignature(
+        PaymentWebhookSignatureRequest signature = new PaymentWebhookSignatureRequest(
                 "SHA256withRSA", "https://local.test/cert", "tx-webhook-" + eventId,
                 "signature-local", "2026-11-09T00:00:00Z");
         paypalWebhooks.handle(signature, rawBody);

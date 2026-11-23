@@ -1,5 +1,8 @@
 package com.atlas.application.repository;
 
+import com.atlas.application.persistence.projection.PendingRetry;
+import com.atlas.application.persistence.projection.RetrySummary;
+import com.atlas.application.persistence.projection.TimelineEntry;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -111,16 +114,5 @@ public class PayPalWebhookRetryHistoryRepository {
 
     private static Instant instant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();
-    }
-
-    public record RetrySummary(long pending, long exhausted, Instant oldestPendingSince,
-            Instant oldestExhaustedSince, long expiredLeaseCount, Map<String, Long> last24HoursOutcomeCounts) {
-    }
-
-    public record PendingRetry(String eventId, String eventType, int attemptCount, Instant nextAttemptAt,
-            String leaseState) {
-    }
-
-    public record TimelineEntry(String category, Instant recordedAt, Integer attemptNumber) {
     }
 }

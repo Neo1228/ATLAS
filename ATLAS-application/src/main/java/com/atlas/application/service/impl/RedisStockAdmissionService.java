@@ -1,5 +1,6 @@
 package com.atlas.application.service.impl;
 
+import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.StockAdmissionService;
 import io.lettuce.core.RedisClient;
@@ -124,14 +125,14 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
     }
 
     @Override
-    public boolean admit(String admissionKey, List<Claim> claims) {
+    public boolean admit(String admissionKey, List<StockClaimRequest> claims) {
         if (System.nanoTime() - breakerOpenUntilNanos < 0) {
             // Redis가 방금 실패했다. 요청마다 timeout을 기다리지 않고 곧바로 정본 경로로 보낸다.
             failedOpen.increment();
             return true;
         }
         try {
-            Map<String, Claim> merged = merge(claims);
+            Map<String, StockClaimRequest> merged = merge(claims);
             long first = evaluate(admissionKey, merged);
             if (first == UNSEEDED) {
                 seedMissing(merged);
@@ -180,7 +181,7 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
         }
     }
 
-    private long evaluate(String admissionKey, Map<String, Claim> merged) {
+    private long evaluate(String admissionKey, Map<String, StockClaimRequest> merged) {
         List<String> keys = new ArrayList<>();
         List<String> args = new ArrayList<>();
         keys.add("atlas:adm:decision:" + admissionKey);
@@ -196,15 +197,15 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
     }
 
     /** 비어 있는 SKU key만 location의 실제 판매 가능 수량으로 채운다. 이미 있으면 덮어쓰지 않는다. */
-    private void seedMissing(Map<String, Claim> merged) {
+    private void seedMissing(Map<String, StockClaimRequest> merged) {
         RedisCommands<String, String> commands = commands();
-        for (Map.Entry<String, Claim> entry : merged.entrySet()) {
+        for (Map.Entry<String, StockClaimRequest> entry : merged.entrySet()) {
             Object lock = seedLocks.computeIfAbsent(entry.getKey(), ignored -> new Object());
             synchronized (lock) {
                 if (commands.exists(entry.getKey()) > 0) {
                     continue;
                 }
-                Claim claim = entry.getValue();
+                StockClaimRequest claim = entry.getValue();
                 long available = inventory.availableStock(
                         claim.fulfillmentLocationId(), claim.sellerId(), claim.skuId());
                 // 승인됐지만 아직 location에 예약되지 않은 수량은 availableStock에 반영돼 있지 않다. 빼 줘야 과다 승인이 없다.
@@ -229,12 +230,12 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
         return current.sync();
     }
 
-    private static Map<String, Claim> merge(List<Claim> claims) {
-        Map<String, Claim> merged = new TreeMap<>();
-        for (Claim claim : claims) {
+    private static Map<String, StockClaimRequest> merge(List<StockClaimRequest> claims) {
+        Map<String, StockClaimRequest> merged = new TreeMap<>();
+        for (StockClaimRequest claim : claims) {
             String key = "atlas:adm:stock:" + claim.fulfillmentLocationId() + ":" + claim.sellerId()
                     + ":" + claim.skuId();
-            merged.merge(key, claim, (left, right) -> new Claim(left.fulfillmentLocationId(), left.sellerId(),
+            merged.merge(key, claim, (left, right) -> new StockClaimRequest(left.fulfillmentLocationId(), left.sellerId(),
                     left.skuId(), Math.addExact(left.quantity(), right.quantity())));
         }
         return merged;

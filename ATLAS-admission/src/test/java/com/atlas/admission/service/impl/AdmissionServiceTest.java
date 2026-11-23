@@ -19,6 +19,8 @@ import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.persistence.entity.AdmissionPolicy;
 import com.atlas.admission.persistence.entity.QueueTicket;
+import com.atlas.admission.persistence.projection.DueTicketCandidate;
+import com.atlas.admission.persistence.projection.DueTicketCursor;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.repository.AdmissionPolicyRepository;
@@ -71,9 +73,9 @@ class AdmissionServiceTest {
         Instant expiresAt = Instant.now().minusSeconds(1);
         when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
                 .thenReturn(List.of(
-                        new QueueRepository.DueTicketCandidate(
+                        new DueTicketCandidate(
                                 UUID.randomUUID(), missingSeller, missingSku, expiresAt),
-                        new QueueRepository.DueTicketCandidate(
+                        new DueTicketCandidate(
                                 UUID.randomUUID(), activeSeller, activeSku, expiresAt)));
         when(queueRepository.tryLockCounter(missingSeller, missingSku))
                 .thenReturn(QueueRepository.CounterLockResult.MISSING);
@@ -342,12 +344,12 @@ class AdmissionServiceTest {
     @Test
     void preservesNonNullExpiryCursorWhenCandidateQueryFails() {
         Instant expiresAt = Instant.now().minusSeconds(10);
-        List<QueueRepository.DueTicketCandidate> candidates =
+        List<DueTicketCandidate> candidates =
                 IntStream.range(0, 200)
-                        .mapToObj(index -> new QueueRepository.DueTicketCandidate(
+                        .mapToObj(index -> new DueTicketCandidate(
                                 UUID.randomUUID(), sellerId, skuId, expiresAt.plusMillis(index)))
                         .toList();
-        QueueRepository.DueTicketCursor lastCursor = candidates.get(candidates.size() - 1).cursor();
+        DueTicketCursor lastCursor = candidates.get(candidates.size() - 1).cursor();
         DataAccessResourceFailureException failure =
                 new DataAccessResourceFailureException("candidate query failed after cursor");
         when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
@@ -371,7 +373,7 @@ class AdmissionServiceTest {
     void processesFirstCandidateWhenCandidateQueryConsumesBudget() throws InterruptedException {
         UUID sellerId = UUID.randomUUID();
         String skuId = "slow-query";
-        QueueRepository.DueTicketCandidate candidate = new QueueRepository.DueTicketCandidate(
+        DueTicketCandidate candidate = new DueTicketCandidate(
                 UUID.randomUUID(), sellerId, skuId, Instant.now().minusSeconds(1));
         when(queueRepository.findDueTicketCandidates(
                 any(Instant.class), any(), anyInt(), any(Duration.class)))

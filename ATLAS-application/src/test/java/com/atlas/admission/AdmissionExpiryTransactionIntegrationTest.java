@@ -6,6 +6,7 @@ import com.atlas.PostgresLockWaitProbe;
 import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
+import com.atlas.admission.persistence.projection.DueTicketCandidate;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.TicketRepository;
@@ -82,9 +83,9 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
         DueTicket first = createDueTicket(seller.sellerId(), product, "first");
         DueTicket second = createDueTicket(seller.sellerId(), product, "second");
 
-        List<QueueRepository.DueTicketCandidate> candidates = queueRepository.findDueTicketCandidates(
+        List<DueTicketCandidate> candidates = queueRepository.findDueTicketCandidates(
                 Instant.now(), null, 10, Duration.ofSeconds(2));
-        assertThat(candidates).extracting(QueueRepository.DueTicketCandidate::skuId)
+        assertThat(candidates).extracting(DueTicketCandidate::skuId)
                 .containsExactlyInAnyOrder(first.skuId(), second.skuId());
         DueTicket visibleBeforeRelease = Map.of(first.skuId(), first, second.skuId(), second)
                 .get(candidates.get(0).skuId());
@@ -287,7 +288,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
         jdbc.update("UPDATE admission_ticket SET expires_at = ? WHERE seller_id = ? AND sku_id = ?",
                 Timestamp.from(dueAt), seller.sellerId(), skuId);
 
-        List<QueueRepository.DueTicketCandidate> page = queueRepository.findDueTicketCandidates(
+        List<DueTicketCandidate> page = queueRepository.findDueTicketCandidates(
                 Instant.now(), null, 201, Duration.ofSeconds(2));
         assertThat(page).hasSize(201);
         UUID ticketIdOutsidePage = page.get(200).ticketId();

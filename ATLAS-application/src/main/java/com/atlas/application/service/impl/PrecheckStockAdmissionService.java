@@ -1,5 +1,6 @@
 package com.atlas.application.service.impl;
 
+import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.StockAdmissionService;
 import java.time.Duration;
@@ -45,10 +46,10 @@ public class PrecheckStockAdmissionService implements StockAdmissionService {
     }
 
     @Override
-    public boolean admit(String admissionKey, List<Claim> claims) {
+    public boolean admit(String admissionKey, List<StockClaimRequest> claims) {
         try {
             long now = System.nanoTime();
-            for (Claim claim : claims) {
+            for (StockClaimRequest claim : claims) {
                 String key = claim.fulfillmentLocationId() + ":" + claim.sellerId() + ":" + claim.skuId();
                 Long until = soldOutUntilNanos.get(key);
                 if (until != null && now - until < 0) {

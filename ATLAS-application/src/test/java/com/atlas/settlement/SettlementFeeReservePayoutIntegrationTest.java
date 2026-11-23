@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.application.repository.payout.PayoutDispatchRepository;
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.application.service.payout.PayoutDispatchPlan;
-import com.atlas.application.service.payout.PayoutDispatchRecord;
+import com.atlas.application.persistence.projection.PayoutDispatchPlan;
+import com.atlas.application.persistence.projection.PayoutDispatchRecord;
 import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;

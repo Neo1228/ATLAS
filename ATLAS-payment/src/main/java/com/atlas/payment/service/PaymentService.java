@@ -3,8 +3,8 @@ package com.atlas.payment.service;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.provider.PaymentWebhookEvent;
-import com.atlas.payment.provider.PaymentWebhookSignature;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -85,7 +85,7 @@ public interface PaymentService {
     PaymentRefundResponse refundOrder(UUID orderId, String idempotencyKey, long amountWon);
     PaymentRefundResponse refundCheckout(UUID checkoutId, String idempotencyKey, long amountWon);
     PaymentRefundResponse findRefundOperation(UUID refundOperationId);
-    PaymentWebhookEvent verifyPayPalWebhook(PaymentWebhookSignature signature, String rawBody);
-    <T> T withPayPalWebhookOwnerLock(PaymentWebhookEvent event, Supplier<T> action);
-    PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEvent event);
+    PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody);
+    <T> T withPayPalWebhookOwnerLock(PaymentWebhookEventResponse event, Supplier<T> action);
+    PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEventResponse event);
 }

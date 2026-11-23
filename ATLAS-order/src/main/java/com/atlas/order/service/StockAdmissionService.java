@@ -1,7 +1,7 @@
 package com.atlas.order.service;
 
+import com.atlas.order.dto.request.StockClaimRequest;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 재고보다 훨씬 많은 예약 요청이 몰릴 때, 어차피 거절될 요청이 workflow 행과 원격 호출을 만들지 않도록 앞단에서 거른다.
@@ -11,12 +11,11 @@ import java.util.UUID;
  * 소진된 SKU의 요청을 싸게 거절하는 것뿐이다.
  */
 public interface StockAdmissionService {
-
     /**
      * 같은 admissionKey로 다시 호출하면 수량을 다시 차감하지 않고 첫 결과를 돌려준다(멱등 재시도).
      * 판단할 수 없는 상태(저장소 장애 등)는 거절이 아니라 통과로 답한다. 정본 검증이 뒤에 남아 있기 때문이다.
      */
-    boolean admit(String admissionKey, List<Claim> claims);
+    boolean admit(String admissionKey, List<StockClaimRequest> claims);
 
     /**
      * 승인한 요청이 location에 실제 예약으로 반영됐다. gate가 따로 들고 있던 "승인됐지만 아직 예약 전" 수량을 정리한다.
@@ -31,6 +30,4 @@ public interface StockAdmissionService {
      */
     default void release(String admissionKey) {
     }
-
-    record Claim(UUID fulfillmentLocationId, UUID sellerId, String skuId, int quantity) {}
 }
