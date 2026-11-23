@@ -75,7 +75,7 @@ class PaymentCaptureCancellationFenceTest {
     // 저장소를 공유하는 단위 테스트이므로 실제 DB 잠금 경합이나 롤백은 검증하지 않는다.
     private static PaymentServiceImpl service(PaymentAttemptRepository repository,
             PlatformTransactionManager transactions, PaymentProvider provider) {
-        return new PaymentServiceImpl(repository, mock(PaymentRefundRepository.class),
+        return PaymentServiceFactory.create(repository, mock(PaymentRefundRepository.class),
                 mock(PaymentWebhookEventRepository.class), mock(PaymentRecoveryRepository.class),
                 transactions, provider, mock(FxConversionService.class), "https://example.test");
     }

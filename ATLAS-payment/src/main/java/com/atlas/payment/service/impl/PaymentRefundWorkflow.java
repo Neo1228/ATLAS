@@ -23,13 +23,17 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.IdGenerator;
 
 /**
  * 환불 예약·실행·재시도. 환불 요청은 결제 owner 단위로 직렬화하고, provider 호출은 transaction 밖에서 하며,
  * 결과가 모호하면 {@code UNKNOWN}으로 남겨 복구 worker가 같은 provider request ID로 이어 받는다.
  */
-final class PaymentRefundWorkflow {
+@Component
+public final class PaymentRefundWorkflow {
     private final OwnerLockRegistry ownerLocks;
     private final PaymentAttemptRepository repository;
     private final PaymentRefundRepository refunds;
@@ -37,11 +41,13 @@ final class PaymentRefundWorkflow {
     private final TransactionTemplate transactions;
     private final PaymentProvider psp;
     private final Duration recoveryInitialDelay;
-    private final Supplier<UUID> ids;
+    private final IdGenerator ids;
 
-    PaymentRefundWorkflow(OwnerLockRegistry ownerLocks, PaymentAttemptRepository repository,
+    public PaymentRefundWorkflow(OwnerLockRegistry ownerLocks, PaymentAttemptRepository repository,
             PaymentRefundRepository refunds, PaymentRecoveryRepository recovery, TransactionTemplate transactions,
-            PaymentProvider psp, Duration recoveryInitialDelay, Supplier<UUID> ids) {
+            PaymentProvider psp,
+            @Value("${atlas.payment.recovery.initial-delay:PT30S}") Duration recoveryInitialDelay,
+            IdGenerator ids) {
         this.ownerLocks = Objects.requireNonNull(ownerLocks);
         this.repository = Objects.requireNonNull(repository);
         this.refunds = Objects.requireNonNull(refunds);
@@ -49,6 +55,9 @@ final class PaymentRefundWorkflow {
         this.transactions = Objects.requireNonNull(transactions);
         this.psp = Objects.requireNonNull(psp);
         this.recoveryInitialDelay = Objects.requireNonNull(recoveryInitialDelay);
+        if (recoveryInitialDelay.isNegative()) {
+            throw new IllegalArgumentException("recoveryInitialDelay must not be negative");
+        }
         this.ids = Objects.requireNonNull(ids);
     }
 
@@ -167,9 +176,9 @@ final class PaymentRefundWorkflow {
                     throw invalidRequest("Refund amount is below the PayPal minimum");
                 }
             }
-            PaymentRefundOperation created = refunds.reserve(ids.get(), attempt.getAttemptId(),
+            PaymentRefundOperation created = refunds.reserve(ids.generateId(), attempt.getAttemptId(),
                     attempt.getProviderCaptureId(), idempotencyKey, amountWon,
-                    providerRefundAmount, providerCurrency, ids.get(), now);
+                    providerRefundAmount, providerCurrency, ids.generateId(), now);
             recovery.enqueueRefund(created.refundOperationId(), recoveryInitialDelay);
             return created;
         }));

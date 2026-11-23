@@ -47,7 +47,7 @@ class PaymentServiceImplWebhookLockTest {
             transactionEntered.countDown();
             return new SimpleTransactionStatus();
         });
-        PaymentServiceImpl payments = new PaymentServiceImpl(attempts, mock(PaymentRefundRepository.class),
+        PaymentServiceImpl payments = PaymentServiceFactory.create(attempts, mock(PaymentRefundRepository.class),
                 mock(PaymentWebhookEventRepository.class), mock(PaymentRecoveryRepository.class),
                 transactionManager,
                 mock(PaymentProvider.class),
@@ -104,7 +104,7 @@ class PaymentServiceImplWebhookLockTest {
             transactionEntered.countDown();
             return new SimpleTransactionStatus();
         });
-        PaymentServiceImpl payments = new PaymentServiceImpl(attempts, mock(PaymentRefundRepository.class),
+        PaymentServiceImpl payments = PaymentServiceFactory.create(attempts, mock(PaymentRefundRepository.class),
                 mock(PaymentWebhookEventRepository.class), mock(PaymentRecoveryRepository.class),
                 transactionManager,
                 mock(PaymentProvider.class),
@@ -146,7 +146,7 @@ class PaymentServiceImplWebhookLockTest {
 
     @Test
     void ownerLockCallbackReturnsResultForUnmappedAndNonCaptureEvents() {
-        PaymentServiceImpl payments = new PaymentServiceImpl(mock(PaymentAttemptRepository.class),
+        PaymentServiceImpl payments = PaymentServiceFactory.create(mock(PaymentAttemptRepository.class),
                 mock(PaymentRefundRepository.class), mock(PaymentWebhookEventRepository.class),
                 mock(PaymentRecoveryRepository.class),
                 mock(PlatformTransactionManager.class), mock(PaymentProvider.class), mock(FxConversionService.class),
