@@ -1,5 +1,6 @@
 package com.atlas.application.service.payout;
 
+import com.atlas.application.repository.payout.PayoutDispatchRepository;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.time.Duration;
 import org.springframework.stereotype.Service;

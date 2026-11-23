@@ -1,10 +1,7 @@
-package com.atlas.application.service;
+package com.atlas.application.repository;
 
-import com.atlas.application.dto.response.PayPalBalanceReportDispositionResponse;
-import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary.DailyTrend;
-import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.application.dto.response.PayPalBalanceReportRunResponse;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,17 +16,17 @@ import org.springframework.stereotype.Repository;
 /** PayPal balance report 대사 결과의 운영자용 읽기 모델. 쓰기는 settlement 모듈의 store가 소유한다. */
 @Repository
 public class PayPalBalanceReportQueryRepository {
-    private static final RowMapper<PayPalBalanceReportRunResponse> RUN_MAPPER = (rs, rowNum) ->
-            new PayPalBalanceReportRunResponse(rs.getObject("run_id", UUID.class), rs.getString("report_sha256"),
+    private static final RowMapper<Run> RUN_MAPPER = (rs, rowNum) ->
+            new Run(rs.getObject("run_id", UUID.class), rs.getString("report_sha256"),
                     rs.getTimestamp("uploaded_at").toInstant(), rs.getString("report_format"),
                     rs.getInt("row_count"), rs.getInt("matched_count"), rs.getInt("unmatched_count"),
                     rs.getInt("mismatch_count"), rs.getInt("duplicate_count"));
-    private static final RowMapper<PayPalBalanceReportRowResponse> ROW_MAPPER = (rs, rowNum) ->
-            new PayPalBalanceReportRowResponse(rs.getObject("run_id", UUID.class), rs.getInt("row_number"),
+    private static final RowMapper<ReportRow> ROW_MAPPER = (rs, rowNum) ->
+            new ReportRow(rs.getObject("run_id", UUID.class), rs.getInt("row_number"),
                     rs.getString("record_id"), rs.getString("related_record_id"), rs.getString("record_type"),
                     rs.getString("status"), rs.getString("reason_code"));
-    private static final RowMapper<PayPalBalanceReportDispositionResponse> DISPOSITION_MAPPER = (rs, rowNum) ->
-            new PayPalBalanceReportDispositionResponse(rs.getObject("disposition_id", UUID.class),
+    private static final RowMapper<Disposition> DISPOSITION_MAPPER = (rs, rowNum) ->
+            new Disposition(rs.getObject("disposition_id", UUID.class),
                     rs.getObject("run_id", UUID.class), rs.getInt("row_number"), rs.getString("disposition"),
                     rs.getString("actor"), rs.getString("reason"), rs.getTimestamp("created_at").toInstant());
 
@@ -75,7 +72,7 @@ public class PayPalBalanceReportQueryRepository {
         return pending == null ? 0 : pending;
     }
 
-    public List<PayPalBalanceReportRunResponse> listRuns(int fetchLimit, int offset) {
+    public List<Run> listRuns(int fetchLimit, int offset) {
         return jdbc.query("""
                 SELECT run_id, report_sha256, uploaded_at, report_format, row_count, matched_count,
                        unmatched_count, mismatch_count, duplicate_count
@@ -85,7 +82,7 @@ public class PayPalBalanceReportQueryRepository {
                 """, RUN_MAPPER, fetchLimit, offset);
     }
 
-    public Optional<PayPalBalanceReportRunResponse> findRunByReportSha256(String reportSha256) {
+    public Optional<Run> findRunByReportSha256(String reportSha256) {
         return jdbc.query("""
                 SELECT run_id, report_sha256, uploaded_at, report_format, row_count, matched_count,
                        unmatched_count, mismatch_count, duplicate_count
@@ -94,7 +91,7 @@ public class PayPalBalanceReportQueryRepository {
     }
 
     /** 모든 run의 예외 행. {@code status}, 업로드 기간, {@code recordId}는 null이면 조건에서 제외한다. */
-    public List<PayPalBalanceReportRowResponse> listExceptions(String status, LocalDate from, LocalDate to,
+    public List<ReportRow> listExceptions(String status, LocalDate from, LocalDate to,
             String recordId, int fetchLimit, int offset) {
         StringBuilder sql = new StringBuilder("""
                 SELECT r.run_id, r.row_number, r.record_id, r.related_record_id, r.record_type, r.status, r.reason_code
@@ -125,7 +122,7 @@ public class PayPalBalanceReportQueryRepository {
         return jdbc.query(sql.toString(), ROW_MAPPER, args.toArray());
     }
 
-    public List<PayPalBalanceReportRowResponse> listRunRows(UUID runId, String status, String recordId,
+    public List<ReportRow> listRunRows(UUID runId, String status, String recordId,
             int fetchLimit, int offset) {
         StringBuilder sql = new StringBuilder("""
                 SELECT run_id, row_number, record_id, related_record_id, record_type, status, reason_code
@@ -147,7 +144,7 @@ public class PayPalBalanceReportQueryRepository {
         return jdbc.query(sql.toString(), ROW_MAPPER, args.toArray());
     }
 
-    public List<PayPalBalanceReportDispositionResponse> dispositionHistory(UUID runId, int rowNumber, int limit) {
+    public List<Disposition> dispositionHistory(UUID runId, int rowNumber, int limit) {
         return jdbc.query("""
                 SELECT disposition_id, run_id, row_number, disposition, actor, reason, created_at
                 FROM paypal_balance_report_disposition
@@ -157,7 +154,7 @@ public class PayPalBalanceReportQueryRepository {
                 """, DISPOSITION_MAPPER, runId, rowNumber, limit);
     }
 
-    public Optional<PayPalBalanceReportDispositionResponse> findDispositionByIdempotencyKey(String idempotencyKey) {
+    public Optional<Disposition> findDispositionByIdempotencyKey(String idempotencyKey) {
         return jdbc.query("""
                 SELECT disposition_id, run_id, row_number, disposition, actor, reason, created_at
                 FROM paypal_balance_report_disposition WHERE idempotency_key = ?
@@ -172,5 +169,20 @@ public class PayPalBalanceReportQueryRepository {
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
+    }
+
+    public record DailyTrend(LocalDate date, long unmatched, long mismatch) {
+    }
+
+    public record Run(UUID runId, String reportSha256, Instant uploadedAt, String reportFormat, int rowCount,
+            int matchedCount, int unmatchedCount, int mismatchCount, int duplicateCount) {
+    }
+
+    public record ReportRow(UUID runId, int rowNumber, String recordId, String relatedRecordId, String recordType,
+            String status, String reasonCode) {
+    }
+
+    public record Disposition(UUID dispositionId, UUID runId, int rowNumber, String disposition, String actor,
+            String reason, Instant createdAt) {
     }
 }

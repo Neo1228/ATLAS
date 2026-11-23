@@ -2,8 +2,8 @@ package com.atlas.migration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.application.service.PayPalWebhookRetryRepository;
-import com.atlas.application.service.PayPalWebhookRetryRepository.ClaimedRetry;
+import com.atlas.application.repository.PayPalWebhookRetryRepository;
+import com.atlas.application.repository.PayPalWebhookRetryRepository.ClaimedRetry;
 import com.atlas.application.service.PayPalWebhookRetryWorker;
 import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.order.service.CheckoutPaymentService;

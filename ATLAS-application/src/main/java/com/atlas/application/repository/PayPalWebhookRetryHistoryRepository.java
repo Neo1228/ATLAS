@@ -1,8 +1,5 @@
-package com.atlas.application.service;
+package com.atlas.application.repository;
 
-import com.atlas.application.dto.response.PayPalWebhookPendingRetryPage;
-import com.atlas.application.dto.response.PayPalWebhookRetryAttemptHistory;
-import com.atlas.application.dto.response.PayPalWebhookRetrySummary;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -29,7 +26,7 @@ public class PayPalWebhookRetryHistoryRepository {
      * (200,000행에서 2,705 버퍼). 생성 컬럼 + (recorded_at, outcome) 인덱스로
      * Index Only Scan 31 버퍼가 됐다(V54, EXP-047).
      */
-    public PayPalWebhookRetrySummary summary() {
+    public RetrySummary summary() {
         Map<String, Long> outcomeCounts = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT outcome, COUNT(*) AS outcome_count
@@ -49,7 +46,7 @@ public class PayPalWebhookRetryHistoryRepository {
                        COUNT(*) FILTER (WHERE lease_owner IS NOT NULL
                                          AND lease_until < CURRENT_TIMESTAMP) AS expired_leases
                 FROM paypal_webhook_retry
-                """, (rs, row) -> new PayPalWebhookRetrySummary(
+                """, (rs, row) -> new RetrySummary(
                 rs.getLong("pending"), rs.getLong("exhausted"),
                 instant(rs.getTimestamp("oldest_pending")), instant(rs.getTimestamp("oldest_exhausted")),
                 rs.getLong("expired_leases"), outcomeCounts));
@@ -61,7 +58,7 @@ public class PayPalWebhookRetryHistoryRepository {
         return total == null ? 0 : total;
     }
 
-    public List<PayPalWebhookPendingRetryPage.Item> listPending(int size, long offset) {
+    public List<PendingRetry> listPending(int size, long offset) {
         return jdbc.query("""
                 SELECT event_id, event_type, attempt_count, next_attempt_at,
                        CASE WHEN lease_owner IS NULL THEN 'UNLEASED'
@@ -71,7 +68,7 @@ public class PayPalWebhookRetryHistoryRepository {
                 WHERE state = 'PENDING'
                 ORDER BY next_attempt_at, created_at, event_id
                 LIMIT ? OFFSET ?
-                """, (rs, row) -> new PayPalWebhookPendingRetryPage.Item(
+                """, (rs, row) -> new PendingRetry(
                 rs.getString("event_id"), rs.getString("event_type"), rs.getInt("attempt_count"),
                 instant(rs.getTimestamp("next_attempt_at")), rs.getString("lease_state")), size, offset);
     }
@@ -94,7 +91,7 @@ public class PayPalWebhookRetryHistoryRepository {
         return total == null ? 0 : total;
     }
 
-    public List<PayPalWebhookRetryAttemptHistory.Entry> timeline(String eventId, int size, long offset) {
+    public List<TimelineEntry> timeline(String eventId, int size, long offset) {
         return jdbc.query("""
                 SELECT category, recorded_at, attempt_number FROM (
                     SELECT outcome AS category, COALESCE(finished_at, claimed_at) AS recorded_at,
@@ -107,12 +104,23 @@ public class PayPalWebhookRetryHistoryRepository {
                 ) timeline
                 ORDER BY recorded_at DESC, category, attempt_number DESC NULLS LAST, sort_key
                 LIMIT ? OFFSET ?
-                """, (rs, row) -> new PayPalWebhookRetryAttemptHistory.Entry(
+                """, (rs, row) -> new TimelineEntry(
                 rs.getString("category"), instant(rs.getTimestamp("recorded_at")),
                 (Integer) rs.getObject("attempt_number")), eventId, eventId, size, offset);
     }
 
     private static Instant instant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    public record RetrySummary(long pending, long exhausted, Instant oldestPendingSince,
+            Instant oldestExhaustedSince, long expiredLeaseCount, Map<String, Long> last24HoursOutcomeCounts) {
+    }
+
+    public record PendingRetry(String eventId, String eventType, int attemptCount, Instant nextAttemptAt,
+            String leaseState) {
+    }
+
+    public record TimelineEntry(String category, Instant recordedAt, Integer attemptNumber) {
     }
 }

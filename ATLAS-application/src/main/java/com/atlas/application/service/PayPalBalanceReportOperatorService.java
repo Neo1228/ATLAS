@@ -6,6 +6,7 @@ import com.atlas.application.dto.response.PayPalBalanceReportOperatorSummary.Dai
 import com.atlas.application.dto.response.PayPalBalanceReportPage;
 import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportRunResponse;
+import com.atlas.application.repository.PayPalBalanceReportQueryRepository;
 import com.atlas.settlement.service.PayPalBalanceReportDisposition;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
 import java.time.Instant;
@@ -41,7 +42,8 @@ public class PayPalBalanceReportOperatorService {
     }
 
     public PayPalBalanceReportOperatorSummary summary() {
-        List<DailyTrend> trend = reports.dailyTrend();
+        List<DailyTrend> trend = reports.dailyTrend().stream()
+                .map(day -> new DailyTrend(day.date(), day.unmatched(), day.mismatch())).toList();
         long unmatched = trend.stream().mapToLong(DailyTrend::unmatched).sum();
         long mismatch = trend.stream().mapToLong(DailyTrend::mismatch).sum();
         return new PayPalBalanceReportOperatorSummary(trend, unmatched, mismatch, reports.countPendingExceptions());
@@ -50,7 +52,8 @@ public class PayPalBalanceReportOperatorService {
     public PayPalBalanceReportPage<PayPalBalanceReportRunResponse> listRuns(int requestedLimit, int offset) {
         int limit = boundedLimit(requestedLimit);
         boundedOffset(offset);
-        return page(reports.listRuns(limit + 1, offset), limit, offset);
+        return page(reports.listRuns(limit + 1, offset).stream()
+                .map(PayPalBalanceReportOperatorService::runResponse).toList(), limit, offset);
     }
 
     public PayPalBalanceReportRunResponse search(String reportSha256) {
@@ -58,6 +61,7 @@ public class PayPalBalanceReportOperatorService {
             throw badRequest("reportSha256 must be a lowercase SHA-256 digest");
         }
         return reports.findRunByReportSha256(reportSha256)
+                .map(PayPalBalanceReportOperatorService::runResponse)
                 .orElseThrow(() -> notFound("Report run not found"));
     }
 
@@ -69,7 +73,8 @@ public class PayPalBalanceReportOperatorService {
             throw badRequest("status must be UNMATCHED, MISMATCH, or DUPLICATE");
         }
         validateDateRange(from, to);
-        return page(reports.listExceptions(status, from, to, recordId, limit + 1, offset), limit, offset);
+        return page(reports.listExceptions(status, from, to, recordId, limit + 1, offset).stream()
+                .map(PayPalBalanceReportOperatorService::rowResponse).toList(), limit, offset);
     }
 
     public PayPalBalanceReportPage<PayPalBalanceReportRowResponse> listRunRows(UUID runId, String status,
@@ -80,13 +85,15 @@ public class PayPalBalanceReportOperatorService {
         if (status != null && !ROW_STATUSES.contains(status)) {
             throw badRequest("Unsupported row status");
         }
-        return page(reports.listRunRows(runId, status, recordId, limit + 1, offset), limit, offset);
+        return page(reports.listRunRows(runId, status, recordId, limit + 1, offset).stream()
+                .map(PayPalBalanceReportOperatorService::rowResponse).toList(), limit, offset);
     }
 
     public List<PayPalBalanceReportDispositionResponse> dispositionHistory(UUID runId, int rowNumber) {
         requireRun(runId);
         requireRow(runId, rowNumber);
-        return reports.dispositionHistory(runId, rowNumber, MAX_PAGE_SIZE);
+        return reports.dispositionHistory(runId, rowNumber, MAX_PAGE_SIZE).stream()
+                .map(PayPalBalanceReportOperatorService::dispositionResponse).toList();
     }
 
     public PayPalBalanceReportDispositionResponse recordDisposition(UUID runId, int rowNumber, String disposition,
@@ -107,6 +114,7 @@ public class PayPalBalanceReportOperatorService {
             return toResponse(candidate);
         }
         PayPalBalanceReportDispositionResponse existing = reports.findDispositionByIdempotencyKey(idempotencyKey)
+                .map(PayPalBalanceReportOperatorService::dispositionResponse)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Idempotency key conflict"));
         if (existing.runId().equals(runId) && existing.rowNumber() == rowNumber
                 && existing.disposition().equals(disposition) && existing.actor().equals(actor)
@@ -183,6 +191,23 @@ public class PayPalBalanceReportOperatorService {
     }
 
     private static PayPalBalanceReportDispositionResponse toResponse(PayPalBalanceReportDisposition value) {
+        return new PayPalBalanceReportDispositionResponse(value.dispositionId(), value.runId(), value.rowNumber(),
+                value.disposition(), value.actor(), value.reason(), value.createdAt());
+    }
+
+    private static PayPalBalanceReportRunResponse runResponse(PayPalBalanceReportQueryRepository.Run run) {
+        return new PayPalBalanceReportRunResponse(run.runId(), run.reportSha256(), run.uploadedAt(),
+                run.reportFormat(), run.rowCount(), run.matchedCount(), run.unmatchedCount(), run.mismatchCount(),
+                run.duplicateCount());
+    }
+
+    private static PayPalBalanceReportRowResponse rowResponse(PayPalBalanceReportQueryRepository.ReportRow row) {
+        return new PayPalBalanceReportRowResponse(row.runId(), row.rowNumber(), row.recordId(),
+                row.relatedRecordId(), row.recordType(), row.status(), row.reasonCode());
+    }
+
+    private static PayPalBalanceReportDispositionResponse dispositionResponse(
+            PayPalBalanceReportQueryRepository.Disposition value) {
         return new PayPalBalanceReportDispositionResponse(value.dispositionId(), value.runId(), value.rowNumber(),
                 value.disposition(), value.actor(), value.reason(), value.createdAt());
     }

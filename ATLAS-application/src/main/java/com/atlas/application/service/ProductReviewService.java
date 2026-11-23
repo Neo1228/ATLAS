@@ -2,6 +2,7 @@ package com.atlas.application.service;
 
 import com.atlas.application.dto.response.ProductReviewPage;
 import com.atlas.application.dto.response.ProductReviewResponse;
+import com.atlas.application.repository.ProductReviewRepository;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.order.service.OrderService;
@@ -45,7 +46,7 @@ public class ProductReviewService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.CONFLICT, "A delivered purchase of this product is required to review it"));
         try {
-            return reviews.create(buyerRef, productId, orderItemId, rating, cleanBody);
+            return toResponse(reviews.create(buyerRef, productId, orderItemId, rating, cleanBody));
         } catch (DuplicateKeyException exception) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "This buyer has already reviewed this product", exception);
@@ -65,11 +66,16 @@ public class ProductReviewService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset must be between 0 and 10000");
         }
         ProductReviewRepository.ReviewSummary summary = reviews.summary(productId);
-        List<ProductReviewResponse> fetched = reviews.list(productId, limit + 1, offset);
+        List<ProductReviewRepository.Review> fetched = reviews.list(productId, limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
-        List<ProductReviewResponse> items = fetched.stream().limit(limit).toList();
+        List<ProductReviewResponse> items = fetched.stream().limit(limit)
+                .map(ProductReviewService::toResponse).toList();
         return new ProductReviewPage(productId, summary.averageRating(), summary.reviewCount(), items, limit, offset,
                 hasMore);
+    }
+
+    private static ProductReviewResponse toResponse(ProductReviewRepository.Review review) {
+        return new ProductReviewResponse(review.reviewId(), review.rating(), review.body(), review.createdAt());
     }
 
     private static void requireBuyerRef(String buyerRef) {

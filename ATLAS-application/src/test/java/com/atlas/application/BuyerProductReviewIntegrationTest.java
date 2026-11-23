@@ -7,7 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.atlas.application.dto.response.ProductReviewResponse;
-import com.atlas.application.service.ProductReviewRepository;
+import com.atlas.application.repository.ProductReviewRepository;
 import com.atlas.application.service.ProductReviewService;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;

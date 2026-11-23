@@ -1,5 +1,7 @@
-package com.atlas.application.service.payout;
+package com.atlas.application.repository.payout;
 
+import com.atlas.application.service.payout.PayoutDispatchPlan;
+import com.atlas.application.service.payout.PayoutDispatchRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;

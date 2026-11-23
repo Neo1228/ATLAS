@@ -1,4 +1,4 @@
-package com.atlas.application.service;
+package com.atlas.application.repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;

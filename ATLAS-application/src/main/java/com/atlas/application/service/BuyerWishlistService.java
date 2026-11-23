@@ -2,6 +2,7 @@ package com.atlas.application.service;
 
 import com.atlas.application.dto.response.BuyerWishlistItemResponse;
 import com.atlas.application.dto.response.BuyerWishlistPage;
+import com.atlas.application.repository.BuyerWishlistRepository;
 import com.atlas.catalog.service.ProductService;
 import java.util.List;
 import java.util.Objects;

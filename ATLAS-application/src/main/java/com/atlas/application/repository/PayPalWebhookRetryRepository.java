@@ -1,4 +1,4 @@
-package com.atlas.application.service;
+package com.atlas.application.repository;
 
 import com.atlas.payment.provider.PaymentWebhookEvent;
 import java.math.BigDecimal;
