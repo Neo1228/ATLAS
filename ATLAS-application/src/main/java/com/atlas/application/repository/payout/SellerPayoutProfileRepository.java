@@ -64,17 +64,6 @@ public class SellerPayoutProfileRepository {
                 sellerId, expectedVersion).stream().findFirst();
     }
 
-    public Optional<SellerPayoutProfile> suspend(UUID sellerId, int expectedVersion, Instant now) {
-        return jdbc.query("""
-                UPDATE seller_payout_profile
-                SET status = 'SUSPENDED', profile_version = profile_version + 1, updated_at = ?
-                WHERE seller_id = ? AND status = 'ACTIVE' AND profile_version = ?
-                RETURNING seller_id, recipient_account_id, country_code, payout_currency, status,
-                          profile_version, updated_at, verified_at, verified_by
-                """, (row, number) -> map(row), Timestamp.from(now), sellerId, expectedVersion)
-                .stream().findFirst();
-    }
-
     public Optional<String> findRequestHash(UUID sellerId, String idempotencyKey) {
         return jdbc.query("""
                 SELECT request_facts_sha256 FROM seller_payout_profile_action

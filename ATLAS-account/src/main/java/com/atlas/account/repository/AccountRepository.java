@@ -416,15 +416,6 @@ public class AccountRepository {
         return true;
     }
 
-    public void revokeRefreshToken(UUID accountId, String tokenHash, Instant revokedAt) {
-        jdbc.update("""
-                        UPDATE account_refresh_token session SET revoked_at = ?
-                        FROM refresh_token_family family
-                        WHERE session.family_id = family.family_id AND family.account_id = ?
-                          AND session.token_hash = ? AND session.revoked_at IS NULL
-                        """, Timestamp.from(revokedAt), accountId, tokenHash);
-    }
-
     private Optional<AccountPrincipal> findAccount(String predicate, Object value) {
         String query = "SELECT account_id, email FROM user_account WHERE status = 'ACTIVE' "
                 + "AND email_verified_at IS NOT NULL AND " + predicate;

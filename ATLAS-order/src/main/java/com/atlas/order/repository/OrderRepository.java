@@ -21,9 +21,6 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
     Optional<PurchaseOrder> findByTicketId(UUID ticketId);
     boolean existsByOrderIdAndBuyerRef(UUID orderId, String buyerRef);
 
-    Optional<PurchaseOrder> findBySellerIdAndBuyerRefAndCheckoutKey(UUID sellerId, String buyerRef,
-                                                                    String checkoutKey);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<PurchaseOrder> findWithLockByOrderId(UUID orderId);
 
@@ -62,7 +59,6 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
             + "and po.state = :state and po.checkoutExpiresAt <= :now order by po.checkoutExpiresAt, po.checkoutId")
     List<UUID> findExpiredCheckoutIds(@Param("state") OrderState state, @Param("now") Instant now,
             Limit limit);
-
 
     default boolean hasOtherUnresolvedPayment(PurchaseOrder order) {
         return existsByCampaignIdAndBuyerRefAndOrderIdNotAndStateIn(order.campaignId(), order.buyerRef(),
@@ -120,5 +116,4 @@ public interface OrderRepository extends JpaRepository<PurchaseOrder, UUID> {
             """, nativeQuery = true)
     Optional<UUID> findDeliveredOrderItemId(@Param("buyerRef") String buyerRef,
             @Param("productId") UUID productId);
-
 }

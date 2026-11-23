@@ -24,7 +24,6 @@ public class QueueRepository {
         jdbc.update("INSERT INTO admission_counter (seller_id, sku_id, last_sequence) VALUES (?, ?, 0) ON CONFLICT (seller_id, sku_id) DO NOTHING", sellerId, skuId);
     }
 
-
     public record DueTicketCandidate(UUID ticketId, UUID sellerId, String skuId, Instant expiresAt) {
         public DueTicketCursor cursor() {
             return new DueTicketCursor(expiresAt, ticketId);
@@ -130,11 +129,6 @@ public class QueueRepository {
         int changed = jdbc.update("UPDATE admission_ticket SET status = 'EXPIRED', checkout_slot_held = false WHERE seller_id = ? AND sku_id = ? AND status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ? AND ticket_id IN (" + placeholders + ")", parameters);
         entityManager.clear();
         return changed;
-    }
-
-    public List<UUID> findWaitingTicketIdsForPromotion(UUID sellerId, String skuId, Instant now, int limit) {
-        entityManager.flush();
-        return jdbc.query("SELECT ticket_id FROM admission_ticket WHERE seller_id = ? AND sku_id = ? AND status = 'WAITING' AND expires_at > ? ORDER BY sequence LIMIT ? FOR UPDATE", (rs, rowNum) -> rs.getObject(1, UUID.class), sellerId, skuId, Timestamp.from(now), limit);
     }
 
     /**

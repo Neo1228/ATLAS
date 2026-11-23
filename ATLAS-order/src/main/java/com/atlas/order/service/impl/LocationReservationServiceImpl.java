@@ -31,9 +31,6 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -78,7 +75,6 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             throw new IllegalArgumentException("Invalid inventory reservation recovery policy");
         }
     }
-
 
     @Override
     public LocationReservationResponse stage(String idempotencyKey,
@@ -388,7 +384,6 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             }
         }
         finish(current, lease.leaseToken(), LocationReservationWorkflowState.RESERVED, null, clock.instant());
-
     }
     private void processPendingWorkflow(WorkflowSnapshot workflow, WorkLease lease) {
         List<LocationTransition> transitions = new ArrayList<>(workflow.locations().size());
@@ -725,17 +720,5 @@ public class LocationReservationServiceImpl implements LocationReservationServic
 
     private OrderException conflict(String message) {
         return new OrderException(OrderException.Code.CONFLICT, message);
-    }
-
-    private static void validateLeaseTiming(Duration leaseDuration, Duration connectTimeout, Duration readTimeout) {
-        if (leaseDuration == null || leaseDuration.isNegative() || leaseDuration.isZero()
-                || connectTimeout == null || connectTimeout.isNegative() || connectTimeout.isZero()
-                || readTimeout == null || readTimeout.isNegative() || readTimeout.isZero()) {
-            throw new IllegalArgumentException("Inventory lease and HTTP timeouts must be positive");
-        }
-        Duration renewalWindow = connectTimeout.plus(readTimeout).plusSeconds(1);
-        if (leaseDuration.dividedBy(2).compareTo(renewalWindow) <= 0) {
-            throw new IllegalArgumentException("Half the reservation lease must exceed HTTP timeouts plus 1 second");
-        }
     }
 }
