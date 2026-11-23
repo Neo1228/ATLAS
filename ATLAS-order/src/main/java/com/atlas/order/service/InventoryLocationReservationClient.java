@@ -20,6 +20,9 @@ public interface InventoryLocationReservationClient {
     RemoteReservation restock(UUID fulfillmentLocationId, UUID reservationId, String restockKey,
             List<ReservationItem> items);
 
+    /** 원격 location의 판매 가능 수량(routing 판단용, 조회 시점 값). */
+    long availableStock(UUID fulfillmentLocationId, UUID sellerId, String skuId);
+
     record ReservationItem(UUID sellerId, String skuId, int quantity) {
     }
 

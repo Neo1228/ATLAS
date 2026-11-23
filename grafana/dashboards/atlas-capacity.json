@@ -209,6 +209,26 @@
           "legendFormat": "oldest due age (s)"
         }
       ]
+    },
+    {
+      "id": 13,
+      "title": "Order inventory recovery age",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "atlas-prometheus" },
+      "gridPos": { "x": 0, "y": 40, "w": 24, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (stage) (atlas_order_inventory_recovery_oldest_due_age_seconds)",
+          "legendFormat": "due: {{stage}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (stage, state) (atlas_order_inventory_recovery_oldest_pending_age_seconds)",
+          "legendFormat": "pending: {{stage}} {{state}}"
+        }
+      ]
     }
   ]
 }

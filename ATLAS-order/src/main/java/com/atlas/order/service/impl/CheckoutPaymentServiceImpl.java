@@ -12,6 +12,7 @@ import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.persistence.state.OrderInventoryReservationWorkflowState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.OrderItemRepository;
@@ -93,6 +94,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         if (checkoutId == null) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "checkoutId required");
         }
+        // 원격 재고 checkout은 승인까지만 진행한 뒤 claim을 확인하고 매입한다. 매입 뒤 재고 부족이 드러나면
+        // 실제 청구 후 환불이 필요해지므로, 자금 이동 전에 재고를 판매 확정 상태로 만든다.
+        boolean remote = checkoutHasRemoteReservation(checkoutId);
         BuyerCheckout prepared = transactions.execute(status -> {
             BuyerCheckout checkout = checkouts.findWithLockByCheckoutId(checkoutId)
                     .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found"));
@@ -197,6 +201,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 221) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "Idempotency-Key is required");
         }
+        boolean remote = checkoutHasRemoteReservation(checkoutId);
         BuyerCheckout current = transactions.execute(status -> checkouts.findById(checkoutId)
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found")));
         boolean cancellationRequested = current.state() == BuyerCheckoutState.CANCEL_PENDING
@@ -212,7 +217,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         }
         PaymentResponse payment = cancellationRequested
                 ? payments.reconcileCheckoutForCancellation(checkoutId, idempotencyKey)
-                : payments.reconcileCheckout(checkoutId, idempotencyKey);
+                : remote
+                        ? payments.reconcileCheckoutAuthorization(checkoutId, idempotencyKey)
+                        : payments.reconcileCheckout(checkoutId, idempotencyKey);
         if ((cancellationRequested && payment.state() == PaymentState.AUTHORIZED)
                 || (payment.state() == PaymentState.DECLINED && payment.authorizationActive())) {
             payment = payments.voidCheckoutAuthorization(checkoutId, idempotencyKey + ":void");
@@ -283,7 +290,8 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 throw new OrderException(OrderException.Code.CONFLICT,
                         "Paid checkouts use the Seller order refund path");
             }
-            if (checkout.state() == BuyerCheckoutState.RESERVED) {
+            if (checkout.state() == BuyerCheckoutState.RESERVED
+                    || checkout.state() == BuyerCheckoutState.RESERVATION_PENDING) {
                 List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
                 if (children.stream().anyMatch(order -> order.reservationWorkflowId() != null)) {
                     for (PurchaseOrder order : children) {
@@ -403,12 +411,11 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 if (total != checkout.totalWon()) throw new OrderException(OrderException.Code.CONFLICT, "Checkout item total mismatch");
                 settlement.recordCheckoutCapture(
                         new CheckoutSettlementPostingRequest(checkoutId, payment.attemptId(), total, allocations));
-                for (PurchaseOrder order : children) {
-                    if (order.state() != OrderState.PAID) {
-                        inventory.claimAll(order.orderId());
-                        redeemCouponReservation(order, now);
-                        order.updateState(OrderState.PAID, payment.attemptId(), now);
-                        fulfillment.initialize(order.orderId());
+                boolean remoteCheckout = children.stream().anyMatch(order -> order.reservationWorkflowId() != null);
+                if (remoteCheckout && !remoteInventoryClaimed(children)) {
+                    // 매입은 확정됐지만 원격 claim이 기록되지 않았다. 판매 확정 전까지 PAID로 올리지 않는다.
+                    for (PurchaseOrder order : children) {
+                        order.updateState(OrderState.INVENTORY_CLAIM_PENDING, payment.attemptId(), now);
                     }
                     checkout.update(BuyerCheckoutState.INVENTORY_CLAIM_PENDING, checkout.totalWon(), now);
                 } else {

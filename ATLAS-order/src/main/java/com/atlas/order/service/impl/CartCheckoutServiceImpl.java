@@ -9,6 +9,7 @@ import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.catalog.dto.response.SellerCouponResponse;
 import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
+import com.atlas.inventory.dto.response.InventoryLocationResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
@@ -32,6 +33,10 @@ import com.atlas.order.dto.request.OrderInventoryReservationRequest.Item;
 import com.atlas.order.dto.request.OrderInventoryReservationRequest.LocationAllocation;
 import com.atlas.order.dto.response.OrderInventoryReservationResponse;
 import com.atlas.order.service.OrderInventoryReservationCoordinator;
+import com.atlas.order.service.OrderReservationFinalizer;
+import com.atlas.order.service.InventoryLocationReservationClient;
+import com.atlas.order.service.LocationAllocationPlanner;
+import com.atlas.order.exception.InventoryLocationClientException;
 import java.math.BigInteger;
 import java.time.Clock;
 import java.time.Duration;
@@ -41,6 +46,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.TreeSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -68,13 +74,30 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     private final Clock clock;
     private final Duration checkoutWindow;
     private OrderInventoryReservationCoordinator locationReservations;
+    private OrderReservationFinalizer reservationFinalizer;
 
     @Value("${atlas.order-inventory-reservation.enabled:false}")
     private boolean locationReservationEnabled;
 
+    // 단일 location으로 SellerOrder를 처리할 수 없을 때 여러 location으로 나눠 예약할지 여부(EXP-054).
+    @Value("${atlas.order-inventory-reservation.split-allocation-enabled:false}")
+    private boolean splitAllocationEnabled;
+
+    private InventoryLocationReservationClient locationClient;
+
+    @Autowired(required = false)
+    public void setLocationClient(InventoryLocationReservationClient locationClient) {
+        this.locationClient = locationClient;
+    }
+
     @Autowired(required = false)
     public void setLocationReservations(OrderInventoryReservationCoordinator coordinator) {
         this.locationReservations = coordinator;
+    }
+
+    @Autowired(required = false)
+    public void setReservationFinalizer(OrderReservationFinalizer finalizer) {
+        this.reservationFinalizer = finalizer;
     }
 
     public CartCheckoutServiceImpl(CartService carts, SellerSkuService sellerSkus,
@@ -110,9 +133,10 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         validate(buyerRef, idempotencyKey);
         Map<UUID, String> couponCodes = normalizeCouponSelections(selections);
         UUID checkoutId;
+        RemoteStock stock = locationReservationEnabled ? remoteCandidates(buyerRef) : RemoteStock.NONE;
         try {
             checkoutId = transactions.execute(status ->
-                    checkoutLocked(buyerRef, idempotencyKey, couponCodes));
+                    checkoutLocked(buyerRef, idempotencyKey, couponCodes, stock));
         } catch (ArithmeticException overflow) {
             // 장바구니 수량에 상한이 없으므로 가격 × 수량이 long 을 넘칠 수 있다.
             // 이것은 클라이언트가 만든 입력 오류이며 500 이 아니라 400 이어야 한다.
@@ -129,7 +153,8 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         return toResponse(checkoutId);
     }
 
-    private UUID checkoutLocked(String buyerRef, String idempotencyKey, Map<UUID, String> couponCodes) {
+    private UUID checkoutLocked(String buyerRef, String idempotencyKey, Map<UUID, String> couponCodes,
+                                RemoteStock stock) {
         CartResponse cart = carts.lockForCheckout(buyerRef);
         BuyerCheckout existing = checkouts.findByBuyerRefAndIdempotencyKey(buyerRef, idempotencyKey)
                 .orElse(null);
@@ -222,16 +247,46 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                     .map(line -> new ReserveInventoryBatchRequest.Item(seller.sellerId(),
                             line.sku().skuId(), line.cartItem().quantity()))
                     .toList();
-            List<ReservationResponse> savedReservations = inventory.reserveAll(
-                    new ReserveInventoryBatchRequest(savedChild.orderId(), null, reservations));
-            UUID locationId = savedReservations.stream().map(ReservationResponse::locationId)
-                    .filter(Objects::nonNull).findFirst()
-                    .orElseThrow(() -> new OrderException(OrderException.Code.CONFLICT,
-                            "Inventory reservations did not include a fulfillment location"));
-            if (savedReservations.size() != reservations.size() || savedReservations.stream()
-                    .anyMatch(reservation -> !locationId.equals(reservation.locationId()))) {
-                throw new OrderException(OrderException.Code.CONFLICT,
-                        "Inventory reservations disagree on fulfillment location");
+            UUID locationId;
+            if (locationReservationEnabled) {
+                Map<String, Integer> required = new TreeMap<>();
+                for (ReserveInventoryBatchRequest.Item item : reservations) {
+                    required.merge(item.skuId(), item.quantity(), Math::addExact);
+                }
+                List<LocationAllocationPlanner.Plan> plan = LocationAllocationPlanner.plan(required,
+                        stock.candidates().getOrDefault(seller.sellerId(), List.of()), splitAllocationEnabled);
+                if (plan.isEmpty()) {
+                    if (stock.unreachableSellers().contains(seller.sellerId())) {
+                        // 조회 실패한 위치가 있었다면 재고 부족이 아니라 가용 수량을 확인하지 못한 것이므로 재시도 가능한 오류로 알린다.
+                        throw new OrderException(OrderException.Code.INVENTORY_UNAVAILABLE,
+                                "Inventory availability could not be confirmed; retry the checkout");
+                    }
+                    throw new OrderException(OrderException.Code.CONFLICT,
+                            "No fulfillment location can serve this SellerOrder");
+                }
+                // 여러 location으로 나뉘면 단일 출고지가 없으므로 location별 내역은 workflow에만 기록한다.
+                locationId = plan.size() == 1 ? plan.getFirst().locationId() : null;
+                OrderInventoryReservationRequest request = new OrderInventoryReservationRequest(
+                        savedChild.orderId(), plan.stream().map(allocation -> new LocationAllocation(
+                                allocation.locationId(), allocation.lines().entrySet().stream()
+                                .map(line -> new Item(seller.sellerId(), line.getKey(), line.getValue()))
+                                .toList())).toList());
+                String reservationKey = reservationKey(savedChild.orderId());
+                OrderInventoryReservationResponse staged = requireLocationReservations()
+                        .stage(reservationKey, request);
+                savedChild.setReservationWorkflowId(staged.workflowId());
+            } else {
+                List<ReservationResponse> savedReservations = inventory.reserveAll(
+                        new ReserveInventoryBatchRequest(savedChild.orderId(), null, reservations));
+                locationId = savedReservations.stream().map(ReservationResponse::locationId)
+                        .filter(Objects::nonNull).findFirst()
+                        .orElseThrow(() -> new OrderException(OrderException.Code.CONFLICT,
+                                "Inventory reservations did not include a fulfillment location"));
+                if (savedReservations.size() != reservations.size() || savedReservations.stream()
+                        .anyMatch(reservation -> !locationId.equals(reservation.locationId()))) {
+                    throw new OrderException(OrderException.Code.CONFLICT,
+                            "Inventory reservations disagree on fulfillment location");
+                }
             }
             savedChild.setFulfillmentLocationId(locationId);
             if (seller.coupon() != null) {
@@ -391,6 +446,42 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         }
     }
     private record SellerLines(UUID sellerId, List<Line> lines, SellerCouponResponse coupon) { }
+    /**
+     * 장바구니 Seller별로 활성 location의 원격 판매 가능 수량을 조회한다. 원격 예약만 재고를 차감하므로
+     * 로컬 inventory_pool은 원격 모드에서 판매량을 반영하지 못한다. 조회 실패 location은 이번 계획에서 제외한다.
+     */
+    private RemoteStock remoteCandidates(String buyerRef) {
+        if (locationClient == null) return RemoteStock.NONE;
+        Map<UUID, Set<String>> skusBySeller = new TreeMap<>();
+        for (CartItemResponse item : carts.find(buyerRef).items()) {
+            skusBySeller.computeIfAbsent(item.sellerId(), ignored -> new TreeSet<>()).add(item.skuId());
+        }
+        Map<UUID, List<LocationAllocationPlanner.Candidate>> candidates = new HashMap<>();
+        Set<UUID> unreachable = new HashSet<>();
+        skusBySeller.forEach((sellerId, skus) -> {
+            List<LocationAllocationPlanner.Candidate> sellerCandidates = new ArrayList<>();
+            for (InventoryLocationResponse location : inventory.findLocations(sellerId)) {
+                if (!location.active()) continue;
+                Map<String, Long> available = new TreeMap<>();
+                try {
+                    for (String sku : skus) {
+                        available.put(sku, locationClient.availableStock(location.locationId(), sellerId, sku));
+                    }
+                } catch (InventoryLocationClientException unavailable) {
+                    // 엔드포인트가 없는 위치(PERMANENT)는 원격 관리 대상이 아니므로 건너뛴다. 일시 장애만 가용 수량 미확인으로 기록한다.
+                    if (unavailable.failure() == InventoryLocationClientException.Failure.RETRYABLE_UNKNOWN) {
+                        unreachable.add(sellerId);
+                    }
+                continue;
+                }
+                sellerCandidates.add(new LocationAllocationPlanner.Candidate(
+                        location.locationId(), location.priority(), available));
+            }
+            candidates.put(sellerId, sellerCandidates);
+        });
+        return new RemoteStock(candidates, unreachable);
+    }
+
     private void finishLocationReservation(UUID checkoutId) {
         if (reservationFinalizer == null) {
             throw new OrderException(OrderException.Code.CONFLICT,
@@ -409,5 +500,10 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
 
     private static String reservationKey(UUID orderId) {
         return "buyer-checkout-location-v1:" + orderId;
+    }
+
+    private record RemoteStock(Map<UUID, List<LocationAllocationPlanner.Candidate>> candidates,
+            Set<UUID> unreachableSellers) {
+        static final RemoteStock NONE = new RemoteStock(Map.of(), Set.of());
     }
 }

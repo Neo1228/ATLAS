@@ -18,5 +18,19 @@ public interface ReservationAdmissionGate {
      */
     boolean tryAdmit(String admissionKey, List<Claim> claims);
 
+    /**
+     * 승인한 요청이 location에 실제 예약으로 반영됐다. gate가 따로 들고 있던 "승인됐지만 아직 예약 전" 수량을 정리한다.
+     * 같은 key로 여러 번 불려도 한 번만 반영돼야 한다.
+     */
+    default void confirm(String admissionKey) {
+    }
+
+    /**
+     * 승인한 요청이 예약 없이 끝났다(취소·실패). 차감해 둔 수량을 돌려줘 과잉 거절을 막는다. 멱등이어야 하며, 승인한 적 없는
+     * key나 이미 처리한 key는 아무것도 바꾸지 않는다.
+     */
+    default void release(String admissionKey) {
+    }
+
     record Claim(UUID fulfillmentLocationId, UUID sellerId, String skuId, int quantity) {}
 }

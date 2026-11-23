@@ -1,0 +1,66 @@
+package com.atlas.application.config;
+
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+
+/**
+ * 예약 이벤트 로그를 Kafka로 내보내는 relay의 producer와 전용 scheduler.
+ *
+ * <p>relay를 켠 경우에만 만들어지고, Boot의 Kafka 자동구성에 기대지 않는다(전역 consumer/admin 설정을 끌어오지 않는다).
+ * producer는 acks=all, idempotence=true라서 retry가 있어도 같은 파티션 안의 순서와 중복 방지가 유지된다.
+ */
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnProperty(name = "atlas.order-inventory-reservation.event-relay.enabled", havingValue = "true")
+public class OrderInventoryEventRelayConfiguration {
+
+    @Bean
+    public DefaultKafkaProducerFactory<String, String> orderInventoryEventProducerFactory(
+            @Value("${atlas.order-inventory-reservation.event-relay.bootstrap-servers:localhost:9092}")
+            String bootstrapServers,
+            @Value("${atlas.order-inventory-reservation.event-relay.send-timeout:PT10S}") Duration sendTimeout) {
+        if (bootstrapServers.isBlank()) throw new IllegalArgumentException("Invalid event relay bootstrap servers");
+        if (sendTimeout.compareTo(Duration.ofSeconds(1)) < 0 || sendTimeout.compareTo(Duration.ofMinutes(5)) > 0) {
+            throw new IllegalArgumentException("Invalid event relay send timeout");
+        }
+        Map<String, Object> config = new HashMap<>();
+        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        config.put(ProducerConfig.ACKS_CONFIG, "all");
+        config.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+        // send-timeout이 한 묶음의 전달 한도다. 한도 안에 못 보내면 future가 실패하고 relay는 cursor를 옮기지 않는다.
+        int timeoutMillis = Math.toIntExact(sendTimeout.toMillis());
+        config.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, timeoutMillis);
+        config.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, timeoutMillis / 2);
+        config.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, timeoutMillis);
+        config.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+        return new DefaultKafkaProducerFactory<>(config);
+    }
+
+    @Bean
+    public KafkaTemplate<String, String> orderInventoryEventKafkaTemplate(
+            DefaultKafkaProducerFactory<String, String> orderInventoryEventProducerFactory) {
+        return new KafkaTemplate<>(orderInventoryEventProducerFactory);
+    }
+
+    /** Kafka 전송 대기가 다른 복구 worker의 scheduler 자리를 차지하지 않도록 전용 thread 하나를 둔다. */
+    @Bean(name = "orderInventoryEventRelayTaskScheduler")
+    public ThreadPoolTaskScheduler orderInventoryEventRelayTaskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("atlas-order-inventory-event-relay-");
+        scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        scheduler.setAwaitTerminationSeconds(10);
+        return scheduler;
+    }
+}

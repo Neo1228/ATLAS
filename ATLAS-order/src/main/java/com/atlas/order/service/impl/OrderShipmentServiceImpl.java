@@ -16,6 +16,9 @@ import com.atlas.order.repository.OrderFulfillmentRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.repository.OrderInventoryReservationRepository;
+import com.atlas.order.repository.OrderInventoryReservationRepository.LocationSnapshot;
+import com.atlas.order.repository.OrderInventoryReservationRepository.WorkflowSnapshot;
 import com.atlas.order.repository.OrderShipmentRepository;
 import com.atlas.order.service.OrderShipmentService;
 import java.time.Clock;
@@ -26,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +41,12 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
     private final OrderFulfillmentRepository fulfillments;
     private final OrderRefundRepository refunds;
     private final Clock clock;
+    private OrderInventoryReservationRepository reservationWorkflows;
+
+    @Autowired(required = false)
+    public void setReservationWorkflows(OrderInventoryReservationRepository reservationWorkflows) {
+        this.reservationWorkflows = reservationWorkflows;
+    }
 
     public OrderShipmentServiceImpl(OrderRepository orders, OrderItemRepository orderItems,
                                     OrderShipmentRepository shipments, OrderFulfillmentRepository fulfillments,
@@ -103,8 +113,10 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
             throw conflict("Order has no shippable quantity");
         }
 
+        UUID shipmentLocation = shipmentLocation(order, facts, byId);
         OrderShipment shipment = new OrderShipment(order, facts.idempotencyKey(), facts.carrierCode(),
                 facts.trackingNumber(), clock.instant());
+        shipment.assignFulfillmentLocation(shipmentLocation);
         facts.quantities().forEach((id, quantity) -> shipment.addItem(byId.get(id), quantity));
         OrderShipment saved = shipments.save(shipment);
         facts.quantities().forEach((id, quantity) -> addShipped(totalsByItem, id, quantity));
@@ -175,6 +187,51 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
         }
     }
 
+    /**
+     * 출고 location을 정하고 검증한다. 여러 location으로 나뉜 원격 재고 주문은 location을 지정해야 하며,
+     * 그 location에 할당된 SKU 수량을 넘겨 출고할 수 없다. 다른 location의 재고로 출고하면 원격 재고와
+     * 실제 출고 위치가 어긋나 환불 재입고 위치도 틀어지기 때문이다.
+     */
+    private UUID shipmentLocation(PurchaseOrder order, Normalized facts, Map<UUID, OrderItem> byId) {
+        UUID requested = facts.fulfillmentLocationId();
+        if (order.reservationWorkflowId() == null || reservationWorkflows == null) {
+            if (requested != null && !requested.equals(order.fulfillmentLocationId())) {
+                throw invalid("Shipment location does not match the order fulfillment location");
+            }
+            return order.fulfillmentLocationId();
+        }
+        WorkflowSnapshot workflow = reservationWorkflows.findByWorkflowId(order.reservationWorkflowId());
+        if (workflow == null) throw conflict("Order inventory allocation not found");
+        List<LocationSnapshot> locations = workflow.locations();
+        if (locations.size() == 1) {
+            UUID only = locations.getFirst().fulfillmentLocationId();
+            if (requested != null && !requested.equals(only)) {
+                throw invalid("Shipment location does not match the order fulfillment location");
+            }
+            return only;
+        }
+        if (requested == null) throw invalid("Split order shipments must specify a fulfillment location");
+        LocationSnapshot location = locations.stream()
+                .filter(candidate -> candidate.fulfillmentLocationId().equals(requested)).findFirst()
+                .orElseThrow(() -> invalid("Shipment location is not allocated to this order"));
+        Map<String, Integer> allocated = new HashMap<>();
+        location.items().forEach(item -> allocated.merge(item.skuId(), item.quantity(), Integer::sum));
+        Map<String, Integer> shipped = new HashMap<>();
+        for (OrderShipment previous : shipments.findWithItemsByOrderId(order.orderId())) {
+            if (!requested.equals(previous.fulfillmentLocationId())) continue;
+            previous.items().forEach(item -> shipped.merge(byId.get(item.orderItemId()).skuId(), item.quantity(),
+                    Integer::sum));
+        }
+        facts.quantities().forEach((itemId, quantity) -> shipped.merge(byId.get(itemId).skuId(), quantity,
+                Integer::sum));
+        shipped.forEach((sku, quantity) -> {
+            if (quantity > allocated.getOrDefault(sku, 0)) {
+                throw conflict("Shipment exceeds the quantity allocated to the fulfillment location");
+            }
+        });
+        return requested;
+    }
+
     private Map<UUID, ShipmentTotals> loadShipmentTotals(UUID orderId) {
         Map<UUID, ShipmentTotals> totals = new HashMap<>();
         for (ShipmentProgress progress :
@@ -217,7 +274,8 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
                 throw invalid("Shipment items must have unique order item IDs and positive quantities");
             }
         }
-        return new Normalized(request.sellerId(), request.orderId(), key, carrier, tracking, quantities);
+        return new Normalized(request.sellerId(), request.orderId(), key, carrier, tracking, quantities,
+                request.fulfillmentLocationId());
     }
 
     private static String blankToNull(String value) {
@@ -228,7 +286,9 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
 
     private static boolean sameFacts(OrderShipment shipment, Normalized facts) {
         if (!Objects.equals(shipment.carrierCode(), facts.carrierCode())
-                || !Objects.equals(shipment.trackingNumber(), facts.trackingNumber())) return false;
+                || !Objects.equals(shipment.trackingNumber(), facts.trackingNumber())
+                || (facts.fulfillmentLocationId() != null
+                && !facts.fulfillmentLocationId().equals(shipment.fulfillmentLocationId()))) return false;
         Map<UUID, Integer> existing = new TreeMap<>();
         shipment.items().forEach(item -> existing.put(item.orderItemId(), item.quantity()));
         return existing.equals(facts.quantities());
@@ -241,7 +301,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
         }
         return new OrderShipmentResponse(shipment.shipmentId(), shipment.orderId(), shipment.idempotencyKey(),
                 shipment.status(), shipment.carrierCode(), shipment.trackingNumber(), shipment.shippedAt(),
-                shipment.deliveredAt(), items);
+                shipment.deliveredAt(), items, shipment.fulfillmentLocationId());
     }
 
     private OrderFulfillment requireFulfillment(UUID orderId) {
@@ -266,7 +326,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
         return new OrderException(OrderException.Code.NOT_FOUND, message);
     }
     private record Normalized(UUID sellerId, UUID orderId, String idempotencyKey, String carrierCode,
-                              String trackingNumber, TreeMap<UUID, Integer> quantities) { }
+                              String trackingNumber, TreeMap<UUID, Integer> quantities, UUID fulfillmentLocationId) { }
     private record ShipmentTotals(long shippedQuantity, long deliveredQuantity) {
     }
 

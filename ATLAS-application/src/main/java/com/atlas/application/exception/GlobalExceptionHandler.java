@@ -114,6 +114,8 @@ public class GlobalExceptionHandler {
                 case NOT_FOUND -> response(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", order.getMessage());
                 case CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", order.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", order.getMessage());
+                case INVENTORY_UNAVAILABLE ->
+                        response(HttpStatus.SERVICE_UNAVAILABLE, "INVENTORY_UNAVAILABLE", order.getMessage());
             };
         }
         if (exception instanceof PaymentException payment) {

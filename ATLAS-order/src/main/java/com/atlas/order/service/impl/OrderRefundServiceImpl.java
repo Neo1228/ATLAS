@@ -21,6 +21,7 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.repository.OrderReturnRepository;
 import com.atlas.order.persistence.projection.RefundRecord;
 import com.atlas.order.persistence.projection.RefundSummary;
+import com.atlas.order.service.OrderInventoryRestockService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.exception.PaymentException;
@@ -42,6 +43,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -334,7 +336,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             throw conflict("PayPal refund facts do not match the order refund request");
         }
         OrderRefundPaymentStatus nextStatus = refundStatus(payment.status());
-        return Objects.requireNonNull(transactions.execute(transaction -> {
+        OrderRefundResponse applied = Objects.requireNonNull(transactions.execute(transaction -> {
             refunds.linkPaymentOperation(reserved.refundId(), payment.refundOperationId());
             boolean changed = refunds.updatePaymentStatus(reserved.refundId(), nextStatus);
             OrderRefundPaymentStatus currentStatus = refunds.paymentStatus(reserved.refundId());
@@ -374,8 +376,40 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             if (item == null) throw conflict("Refund item does not belong to order");
             quantitiesBySku.merge(item.skuId(), line.quantity(), Math::addExact);
         }
-        for (Map.Entry<String, Integer> quantity : quantitiesBySku.entrySet()) {
-            inventory.restoreClaimed(order.orderId(), refund.sellerId(), quantity.getKey(), quantity.getValue());
+        if (order.reservationWorkflowId() != null) {
+            if (restockService == null) throw conflict("Remote inventory restock is unavailable for this order");
+            long returnItemCount = returns.countItemsByRefundId(refund.refundId());
+            if (returnItemCount > 0) {
+                List<OrderReturnRepository.ReturnRestockAllocation> sourceAllocations =
+                        returns.findRestockAllocationsByRefundId(refund.refundId());
+                if (sourceAllocations.size() > returnItemCount) {
+                    throw conflict("Return shipment source count is inconsistent");
+                }
+                Map<UUID, Map<String, Integer>> quantitiesByLocation = new HashMap<>();
+                Map<String, Integer> locatedBySku = new HashMap<>();
+                sourceAllocations.forEach(source ->
+                        locatedBySku.merge(source.getSkuId(), source.getQuantity(), Math::addExact));
+                for (var source : sourceAllocations) {
+                    quantitiesByLocation.computeIfAbsent(source.getFulfillmentLocationId(), ignored -> new HashMap<>())
+                            .merge(source.getSkuId(), source.getQuantity(), Math::addExact);
+                }
+                Map<String, Integer> unlocated = new HashMap<>();
+                quantitiesBySku.forEach((sku, quantity) -> {
+                    int missing = quantity - locatedBySku.getOrDefault(sku, 0);
+                    if (missing < 0) throw conflict("Return shipment restock quantity exceeds refund lines");
+                    if (missing > 0) unlocated.put(sku, missing);
+                });
+                if (!unlocated.isEmpty()) quantitiesByLocation.put(null, unlocated);
+                restockService.stageAtLocations(refund.refundId(), order.orderId(),
+                        order.reservationWorkflowId(), refund.sellerId(), quantitiesByLocation);
+            } else {
+                restockService.stage(refund.refundId(), order.orderId(), order.reservationWorkflowId(),
+                        refund.sellerId(), quantitiesBySku);
+            }
+        } else {
+            for (Map.Entry<String, Integer> quantity : quantitiesBySku.entrySet()) {
+                inventory.restoreClaimed(order.orderId(), refund.sellerId(), quantity.getKey(), quantity.getValue());
+            }
         }
         settlement.recordRefund(new RefundPostingRequest(
                 order.orderId(), refund.refundId(), refund.sellerId(), refund.recordedAmountWon()));
