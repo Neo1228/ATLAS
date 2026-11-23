@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 import com.atlas.application.dto.response.PayPalBalanceReportDispositionResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.application.repository.PayPalBalanceReportQueryRepository;
 import com.atlas.application.service.PayPalBalanceReportOperatorService;
 import com.atlas.application.service.PayPalBalanceReportReconciliationService;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
@@ -85,7 +84,7 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
         PayPalBalanceReportReconciliationService reconciliation =
                 new PayPalBalanceReportReconciliationService(matchQuery);
         ingestion = new PayPalBalanceReportRunIngestionService(reconciliation, store);
-        operator = new PayPalBalanceReportOperatorService(new PayPalBalanceReportQueryRepository(jdbc), store);
+        operator = new PayPalBalanceReportOperatorService(store);
     }
 
     @Test
