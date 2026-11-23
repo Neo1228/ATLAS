@@ -138,7 +138,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         }
 
         PurchaseOrder order = requireOrder(reserved.orderId());
-        // 예약 시점에 고정한 payment key 를 그대로 쓴다. 다시 유도하면 V57 이전 행이나 다른 규칙으로
+        // 예약 시점에 고정한 payment key 를 그대로 쓴다. 다시 유도하면 다른 규칙으로
         // 만든 행이 새 송금 작업을 만들 수 있다.
         String paymentKey = refunds.paymentIdempotencyKey(reserved.refundId());
         PaymentRefundResponse payment;

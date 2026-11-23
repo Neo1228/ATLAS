@@ -1,4 +1,4 @@
-package com.atlas.migration;
+package com.atlas.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,8 +14,6 @@ import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.service.PaymentService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,18 +26,16 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
-class PayPalWebhookRetryHistoryMigrationIntegrationTest {
+class PayPalWebhookRetrySchemaIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 
@@ -48,21 +44,14 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     private PayPalWebhookRetryRepository repository;
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() {
         dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("DROP SCHEMA public CASCADE");
         jdbc.execute("CREATE SCHEMA public");
-        apply("V31__paypal_webhook_retry_queue.sql");
+        jdbc.execute(BaselineSchema.script());
         repository = new PayPalWebhookRetryRepository(jdbc);
-    }
-
-    private void apply(String migration) throws IOException {
-        ClassPathResource resource = new ClassPathResource("db/migration/" + migration);
-        try (var input = resource.getInputStream()) {
-            jdbc.execute(StreamUtils.copyToString(input, StandardCharsets.UTF_8));
-        }
     }
 
     private void insertQueueRow(String eventId, int attempts) {
@@ -80,10 +69,9 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
-    void transientFailuresAreRescheduledAtSpreadOutTimes() throws IOException {
+    void transientFailuresAreRescheduledAtSpreadOutTimes() {
         // 같은 시각에 실패한 이벤트가 모두 같은 시각에 재시도되면 공급자가 복구되는 순간 한꺼번에 몰린다.
         // 시도 5의 기본 지연은 16초이고, 재시도 시각은 8~16초 사이로 흩어져야 한다.
-        apply("V33__paypal_webhook_retry_attempt_history.sql");
         Set<Long> offsets = new HashSet<>();
         for (int index = 0; index < 16; index++) {
             String eventId = "evt-spread-" + index;
@@ -104,8 +92,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
-    void claimingAndRecordingHistoryRollBackTogether() throws IOException {
-        apply("V33__paypal_webhook_retry_attempt_history.sql");
+    void claimingAndRecordingHistoryRollBackTogether() {
         insertQueueRow("evt-atomic", 0);
         TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 
@@ -123,8 +110,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
-    void expiredLeaseCanBeReclaimedButStaleWorkerCannotChangeItsHistoryOrQueue() throws IOException {
-        apply("V33__paypal_webhook_retry_attempt_history.sql");
+    void expiredLeaseCanBeReclaimedButStaleWorkerCannotChangeItsHistoryOrQueue() {
         insertQueueRow("evt-lease", 0);
         ClaimedRetry first = repository.claimDue().get(0);
         jdbc.update("UPDATE paypal_webhook_retry SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE event_id = ?",
@@ -161,7 +147,6 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
 
     @Test
     void concurrentClaimersDoNotReceiveTheSameDueWebhookRetry() throws Exception {
-        apply("V33__paypal_webhook_retry_attempt_history.sql");
         insertQueueRow("evt-concurrent-claim", 0);
         CountDownLatch firstClaimed = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
@@ -204,9 +189,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
-    void reaperBoundsEachPollAndDrainsExpiredMaxAttemptRows() throws IOException {
-        apply("V33__paypal_webhook_retry_attempt_history.sql");
-        apply("V42__paypal_webhook_retry_reaper_index.sql");
+    void reaperBoundsEachPollAndDrainsExpiredMaxAttemptRows() {
         int rowCount = 11;
         for (int i = 0; i < rowCount; i++) {
             String eventId = "evt-reaper-" + i;
@@ -239,9 +222,8 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
-    void legacyQueueAndRecreatedEventRetainTheirDistinctClaims() throws IOException {
+    void queueRowWithPriorAttemptsAndRecreatedEventsKeepDistinctClaims() {
         insertQueueRow("evt-legacy", 3);
-        apply("V33__paypal_webhook_retry_attempt_history.sql");
         assertThat(historyCount("evt-legacy")).isZero();
         ClaimedRetry legacy = repository.claimDue().get(0);
         assertThat(legacy.attempt()).isEqualTo(4);
@@ -261,8 +243,7 @@ class PayPalWebhookRetryHistoryMigrationIntegrationTest {
     }
 
     @Test
-    void workerRecreationAcknowledgesDuplicateFromPersistentRetryQueue() throws IOException {
-        apply("V33__paypal_webhook_retry_attempt_history.sql");
+    void workerRecreationAcknowledgesDuplicateFromPersistentRetryQueue() {
         insertQueueRow("evt-worker-recreation", 0);
 
         ClaimedRetry initial = repository.claimDue().get(0);

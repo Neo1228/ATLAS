@@ -24,7 +24,7 @@ public record PayPalBalanceReportDisposition(UUID dispositionId, UUID runId, int
         }
         if (actor.length() > 128 || reason.trim().isEmpty() || reason.length() > 500
                 || idempotencyKey.length() > 128) {
-            throw new IllegalArgumentException("actor, reason or idempotencyKey exceeds the V34 constraints");
+            throw new IllegalArgumentException("actor, reason or idempotencyKey exceeds the column limits");
         }
     }
 }

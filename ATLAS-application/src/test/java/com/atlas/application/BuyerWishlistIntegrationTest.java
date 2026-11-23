@@ -13,19 +13,15 @@ import com.atlas.application.exception.ApplicationException;
 import com.atlas.application.repository.BuyerWishlistRepository;
 import com.atlas.application.service.BuyerWishlistService;
 import com.atlas.catalog.service.ProductService;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -41,17 +37,24 @@ class BuyerWishlistIntegrationTest {
     private BuyerWishlistService wishlist;
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("DROP SCHEMA public CASCADE");
         jdbc.execute("CREATE SCHEMA public");
-        jdbc.execute("CREATE TABLE product (product_id UUID PRIMARY KEY)");
-        ClassPathResource migration = new ClassPathResource("db/migration/V35__buyer_product_wishlist.sql");
-        try (var input = migration.getInputStream()) {
-            jdbc.execute(StreamUtils.copyToString(input, StandardCharsets.UTF_8));
-        }
+                jdbc.execute("CREATE TABLE product (product_id UUID PRIMARY KEY)");
+        jdbc.execute("""
+                CREATE TABLE buyer_wishlist_item (
+                    buyer_ref VARCHAR(256) NOT NULL,
+                    product_id UUID NOT NULL REFERENCES product (product_id) ON DELETE CASCADE,
+                    saved_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (buyer_ref, product_id),
+                    CONSTRAINT buyer_wishlist_item_buyer_nonblank CHECK (length(btrim(buyer_ref)) > 0)
+                )
+                """);
+        jdbc.execute("CREATE INDEX idx_buyer_wishlist_item_saved_order "
+                + "ON buyer_wishlist_item (buyer_ref, saved_at DESC, product_id DESC)");
         repository = new BuyerWishlistRepository(jdbc);
         products = mock(ProductService.class);
         when(products.isPublicOrderable(any())).thenReturn(true);

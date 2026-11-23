@@ -81,7 +81,7 @@ public class OrderRefundRepository {
     }
 
     /**
-     * payment 계층에 넘길 환불 key 를 돌려준다. V57 이전 행과 직접 넣은 행은 컬럼이 비어 있으므로
+     * payment 계층에 넘길 환불 key 를 돌려준다. 직접 넣은 행처럼 컬럼이 비어 있으므로
      * 원래 idempotency key 를 쓴다(이미 그 key 로 payment 작업이 만들어졌다).
      */
     public String paymentIdempotencyKey(UUID refundId) {

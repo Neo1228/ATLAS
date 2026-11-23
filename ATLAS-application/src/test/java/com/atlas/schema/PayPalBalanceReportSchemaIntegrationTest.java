@@ -1,24 +1,20 @@
-package com.atlas.migration;
+package com.atlas.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers(disabledWithoutDocker = true)
-class PayPalBalanceReportRunMigrationIntegrationTest {
+class PayPalBalanceReportSchemaIntegrationTest {
 
     @Container
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
@@ -26,17 +22,13 @@ class PayPalBalanceReportRunMigrationIntegrationTest {
     private JdbcTemplate jdbc;
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("DROP SCHEMA public CASCADE");
         jdbc.execute("CREATE SCHEMA public");
-        ClassPathResource resource = new ClassPathResource(
-                "db/migration/V34__paypal_balance_report_reconciliation_runs.sql");
-        try (var input = resource.getInputStream()) {
-            jdbc.execute(StreamUtils.copyToString(input, StandardCharsets.UTF_8));
-        }
+        jdbc.execute(BaselineSchema.script());
     }
 
     @Test

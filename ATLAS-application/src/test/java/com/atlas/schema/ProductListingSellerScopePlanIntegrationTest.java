@@ -1,17 +1,13 @@
-package com.atlas.migration;
+package com.atlas.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.util.StreamUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -57,7 +53,7 @@ class ProductListingSellerScopePlanIntegrationTest {
                 SELECT gen_random_uuid(), md5((g % 100)::text)::uuid, 'Product ' || g, 'description', 'ACTIVE'
                 FROM generate_series(1, 20000) AS g
                 """);
-        jdbc.execute(migrationScript("db/migration/V40__product_listing_sort_index.sql"));
+        jdbc.execute(BaselineSchema.createIndex("product_listing_sort_idx"));
         jdbc.execute("ANALYZE product");
     }
 
@@ -120,14 +116,5 @@ class ProductListingSellerScopePlanIntegrationTest {
                 %s
                 LIMIT 101
                 """.formatted(sellerPredicate, SELLER_ORDER_BY);
-    }
-
-    private static String migrationScript(String path) {
-        ClassPathResource resource = new ClassPathResource(path);
-        try (var input = resource.getInputStream()) {
-            return StreamUtils.copyToString(input, StandardCharsets.UTF_8);
-        } catch (IOException exception) {
-            throw new IllegalStateException(exception);
-        }
     }
 }
