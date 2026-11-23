@@ -47,6 +47,26 @@ public interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> 
 
     @EntityGraph(attributePaths = "items")
     List<OrderReturn> findWithItemsByReturnIdIn(List<UUID> returnIds);
+    @Query(value = """
+            SELECT sh.fulfillment_location_id AS "fulfillmentLocationId",
+                   oi.sku_id AS "skuId",
+                   ri.quantity AS "quantity"
+            FROM order_return_item ri
+            JOIN order_shipment sh ON sh.shipment_id = ri.shipment_id
+            JOIN order_item oi ON oi.order_item_id = ri.order_item_id
+            WHERE ri.refund_id = :refundId
+            ORDER BY sh.fulfillment_location_id, oi.sku_id
+            """, nativeQuery = true)
+    List<ReturnRestockAllocation> findRestockAllocationsByRefundId(@Param("refundId") UUID refundId);
+
+    @Query(value = "SELECT COUNT(*) FROM order_return_item WHERE refund_id = :refundId", nativeQuery = true)
+    long countItemsByRefundId(@Param("refundId") UUID refundId);
+
+    interface ReturnRestockAllocation {
+        UUID getFulfillmentLocationId();
+        String getSkuId();
+        Integer getQuantity();
+    }
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select distinct r from OrderReturn r where r.orderId = :orderId and r.returnId = :returnId")

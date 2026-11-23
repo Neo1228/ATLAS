@@ -10,17 +10,21 @@ import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.OrderReturn;
 import com.atlas.order.persistence.entity.OrderReturnItem;
+import com.atlas.order.persistence.entity.OrderShipment;
+import com.atlas.order.persistence.entity.OrderShipmentItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.FulfillmentStatus;
 import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
 import com.atlas.order.persistence.state.OrderReturnInspectionResult;
 import com.atlas.order.persistence.state.OrderReturnStatus;
+import com.atlas.order.persistence.state.OrderShipmentStatus;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.OrderFulfillmentRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.repository.OrderReturnRepository;
+import com.atlas.order.repository.OrderShipmentRepository;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
 import java.nio.charset.StandardCharsets;
@@ -49,15 +53,17 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     private final OrderFulfillmentRepository fulfillments;
     private final OrderRefundRepository refundRecords;
     private final OrderReturnRepository returns;
+    private final OrderShipmentRepository shipments;
     private final OrderRefundService refunds;
     private final Clock clock;
 
     public OrderReturnServiceImpl(PlatformTransactionManager manager, OrderRepository orders, OrderItemRepository items,
             OrderFulfillmentRepository fulfillments, OrderRefundRepository refundRecords,
-            OrderReturnRepository returns, OrderRefundService refunds, Clock clock) {
+            OrderReturnRepository returns, OrderShipmentRepository shipments, OrderRefundService refunds, Clock clock) {
         this.transactions = new TransactionTemplate(Objects.requireNonNull(manager));
         this.orders = orders; this.items = items; this.fulfillments = fulfillments;
-        this.refundRecords = refundRecords; this.returns = returns; this.refunds = refunds; this.clock = clock;
+        this.refundRecords = refundRecords; this.returns = returns; this.shipments = shipments;
+        this.refunds = refunds; this.clock = clock;
     }
 
     @Override
@@ -75,7 +81,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             if (existing.isPresent()) {
                 OrderReturn prior = existing.get();
                 if (!prior.buyerRef().equals(request.buyerRef()) || !prior.sellerId().equals(order.sellerId())
-                        || !facts(prior).equals(lines)) throw conflict("Idempotency key was used for different return facts");
+                        || !sameFacts(prior, lines)) throw conflict("Idempotency key was used for different return facts");
                 return response(prior);
             }
             if (order.state() != OrderState.PAID) throw conflict("Only paid orders can be returned");
@@ -86,22 +92,30 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             orderItems.forEach(item -> byId.put(item.orderItemId(), item));
             Map<UUID, Integer> refunded = refundRecords.refundedQuantitiesByOrder(order.orderId());
             Map<UUID, Integer> claimed = new HashMap<>();
-            for (OrderReturn old : returns.findAllByOrderId(order.orderId())) {
+            List<OrderReturn> existingReturns = returns.findAllByOrderId(order.orderId());
+            for (OrderReturn old : existingReturns) {
                 for (OrderReturnItem line : old.items()) {
                     if (old.status() == OrderReturnStatus.REQUESTED || old.status() == OrderReturnStatus.RECEIVED
                             || line.inspectionResult() == OrderReturnInspectionResult.FAILED)
                         claimed.merge(line.orderItemId(), line.quantity(), Math::addExact);
                 }
             }
+            List<OrderShipment> deliveredShipments = shipments.findWithItemsByOrderId(order.orderId()).stream()
+                    .filter(shipment -> shipment.status() == OrderShipmentStatus.DELIVERED)
+                    .toList();
+            Map<UUID, UUID> shipmentByItem = new HashMap<>();
             for (OrderReturnRequest.Item line : lines) {
                 OrderItem item = byId.get(line.orderItemId());
                 if (item == null || !item.sellerId().equals(order.sellerId())) throw invalid("Return item does not belong to this seller order");
                 int eligible = item.quantity() - refunded.getOrDefault(item.orderItemId(), 0) - claimed.getOrDefault(item.orderItemId(), 0);
                 if (line.quantity() > eligible) throw conflict("Return quantity exceeds remaining eligible quantity");
+                OrderShipment shipment = resolveShipment(line, deliveredShipments, existingReturns);
+                shipmentByItem.put(line.orderItemId(), shipment.shipmentId());
             }
             var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
             OrderReturn entity = new OrderReturn(order.orderId(), order.sellerId(), request.buyerRef(), request.idempotencyKey(), now);
-            lines.forEach(line -> entity.addItem(new OrderReturnItem(line.orderItemId(), line.quantity())));
+            lines.forEach(line -> entity.addItem(new OrderReturnItem(
+                    line.orderItemId(), line.quantity(), shipmentByItem.get(line.orderItemId()))));
             return response(returns.saveAndFlush(entity));
         }));
     }
@@ -294,6 +308,55 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     private static void ownSeller(OrderReturn row, UUID sellerId, UUID orderId) {
         if (!row.orderId().equals(orderId) || !row.sellerId().equals(sellerId)) throw conflict("Seller does not own return");
     }
+    private OrderShipment resolveShipment(OrderReturnRequest.Item line, List<OrderShipment> deliveredShipments,
+            List<OrderReturn> existingReturns) {
+        List<OrderShipment> candidates = deliveredShipments.stream()
+                .filter(shipment -> shipment.items().stream()
+                        .anyMatch(item -> item.orderItemId().equals(line.orderItemId())))
+                .toList();
+        int unassignedQuantity = existingReturns.stream()
+                .flatMap(row -> row.items().stream())
+                .filter(old -> old.orderItemId().equals(line.orderItemId()) && old.shipmentId() == null)
+                .mapToInt(OrderReturnItem::quantity)
+                .sum();
+        if (unassignedQuantity > 0 && candidates.size() != 1) {
+            throw conflict("Existing return shipment source is ambiguous");
+        }
+        List<OrderShipment> eligible = candidates.stream()
+                .filter(shipment -> line.shipmentId() == null || shipment.shipmentId().equals(line.shipmentId()))
+                .filter(shipment -> {
+                    int shipped = shipment.items().stream()
+                            .filter(item -> item.orderItemId().equals(line.orderItemId()))
+                            .mapToInt(OrderShipmentItem::quantity)
+                            .sum();
+                    int previouslyReturned = existingReturns.stream()
+                            .flatMap(row -> row.items().stream())
+                            .filter(old -> old.orderItemId().equals(line.orderItemId())
+                                    && shipment.shipmentId().equals(old.shipmentId()))
+                            .mapToInt(OrderReturnItem::quantity)
+                            .sum();
+                    return line.quantity() <= shipped - previouslyReturned - unassignedQuantity;
+                })
+                .toList();
+        if (eligible.size() != 1) {
+            throw conflict(line.shipmentId() == null
+                    ? "Return shipment must be specified when source is ambiguous"
+                    : "Shipment does not contain enough delivered quantity for this return");
+        }
+        return eligible.getFirst();
+    }
+
+    private static boolean sameFacts(OrderReturn prior, List<OrderReturnRequest.Item> request) {
+        if (prior.items().size() != request.size()) return false;
+        Map<UUID, OrderReturnRequest.Item> byItem = new HashMap<>();
+        request.forEach(line -> byItem.put(line.orderItemId(), line));
+        return prior.items().stream().allMatch(item -> {
+            OrderReturnRequest.Item line = byItem.get(item.orderItemId());
+            return line != null && line.quantity() == item.quantity()
+                    && (line.shipmentId() == null || line.shipmentId().equals(item.shipmentId()));
+        });
+    }
+
     private static List<OrderReturnRequest.Item> normalize(List<OrderReturnRequest.Item> lines) {
         List<OrderReturnRequest.Item> result = new ArrayList<>();
         HashSet<UUID> ids = new HashSet<>();
@@ -318,10 +381,6 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         }
         return map;
     }
-    private static List<OrderReturnRequest.Item> facts(OrderReturn row) {
-        return row.items().stream().map(i -> new OrderReturnRequest.Item(i.orderItemId(), i.quantity()))
-                .sorted(Comparator.comparing(OrderReturnRequest.Item::orderItemId)).toList();
-    }
     private static boolean terminal(OrderReturnStatus status) {
         return status == OrderReturnStatus.REFUND_RECORDED || status == OrderReturnStatus.PARTIALLY_RECORDED
                 || status == OrderReturnStatus.INSPECTION_FAILED;
@@ -333,8 +392,8 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     private OrderReturnResponse response(OrderReturn row) {
         return new OrderReturnResponse(row.returnId(), row.orderId(), row.sellerId(), row.buyerRef(), row.status(),
                 paymentStatus(row), row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream().map(i ->
-                new OrderReturnResponse.Item(i.orderItemId(), i.quantity(), i.inspectionResult(), i.refundId(),
-                        i.refundAmountWon(), i.inspectedAt())).toList());
+                new OrderReturnResponse.Item(i.orderItemId(), i.quantity(), i.shipmentId(),
+                        i.inspectionResult(), i.refundId(), i.refundAmountWon(), i.inspectedAt())).toList());
     }
 
     private SellerOrderReturnResponse sellerResponse(OrderReturn row) {

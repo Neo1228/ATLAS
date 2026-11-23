@@ -30,7 +30,7 @@ public class OrderShipmentController {
         return shipments.create(new OrderShipmentRequest(sellerId, orderId, idempotencyKey,
                 request.carrierCode(), request.trackingNumber(),
                 request.items().stream().map(item -> new OrderShipmentRequest.Item(
-                        item.orderItemId(), item.quantity())).toList()));
+                        item.orderItemId(), item.quantity())).toList(), request.fulfillmentLocationId()));
     }
 
     @GetMapping("/buyers/{buyerRef}/orders/{orderId}/shipments")

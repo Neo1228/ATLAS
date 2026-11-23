@@ -234,6 +234,28 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    public PaymentResponse submitCheckoutAuthorization(UUID checkoutId, BigDecimal amount) {
+        if (checkoutId == null) throw invalidRequest("checkoutId required");
+        long amountWon = amountWon(amount);
+        return withOwnerLock(checkoutId, () -> {
+            PaymentAttempt attempt = preparePaymentAttempt(null, checkoutId, amountWon);
+            verifyPreparedAmount(attempt, amountWon);
+            if (attempt.getState() != PaymentState.NOT_STARTED) return toResponse(attempt);
+            return performPhase(attempt, "initial:" + attempt.getAttemptId(), false);
+        });
+    }
+
+    @Override
+    public PaymentResponse reconcileCheckoutAuthorization(UUID checkoutId, String idempotencyKey) {
+        validateOwnerAndKey(checkoutId, idempotencyKey, "checkoutId");
+        return withOwnerLock(checkoutId, () -> {
+            PaymentAttempt attempt = transactions.execute(status -> requireCheckout(checkoutId));
+            if (attempt.getState().isTerminal()) return toResponse(attempt);
+            return performPhase(attempt, idempotencyKey, false);
+        });
+    }
+
+    @Override
     public PaymentResponse reconcileForCancellation(UUID orderId, String idempotencyKey) {
         validateOwnerAndKey(orderId, idempotencyKey, "orderId");
         return withOwnerLock(orderId, () -> {

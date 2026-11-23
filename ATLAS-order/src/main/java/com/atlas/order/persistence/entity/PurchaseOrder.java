@@ -18,6 +18,8 @@ import org.hibernate.annotations.UuidGenerator;
 public class PurchaseOrder {
     @Column(name = "checkout_id")
     private UUID checkoutId;
+    @Column(name = "reservation_workflow_id")
+    private UUID reservationWorkflowId;
     @Id
     @Column(name = "order_id", nullable = false)
     @GeneratedValue
@@ -131,7 +133,22 @@ public class PurchaseOrder {
     public void setFulfillmentLocationId(UUID fulfillmentLocationId) {
         this.fulfillmentLocationId = fulfillmentLocationId;
     }
+    public UUID reservationWorkflowId() {
+        return reservationWorkflowId;
+    }
 
+    public void setReservationWorkflowId(UUID reservationWorkflowId) {
+        if (source != OrderSource.CART || reservationWorkflowId == null) {
+            throw new IllegalArgumentException("Reservation workflow requires a cart order");
+        }
+        this.reservationWorkflowId = reservationWorkflowId;
+    }
+
+
+    public void limitCheckoutExpiry(Instant deadline) {
+        if (deadline == null) throw new IllegalArgumentException("Deadline is required");
+        if (deadline.isBefore(checkoutExpiresAt)) checkoutExpiresAt = deadline;
+    }
 
     public void updateState(OrderState state, UUID paymentAttemptId, Instant updatedAt) {
         this.state = state;

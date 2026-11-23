@@ -1,0 +1,25 @@
+services:
+  order-coordinator-postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: atlas_order
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${ATLAS_ORDER_DB_PASSWORD:-atlas-order-local-only}
+    ports:
+      - "127.0.0.1:${ATLAS_ORDER_DB_PORT:-5435}:5432"
+    volumes:
+      - atlas-order-coordinator-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_order"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  order-coordinator-mailpit:
+    image: axllent/mailpit:v1.34.0
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  atlas-order-coordinator-data:
