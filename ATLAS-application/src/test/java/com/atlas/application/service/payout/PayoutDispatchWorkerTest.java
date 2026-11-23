@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.application.repository.payout.PayoutDispatchRepository;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutBatch;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsProvider;

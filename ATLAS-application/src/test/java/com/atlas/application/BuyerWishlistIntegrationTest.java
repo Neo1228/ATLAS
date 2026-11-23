@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.application.dto.response.BuyerWishlistItemResponse;
-import com.atlas.application.service.BuyerWishlistRepository;
+import com.atlas.application.repository.BuyerWishlistRepository;
 import com.atlas.application.service.BuyerWishlistService;
 import com.atlas.catalog.service.ProductService;
 import java.io.IOException;

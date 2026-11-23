@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.atlas.account.service.AccountService;
+import com.atlas.application.repository.payout.SellerPayoutProfileRepository;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;
 import java.time.Clock;

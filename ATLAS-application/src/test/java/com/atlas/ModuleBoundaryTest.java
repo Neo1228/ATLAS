@@ -7,6 +7,7 @@ import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
+import org.springframework.stereotype.Repository;
 
 class ModuleBoundaryTest {
 
@@ -120,6 +121,17 @@ class ModuleBoundaryTest {
                 .should().dependOnClassesThat()
                 .resideInAnyPackage("com.atlas..dto.request..", "com.atlas..dto.response..",
                         "com.atlas..exception..", "com.atlas.application.controller..")
+                .check(source);
+    }
+
+    @Test
+    void repositoriesResideInRepositoryPackages() {
+        // 위의 의존 규칙은 repository 패키지만 검사한다. 저장소가 service 같은 다른 패키지에 있으면 검사를 받지 못한다.
+        JavaClasses source = productionClasses();
+        classes()
+                .that().areAnnotatedWith(Repository.class)
+                .or().haveSimpleNameEndingWith("Repository")
+                .should().resideInAPackage("com.atlas..repository..")
                 .check(source);
     }
 

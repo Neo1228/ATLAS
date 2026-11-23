@@ -10,7 +10,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.service.PayPalWebhookOperatorRepository.RequeueRecord;
+import com.atlas.application.repository.PayPalWebhookOperatorRepository;
+import com.atlas.application.repository.PayPalWebhookOperatorRepository.RequeueRecord;
 import java.util.Optional;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
