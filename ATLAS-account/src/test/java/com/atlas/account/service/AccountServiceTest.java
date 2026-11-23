@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -328,6 +329,46 @@ class AccountServiceTest {
         verify(accounts).updatePassword(eq(ACCOUNT_ID), eq("dummy-encoded-password"), eq(NOW));
         verify(accounts).revokeAllRefreshFamilies(ACCOUNT_ID, NOW);
         verify(accounts).revokeMfaChallenges(ACCOUNT_ID, NOW);
+    }
+
+    @Test
+    void passwordResetClearsTheLoginLockoutButNotTheMfaCounter() {
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+                NOW.plusSeconds(60), null);
+        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(true);
+        when(accounts.findActiveById(ACCOUNT_ID)).thenReturn(Optional.of(principal()));
+
+        service.resetPassword("reset-token", "new-long-password");
+
+        verify(limiter).resetSubject("LOGIN", "buyer@example.com");
+        verify(limiter, never()).resetSubject(eq("MFA"), anyString());
+    }
+
+    @Test
+    void failedPasswordResetLeavesTheLoginLockoutInPlace() {
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+                NOW.plusSeconds(60), null);
+        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(false);
+
+        assertThrows(AccountException.class, () -> service.resetPassword("reset-token", "new-long-password"));
+
+        verify(limiter, never()).resetSubject(anyString(), anyString());
+    }
+
+    @Test
+    void lockoutCounterFailureAfterTheCommittedResetDoesNotFailTheReset() {
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+                NOW.plusSeconds(60), null);
+        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(true);
+        when(accounts.findActiveById(ACCOUNT_ID)).thenReturn(Optional.of(principal()));
+        doThrow(new IllegalStateException("counter store down")).when(limiter).resetSubject(anyString(), anyString());
+
+        service.resetPassword("reset-token", "new-long-password");
+
+        verify(accounts).updatePassword(eq(ACCOUNT_ID), anyString(), eq(NOW));
     }
 
     @Test
