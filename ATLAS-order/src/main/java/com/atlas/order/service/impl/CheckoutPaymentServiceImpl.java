@@ -16,7 +16,7 @@ import com.atlas.order.persistence.state.LocationReservationWorkflowState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.OrderItemRepository;
-import com.atlas.order.repository.JdbcExpirySweepLockRepository;
+import com.atlas.order.repository.ExpirySweepLockRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.ExpirySweepPolicy;
@@ -59,7 +59,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final ExpirySweepPolicy expirySweep;
-    private final JdbcExpirySweepLockRepository expirySweepLock;
+    private final ExpirySweepLockRepository expirySweepLock;
     private LocationReservationService locationReservations;
 
 
@@ -74,7 +74,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             SettlementService settlement, SellerCouponService sellerCoupons, Clock clock,
             @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
             @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget,
-            JdbcExpirySweepLockRepository expirySweepLock) {
+            ExpirySweepLockRepository expirySweepLock) {
         this.transactions = new TransactionTemplate(transactionManager);
         this.checkouts = Objects.requireNonNull(checkouts);
         this.orders = Objects.requireNonNull(orders);

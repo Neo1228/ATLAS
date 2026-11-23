@@ -4,7 +4,7 @@ import com.atlas.application.controller.dto.OrderRefundHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnHttpRequest;
 import com.atlas.application.controller.dto.OrderReturnInspectionHttpRequest;
 import com.atlas.application.controller.dto.PaymentRecoveryStatusResponse;
-import com.atlas.application.controller.dto.ReorderHttpRequest;
+import com.atlas.application.controller.dto.ReorderRequest;
 import com.atlas.cart.dto.response.CartResponse;
 import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.dto.response.OrderHistoryPageResponse;
@@ -94,7 +94,7 @@ public class OrderController {
     @PostMapping("/orders/{orderId}/reorder")
     public CartResponse reorder(@PathVariable UUID orderId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody ReorderHttpRequest request) {
+            @Valid @RequestBody ReorderRequest request) {
         return reorders.reorder(new OrderReorderRequest(orderId, idempotencyKey,
                 request.confirmExistingCartMerge()));
     }

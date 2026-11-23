@@ -6,9 +6,9 @@ import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcStockRepository {
+public class StockRepository {
     private final JdbcTemplate jdbc;
-    public JdbcStockRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
+    public StockRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
     public void lockOrder(UUID orderId){jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",(RowCallbackHandler)rs->{},orderId.toString());}
     public UUID defaultLocation(UUID sellerId){jdbc.update("INSERT INTO inventory_location(seller_id,location_code,name,priority,active) VALUES(?,'DEFAULT','Default',0,TRUE) ON CONFLICT(seller_id,location_code) DO NOTHING",sellerId);return jdbc.queryForObject("SELECT location_id FROM inventory_location WHERE seller_id=? AND location_code='DEFAULT'",UUID.class,sellerId);}
     public void ensurePool(UUID sellerId,String skuId,int initialStock){UUID loc=defaultLocation(sellerId);jdbc.update("INSERT INTO inventory_pool(seller_id,location_id,sku_id,initial_capacity,available,reserved,claimed) VALUES(?,?,?,?,?,0,0) ON CONFLICT(seller_id,location_id,sku_id) DO NOTHING",sellerId,loc,skuId,initialStock,initialStock);}

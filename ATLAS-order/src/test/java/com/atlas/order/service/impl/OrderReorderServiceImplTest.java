@@ -21,9 +21,9 @@ import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
-import com.atlas.order.persistence.projection.ExistingReorderRequest;
+import com.atlas.order.persistence.projection.ExistingReorder;
 import com.atlas.order.persistence.state.OrderState;
-import com.atlas.order.repository.JdbcOrderReorderRepository;
+import com.atlas.order.repository.OrderReorderRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import java.time.Clock;
@@ -52,7 +52,7 @@ class OrderReorderServiceImplTest {
     @Mock InventoryService inventory;
     @Mock SellerSkuService sellerSkus;
     @Mock CartService carts;
-    @Mock JdbcOrderReorderRepository reorderRequests;
+    @Mock OrderReorderRepository reorderRequests;
     @Mock Clock clock;
     @InjectMocks OrderReorderServiceImpl service;
 
@@ -88,7 +88,7 @@ class OrderReorderServiceImplTest {
         CartResponse expected = new CartResponse(UUID.randomUUID(), "cart", List.of());
         when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(order));
         when(reorderRequests.find(SELLER_ID, BUYER_REF, "reorder-key"))
-                .thenReturn(Optional.of(new ExistingReorderRequest(ORDER_ID, true)));
+                .thenReturn(Optional.of(new ExistingReorder(ORDER_ID, true)));
         when(carts.find(BUYER_REF)).thenReturn(expected);
 
         assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));

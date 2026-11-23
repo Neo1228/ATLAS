@@ -44,7 +44,7 @@ class JdbcCapacityAdjustmentRepositoryTest {
         when(jdbc.queryForObject(eq(locationCodeQuery), eq(String.class), eq(sellerId), eq(missingLocationId)))
                 .thenThrow(new EmptyResultDataAccessException(1));
 
-        JdbcCapacityAdjustmentRepository repository = new JdbcCapacityAdjustmentRepository(jdbc);
+        CapacityAdjustmentRepository repository = new CapacityAdjustmentRepository(jdbc);
         String skuId = "sku-1";
         String idempotencyKey = "adjustment-1";
 

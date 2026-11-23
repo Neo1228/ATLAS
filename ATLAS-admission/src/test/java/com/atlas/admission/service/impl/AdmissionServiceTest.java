@@ -22,7 +22,7 @@ import com.atlas.admission.persistence.entity.QueueTicket;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.persistence.state.TicketStatus;
 import com.atlas.admission.repository.AdmissionPolicyRepository;
-import com.atlas.admission.repository.JdbcQueueRepository;
+import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.TicketRepository;
 import com.atlas.campaign.exception.CampaignException;
 import com.atlas.campaign.dto.response.CampaignResponse;
@@ -51,7 +51,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 class AdmissionServiceTest {
     private final TicketRepository tickets = mock(TicketRepository.class);
-    private final JdbcQueueRepository queueRepository = mock(JdbcQueueRepository.class);
+    private final QueueRepository queueRepository = mock(QueueRepository.class);
     private final CampaignService campaigns = mock(CampaignService.class);
     private final SellerSkuService sellerSkus = mock(SellerSkuService.class);
     private final AdmissionPolicyRepository policies = mock(AdmissionPolicyRepository.class);
@@ -71,14 +71,14 @@ class AdmissionServiceTest {
         Instant expiresAt = Instant.now().minusSeconds(1);
         when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
                 .thenReturn(List.of(
-                        new JdbcQueueRepository.DueTicketCandidate(
+                        new QueueRepository.DueTicketCandidate(
                                 UUID.randomUUID(), missingSeller, missingSku, expiresAt),
-                        new JdbcQueueRepository.DueTicketCandidate(
+                        new QueueRepository.DueTicketCandidate(
                                 UUID.randomUUID(), activeSeller, activeSku, expiresAt)));
         when(queueRepository.tryLockCounter(missingSeller, missingSku))
-                .thenReturn(JdbcQueueRepository.CounterLockResult.MISSING);
+                .thenReturn(QueueRepository.CounterLockResult.MISSING);
         when(queueRepository.tryLockCounter(activeSeller, activeSku))
-                .thenReturn(JdbcQueueRepository.CounterLockResult.ACQUIRED);
+                .thenReturn(QueueRepository.CounterLockResult.ACQUIRED);
         when(queueRepository.expireDueTicketCandidates(
                 eq(activeSeller), eq(activeSku), any(), any(Instant.class)))
                 .thenReturn(0);
@@ -342,12 +342,12 @@ class AdmissionServiceTest {
     @Test
     void preservesNonNullExpiryCursorWhenCandidateQueryFails() {
         Instant expiresAt = Instant.now().minusSeconds(10);
-        List<JdbcQueueRepository.DueTicketCandidate> candidates =
+        List<QueueRepository.DueTicketCandidate> candidates =
                 IntStream.range(0, 200)
-                        .mapToObj(index -> new JdbcQueueRepository.DueTicketCandidate(
+                        .mapToObj(index -> new QueueRepository.DueTicketCandidate(
                                 UUID.randomUUID(), sellerId, skuId, expiresAt.plusMillis(index)))
                         .toList();
-        JdbcQueueRepository.DueTicketCursor lastCursor = candidates.get(candidates.size() - 1).cursor();
+        QueueRepository.DueTicketCursor lastCursor = candidates.get(candidates.size() - 1).cursor();
         DataAccessResourceFailureException failure =
                 new DataAccessResourceFailureException("candidate query failed after cursor");
         when(queueRepository.findDueTicketCandidates(any(Instant.class), isNull(), anyInt(), any(Duration.class)))
@@ -357,7 +357,7 @@ class AdmissionServiceTest {
                 .thenThrow(failure)
                 .thenReturn(List.of());
         when(queueRepository.tryLockCounter(sellerId, skuId))
-                .thenReturn(JdbcQueueRepository.CounterLockResult.BUSY);
+                .thenReturn(QueueRepository.CounterLockResult.BUSY);
 
         assertEquals(0, admission.expireDueTickets());
         assertThrows(DataAccessResourceFailureException.class, () -> admission.expireDueTickets());
@@ -371,7 +371,7 @@ class AdmissionServiceTest {
     void processesFirstCandidateWhenCandidateQueryConsumesBudget() throws InterruptedException {
         UUID sellerId = UUID.randomUUID();
         String skuId = "slow-query";
-        JdbcQueueRepository.DueTicketCandidate candidate = new JdbcQueueRepository.DueTicketCandidate(
+        QueueRepository.DueTicketCandidate candidate = new QueueRepository.DueTicketCandidate(
                 UUID.randomUUID(), sellerId, skuId, Instant.now().minusSeconds(1));
         when(queueRepository.findDueTicketCandidates(
                 any(Instant.class), any(), anyInt(), any(Duration.class)))
@@ -380,7 +380,7 @@ class AdmissionServiceTest {
                     return List.of(candidate);
                 });
         when(queueRepository.tryLockCounter(sellerId, skuId))
-                .thenReturn(JdbcQueueRepository.CounterLockResult.ACQUIRED);
+                .thenReturn(QueueRepository.CounterLockResult.ACQUIRED);
         when(queueRepository.expireDueTicketsForSellerSku(eq(sellerId), eq(skuId), any(Instant.class)))
                 .thenReturn(0);
 

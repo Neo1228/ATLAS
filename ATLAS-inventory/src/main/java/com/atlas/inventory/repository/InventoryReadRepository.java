@@ -9,10 +9,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcInventoryReadRepository {
+public class InventoryReadRepository {
     private final JdbcTemplate jdbc;
 
-    public JdbcInventoryReadRepository(JdbcTemplate jdbc) {
+    public InventoryReadRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
@@ -26,7 +26,7 @@ public class JdbcInventoryReadRepository {
                 FROM inventory_pool
                 WHERE seller_id = ? AND sku_id = ?
                 GROUP BY seller_id, sku_id
-                """, JdbcInventoryReadRepository::map, sellerId, skuId);
+                """, InventoryReadRepository::map, sellerId, skuId);
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
@@ -41,7 +41,7 @@ public class JdbcInventoryReadRepository {
                 WHERE seller_id = ?
                 GROUP BY seller_id, sku_id
                 ORDER BY sku_id
-                """, JdbcInventoryReadRepository::map, sellerId);
+                """, InventoryReadRepository::map, sellerId);
     }
 
     private static InventoryPoolSummary map(ResultSet result, int rowNumber) throws SQLException {

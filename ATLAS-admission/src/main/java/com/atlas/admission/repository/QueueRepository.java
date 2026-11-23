@@ -11,11 +11,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcQueueRepository {
+public class QueueRepository {
     private final JdbcTemplate jdbc;
     private final EntityManager entityManager;
 
-    public JdbcQueueRepository(JdbcTemplate jdbc, EntityManager entityManager) {
+    public QueueRepository(JdbcTemplate jdbc, EntityManager entityManager) {
         this.jdbc = jdbc;
         this.entityManager = entityManager;
     }

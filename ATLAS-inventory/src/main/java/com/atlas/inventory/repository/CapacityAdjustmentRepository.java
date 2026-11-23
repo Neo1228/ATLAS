@@ -11,10 +11,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcCapacityAdjustmentRepository {
+public class CapacityAdjustmentRepository {
     private final JdbcTemplate jdbc;
 
-    public JdbcCapacityAdjustmentRepository(JdbcTemplate jdbc) {
+    public CapacityAdjustmentRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 

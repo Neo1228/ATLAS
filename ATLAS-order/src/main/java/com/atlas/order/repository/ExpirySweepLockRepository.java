@@ -28,10 +28,10 @@ import org.springframework.stereotype.Repository;
  * <p>연결이 끊기면 서버가 session 락을 함께 해제하므로, 프로세스가 죽어도 락이 남지 않습니다.
  */
 @Repository
-public class JdbcExpirySweepLockRepository {
+public class ExpirySweepLockRepository {
     private final JdbcTemplate jdbc;
 
-    public JdbcExpirySweepLockRepository(JdbcTemplate jdbc) {
+    public ExpirySweepLockRepository(JdbcTemplate jdbc) {
         this.jdbc = Objects.requireNonNull(jdbc);
     }
 

@@ -1,9 +1,9 @@
 package com.atlas.application.controller.seller;
 
-import com.atlas.application.controller.dto.SetSkuSalePriceHttpRequest;
-import com.atlas.application.controller.dto.UpdateProductChannelAvailabilityHttpRequest;
-import com.atlas.application.controller.dto.UpdateProductStatusHttpRequest;
-import com.atlas.application.controller.dto.UpdateSkuPriceHttpRequest;
+import com.atlas.application.controller.dto.SetSkuSalePriceRequest;
+import com.atlas.application.controller.dto.UpdateProductChannelAvailabilityRequest;
+import com.atlas.application.controller.dto.UpdateProductStatusRequest;
+import com.atlas.application.controller.dto.UpdateSkuPriceRequest;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.dto.request.UpdateProductCategoryAssignmentRequest;
@@ -62,13 +62,13 @@ public class ProductController {
 
  @PutMapping("/sellers/{sellerId}/products/{productId}/status")
  public ProductResponse updateProductStatus(@PathVariable UUID sellerId, @PathVariable UUID productId,
- @Valid @RequestBody UpdateProductStatusHttpRequest request) {
+ @Valid @RequestBody UpdateProductStatusRequest request) {
  return products.updateStatus(sellerId, productId, request.status());
  }
 
  @PutMapping("/sellers/{sellerId}/products/{productId}/channel-availability")
  public ProductResponse updateProductChannelAvailability(@PathVariable UUID sellerId, @PathVariable UUID productId,
- @Valid @RequestBody UpdateProductChannelAvailabilityHttpRequest request) {
+ @Valid @RequestBody UpdateProductChannelAvailabilityRequest request) {
  return products.updateChannelAvailability(sellerId, productId, request.channel(), request.available());
  }
 
@@ -87,12 +87,12 @@ public class ProductController {
 
     @PutMapping("/sellers/{sellerId}/products/{productId}/skus/{skuId}/price")
     public SellerSkuResponse updateSkuPrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
-            @PathVariable String skuId, @Valid @RequestBody UpdateSkuPriceHttpRequest request) {
+            @PathVariable String skuId, @Valid @RequestBody UpdateSkuPriceRequest request) {
         return products.updateSkuPrice(sellerId, productId, skuId, request.priceWon());
     }
     @PutMapping("/sellers/{sellerId}/products/{productId}/skus/{skuId}/sale-price")
     public SellerSkuResponse setSkuSalePrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
-            @PathVariable String skuId, @Valid @RequestBody SetSkuSalePriceHttpRequest request) {
+            @PathVariable String skuId, @Valid @RequestBody SetSkuSalePriceRequest request) {
         return products.setSkuSalePrice(sellerId, productId, skuId, request.salePriceWon(),
                 request.startsAt(), request.endsAt());
     }

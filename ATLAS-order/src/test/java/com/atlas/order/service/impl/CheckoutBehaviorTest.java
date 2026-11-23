@@ -33,8 +33,8 @@ import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.BuyerCheckoutState;
 import com.atlas.order.persistence.state.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
-import com.atlas.order.repository.JdbcBuyerLockRepository;
-import com.atlas.order.repository.JdbcExpirySweepLockRepository;
+import com.atlas.order.repository.BuyerLockRepository;
+import com.atlas.order.repository.ExpirySweepLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutIdempotencyKeys;
@@ -157,7 +157,7 @@ class CheckoutBehaviorTest {
         when(orders.findById(any())).thenAnswer(invocation -> Optional.ofNullable(savedOrder.get()));
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
-                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
+                mock(BuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
                 inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
                 fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
@@ -194,7 +194,7 @@ class CheckoutBehaviorTest {
             @Override public void rollback(TransactionStatus status) { }
         };
         OrderServiceImpl service = new OrderServiceImpl(manager, orders, items,
-                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
+                mock(BuyerLockRepository.class), mock(OrderFulfillmentService.class), admission,
                 inventory, mock(PaymentService.class), catalog, mock(SettlementService.class),
                 fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
@@ -234,7 +234,7 @@ class CheckoutBehaviorTest {
                 new PaymentResponse(orderId, attemptId, PaymentState.CAPTURED, false));
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
-                mock(JdbcBuyerLockRepository.class), fulfillment, mock(AdmissionService.class), inventory,
+                mock(BuyerLockRepository.class), fulfillment, mock(AdmissionService.class), inventory,
                 payments, mock(SellerSkuService.class), settlement, fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
 
@@ -272,7 +272,7 @@ class CheckoutBehaviorTest {
                 .thenReturn(new PaymentResponse(orderId, attemptId, PaymentState.VOIDED, false));
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
-                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(BuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
                 mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
@@ -308,7 +308,7 @@ class CheckoutBehaviorTest {
                 new PaymentResponse(orderId, attemptId, PaymentState.UNKNOWN, true));
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
-                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(BuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
                 mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
@@ -380,7 +380,7 @@ class CheckoutBehaviorTest {
         when(orders.findReservedOrdersExpiredBy(any(Instant.class), any())).thenReturn(List.of());
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
-                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(BuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, mock(PaymentService.class),
                 mock(SellerSkuService.class), mock(SettlementService.class), fixedClock(),
                 Duration.ofMinutes(10), 25, Duration.ofSeconds(2),
@@ -456,7 +456,7 @@ class CheckoutBehaviorTest {
                 .thenReturn(new PaymentResponse(null, checkoutId, null, PaymentState.NOT_STARTED, false));
 
         OrderServiceImpl service = new OrderServiceImpl(transactionManager(), orders, items,
-                mock(JdbcBuyerLockRepository.class), mock(OrderFulfillmentService.class),
+                mock(BuyerLockRepository.class), mock(OrderFulfillmentService.class),
                 mock(AdmissionService.class), inventory, payments, mock(SellerSkuService.class),
                 mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
@@ -516,8 +516,8 @@ class CheckoutBehaviorTest {
      * 만료 sweep 테스트는 실제로 후보 조회까지 진행해야 하므로 락을 항상 허용합니다.
      * 락으로 인한 skip 동작 자체는 JdbcExpirySweepLockRepositoryTest가 검증합니다.
      */
-    private static JdbcExpirySweepLockRepository sweepLock() {
-        JdbcExpirySweepLockRepository lock = mock(JdbcExpirySweepLockRepository.class);
+    private static ExpirySweepLockRepository sweepLock() {
+        ExpirySweepLockRepository lock = mock(ExpirySweepLockRepository.class);
         when(lock.runExclusive(anyString(), any())).thenAnswer(invocation ->
                 Optional.ofNullable(invocation.<Supplier<?>>getArgument(1).get()));
         return lock;

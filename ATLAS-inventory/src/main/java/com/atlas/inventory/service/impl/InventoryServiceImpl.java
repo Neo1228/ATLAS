@@ -21,9 +21,9 @@ import com.atlas.inventory.persistence.projection.InventoryTransferRecord;
 import com.atlas.inventory.persistence.projection.InventoryTransferResult;
 import com.atlas.inventory.persistence.state.ReservationStatus;
 import com.atlas.inventory.repository.InventoryPoolRepository;
-import com.atlas.inventory.repository.JdbcInventoryReadRepository;
-import com.atlas.inventory.repository.JdbcLocationRepository;
-import com.atlas.inventory.repository.JdbcStockRepository;
+import com.atlas.inventory.repository.InventoryReadRepository;
+import com.atlas.inventory.repository.LocationRepository;
+import com.atlas.inventory.repository.StockRepository;
 import com.atlas.inventory.repository.ReservationRepository;
 import com.atlas.inventory.service.InventoryService;
 import java.util.ArrayList;
@@ -50,14 +50,14 @@ public class InventoryServiceImpl implements InventoryService {
     private static final int MAX_INVENTORY_PAGE_SIZE = 500;
     private final InventoryPoolRepository pools;
     private final ReservationRepository reservations;
-    private final JdbcStockRepository stock;
-    private final JdbcLocationRepository locations;
-    private final JdbcInventoryReadRepository inventoryReads;
+    private final StockRepository stock;
+    private final LocationRepository locations;
+    private final InventoryReadRepository inventoryReads;
     private final TransactionTemplate transactions;
 
     @Autowired
     public InventoryServiceImpl(InventoryPoolRepository pools, ReservationRepository reservations,
-            JdbcStockRepository stock, JdbcLocationRepository locations, JdbcInventoryReadRepository inventoryReads,
+            StockRepository stock, LocationRepository locations, InventoryReadRepository inventoryReads,
             PlatformTransactionManager transactionManager) {
         this.pools=Objects.requireNonNull(pools); this.reservations=Objects.requireNonNull(reservations);
         this.stock=Objects.requireNonNull(stock); this.locations=Objects.requireNonNull(locations);

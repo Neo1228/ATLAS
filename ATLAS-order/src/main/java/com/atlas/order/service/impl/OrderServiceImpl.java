@@ -20,8 +20,8 @@ import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.state.OrderSource;
 import com.atlas.order.persistence.state.OrderState;
-import com.atlas.order.repository.JdbcBuyerLockRepository;
-import com.atlas.order.repository.JdbcExpirySweepLockRepository;
+import com.atlas.order.repository.BuyerLockRepository;
+import com.atlas.order.repository.ExpirySweepLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.ExpirySweepPolicy;
@@ -60,7 +60,7 @@ public final class OrderServiceImpl implements OrderService {
     private final OrderRepository repository;
     private final OrderItemRepository items;
     private final OrderFulfillmentService fulfillmentService;
-    private final JdbcBuyerLockRepository buyerLockRepository;
+    private final BuyerLockRepository buyerLockRepository;
     private final TransactionTemplate transactions;
     private final OrderHistoryReader history;
     private final AdmissionService admission;
@@ -71,16 +71,16 @@ public final class OrderServiceImpl implements OrderService {
     private final Clock clock;
     private final Duration checkoutWindow;
     private final ExpirySweepPolicy expirySweep;
-    private final JdbcExpirySweepLockRepository expirySweepLock;
+    private final ExpirySweepLockRepository expirySweepLock;
 
     public OrderServiceImpl(PlatformTransactionManager transactionManager, OrderRepository repository,
-            OrderItemRepository items, JdbcBuyerLockRepository buyerLockRepository,
+            OrderItemRepository items, BuyerLockRepository buyerLockRepository,
             OrderFulfillmentService fulfillmentService, AdmissionService admission, InventoryService inventory,
             PaymentService payments, SellerSkuService sellerSkus, SettlementService settlement, Clock clock,
             @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow,
             @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
             @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget,
-            JdbcExpirySweepLockRepository expirySweepLock) {
+            ExpirySweepLockRepository expirySweepLock) {
         this.repository = Objects.requireNonNull(repository);
         this.items = Objects.requireNonNull(items);
         this.buyerLockRepository = Objects.requireNonNull(buyerLockRepository);

@@ -7,7 +7,7 @@ import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.state.CheckoutSlotReleaseReason;
 import com.atlas.admission.persistence.state.TicketStatus;
-import com.atlas.admission.repository.JdbcQueueRepository;
+import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.campaign.dto.request.CreateCampaignRequest;
 import com.atlas.campaign.dto.response.CampaignResponse;
@@ -62,7 +62,7 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
     @Autowired private ProductService products;
     @Autowired private CampaignService campaigns;
     @Autowired private AdmissionService admission;
-    @Autowired private JdbcQueueRepository queueRepository;
+    @Autowired private QueueRepository queueRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager transactionManager;
 

@@ -6,10 +6,10 @@ import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcBuyerLockRepository {
+public class BuyerLockRepository {
     private final JdbcTemplate jdbc;
 
-    public JdbcBuyerLockRepository(JdbcTemplate jdbc) {
+    public BuyerLockRepository(JdbcTemplate jdbc) {
         this.jdbc = Objects.requireNonNull(jdbc);
     }
 

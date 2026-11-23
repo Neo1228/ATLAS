@@ -6,7 +6,7 @@ import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.persistence.projection.CapacityAdjustmentRecord;
 import com.atlas.inventory.persistence.projection.InventoryPoolState;
-import com.atlas.inventory.repository.JdbcCapacityAdjustmentRepository;
+import com.atlas.inventory.repository.CapacityAdjustmentRepository;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
 import java.util.Objects;
 import java.util.UUID;
@@ -16,10 +16,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacityAdjustmentService {
-    private final JdbcCapacityAdjustmentRepository adjustments;
+    private final CapacityAdjustmentRepository adjustments;
     private final TransactionTemplate transactions;
     public InventoryCapacityAdjustmentServiceImpl(
-            JdbcCapacityAdjustmentRepository adjustments, PlatformTransactionManager manager) {
+            CapacityAdjustmentRepository adjustments, PlatformTransactionManager manager) {
         this.adjustments = Objects.requireNonNull(adjustments);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(manager));
     }
