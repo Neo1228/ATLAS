@@ -50,3 +50,6 @@ tasks.named('test') {
     // 로컬 coordinator 시나리오만 이 flag를 export한다. 일반 test suite는 실제 HTTP 연결 설정을 상속하지 않는다.
     systemProperty 'atlas.order-inventory-reservation.enabled', 'false'
 }
+
+// 모든 모듈이 공유하는 패키지 구조 규칙(config/archunit)을 이 모듈의 테스트로도 실행한다.
+sourceSets.test.java.srcDir rootProject.file('config/archunit')
