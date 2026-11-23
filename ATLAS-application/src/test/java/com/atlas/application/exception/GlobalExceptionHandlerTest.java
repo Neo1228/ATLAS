@@ -15,12 +15,14 @@ import com.atlas.settlement.exception.SettlementException;
 import java.util.UUID;
 import org.slf4j.MDC;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.server.ResponseStatusException;
 
 class GlobalExceptionHandlerTest {
@@ -55,6 +57,18 @@ class GlobalExceptionHandlerTest {
         } finally {
             MDC.remove("requestId");
         }
+    }
+
+    @Test
+    void connectionPoolExhaustionIsServiceUnavailableWithRetryAfterAndNoInternalDetail() {
+        var response = handler.capacityUnavailable(new CannotCreateTransactionException(
+                "HikariPool-1 - Connection is not available, request timed out after 505ms"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
+        assertThat(response.getBody().getProperties()).containsEntry("code", "SERVICE_UNAVAILABLE");
+        assertThat(Integer.parseInt(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)))
+                .isBetween(1, 3);
+        assertThat(response.getBody().getDetail()).doesNotContain("Hikari");
     }
 
     @Test

@@ -10,14 +10,22 @@ import com.atlas.order.exception.OrderException;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.settlement.exception.SettlementException;
 import java.net.URI;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -27,6 +35,12 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class GlobalExceptionHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    /** 용량 부족 응답의 재시도 대기 힌트(초). 클라이언트가 같은 순간에 몰려 재시도하지 않도록 범위로 흩는다. */
+    private static final int RETRY_AFTER_MIN_SECONDS = 1;
+    private static final int RETRY_AFTER_MAX_SECONDS = 3;
+
+    private final SampledFailureLog capacityFailures = new SampledFailureLog(
+            LOGGER, Clock.systemUTC(), Duration.ofMinutes(1));
 
     @ExceptionHandler({
             AccountException.class,
@@ -125,6 +139,26 @@ public class GlobalExceptionHandler {
         return internalError(exception);
     }
 
+    /**
+     * DB 연결을 얻지 못하거나(풀 고갈), DB에 닿지 못하거나, 쿼리가 시간 제한을 넘긴 경우. 서버가 일시적으로 요청을
+     * 처리할 수 없는 상태이므로 500이 아니라 503과 {@code Retry-After}로 알려 클라이언트와 중간 계층이 재시도 여부를
+     * 판단하게 한다(RFC 9110 15.6.4). 원인이 코드 결함이 아니므로 요청마다 전체 스택을 남기지 않는다.
+     */
+    @ExceptionHandler({
+            CannotCreateTransactionException.class,
+            CannotGetJdbcConnectionException.class,
+            QueryTimeoutException.class,
+            DataAccessResourceFailureException.class
+    })
+    ResponseEntity<ProblemDetail> capacityUnavailable(Exception exception) {
+        capacityFailures.warn(MDC.get("requestId"), exception);
+        int retryAfter = ThreadLocalRandom.current().nextInt(RETRY_AFTER_MIN_SECONDS, RETRY_AFTER_MAX_SECONDS + 1);
+        ResponseEntity<ProblemDetail> base = response(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", null);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfter))
+                .body(base.getBody());
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<ProblemDetail> invalidArgument(MethodArgumentTypeMismatchException exception) {
         ResponseEntity<ProblemDetail> error = response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", null);
@@ -175,6 +209,7 @@ public class GlobalExceptionHandler {
             case "INSUFFICIENT_STOCK" -> "요청한 수량의 재고를 확보할 수 없습니다.";
             case "PRODUCT_NOT_ORDERABLE" -> "현재 주문할 수 없는 상품입니다.";
             case "INTERNAL_ERROR" -> "서버에서 요청을 처리하지 못했습니다. 요청 ID를 고객 지원에 전달해 주세요.";
+            case "SERVICE_UNAVAILABLE" -> "서버가 일시적으로 요청을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.";
             default -> switch (status.value()) {
                 case 400 -> "요청 정보를 확인해 주세요.";
                 case 401 -> "인증이 필요합니다.";
