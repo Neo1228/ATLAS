@@ -269,7 +269,6 @@ public class AccountService {
         accounts.disableMfa(accountId);
     }
 
-    @Transactional
     public AccountTokenResponse completeMfaLogin(MfaChallengeRequest request) {
         if (request == null || !StringUtils.hasText(request.challengeToken())
                 || (StringUtils.hasText(request.code()) == StringUtils.hasText(request.recoveryCode()))) {
@@ -277,25 +276,51 @@ public class AccountService {
         }
         Instant now = clock.instant();
         String challengeHash = hashRefreshToken(request.challengeToken());
-        UUID accountId = accounts.findMfaChallengeForUpdate(challengeHash, now)
-                .orElseThrow(AccountService::invalidCredentials);
-        AccountPrincipal account = accounts.findActiveById(accountId).orElseThrow(AccountService::invalidCredentials);
-        AccountMfaSecret secret = accounts.findMfaSecretForUpdate(accountId).orElseThrow(AccountService::invalidCredentials);
         // 챌린지 TTL(5분) 안에서 6자리 코드를 무제한 시도할 수 있으면 MFA가 사실상 무력화된다.
         // 실패 한도를 넘으면 챌린지를 소모시켜 같은 챌린지로 계속 시도하지 못하게 한다.
+        // 한도 저장은 독립 transaction이라 챌린지·비밀 행 잠금을 쥔 채 호출하면 연결을 둘 잡는다. 동시 요청이
+        // 풀 크기를 넘으면 모든 요청이 연결 1개와 행 잠금을 쥔 채 두 번째 연결을 기다려 붕괴한다. 그래서 대상
+        // 계정을 잠금 없이 먼저 읽어 한도를 확인하고, 코드 검증과 챌린지 소모만 잠금 아래 짧게 수행한다.
+        UUID accountId = accounts.findMfaChallengeAccount(challengeHash, now).orElseThrow(AccountService::invalidCredentials);
         String mfaSubject = "mfa:" + accountId;
         if (!limiter.tryAcquire("MFA", mfaSubject, mfaSubject, now)) {
-            accounts.consumeMfaChallenge(challengeHash, now);
+            transactions.executeWithoutResult(status -> accounts.consumeMfaChallenge(challengeHash, now));
             throw invalidCredentials();
         }
-        boolean valid = secret.enabledAt() != null && (StringUtils.hasText(request.code())
-                ? validTotp(accountId, secret.encryptedSecret(), request.code())
-                : accounts.consumeMfaRecoveryCode(accountId, hashRefreshToken(request.recoveryCode()), now));
-        if (!valid || !accounts.consumeMfaChallenge(challengeHash, now)) {
-            if (!valid) limiter.recordSubjectFailure("MFA", mfaSubject, now);
+        AccountTokenResponse tokens = transactions.execute(status ->
+                verifyMfaAndIssue(accountId, challengeHash, request, now));
+        if (tokens == null) {
+            limiter.recordSubjectFailure("MFA", mfaSubject, now);
             throw invalidCredentials();
         }
         limiter.resetSubject("MFA", mfaSubject);
+        return tokens;
+    }
+
+    /**
+     * 챌린지·비밀 행을 잠그고 코드를 검증해 토큰을 발급한다. 검증에 실패하면 {@code null}을 돌려주고 실패 기록은
+     * 호출자가 transaction 밖에서 한다. 챌린지는 코드가 맞을 때만 소모하므로 틀린 코드는 같은 챌린지로 다시 시도할
+     * 수 있고, 시도 횟수는 한도가 제한한다.
+     */
+    private AccountTokenResponse verifyMfaAndIssue(UUID accountId, String challengeHash,
+            MfaChallengeRequest request, Instant now) {
+        Optional<UUID> locked = accounts.findMfaChallengeForUpdate(challengeHash, now);
+        if (locked.isEmpty() || !locked.get().equals(accountId)) {
+            throw invalidCredentials();
+        }
+        AccountPrincipal account = accounts.findActiveById(accountId).orElseThrow(AccountService::invalidCredentials);
+        AccountMfaSecret secret = accounts.findMfaSecretForUpdate(accountId).orElseThrow(AccountService::invalidCredentials);
+        boolean valid = secret.enabledAt() != null && (StringUtils.hasText(request.code())
+                ? validTotp(accountId, secret.encryptedSecret(), request.code())
+                : accounts.consumeMfaRecoveryCode(accountId, hashRefreshToken(request.recoveryCode()), now));
+        if (!valid) {
+            return null;
+        }
+        // 코드는 맞았는데 챌린지를 소모하지 못하면(만료 직전 경합) 방금 소모한 복구 코드와 TOTP 사용 기록이 남지
+        // 않도록 예외로 transaction을 롤백한다. 코드가 맞았으므로 실패 횟수에는 포함하지 않는다.
+        if (!accounts.consumeMfaChallenge(challengeHash, now)) {
+            throw invalidCredentials();
+        }
         return issueTokens(account);
     }
 

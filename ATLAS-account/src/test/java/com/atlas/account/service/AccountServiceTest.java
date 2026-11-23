@@ -372,6 +372,7 @@ class AccountServiceTest {
 
     @Test
     void mfaRecoveryCodeCompletesChallengeAndIssuesTokens() {
+        when(accounts.findMfaChallengeAccount(anyString(), eq(NOW))).thenReturn(Optional.of(ACCOUNT_ID));
         when(accounts.findMfaChallengeForUpdate(anyString(), eq(NOW))).thenReturn(Optional.of(ACCOUNT_ID));
         when(accounts.findActiveById(ACCOUNT_ID)).thenReturn(Optional.of(principal()));
         when(accounts.findMfaSecretForUpdate(ACCOUNT_ID))
