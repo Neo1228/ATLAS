@@ -143,7 +143,7 @@ public class PayoutDispatchWorker {
             review(r, "BATCH_ID_MISMATCH");
             return;
         }
-        String batchStatus = safe(batch.batchStatus(), "UNKNOWN");
+        String batchStatus = safe(batch.rawBatchStatus(), "UNKNOWN");
         List<PayPalPayoutBatchResponse.Item> items = batch.items().stream()
                 .filter(item -> r.senderItemId().equals(item.senderItemId())).toList();
         if (items.size() > 1) {
@@ -162,7 +162,8 @@ public class PayoutDispatchWorker {
             return;
         }
         PayPalPayoutBatchResponse.Item item = items.getFirst();
-        String itemStatus = safe(item.transactionStatus(), "UNKNOWN");
+        String itemStatus = safe(item.rawTransactionStatus(), "UNKNOWN");
+        PayPalPayoutBatchResponse.TransactionStatus status = item.transactionStatus();
         String providerItemId = safeProviderId(item.itemId()) ? item.itemId() : null;
         if (hasUnsupportedRecipientConversion(item, r.providerAmountMinor())) {
             outcomes.reviewWithEvidence(r, batch.batchId(), batchStatus, providerItemId,
@@ -177,7 +178,7 @@ public class PayoutDispatchWorker {
             outcome("needs_review");
             return;
         }
-        if ("SUCCESS".equals(itemStatus)) {
+        if (status == PayPalPayoutBatchResponse.TransactionStatus.SUCCESS) {
             if (providerItemId == null || item.fee() == null || item.fee().signum() < 0
                     || !"USD".equalsIgnoreCase(item.feeCurrency())) {
                 outcomes.reviewWithEvidence(r, batch.batchId(), batchStatus, providerItemId,
@@ -196,13 +197,13 @@ public class PayoutDispatchWorker {
                         itemStatus, "INVALID_PROVIDER_FEE");
                 outcome("needs_review");
             }
-        } else if ("UNCLAIMED".equals(itemStatus)) {
+        } else if (status == PayPalPayoutBatchResponse.TransactionStatus.UNCLAIMED) {
             if (outcomes.unclaimed(r, batch.batchId(), batchStatus, providerItemId, itemStatus,
                     null, null, backoff(r))) outcome("unclaimed");
-        } else if (isWaitingItemStatus(itemStatus)) {
+        } else if (isWaitingItemStatus(status)) {
             if (outcomes.accepted(r, batch.batchId(), batchStatus, providerItemId, itemStatus,
                     null, null, backoff(r))) outcome("waiting");
-        } else if (isDefinitiveFailure(itemStatus)) {
+        } else if (isDefinitiveFailure(status)) {
             if (providerItemId == null || item.fee() == null || item.fee().signum() != 0
                     || !"USD".equalsIgnoreCase(item.feeCurrency())) {
                 outcomes.reviewWithEvidence(r, batch.batchId(), batchStatus, providerItemId,
@@ -263,12 +264,14 @@ public class PayoutDispatchWorker {
         return Duration.ofMillis(seconds * 1_000L * jitterPercent / 100L);
     }
 
-    private static boolean isWaitingItemStatus(String status) {
-        return List.of("PENDING", "PROCESSING").contains(status);
+    private static boolean isWaitingItemStatus(PayPalPayoutBatchResponse.TransactionStatus status) {
+        return status == PayPalPayoutBatchResponse.TransactionStatus.PENDING
+                || status == PayPalPayoutBatchResponse.TransactionStatus.PROCESSING;
     }
 
-    private static boolean isDefinitiveFailure(String status) {
-        return List.of("FAILED", "DENIED").contains(status);
+    private static boolean isDefinitiveFailure(PayPalPayoutBatchResponse.TransactionStatus status) {
+        return status == PayPalPayoutBatchResponse.TransactionStatus.FAILED
+                || status == PayPalPayoutBatchResponse.TransactionStatus.DENIED;
     }
 
     private static boolean hasUnsupportedRecipientConversion(PayPalPayoutBatchResponse.Item item, long payoutAmountMinor) {
@@ -283,9 +286,11 @@ public class PayoutDispatchWorker {
                 || item.conversionToAmount() == null || item.conversionToAmount().compareTo(expected) != 0
                 || item.conversionRate() == null || item.conversionRate().compareTo(BigDecimal.ONE) != 0;
     }
-    private static boolean isTerminalBatchFailure(String status) {
-        return status != null && List.of("FAILED", "DENIED", "CANCELED", "CANCELLED")
-                .contains(status.toUpperCase(Locale.ROOT));
+    private static boolean isTerminalBatchFailure(PayPalPayoutBatchResponse.BatchStatus status) {
+        return switch (status) {
+            case FAILED, DENIED, CANCELED, CANCELLED -> true;
+            case PENDING, PROCESSING, SUCCESS, UNKNOWN -> false;
+        };
     }
 
     private static boolean safeProviderId(String id) {
