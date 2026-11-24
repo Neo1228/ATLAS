@@ -3,7 +3,7 @@ package com.atlas.order.config;
 import com.atlas.order.repository.LocationReservationRepository;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.LocationReservationService;
-import com.atlas.order.service.StockAdmissionService;
+import com.atlas.order.service.StockAdmissionControl;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import java.time.Clock;
 import java.time.Duration;
@@ -23,7 +23,7 @@ public class LocationReservationConfiguration {
             LocationClient inventory,
             Clock clock,
             PlatformTransactionManager transactionManager,
-            Optional<StockAdmissionService> stockAdmission,
+            Optional<StockAdmissionControl> stockAdmission,
             @Value("${atlas.order-inventory-reservation.recovery.lease-duration:PT30S}") Duration leaseDuration,
             @Value("${atlas.order-inventory-reservation.recovery.base-backoff:PT1S}") Duration baseBackoff,
             @Value("${atlas.order-inventory-reservation.recovery.max-backoff:PT1M}") Duration maxBackoff,

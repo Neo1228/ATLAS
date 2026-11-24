@@ -30,6 +30,13 @@
 - 세 recovery 워커의 개별 poll·batch 설정과 중첩 fallback은 공용 poll 간격·batch 크기로 합친다. 워커별 설정 차이를 뒷받침하는 실험이 없기 때문이다. 공용 값은 운영 부하에 따라 조정할 수 있게 유지한다.
 - 비밀값, 배포별 주소, 기능 플래그, 실험에서 실제로 변경한 요청률·재고량·gate 방식·timeout은 설정으로 유지한다. 재고 TTL, 멱등성 보존, timeout·lease처럼 상태 안전성에 영향을 주는 설정은 근거 없이 제거하지 않는다.
 - 실행 스크립트와 결과는 `.local/`에 두고, 재현에 필요한 Compose 정의와 관측 도구 코드는 `load-tests/`에 추적한다. git-ignore 영역에만 원본 자료가 남은 EXP-053은 저장소만으로 재현할 수 없다고 밝힌다.
+- 추상과 구체의 경계(2026-11-24 추가). 이름을 정할 때 두 가지를 묻는다. 첫째, 내일 기술이나 공급자를 바꾸면 이 이름도 고쳐야 하는가. 둘째, 이 이름은 바깥(다른 모듈이 기대하는 기능)을 설명하는가, 안쪽(구현 기술)을 설명하는가.
+  - 다른 모듈이 부르는 계약(interface)은 역할 이름으로 짓고 기술명을 넣지 않는다. 기술이 바뀌어도 이름이 유지돼야 하기 때문이다(`StockAdmissionControl`, `PaymentProvider`, `LocationClient`).
+  - 구현체는 기술을 앞에 붙여 구체적으로 짓는다(`RedisStockAdmissionControl`, `PrecheckStockAdmissionControl`, `PayPalPaymentProvider`, `HttpLocationClient`). 한 계약에 구현이 둘 이상이면 이름만으로 구분돼야 한다. 구현이 하나뿐이면 `*Impl`을 쓴다.
+  - 기술 설정 클래스는 안쪽 이름이므로 기술을 드러낸다(`RedisStockAdmissionControlConfiguration`).
+  - 계약 자체가 공급자에 묶여 있으면 공급자 이름이 정확한 이름이다. `PayPalPayoutsProvider`는 PayPal 요청 id와 USD만을 전제로 하므로 `PayoutProvider`로 부르면 공급자를 바꿀 수 있다고 잘못 알린다. 공급자가 둘이 되는 시점에 요청·응답 타입과 함께 일반화한다.
+  - `Service`는 역할을 말하지 않는다. 역할이 분명하면 그 역할의 단어를 쓴다(store, client, provider, sender, publisher). 요청이 큐나 workflow에 들어가기 전에 받을지 결정하는 일은 업계에서 admission control이라고 부르는 확립된 용어이므로 admission 계약을 `StockAdmissionService`에서 `StockAdmissionControl`로 바꿨다. 처음에는 ADR-0066의 문서 용어를 따라 `Gate`로 지었으나 gate는 admission control 안의 하위 메커니즘(capacity gate)을 가리키는 말이고 Fowler의 Gateway(외부 시스템 접근을 감싸는 객체)와도 다른 뜻이어서 계약 이름으로 쓰지 않는다. 속성(`admission-gate`)과 metric(`atlas.order.admission.gate`) 이름은 외부 계약이라 유지한다.
+  - 인프라 구성 요소는 역할 뒤에 기술을 붙인다(`order-postgres`, `location-postgres`, `node-exporter`). 운영자가 서버 목록에서 무엇이 도는지 바로 알아야 하기 때문이며 저장소의 Compose 서비스 이름이 이미 이 방식이다.
 
 ## 검증과 한계
 

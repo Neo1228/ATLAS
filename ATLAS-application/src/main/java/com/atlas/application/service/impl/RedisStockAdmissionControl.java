@@ -2,7 +2,7 @@ package com.atlas.application.service.impl;
 
 import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.service.LocationClient;
-import com.atlas.order.service.StockAdmissionService;
+import com.atlas.order.service.StockAdmissionControl;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.ScriptOutputType;
 import io.lettuce.core.SetArgs;
@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -35,10 +34,11 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @ConditionalOnProperty(name = "atlas.order-inventory-reservation.admission-gate.enabled", havingValue = "true")
-public class RedisStockAdmissionService implements StockAdmissionService, DisposableBean {
+public class RedisStockAdmissionControl implements StockAdmissionControl, DisposableBean {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(RedisStockAdmissionService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(RedisStockAdmissionControl.class);
     private static final long UNSEEDED = -1;
+    private static final int SEED_LOCK_STRIPES = 256;
     // decision 값: 0 거절, 1 승인(예약 전), 2 반환됨, 3 예약 확정. held 해시는 승인 때 잡은 SKU별 수량이다.
     private static final String ADMIT_SCRIPT = """
             local decided = redis.call('GET', KEYS[1])
@@ -96,14 +96,18 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
     private volatile StatefulRedisConnection<String, String> connection;
     private final long decisionTtlMillis;
     private final long stockTtlMillis;
-    private final Map<String, Object> seedLocks = new ConcurrentHashMap<>();
+    /**
+     * 시드(location 조회 후 SET NX)를 SKU별로 직렬화하는 고정 개수의 lock. SKU마다 lock 객체를 맵에 쌓으면
+     * 판매된 SKU 수만큼 줄지 않고 늘기 때문에, key의 hash로 고르는 stripe로 개수를 묶는다.
+     */
+    private final Object[] seedLocks = createSeedLocks();
     private final Counter admitted;
     private final Counter rejected;
     private final Counter failedOpen;
     private final long breakerCooldownNanos;
     private volatile long breakerOpenUntilNanos;
 
-    public RedisStockAdmissionService(LocationClient inventory, MeterRegistry meters,
+    public RedisStockAdmissionControl(LocationClient inventory, MeterRegistry meters,
             RedisClient client,
             @Value("${atlas.order-inventory-reservation.admission-gate.stock-ttl:PT5S}") Duration stockTtl,
             @Value("${atlas.order-inventory-reservation.admission-gate.decision-ttl:PT10M}") Duration decisionTtl,
@@ -197,7 +201,7 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
     private void seedMissing(Map<String, StockClaimRequest> merged) {
         RedisCommands<String, String> commands = commands();
         for (Map.Entry<String, StockClaimRequest> entry : merged.entrySet()) {
-            Object lock = seedLocks.computeIfAbsent(entry.getKey(), ignored -> new Object());
+            Object lock = seedLocks[Math.floorMod(entry.getKey().hashCode(), seedLocks.length)];
             synchronized (lock) {
                 if (commands.exists(entry.getKey()) > 0) {
                     continue;
@@ -244,5 +248,13 @@ public class RedisStockAdmissionService implements StockAdmissionService, Dispos
         if (current != null) {
             current.close();
         }
+    }
+
+    private static Object[] createSeedLocks() {
+        Object[] locks = new Object[SEED_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
     }
 }

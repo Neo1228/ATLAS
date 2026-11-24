@@ -1,6 +1,6 @@
 package com.atlas.order;
 
-import com.atlas.order.service.StockAdmissionService;
+import com.atlas.order.service.StockAdmissionControl;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -231,7 +231,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         // 재고 admission을 거절하도록 생성자로 주입한 별도 coordinator를 쓴다(공유 빈을 바꾸지 않는다).
         LocationReservationService gated = new LocationReservationServiceImpl(repository, inventoryClient, clock,
                 transactionManager, Duration.ofSeconds(30), Duration.ofMillis(1), Duration.ofSeconds(1),
-                Duration.ofSeconds(10), 8, Optional.of((StockAdmissionService) (key, claims) -> false));
+                Duration.ofSeconds(10), 8, Optional.of((StockAdmissionControl) (key, claims) -> false));
         String key = "gated-" + UUID.randomUUID();
         assertThatThrownBy(() -> gated.submit(key,
                 request(UUID.randomUUID(), allocation(LOCATION_A, "sku-a"))))

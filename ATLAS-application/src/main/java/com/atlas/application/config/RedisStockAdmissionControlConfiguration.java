@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 /** 입장 게이트의 Redis 연결을 빈으로 만들어 컨테이너가 생성과 종료를 소유하게 합니다. */
 @Configuration
 @ConditionalOnProperty(name = "atlas.order-inventory-reservation.admission-gate.enabled", havingValue = "true")
-public class AdmissionGateRedisConfiguration {
+public class RedisStockAdmissionControlConfiguration {
 
     @Bean(destroyMethod = "shutdown")
     public RedisClient admissionGateRedisClient(

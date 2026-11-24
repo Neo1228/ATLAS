@@ -2,6 +2,7 @@
 
 - 상태: Accepted(보강 중) — 옵트인(`atlas.order-inventory-reservation.admission-gate.enabled`, 기본 꺼짐). [ADR-0068](ADR-0068-external-research-direction-review.md)의 외부 조사로 반환 경로 부재·근사 카운터 문제와 더 단순한 대안(품절 음성 캐시)이 확인돼, 반환 경로(`release`/`confirm`)와 pending 반영으로 보강했다. 같은 세션 짝 비교([EXP-062](../../03-experiments/EXP-062-admission-gate-paired-comparison.md))에서 1,000/s는 잡음 안에서 같았고(처리량 비 Redis/precheck 중앙값 1.007, 범위 0.986~1.066, 팔당 n=6) 2,000/s는 보강 전 빌드의 Redis 팔이 precheck보다 불안정했다(팔당 n=3). 그래서 **기본 gate 후보는 품절 음성 캐시 precheck**로, Redis gate는 location 읽기를 더 줄여야 하는 규모를 위한 옵션으로 둔다. 보강 jar로 다시 한 짝 비교([EXP-063](../../03-experiments/EXP-063-redis-gate-failopen-and-paired-rerun.md))에서는 2,000/s 처리량이 구분되지 않았다(중앙값 Redis 1,964/s, precheck 1,974/s, 팔당 n=4).
 - 날짜: 2026-11-23
+- 이름 변경(2026-11-24): 아래 본문의 `StockAdmissionService`, `RedisStockAdmissionService`, `PrecheckStockAdmissionService`는 각각 `StockAdmissionControl`, `RedisStockAdmissionControl`, `PrecheckStockAdmissionControl`로 바뀌었다. 동작과 속성·metric 이름은 그대로다. 근거는 [ADR-0069](ADR-0069-layered-naming-and-runtime-configuration.md)의 추상과 구체의 경계.
 - 관련 결정: [ADR-0053](ADR-0053-shared-infra-adoption-gates.md)(공유 인프라 도입 조건), [ADR-0060](ADR-0060-order-inventory-reservation-workflow.md)(예약 workflow), [ADR-0046](ADR-0046-order-payment-transactional-outbox.md)
 - 근거 실험: [EXP-060](../../03-experiments/EXP-060-hot-sku-admission-gate.md), [EXP-062](../../03-experiments/EXP-062-admission-gate-paired-comparison.md), [EXP-063](../../03-experiments/EXP-063-redis-gate-failopen-and-paired-rerun.md)
 

@@ -2,7 +2,7 @@ package com.atlas.application.service.impl;
 
 import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.service.LocationClient;
-import com.atlas.order.service.StockAdmissionService;
+import com.atlas.order.service.StockAdmissionControl;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,20 +22,20 @@ import org.springframework.stereotype.Component;
  *
  * <p>차감하지 않는 읽기라 동시에 들어온 요청은 같은 수량을 보고 통과할 수 있다. 그 요청들은 뒤의 정본 경로(location의
  * 조건부 UPDATE)에서 거절되므로 초과 예약은 생기지 않는다. 인스턴스가 여러 개면 TTL마다 인스턴스당 한 번씩 location을 읽는다.
- * Redis gate({@link RedisStockAdmissionService})와 동시에 켜지 않는다.
+ * Redis gate({@link RedisStockAdmissionControl})와 동시에 켜지 않는다.
  */
 @Component
 @ConditionalOnProperty(name = "atlas.order-inventory-reservation.admission-gate.precheck.enabled", havingValue = "true")
-public class PrecheckStockAdmissionService implements StockAdmissionService {
+public class PrecheckStockAdmissionControl implements StockAdmissionControl {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(PrecheckStockAdmissionService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PrecheckStockAdmissionControl.class);
     private static final int MAX_CACHED_KEYS = 100_000;
 
     private final LocationClient inventory;
     private final long soldOutTtlNanos;
     private final ConcurrentHashMap<String, Long> soldOutUntilNanos = new ConcurrentHashMap<>();
 
-    public PrecheckStockAdmissionService(LocationClient inventory,
+    public PrecheckStockAdmissionControl(LocationClient inventory,
             @Value("${atlas.order-inventory-reservation.admission-gate.precheck.sold-out-ttl:PT1S}")
             Duration soldOutTtl) {
         if (soldOutTtl.isNegative()) {

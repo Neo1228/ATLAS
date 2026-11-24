@@ -21,7 +21,7 @@ import com.atlas.order.repository.LocationReservationRepository;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.LocationReservationService.ClaimOutcome;
 import com.atlas.order.service.LocationReservationService;
-import com.atlas.order.service.StockAdmissionService;
+import com.atlas.order.service.StockAdmissionControl;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -60,7 +60,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             Duration maxRetryDelay,
             Duration minimumReservationRemaining,
             int maxAttempts,
-            Optional<StockAdmissionService> stockAdmission) {
+            Optional<StockAdmissionControl> stockAdmission) {
         this.stockAdmission = stockAdmission;
         this.repository = repository;
         this.inventory = inventory;
@@ -129,7 +129,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         return workflow;
     }
 
-    private final Optional<StockAdmissionService> stockAdmission;
+    private final Optional<StockAdmissionControl> stockAdmission;
 
     /** 선택 구성요소다. 없으면 모든 요청이 기존 경로를 그대로 탄다. */
 

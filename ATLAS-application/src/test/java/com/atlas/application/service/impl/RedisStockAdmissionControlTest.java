@@ -8,7 +8,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.config.AdmissionGateRedisConfiguration;
+import com.atlas.application.config.RedisStockAdmissionControlConfiguration;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.dto.request.StockClaimRequest;
 import io.lettuce.core.RedisClient;
@@ -29,7 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
-class RedisStockAdmissionServiceTest {
+class RedisStockAdmissionControlTest {
 
     private static final UUID LOCATION = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID SELLER = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
@@ -46,10 +46,10 @@ class RedisStockAdmissionServiceTest {
         clients.clear();
     }
 
-    private RedisStockAdmissionService gate(String uri, LocationClient inventory) {
-        RedisClient client = new AdmissionGateRedisConfiguration().admissionGateRedisClient(uri, Duration.ofMillis(200));
+    private RedisStockAdmissionControl gate(String uri, LocationClient inventory) {
+        RedisClient client = new RedisStockAdmissionControlConfiguration().admissionGateRedisClient(uri, Duration.ofMillis(200));
         clients.add(client);
-        return new RedisStockAdmissionService(inventory, new SimpleMeterRegistry(), client,
+        return new RedisStockAdmissionControl(inventory, new SimpleMeterRegistry(), client,
                 Duration.ofMinutes(5), Duration.ofMinutes(5), Duration.ofSeconds(2));
     }
 
@@ -57,7 +57,7 @@ class RedisStockAdmissionServiceTest {
     void concurrentAdmissionNeverExceedsTheSeededQuantityAndReplayDoesNotDoubleCharge() throws Exception {
         LocationClient inventory = mock(LocationClient.class);
         when(inventory.availableStock(any(), any(), anyString())).thenReturn(100L);
-        RedisStockAdmissionService gate = gate("redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort(), inventory);
+        RedisStockAdmissionControl gate = gate("redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort(), inventory);
         String sku = "hot-" + UUID.randomUUID();
         List<StockClaimRequest> claim = List.of(new StockClaimRequest(LOCATION, SELLER, sku, 1));
 
@@ -93,7 +93,7 @@ class RedisStockAdmissionServiceTest {
     void releaseReturnsQuantityOnceAndConfirmedAdmissionsAreNeverReturned() {
         LocationClient inventory = mock(LocationClient.class);
         when(inventory.availableStock(any(), any(), anyString())).thenReturn(2L);
-        RedisStockAdmissionService gate = gate("redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort(), inventory);
+        RedisStockAdmissionControl gate = gate("redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort(), inventory);
         List<StockClaimRequest> one = List.of(new StockClaimRequest(LOCATION, SELLER, "ret-" + UUID.randomUUID(), 1));
 
         assertThat(gate.admit("a", one)).isTrue();
@@ -116,7 +116,7 @@ class RedisStockAdmissionServiceTest {
     @Test
     void unreachableRedisFallsThroughInsteadOfRejectingOrders() {
         LocationClient inventory = mock(LocationClient.class);
-        RedisStockAdmissionService gate = gate("redis://127.0.0.1:1", inventory);
+        RedisStockAdmissionControl gate = gate("redis://127.0.0.1:1", inventory);
 
         // 판단할 수 없으면 거절하지 않는다. 정본 검증(location의 조건부 UPDATE)이 뒤에 남아 있다.
         List<StockClaimRequest> claim = List.of(new StockClaimRequest(LOCATION, SELLER, "sku", 1));
@@ -127,6 +127,41 @@ class RedisStockAdmissionServiceTest {
             assertThat(gate.admit("order-" + i, claim)).isTrue();
         }
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofMillis(500));
+        gate.destroy();
+    }
+
+    @Test
+    void manySkusSharingSeedLockStripesAreEachSeededOnceAndAdmitOnlyTheirStock() throws Exception {
+        LocationClient inventory = mock(LocationClient.class);
+        when(inventory.availableStock(any(), any(), anyString())).thenReturn(1L);
+        RedisStockAdmissionControl gate = gate("redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort(), inventory);
+        // stripe 수(256)보다 많은 SKU로 서로 다른 SKU가 같은 lock을 공유하는 경우를 만든다.
+        int skuCount = 600;
+        String run = UUID.randomUUID().toString();
+        AtomicInteger admitted = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(32);
+        try {
+            List<Future<?>> calls = new ArrayList<>();
+            for (int sku = 0; sku < skuCount; sku++) {
+                List<StockClaimRequest> claim = List.of(new StockClaimRequest(LOCATION, SELLER, "stripe-" + run + "-" + sku, 1));
+                for (int buyer = 0; buyer < 4; buyer++) {
+                    String key = "order-" + run + "-" + sku + "-" + buyer;
+                    calls.add(pool.submit(() -> {
+                        if (gate.admit(key, claim)) {
+                            admitted.incrementAndGet();
+                        }
+                    }));
+                }
+            }
+            for (Future<?> call : calls) {
+                call.get();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(admitted.get()).isEqualTo(skuCount);
+        verify(inventory, times(skuCount)).availableStock(any(), any(), anyString());
         gate.destroy();
     }
 }
