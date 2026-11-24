@@ -7,6 +7,7 @@ import com.atlas.schema.BaselineSchema;
 import com.atlas.settlement.model.PayoutDispatchMetrics;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchState;
 import com.atlas.settlement.model.SellerPayoutProfile;
 import com.atlas.settlement.repository.JdbcPayoutDispatchStore;
 import com.atlas.settlement.repository.JdbcPayoutOperatorActionStore;
@@ -252,7 +253,7 @@ class PayoutStoreIntegrationTest {
         PayoutDispatchRecord record = dispatches.enqueue(plan);
 
         assertThat(record.payoutId()).isEqualTo(payoutId);
-        assertThat(record.status()).isEqualTo("PENDING");
+        assertThat(record.status()).isEqualTo(PayoutDispatchState.PENDING);
         assertThat(record.profileVersion()).isEqualTo(plan.profileVersion());
         assertThat(record.recipientEmailCiphertext()).isEqualTo(plan.recipientEmailCiphertext());
         assertThat(record.recipientCountryCode()).isEqualTo("US");
@@ -320,7 +321,7 @@ class PayoutStoreIntegrationTest {
 
         assertThat(firstClaim).extracting(PayoutDispatchRecord::payoutId).containsExactly(oldest, middle);
         assertThat(firstClaim).allSatisfy(leased -> {
-            assertThat(leased.status()).isEqualTo("LEASED");
+            assertThat(leased.status()).isEqualTo(PayoutDispatchState.LEASED);
             assertThat(leased.attemptCount()).isEqualTo(1);
             assertThat(leased.leaseToken()).isNotNull();
             assertThat(leased.lastAttemptAt()).isNotNull();
@@ -356,7 +357,7 @@ class PayoutStoreIntegrationTest {
         assertThat(dispatches.claim(1, Duration.ofSeconds(-5))).isEmpty();
 
         PayoutDispatchRecord untouched = dispatches.find(payoutId).orElseThrow();
-        assertThat(untouched.status()).isEqualTo("PENDING");
+        assertThat(untouched.status()).isEqualTo(PayoutDispatchState.PENDING);
         assertThat(untouched.attemptCount()).isZero();
     }
 
@@ -373,12 +374,12 @@ class PayoutStoreIntegrationTest {
         assertThat(secondLease.payoutId()).isEqualTo(payoutId);
         assertThat(secondLease.leaseToken()).isNotEqualTo(firstLease.leaseToken());
         assertThat(secondLease.attemptCount()).isEqualTo(2);
-        assertThat(dispatches.transition(firstLease, "COMPLETED", null)).isFalse();
+        assertThat(dispatches.transition(firstLease, PayoutDispatchState.COMPLETED, null)).isFalse();
         assertThat(dispatches.recordProviderEvidence(firstLease, "BATCH-1", "PENDING", "ITEM-1", "PENDING",
                 null, null, null)).isFalse();
-        assertThat(dispatches.reschedule(firstLease, Duration.ZERO, "STALE", "PENDING")).isFalse();
+        assertThat(dispatches.reschedule(firstLease, Duration.ZERO, "STALE", PayoutDispatchState.PENDING)).isFalse();
         assertThat(statusOf(payoutId)).isEqualTo("LEASED");
-        assertThat(dispatches.transition(secondLease, "COMPLETED", null)).isTrue();
+        assertThat(dispatches.transition(secondLease, PayoutDispatchState.COMPLETED, null)).isTrue();
         assertThat(statusOf(payoutId)).isEqualTo("COMPLETED");
     }
 
@@ -407,14 +408,14 @@ class PayoutStoreIntegrationTest {
         UUID payoutId = enqueuePending();
         PayoutDispatchRecord leased = dispatches.claim(1, LEASE).getFirst();
 
-        assertThat(dispatches.transition(leased, "FAILED", "PROVIDER_REJECTED")).isTrue();
+        assertThat(dispatches.transition(leased, PayoutDispatchState.FAILED, "PROVIDER_REJECTED")).isTrue();
 
         PayoutDispatchRecord failed = dispatches.find(payoutId).orElseThrow();
-        assertThat(failed.status()).isEqualTo("FAILED");
+        assertThat(failed.status()).isEqualTo(PayoutDispatchState.FAILED);
         assertThat(failed.lastErrorCode()).isEqualTo("PROVIDER_REJECTED");
         assertThat(failed.leaseToken()).isNull();
         assertThat(failed.leaseUntil()).isNull();
-        assertThat(dispatches.transition(leased, "COMPLETED", null)).isFalse();
+        assertThat(dispatches.transition(leased, PayoutDispatchState.COMPLETED, null)).isFalse();
         assertThat(statusOf(payoutId)).isEqualTo("FAILED");
         assertThat(dispatches.claim(1, LEASE)).isEmpty();
     }
@@ -425,11 +426,9 @@ class PayoutStoreIntegrationTest {
         PayoutDispatchRecord pending = dispatches.find(payoutId).orElseThrow();
         PayoutDispatchRecord leased = dispatches.claim(1, LEASE).getFirst();
 
-        assertThatThrownBy(() -> dispatches.transition(leased, "LEASED", null))
+        assertThatThrownBy(() -> dispatches.transition(leased, PayoutDispatchState.LEASED, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> dispatches.transition(leased, "BOGUS", null))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThat(dispatches.transition(pending, "COMPLETED", null)).isFalse();
+        assertThat(dispatches.transition(pending, PayoutDispatchState.COMPLETED, null)).isFalse();
         assertThat(statusOf(payoutId)).isEqualTo("LEASED");
     }
 
@@ -438,10 +437,10 @@ class PayoutStoreIntegrationTest {
         UUID payoutId = enqueuePending();
         PayoutDispatchRecord leased = dispatches.claim(1, LEASE).getFirst();
 
-        assertThat(dispatches.reschedule(leased, Duration.ofMinutes(10), "PROVIDER_TIMEOUT", "PENDING")).isTrue();
+        assertThat(dispatches.reschedule(leased, Duration.ofMinutes(10), "PROVIDER_TIMEOUT", PayoutDispatchState.PENDING)).isTrue();
 
         PayoutDispatchRecord retry = dispatches.find(payoutId).orElseThrow();
-        assertThat(retry.status()).isEqualTo("PENDING");
+        assertThat(retry.status()).isEqualTo(PayoutDispatchState.PENDING);
         assertThat(retry.lastErrorCode()).isEqualTo("PROVIDER_TIMEOUT");
         assertThat(retry.attemptCount()).isEqualTo(1);
         assertThat(retry.leaseToken()).isNull();
@@ -456,7 +455,7 @@ class PayoutStoreIntegrationTest {
         UUID payoutId = enqueuePending();
         PayoutDispatchRecord leased = dispatches.claim(1, LEASE).getFirst();
 
-        assertThat(dispatches.reschedule(leased, Duration.ofMinutes(-30), "RETRY_NOW", "PENDING")).isTrue();
+        assertThat(dispatches.reschedule(leased, Duration.ofMinutes(-30), "RETRY_NOW", PayoutDispatchState.PENDING)).isTrue();
 
         PayoutDispatchRecord reclaimed = dispatches.claim(1, LEASE).getFirst();
         assertThat(reclaimed.payoutId()).isEqualTo(payoutId);
@@ -468,17 +467,17 @@ class PayoutStoreIntegrationTest {
         UUID payoutId = enqueuePending();
         PayoutDispatchRecord leased = dispatches.claim(1, LEASE).getFirst();
 
-        assertThatThrownBy(() -> dispatches.reschedule(leased, Duration.ZERO, "X", "COMPLETED"))
+        assertThatThrownBy(() -> dispatches.reschedule(leased, Duration.ZERO, "X", PayoutDispatchState.COMPLETED))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> dispatches.reschedule(leased, Duration.ZERO, "X", "LEASED"))
+        assertThatThrownBy(() -> dispatches.reschedule(leased, Duration.ZERO, "X", PayoutDispatchState.LEASED))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(statusOf(payoutId)).isEqualTo("LEASED");
 
-        assertThat(dispatches.reschedule(leased, Duration.ZERO, "AMBIGUOUS_PROVIDER_RESULT", "NEEDS_REVIEW")).isTrue();
+        assertThat(dispatches.reschedule(leased, Duration.ZERO, "AMBIGUOUS_PROVIDER_RESULT", PayoutDispatchState.NEEDS_REVIEW)).isTrue();
 
         assertThat(statusOf(payoutId)).isEqualTo("NEEDS_REVIEW");
         assertThat(dispatches.claim(1, LEASE)).isEmpty();
-        assertThat(dispatches.reschedule(leased, Duration.ZERO, "AGAIN", "PENDING")).isFalse();
+        assertThat(dispatches.reschedule(leased, Duration.ZERO, "AGAIN", PayoutDispatchState.PENDING)).isFalse();
     }
 
     @Test
@@ -500,7 +499,7 @@ class PayoutStoreIntegrationTest {
         assertThat(withEvidence.providerFeeCurrency()).isEqualTo("USD");
         assertThat(withEvidence.providerFeeWon()).isEqualTo(33L);
 
-        assertThat(dispatches.reschedule(leased, Duration.ZERO, "PROVIDER_PENDING", "WAITING_PROVIDER")).isTrue();
+        assertThat(dispatches.reschedule(leased, Duration.ZERO, "PROVIDER_PENDING", PayoutDispatchState.WAITING_PROVIDER)).isTrue();
         assertThat(dispatches.recordProviderEvidence(
                 leased, "BATCH-2", "OTHER", "ITEM-2", "OTHER", null, null, null)).isFalse();
 
@@ -528,7 +527,7 @@ class PayoutStoreIntegrationTest {
         assertThat(dispatches.cancelPending(needsReview)).isFalse();
         assertThat(dispatches.cancelPending(UUID.randomUUID())).isFalse();
 
-        assertThat(dispatches.find(pending).orElseThrow().status()).isEqualTo("CANCELLED");
+        assertThat(dispatches.find(pending).orElseThrow().status()).isEqualTo(PayoutDispatchState.CANCELLED);
         assertThat(dispatches.find(pending).orElseThrow().lastErrorCode()).isEqualTo("OPERATOR_CANCELLED");
         assertThat(statusOf(leased)).isEqualTo("LEASED");
         assertThat(statusOf(waiting)).isEqualTo("WAITING_PROVIDER");
@@ -543,7 +542,7 @@ class PayoutStoreIntegrationTest {
         assertThat(dispatches.requeueNeedsReview(payoutId)).isTrue();
 
         PayoutDispatchRecord requeued = dispatches.find(payoutId).orElseThrow();
-        assertThat(requeued.status()).isEqualTo("PENDING");
+        assertThat(requeued.status()).isEqualTo(PayoutDispatchState.PENDING);
         assertThat(requeued.attemptCount()).isZero();
         assertThat(requeued.lastErrorCode()).isEqualTo("OPERATOR_REQUEUED");
         assertThat(dispatches.claim(1, LEASE)).extracting(PayoutDispatchRecord::payoutId).containsExactly(payoutId);
@@ -558,7 +557,7 @@ class PayoutStoreIntegrationTest {
         assertThat(dispatches.requeueNeedsReview(payoutId)).isTrue();
 
         PayoutDispatchRecord requeued = dispatches.find(payoutId).orElseThrow();
-        assertThat(requeued.status()).isEqualTo("WAITING_PROVIDER");
+        assertThat(requeued.status()).isEqualTo(PayoutDispatchState.WAITING_PROVIDER);
         assertThat(requeued.providerBatchId()).isEqualTo("BATCH-7");
         assertThat(requeued.attemptCount()).isZero();
     }
@@ -584,10 +583,10 @@ class PayoutStoreIntegrationTest {
         parkInReview(payoutId, 1);
 
         assertThat(dispatches.resolveNeedsReview(
-                payoutId, "COMPLETED", "BATCH-9", "ITEM-9", 25L, 33L, "MANUAL_COMPLETED")).isTrue();
+                payoutId, PayoutDispatchState.COMPLETED, "BATCH-9", "ITEM-9", 25L, 33L, "MANUAL_COMPLETED")).isTrue();
 
         PayoutDispatchRecord resolved = dispatches.find(payoutId).orElseThrow();
-        assertThat(resolved.status()).isEqualTo("COMPLETED");
+        assertThat(resolved.status()).isEqualTo(PayoutDispatchState.COMPLETED);
         assertThat(resolved.providerBatchId()).isEqualTo("BATCH-9");
         assertThat(resolved.providerItemId()).isEqualTo("ITEM-9");
         assertThat(resolved.providerBatchStatus()).isEqualTo("MANUAL_RECONCILIATION");
@@ -597,7 +596,7 @@ class PayoutStoreIntegrationTest {
         assertThat(resolved.providerFeeWon()).isEqualTo(33L);
         assertThat(resolved.lastErrorCode()).isEqualTo("MANUAL_COMPLETED");
         assertThat(dispatches.resolveNeedsReview(
-                payoutId, "FAILED", null, null, null, null, "MANUAL_FAILED")).isFalse();
+                payoutId, PayoutDispatchState.FAILED, null, null, null, null, "MANUAL_FAILED")).isFalse();
         assertThat(statusOf(payoutId)).isEqualTo("COMPLETED");
     }
 
@@ -608,10 +607,10 @@ class PayoutStoreIntegrationTest {
         jdbc.update("UPDATE " + OUTBOX + " SET provider_batch_id = 'BATCH-1' WHERE payout_id = ?", payoutId);
 
         assertThat(dispatches.resolveNeedsReview(
-                payoutId, "FAILED", null, null, null, null, "MANUAL_FAILED")).isTrue();
+                payoutId, PayoutDispatchState.FAILED, null, null, null, null, "MANUAL_FAILED")).isTrue();
 
         PayoutDispatchRecord resolved = dispatches.find(payoutId).orElseThrow();
-        assertThat(resolved.status()).isEqualTo("FAILED");
+        assertThat(resolved.status()).isEqualTo(PayoutDispatchState.FAILED);
         assertThat(resolved.providerBatchId()).isEqualTo("BATCH-1");
         assertThat(resolved.providerItemId()).isNull();
         assertThat(resolved.providerItemStatus()).isEqualTo("FAILED");
@@ -627,9 +626,9 @@ class PayoutStoreIntegrationTest {
         parkInReview(review, 1);
 
         assertThat(dispatches.resolveNeedsReview(
-                pending, "COMPLETED", "BATCH-1", "ITEM-1", null, null, "MANUAL_COMPLETED")).isFalse();
+                pending, PayoutDispatchState.COMPLETED, "BATCH-1", "ITEM-1", null, null, "MANUAL_COMPLETED")).isFalse();
         assertThatThrownBy(() -> dispatches.resolveNeedsReview(
-                review, "CANCELLED", null, null, null, null, "MANUAL_CANCELLED"))
+                review, PayoutDispatchState.CANCELLED, null, null, null, null, "MANUAL_CANCELLED"))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThat(statusOf(pending)).isEqualTo("PENDING");

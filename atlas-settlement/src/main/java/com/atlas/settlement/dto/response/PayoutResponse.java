@@ -1,5 +1,6 @@
 package com.atlas.settlement.dto.response;
 
+import com.atlas.settlement.model.SettlementPayoutState;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -25,7 +26,7 @@ public final class PayoutResponse {
             Instant periodEnd,
             long amountWon,
             long settledAmountWon,
-            SettlementPayoutStatus state,
+            SettlementPayoutState state,
             Instant requestedAt,
             Instant sentAt,
             Instant confirmedAt,

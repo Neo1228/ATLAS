@@ -2,9 +2,10 @@ package com.atlas.application.service.payout;
 
 import com.atlas.application.dto.request.SettlementHttpRequest;
 import com.atlas.settlement.dto.response.PayoutResponse;
-import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
 import com.atlas.settlement.service.SettlementPayoutService;
@@ -92,13 +93,13 @@ public class PayoutManualOperatorService {
         validate(payoutId, idempotencyKey, actor, evidenceReference);
         requireNoProviderOutbox(payoutId);
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
-        if (payout.state() == SettlementPayoutStatus.FAILED
+        if (payout.state() == SettlementPayoutState.FAILED
                 && actions.matches(payoutId, idempotencyKey, "MANUAL_NO_TRANSFER_CONFIRMED",
                         actor, evidenceReference.trim())) {
             return payout;
         }
-        if (payout.state() != SettlementPayoutStatus.SENT
-                && payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) {
+        if (payout.state() != SettlementPayoutState.SENT
+                && payout.state() != SettlementPayoutState.NEEDS_REVIEW) {
             throw conflict("Only a legacy attempted payout can be manually reconciled");
         }
         PayoutResponse.SellerPayout failed = payouts.failWithProviderEvidence(payoutId, "MANUAL_NO_TRANSFER_CONFIRMED");
@@ -114,23 +115,21 @@ public class PayoutManualOperatorService {
         validate(payoutId, idempotencyKey, actor, request.evidenceReference());
         PayoutDispatchRecord record = dispatches.find(payoutId)
                 .orElseThrow(() -> conflict("Payout has no provider dispatch record"));
-        if (!"PAID".equals(request.outcome()) && !"NOT_PAID".equals(request.outcome())) {
-            throw invalid("Unsupported provider resolution outcome");
-        }
         if ((request.providerBatchId() != null
                 && !request.providerBatchId().matches("[A-Za-z0-9_-]{1,128}"))
                 || (request.providerItemId() != null
                 && !request.providerItemId().matches("[A-Za-z0-9_-]{1,128}"))) {
             throw invalid("Provider evidence identifiers are invalid");
         }
-        if ("NOT_PAID".equals(request.outcome())
+        if (request.outcome() == SettlementHttpRequest.ProviderOutcome.NOT_PAID
                 && (request.providerAmountMinor() != null || !"USD".equals(request.providerCurrency())
                 || !Long.valueOf(0).equals(request.providerFeeMinor()))) {
             throw invalid("No-transfer resolution requires explicit zero-fee USD evidence");
         }
-        String action = "PAID".equals(request.outcome()) ? "PROVIDER_REVIEW_PAID" : "PROVIDER_REVIEW_NOT_PAID";
+        boolean paid = request.outcome() == SettlementHttpRequest.ProviderOutcome.PAID;
+        String action = paid ? "PROVIDER_REVIEW_PAID" : "PROVIDER_REVIEW_NOT_PAID";
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
-        if ("COMPLETED".equals(record.status())) {
+        if (record.status() == PayoutDispatchState.COMPLETED) {
             if (!"PROVIDER_REVIEW_PAID".equals(action)
                     || !actions.matches(payoutId, idempotencyKey, action, actor, request.evidenceReference().trim())) {
                 throw conflict("Provider review has already been resolved");
@@ -143,7 +142,7 @@ public class PayoutManualOperatorService {
             }
             return payout;
         }
-        if ("FAILED".equals(record.status())) {
+        if (record.status() == PayoutDispatchState.FAILED) {
             if (!"PROVIDER_REVIEW_NOT_PAID".equals(action)
                     || !actions.matches(payoutId, idempotencyKey, action, actor, request.evidenceReference().trim())
                     || !Long.valueOf(0).equals(record.providerFeeMinor())
@@ -157,16 +156,16 @@ public class PayoutManualOperatorService {
             }
             return payout;
         }
-        if (!"NEEDS_REVIEW".equals(record.status()) || payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) {
+        if (record.status() != PayoutDispatchState.NEEDS_REVIEW || payout.state() != SettlementPayoutState.NEEDS_REVIEW) {
             throw conflict("Only a payout in provider review can be manually resolved");
         }
-        if ("PAID".equals(request.outcome())) {
+        if (paid) {
             validatePaidProviderFacts(record, request);
             long feeWon = conversions.usdCentsToWonCeiling(
                     request.providerFeeMinor(), record.fxRateWonPerUsd());
             PayoutResponse.SellerPayout confirmed = payouts.confirmProviderSuccess(payoutId,
                     record.providerDebitBookValueWon(), record.payoutFxRoundingExpenseWon(), feeWon);
-            if (!dispatches.resolveNeedsReview(payoutId, "COMPLETED", request.providerBatchId(),
+            if (!dispatches.resolveNeedsReview(payoutId, PayoutDispatchState.COMPLETED, request.providerBatchId(),
                     request.providerItemId(), request.providerFeeMinor(), feeWon, "OPERATOR_PROVIDER_PAID")) {
                 throw conflict("Provider outbox changed while manual evidence was applied");
             }
@@ -183,7 +182,7 @@ public class PayoutManualOperatorService {
         }
         PayoutResponse.SellerPayout failed = payouts.failWithProviderEvidence(
                 payoutId, "OPERATOR_CONFIRMED_NO_TRANSFER");
-        if (!dispatches.resolveNeedsReview(payoutId, "FAILED", request.providerBatchId(),
+        if (!dispatches.resolveNeedsReview(payoutId, PayoutDispatchState.FAILED, request.providerBatchId(),
                 request.providerItemId(), 0L, 0L, "OPERATOR_NO_TRANSFER")) {
             throw conflict("Provider outbox changed while manual evidence was applied");
         }

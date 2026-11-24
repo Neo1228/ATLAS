@@ -16,6 +16,7 @@ import com.atlas.payment.provider.paypal.payouts.PayPalPayoutException;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsProvider;
 import com.atlas.settlement.model.PayoutDispatchMetrics;
 import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -215,7 +216,7 @@ class PayoutDispatchWorkerTest {
         return new PayoutDispatchRecord(payoutId, 1, cipher.encrypt("seller@example.test"), "US", "USD",
                 10_000, 730, new BigDecimal("1371.25000000"), "BOK_ECOS", LocalDate.parse("2026-11-21"),
                 10_011, 11, null, null, null, "sender-batch", "sender-item", "request-id", "0".repeat(64),
-                null, null, null, null, "LEASED", NOW, NOW, 1, NOW, null, UUID.randomUUID(), NOW.plusSeconds(60));
+                null, null, null, null, PayoutDispatchState.LEASED, NOW, NOW, 1, NOW, null, UUID.randomUUID(), NOW.plusSeconds(60));
     }
 
     private static PayPalPayoutBatchResponse batch(String batchStatus, List<PayPalPayoutBatchResponse.Item> items) {

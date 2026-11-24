@@ -1,7 +1,7 @@
 package com.atlas.settlement.service.impl;
 
 import com.atlas.settlement.dto.response.PayoutResponse;
-import com.atlas.settlement.dto.response.SettlementPayoutStatus;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.SellerBalance;
 import com.atlas.settlement.model.SettlementPayoutState;
@@ -103,14 +103,13 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        if (payout.state() == SettlementPayoutStatus.CANCELLED) return false;
-        if (payout.state() == SettlementPayoutStatus.DISPATCHING) return true;
-        if (payout.state() != SettlementPayoutStatus.APPROVED
-                && payout.state() != SettlementPayoutStatus.UNKNOWN
-                && payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) return false;
-        SettlementPayoutState expected = persistenceState(payout);
-        return payouts.transition(payoutId, expected, SettlementPayoutState.DISPATCHING, clock.instant())
-                || requirePayout(payoutId).state() == SettlementPayoutStatus.DISPATCHING;
+        if (payout.state() == SettlementPayoutState.CANCELLED) return false;
+        if (payout.state() == SettlementPayoutState.DISPATCHING) return true;
+        if (payout.state() != SettlementPayoutState.APPROVED
+                && payout.state() != SettlementPayoutState.UNKNOWN
+                && payout.state() != SettlementPayoutState.NEEDS_REVIEW) return false;
+        return payouts.transition(payoutId, payout.state(), SettlementPayoutState.DISPATCHING, clock.instant())
+                || requirePayout(payoutId).state() == SettlementPayoutState.DISPATCHING;
     }
 
     @Transactional
@@ -143,16 +142,16 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        if (payout.state() == SettlementPayoutStatus.NEEDS_REVIEW) return payout;
-        if (payout.state() != SettlementPayoutStatus.DISPATCHING
-                && payout.state() != SettlementPayoutStatus.SENT
-                && payout.state() != SettlementPayoutStatus.UNKNOWN
-                && payout.state() != SettlementPayoutStatus.UNCLAIMED) {
+        if (payout.state() == SettlementPayoutState.NEEDS_REVIEW) return payout;
+        if (payout.state() != SettlementPayoutState.DISPATCHING
+                && payout.state() != SettlementPayoutState.SENT
+                && payout.state() != SettlementPayoutState.UNKNOWN
+                && payout.state() != SettlementPayoutState.UNCLAIMED) {
             throw conflict("Only an externally attempted payout can require provider review");
         }
         if (payouts.markNeedsReview(payoutId, reasonCode, clock.instant())) return requirePayout(payoutId);
         PayoutResponse.SellerPayout latest = requirePayout(payoutId);
-        if (latest.state() == SettlementPayoutStatus.NEEDS_REVIEW) return latest;
+        if (latest.state() == SettlementPayoutState.NEEDS_REVIEW) return latest;
         throw conflict("Payout could not be moved to provider review");
     }
 
@@ -163,19 +162,19 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        if (payout.state() == SettlementPayoutStatus.FAILED) return payout;
-        if (payout.state() != SettlementPayoutStatus.DISPATCHING
-                && payout.state() != SettlementPayoutStatus.SENT
-                && payout.state() != SettlementPayoutStatus.UNKNOWN
-                && payout.state() != SettlementPayoutStatus.UNCLAIMED
-                && payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) {
+        if (payout.state() == SettlementPayoutState.FAILED) return payout;
+        if (payout.state() != SettlementPayoutState.DISPATCHING
+                && payout.state() != SettlementPayoutState.SENT
+                && payout.state() != SettlementPayoutState.UNKNOWN
+                && payout.state() != SettlementPayoutState.UNCLAIMED
+                && payout.state() != SettlementPayoutState.NEEDS_REVIEW) {
             throw conflict("Provider failure evidence cannot fail this payout state");
         }
         if (payouts.failWithProviderEvidence(payoutId, failureCode, clock.instant())) {
             return requirePayout(payoutId);
         }
         PayoutResponse.SellerPayout latest = requirePayout(payoutId);
-        if (latest.state() == SettlementPayoutStatus.FAILED) return latest;
+        if (latest.state() == SettlementPayoutState.FAILED) return latest;
         throw conflict("Provider evidence could not fail payout");
     }
 
@@ -193,14 +192,14 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        if (payout.state() == SettlementPayoutStatus.CONFIRMED) return payout;
-        if (payout.state() != SettlementPayoutStatus.SENT) {
+        if (payout.state() == SettlementPayoutState.CONFIRMED) return payout;
+        if (payout.state() != SettlementPayoutState.SENT) {
             throw conflict("Only a sent payout can be confirmed");
         }
         Instant now = clock.instant();
         if (!payouts.transition(payoutId, SettlementPayoutState.SENT, SettlementPayoutState.CONFIRMED, now)) {
             PayoutResponse.SellerPayout latest = requirePayout(payoutId);
-            if (latest.state() == SettlementPayoutStatus.CONFIRMED) return latest;
+            if (latest.state() == SettlementPayoutState.CONFIRMED) return latest;
             throw conflict("Payout could not be confirmed");
         }
         recordPayoutJournal(payout, 0, 0, now);
@@ -214,16 +213,16 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        if (payout.state() == SettlementPayoutStatus.CONFIRMED) {
+        if (payout.state() == SettlementPayoutState.CONFIRMED) {
             if (payouts.providerConfirmationMatches(
                     payoutId, providerDebitBookValueWon, fxRoundingExpenseWon, providerFeeWon)) return payout;
             throw conflict("Confirmed payout does not match provider settlement facts");
         }
-        if (payout.state() != SettlementPayoutStatus.DISPATCHING
-                && payout.state() != SettlementPayoutStatus.SENT
-                && payout.state() != SettlementPayoutStatus.UNKNOWN
-                && payout.state() != SettlementPayoutStatus.UNCLAIMED
-                && payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) {
+        if (payout.state() != SettlementPayoutState.DISPATCHING
+                && payout.state() != SettlementPayoutState.SENT
+                && payout.state() != SettlementPayoutState.UNKNOWN
+                && payout.state() != SettlementPayoutState.UNCLAIMED
+                && payout.state() != SettlementPayoutState.NEEDS_REVIEW) {
             throw conflict("Only an externally attempted payout can be provider-confirmed");
         }
         if (fxRoundingExpenseWon < 0 || providerFeeWon < 0) {
@@ -242,7 +241,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         if (!payouts.confirmWithProviderEvidence(
                 payoutId, providerDebitBookValueWon, fxRoundingExpenseWon, providerFeeWon, now)) {
             PayoutResponse.SellerPayout latest = requirePayout(payoutId);
-            if (latest.state() == SettlementPayoutStatus.CONFIRMED
+            if (latest.state() == SettlementPayoutState.CONFIRMED
                     && payouts.providerConfirmationMatches(
                             payoutId, providerDebitBookValueWon, fxRoundingExpenseWon, providerFeeWon)) {
                 return latest;
@@ -260,9 +259,9 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        if (payout.state() == SettlementPayoutStatus.FAILED) return payout;
-        if (payout.state() != SettlementPayoutStatus.REQUESTED
-                && payout.state() != SettlementPayoutStatus.APPROVED) {
+        if (payout.state() == SettlementPayoutState.FAILED) return payout;
+        if (payout.state() != SettlementPayoutState.REQUESTED
+                && payout.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Only a payout with no external transfer attempt can be failed");
         }
         if (!payouts.fail(payoutId, failureCode, clock.instant())) return requirePayout(payoutId);
@@ -276,14 +275,14 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        if (payout.state() == SettlementPayoutStatus.CANCELLED) return payout;
-        if (payout.state() != SettlementPayoutStatus.REQUESTED
-                && payout.state() != SettlementPayoutStatus.APPROVED) {
+        if (payout.state() == SettlementPayoutState.CANCELLED) return payout;
+        if (payout.state() != SettlementPayoutState.REQUESTED
+                && payout.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Payout cannot be cancelled after provider dispatch begins");
         }
         if (payouts.cancelBeforeDispatch(payoutId, reasonCode, clock.instant())) return requirePayout(payoutId);
         PayoutResponse.SellerPayout latest = requirePayout(payoutId);
-        if (latest.state() == SettlementPayoutStatus.CANCELLED) return latest;
+        if (latest.state() == SettlementPayoutState.CANCELLED) return latest;
         throw conflict("Payout cancellation was rejected");
     }
 
@@ -358,15 +357,13 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
     private PayoutResponse.SellerPayout transition(UUID payoutId, SettlementPayoutState expected,
             SettlementPayoutState next) {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
-        SettlementPayoutStatus expectedStatus = SettlementPayoutStatus.valueOf(expected.name());
-        SettlementPayoutStatus nextStatus = SettlementPayoutStatus.valueOf(next.name());
-        if (payout.state() == nextStatus) return payout;
-        if (payout.state() != expectedStatus) {
-            throw conflict("Payout is in " + payout.state() + ", expected " + expectedStatus);
+        if (payout.state() == next) return payout;
+        if (payout.state() != expected) {
+            throw conflict("Payout is in " + payout.state() + ", expected " + expected);
         }
         if (!payouts.transition(payoutId, expected, next, clock.instant())) {
             PayoutResponse.SellerPayout latest = requirePayout(payoutId);
-            if (latest.state() == nextStatus) return latest;
+            if (latest.state() == next) return latest;
             throw conflict("Payout transition was rejected");
         }
         return requirePayout(payoutId);
@@ -377,20 +374,15 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
-        SettlementPayoutStatus nextStatus = SettlementPayoutStatus.valueOf(next.name());
-        if (payout.state() == nextStatus) return payout;
-        SettlementPayoutState currentState = persistenceState(payout);
+        if (payout.state() == next) return payout;
+        SettlementPayoutState currentState = payout.state();
         if (!allowed.contains(currentState)) {
             throw conflict("Provider transition is not allowed from " + payout.state());
         }
         if (payouts.transition(payoutId, currentState, next, clock.instant())) return requirePayout(payoutId);
         PayoutResponse.SellerPayout latest = requirePayout(payoutId);
-        if (latest.state() == nextStatus) return latest;
+        if (latest.state() == next) return latest;
         throw conflict("Provider payout transition was rejected");
-    }
-
-    private static SettlementPayoutState persistenceState(PayoutResponse.SellerPayout payout) {
-        return SettlementPayoutState.valueOf(payout.state().name());
     }
 
     /**
@@ -432,7 +424,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
     private static PayoutResponse.SellerPayout toDto(SettlementPayoutRow row) {
         return new PayoutResponse.SellerPayout(row.payoutId(), row.sellerId(), row.periodStart(),
                 row.periodEnd(), row.amountWon(), row.settledAmountWon(),
-                SettlementPayoutStatus.valueOf(row.state().name()), row.requestedAt(),
+                row.state(), row.requestedAt(),
                 row.sentAt(), row.confirmedAt(), row.cancelledAt());
     }
 

@@ -22,9 +22,15 @@ public final class SettlementHttpRequest {
             @NotBlank @Size(max = 500) @Pattern(regexp = "[A-Za-z0-9가-힣 .,/_:-]+") String reason) {
     }
 
+    /** 운영자가 provider 에서 확인한 지급 결과. */
+    public enum ProviderOutcome {
+        PAID,
+        NOT_PAID
+    }
+
     /** Manual evidence is limited to provider facts; it never accepts recipient identity or a new payout amount. */
     public record PayoutProviderResolution(
-            @NotBlank @Pattern(regexp = "PAID|NOT_PAID") String outcome,
+            @NotNull ProviderOutcome outcome,
             @NotBlank @Size(max = 500) @Pattern(regexp = "[A-Za-z0-9가-힣 .,_:/-]+") String evidenceReference,
             @Pattern(regexp = "[A-Za-z0-9_-]{1,128}") String providerBatchId,
             @Pattern(regexp = "[A-Za-z0-9_-]{1,128}") String providerItemId,
@@ -33,11 +39,11 @@ public final class SettlementHttpRequest {
             @Min(0) Long providerFeeMinor) {
         @AssertTrue
         public boolean isValid() {
-            if ("PAID".equals(outcome)) {
+            if (outcome == ProviderOutcome.PAID) {
                 return providerBatchId != null && providerItemId != null && providerAmountMinor != null
                         && "USD".equals(providerCurrency) && providerFeeMinor != null;
             }
-            return "NOT_PAID".equals(outcome) && providerAmountMinor == null
+            return outcome == ProviderOutcome.NOT_PAID && providerAmountMinor == null
                     && "USD".equals(providerCurrency) && Long.valueOf(0).equals(providerFeeMinor);
         }
     }

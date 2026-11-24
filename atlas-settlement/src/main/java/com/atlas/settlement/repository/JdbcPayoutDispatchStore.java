@@ -3,6 +3,7 @@ package com.atlas.settlement.repository;
 import com.atlas.settlement.model.PayoutDispatchMetrics;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -74,25 +75,28 @@ public class JdbcPayoutDispatchStore implements PayoutDispatchStore {
 
     @Transactional
     @Override
-    public boolean reschedule(PayoutDispatchRecord r, Duration delay, String safeCode, String resultingStatus) {
-        if (!List.of("PENDING", "WAITING_PROVIDER", "NEEDS_REVIEW").contains(resultingStatus))
+    public boolean reschedule(PayoutDispatchRecord r, Duration delay, String safeCode, PayoutDispatchState resultingStatus) {
+        if (resultingStatus != PayoutDispatchState.PENDING && resultingStatus != PayoutDispatchState.WAITING_PROVIDER
+                && resultingStatus != PayoutDispatchState.NEEDS_REVIEW) {
             throw new IllegalArgumentException("Invalid dispatch retry status");
+        }
         return jdbc.update("""
                 UPDATE settlement_payout_dispatch_outbox SET status=?, available_at=now() + (? * interval '1 millisecond'),
                   last_error_code=?, lease_token=NULL, lease_until=NULL, updated_at=now()
                 WHERE payout_id=? AND status='LEASED' AND lease_token=?
-                """, resultingStatus, Math.max(0, delay.toMillis()), safeCode, r.payoutId(), r.leaseToken()) == 1;
+                """, resultingStatus.name(), Math.max(0, delay.toMillis()), safeCode, r.payoutId(), r.leaseToken()) == 1;
     }
 
     @Transactional
     @Override
-    public boolean transition(PayoutDispatchRecord r, String status, String safeCode) {
-        if (!List.of("COMPLETED", "FAILED", "CANCELLED", "NEEDS_REVIEW", "WAITING_PROVIDER", "PENDING").contains(status))
+    public boolean transition(PayoutDispatchRecord r, PayoutDispatchState status, String safeCode) {
+        if (status == PayoutDispatchState.LEASED) {
             throw new IllegalArgumentException("Invalid dispatch status");
+        }
         return jdbc.update("""
                 UPDATE settlement_payout_dispatch_outbox SET status=?, last_error_code=?, lease_token=NULL,
                   lease_until=NULL, updated_at=now() WHERE payout_id=? AND status='LEASED' AND lease_token=?
-                """, status, safeCode, r.payoutId(), r.leaseToken()) == 1;
+                """, status.name(), safeCode, r.payoutId(), r.leaseToken()) == 1;
     }
 
     @Transactional
@@ -119,12 +123,12 @@ public class JdbcPayoutDispatchStore implements PayoutDispatchStore {
 
     @Transactional
     @Override
-    public boolean resolveNeedsReview(UUID payoutId, String result, String batchId, String itemId,
+    public boolean resolveNeedsReview(UUID payoutId, PayoutDispatchState result, String batchId, String itemId,
             Long feeMinor, Long feeWon, String safeCode) {
-        if (!List.of("COMPLETED", "FAILED").contains(result)) {
+        if (result != PayoutDispatchState.COMPLETED && result != PayoutDispatchState.FAILED) {
             throw new IllegalArgumentException("Invalid manual payout resolution");
         }
-        String itemStatus = "COMPLETED".equals(result) ? "SUCCESS" : "FAILED";
+        String itemStatus = result == PayoutDispatchState.COMPLETED ? "SUCCESS" : "FAILED";
         String feeCurrency = feeMinor == null ? null : "USD";
         return jdbc.update("""
                 UPDATE settlement_payout_dispatch_outbox
@@ -134,7 +138,7 @@ public class JdbcPayoutDispatchStore implements PayoutDispatchStore {
                     provider_item_status = ?, provider_fee_minor = ?, provider_fee_currency = ?,
                     provider_fee_won = ?, last_error_code = ?, updated_at = now()
                 WHERE payout_id = ? AND status = 'NEEDS_REVIEW'
-                """, result, batchId, itemId, itemStatus, feeMinor, feeCurrency, feeWon,
+                """, result.name(), batchId, itemId, itemStatus, feeMinor, feeCurrency, feeWon,
                 safeCode, payoutId) == 1;
     }
 
@@ -189,7 +193,7 @@ public class JdbcPayoutDispatchStore implements PayoutDispatchStore {
                 (Long) rs.getObject("provider_fee_won"), rs.getString("sender_batch_id"), rs.getString("sender_item_id"),
                 rs.getString("paypal_request_id"), rs.getString("request_payload_sha256"), rs.getString("provider_batch_id"),
                 rs.getString("provider_item_id"), rs.getString("provider_batch_status"), rs.getString("provider_item_status"),
-                rs.getString("status"), rs.getTimestamp("available_at").toInstant(),
+                PayoutDispatchState.valueOf(rs.getString("status")), rs.getTimestamp("available_at").toInstant(),
                 rs.getTimestamp("first_enqueued_at").toInstant(), rs.getInt("attempt_count"),
                 rs.getTimestamp("last_attempt_at") == null ? null : rs.getTimestamp("last_attempt_at").toInstant(),
                 rs.getString("last_error_code"), rs.getObject("lease_token", UUID.class),
