@@ -47,7 +47,7 @@
    - JWT Buyer가 다른 Seller의 SKU를 cart에 담을 때 HTTP 403 발생
    - 원인: `AccountOwnershipInterceptor`가 모든 `{sellerId}` 경로에 Seller ownership을 강제
    - 수정: Seller ownership 검증은 `/api/sellers/` 경로에 한정. Buyer 경로의 `buyerRef` ownership 검증 유지
-   - 회귀 테스트: [`AccountOwnershipInterceptorTest`](../../ATLAS-application/src/test/java/com/atlas/application/security/AccountOwnershipInterceptorTest.java)
+   - 회귀 테스트: [`AccountOwnershipInterceptorTest`](../../atlas-application/src/test/java/com/atlas/application/security/AccountOwnershipInterceptorTest.java)
 - `/api/sellers/` 외부에 Seller 소유 API를 추가하면 ownership 검증도 함께 추가
 
 1. **K6 종료 경계 iteration**
@@ -56,14 +56,14 @@
    - Guard는 해당 pilot의 false stock exhaustion 방지용. 트래픽 용량 가정으로 해석 금지
 
 1. **Container build 순서**
-   - [`ATLAS-application/Dockerfile`](../../ATLAS-application/Dockerfile)은 기존 `application-module.jar` 복사
-   - Java 변경 후 `./gradlew :application-module:bootJar` 완료 뒤 Compose image 재생성 필요
+   - [`atlas-application/Dockerfile`](../../atlas-application/Dockerfile)은 기존 `atlas-application.jar` 복사
+   - Java 변경 후 `./gradlew :atlas-application:bootJar` 완료 뒤 Compose image 재생성 필요
 
 ## 검증
 
 - K6 2.3.0 `inspect`: 활성 시나리오 8종·모드 구문 및 import 확인
 - Compose `loadtest` profile config: 통과
-- Full `./gradlew --no-daemon check :application-module:bootJar`: 57 suites · 274 tests · 실패/오류/건너뜀 0
+- Full `./gradlew --no-daemon check :atlas-application:bootJar`: 57 suites · 274 tests · 실패/오류/건너뜀 0
 - `PaymentLifecycleIntegrationTest.paypalAuthorizationCaptureAndReplayUseTheLocalProvider`: `AUTHORIZATION_PENDING`·approval URL assertion
 - `AccountOwnershipInterceptorTest`: 통과
 - Buyer flow·coupon integration tests: 통과

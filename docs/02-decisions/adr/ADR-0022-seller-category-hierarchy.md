@@ -42,7 +42,7 @@ D-074의 flat category는 Seller별 분류와 상품 필터를 제공하지만, 
 
 - PostgreSQL Testcontainers: V19→V20 upgrade와 기존 Category/Product 보존, same-Seller FK, cross-Seller/self parent 거절.
 - Catalog integration: 동시 반대 방향 move에서 하나만 commit, subtree pagination, cursor v4/legacy 호환성, public·Seller visibility.
-- 결합 검증: `./gradlew --no-daemon --rerun-tasks check :application-module:bootJar`
+- 결합 검증: `./gradlew --no-daemon --rerun-tasks check :atlas-application:bootJar`
 - 결과: 40 suites, 200 tests, 0 failures/errors/skips; `bootJar` 성공. 동시성 correctness 확인이며 부하·성능 benchmark는 아님.
 
 ## 참고 자료
@@ -60,4 +60,4 @@ D-074의 flat category는 Seller별 분류와 상품 필터를 제공하지만, 
 - 응답 `categoryIds`는 UUID 오름차순. Category filter는 선택 node와 descendants에 primary·additional 연결이 있는 Product를 중복 없이 반환. Seller scope·visibility·name query·UUID order·cursor v4 유지.
 - API 수정 경로는 `PUT /api/sellers/{sellerId}/products/{productId}/categories`. 이전 singular `categoryId` 계약의 호환 경로 미제공.
 - V29는 기존 `category_id`를 `primary_category_id`로 rename하고 additional assignment table 생성. 기존 Product 연결과 same-Seller FK 보존.
-- `:catalog-module:test`와 `:application-module:compileTestJava` 통과. 신규 PostgreSQL Testcontainers 검증은 Docker provider 초기화 실패로 미완료.
+- `:atlas-catalog:test`와 `:atlas-application:compileTestJava` 통과. 신규 PostgreSQL Testcontainers 검증은 Docker provider 초기화 실패로 미완료.

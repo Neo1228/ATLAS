@@ -41,7 +41,7 @@ exec env -i PATH="$PATH" HOME="$private" \
   ATLAS_PAYPAL_WEBHOOK_RETRY_ENABLED=false \
   ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED="${ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED:-true}" \
   HOSTS_FILE="$private/hosts" \
-  APP_JAR="$root/ATLAS-application/build/libs/application-module.jar" \
+  APP_JAR="$root/atlas-application/build/libs/atlas-application.jar" \
   /bin/bash -c '
     IFS= read -r PAYPAL_CLIENT_ID || exit 1
     IFS= read -r PAYPAL_CLIENT_SECRET || exit 1

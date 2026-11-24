@@ -38,7 +38,7 @@ export JAVA_HOME="$(/usr/libexec/java_home -v 25)"
 export PATH="$JAVA_HOME/bin:$PATH"
 export DOCKER_HOST="$(docker context inspect --format '{{ .Endpoints.docker.Host }}')"
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
-./gradlew --no-daemon --rerun-tasks check :application-module:bootJar
+./gradlew --no-daemon --rerun-tasks check :atlas-application:bootJar
 ```
 
 ### 검증 결과

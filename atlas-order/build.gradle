@@ -1,9 +1,9 @@
 dependencies {
-    implementation project(':admission-module')
-    implementation project(':inventory-module')
-    implementation project(':payment-module')
-    implementation project(':catalog-module')
-    implementation project(':settlement-module')
+    implementation project(':atlas-admission')
+    implementation project(':atlas-inventory')
+    implementation project(':atlas-payment')
+    implementation project(':atlas-catalog')
+    implementation project(':atlas-settlement')
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     compileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"

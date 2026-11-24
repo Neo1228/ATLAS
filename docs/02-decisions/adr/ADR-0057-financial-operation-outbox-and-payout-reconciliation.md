@@ -15,9 +15,9 @@ ATLAS는 buyer capture·refund 결과를 provider resource ID, idempotency key, 
 
 ### 1. 범위와 domain ownership
 
-- `ATLAS-payment`는 buyer capture/refund와 PayPal provider contract를 소유한다. 기존 `payment_attempt`, `payment_refund_operation`, `payment_recovery_job`은 durable provider evidence·unknown recovery를 이미 제공하므로 전면 rewrite하지 않는다.
-- `ATLAS-settlement`은 Seller payable, payout reservation, fee/reserve policy, immutable ledger journal을 소유한다.
-- `ATLAS-application`은 두 domain 사이의 operator/API orchestration, payout dispatch outbox, scheduler, provider reconciliation과 metrics를 소유한다. Migration은 계속 `ATLAS-application`에서 관리한다.
+- `atlas-payment`는 buyer capture/refund와 PayPal provider contract를 소유한다. 기존 `payment_attempt`, `payment_refund_operation`, `payment_recovery_job`은 durable provider evidence·unknown recovery를 이미 제공하므로 전면 rewrite하지 않는다.
+- `atlas-settlement`은 Seller payable, payout reservation, fee/reserve policy, immutable ledger journal을 소유한다.
+- `atlas-application`은 두 domain 사이의 operator/API orchestration, payout dispatch outbox, scheduler, provider reconciliation과 metrics를 소유한다. Migration은 계속 `atlas-application`에서 관리한다.
 - 외부 PayPal call은 DB transaction 밖에서 실행한다. Payout 승인 상태와 outbox intent는 같은 PostgreSQL transaction에서 commit한다. Provider 결과는 application orchestration을 통해 settlement의 조건부 상태 전이에 반영한다.
 - Capture/refund/payout은 같은 provider-operation 원칙(immutable identity, explicit UNKNOWN, bounded retry, verified-result-only ledger effect)을 따른다. 저장소/queue를 합치는 변경은 측정된 중복 비용 또는 운영 실패가 있을 때만 후속 decision으로 검토한다.
 

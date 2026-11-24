@@ -59,7 +59,7 @@ flowchart LR
 - `sellerId`는 데이터 식별자일 뿐 인증·인가나 tenant isolation이 아님.
 - `DRAFT`, `ARCHIVED`, 예약판매, variant별 채널 게시, 재고 기반 자동 비활성화, campaign 자동 종료, 기존 ticket 일괄 취소는 미지원.
 - 사용자 수, traffic, RPS/TPS, 운영 용량·SLO에 대한 주장은 하지 않음. 이 변경은 부하 시험 대상이 아님.
-- 검증 환경: macOS 27.2 arm64, JDK 25.0.5, Colima·PostgreSQL 18.6 Testcontainers. `./gradlew --no-daemon --rerun-tasks check :application-module:bootJar` 통과; 38 suites, 196 tests, 실패·오류·skip 0, `bootJar` 성공.
+- 검증 환경: macOS 27.2 arm64, JDK 25.0.5, Colima·PostgreSQL 18.6 Testcontainers. `./gradlew --no-daemon --rerun-tasks check :atlas-application:bootJar` 통과; 38 suites, 196 tests, 실패·오류·skip 0, `bootJar` 성공.
 
 ## 참고 자료
 

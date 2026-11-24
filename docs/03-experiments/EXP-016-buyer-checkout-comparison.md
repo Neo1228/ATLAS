@@ -16,11 +16,11 @@
 앱과 k6 모두 선택적 Compose 프로파일로 실행한다. 먼저 앱 JAR를 만들고 서비스를 시작한다:
 
 ```sh
-./gradlew :application-module:bootJar
+./gradlew :atlas-application:bootJar
 docker compose --profile observability up --build -d application postgres-exporter prometheus grafana
 ```
 
-- App image build context는 `ATLAS-application/Dockerfile`과 `ATLAS-application/build/libs/application-module.jar`.
+- App image build context는 `atlas-application/Dockerfile`과 `atlas-application/build/libs/atlas-application.jar`.
 - API·management port는 host에 publish하지 않음. Compose 내부에서 k6·Prometheus가 `application:8080/8081`에 접근.
 - PostgreSQL `5432`, exporter `9187`, Prometheus `9090`, Grafana `3000`은 host loopback에만 publish.
 - Host `bootRun`의 API·management listener는 기본 `127.0.0.1` bind.

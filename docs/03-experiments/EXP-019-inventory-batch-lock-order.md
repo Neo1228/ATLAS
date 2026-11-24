@@ -11,7 +11,7 @@
 - Seller 2명, Seller별 SKU 1개, pool capacity 각 1
 - 서로 다른 Order 2개가 같은 두 Seller/SKU를 반대 입력 순서로 동시 예약
 - Worker 2개 · `CyclicBarrier(2)` 시작 동기화 · barrier 10초 / Future 20초 제한
-- [테스트 위치](../../ATLAS-application/src/test/java/com/atlas/inventory/InventoryConcurrencyIntegrationTest.java)
+- [테스트 위치](../../atlas-application/src/test/java/com/atlas/inventory/InventoryConcurrencyIntegrationTest.java)
 
 ## 결과
 
@@ -33,9 +33,9 @@ export PATH="$JAVA_HOME/bin:$PATH"
 export DOCKER_HOST="$(docker context inspect --format '{{ .Endpoints.docker.Host }}')"
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 
-./gradlew --no-daemon :application-module:test \
+./gradlew --no-daemon :atlas-application:test \
   --tests com.atlas.inventory.InventoryConcurrencyIntegrationTest
-./gradlew --no-daemon check :application-module:bootJar
+./gradlew --no-daemon check :atlas-application:bootJar
 ```
 
 - Runtime: Java 25 · Colima Docker context · PostgreSQL 18.6

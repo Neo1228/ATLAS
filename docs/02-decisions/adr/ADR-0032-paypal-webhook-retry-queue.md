@@ -59,7 +59,7 @@ EXHAUSTED는 별도 opt-in HTTP Basic chain으로만 노출한다. chain은 `atl
 
 큐 행은 현재 스케줄링 상태이며 성공 시 삭제되고 수동 재시도 시 카운터가 초기화될 수 있으므로 시도 이력의 원본이 아니다. 각 lease 처리 시도를 큐와 독립적으로 영속 보존하고, 큐 삭제나 재등록 이후에도 조회할 수 있어야 한다. 시도 행은 삭제하지 않으며 `CLAIMED`에서 종료 결과로의 조건부 갱신 한 번만 허용한다. 서로 다른 재처리 주기의 시도를 카운터 재사용 때문에 합치지 않는다. 기존 큐 행만으로 과거 시도를 복원하거나 이 기능 도입 전 이력이 완전하다고 주장하지 않는다.
 
-V33은 lease당 한 행을 기록한다. 행은 독립 ID, `event_id`, `event_type`, `attempt_number`, 유일한 내부 상관관계 키 `lease_token`, `outcome`, `claimed_at`, nullable `finished_at`을 가진다. 결과는 `CLAIMED`, `CORRELATION_MISS`, `TRANSIENT_ERROR`, `PROCESSED`, `PERMANENT_REJECT`, `EXHAUSTED`, `LEASE_EXPIRED`로 구분한다. 큐에 대한 FK가 없어 큐 삭제 후에도 이력이 남는다. lease token은 저장 시 상관관계에만 사용하고 운영자 응답에는 포함하지 않는다. 상세 스키마는 [V33 migration](../../../ATLAS-application/src/main/resources/db/migration/V33__paypal_webhook_retry_attempt_history.sql)을 참조한다.
+V33은 lease당 한 행을 기록한다. 행은 독립 ID, `event_id`, `event_type`, `attempt_number`, 유일한 내부 상관관계 키 `lease_token`, `outcome`, `claimed_at`, nullable `finished_at`을 가진다. 결과는 `CLAIMED`, `CORRELATION_MISS`, `TRANSIENT_ERROR`, `PROCESSED`, `PERMANENT_REJECT`, `EXHAUSTED`, `LEASE_EXPIRED`로 구분한다. 큐에 대한 FK가 없어 큐 삭제 후에도 이력이 남는다. lease token은 저장 시 상관관계에만 사용하고 운영자 응답에는 포함하지 않는다. 상세 스키마는 [V33 migration](../../../atlas-application/src/main/resources/db/migration/V33__paypal_webhook_retry_attempt_history.sql)을 참조한다.
 
 운영자 read model은 기존 [D-089](../../00-governance/decision-log.md#d-089)의 opt-in 설정, 별도 Basic 인증 및 `PAYMENT_WEBHOOK_RETRY_OPERATOR` 권한 경계를 공유한다. `/api/internal/payment/paypal/webhook-retries` 아래에서 요약, PENDING 목록, 이벤트별 이력을 GET으로 제공한다. 조회는 큐 claim·lease 갱신·재시도·감사 쓰기 또는 payment/refund/provider 상태 변경을 하지 않는다. 수동 재시도는 기존 별도 POST와 그 멱등성·감사·횟수 제한을 그대로 따른다.
 

@@ -8,10 +8,10 @@
 - 현재 pool 3이 독립 scheduler task를 동시에 시작하는지, pool 1에서 queued task가 대기하는지 검증.
 - 두 Spring application context의 독립 Hikari pool이 같은 PostgreSQL Seller-SKU counter에서 동시에 만료를 수행할 때 duplicate state change가 없는지 확인.
 - Multi-context 경합은 Admission의 per-Seller-SKU counter 경로만 측정. Standalone Order와 grouped BuyerCheckout은 기존 단일 context 상태 전이 테스트 범위.
-- Scheduler pool control: [`SchedulingConcurrencyTest`](../../ATLAS-application/src/test/java/com/atlas/application/config/SchedulingConcurrencyTest.java).
-- Multi-context scenario: [`ScheduledExpiryMultiInstanceIntegrationTest`](../../ATLAS-application/src/test/java/com/atlas/ScheduledExpiryMultiInstanceIntegrationTest.java).
-- [OrderServiceImpl.expireDueOrders](../../ATLAS-order/src/main/java/com/atlas/order/service/impl/OrderServiceImpl.java): `checkout_id IS NULL` standalone Order만 처리; misleading method name 교정.
-- [CheckoutPaymentServiceImpl.expireDueCheckouts](../../ATLAS-order/src/main/java/com/atlas/order/service/impl/CheckoutPaymentServiceImpl.java): `checkout_id IS NOT NULL` BuyerCheckout 처리. 두 SQL 대상은 서로 겹치지 않음.
+- Scheduler pool control: [`SchedulingConcurrencyTest`](../../atlas-application/src/test/java/com/atlas/application/config/SchedulingConcurrencyTest.java).
+- Multi-context scenario: [`ScheduledExpiryMultiInstanceIntegrationTest`](../../atlas-application/src/test/java/com/atlas/ScheduledExpiryMultiInstanceIntegrationTest.java).
+- [OrderServiceImpl.expireDueOrders](../../atlas-order/src/main/java/com/atlas/order/service/impl/OrderServiceImpl.java): `checkout_id IS NULL` standalone Order만 처리; misleading method name 교정.
+- [CheckoutPaymentServiceImpl.expireDueCheckouts](../../atlas-order/src/main/java/com/atlas/order/service/impl/CheckoutPaymentServiceImpl.java): `checkout_id IS NOT NULL` BuyerCheckout 처리. 두 SQL 대상은 서로 겹치지 않음.
 
 ## 환경과 workload
 
@@ -29,7 +29,7 @@
 ### 재현 방법
 
 ```sh
-./gradlew --no-daemon :application-module:test \
+./gradlew --no-daemon :atlas-application:test \
   --tests com.atlas.application.config.SchedulingConcurrencyTest \
   --tests com.atlas.ScheduledExpiryMultiInstanceIntegrationTest
 ```
@@ -57,7 +57,7 @@
 
 각 run에서 해당 campaign의 due ticket이 전부 `EXPIRED`, `checkout_slot_held=false`; Seller-SKU sequence 값 불변. Concurrent invocations는 한 번만 상태를 변경.
 
-- 전체 검증: `./gradlew --no-daemon clean check :application-module:bootJar` 성공 · 59 test suites · 277 tests · failure/error/skip 0.
+- 전체 검증: `./gradlew --no-daemon clean check :atlas-application:bootJar` 성공 · 59 test suites · 277 tests · failure/error/skip 0.
 
 ## 해석과 한계
 

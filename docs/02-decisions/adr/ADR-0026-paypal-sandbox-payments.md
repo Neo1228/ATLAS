@@ -20,10 +20,10 @@ PayPal AI Hackathon 결제 흐름에서 PayPal Orders API Sandbox를 사용. Pro
 - PayPal `PayPal-Request-Id`는 각 endpoint의 공식 지원이 확인된 경우에만 사용. 지원하지 않거나 응답이 불명확한 operation은 내부 operation ID와 PayPal resource 상태 조회로 복구. 무조건 재시도 금지.
 - Webhook은 PayPal 서명 확인 후 event ID 중복을 제거. Provider 결과 확인 뒤 checkout, coupon, inventory 및 원장 변경 적용.
 - 모듈 책임:
-  - `payment-module`: PayPal API, provider operation 및 PaymentAttempt 상태
-  - `order-module`: 구매자 승인/결제 상태와 환불 정책
-  - `settlement-module`: 확인된 capture/refund의 내부 원장 기록
-  - `application-module`: HTTP 경로, 설정, Flyway migration
+  - `atlas-payment`: PayPal API, provider operation 및 PaymentAttempt 상태
+  - `atlas-order`: 구매자 승인/결제 상태와 환불 정책
+  - `atlas-settlement`: 확인된 capture/refund의 내부 원장 기록
+  - `atlas-application`: HTTP 경로, 설정, Flyway migration
 - PayPal credentials가 없으면 payment request는 `PROVIDER_UNAVAILABLE`로 실패. 비결제 기능은 계속 사용할 수 있음.
 - Settlement ledger에는 PayPal에서 확인된 capture/refund만 기록. Ledger entry는 provider-confirmed event에 대응하는 내부 회계 기록.
 - `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `BOK_ECOS_API_KEY`는 비밀 저장소나 환경 변수로만 전달. Sandbox URL은 `PAYPAL_BASE_URL`로 구성. GitHub Actions Secret의 로컬 자동 전달 미지원.

@@ -24,7 +24,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * <p>지연 자체를 주장하려는 테스트가 아니다. EXP-041 의 측정을 재현하는 도구다.
  * 캐시 도입 전후를 같은 조건에서 비교하려면 이 표본을 다시 뽑을 수 있어야 한다.
  *
- * <p>사용법: {@code FX_STUB_LATENCY_MS=80 ./gradlew :application-module:test --tests '*FxRateLatencyProbeTest' --rerun-tasks}
+ * <p>사용법: {@code FX_STUB_LATENCY_MS=80 ./gradlew :atlas-application:test --tests '*FxRateLatencyProbeTest' --rerun-tasks}
  * 결과는 테스트 출력의 {@code FX_LOOKUP_SAMPLES} 줄에 남는다.
  */
 @Testcontainers

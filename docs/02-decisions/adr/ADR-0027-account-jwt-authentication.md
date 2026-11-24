@@ -70,10 +70,10 @@ sequenceDiagram
 - Security boundary: anonymous protected endpoint denied; explicitly public catalog/login/callback/webhook routes still obey route-specific validation; authenticated role cannot bypass ownership.
 - Testcontainers PostgreSQL for account/session uniqueness, transaction rollback, rotation race, and migration. ArchUnit verifies application/security dependency boundaries.
 - 미구현 정책: 이메일 인증, 비밀번호 재설정, MFA. 도입 시 요구사항과 위협 모델 별도 검토.
-- Account workflow: [AccountService](../../../ATLAS-account/src/main/java/com/atlas/account/service/AccountService.java) · [AccountController](../../../ATLAS-application/src/main/java/com/atlas/application/controller/account/AccountController.java)
-- Ownership/schema: [AccountOwnershipInterceptor](../../../ATLAS-application/src/main/java/com/atlas/application/security/AccountOwnershipInterceptor.java) · [V25 account migration](../../../ATLAS-application/src/main/resources/db/migration/V25__account_identity.sql)
-- Unit tests: [AccountServiceTest](../../../ATLAS-account/src/test/java/com/atlas/account/service/AccountServiceTest.java) · [AccountSecurityConfigurationTest](../../../ATLAS-account/src/test/java/com/atlas/account/security/AccountSecurityConfigurationTest.java)
-- Security tests: [AccountJwtConfigurationTest](../../../ATLAS-application/src/test/java/com/atlas/application/AccountJwtConfigurationTest.java) · [AccountOwnershipInterceptorTest](../../../ATLAS-application/src/test/java/com/atlas/application/security/AccountOwnershipInterceptorTest.java)
+- Account workflow: [AccountService](../../../atlas-account/src/main/java/com/atlas/account/service/AccountService.java) · [AccountController](../../../atlas-application/src/main/java/com/atlas/application/controller/account/AccountController.java)
+- Ownership/schema: [AccountOwnershipInterceptor](../../../atlas-application/src/main/java/com/atlas/application/security/AccountOwnershipInterceptor.java) · [V25 account migration](../../../atlas-application/src/main/resources/db/migration/V25__account_identity.sql)
+- Unit tests: [AccountServiceTest](../../../atlas-account/src/test/java/com/atlas/account/service/AccountServiceTest.java) · [AccountSecurityConfigurationTest](../../../atlas-account/src/test/java/com/atlas/account/security/AccountSecurityConfigurationTest.java)
+- Security tests: [AccountJwtConfigurationTest](../../../atlas-application/src/test/java/com/atlas/application/AccountJwtConfigurationTest.java) · [AccountOwnershipInterceptorTest](../../../atlas-application/src/test/java/com/atlas/application/security/AccountOwnershipInterceptorTest.java)
 
 ## 참고 자료
 

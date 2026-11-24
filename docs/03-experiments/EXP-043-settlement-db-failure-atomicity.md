@@ -16,7 +16,7 @@
 
 Testcontainers PostgreSQL 18.6 에서, 진행 중인 transaction 의 백엔드 PID 를 **별도 커넥션**에서 `pg_terminate_backend(pid)` 로 종료했다. 무작위 타이밍이 아니라, INSERT 를 실행한 직후 같은 transaction 안에서 종료를 요청하는 방식으로 **경계를 지정**했다.
 
-테스트: `ATLAS-application/src/test/java/com/atlas/settlement/SettlementDbFailureAtomicityIntegrationTest.java`
+테스트: `atlas-application/src/test/java/com/atlas/settlement/SettlementDbFailureAtomicityIntegrationTest.java`
 
 ## 결과
 

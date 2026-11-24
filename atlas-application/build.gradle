@@ -3,14 +3,14 @@ plugins {
 }
 
 dependencies {
-    implementation project(':admission-module')
-    implementation project(':inventory-module')
-    implementation project(':order-module')
-    implementation project(':payment-module')
-    implementation project(':settlement-module')
-    implementation project(':catalog-module')
+    implementation project(':atlas-admission')
+    implementation project(':atlas-inventory')
+    implementation project(':atlas-order')
+    implementation project(':atlas-payment')
+    implementation project(':atlas-settlement')
+    implementation project(':atlas-catalog')
 
-    implementation project(':account-module')
+    implementation project(':atlas-account')
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'

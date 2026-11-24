@@ -30,8 +30,8 @@
 
 ## 공통 처리 기준
 
-- **HTTP 오류:** Spring `ProblemDetail` / RFC 9457 사용. 표준 `type/title/status/detail`과 기계 판독용 `code`를 반환. `application-module`의 `GlobalExceptionHandler`가 module not-found/conflict, request validation/framework 오류, 예상하지 못한 500을 처리. 내부 500 상세는 client에 노출하지 않음.
-- **오류 소유권:** 각 도메인은 reason code를 가진 typed exception 하나를 제공하고, `application-module`이 code를 HTTP 응답으로 변환. `IllegalArgumentException`은 client 계약으로 쓰지 않음. Controller별 `ResponseStatusException` mapping 금지.
+- **HTTP 오류:** Spring `ProblemDetail` / RFC 9457 사용. 표준 `type/title/status/detail`과 기계 판독용 `code`를 반환. `atlas-application`의 `GlobalExceptionHandler`가 module not-found/conflict, request validation/framework 오류, 예상하지 못한 500을 처리. 내부 500 상세는 client에 노출하지 않음.
+- **오류 소유권:** 각 도메인은 reason code를 가진 typed exception 하나를 제공하고, `atlas-application`이 code를 HTTP 응답으로 변환. `IllegalArgumentException`은 client 계약으로 쓰지 않음. Controller별 `ResponseStatusException` mapping 금지.
 - **검증:** HTTP request 형식은 Jakarta Bean Validation. Module service도 다른 caller를 위해 도메인 불변조건 검증. Controller는 transport 경계, service는 domain 경계를 담당.
 - **조회·변경:** `AdmissionService.find()`는 저장된 상태만 읽음. GET/`OrderResponse` 조립 중 만료·승격·DB 쓰기 금지. 만료는 scheduler 또는 명시적 상태 변경에서 처리하므로 sweep 전 응답은 마지막 commit 상태일 수 있음 (REF-080/081).
 - **Transaction:** 불변조건에 필요한 짧은 transaction 사용. `@Transactional`은 일반 module operation, `TransactionTemplate`은 Order/Inventory/Payment 흐름의 명시적 transaction block에 사용. 같은 datasource/manager와 기본 `REQUIRED` 전파에서는 모듈 JDBC 호출이 caller transaction에 참여 가능. PSP 호출은 transaction 밖. 원격 service로 분리한 뒤에도 같은 원자성이 유지된다고 가정 금지.

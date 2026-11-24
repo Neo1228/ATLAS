@@ -61,7 +61,7 @@
 ## 재현
 
 ```sh
-./gradlew :application-module:test --tests com.atlas.order.LocationFaultConvergenceIntegrationTest
+./gradlew :atlas-application:test --tests com.atlas.order.LocationFaultConvergenceIntegrationTest
 ```
 
-seed별 요약은 `ATLAS-application/build/fault-convergence/`에 쌓이며 git에서 제외된다. 위 수치는 2026-11-23 실행의 표준 출력에서 옮겼다.
+seed별 요약은 `atlas-application/build/fault-convergence/`에 쌓이며 git에서 제외된다. 위 수치는 2026-11-23 실행의 표준 출력에서 옮겼다.

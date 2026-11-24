@@ -1,5 +1,6 @@
 dependencies {
-    implementation project(':inventory-module')
+    implementation project(':atlas-catalog')
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     compileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
     annotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"

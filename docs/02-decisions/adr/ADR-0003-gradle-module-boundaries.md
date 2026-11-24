@@ -18,20 +18,20 @@ ADR-0001에서 결정한 Buyer 흐름은 Campaign, Admission, Inventory, Order/C
 
 ## 결정
 
-ATLAS는 Spring Boot modular monolith. `:application-module`이 다른 Gradle project를 조립·실행하며, 후속 결정은 Catalog·Cart·Fulfillment·Settlement와 Account 경계를 확장. Gradle project 추가가 독립 서비스 분리를 뜻하지 않음.
+ATLAS는 Spring Boot modular monolith. `:atlas-application`이 다른 Gradle project를 조립·실행하며, 후속 결정은 Catalog·Cart·Fulfillment·Settlement와 Account 경계를 확장. Gradle project 추가가 독립 서비스 분리를 뜻하지 않음.
 
 | Gradle project path | 소유 책임 |
 |---|---|
-| `:application-module` | Spring Boot 실행, HTTP/controller, 보안·오류 설정, Flyway |
-| `:account-module` | Account, Buyer/Seller identity 연결, JWT·refresh session |
-| `:catalog-module` | Seller, Product/category/SKU, 가격과 판매 channel |
+| `:atlas-application` | Spring Boot 실행, HTTP/controller, 보안·오류 설정, Flyway |
+| `:atlas-account` | Account, Buyer/Seller identity 연결, JWT·refresh session |
+| `:atlas-catalog` | Seller, Product/category/SKU, 가격과 판매 channel |
 | `:cart-module` | Buyer-wide Cart와 CartItem |
 | `:campaign-module` | Campaign과 판매 자격 |
-| `:admission-module` | FIFO queue, ticket, idempotency, checkout slot |
-| `:inventory-module` | Stock pool, reservation, fulfillment location, adjustment·transfer |
-| `:order-module` | BuyerCheckout, SellerOrder/OrderItem, shipment, refund·return |
-| `:payment-module` | PayPal provider operation, PaymentAttempt, webhook·recovery |
-| `:settlement-module` | Confirmed capture/refund ledger, Seller allocation과 statement |
+| `:atlas-admission` | FIFO queue, ticket, idempotency, checkout slot |
+| `:atlas-inventory` | Stock pool, reservation, fulfillment location, adjustment·transfer |
+| `:atlas-order` | BuyerCheckout, SellerOrder/OrderItem, shipment, refund·return |
+| `:atlas-payment` | PayPal provider operation, PaymentAttempt, webhook·recovery |
+| `:atlas-settlement` | Confirmed capture/refund ledger, Seller allocation과 statement |
 
 Gradle dependency graph는 각 디렉터리의 `build.gradle`이 기준. `ModuleBoundaryTest`가 허용 경계를 검증하며, 모듈 간 호출은 public `.service`와 DTO 계약 사용. [README의 모듈 개요](../../../README.md#현재-기능과-모듈) 참고.
 
@@ -60,14 +60,14 @@ Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·
 - **도메인 명칭:** 책임이 드러나는 용어 사용. Inventory의 일반명 `Pool`은 `InventoryPool`로 구체화. Java 타입/ID/repository/DTO/service operation만 변경; DB schema와 API 응답 필드는 유지 ([D-053](../../00-governance/decision-log.md)).
 - **CRUD·schema:** 일반 CRUD는 JPA. Schema는 Flyway 소유, Hibernate는 `ddl-auto=validate`.
 - **특화 SQL:** PostgreSQL 전용 lock·sequence·guarded update만 `.repository`에서 JDBC/native SQL로 처리.
-- **HTTP:** controller·transport DTO·설정·오류 변환은 `application-module` 소유. HTTP/domain request 분리는 입력 모양이나 validation 규칙이 다를 때만 허용.
+- **HTTP:** controller·transport DTO·설정·오류 변환은 `atlas-application` 소유. HTTP/domain request 분리는 입력 모양이나 validation 규칙이 다를 때만 허용.
 - **Transaction:** 불변조건 기준으로 경계를 정함. Admission counter+ticket, Inventory pool+reservation은 한 transaction; PSP 호출은 DB transaction 밖.
 - **금지 pattern:** CQRS, CommandBus, handler/mediator, `internal`, `package-info.java` marker 금지. 새 pattern은 구체 요구와 ADR 승인 필요.
 - **Test:** consumer-visible behavior, module boundary, state transition, error contract, concurrency 검증에 한정. PostgreSQL 전용 동작은 PostgreSQL로 검증; wiring/중복 위험 테스트 금지 ([REF-099](../../00-governance/reference-register.md)).
 
 ## 결과와 한계
 
-- `application-module`은 Spring Boot application을 조립·실행. Gradle dependency graph와 ArchUnit test가 module 방향·public contract를 검사. 현재 module 책임은 [README](../../../README.md#현재-기능과-모듈) 기준.
+- `atlas-application`은 Spring Boot application을 조립·실행. Gradle dependency graph와 ArchUnit test가 module 방향·public contract를 검사. 현재 module 책임은 [README](../../../README.md#현재-기능과-모듈) 기준.
 - JPA와 PostgreSQL SQL의 범위·절충은 ADR-0004에 기록한다. 독립 서비스 추출·추가 persistence framework는 근거와 사용자 승인 없이 진행하지 않는다.
 
 ## 판단 근거

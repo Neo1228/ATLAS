@@ -8,7 +8,7 @@
 
 - 주문·결제·환불·정산 원장은 KRW를 유지하고 PayPal 요청은 USD로 변환한다. 환율 source와 기준일은 payment attempt에 고정해 재시도·환불에서 같은 근거를 사용한다([ADR-0030](ADR-0030-paypal-currency-boundary.md)).
 - 기본 BOK ECOS provider는 API key가 필요하다. 사용자는 PayPal Sandbox 실행에 회원가입이나 API key 없이 쓸 수 있는 무료 환율 API를 요청했다.
-- [`FrankfurterExchangeRateProvider`](../../../ATLAS-payment/src/main/java/com/atlas/payment/provider/exchange/FrankfurterExchangeRateProvider.java)는 keyless ECB 일별 기준환율 endpoint를 이미 제공한다. 이 값은 실시간 PayPal quote나 은행 체결률이 아니다.
+- [`FrankfurterExchangeRateProvider`](../../../atlas-payment/src/main/java/com/atlas/payment/provider/exchange/FrankfurterExchangeRateProvider.java)는 keyless ECB 일별 기준환율 endpoint를 이미 제공한다. 이 값은 실시간 PayPal quote나 은행 체결률이 아니다.
 
 ## 결정
 

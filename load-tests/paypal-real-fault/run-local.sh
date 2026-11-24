@@ -107,9 +107,9 @@ fi
 
 gradle_args=(--no-daemon)
 if [[ -n ${GRADLE_INIT_SCRIPT:-} ]]; then gradle_args+=(--init-script "$GRADLE_INIT_SCRIPT"); fi
-if ! (cd "$root" && ./gradlew "${gradle_args[@]}" :application-module:bootJar) > "$private/build.log" 2>&1; then
+if ! (cd "$root" && ./gradlew "${gradle_args[@]}" :atlas-application:bootJar) > "$private/build.log" 2>&1; then
     tail -40 "$private/build.log" >&2
-    fail 'ATLAS application-module:bootJar 가 실패했다.'
+    fail 'ATLAS atlas-application:bootJar 가 실패했다.'
 fi
 
 "${compose[@]}" up -d --wait

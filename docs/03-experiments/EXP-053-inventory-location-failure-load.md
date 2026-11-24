@@ -98,7 +98,7 @@ DB 계측(`pg_stat_database` delta): 수정 전 order당 7.79 transaction·5.70 
 
 - 이 문서의 수치(2026-11-20 측정) 원본은 k6 summary, 실행 로그, fixture, 실행·승인·환불 스크립트, service token을 포함해 git-ignore된 `.local/distributed-fulfillment/`에만 있다. 이 저장소만으로는 재현할 수 없으며, 조건과 수치는 본문에 옮겨 적은 값이 전부다.
 - 저장소에 추적하는 도구는 `load-tests/distributed-coordinator.js`(coordinator HTTP API k6 시나리오), `load-tests/run-distributed-coordinator.sh`, Compose 정의 `load-tests/compose-inventory-location.yaml`, `load-tests/compose-order-coordinator.yaml`이다. 이 도구는 V65 seller-scoped 계약을 반영해 이후 고친 것이며 위 표를 낸 실행기와 같지 않다. 현재 stack에서 이 도구로 얻은 결과는 [EXP-059](EXP-059-order-reservation-load-and-idempotent-replay.md)에 있다.
-- 저장소 명령으로 다시 실행할 수 있는 것은 안전성 검증이다. `./gradlew :inventory-location-module:test --tests 'com.atlas.inventorylocation.InventoryReservationIntegrationTest'`와 `./gradlew :application-module:test --tests 'com.atlas.order.LocationReservationServiceIntegrationTest'`이며, JDK 25와 Testcontainers 설정은 [ADR-0058](../02-decisions/adr/ADR-0058-distributed-fulfillment-stage-one-baseline.md)의 명령을 따른다. 2026-11-23 no-cache 실행의 통과 수는 각각 13건과 15건이다.
+- 저장소 명령으로 다시 실행할 수 있는 것은 안전성 검증이다. `./gradlew :atlas-inventory-location:test --tests 'com.atlas.inventorylocation.InventoryReservationIntegrationTest'`와 `./gradlew :atlas-application:test --tests 'com.atlas.order.LocationReservationServiceIntegrationTest'`이며, JDK 25와 Testcontainers 설정은 [ADR-0058](../02-decisions/adr/ADR-0058-distributed-fulfillment-stage-one-baseline.md)의 명령을 따른다. 2026-11-23 no-cache 실행의 통과 수는 각각 13건과 15건이다.
 
 ## 참고
 

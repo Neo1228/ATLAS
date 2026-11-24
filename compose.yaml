@@ -26,7 +26,7 @@ services:
   application:
     image: atlas-application:local
     build:
-      context: ./ATLAS-application
+      context: ./atlas-application
       dockerfile: Dockerfile
     profiles: ["observability", "loadtest", "edge-cache"]
     environment:
@@ -168,7 +168,7 @@ services:
       K6_MAIL_API_URL: ${K6_MAIL_API_URL:-http://mailpit:8025}
     volumes:
       - ./load-tests:/scripts:ro
-      - ./ATLAS-application/build/k6-results:/results
+      - ./atlas-application/build/k6-results:/results
     depends_on:
       - application
       - mailpit

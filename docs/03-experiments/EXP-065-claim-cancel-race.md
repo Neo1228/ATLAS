@@ -34,5 +34,5 @@
 ## 재현
 
 ```sh
-./gradlew :application-module:test --tests 'com.atlas.order.LocationFaultConvergenceIntegrationTest'
+./gradlew :atlas-application:test --tests 'com.atlas.order.LocationFaultConvergenceIntegrationTest'
 ```
