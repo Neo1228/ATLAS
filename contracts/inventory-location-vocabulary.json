@@ -1,6 +1,0 @@
-{
-  "description": "inventory-location 서비스와 order 서비스가 HTTP 로 주고받는 값의 어휘. 두 서비스는 컴파일 의존이 없어 양쪽 테스트가 이 파일을 읽어 각자의 코드와 비교한다. 값을 바꾸려면 양쪽 코드와 이 파일을 함께 고친다.",
-  "reservationStatus": ["RESERVED", "CLAIMED", "RELEASED", "EXPIRED", "CANCELLED"],
-  "errorCode": ["INVALID_REQUEST", "INSUFFICIENT_STOCK", "IDEMPOTENCY_CONFLICT", "NOT_FOUND", "INVALID_STATE", "RESERVATION_EXPIRED", "RESERVATION_CANCELLED"],
-  "errorCodesOrderBranchesOn": ["INSUFFICIENT_STOCK", "INVALID_STATE", "RESERVATION_CANCELLED", "RESERVATION_EXPIRED"]
-}
