@@ -67,10 +67,15 @@ jobs:
       - name: Verify Docker is available for PostgreSQL integration tests
         run: docker info
       # application 모듈의 테스트는 아래 app-tests가 나누어 실행한다. 나머지 모든 검사는 여기서 한다.
+      # resolveTestRuntimeClasspath 는 application 테스트가 런타임에만 쓰는 jar 를 이 job 의 캐시에 넣는다.
+      # app-tests 는 캐시를 읽기만 하므로 이게 없으면 shard 4개가 매 실행 같은 jar 5개를 Maven Central 에서 다시 받는다(EXP-075).
       - name: Run checkstyle, compile and the other modules' tests
         env:
           ATLAS_TEST_FORKS: '2'
-        run: ./gradlew --no-daemon check -x :atlas-application:test
+        run: >-
+          ./gradlew --no-daemon
+          -I .github/gradle/resolve-test-runtime-classpaths.init.gradle
+          check -x :atlas-application:test resolveTestRuntimeClasspath
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -109,10 +114,17 @@ jobs:
         env:
           ATLAS_TEST_FORKS: '2'
           ATLAS_TEST_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
-        run: ./gradlew --no-daemon :atlas-application:test
+        run: |
+          touch "$RUNNER_TEMP/before-gradle"
+          ./gradlew --no-daemon :atlas-application:test
       - name: Summarize executed tests
         if: always()
         run: |
+          # 이 shard 가 Maven Central 에서 새로 받은 jar 수. 캐시가 데워져 있으면 0 이어야 한다(EXP-075).
+          # 0 이 아닌 값이 main push 실행에서 보이면 verify 의 캐시에 shard 의존성이 빠졌다는 신호다.
+          downloaded=$(find "$HOME/.gradle/caches/modules-2/files-2.1" -type f -name '*.jar' -newer "$RUNNER_TEMP/before-gradle" 2>/dev/null | wc -l)
+          echo "DOWNLOADED_JARS $downloaded"
+          echo "shard ${{ matrix.shard }}/${{ strategy.job-total }}: Maven Central 에서 새로 받은 jar ${downloaded}개" >> "$GITHUB_STEP_SUMMARY"
           python3 - <<'PY'
           import glob, re
           total = failed = 0

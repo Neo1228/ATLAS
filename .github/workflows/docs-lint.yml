@@ -31,7 +31,8 @@ jobs:
   pr-checklist:
     timeout-minutes: 10
     name: PR checklist
-    if: github.event_name == 'pull_request'
+    # 병합·종료된 PR의 edited 이벤트는 건너뛴다. 병합 후 head 브랜치가 지워져 base..head 범위를 만들 수 없어 실패한다.
+    if: github.event_name == 'pull_request' && github.event.pull_request.state == 'open'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -88,13 +89,13 @@ jobs:
           const expected = checklist(template);
           const provided = checklist(body);
           if (expected.length === 0 || provided.length !== expected.length) {
-            console.error(`PR 본문에 template 기준 ${expected.length}개 검토 항목을 포함해야 합니다.`);
+            console.error(`::error title=PR 본문 검토 체크리스트::PR 본문에 template 기준 ${expected.length}개 검토 항목을 포함해야 합니다.`);
             process.exit(1);
           }
           const incomplete = [...body.matchAll(/^[ \t]*[-*]\s+\[([ xX])\]\s+.+$/gm)]
             .filter(([, state]) => state.toLowerCase() !== "x");
           if (incomplete.length > 0) {
-            console.error(`체크하지 않은 항목 ${incomplete.length}개를 완료해야 병합할 수 있습니다.`);
+            console.error(`::error title=PR 본문 검토 체크리스트::체크하지 않은 항목 ${incomplete.length}개를 완료해야 병합할 수 있습니다.`);
             process.exit(1);
           }
           const issueLine = body.split(/\r?\n/).find((line) => /^[ \t]*[-*]\s+Issues:\s*/.test(line));
@@ -109,7 +110,7 @@ jobs:
               || match[4] !== `https://github.com/${process.env.REPOSITORY}/issues/${match[2]}`;
           });
           if (entries.length === 0 || invalidTrace) {
-            console.error("Issues 항목에 plain-text Closes #N — [Issue #N](URL) 또는 Refs #N — [Issue #N](URL)을 작성하세요. Closes/Refs와 #N을 Markdown link로 감싸지 마세요.");
+            console.error("::error title=PR 본문 Issues 항목::Issues 항목에 plain-text Closes #N — [Issue #N](URL) 또는 Refs #N — [Issue #N](URL)을 작성하세요. Closes/Refs와 #N을 Markdown link로 감싸지 마세요.");
             process.exit(1);
           }
           const traceLine = body.split(/\r?\n/).find((line) =>
@@ -122,7 +123,7 @@ jobs:
           const hasDirectTraceLink = /\[[^\]]+\]\([^)]+\)/.test(traceValue);
           const explicitNoTrace = /^(N\/A|해당 없음)\s*[:：]\s*\S/i.test(traceValue);
           if (!hasDirectTraceLink && !explicitNoTrace) {
-            console.error("요구사항·결정·규칙 ID에 직접 링크를 넣거나, 해당 없음과 구체적 사유를 작성하세요.");
+            console.error("::error title=PR 본문 추적 기준::요구사항·결정·규칙 ID에 직접 링크를 넣거나, 해당 없음과 구체적 사유를 작성하세요.");
             process.exit(1);
           }
 
