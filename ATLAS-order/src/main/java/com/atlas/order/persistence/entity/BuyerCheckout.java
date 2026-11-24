@@ -1,6 +1,6 @@
 package com.atlas.order.persistence.entity;
 
-import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.model.BuyerCheckoutState;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

@@ -9,7 +9,7 @@ import com.atlas.payment.dto.response.ClaimedWebhookRetryResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.WebhookRetryPollResponse;
-import com.atlas.payment.persistence.state.WebhookRetryFailure;
+import com.atlas.payment.model.WebhookRetryFailure;
 import com.atlas.payment.service.PayPalWebhookRetryService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;

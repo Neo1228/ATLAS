@@ -1,7 +1,7 @@
 package com.atlas.catalog.dto.response;
 
-import com.atlas.catalog.persistence.state.ProductSalesChannel;
-import com.atlas.catalog.persistence.state.ProductStatus;
+import com.atlas.catalog.model.ProductSalesChannel;
+import com.atlas.catalog.model.ProductStatus;
 import java.util.List;
 import java.util.UUID;
 

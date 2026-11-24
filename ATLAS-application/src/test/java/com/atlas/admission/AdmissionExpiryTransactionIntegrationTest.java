@@ -7,7 +7,7 @@ import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 import com.atlas.admission.dto.request.JoinQueueRequest;
 import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.projection.DueTicketCandidate;
-import com.atlas.admission.persistence.state.TicketStatus;
+import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.TicketRepository;
 import com.atlas.admission.service.AdmissionService;

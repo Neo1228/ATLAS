@@ -1,6 +1,6 @@
 package com.atlas.order.service;
 
-import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.model.BuyerCheckoutState;
 import java.util.UUID;
 
 public interface CheckoutFinalizationService {

@@ -1,7 +1,7 @@
 package com.atlas.order.persistence.entity;
 
-import com.atlas.order.persistence.state.OrderSource;
-import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.model.OrderSource;
+import com.atlas.order.model.OrderState;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

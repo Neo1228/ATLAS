@@ -5,7 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.application.controller.PayPalWebhookRetryHistoryController;
+import com.atlas.application.controller.payment.PayPalWebhookRetryHistoryController;
 import com.atlas.application.exception.GlobalExceptionHandler;
 import com.atlas.payment.repository.PayPalWebhookRetryHistoryRepository;
 import com.atlas.payment.service.impl.PayPalWebhookRetryHistoryServiceImpl;

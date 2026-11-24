@@ -17,7 +17,7 @@ import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
 import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
-import com.atlas.order.persistence.state.OrderReturnStatus;
+import com.atlas.order.model.OrderReturnStatus;
 import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.service.OrderRefundService;

@@ -7,7 +7,7 @@ import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.persistence.projection.SellerBalance;
 import com.atlas.settlement.persistence.projection.SettlementPayoutRow;
-import com.atlas.settlement.persistence.state.SettlementPayoutState;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.repository.SettlementPayoutRepository;
 import com.atlas.settlement.repository.SettlementRefundReservationRepository;

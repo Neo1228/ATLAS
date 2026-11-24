@@ -1,6 +1,6 @@
 package com.atlas.settlement.persistence.projection;
 
-import com.atlas.settlement.persistence.state.SettlementPayoutState;
+import com.atlas.settlement.model.SettlementPayoutState;
 import java.time.Instant;
 import java.util.UUID;
 

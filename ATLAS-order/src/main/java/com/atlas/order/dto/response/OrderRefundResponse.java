@@ -1,7 +1,7 @@
 package com.atlas.order.dto.response;
 
-import com.atlas.order.persistence.state.OrderRefundPaymentStatus;
-import com.atlas.order.persistence.state.OrderRefundStatus;
+import com.atlas.order.model.OrderRefundPaymentStatus;
+import com.atlas.order.model.OrderRefundStatus;
 import java.time.Instant;
 import java.util.UUID;
 

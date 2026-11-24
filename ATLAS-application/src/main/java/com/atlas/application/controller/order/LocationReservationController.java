@@ -3,7 +3,7 @@ package com.atlas.application.controller.order;
 import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.response.LocationReservationResponse;
 import com.atlas.order.service.LocationReservationService;
-import com.atlas.order.persistence.state.LocationReservationWorkflowState;
+import com.atlas.order.model.LocationReservationWorkflowState;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;

@@ -1,7 +1,7 @@
 package com.atlas.payment.persistence.projection;
 
-import com.atlas.payment.persistence.state.PaymentRecoveryOperationType;
-import com.atlas.payment.persistence.state.PaymentRecoveryWorkStage;
+import com.atlas.payment.model.PaymentRecoveryOperationType;
+import com.atlas.payment.model.PaymentRecoveryWorkStage;
 import java.time.Instant;
 import java.util.UUID;
 

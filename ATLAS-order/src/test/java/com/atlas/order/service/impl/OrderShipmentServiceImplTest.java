@@ -14,7 +14,7 @@ import com.atlas.order.persistence.entity.OrderFulfillment;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.OrderShipment;
 import com.atlas.order.persistence.entity.PurchaseOrder;
-import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.model.OrderState;
 import com.atlas.order.repository.OrderFulfillmentRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRefundRepository;

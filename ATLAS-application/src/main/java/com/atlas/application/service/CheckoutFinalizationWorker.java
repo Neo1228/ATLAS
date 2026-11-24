@@ -1,6 +1,6 @@
 package com.atlas.application.service;
 
-import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.service.CheckoutFinalizationService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;

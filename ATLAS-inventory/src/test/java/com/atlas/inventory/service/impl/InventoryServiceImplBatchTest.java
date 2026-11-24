@@ -14,7 +14,7 @@ import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.persistence.entity.Reservation;
-import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.repository.InventoryPoolRepository;
 import com.atlas.inventory.repository.InventoryReadRepository;
 import com.atlas.inventory.repository.LocationRepository;

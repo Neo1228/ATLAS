@@ -1,7 +1,7 @@
 package com.atlas.payment.persistence.entity;
 
-import com.atlas.payment.persistence.state.PaymentPhase;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.model.PaymentPhase;
+import com.atlas.payment.model.PaymentState;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

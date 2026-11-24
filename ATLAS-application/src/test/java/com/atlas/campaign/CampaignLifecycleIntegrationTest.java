@@ -10,7 +10,7 @@ import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.dto.request.CreateCampaignRequest;
 import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.exception.CampaignException;
-import com.atlas.admission.persistence.state.CampaignStatus;
+import com.atlas.admission.model.CampaignStatus;
 import com.atlas.admission.service.CampaignService;
 import com.atlas.catalog.dto.request.CreateProductRequest;
 import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;

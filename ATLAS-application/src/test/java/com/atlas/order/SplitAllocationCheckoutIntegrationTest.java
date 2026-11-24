@@ -16,7 +16,7 @@ import com.atlas.order.dto.request.OrderShipmentRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.exception.OrderException;
-import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderShipmentService;

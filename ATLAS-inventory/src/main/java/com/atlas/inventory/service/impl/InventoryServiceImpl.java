@@ -19,7 +19,7 @@ import com.atlas.inventory.persistence.projection.InventoryLocationRecord;
 import com.atlas.inventory.persistence.projection.InventoryPoolSummary;
 import com.atlas.inventory.persistence.projection.InventoryTransferRecord;
 import com.atlas.inventory.persistence.projection.InventoryTransferResult;
-import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.repository.InventoryPoolRepository;
 import com.atlas.inventory.repository.InventoryReadRepository;
 import com.atlas.inventory.repository.LocationRepository;

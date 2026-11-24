@@ -9,7 +9,7 @@ import com.atlas.inventory.dto.request.ReserveInventoryRequest;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.exception.InventoryException;
-import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 
 import java.util.ArrayList;

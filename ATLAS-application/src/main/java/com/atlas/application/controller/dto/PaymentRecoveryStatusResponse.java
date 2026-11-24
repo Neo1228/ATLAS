@@ -1,7 +1,7 @@
 package com.atlas.application.controller.dto;
 
-import com.atlas.order.persistence.state.OrderState;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.order.model.OrderState;
+import com.atlas.payment.model.PaymentState;
 import java.time.Instant;
 import java.util.UUID;
 

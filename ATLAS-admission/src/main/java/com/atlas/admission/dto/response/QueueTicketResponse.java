@@ -1,6 +1,6 @@
 package com.atlas.admission.dto.response;
 
-import com.atlas.admission.persistence.state.TicketStatus;
+import com.atlas.admission.model.TicketStatus;
 
 import java.time.Instant;
 import java.util.UUID;

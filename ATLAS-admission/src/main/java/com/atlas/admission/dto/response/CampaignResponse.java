@@ -1,6 +1,6 @@
 package com.atlas.admission.dto.response;
 
-import com.atlas.admission.persistence.state.CampaignStatus;
+import com.atlas.admission.model.CampaignStatus;
 import java.time.Duration;
 import java.util.UUID;
 

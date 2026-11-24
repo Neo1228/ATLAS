@@ -1,7 +1,7 @@
 package com.atlas.order.repository;
 
 import com.atlas.order.persistence.entity.OrderReturn;
-import com.atlas.order.persistence.state.OrderReturnStatus;
+import com.atlas.order.model.OrderReturnStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.time.Instant;

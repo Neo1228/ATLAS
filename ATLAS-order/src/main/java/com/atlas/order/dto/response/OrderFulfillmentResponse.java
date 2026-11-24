@@ -1,6 +1,6 @@
 package com.atlas.order.dto.response;
 
-import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.model.FulfillmentStatus;
 import java.time.Instant;
 import java.util.UUID;
 

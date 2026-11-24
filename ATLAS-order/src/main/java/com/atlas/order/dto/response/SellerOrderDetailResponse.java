@@ -1,8 +1,8 @@
 package com.atlas.order.dto.response;
 
-import com.atlas.inventory.persistence.state.ReservationStatus;
-import com.atlas.order.persistence.state.OrderSource;
-import com.atlas.order.persistence.state.OrderState;
+import com.atlas.inventory.model.ReservationStatus;
+import com.atlas.order.model.OrderSource;
+import com.atlas.order.model.OrderState;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;

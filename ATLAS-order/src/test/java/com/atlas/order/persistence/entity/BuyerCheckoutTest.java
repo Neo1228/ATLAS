@@ -2,7 +2,7 @@ package com.atlas.order.persistence.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.model.BuyerCheckoutState;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 

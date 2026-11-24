@@ -20,7 +20,7 @@ import java.time.Duration;
 import java.util.List;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.LocationReservationService;
 import com.atlas.order.service.CheckoutFinalizationService;

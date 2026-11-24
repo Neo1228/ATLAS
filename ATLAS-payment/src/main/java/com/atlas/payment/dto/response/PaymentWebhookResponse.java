@@ -1,6 +1,6 @@
 package com.atlas.payment.dto.response;
 
-import com.atlas.payment.persistence.state.PaymentRefundState;
+import com.atlas.payment.model.PaymentRefundState;
 import java.util.UUID;
 
 public record PaymentWebhookResponse(

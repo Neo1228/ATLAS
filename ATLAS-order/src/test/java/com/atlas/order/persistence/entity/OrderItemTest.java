@@ -3,7 +3,7 @@ package com.atlas.order.persistence.entity;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.model.OrderState;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

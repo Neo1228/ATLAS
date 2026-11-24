@@ -1,6 +1,6 @@
 package com.atlas.payment.persistence.entity;
 
-import com.atlas.payment.persistence.state.PaymentRefundState;
+import com.atlas.payment.model.PaymentRefundState;
 import java.time.Instant;
 import java.util.UUID;
 

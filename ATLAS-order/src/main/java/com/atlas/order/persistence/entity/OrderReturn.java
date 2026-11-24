@@ -1,6 +1,6 @@
 package com.atlas.order.persistence.entity;
 
-import com.atlas.order.persistence.state.OrderReturnStatus;
+import com.atlas.order.model.OrderReturnStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

@@ -1,6 +1,6 @@
 package com.atlas.application.controller.account;
 
-import com.atlas.application.controller.ClientOrigin;
+import com.atlas.application.security.ClientOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 
 import com.atlas.account.dto.request.LoginRequest;

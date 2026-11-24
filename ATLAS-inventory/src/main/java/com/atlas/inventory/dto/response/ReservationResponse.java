@@ -1,6 +1,6 @@
 package com.atlas.inventory.dto.response;
 
-import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.inventory.model.ReservationStatus;
 import java.util.UUID;
 
 public record ReservationResponse(UUID orderId, UUID campaignId, UUID sellerId, String skuId,
