@@ -1,0 +1,23 @@
+// CI 전용 init script: 모든 프로젝트의 testRuntimeClasspath 를 해석해 jar 까지 Gradle 캐시에 내려받는다.
+//
+// 왜 필요한가: verify job 은 `check -x :atlas-application:test` 라서 application 테스트의
+// "런타임에만 필요한" 의존성(kafka-clients 의 snappy·lz4·zstd, micrometer-prometheus 의 exposition formats 등)을
+// 받지 않는다. 앱 테스트 shard 는 캐시를 읽기만 하므로 그 jar 를 매 실행, shard 마다 Maven Central 에서 받는다.
+// 이 task 를 verify 의 Gradle 호출에 함께 실행하면, main 에서 verify 가 저장하는 캐시에 그 jar 가 들어가
+// shard 는 다시 받지 않는다. 근거: docs/03-experiments/EXP-075-ci-pipeline-reliability.md
+//
+// 사용: ./gradlew -I .github/gradle/resolve-test-runtime-classpaths.init.gradle resolveTestRuntimeClasspath
+// 이름만 쓰면 Gradle 이 모든 프로젝트의 같은 이름 task 를 실행한다. 다른 프로젝트의 configuration 을 한 task 에서
+// 해석하면 Gradle 이 "exclusive lock 없는 해석"으로 거부하므로(로컬에서 확인), 프로젝트마다 자기 것만 해석한다.
+allprojects { p ->
+    p.tasks.register('resolveTestRuntimeClasspath') {
+        group = 'ci'
+        description = 'testRuntimeClasspath 를 해석해 의존성 jar 를 Gradle 캐시에 받아 둔다.'
+        doLast {
+            def classpath = p.configurations.findByName('testRuntimeClasspath')
+            if (classpath != null && classpath.canBeResolved) {
+                logger.lifecycle("resolved ${p.path} testRuntimeClasspath: ${classpath.files.size()} files")
+            }
+        }
+    }
+}
