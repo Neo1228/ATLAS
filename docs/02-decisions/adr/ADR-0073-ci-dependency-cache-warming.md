@@ -45,7 +45,12 @@
 
 - **보호 규칙 `strict: true`(최신 main 기준 필수)를 유지하고 squash만 허용하는 경우**: 병합 결과 트리는 PR에서 테스트한 트리와 같다. R2는 중복이다. 샤딩 이후 main push 실패 4건(전체 검사 51건 중)은 429 2건과 `LocationFaultConvergenceIntegrationTest`(타이밍 의존, 원인 미확정) 1건 실패가 2건이었다. 병합 결과의 결정적 결함으로 확인된 건은 이 표본에 없다(표본이 작아 일반화하지 않는다). 이 경우 push 실행에서 `app-tests`에 `if: github.event_name == 'pull_request'`를 더하면 push는 `verify` 하나(약 1분)로 R1을 하고, push 한 번당 job 합계가 약 12분에서 약 1분이 된다. 공개 저장소라 표준 러너 사용량은 무료([GitHub 문서](https://docs.github.com/en/billing/managing-billing-for-your-products/about-billing-for-github-actions))이므로 이득은 비용이 아니라 거짓 경보(위 4건)와 429 노출을 줄이는 것이다.
 - **`strict`를 끄는 경우**: 두 PR이 각각 통과해도 병합 결과가 처음 합쳐지는 곳이 main push다. R2가 필요하다. 지금 workflow를 그대로 둔다.
-- 이 PR은 push 정책을 바꾸지 않는다. 통합 담당이 병합 흐름을 정하면 위 한 줄로 반영한다. 어느 쪽이든 R1은 바뀌지 않는다.
+- **적용(2026-11-24): `strict`를 유지하고 push 실행에서 `app-tests`를 건너뛴다.** 병합 흐름은 바꾸지 않았다. 근거:
+  - 최근 300개 Backend CI 실행에서 main push 103회 중 8회가 실패했다(성공 91, 취소 4). 그중 확인한 원인은 Maven Central HTTP 429 2건과 간헐 테스트 `LocationFaultConvergenceIntegrationTest` 실패 여러 건이다. `strict` + squash에서 push 트리는 PR 트리와 같으므로 이 실패들은 코드가 아니라 같은 트리의 재실행 잡음이다.
+  - 건너뛰면 push 실행의 job 합계가 약 11분에서 약 1분(`verify`)으로 줄고, 의미 없는 실패 노출이 사라진다. 이 줄어드는 양은 계산한 것이고 건너뛴 뒤의 실측은 아직 없다.
+  - 판정 job은 push에서만 `app-tests`의 `skipped`를 허용한다. PR에서 `skipped`는 실패다(48개 입력 조합을 직접 실행해 기대와 일치함을 확인).
+- **이 정책의 전제와 위험**: 전제는 보호 규칙 `strict: true`와 squash 병합만 허용이다. 이 중 하나라도 바뀌면 병합 결과가 처음 합쳐지는 곳이 main push이므로 push의 `app-tests`를 되살려야 한다(`app-tests`의 `if`에서 `&& github.event_name == 'pull_request'`를 지운다). 보호 규칙을 바꾸는 사람이 이 문서를 보지 못하면 조용히 검증이 사라지는 위험이 있고, 이것을 자동으로 막는 장치는 만들지 않았다.
+- 되돌리는 법: 위 한 줄을 지운다. 판정 job의 `skipped` 허용은 그대로 두어도 해롭지 않다(PR에서는 계속 `success`가 필요하다).
 
 ## 실패 경로와 롤백
 

@@ -90,7 +90,9 @@ jobs:
   app-tests:
     name: Application tests (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # main push 에서는 건너뛴다(ADR-0073). 보호 규칙 strict(최신 main 기준 필수) + squash 만 허용이면 병합 결과
+    # 트리가 PR 에서 테스트한 트리와 같아 push 에서 다시 돌리는 것은 중복이다. strict 를 끄면 이 조건도 되돌려야 한다.
+    if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -167,13 +169,22 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           VERIFY: ${{ needs.verify.result }}
           APP_TESTS: ${{ needs.app-tests.result }}
+          EVENT: ${{ github.event_name }}
         run: |
           echo "code=$CODE changes=$CHANGES verify=$VERIFY app-tests=$APP_TESTS"
           if [ "$CHANGES" != "success" ]; then
             echo "변경 감지가 실패했습니다."; exit 1
           fi
           if [ "$CODE" = "true" ]; then
-            if [ "$VERIFY" != "success" ] || [ "$APP_TESTS" != "success" ]; then
+            # main push 는 app-tests 를 건너뛴다(PR 에서 같은 트리로 통과). PR 에서는 반드시 success 여야 한다.
+            if [ "$EVENT" = "push" ] && [ "$APP_TESTS" = "skipped" ]; then
+              APP_OK=1
+            elif [ "$APP_TESTS" = "success" ]; then
+              APP_OK=1
+            else
+              APP_OK=0
+            fi
+            if [ "$VERIFY" != "success" ] || [ "$APP_OK" != "1" ]; then
               echo "Java 검사가 성공하지 않았습니다."; exit 1
             fi
           else
