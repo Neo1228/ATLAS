@@ -1,14 +1,14 @@
 package com.atlas.inventorylocation.service;
 
-import com.atlas.inventorylocation.dto.response.LocationResponse;
-import com.atlas.inventorylocation.dto.request.LocationRequest;
-import com.atlas.inventorylocation.exception.InventoryLocationException;
-
 import com.atlas.inventorylocation.dto.request.LocationRequest.Reservation.Item;
-import com.atlas.inventorylocation.repository.InventoryReservationRepository;
+import com.atlas.inventorylocation.dto.request.LocationRequest;
+import com.atlas.inventorylocation.dto.response.LocationResponse;
+import com.atlas.inventorylocation.exception.InventoryLocationException;
+import com.atlas.inventorylocation.model.LocationReservationStatus;
 import com.atlas.inventorylocation.persistence.projection.LocationReservationItemRecord;
 import com.atlas.inventorylocation.persistence.projection.LocationReservationRecord;
 import com.atlas.inventorylocation.persistence.projection.LocationStockRecord;
+import com.atlas.inventorylocation.repository.InventoryReservationRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -96,7 +96,7 @@ public class InventoryReservationService {
                 throw new InventoryLocationException(InventoryLocationException.Code.IDEMPOTENCY_CONFLICT,
                         "Idempotency key was used for a different order");
             }
-            if ("CANCELLED".equals(prior.status())) {
+            if (prior.status() == LocationReservationStatus.CANCELLED) {
                 throw new InventoryLocationException(InventoryLocationException.Code.RESERVATION_CANCELLED,
                         "Reservation key was cancelled before or after reserve");
             }
@@ -146,12 +146,12 @@ public class InventoryReservationService {
             throw new InventoryLocationException(InventoryLocationException.Code.IDEMPOTENCY_CONFLICT,
                     "Idempotency key was used for a different order");
         }
-        if ("CANCELLED".equals(reservation.status())
-                || "RELEASED".equals(reservation.status())
-                || "EXPIRED".equals(reservation.status())) {
+        if (reservation.status() == LocationReservationStatus.CANCELLED
+                || reservation.status() == LocationReservationStatus.RELEASED
+                || reservation.status() == LocationReservationStatus.EXPIRED) {
             return response(reservation, true);
         }
-        if (!"RESERVED".equals(reservation.status())) {
+        if (reservation.status() != LocationReservationStatus.RESERVED) {
             throw invalidState("Claimed stock cannot be cancelled; use the refund workflow");
         }
         for (LocationReservationItemRecord item : reservation.items()) {
@@ -159,7 +159,7 @@ public class InventoryReservationService {
                 throw new IllegalStateException("Reserved stock is inconsistent with its reservation");
             }
         }
-        transition(reservation.reservationId(), "CANCELLED");
+        transition(reservation.reservationId(), LocationReservationStatus.CANCELLED);
         return response(requireForUpdate(fulfillmentLocationId, reservation.reservationId()), false);
     }
 
@@ -176,8 +176,8 @@ public class InventoryReservationService {
     public LocationResponse.Reservation claim(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
         LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
-        if ("CLAIMED".equals(reservation.status())) return response(reservation, true);
-        if (!"RESERVED".equals(reservation.status())) {
+        if (reservation.status() == LocationReservationStatus.CLAIMED) return response(reservation, true);
+        if (reservation.status() != LocationReservationStatus.RESERVED) {
             throw invalidState("Only reserved stock can be claimed");
         }
         if (!reservation.expiresAt().isAfter(clock.instant())) {
@@ -189,7 +189,7 @@ public class InventoryReservationService {
                 throw new IllegalStateException("Reserved stock is inconsistent with its reservation");
             }
         }
-        transition(reservation.reservationId(), "CLAIMED");
+        transition(reservation.reservationId(), LocationReservationStatus.CLAIMED);
         return response(requireForUpdate(fulfillmentLocationId, reservationId), false);
     }
 
@@ -201,8 +201,8 @@ public class InventoryReservationService {
     public LocationResponse.Reservation restore(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
         LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
-        if ("RELEASED".equals(reservation.status())) return response(reservation, true);
-        if (!"CLAIMED".equals(reservation.status())) {
+        if (reservation.status() == LocationReservationStatus.RELEASED) return response(reservation, true);
+        if (reservation.status() != LocationReservationStatus.CLAIMED) {
             throw invalidState("Only claimed stock can be restored");
         }
         for (LocationReservationItemRecord item : reservation.items()) {
@@ -215,7 +215,7 @@ public class InventoryReservationService {
                 throw new IllegalStateException("Claimed stock is inconsistent with its reservation");
             }
         }
-        if (repository.transitionClaimed(reservation.reservationId(), "RELEASED") != 1) {
+        if (repository.transitionClaimed(reservation.reservationId(), LocationReservationStatus.RELEASED) != 1) {
             throw new IllegalStateException("Reservation state changed while locked");
         }
         return response(requireForUpdate(fulfillmentLocationId, reservationId), false);
@@ -242,7 +242,7 @@ public class InventoryReservationService {
             }
             return response(reservation, true);
         }
-        if (!"CLAIMED".equals(reservation.status())) throw invalidState("Only claimed stock can be restocked");
+        if (reservation.status() != LocationReservationStatus.CLAIMED) throw invalidState("Only claimed stock can be restocked");
         Map<String, LocationReservationItemRecord> sold = new TreeMap<>();
         for (LocationReservationItemRecord item : reservation.items()) sold.put(item.sellerId() + ":" + item.skuId(), item);
         Instant now = clock.instant();
@@ -273,11 +273,11 @@ public class InventoryReservationService {
     public LocationResponse.Reservation release(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
         LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
-        if ("RELEASED".equals(reservation.status()) || "EXPIRED".equals(reservation.status())
-                || "CANCELLED".equals(reservation.status())) {
+        if (reservation.status() == LocationReservationStatus.RELEASED || reservation.status() == LocationReservationStatus.EXPIRED
+                || reservation.status() == LocationReservationStatus.CANCELLED) {
             return response(reservation, true);
         }
-        if (!"RESERVED".equals(reservation.status())) {
+        if (reservation.status() != LocationReservationStatus.RESERVED) {
             throw invalidState("Only reserved stock can be released");
         }
         for (LocationReservationItemRecord item : reservation.items()) {
@@ -285,7 +285,7 @@ public class InventoryReservationService {
                 throw new IllegalStateException("Reserved stock is inconsistent with its reservation");
             }
         }
-        transition(reservation.reservationId(), "RELEASED");
+        transition(reservation.reservationId(), LocationReservationStatus.RELEASED);
         return response(requireForUpdate(fulfillmentLocationId, reservationId), false);
     }
 
@@ -301,7 +301,7 @@ public class InventoryReservationService {
                     throw new IllegalStateException("Reserved stock is inconsistent with an expired reservation");
                 }
             }
-            transition(reservation.reservationId(), "EXPIRED");
+            transition(reservation.reservationId(), LocationReservationStatus.EXPIRED);
         }
         return due.size();
     }
@@ -312,7 +312,7 @@ public class InventoryReservationService {
         return reservation;
     }
 
-    private void transition(UUID reservationId, String status) {
+    private void transition(UUID reservationId, LocationReservationStatus status) {
         if (repository.transitionReserved(reservationId, status) != 1) {
             throw new IllegalStateException("Reservation state changed while locked");
         }

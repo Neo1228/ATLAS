@@ -1,5 +1,6 @@
 package com.atlas.inventorylocation.repository;
 
+import com.atlas.inventorylocation.model.LocationReservationStatus;
 import com.atlas.inventorylocation.persistence.projection.LocationReservationItemRecord;
 import com.atlas.inventorylocation.persistence.projection.LocationReservationRecord;
 import com.atlas.inventorylocation.persistence.projection.LocationStockRecord;
@@ -125,8 +126,8 @@ public class InventoryReservationRepository {
                 available_quantity = available_quantity + ? WHERE fulfillment_location_id = ? AND seller_id = ? AND sku_id = ? AND claimed_quantity >= ?""",
                 quantity, quantity, locationId, sellerId, skuId, quantity);
     }
-    public int transitionClaimed(UUID reservationId, String status) {
-        return jdbc.update("UPDATE inventory_reservation SET status = ? WHERE reservation_id = ? AND status = 'CLAIMED'", status, reservationId);
+    public int transitionClaimed(UUID reservationId, LocationReservationStatus status) {
+        return jdbc.update("UPDATE inventory_reservation SET status = ? WHERE reservation_id = ? AND status = 'CLAIMED'", status.name(), reservationId);
     }
     public int insertRestock(String restockKey, UUID reservationId, UUID sellerId, String skuId, int quantity,
                              Instant createdAt) {
@@ -155,8 +156,8 @@ public class InventoryReservationRepository {
                 """, Integer.class, reservationId, sellerId, skuId);
         return total == null ? 0 : total;
     }
-    public int transitionReserved(UUID reservationId, String status) {
-        return jdbc.update("UPDATE inventory_reservation SET status = ? WHERE reservation_id = ? AND status = 'RESERVED'", status, reservationId);
+    public int transitionReserved(UUID reservationId, LocationReservationStatus status) {
+        return jdbc.update("UPDATE inventory_reservation SET status = ? WHERE reservation_id = ? AND status = 'RESERVED'", status.name(), reservationId);
     }
     private LocationReservationRecord withItems(ReservationHeader h) {
         return new LocationReservationRecord(h.reservationId(), h.fulfillmentLocationId(), h.orderId(), h.idempotencyKey(),
@@ -165,10 +166,11 @@ public class InventoryReservationRepository {
     private static ReservationHeader mapReservation(ResultSet rs, int row) throws SQLException {
         return new ReservationHeader(rs.getObject("reservation_id", UUID.class),
                 rs.getObject("fulfillment_location_id", UUID.class), rs.getObject("order_id", UUID.class),
-                rs.getString("idempotency_key"), rs.getString("status"), rs.getTimestamp("created_at").toInstant(),
+                rs.getString("idempotency_key"), LocationReservationStatus.valueOf(rs.getString("status")),
+                rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("expires_at").toInstant());
     }
 
     private record ReservationHeader(UUID reservationId, UUID fulfillmentLocationId, UUID orderId, String idempotencyKey,
-                                     String status, Instant createdAt, Instant expiresAt) { }
+                                     LocationReservationStatus status, Instant createdAt, Instant expiresAt) { }
 }
