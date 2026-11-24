@@ -1,5 +1,7 @@
 package com.atlas.settlement.dto.response;
 
+import com.atlas.settlement.model.PayPalBalanceReportDispositionType;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -10,7 +12,7 @@ public final class PayPalBalanceReportResponse {
     }
 
     public record Disposition(UUID dispositionId, UUID runId, int rowNumber,
-            String disposition, String actor, String reason, Instant createdAt) {
+            PayPalBalanceReportDispositionType disposition, String actor, String reason, Instant createdAt) {
     }
 
     /** 최근 30일 예외 추이와 미완료 운영 작업 요약입니다. */
@@ -33,7 +35,7 @@ public final class PayPalBalanceReportResponse {
 
     /** 금액과 원본 식별 정보를 제외한 대사 행 조회 DTO입니다. */
     public record Row(UUID runId, int rowNumber, String recordId,
-            String relatedRecordId, String recordType, String status, String reasonCode) {
+            String relatedRecordId, String recordType, PayPalBalanceReportRowStatus status, String reasonCode) {
     }
 
     public record Run(UUID runId, String reportSha256, Instant uploadedAt,

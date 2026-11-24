@@ -1,5 +1,6 @@
 package com.atlas.application.dto.response;
 
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -92,15 +93,8 @@ public final class SettlementHttpResponse {
                 BigDecimal feeAmount,
                 BigDecimal netAmount,
                 String transferId,
-                Status status,
+                PayPalBalanceReportRowStatus status,
                 String reasonCode) {
-        }
-
-        public enum Status {
-            MATCHED,
-            UNMATCHED,
-            DUPLICATE,
-            MISMATCH
         }
     }
 }

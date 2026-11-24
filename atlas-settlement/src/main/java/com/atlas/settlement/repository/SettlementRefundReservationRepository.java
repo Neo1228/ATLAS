@@ -1,5 +1,6 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.model.RefundReservationState;
 import com.atlas.settlement.persistence.projection.RefundReservation;
 import com.atlas.settlement.persistence.projection.RefundReservationMetrics;
 import java.sql.ResultSet;
@@ -69,7 +70,7 @@ public class SettlementRefundReservationRepository {
                 WHERE refund_id = ? AND status = 'RESERVED'
                 """, Timestamp.from(now), refundId);
         if (updated == 1) return true;
-        return find(refundId).map(row -> "POSTED".equals(row.status())).orElse(false);
+        return find(refundId).map(row -> row.status() == RefundReservationState.POSTED).orElse(false);
     }
 
     public boolean release(UUID refundId, Instant now) {
@@ -79,13 +80,13 @@ public class SettlementRefundReservationRepository {
                 WHERE refund_id = ? AND status = 'RESERVED'
                 """, Timestamp.from(now), refundId);
         if (updated == 1) return true;
-        return find(refundId).map(row -> "RELEASED".equals(row.status())).orElse(false);
+        return find(refundId).map(row -> row.status() == RefundReservationState.RELEASED).orElse(false);
     }
 
     private static RefundReservation map(ResultSet row) throws SQLException {
         return new RefundReservation(row.getObject("refund_id", UUID.class),
                 row.getObject("order_id", UUID.class), row.getObject("seller_id", UUID.class),
-                row.getLong("amount_won"), row.getString("status"),
+                row.getLong("amount_won"), RefundReservationState.valueOf(row.getString("status")),
                 row.getTimestamp("created_at").toInstant(), row.getTimestamp("updated_at").toInstant());
     }
 }

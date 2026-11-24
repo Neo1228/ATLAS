@@ -1,6 +1,8 @@
 package com.atlas.settlement.service;
 
 import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
+import com.atlas.settlement.model.PayPalBalanceReportDispositionType;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -17,11 +19,11 @@ public interface PayPalBalanceReportOperatorService {
 
     PayPalBalanceReportResponse.Run search(String reportSha256);
 
-    PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listExceptions(String status, LocalDate from, LocalDate to, String recordId, int requestedLimit, int offset);
+    PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listExceptions(PayPalBalanceReportRowStatus status, LocalDate from, LocalDate to, String recordId, int requestedLimit, int offset);
 
-    PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listRunRows(UUID runId, String status, String recordId, int requestedLimit, int offset);
+    PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listRunRows(UUID runId, PayPalBalanceReportRowStatus status, String recordId, int requestedLimit, int offset);
 
     List<PayPalBalanceReportResponse.Disposition> dispositionHistory(UUID runId, int rowNumber);
 
-    PayPalBalanceReportResponse.Disposition recordDisposition(UUID runId, int rowNumber, String disposition, String actor, String reason, String idempotencyKey);
+    PayPalBalanceReportResponse.Disposition recordDisposition(UUID runId, int rowNumber, PayPalBalanceReportDispositionType disposition, String actor, String reason, String idempotencyKey);
 }

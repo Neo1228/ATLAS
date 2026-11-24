@@ -3,7 +3,7 @@ package com.atlas.application.service;
 import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchResponse;
 import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult;
-import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.Status;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.payment.service.PayPalReportMatchQuery;
 import com.atlas.settlement.model.ParsedPayPalReport;
 import com.atlas.settlement.model.ParsedPayPalReportRow;
@@ -99,7 +99,7 @@ public class PayPalBalanceReportReconciliationService {
         ParsedPayPalReportRow first = rows.get(sameRecordIds.getFirst());
         boolean conflicting = sameRecordIds.stream().map(rows::get)
                 .anyMatch(other -> !sameReportFacts(first, other));
-        return result(row, rowNumber, conflicting ? Status.MISMATCH : Status.DUPLICATE,
+        return result(row, rowNumber, conflicting ? PayPalBalanceReportRowStatus.MISMATCH : PayPalBalanceReportRowStatus.DUPLICATE,
                 conflicting ? "DUPLICATE_REPORT_RECORD_FACTS_CONFLICT" : "DUPLICATE_REPORT_RECORD_ID");
     }
 
@@ -126,29 +126,29 @@ public class PayPalBalanceReportReconciliationService {
         if (SALE.equals(type)) return classifySale(row, rowNumber, providerFacts);
         if (REFUND.equals(type)) return classifyRefund(row, rowNumber, providerFacts);
         if (WITHDRAWAL.equals(type)) {
-            return result(row, rowNumber, Status.UNMATCHED, "BANK_STATEMENT_REQUIRED_FOR_TRANSFER_ID");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "BANK_STATEMENT_REQUIRED_FOR_TRANSFER_ID");
         }
-        return result(row, rowNumber, Status.UNMATCHED, "UNSUPPORTED_PROVIDER_RECORD_TYPE");
+        return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "UNSUPPORTED_PROVIDER_RECORD_TYPE");
     }
 
     private static RowResult classifySale(ParsedPayPalReportRow row, int rowNumber,
             Map<String, List<PayPalReportMatchResponse.Candidate>> providerFacts) {
         List<PayPalReportMatchResponse.Candidate> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
         if (candidates.isEmpty()) {
-            return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_CAPTURE_ID_NOT_FOUND");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "PROVIDER_CAPTURE_ID_NOT_FOUND");
         }
         if (candidates.size() != 1) {
-            return result(row, rowNumber, Status.MISMATCH, "AMBIGUOUS_PROVIDER_RECORD_ID");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "AMBIGUOUS_PROVIDER_RECORD_ID");
         }
         PayPalReportMatchResponse.Candidate candidate = candidates.getFirst();
         if (candidate.kind() != PayPalReportMatchResponse.Kind.CAPTURE) {
-            return result(row, rowNumber, Status.MISMATCH, "PROVIDER_ID_TYPE_CONFLICT");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "PROVIDER_ID_TYPE_CONFLICT");
         }
         if (!candidate.confirmed()) {
-            return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_CAPTURE_NOT_CONFIRMED");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "PROVIDER_CAPTURE_NOT_CONFIRMED");
         }
         if (!Objects.equals(row.recordId(), candidate.captureId())) {
-            return result(row, rowNumber, Status.MISMATCH, "PROVIDER_CAPTURE_ID_CONFLICT");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "PROVIDER_CAPTURE_ID_CONFLICT");
         }
         return validateFacts(row, rowNumber, candidate, false, "EXACT_CAPTURE_ID_AND_AMOUNT_CURRENCY_MATCH");
     }
@@ -157,35 +157,35 @@ public class PayPalBalanceReportReconciliationService {
             Map<String, List<PayPalReportMatchResponse.Candidate>> providerFacts) {
         List<PayPalReportMatchResponse.Candidate> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
         if (candidates.isEmpty()) {
-            return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_REFUND_ID_NOT_FOUND");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "PROVIDER_REFUND_ID_NOT_FOUND");
         }
         if (candidates.size() != 1) {
-            return result(row, rowNumber, Status.MISMATCH, "AMBIGUOUS_PROVIDER_RECORD_ID");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "AMBIGUOUS_PROVIDER_RECORD_ID");
         }
         PayPalReportMatchResponse.Candidate refund = candidates.getFirst();
         if (refund.kind() != PayPalReportMatchResponse.Kind.REFUND) {
-            return result(row, rowNumber, Status.MISMATCH, "PROVIDER_ID_TYPE_CONFLICT");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "PROVIDER_ID_TYPE_CONFLICT");
         }
         if (!refund.confirmed()) {
-            return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_REFUND_NOT_CONFIRMED");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "PROVIDER_REFUND_NOT_CONFIRMED");
         }
         if (row.relatedRecordId().isBlank()) {
-            return result(row, rowNumber, Status.UNMATCHED, "REFUND_CAPTURE_LINK_REQUIRED");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "REFUND_CAPTURE_LINK_REQUIRED");
         }
         if (!Objects.equals(row.relatedRecordId(), refund.captureId())) {
-            return result(row, rowNumber, Status.MISMATCH, "REFUND_CAPTURE_ID_CONFLICT");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "REFUND_CAPTURE_ID_CONFLICT");
         }
         List<PayPalReportMatchResponse.Candidate> captures = providerFacts.getOrDefault(refund.captureId(), List.of()).stream()
                 .filter(candidate -> candidate.kind() == PayPalReportMatchResponse.Kind.CAPTURE)
                 .toList();
         if (captures.isEmpty()) {
-            return result(row, rowNumber, Status.UNMATCHED, "REFUND_CAPTURE_ID_NOT_FOUND");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "REFUND_CAPTURE_ID_NOT_FOUND");
         }
         if (captures.size() != 1) {
-            return result(row, rowNumber, Status.MISMATCH, "AMBIGUOUS_REFUND_CAPTURE_ID");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "AMBIGUOUS_REFUND_CAPTURE_ID");
         }
         if (!captures.getFirst().confirmed()) {
-            return result(row, rowNumber, Status.UNMATCHED, "REFUND_CAPTURE_NOT_CONFIRMED");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "REFUND_CAPTURE_NOT_CONFIRMED");
         }
         return validateFacts(row, rowNumber, refund, true, "EXACT_REFUND_AND_CAPTURE_LINK_MATCH");
     }
@@ -194,18 +194,18 @@ public class PayPalBalanceReportReconciliationService {
             PayPalReportMatchResponse.Candidate candidate, boolean refund, String matchedReason) {
         if (candidate.providerAmountMinor() == null || candidate.providerAmountMinor() <= 0
                 || candidate.providerCurrency() == null || candidate.providerCurrency().isBlank()) {
-            return result(row, rowNumber, Status.UNMATCHED, "PROVIDER_AMOUNT_CURRENCY_FACTS_UNAVAILABLE");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.UNMATCHED, "PROVIDER_AMOUNT_CURRENCY_FACTS_UNAVAILABLE");
         }
         BigDecimal expectedGross = BigDecimal.valueOf(candidate.providerAmountMinor(), 2);
         if (refund) expectedGross = expectedGross.negate();
         if (!normalize(row.currency()).equals(normalize(candidate.providerCurrency()))
                 || row.grossAmount().compareTo(expectedGross) != 0) {
-            return result(row, rowNumber, Status.MISMATCH, "PROVIDER_AMOUNT_OR_CURRENCY_CONFLICT");
+            return result(row, rowNumber, PayPalBalanceReportRowStatus.MISMATCH, "PROVIDER_AMOUNT_OR_CURRENCY_CONFLICT");
         }
-        return result(row, rowNumber, Status.MATCHED, matchedReason);
+        return result(row, rowNumber, PayPalBalanceReportRowStatus.MATCHED, matchedReason);
     }
 
-    private static RowResult result(ParsedPayPalReportRow row, int rowNumber, Status status,
+    private static RowResult result(ParsedPayPalReportRow row, int rowNumber, PayPalBalanceReportRowStatus status,
             String reasonCode) {
         return new RowResult(rowNumber, row.recordId(), row.relatedRecordId(), row.originalRecordId(),
                 row.recordType(), row.recordSubtype(), row.currency(), row.grossAmount(),

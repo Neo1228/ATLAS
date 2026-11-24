@@ -2,7 +2,7 @@ package com.atlas.application.service;
 
 import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult;
-import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.Status;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.model.PayPalBalanceReportRow;
 import com.atlas.settlement.model.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
@@ -83,7 +83,7 @@ public class PayPalBalanceReportRunIngestionService {
                 row.feeAmount(),
                 row.netAmount(),
                 row.transferId(),
-                row.status().name(),
+                row.status(),
                 row.reasonCode());
     }
 
@@ -100,7 +100,7 @@ public class PayPalBalanceReportRunIngestionService {
                 row.feeAmount(),
                 row.netAmount(),
                 row.transferId(),
-                Status.valueOf(row.status()),
+                row.status(),
                 row.reasonCode());
     }
 
