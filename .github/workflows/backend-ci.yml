@@ -63,7 +63,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           # main에서 실행한 결과만 캐시에 쓰고, PR은 읽기만 해 캐시가 PR마다 오염되지 않게 한다.
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-read-only: false
       - name: Verify Docker is available for PostgreSQL integration tests
         run: docker info
       # application 모듈의 테스트는 아래 app-tests가 나누어 실행한다. 나머지 모든 검사는 여기서 한다.
