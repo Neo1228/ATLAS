@@ -13,7 +13,8 @@
 
 - 대상: `api-m.sandbox.paypal.com`만 허용한다. 호스트가 다르면 스크립트가 중단되도록 했고 Live endpoint는 호출하지 않았다.
 - 자격 증명: git 제외 `.env.local`에서 프로세스 안에서만 읽고 출력하지 않았다. 출력에는 상태 코드와 비밀이 아닌 필드만 남겼고, 이 문서의 응답 예시는 식별자를 치환했다.
-- 호출: 앱의 `PayPalPayoutsRestClient`와 같은 요청 모양(`recipient_type=EMAIL`, USD, `PayPal-Request-Id` 헤더)으로 Python에서 직접 보냈다. 지급은 1.00 USD짜리 4건을 만들었고 중복 `sender_batch_id` 재전송은 5회 거부됐다.
+- 호출 1: 앱의 `PayPalPayoutsRestClient`와 같은 요청 모양(`recipient_type=EMAIL`, USD, `PayPal-Request-Id` 헤더)으로 Python에서 직접 보냈다. 지급은 1.00 USD짜리 4건을 만들었고 중복 `sender_batch_id` 재전송은 5회 거부됐다.
+- 호출 2: 실제 Java 클라이언트(`PayPalPayoutsRestClient`)를 Sandbox에 직접 붙여 수정 전후를 비교했다. 저장소에 올리지 않는 임시 테스트로 생성, 같은 요청 재전송, 조회를 실행했다. 이 호출로 1.00 USD 지급 2건이 더 만들어졌다(수정 후 1건, 수정 전 1건).
 - 수취인: Sandbox 개인 계정 1개, PayPal 계정이 없는 임의 이메일 1개.
 - 하네스는 저장소에 올리지 않았다(Sandbox 자격 증명과 로컬 `.env.local`에 의존한다).
 
@@ -37,6 +38,19 @@
 
 추가로 `parse`가 `sender_batch_id`를 잘못된 위치에서 읽어 조회 응답의 `senderBatchId`가 항상 `null`이었다. 워커의 `senderMismatch` 검사가 실제 응답에서는 동작하지 않았다는 뜻이다.
 
+## 실제 Java 클라이언트로 수정 전후를 비교했다
+
+같은 임시 테스트를 수정 전 소스(main)와 수정 후 소스에서 실제 Sandbox를 상대로 한 번씩 실행했다(각 n=1).
+
+| 관찰 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| 생성 응답의 `senderBatchId` | 일치(생성 요청의 값을 대신 채운다) | 일치 |
+| 같은 요청 재전송 | `DEFINITIVE_NO_SEND`, 원래 배치 ID 없음 | `DUPLICATE_BATCH`, 원래 배치 ID가 방금 만든 배치와 같음 |
+| 조회 응답의 `senderBatchId`(4회 폴링) | 4회 모두 불일치(`null`) | 4회 모두 일치 |
+| 항목 | `SUCCESS`, 수수료 0.02 USD, 금액 1.00 USD, 항목 ID 있음 | 같음 |
+
+수정 전 소스에서 실제 Sandbox가 앞에서 서술한 오분류를 그대로 재현한다. 이 비교는 클라이언트 수준이며 워커 이후의 상태 전이는 코드를 읽은 것이다.
+
 ## 고친 것
 
 - `isDuplicateBatch`: `details` 배열을 순회해 `field`와 `issue`를 함께 본다.
@@ -55,7 +69,7 @@
 
 ## 한계
 
-- 앱을 거치지 않은 직접 호출이다. 정산 원장에서 지급을 만들고 운영자가 승인해 워커가 보내는 전체 경로는 실행하지 않았다.
+- 앱 전체를 거치지 않았다. 정산 원장에서 지급을 만들고 운영자가 승인해 워커가 보내는 전체 경로는 실행하지 않았다. 실제 Java 클라이언트는 직접 붙여 보았지만 Spring 앱과 워커, DB는 거치지 않았다.
 - 지급 4건, 수취인 2종, 통화 USD 하나다. 다른 통화, 다른 수취 국가(대한민국은 통화 변환 제외 대상), 수수료율의 일반성은 확인하지 못했다. 수수료 0.02는 1.00에 대한 한 번의 값이다.
 - 같은 `sender_batch_id`가 거부되는 기간(30일 보호 기간)은 확인하지 못했다.
 - Sandbox와 운영 PayPal의 응답이 같다는 보장은 없다.
