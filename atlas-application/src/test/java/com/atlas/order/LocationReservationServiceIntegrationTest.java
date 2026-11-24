@@ -10,6 +10,7 @@ import com.atlas.order.model.LocationReservationWorkflowState;
 import com.atlas.order.repository.LocationReservationRepository;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.LocationReservationService;
+import com.atlas.order.service.LocationRestockService;
 import com.atlas.order.service.StockAdmissionControl;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import com.atlas.payment.PayPalIntegrationTestSupport;
@@ -18,6 +19,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +42,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -97,6 +100,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
     @Autowired
     private JdbcTemplate jdbc;
     @Autowired
+    private LocationRestockService restocks;
+    @Autowired
     private MockMvc mockMvc;
 
     @AfterAll
@@ -107,6 +112,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
 
     @BeforeEach
     void clearWorkflowState() throws InterruptedException {
+        jdbc.update("DELETE FROM order_inventory_restock_item");
+        jdbc.update("DELETE FROM order_inventory_restock");
         jdbc.update("DELETE FROM order_inventory_location_item");
         jdbc.update("DELETE FROM order_inventory_location_command");
         jdbc.update("DELETE FROM order_inventory_reservation_workflow");
@@ -544,6 +551,108 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         mockMvc.perform(get("/api/internal/order-inventory/reservations/{workflowId}", UUID.randomUUID()))
                 .andExpect(status().isUnauthorized());
     }
+
+    /** 분할 주문(두 location)의 반품 재입고는 location마다 자기 수량만 한 번씩 보낸다. */
+    @Test
+    void splitOrderReturnRestocksEachLocationWithItsOwnQuantitiesExactlyOnce() throws Exception {
+        ClaimedSplit split = claimedSplitOrder();
+        UUID refundId = UUID.randomUUID();
+        INVENTORY_A.enqueue(transitioned(split.reservationA(), "CLAIMED"));
+        INVENTORY_B.enqueue(transitioned(split.reservationB(), "CLAIMED"));
+
+        restocks.stageAtLocations(refundId, split.orderId(), split.workflowId(), SELLER_ID,
+                Map.of(LOCATION_A, Map.of("SKU-A", 1), LOCATION_B, Map.of("SKU-B", 1)));
+        restocks.dispatch(refundId);
+
+        RecordedRequest toA = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
+        RecordedRequest toB = INVENTORY_B.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(toA.getPath()).endsWith("/reservations/" + split.reservationA() + "/restock");
+        assertThat(toA.getBody().readUtf8()).contains("SKU-A").doesNotContain("SKU-B");
+        assertThat(toB.getPath()).endsWith("/reservations/" + split.reservationB() + "/restock");
+        assertThat(toB.getBody().readUtf8()).contains("SKU-B").doesNotContain("SKU-A");
+        assertThat(restockRows(refundId)).isEqualTo(2);
+        assertThat(restockStates(refundId)).isEqualTo("COMPLETED");
+
+        restocks.dispatch(refundId);
+        assertThat(INVENTORY_A.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
+        assertThat(INVENTORY_B.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
+    }
+
+    /**
+     * 한 location의 수량이 청구된 수량을 넘으면 어느 location에도 재입고가 남지 않는다. 운영 경로(환불 서비스)처럼
+     * 호출자의 트랜잭션 안에서 부르면 예외가 앞서 넣은 행까지 롤백한다.
+     */
+    @Test
+    void splitOrderRestockBeyondOneLocationsClaimedQuantityLeavesNoRestockRows() throws Exception {
+        ClaimedSplit split = claimedSplitOrder();
+        UUID overRefund = UUID.randomUUID();
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> restocks.stageAtLocations(overRefund,
+                split.orderId(), split.workflowId(), SELLER_ID,
+                Map.of(LOCATION_A, Map.of("SKU-A", 1), LOCATION_B, Map.of("SKU-B", 2)))))
+                .isInstanceOf(OrderException.class);
+        UUID unknownLocation = UUID.randomUUID();
+        UUID unknownRefund = UUID.randomUUID();
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> restocks.stageAtLocations(unknownRefund,
+                split.orderId(), split.workflowId(), SELLER_ID, Map.of(unknownLocation, Map.of("SKU-A", 1)))))
+                .isInstanceOf(OrderException.class);
+
+        assertThat(restockRows(overRefund)).as("트랜잭션 안의 거부는 앞서 넣은 location 행까지 롤백한다").isZero();
+        assertThat(restockRows(unknownRefund)).isZero();
+        restocks.dispatch(overRefund);
+        assertThat(INVENTORY_A.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
+        assertThat(INVENTORY_B.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
+    }
+
+    /** 대조: 트랜잭션 밖에서 직접 부르면 거부되기 전에 넣은 location의 행이 남는다. 그래서 호출자의 트랜잭션이 전제다. */
+    @Test
+    void splitOrderRestockOutsideATransactionLeavesTheEarlierLocationRowBehind() throws Exception {
+        ClaimedSplit split = claimedSplitOrder();
+        UUID refundId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> restocks.stageAtLocations(refundId, split.orderId(), split.workflowId(), SELLER_ID,
+                Map.of(LOCATION_A, Map.of("SKU-A", 1), LOCATION_B, Map.of("SKU-B", 2))))
+                .isInstanceOf(OrderException.class);
+
+        assertThat(restockRows(refundId)).isEqualTo(1);
+    }
+
+    private ClaimedSplit claimedSplitOrder() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        UUID reservationA = UUID.randomUUID();
+        UUID reservationB = UUID.randomUUID();
+        INVENTORY_A.enqueue(reserved(reservationA));
+        INVENTORY_B.enqueue(reserved(reservationB));
+        ReservationWorkflowResponse.LocationReservation reserved = coordinator.submit("SPLIT-" + UUID.randomUUID(),
+                request(orderId, allocation(LOCATION_A, "SKU-A"), allocation(LOCATION_B, "SKU-B")));
+        INVENTORY_A.enqueue(transitioned(reservationA, "CLAIMED"));
+        INVENTORY_B.enqueue(transitioned(reservationB, "CLAIMED"));
+        assertThat(coordinator.claim(reserved.workflowId()).name()).isEqualTo("CLAIMED");
+        drain(INVENTORY_A);
+        drain(INVENTORY_B);
+        return new ClaimedSplit(orderId, reserved.workflowId(), reservationA, reservationB);
+    }
+
+    private int restockRows(UUID refundId) {
+        return jdbc.queryForObject("SELECT count(*) FROM order_inventory_restock WHERE refund_id = ?",
+                Integer.class, refundId);
+    }
+
+    private String restockStates(UUID refundId) {
+        return jdbc.queryForObject(
+                "SELECT string_agg(DISTINCT restock_state, ',') FROM order_inventory_restock WHERE refund_id = ?",
+                String.class, refundId);
+    }
+
+    private MockResponse transitioned(UUID reservationId, String status) {
+        return new MockResponse().setResponseCode(200)
+                .addHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .setBody("{\"reservationId\":\"" + reservationId + "\",\"status\":\"" + status + "\","
+                        + "\"expiresAt\":\"" + Instant.now().plusSeconds(60) + "\"}");
+    }
+
+    private record ClaimedSplit(UUID orderId, UUID workflowId, UUID reservationA, UUID reservationB) {}
 
     private static MockWebServer startServer() {
         MockWebServer server = new MockWebServer();
