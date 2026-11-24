@@ -1,0 +1,57 @@
+# Sources (item | claim | file)
+#  client->app 직접   | compose가 application을 127.0.0.1:18080으로 공개           | compose.yaml:56-57
+#  cache              | nginx 1.29, 프로파일 edge-cache에서만 뜸, 18082 공개, 상류는 application:8080 | compose.yaml:66-75
+#  cache 동작         | GET/HEAD 200만 1초 캐시, Authorization/쿠키 요청은 우회       | config/nginx/catalog-cache.conf.template:13-23,53,62
+#  app                | Spring Boot 단일 프로세스, 모듈은 settings.gradle의 include   | settings.gradle, atlas-application/build.gradle
+#  pg                 | postgres:18.6, 127.0.0.1:5432                                | compose.yaml:3,14
+#  loc 켬 조건        | order-inventory-reservation.enabled 기본 false, HttpLocationClient는 true일 때만 빈 | atlas-application/src/main/resources/application.yml:200-201, HttpLocationClient.java:27 ; 기본 compose에는 location 서비스 없음(load-tests/compose-inventory-location.yaml에만 있음)
+#  loc                | 독립 Spring Boot runtime, application이 RestClient로 호출    | ADR-0059 (docs/02-decisions/adr/ADR-0059-independent-inventory-location-service.md), HttpLocationClient.java:22-30
+#  loc 개수          | instance 하나는 location 하나와 그 DB만 소유, location마다 runtime  | ADR-0059.md:24, atlas-inventory-location/src/main/resources/application.yml:19
+#  locpg              | loc가 자기 datasource를 가짐(기본 127.0.0.1:5433)            | atlas-inventory-location/src/main/resources/application.yml:7-8
+#  paypal 켬 조건     | ATLAS_PAYMENT_PROVIDER 기본 disabled                          | compose.yaml:44, application.yml:125
+#  fx                 | 결제는 환율 스냅샷을 만들고 기본 공급자는 BOK ECOS(대안 frankfurter)  | PaymentServiceImpl.java:433,616, application.yml:126-128
+#  paypal             | PayPal Sandbox 호출, 실제 돈 아님                            | ADR-0026, atlas-payment (provider.paypal)
+#  smtp               | SPRING_MAIL_HOST 기본 mailpit:1025 (기본 구성에서 켜짐)                           | compose.yaml:42-43
+#  redis (선택)       | admission-gate.enabled=true일 때만 빈 생성                   | RedisStockAdmissionControlConfiguration.java:13
+#  kafka (선택)       | event-relay.enabled=true일 때만 빈 생성                      | ReservationEventConfiguration.java:23
+# Composition: application을 가운데(행2 열2)에 두고 호출 방향을 오른쪽과 위아래로 펼친다. 켜야 동작하는 영역은 서로 겹치지 않게 세로로 쌓는다. 호출자는 왼쪽,
+#  저장소와 독립 runtime은 오른쪽, 메일은 위, 선택 요소(redis, kafka)는 아래 한 영역에 모아 "기본은 꺼짐"을 공간으로 표현한다.
+#  기본으로 켜지지 않는 경로(재고 예약, 결제, Redis, Kafka)는 "켬" 영역으로 묶어 "기본은 꺼짐"을 공간으로 표현한다.
+meta:
+  title: ATLAS 실행 구조
+  subtitle: 로컬 compose 기준
+  layout: grid
+  direction: LTR
+  seed: 7
+  grid: {gutter: 80, gutter_y: 120, group_gap: 64}
+groups:
+  - {id: locrt, title: 재고 예약 켬, kind: zone}
+  - {id: pay, title: 결제 켬, kind: zone}
+  - {id: opt, title: 설정으로 켬, kind: zone}
+nodes:
+  - {id: client, kind: client, title: API 호출자, subtitle: "브라우저, 부하 도구", at: [2, 0]}
+  - {id: cache, kind: gateway, title: 카탈로그 캐시, subtitle: 선택 프로파일, at: [0,1]}
+  - {id: smtp, kind: external_source, title: 메일 서버, subtitle: 개발은 Mailpit, at: [0,2]}
+  - {id: paypal, kind: external_source, title: PayPal sandbox, group: pay, at: [3,3]}
+  - {id: fx, kind: external_source, title: 환율 API, subtitle: BOK ECOS 기본, group: pay, at: [4,3]}
+  - {id: pg, kind: database, title: PostgreSQL, subtitle: 주 데이터, at: [1,3]}
+  - {id: app, kind: service, title: application, subtitle: Spring Boot, emphasis: primary, at: [2, 2]}
+  - {id: loc, kind: service, title: 재고 위치, subtitle: Spring Boot, group: locrt, at: [2,3]}
+  - {id: locpg, kind: database, title: PostgreSQL, subtitle: 위치 전용, group: locrt, at: [2,4]}
+  - {id: redis, kind: cache, title: Redis, group: opt, at: [4,1]}
+  - {id: kafka, kind: service, title: Kafka, group: opt, at: [4,2]}
+edges:
+  - {from: client, to: app, label: HTTP, emphasis: primary}
+  - {from: client, to: cache, label: HTTP}
+  - {from: cache, to: app, label: 프록시}
+  - {from: app, to: pg, label: SQL, emphasis: primary}
+  - {from: app, to: smtp, label: 메일 발송}
+  - {from: app, to: paypal, label: 결제 API}
+  - {from: app, to: fx, label: 환율 조회}
+  - {from: app, to: loc, label: 재고 예약}
+  - {from: loc, to: locpg, label: SQL}
+  - {from: app, to: redis, label: 입장 판정}
+  - {from: app, to: kafka, label: 이벤트 발행}
+notes:
+  - {text: "위치마다 프로세스와\nDB를 따로 둠", near: loc}
+legend: auto
