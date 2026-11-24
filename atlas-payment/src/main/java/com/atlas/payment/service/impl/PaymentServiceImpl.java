@@ -402,10 +402,10 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public boolean matchesCheckoutCancelState(UUID checkoutId, String state) {
-        if (checkoutId == null || state == null || state.isBlank()) return false;
+    public boolean matchesCheckoutCancelToken(UUID checkoutId, String cancelToken) {
+        if (checkoutId == null || cancelToken == null || cancelToken.isBlank()) return false;
         return repository.findByCheckoutId(checkoutId)
-                .map(attempt -> state.equals(attempt.getCreateOrderRequestId()))
+                .map(attempt -> cancelToken.equals(attempt.getCreateOrderRequestId()))
                 .orElse(false);
     }
 

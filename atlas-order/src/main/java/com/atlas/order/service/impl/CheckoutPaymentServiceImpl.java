@@ -361,13 +361,13 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     }
 
     @Override
-    public CheckoutResponse cancelFromProvider(UUID checkoutId, String state) {
-        if (checkoutId == null || state == null || state.isBlank()
-                || !payments.matchesCheckoutCancelState(checkoutId, state)) {
+    public CheckoutResponse cancelFromProvider(UUID checkoutId, String cancelToken) {
+        if (checkoutId == null || cancelToken == null || cancelToken.isBlank()
+                || !payments.matchesCheckoutCancelToken(checkoutId, cancelToken)) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST,
                     "Checkout and matching provider cancellation state required");
         }
-        return cancel(checkoutId, "paypal-cancel:" + checkoutId + ":" + state);
+        return cancel(checkoutId, "paypal-cancel:" + checkoutId + ":" + cancelToken);
     }
 
     @Override
