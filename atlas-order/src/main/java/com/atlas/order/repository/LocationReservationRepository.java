@@ -23,8 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class LocationReservationRepository {
     private static final RowMapper<WorkflowHeader> WORKFLOW_MAPPER =
             LocationReservationRepository::mapWorkflow;
-    private static final RowMapper<LocationHeader> LOCATION_MAPPER =
-            LocationReservationRepository::mapLocation;
 
     private final JdbcTemplate jdbc;
 
@@ -316,7 +314,8 @@ public class LocationReservationRepository {
                 ORDER BY command.fulfillment_location_id, item.seller_id, item.sku_id
                 """, (resultSet, rowNum) -> new LocationItemRow(
                 resultSet.getObject("fulfillment_location_id", UUID.class),
-                resultSet.getString("idempotency_key"), resultSet.getString("command_state"),
+                resultSet.getString("idempotency_key"),
+                LocationReservationState.valueOf(resultSet.getString("command_state")),
                 resultSet.getObject("remote_reservation_id", UUID.class),
                 resultSet.getTimestamp("remote_expires_at") == null
                         ? null : resultSet.getTimestamp("remote_expires_at").toInstant(),
@@ -339,7 +338,7 @@ public class LocationReservationRepository {
         }
         if (currentLocationRow != null) locations.add(toSnapshot(currentLocationRow, items));
         return new ReservationWorkflowSnapshot(header.workflowId(), header.orderId(), header.idempotencyKey(),
-                LocationReservationWorkflowState.valueOf(header.state()), header.attemptCount(), header.nextAttemptAt(), header.createdAt(),
+                header.state(), header.attemptCount(), header.nextAttemptAt(), header.createdAt(),
                 header.updatedAt(), header.lastErrorCode(), locations);
     }
 
@@ -348,40 +347,27 @@ public class LocationReservationRepository {
     }
 
     private static ReservationWorkflowLocationSnapshot toSnapshot(LocationItemRow row, List<ReservationWorkflowItemRecord> items) {
-        return new ReservationWorkflowLocationSnapshot(row.locationId(), row.idempotencyKey(), LocationReservationState.valueOf(row.state()), row.reservationId(),
+        return new ReservationWorkflowLocationSnapshot(row.locationId(), row.idempotencyKey(), row.state(), row.reservationId(),
                 row.remoteExpiresAt(), row.lastErrorCode(), row.updatedAt(), List.copyOf(items));
     }
 
     private static WorkflowHeader mapWorkflow(ResultSet resultSet, int rowNum) throws SQLException {
         return new WorkflowHeader(resultSet.getObject("workflow_id", UUID.class),
                 resultSet.getObject("order_id", UUID.class), resultSet.getString("idempotency_key"),
-                resultSet.getString("workflow_state"), resultSet.getInt("attempt_count"),
+                LocationReservationWorkflowState.valueOf(resultSet.getString("workflow_state")),
+                resultSet.getInt("attempt_count"),
                 resultSet.getTimestamp("next_attempt_at").toInstant(),
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant(), resultSet.getString("last_error_code"));
     }
 
-    private static LocationHeader mapLocation(ResultSet resultSet, int rowNum) throws SQLException {
-        Timestamp expiry = resultSet.getTimestamp("remote_expires_at");
-        return new LocationHeader(resultSet.getObject("fulfillment_location_id", UUID.class),
-                resultSet.getString("idempotency_key"), resultSet.getString("command_state"),
-                resultSet.getObject("remote_reservation_id", UUID.class),
-                expiry == null ? null : expiry.toInstant(), resultSet.getString("last_error_code"),
-                resultSet.getTimestamp("updated_at").toInstant());
-    }
-
-    private record LocationItemRow(UUID locationId, String idempotencyKey, String state, UUID reservationId,
-                                   Instant remoteExpiresAt, String lastErrorCode, Instant updatedAt,
+    private record LocationItemRow(UUID locationId, String idempotencyKey, LocationReservationState state,
+                                   UUID reservationId, Instant remoteExpiresAt, String lastErrorCode, Instant updatedAt,
                                    UUID sellerId, String skuId, Integer quantity) {
     }
 
-    private record WorkflowHeader(UUID workflowId, UUID orderId, String idempotencyKey, String state,
-                                  int attemptCount, Instant nextAttemptAt, Instant createdAt,
+    private record WorkflowHeader(UUID workflowId, UUID orderId, String idempotencyKey,
+                                  LocationReservationWorkflowState state, int attemptCount, Instant nextAttemptAt, Instant createdAt,
                                   Instant updatedAt, String lastErrorCode) {
-    }
-
-    private record LocationHeader(UUID fulfillmentLocationId, String idempotencyKey, String state,
-                                  UUID reservationId, Instant remoteExpiresAt, String lastErrorCode,
-                                  Instant updatedAt) {
     }
 }

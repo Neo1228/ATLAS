@@ -1,5 +1,6 @@
 package com.atlas.order.repository;
 
+import com.atlas.order.model.LocationRestockState;
 import com.atlas.order.persistence.projection.LocationRestock;
 import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
 import java.sql.Timestamp;
@@ -75,19 +76,14 @@ public class LocationRestockRepository {
      * worker는 낡은 횟수를 들고 있어 갱신이 0행이 되고 더 새로운 claim의 결과를 덮어쓰지 못한다.
      */
     @Transactional
-public void finish(String restockKey, UUID locationId, int attemptCount, String state, String errorCode, Instant nextAttemptAt,
-                       Instant now) {
+    public void finish(String restockKey, UUID locationId, int attemptCount, LocationRestockState state,
+            String errorCode, Instant nextAttemptAt, Instant now) {
         jdbc.update("""
                 UPDATE order_inventory_restock
                 SET restock_state = ?, last_error_code = ?, next_attempt_at = ?, updated_at = ?
                 WHERE restock_key = ? AND fulfillment_location_id = ? AND restock_state = 'PENDING' AND attempt_count = ?
-                """, state, errorCode, Timestamp.from(nextAttemptAt), Timestamp.from(now), restockKey, locationId, attemptCount);
-    }
-
-    @Transactional(readOnly = true)
-    public List<String> states(String restockKey) {
-        return jdbc.queryForList("SELECT restock_state FROM order_inventory_restock WHERE restock_key = ?",
-                String.class, restockKey);
+                """, state.name(), errorCode, Timestamp.from(nextAttemptAt), Timestamp.from(now), restockKey, locationId,
+                attemptCount);
     }
 
     @Transactional(readOnly = true)
