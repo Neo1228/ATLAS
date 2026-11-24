@@ -87,9 +87,11 @@ class PayPalPayoutsRestClientTest {
         assertThat(sent.path("items").get(0).path("recipient_type").asString()).isEqualTo("EMAIL");
         assertThat(sent.path("items").get(0).path("sender_item_id").asString()).isEqualTo("item-stable");
         assertThat(sent.path("items").get(0).path("amount").path("value").asString()).isEqualTo("12.34");
-        assertThat(result.batchStatus()).isEqualTo("PENDING");
-        assertThat(result.items().getFirst().transactionStatus()).isEqualTo("UNCLAIMED");
-        assertThat(result.items().getFirst().transactionStatus()).isNotEqualTo("SUCCESS");
+        assertThat(result.rawBatchStatus()).isEqualTo("PENDING");
+        assertThat(result.batchStatus()).isEqualTo(PayPalPayoutBatchResponse.BatchStatus.PENDING);
+        assertThat(result.items().getFirst().rawTransactionStatus()).isEqualTo("UNCLAIMED");
+        assertThat(result.items().getFirst().transactionStatus())
+                .isEqualTo(PayPalPayoutBatchResponse.TransactionStatus.UNCLAIMED);
         assertThat(result.items().getFirst().currencyConversionPresent()).isFalse();
         assertThat(receivedBody.get()).doesNotContain("recipientEmail");
     }
@@ -100,7 +102,8 @@ class PayPalPayoutsRestClientTest {
         PayPalPayoutBatchResponse result = client.getBatch("PAYOUT-2");
         assertThat(receivedPath.get()).isEqualTo("/v1/payments/payouts/PAYOUT-2");
         assertThat(receivedRequestId.get()).isNull();
-        assertThat(result.items().getFirst().transactionStatus()).isEqualTo("SUCCESS");
+        assertThat(result.items().getFirst().transactionStatus())
+                .isEqualTo(PayPalPayoutBatchResponse.TransactionStatus.SUCCESS);
         assertThat(result.items().getFirst().amount()).isEqualByComparingTo("4.50");
         assertThat(result.items().getFirst().fee()).isEqualByComparingTo("0.25");
         assertThat(result.items().getFirst().conversionFromAmount()).isEqualByComparingTo("4.50");

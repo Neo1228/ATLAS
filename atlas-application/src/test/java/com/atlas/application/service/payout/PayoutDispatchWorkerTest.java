@@ -30,6 +30,8 @@ import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class PayoutDispatchWorkerTest {
     private static final Instant NOW = Instant.parse("2026-11-22T00:00:00Z");
@@ -210,6 +212,63 @@ class PayoutDispatchWorkerTest {
         verify(outcomes).reviewWithEvidence(record, "provider-batch", "FAILED", "provider-item",
                 "FAILED", "FAILED_FEE_UNCONFIRMED");
         verify(outcomes, never()).fail(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    /**
+     * PayPal item 상태는 대소문자와 무관하게 분류하고, 처리 대상이 아닌 값(문서에 있지만 다루지 않는
+     * ONHOLD, 새로 생길 값, 누락)은 검토로 보낸다. 증거로 저장하는 값은 대문자로 정규화한 원문이다.
+     */
+    @ParameterizedTest
+    @CsvSource(nullValues = "NULL", value = {
+            "pending, PENDING, waiting",
+            "PROCESSING, PROCESSING, waiting",
+            "denied, DENIED, failed",
+            "ONHOLD, ONHOLD, review",
+            "NEW_ITEM_STATUS, NEW_ITEM_STATUS, review",
+            "NULL, UNKNOWN, review"})
+    void itemStatusDecidesTheOutcomeAndUnknownValuesGoToReview(String providerStatus, String evidence,
+            String expected) {
+        PayoutDispatchRecord record = leasedRecord();
+        PayPalPayoutBatchResponse.Item item = item(providerStatus, BigDecimal.ZERO, "USD");
+        when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
+        when(payouts.beginDispatch(payoutId)).thenReturn(true);
+        when(provider.createBatch(any())).thenReturn(batch("PROCESSING", List.of(item)));
+
+        worker.dispatchDue();
+
+        switch (expected) {
+            case "waiting" -> verify(outcomes).accepted(eq(record), eq("provider-batch"), eq("PROCESSING"),
+                    eq("provider-item"), eq(evidence), isNull(), isNull(), any(Duration.class));
+            case "failed" -> verify(outcomes).fail(record, "provider-batch", "PROCESSING", "provider-item",
+                    evidence, "PROVIDER_ITEM_FAILED", 0L, 0L);
+            default -> verify(outcomes).reviewWithEvidence(record, "provider-batch", "PROCESSING",
+                    "provider-item", evidence, "UNKNOWN_PROVIDER_STATUS");
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "canceled, CANCELED, review",
+            "DENIED, DENIED, review",
+            "NEW_BATCH_STATUS, NEW_BATCH_STATUS, waiting"})
+    void batchWithoutMatchingItemIsReviewedOnlyForTerminalFailure(String providerStatus, String evidence,
+            String expected) {
+        PayoutDispatchRecord record = leasedRecord();
+        when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
+        when(payouts.beginDispatch(payoutId)).thenReturn(true);
+        when(provider.createBatch(any())).thenReturn(batch(providerStatus, List.of()));
+
+        worker.dispatchDue();
+
+        if ("review".equals(expected)) {
+            verify(outcomes).reviewWithEvidence(record, "provider-batch", evidence, null, null,
+                    "BATCH_FAILED_WITHOUT_ITEM");
+        } else {
+            verify(outcomes).accepted(eq(record), eq("provider-batch"), eq(evidence), isNull(), isNull(),
+                    isNull(), isNull(), any(Duration.class));
+        }
     }
 
     private PayoutDispatchRecord leasedRecord() {

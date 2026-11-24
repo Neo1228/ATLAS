@@ -65,7 +65,8 @@ public class PayPalRestClient {
                 "payment_source", Map.of("paypal", Map.of("experience_context", Map.of(
                         "return_url", returnUrl, "cancel_url", cancelUrl, "user_action", "PAY_NOW"))));
         Map<String, Object> response = post("/v2/checkout/orders", body, requestId);
-        return new OrderResult(text(response, "id"), text(response, "status"), approvalUrl(response));
+        return new OrderResult(text(response, "id"), PayPalOrderStatus.from(text(response, "status")),
+                approvalUrl(response));
     }
 
     public OrderStatus getOrder(String orderId) {
@@ -79,12 +80,12 @@ public class PayPalRestClient {
         }
         Map<String, Object> authorization = firstResource(response, "authorization");
         Map<String, Object> capture = firstResource(response, "capture");
-        return new OrderStatus(text(response, "id"), text(response, "status"),
+        return new OrderStatus(text(response, "id"), PayPalOrderStatus.from(text(response, "status")),
                 orderAmount(response), orderCurrency(response),
                 authorization == null ? null : text(authorization, "id"),
-                authorization == null ? null : text(authorization, "status"),
+                PayPalAuthorizationStatus.from(authorization == null ? null : text(authorization, "status")),
                 capture == null ? null : text(capture, "id"),
-                capture == null ? null : text(capture, "status"),
+                PayPalCaptureStatus.from(capture == null ? null : text(capture, "status")),
                 resourceAmount(response, "capture"), resourceCurrency(response, "capture"));
     }
 
@@ -92,7 +93,7 @@ public class PayPalRestClient {
         Map<String, Object> response = post("/v2/checkout/orders/{id}/authorize".replace("{id}", orderId),
                 Map.of(), requestId);
         return new AuthorizationResult(resourceId(response, "authorization"),
-                resourceStatus(response, "authorization"));
+                PayPalAuthorizationStatus.from(resourceStatus(response, "authorization")));
     }
 
     public CaptureResult captureAuthorization(String authorizationId, BigDecimal amount,
@@ -101,7 +102,8 @@ public class PayPalRestClient {
                 "value", amount.toPlainString()), "final_capture", true);
         Map<String, Object> response = post("/v2/payments/authorizations/{id}/capture".replace("{id}", authorizationId),
                 body, requestId, properties.getCaptureBaseUrl());
-        return new CaptureResult(resourceId(response, "capture"), resourceStatus(response, "capture"),
+        return new CaptureResult(resourceId(response, "capture"),
+                PayPalCaptureStatus.from(resourceStatus(response, "capture")),
                 resourceAmount(response, "capture"), resourceCurrency(response, "capture"));
     }
 
@@ -153,7 +155,8 @@ public class PayPalRestClient {
             throw new IllegalArgumentException("PayPal webhook body is not valid JSON", exception);
         }
         Map<String, Object> response = postWebhook(body);
-        return new WebhookVerificationResult("SUCCESS".equals(text(response, "verification_status")));
+        return new WebhookVerificationResult(PayPalWebhookVerificationStatus.from(
+                text(response, "verification_status")) == PayPalWebhookVerificationStatus.SUCCESS);
     }
 
     public PaymentWebhookEventResponse parseWebhook(String rawBody) {
@@ -364,14 +367,18 @@ public class PayPalRestClient {
         return url == null ? "https://api-m.sandbox.paypal.com" : url.replaceAll("/+$", "");
     }
 
-    public record OrderResult(String id, String status, String approvalUrl) { }
-    public record OrderStatus(String id, String status, BigDecimal amount, String currency,
-                              String authorizationId, String authorizationStatus,
-                              String captureId, String captureStatus, BigDecimal captureAmount,
+    public record OrderResult(String id, PayPalOrderStatus status, String approvalUrl) { }
+    public record OrderStatus(String id, PayPalOrderStatus status, BigDecimal amount, String currency,
+                              String authorizationId, PayPalAuthorizationStatus authorizationStatus,
+                              String captureId, PayPalCaptureStatus captureStatus, BigDecimal captureAmount,
                               String captureCurrency) { }
-    public record AuthorizationResult(String id, String status) { }
-    public record CaptureResult(String id, String status, BigDecimal amount, String currency) { }
-    public record RefundResult(String id, String status, BigDecimal amount, String currency) { }
+    public record AuthorizationResult(String id, PayPalAuthorizationStatus status) { }
+    public record CaptureResult(String id, PayPalCaptureStatus status, BigDecimal amount, String currency) { }
+
+    /** {@code providerStatus}는 환불 이력에 증거로 저장하는 PayPal 원문이다. */
+    public record RefundResult(String id, String providerStatus, BigDecimal amount, String currency) {
+        public PayPalRefundStatus status() { return PayPalRefundStatus.from(providerStatus); }
+    }
     public record WebhookVerificationResult(boolean verified) { }
 
     public static class PayPalUnavailableException extends RuntimeException {
