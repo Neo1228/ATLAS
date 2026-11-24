@@ -10,13 +10,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.settlement.dto.response.PayoutResponse;
-import com.atlas.payment.dto.response.FxResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.application.security.PayoutRecipientCipher;
+import com.atlas.payment.dto.response.FxResponse;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
-import com.atlas.settlement.model.SettlementPayoutState;
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.math.BigDecimal;
@@ -96,5 +97,22 @@ class PayoutDispatchApprovalServiceTest {
                 .isInstanceOf(SettlementException.class)
                 .hasMessageContaining("not eligible");
         verify(committer, never()).approve(any(), any(), any(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void dispatchStatusReportsNoDispatchStateWhenPayoutHasNoProviderOutbox() {
+        UUID payoutId = UUID.randomUUID();
+        Instant requestedAt = Instant.parse("2026-11-22T00:00:00Z");
+        when(payouts.find(payoutId)).thenReturn(new PayoutResponse.SellerPayout(payoutId, UUID.randomUUID(),
+                requestedAt, requestedAt.plusSeconds(60), 10_000, 0, SettlementPayoutState.APPROVED,
+                requestedAt, null, null, null));
+        when(dispatches.find(payoutId)).thenReturn(Optional.empty());
+
+        SettlementHttpResponse.PayoutDispatchStatus status = service.dispatchStatus(payoutId);
+
+        assertThat(status.payoutState()).isEqualTo(SettlementPayoutState.APPROVED);
+        assertThat(status.dispatchStatus()).isNull();
+        assertThat(status.requestedAmountWon()).isEqualTo(10_000);
+        assertThat(status.attemptCount()).isZero();
     }
 }

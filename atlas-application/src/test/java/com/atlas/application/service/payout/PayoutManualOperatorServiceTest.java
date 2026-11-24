@@ -14,6 +14,7 @@ import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.PayoutOperatorActionType;
 import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
@@ -47,7 +48,7 @@ class PayoutManualOperatorServiceTest {
         when(payouts.confirmProviderSuccess(payoutId, 10_011, 11, 343)).thenReturn(confirmed);
         when(dispatches.resolveNeedsReview(payoutId, PayoutDispatchState.COMPLETED, "provider-batch", "provider-item",
                 25L, 343L, "OPERATOR_PROVIDER_PAID")).thenReturn(true);
-        when(actions.record(payoutId, "review-1", "PROVIDER_REVIEW_PAID", "operator-1",
+        when(actions.record(payoutId, "review-1", PayoutOperatorActionType.PROVIDER_REVIEW_PAID, "operator-1",
                 "case-2026-001", NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.resolveProviderReview(payoutId, "review-1", "operator-1",
@@ -56,7 +57,7 @@ class PayoutManualOperatorServiceTest {
 
         assertThat(result.state()).isEqualTo(SettlementPayoutState.CONFIRMED);
         verify(payouts).confirmProviderSuccess(payoutId, 10_011, 11, 343);
-        verify(actions).record(payoutId, "review-1", "PROVIDER_REVIEW_PAID", "operator-1",
+        verify(actions).record(payoutId, "review-1", PayoutOperatorActionType.PROVIDER_REVIEW_PAID, "operator-1",
                 "case-2026-001", NOW);
     }
 
@@ -82,7 +83,7 @@ class PayoutManualOperatorServiceTest {
                 .thenReturn(response(SettlementPayoutState.FAILED));
         when(dispatches.resolveNeedsReview(payoutId, PayoutDispatchState.FAILED, null, null, 0L, 0L, "OPERATOR_NO_TRANSFER"))
                 .thenReturn(true);
-        when(actions.record(payoutId, "review-no-transfer", "PROVIDER_REVIEW_NOT_PAID", "operator-1",
+        when(actions.record(payoutId, "review-no-transfer", PayoutOperatorActionType.PROVIDER_REVIEW_NOT_PAID, "operator-1",
                 "paypal-case-2026-01", NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout failed = service.resolveProviderReview(payoutId, "review-no-transfer",
@@ -91,7 +92,7 @@ class PayoutManualOperatorServiceTest {
 
         assertThat(failed.state()).isEqualTo(SettlementPayoutState.FAILED);
         verify(payouts).failWithProviderEvidence(payoutId, "OPERATOR_CONFIRMED_NO_TRANSFER");
-        verify(actions).record(payoutId, "review-no-transfer", "PROVIDER_REVIEW_NOT_PAID", "operator-1",
+        verify(actions).record(payoutId, "review-no-transfer", PayoutOperatorActionType.PROVIDER_REVIEW_NOT_PAID, "operator-1",
                 "paypal-case-2026-01", NOW);
     }
     private PayoutDispatchRecord needsReviewRecord() {

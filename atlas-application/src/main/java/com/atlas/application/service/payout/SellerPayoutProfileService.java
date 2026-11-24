@@ -1,12 +1,13 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.application.dto.response.SettlementHttpResponse;
-import com.atlas.application.dto.request.SettlementHttpRequest;
 import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.service.AccountService;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.SellerPayoutProfile;
+import com.atlas.settlement.model.SellerPayoutProfileActionType;
 import com.atlas.settlement.service.SellerPayoutProfileStore;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -62,17 +63,17 @@ public class SellerPayoutProfileService {
         Instant now = clock.instant();
         Optional<SellerPayoutProfile> prior = profiles.find(sellerId);
         SellerPayoutProfile profile;
-        String action;
+        SellerPayoutProfileActionType action;
         if (prior.isPresent() && prior.get().recipientAccountId().equals(account.accountId())
                 && prior.get().countryCode().equals(countryCode) && prior.get().payoutCurrency().equals(USD)) {
             if (prior.get().state() == SellerPayoutProfile.State.SUSPENDED) {
                 throw conflict("Suspended payout profile requires operator review");
             }
             profile = prior.get();
-            action = "PROFILE_CONFIRMED";
+            action = SellerPayoutProfileActionType.PROFILE_CONFIRMED;
         } else {
             profile = profiles.submit(sellerId, account.accountId(), countryCode, now);
-            action = "PROFILE_SUBMITTED";
+            action = SellerPayoutProfileActionType.PROFILE_SUBMITTED;
         }
         if (!profiles.recordAction(sellerId, profile.profileVersion(), action, idempotencyKey,
                 requestHash, account.accountId().toString(), "seller_confirmed_verified_email_and_usd_wallet", now)) {
@@ -126,7 +127,8 @@ public class SellerPayoutProfileService {
         if (!verified.recipientAccountId().equals(account.accountId())) {
             throw new IllegalStateException("Verified payout account mapping changed");
         }
-        if (!profiles.recordAction(sellerId, verified.profileVersion(), "PROFILE_VERIFIED", idempotencyKey,
+        if (!profiles.recordAction(sellerId, verified.profileVersion(),
+                SellerPayoutProfileActionType.PROFILE_VERIFIED, idempotencyKey,
                 requestHash, actor, request.evidenceReference(), now)) {
             String existingHash = profiles.findRequestHash(sellerId, idempotencyKey).orElseThrow(
                     () -> new IllegalStateException("Payout profile verification action disappeared"));
@@ -190,7 +192,7 @@ public class SellerPayoutProfileService {
 
     private static SettlementHttpResponse.SellerPayoutProfile toResponse(SellerPayoutProfile profile) {
         return new SettlementHttpResponse.SellerPayoutProfile(profile.sellerId(), profile.countryCode(), profile.payoutCurrency(),
-                profile.state().name(), profile.profileVersion(), profile.updatedAt(), profile.verifiedAt());
+                profile.state(), profile.profileVersion(), profile.updatedAt(), profile.verifiedAt());
     }
 
     private static SettlementException invalid(String message) {

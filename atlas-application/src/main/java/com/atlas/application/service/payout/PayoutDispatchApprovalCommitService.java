@@ -6,6 +6,7 @@ import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.PayoutOperatorActionType;
 import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
@@ -74,18 +75,18 @@ public class PayoutDispatchApprovalCommitService {
                 currentRecipient.verifiedEmail().getBytes(StandardCharsets.UTF_8))) {
             throw conflict("Existing provider dispatch recipient differs from the verified Seller identity");
         }
-        recordAction(payoutId, idempotencyKey, "PAYOUT_APPROVED", actor, reason);
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_APPROVED, actor, reason);
         return approved;
     }
 
     @Transactional
     public PayoutResponse.SellerPayout replay(UUID payoutId, String idempotencyKey, String actor, String reason) {
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
-        if (actions.matches(payoutId, idempotencyKey, "PAYOUT_APPROVED", actor, reason)) return payout;
+        if (actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_APPROVED, actor, reason)) return payout;
         if (payout.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Payout approval is already terminal or in provider reconciliation");
         }
-        recordAction(payoutId, idempotencyKey, "PAYOUT_APPROVAL_REPLAYED", actor, reason);
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_APPROVAL_REPLAYED, actor, reason);
         return payout;
     }
 
@@ -93,7 +94,7 @@ public class PayoutDispatchApprovalCommitService {
     public PayoutResponse.SellerPayout cancel(UUID payoutId, String idempotencyKey, String actor, String reason) {
         PayoutResponse.SellerPayout cancelled = payouts.cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED");
         dispatches.cancelPending(payoutId);
-        recordAction(payoutId, idempotencyKey, "PAYOUT_CANCELLED", actor, reason);
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_CANCELLED, actor, reason);
         return cancelled;
     }
 
@@ -103,25 +104,25 @@ public class PayoutDispatchApprovalCommitService {
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         PayoutDispatchRecord record = dispatches.find(payoutId)
                 .orElseThrow(() -> conflict("Payout has no provider dispatch record"));
-        if (actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) return payout;
+        if (actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_REQUEUED, actor, reason)) return payout;
         if (record.status() == PayoutDispatchState.NEEDS_REVIEW) {
             if (payout.state() != SettlementPayoutState.NEEDS_REVIEW) {
                 throw conflict("Payout state does not permit provider requeue");
             }
             if (dispatches.requeueNeedsReview(payoutId)) {
-                recordAction(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason);
+                recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_REQUEUED, actor, reason);
                 return payout;
             }
             PayoutDispatchRecord latest = dispatches.find(payoutId).orElseThrow(
                     () -> conflict("Payout dispatch record disappeared during requeue"));
             if ((latest.status() == PayoutDispatchState.PENDING || latest.status() == PayoutDispatchState.WAITING_PROVIDER)
-                    && actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) {
+                    && actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_REQUEUED, actor, reason)) {
                 return payout;
             }
             throw conflict("Payout is no longer eligible for provider requeue");
         }
         if ((record.status() == PayoutDispatchState.PENDING || record.status() == PayoutDispatchState.WAITING_PROVIDER)
-                && actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) {
+                && actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_REQUEUED, actor, reason)) {
             return payout;
         }
         throw conflict("Payout is not waiting for manual provider requeue");
@@ -141,7 +142,7 @@ public class PayoutDispatchApprovalCommitService {
                 && plan.paypalRequestId().equals(record.paypalRequestId())
                 && plan.requestPayloadSha256().equals(record.requestPayloadSha256());
     }
-    private void recordAction(UUID payoutId, String idempotencyKey, String action,
+    private void recordAction(UUID payoutId, String idempotencyKey, PayoutOperatorActionType action,
             String actor, String reason) {
         if (!actions.record(payoutId, idempotencyKey, action, actor, reason, clock.instant())) {
             throw conflict("Payout operator idempotency key was reused for different facts");

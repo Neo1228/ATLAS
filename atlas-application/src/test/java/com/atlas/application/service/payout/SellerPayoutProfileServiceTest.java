@@ -11,15 +11,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.dto.response.SettlementHttpResponse;
-import com.atlas.application.dto.request.SettlementHttpRequest;
 import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.service.AccountService;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.application.service.payout.SellerPayoutProfileService.ActiveRecipient;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.SellerPayoutProfile.State;
 import com.atlas.settlement.model.SellerPayoutProfile;
+import com.atlas.settlement.model.SellerPayoutProfileActionType;
 import com.atlas.settlement.service.SellerPayoutProfileStore;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -34,6 +35,7 @@ import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -56,7 +58,7 @@ class SellerPayoutProfileServiceTest {
         SellerPayoutProfile submitted = profile(State.PENDING_REVIEW, 1, accountId, "US");
         when(profiles.find(sellerId)).thenReturn(Optional.empty());
         when(profiles.submit(sellerId, accountId, "US", NOW)).thenReturn(submitted);
-        when(profiles.recordAction(sellerId, 1, "PROFILE_SUBMITTED", KEY, configureHash("US"),
+        when(profiles.recordAction(sellerId, 1, SellerPayoutProfileActionType.PROFILE_SUBMITTED, KEY, configureHash("US"),
                 accountId.toString(), CONFIRMATION_REASON, NOW)).thenReturn(true);
 
         SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("us"));
@@ -64,10 +66,10 @@ class SellerPayoutProfileServiceTest {
         assertThat(response.sellerId()).isEqualTo(sellerId);
         assertThat(response.countryCode()).isEqualTo("US");
         assertThat(response.payoutCurrency()).isEqualTo("USD");
-        assertThat(response.status()).isEqualTo("PENDING_REVIEW");
+        assertThat(response.status()).isEqualTo(State.PENDING_REVIEW);
         assertThat(response.profileVersion()).isEqualTo(1);
         assertThat(response.verifiedAt()).isNull();
-        verify(profiles).recordAction(sellerId, 1, "PROFILE_SUBMITTED", KEY, configureHash("US"),
+        verify(profiles).recordAction(sellerId, 1, SellerPayoutProfileActionType.PROFILE_SUBMITTED, KEY, configureHash("US"),
                 accountId.toString(), CONFIRMATION_REASON, NOW);
     }
 
@@ -76,15 +78,15 @@ class SellerPayoutProfileServiceTest {
         givenVerifiedAccount();
         SellerPayoutProfile active = profile(State.ACTIVE, 3, accountId, "US");
         when(profiles.find(sellerId)).thenReturn(Optional.of(active));
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
 
         SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
-        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.status()).isEqualTo(State.ACTIVE);
         assertThat(response.profileVersion()).isEqualTo(3);
         verify(profiles, never()).submit(any(), any(), anyString(), any());
-        verify(profiles).recordAction(sellerId, 3, "PROFILE_CONFIRMED", KEY, configureHash("US"),
+        verify(profiles).recordAction(sellerId, 3, SellerPayoutProfileActionType.PROFILE_CONFIRMED, KEY, configureHash("US"),
                 accountId.toString(), CONFIRMATION_REASON, NOW);
     }
 
@@ -96,15 +98,15 @@ class SellerPayoutProfileServiceTest {
         SellerPayoutProfile resubmitted = profile(State.PENDING_REVIEW, 4, accountId, "CA");
         when(profiles.find(sellerId)).thenReturn(Optional.of(active));
         when(profiles.submit(sellerId, accountId, "CA", NOW)).thenReturn(resubmitted);
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
 
         SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("ca"));
 
-        assertThat(response.status()).isEqualTo("PENDING_REVIEW");
+        assertThat(response.status()).isEqualTo(State.PENDING_REVIEW);
         assertThat(response.countryCode()).isEqualTo("CA");
         assertThat(response.profileVersion()).isEqualTo(4);
-        verify(profiles).recordAction(sellerId, 4, "PROFILE_SUBMITTED", KEY, configureHash("CA"),
+        verify(profiles).recordAction(sellerId, 4, SellerPayoutProfileActionType.PROFILE_SUBMITTED, KEY, configureHash("CA"),
                 accountId.toString(), CONFIRMATION_REASON, NOW);
     }
 
@@ -115,12 +117,12 @@ class SellerPayoutProfileServiceTest {
         SellerPayoutProfile resubmitted = profile(State.PENDING_REVIEW, 3, accountId, "US");
         when(profiles.find(sellerId)).thenReturn(Optional.of(otherAccount));
         when(profiles.submit(sellerId, accountId, "US", NOW)).thenReturn(resubmitted);
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
 
         SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
-        assertThat(response.status()).isEqualTo("PENDING_REVIEW");
+        assertThat(response.status()).isEqualTo(State.PENDING_REVIEW);
         verify(profiles).submit(sellerId, accountId, "US", NOW);
     }
 
@@ -132,7 +134,7 @@ class SellerPayoutProfileServiceTest {
         assertCode(() -> service.configure(accountId, sellerId, KEY, request("US")),
                 SettlementException.Code.CONFLICT);
         verify(profiles, never()).submit(any(), any(), anyString(), any());
-        verify(profiles, never()).recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(),
+        verify(profiles, never()).recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(),
                 anyString(), any());
     }
 
@@ -144,9 +146,9 @@ class SellerPayoutProfileServiceTest {
 
         SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
-        assertThat(response.status()).isEqualTo("PENDING_REVIEW");
+        assertThat(response.status()).isEqualTo(State.PENDING_REVIEW);
         verify(profiles, never()).submit(any(), any(), anyString(), any());
-        verify(profiles, never()).recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(),
+        verify(profiles, never()).recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(),
                 anyString(), any());
     }
 
@@ -172,13 +174,13 @@ class SellerPayoutProfileServiceTest {
         when(profiles.find(sellerId)).thenReturn(Optional.empty())
                 .thenReturn(Optional.of(pending));
         when(profiles.submit(sellerId, accountId, "US", NOW)).thenReturn(pending);
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(false);
 
         SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
         assertThat(response.profileVersion()).isEqualTo(1);
-        assertThat(response.status()).isEqualTo("PENDING_REVIEW");
+        assertThat(response.status()).isEqualTo(State.PENDING_REVIEW);
     }
 
     @Test
@@ -190,7 +192,7 @@ class SellerPayoutProfileServiceTest {
                 .thenReturn(Optional.of(configureHash("CA")));
         when(profiles.find(sellerId)).thenReturn(Optional.empty());
         when(profiles.submit(sellerId, accountId, "US", NOW)).thenReturn(pending);
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(false);
 
         assertCode(() -> service.configure(accountId, sellerId, KEY, request("US")),
@@ -203,7 +205,7 @@ class SellerPayoutProfileServiceTest {
         SellerPayoutProfile pending = profile(State.PENDING_REVIEW, 1, accountId, "US");
         when(profiles.find(sellerId)).thenReturn(Optional.empty());
         when(profiles.submit(sellerId, accountId, "US", NOW)).thenReturn(pending);
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(false);
 
         assertThatThrownBy(() -> service.configure(accountId, sellerId, KEY, request("US")))
@@ -225,13 +227,13 @@ class SellerPayoutProfileServiceTest {
         SellerPayoutProfile pending = profile(State.PENDING_REVIEW, 1, accountId, "US");
         when(profiles.find(sellerId)).thenReturn(Optional.empty());
         when(profiles.submit(sellerId, accountId, "US", NOW)).thenReturn(pending);
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
 
         assertCode(() -> service.configure(accountId, sellerId, "k".repeat(129), request("US")),
                 SettlementException.Code.INVALID_REQUEST);
         assertThat(service.configure(accountId, sellerId, "k".repeat(128), request("US")).status())
-                .isEqualTo("PENDING_REVIEW");
+                .isEqualTo(State.PENDING_REVIEW);
     }
 
     @Test
@@ -282,14 +284,14 @@ class SellerPayoutProfileServiceTest {
         SellerPayoutProfile active = profile(State.ACTIVE, 1, accountId, "US");
         when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.PENDING_REVIEW, 1, accountId, "US")));
         when(profiles.verify(sellerId, 1, "operator-1", NOW)).thenReturn(Optional.of(active));
-        when(profiles.recordAction(sellerId, 1, "PROFILE_VERIFIED", KEY, verifyHash(1, "case-2026/11"),
+        when(profiles.recordAction(sellerId, 1, SellerPayoutProfileActionType.PROFILE_VERIFIED, KEY, verifyHash(1, "case-2026/11"),
                 "operator-1", "case-2026/11", NOW)).thenReturn(true);
 
         SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-2026/11"));
 
-        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.status()).isEqualTo(State.ACTIVE);
         assertThat(response.verifiedAt()).isEqualTo(NOW);
-        verify(profiles).recordAction(sellerId, 1, "PROFILE_VERIFIED", KEY, verifyHash(1, "case-2026/11"),
+        verify(profiles).recordAction(sellerId, 1, SellerPayoutProfileActionType.PROFILE_VERIFIED, KEY, verifyHash(1, "case-2026/11"),
                 "operator-1", "case-2026/11", NOW);
     }
 
@@ -299,9 +301,9 @@ class SellerPayoutProfileServiceTest {
 
         SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(2, "case-1"));
 
-        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.status()).isEqualTo(State.ACTIVE);
         verify(profiles, never()).verify(any(), anyInt(), anyString(), any());
-        verify(profiles, never()).recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(),
+        verify(profiles, never()).recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(),
                 anyString(), any());
         verifyNoInteractions(accounts);
     }
@@ -339,7 +341,7 @@ class SellerPayoutProfileServiceTest {
 
         SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
 
-        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.status()).isEqualTo(State.ACTIVE);
         verify(profiles, never()).verify(any(), anyInt(), anyString(), any());
     }
 
@@ -363,8 +365,8 @@ class SellerPayoutProfileServiceTest {
 
         SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
 
-        assertThat(response.status()).isEqualTo("ACTIVE");
-        verify(profiles, never()).recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(),
+        assertThat(response.status()).isEqualTo(State.ACTIVE);
+        verify(profiles, never()).recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(),
                 anyString(), any());
     }
 
@@ -376,7 +378,7 @@ class SellerPayoutProfileServiceTest {
 
         assertCode(() -> service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1")),
                 SettlementException.Code.CONFLICT);
-        verify(profiles, never()).recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(),
+        verify(profiles, never()).recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(),
                 anyString(), any());
     }
 
@@ -389,7 +391,7 @@ class SellerPayoutProfileServiceTest {
 
         assertThatThrownBy(() -> service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1")))
                 .isInstanceOf(IllegalStateException.class);
-        verify(profiles, never()).recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(),
+        verify(profiles, never()).recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(),
                 anyString(), any());
     }
 
@@ -402,12 +404,12 @@ class SellerPayoutProfileServiceTest {
         when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.PENDING_REVIEW, 1, accountId, "US")))
                 .thenReturn(Optional.of(active));
         when(profiles.verify(sellerId, 1, "operator-1", NOW)).thenReturn(Optional.of(active));
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(false);
 
         SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
 
-        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.status()).isEqualTo(State.ACTIVE);
     }
 
     @Test
@@ -418,7 +420,7 @@ class SellerPayoutProfileServiceTest {
                 .thenReturn(Optional.of(verifyHash(1, "other")));
         when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.PENDING_REVIEW, 1, accountId, "US")));
         when(profiles.verify(sellerId, 1, "operator-1", NOW)).thenReturn(Optional.of(active));
-        when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(profiles.recordAction(any(), anyInt(), any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(false);
 
         assertCode(() -> service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1")),
@@ -499,7 +501,7 @@ class SellerPayoutProfileServiceTest {
         SettlementHttpResponse.SellerPayoutProfile response = service.find(accountId, sellerId);
 
         assertThat(response.sellerId()).isEqualTo(sellerId);
-        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.status()).isEqualTo(State.ACTIVE);
         assertThat(response.profileVersion()).isEqualTo(5);
     }
 
@@ -566,9 +568,9 @@ class SellerPayoutProfileServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"PENDING_REVIEW", "SUSPENDED"})
-    void requireActiveRecipientRejectsProfilesThatAreNotActive(String state) {
-        when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.valueOf(state), 1, accountId, "US")));
+    @EnumSource(value = State.class, names = {"PENDING_REVIEW", "SUSPENDED"})
+    void requireActiveRecipientRejectsProfilesThatAreNotActive(State state) {
+        when(profiles.find(sellerId)).thenReturn(Optional.of(profile(state, 1, accountId, "US")));
 
         assertCode(() -> service.requireActiveRecipient(sellerId), SettlementException.Code.CONFLICT);
         verifyNoInteractions(accounts);
