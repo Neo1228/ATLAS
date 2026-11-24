@@ -6,8 +6,8 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 
 ## 아키텍처와 데이터 흐름
 
-- Spring Boot 기반 **modular monolith**. `ATLAS-*` 디렉터리별로 도메인 책임을 나누며 애플리케이션은 하나로 실행.
-- 실제 디렉터리명은 `ATLAS-*`; Gradle project path는 [`settings.gradle`](settings.gradle)에 선언. 현재 task 이름은 `:atlas-application:...` 등 설정된 project path 사용.
+- Spring Boot 기반 **modular monolith**. `atlas-*` 디렉터리별로 도메인 책임을 나누며 애플리케이션은 하나로 실행.
+- 디렉터리 이름과 Gradle project 이름은 `atlas-*`로 같다([`settings.gradle`](settings.gradle)). task 이름은 `:atlas-application:...`처럼 쓴다.
 - 주요 흐름: Buyer cart/checkout → admission·inventory 예약 → PayPal authorization/capture → Seller별 order → shipment/return/refund → settlement ledger. Campaign 참여는 선택 경로. 세부 흐름은 README의 Mermaid diagram 참고.
 
 | 모듈 디렉터리 | 주 책임 |
@@ -33,9 +33,9 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 
 | 경로 | 용도 |
 |---|---|
-| `ATLAS-*/src/main/java/` | 각 모듈의 Java 구현 |
+| `atlas-*/src/main/java/` | 각 모듈의 Java 구현 |
 | `atlas-application/src/main/java/com/atlas/AtlasApplication.java` | Spring Boot 진입점 |
-| `ATLAS-*/src/test/java/` | JUnit 단위·통합 테스트 |
+| `atlas-*/src/test/java/` | JUnit 단위·통합 테스트 |
 | `atlas-application/src/main/resources/` | `application.yml`, 관측 설정, Flyway migration |
 | `config/checkstyle/checkstyle.xml` | Java Checkstyle 규칙 |
 | `compose.yaml`, `observability/` | PostgreSQL·실험 관측 환경 |
