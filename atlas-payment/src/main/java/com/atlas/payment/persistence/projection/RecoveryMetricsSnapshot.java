@@ -1,5 +1,7 @@
 package com.atlas.payment.persistence.projection;
 
+import com.atlas.payment.model.PaymentRecoveryJobStatus;
+import com.atlas.payment.model.PaymentRecoveryWorkStage;
 import java.util.Map;
 
 /**
@@ -12,23 +14,23 @@ import java.util.Map;
  * <p>키는 DB 문자열이 아니라 enum 이름이며, 호출자가 이미 enum 상수를 알고 있다.
  */
 public record RecoveryMetricsSnapshot(
-        Map<String, Long> statusCounts,
+        Map<PaymentRecoveryJobStatus, Long> statusCounts,
         Map<StageKey, StageMetrics> stages) {
 
-    public long statusCount(String status) {
+    public long statusCount(PaymentRecoveryJobStatus status) {
         Long value = statusCounts.get(status);
         return value == null ? 0L : value;
     }
 
-    public long stageCount(String stage, String status) {
+    public long stageCount(PaymentRecoveryWorkStage stage, PaymentRecoveryJobStatus status) {
         StageMetrics metrics = stages.get(new StageKey(stage, status));
         return metrics == null ? 0L : metrics.total();
     }
 
-    public double stageOldestDueAgeSeconds(String stage) {
+    public double stageOldestDueAgeSeconds(PaymentRecoveryWorkStage stage) {
         double oldest = 0;
         for (Map.Entry<StageKey, StageMetrics> entry : stages.entrySet()) {
-            if (entry.getKey().stage().equals(stage)) {
+            if (entry.getKey().stage() == stage) {
                 oldest = Math.max(oldest, entry.getValue().oldestDueAgeSeconds());
             }
         }
@@ -41,14 +43,14 @@ public record RecoveryMetricsSnapshot(
     public double oldestDueAgeAnyStage() {
         double oldest = 0;
         for (Map.Entry<StageKey, StageMetrics> entry : stages.entrySet()) {
-            if ("PENDING".equals(entry.getKey().status())) {
+            if (entry.getKey().status() == PaymentRecoveryJobStatus.PENDING) {
                 oldest = Math.max(oldest, entry.getValue().oldestDueAgeSeconds());
             }
         }
         return oldest;
     }
 
-    public record StageKey(String stage, String status) {}
+    public record StageKey(PaymentRecoveryWorkStage stage, PaymentRecoveryJobStatus status) {}
 
     public record StageMetrics(long total, double oldestDueAgeSeconds) {}
 }

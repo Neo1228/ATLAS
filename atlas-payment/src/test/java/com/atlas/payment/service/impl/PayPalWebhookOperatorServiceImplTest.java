@@ -2,6 +2,7 @@ package com.atlas.payment.service.impl;
 
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
+import com.atlas.payment.model.WebhookRequeueOutcome;
 import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
 import com.atlas.payment.repository.PayPalWebhookOperatorRepository;
 import com.atlas.payment.service.PayPalWebhookOperatorService;
@@ -42,9 +43,9 @@ class PayPalWebhookOperatorServiceImplTest {
 
     @Test
     void sameKeyReplaySurvivesQueueRowDeletionAndDoesNotTouchQueueOrProvider() {
-        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new WebhookRequeueRecord(EVENT, ACTOR, REASON, "REQUEUED")));
+        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new WebhookRequeueRecord(EVENT, ACTOR, REASON, WebhookRequeueOutcome.REQUEUED)));
 
-        assertThat(service.requeue(EVENT, KEY, ACTOR, REASON).outcome()).isEqualTo("REQUEUED");
+        assertThat(service.requeue(EVENT, KEY, ACTOR, REASON).outcome()).isEqualTo(WebhookRequeueOutcome.REQUEUED);
         verify(events, never()).lockExhausted(anyString());
         verify(events, never()).requeueExhausted(anyString(), anyInt(), anyInt());
         verify(events, never()).recordRequeue(anyString(), anyString(), anyString(), anyString());
@@ -52,7 +53,7 @@ class PayPalWebhookOperatorServiceImplTest {
 
     @Test
     void idempotencyKeyCannotBeReusedForDifferentActorEventOrReason() {
-        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new WebhookRequeueRecord(EVENT, ACTOR, REASON, "REQUEUED")));
+        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new WebhookRequeueRecord(EVENT, ACTOR, REASON, WebhookRequeueOutcome.REQUEUED)));
 
         assertConflict(() -> service.requeue(EVENT, KEY, "other-operator", REASON));
         assertConflict(() -> service.requeue("event-2", KEY, ACTOR, REASON));
@@ -78,7 +79,7 @@ class PayPalWebhookOperatorServiceImplTest {
         when(events.countRequeues(EVENT)).thenReturn(0);
         when(events.requeueExhausted(EVENT, 1, PayPalWebhookOperatorService.MAX_MANUAL_REQUEUES)).thenReturn(true);
 
-        assertThat(service.requeue(EVENT, KEY, ACTOR, REASON).outcome()).isEqualTo("REQUEUED");
+        assertThat(service.requeue(EVENT, KEY, ACTOR, REASON).outcome()).isEqualTo(WebhookRequeueOutcome.REQUEUED);
         verify(events).requeueExhausted(EVENT, 1, PayPalWebhookOperatorService.MAX_MANUAL_REQUEUES);
         verify(events).recordRequeue(KEY, EVENT, ACTOR, REASON);
     }

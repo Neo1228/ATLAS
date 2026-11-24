@@ -1,5 +1,8 @@
 package com.atlas.payment.dto.response;
 
+import com.atlas.payment.model.WebhookRequeueOutcome;
+import com.atlas.payment.model.WebhookRetryAttemptOutcome;
+import com.atlas.payment.model.WebhookRetryLeaseState;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -32,10 +35,10 @@ public final class WebhookRetryResponse {
         }
 
         public record Item(String eventId, String eventType, int attemptCount,
-                Instant nextAttemptAt, String leaseState) { }
+                Instant nextAttemptAt, WebhookRetryLeaseState leaseState) { }
     }
 
-    public record Requeue(String eventId, String outcome) { }
+    public record Requeue(String eventId, WebhookRequeueOutcome outcome) { }
 
     public record RetryAttemptHistory(String eventId, long total, int page, int size,
             List<Entry> entries) {
@@ -49,7 +52,7 @@ public final class WebhookRetryResponse {
 
     public record RetrySummary(long pending, long exhausted,
             Instant oldestPendingSince, Instant oldestExhaustedSince, long expiredLeaseCount,
-            Map<String, Long> last24HoursOutcomeCounts) {
+            Map<WebhookRetryAttemptOutcome, Long> last24HoursOutcomeCounts) {
         public RetrySummary {
             last24HoursOutcomeCounts = Map.copyOf(last24HoursOutcomeCounts);
         }

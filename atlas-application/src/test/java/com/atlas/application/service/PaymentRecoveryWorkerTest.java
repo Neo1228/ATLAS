@@ -17,6 +17,7 @@ import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentResponse;
+import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.model.PaymentRecoveryOperationType;
 import com.atlas.payment.model.PaymentRecoveryWorkStage;
 import com.atlas.payment.model.PaymentState;
@@ -194,6 +195,20 @@ class PaymentRecoveryWorkerTest {
                 "operation_type", "PAYMENT_ATTEMPT").count()).isZero();
         assertThat(meters.counter("atlas.payment.recovery.completion_fenced",
                 "operation_type", "PAYMENT_ATTEMPT").count()).isEqualTo(1);
+    }
+
+    @Test
+    void backlogGaugesKeepPrometheusNamesAndStringTagsWhileReadingByEnum() {
+        when(recovery.statusCount(PaymentRecoveryJobStatus.NEEDS_REVIEW)).thenReturn(3L);
+        when(recovery.stageCount(PaymentRecoveryWorkStage.APPLY, PaymentRecoveryJobStatus.PENDING)).thenReturn(2L);
+        when(recovery.stageOldestDueAgeSeconds(PaymentRecoveryWorkStage.PROVIDER)).thenReturn(7.5);
+
+        assertThat(meters.get("atlas.payment.recovery.jobs").tag("status", "NEEDS_REVIEW").gauge().value())
+                .isEqualTo(3.0);
+        assertThat(meters.get("atlas.payment.recovery.stage.jobs")
+                .tags("work_stage", "APPLY", "status", "PENDING").gauge().value()).isEqualTo(2.0);
+        assertThat(meters.get("atlas.payment.recovery.stage.oldest_due_age_seconds")
+                .tag("work_stage", "PROVIDER").gauge().value()).isEqualTo(7.5);
     }
 
     private static PaymentRecoveryResponse.Job job(PaymentRecoveryOperationType type, UUID operationId) {

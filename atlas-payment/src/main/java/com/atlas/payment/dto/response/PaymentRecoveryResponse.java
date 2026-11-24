@@ -1,5 +1,6 @@
 package com.atlas.payment.dto.response;
 
+import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.model.PaymentRecoveryOperationType;
 import com.atlas.payment.model.PaymentRecoveryWorkStage;
 import java.time.Instant;
@@ -24,7 +25,7 @@ public final class PaymentRecoveryResponse {
     /** 운영자 수동 재큐 결과. {@code duplicate}는 같은 멱등 키의 이전 요청을 재생한 경우다. */
     public record Requeue(
             UUID recoveryJobId,
-            String status,
+            PaymentRecoveryJobStatus status,
             int manualRequeueCount,
             Instant acceptedAt,
             boolean duplicate) {

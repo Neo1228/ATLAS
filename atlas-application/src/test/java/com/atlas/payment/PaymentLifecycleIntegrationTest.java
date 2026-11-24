@@ -38,6 +38,7 @@ import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
 import com.atlas.payment.persistence.projection.WebhookRetryEvent;
 import com.atlas.payment.model.PaymentRefundState;
 import com.atlas.payment.model.PaymentState;
+import com.atlas.payment.model.WebhookRequeueOutcome;
 import com.atlas.payment.model.WebhookRetryFailure;
 import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.provider.PaymentProvider;
@@ -1118,11 +1119,11 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         insertExhaustedRetry(eventId);
 
         assertThat(webhookOperator.requeue(eventId, key, "operator-a", "reviewed delivery").outcome())
-                .isEqualTo("REQUEUED");
+                .isEqualTo(WebhookRequeueOutcome.REQUEUED);
         jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
         insertExhaustedRetry(eventId);
         assertThat(webhookOperator.requeue(eventId, key, "operator-a", "reviewed delivery").outcome())
-                .isEqualTo("REQUEUED");
+                .isEqualTo(WebhookRequeueOutcome.REQUEUED);
         assertConflict(() -> webhookOperator.requeue(eventId, key, "operator-b", "reviewed delivery"));
         assertConflict(() -> webhookOperator.requeue(eventId, key, "operator-a", "different reason"));
         assertConflict(() -> webhookOperator.requeue("different-event", key, "operator-a", "reviewed delivery"));
@@ -1199,7 +1200,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         for (int attempt = 1; attempt <= 3; attempt++) {
             insertExhaustedRetry(eventId);
             assertThat(webhookOperator.requeue(eventId, "cap-key-" + attempt + "-" + UUID.randomUUID(),
-                    "operator-a", "approved retry " + attempt).outcome()).isEqualTo("REQUEUED");
+                    "operator-a", "approved retry " + attempt).outcome()).isEqualTo(WebhookRequeueOutcome.REQUEUED);
             jdbc.update("DELETE FROM paypal_webhook_retry WHERE event_id = ?", eventId);
         }
         insertExhaustedRetry(eventId);

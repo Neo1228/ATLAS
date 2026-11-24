@@ -1,5 +1,6 @@
 package com.atlas.payment.repository;
 
+import com.atlas.payment.model.WebhookRequeueOutcome;
 import com.atlas.payment.persistence.projection.ExhaustedWebhookRetryRow;
 import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
 import java.sql.ResultSet;
@@ -49,7 +50,7 @@ public class PayPalWebhookOperatorRepository {
                 WHERE idempotency_key = ?
                 """, (rs, rowNum) -> new WebhookRequeueRecord(
                         rs.getString("event_id"), rs.getString("actor"),
-                        rs.getString("reason"), rs.getString("outcome")), idempotencyKey)
+                        rs.getString("reason"), WebhookRequeueOutcome.valueOf(rs.getString("outcome"))), idempotencyKey)
                 .stream().findFirst();
     }
 

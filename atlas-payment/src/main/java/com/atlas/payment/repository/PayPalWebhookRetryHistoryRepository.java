@@ -1,5 +1,7 @@
 package com.atlas.payment.repository;
 
+import com.atlas.payment.model.WebhookRetryAttemptOutcome;
+import com.atlas.payment.model.WebhookRetryLeaseState;
 import com.atlas.payment.persistence.projection.PendingWebhookRetry;
 import com.atlas.payment.persistence.projection.WebhookRetrySummary;
 import com.atlas.payment.persistence.projection.WebhookRetryTimelineEntry;
@@ -30,7 +32,7 @@ public class PayPalWebhookRetryHistoryRepository {
      * Index Only Scan 31 버퍼가 됐다(EXP-047).
      */
     public WebhookRetrySummary summary() {
-        Map<String, Long> outcomeCounts = new LinkedHashMap<>();
+        Map<WebhookRetryAttemptOutcome, Long> outcomeCounts = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT outcome, COUNT(*) AS outcome_count
                 FROM paypal_webhook_retry_attempt_history
@@ -39,7 +41,8 @@ public class PayPalWebhookRetryHistoryRepository {
                 GROUP BY outcome
                 ORDER BY outcome
                 """, rs -> {
-                    outcomeCounts.put(rs.getString("outcome"), rs.getLong("outcome_count"));
+                    outcomeCounts.put(WebhookRetryAttemptOutcome.valueOf(rs.getString("outcome")),
+                            rs.getLong("outcome_count"));
                 });
         return jdbc.queryForObject("""
                 SELECT COUNT(*) FILTER (WHERE state = 'PENDING') AS pending,
@@ -73,7 +76,8 @@ public class PayPalWebhookRetryHistoryRepository {
                 LIMIT ? OFFSET ?
                 """, (rs, row) -> new PendingWebhookRetry(
                 rs.getString("event_id"), rs.getString("event_type"), rs.getInt("attempt_count"),
-                instant(rs.getTimestamp("next_attempt_at")), rs.getString("lease_state")), size, offset);
+                instant(rs.getTimestamp("next_attempt_at")),
+                WebhookRetryLeaseState.valueOf(rs.getString("lease_state"))), size, offset);
     }
 
     /** 큐, 시도 이력, 운영자 감사 중 어디에든 기록이 있는 이벤트인지. 큐 행이 정리된 뒤에도 이력은 조회할 수 있다. */
