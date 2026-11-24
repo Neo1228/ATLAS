@@ -7,11 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
-import com.atlas.inventorylocation.dto.response.LocationResponse;
-import com.atlas.inventorylocation.dto.request.LocationRequest;
 import com.atlas.inventorylocation.dto.request.LocationRequest.Reservation.Item;
-import com.atlas.inventorylocation.service.InventoryReservationService;
+import com.atlas.inventorylocation.dto.request.LocationRequest;
+import com.atlas.inventorylocation.dto.response.LocationResponse;
 import com.atlas.inventorylocation.exception.InventoryLocationException;
+import com.atlas.inventorylocation.model.LocationReservationStatus;
+import com.atlas.inventorylocation.service.InventoryReservationService;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,8 +27,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -270,7 +271,7 @@ class InventoryReservationIntegrationTest {
         LocationResponse.Reservation cancelled = inventory.cancel(FULFILLMENT_LOCATION_ID, key,
                 new LocationRequest.Cancellation(orderId));
 
-        assertThat(cancelled.status()).isEqualTo("CANCELLED");
+        assertThat(cancelled.status()).isEqualTo(LocationReservationStatus.CANCELLED);
         assertThat(cancelled.items()).isEmpty();
         assertStock("cancel-first-sku", 1, 1, 0);
         assertThatThrownBy(() -> inventory.reserve(FULFILLMENT_LOCATION_ID, key,
@@ -311,7 +312,7 @@ class InventoryReservationIntegrationTest {
             });
             start.countDown();
             assertThat(reserve.get(10, TimeUnit.SECONDS)).isIn("RESERVED", "TOMBSTONED");
-            assertThat(cancel.get(10, TimeUnit.SECONDS).status()).isEqualTo("CANCELLED");
+            assertThat(cancel.get(10, TimeUnit.SECONDS).status()).isEqualTo(LocationReservationStatus.CANCELLED);
         }
 
         assertThat(jdbc.queryForObject("""
@@ -347,7 +348,7 @@ class InventoryReservationIntegrationTest {
         LocationResponse.Reservation cancel = inventory.reserve(FULFILLMENT_LOCATION_ID, cancelKey,
                 request(cancelOrderId, new Item(secondSeller, "shared-sku", 1)));
         inventory.cancel(FULFILLMENT_LOCATION_ID, cancelKey, new LocationRequest.Cancellation(cancelOrderId));
-        assertThat(inventory.findReservation(FULFILLMENT_LOCATION_ID, cancel.reservationId()).status()).isEqualTo("CANCELLED");
+        assertThat(inventory.findReservation(FULFILLMENT_LOCATION_ID, cancel.reservationId()).status()).isEqualTo(LocationReservationStatus.CANCELLED);
         LocationResponse.Reservation expiry = inventory.reserve(FULFILLMENT_LOCATION_ID, "expire-seller-a-" + UUID.randomUUID(),
                 request(UUID.randomUUID(), new Item(SELLER_ID, "shared-sku", 1)));
         jdbc.update("UPDATE inventory_reservation SET expires_at = ? WHERE reservation_id = ?",
@@ -369,7 +370,7 @@ class InventoryReservationIntegrationTest {
         LocationResponse.Reservation restored = inventory.restore(FULFILLMENT_LOCATION_ID, claimed.reservationId());
         LocationResponse.Reservation replay = inventory.restore(FULFILLMENT_LOCATION_ID, claimed.reservationId());
 
-        assertThat(restored.status()).isEqualTo("RELEASED");
+        assertThat(restored.status()).isEqualTo(LocationReservationStatus.RELEASED);
         assertThat(replay.replayed()).isTrue();
         assertStock("restore-sku", 2, 1, 1);
         // 판매 확정 전 예약은 restore가 아니라 cancel/release 대상이다.

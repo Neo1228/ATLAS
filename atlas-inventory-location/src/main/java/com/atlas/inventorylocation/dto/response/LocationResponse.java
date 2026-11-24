@@ -1,5 +1,6 @@
 package com.atlas.inventorylocation.dto.response;
 
+import com.atlas.inventorylocation.model.LocationReservationStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -17,7 +18,7 @@ public final class LocationResponse {
             UUID fulfillmentLocationId,
             UUID orderId,
             String idempotencyKey,
-            String status,
+            LocationReservationStatus status,
             List<Item> items,
             Instant createdAt,
             Instant expiresAt,
