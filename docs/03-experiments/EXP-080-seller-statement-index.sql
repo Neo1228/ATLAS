@@ -1,9 +1,10 @@
--- EXP-027: seller 정산 명세 index 적용 전후 비교
+-- EXP-080: seller 정산 명세 index 적용 전후 비교
+-- 이전 번호: EXP-027 (중복 번호 정리, #618)
 -- 로컬 합성 데이터 측정 재현용. 운영 DB에서 실행하지 않는다.
 --
 -- 사용법:
 --   docker run --rm -e POSTGRES_PASSWORD=x -e POSTGRES_DB=atlas -d --name stmt-measure postgres:18.6
---   docker exec -i stmt-measure psql -U postgres -d atlas -q < EXP-027-seller-statement-index.sql
+--   docker exec -i stmt-measure psql -U postgres -d atlas -q < EXP-080-seller-statement-index.sql
 
 CREATE TABLE seller (seller_id uuid primary key);
 CREATE TABLE settlement_journal (

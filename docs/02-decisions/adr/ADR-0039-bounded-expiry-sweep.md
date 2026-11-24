@@ -42,11 +42,11 @@ batch와 시간 예산을 **둘 다** 두는 이유는 서로 다른 실패 모�
 - 한 tick의 후보 수는 `batchSize` 이하, 소요 시간은 시간 예산 근처에서 잘립니다. backlog는 tick마다 감소합니다.
 - 처리량(초당 만료 건수)은 후보 1건당 transaction 비용에 의해 결정되며, 이 ADR은 그 비용을 줄이지 않습니다. backlog가 지속적으로 유입되면 batch를 키우거나 만료 처리를 별도 경로로 옮기는 후속 작업이 필요합니다.
 - 시간 예산은 `System.nanoTime()` 기준이며, 후보 loop 진입 전에만 검사합니다. 후보 1건 처리 시간이 예산보다 길면 그 tick은 예산을 초과할 수 있습니다.
-- 측정은 EXP-026의 로컬 합성 데이터 결과이며 운영 부하 근거가 아닙니다.
+- 측정은 EXP-079의 로컬 합성 데이터 결과이며 운영 부하 근거가 아닙니다.
 
 ## 검증
 
 - `ExpirySweepPolicy` 단위 테스트: batch·시간 예산 허용 범위와 기본값.
 - `CheckoutBehaviorTest`: sweep이 설정된 batch 크기를 후보 조회에 전달하는지 검증.
 - `ExpiredOrderSweepIntegrationTest`: PostgreSQL에서 만료 후보 60건을 만들고 batch 25로 조회했을 때 정확히 25건만 반환되는지 검증.
-- EXP-026: 만료 60,000행 + 미만료 60,000행에서 후보 조회가 상한 없음 8.842 ms/613 buffers, `LIMIT 25` 0.055 ms/3 buffers.
+- EXP-079: 만료 60,000행 + 미만료 60,000행에서 후보 조회가 상한 없음 8.842 ms/613 buffers, `LIMIT 25` 0.055 ms/3 buffers.
