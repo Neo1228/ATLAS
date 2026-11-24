@@ -3,9 +3,9 @@ package com.atlas.application.exception;
 import com.atlas.account.exception.AccountException;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.exception.CampaignException;
-import com.atlas.order.exception.CartException;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.inventory.exception.InventoryException;
+import com.atlas.order.exception.CartException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.settlement.exception.SettlementException;
@@ -24,6 +24,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.ErrorResponse;
@@ -171,8 +172,12 @@ public class GlobalExceptionHandler {
                 .body(base.getBody());
     }
 
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    ResponseEntity<ProblemDetail> invalidArgument(MethodArgumentTypeMismatchException exception) {
+    /**
+     * 경로·쿼리 변수 형식 오류와 읽을 수 없는 요청 본문(깨진 JSON, 알 수 없는 enum 값)은 모두 클라이언트 입력 오류다.
+     * 이 둘이 {@link #handleUnexpected}로 떨어지면 500으로 응답하므로 따로 400으로 매핑한다.
+     */
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class, HttpMessageNotReadableException.class})
+    ResponseEntity<ProblemDetail> invalidArgument(Exception exception) {
         ResponseEntity<ProblemDetail> error = response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", null);
         String requestId = MDC.get("requestId");
         String instanceId = requestId == null ? UUID.randomUUID().toString() : requestId;

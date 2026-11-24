@@ -2,6 +2,7 @@ package com.atlas.application.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,10 +18,13 @@ import org.slf4j.MDC;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.server.ResponseStatusException;
@@ -215,12 +219,35 @@ class GlobalExceptionHandlerTest {
         assertThat(conflict.getBody().getProperties()).containsEntry("code", "CONFLICT");
     }
 
+    @Test
+    void unreadableRequestBodyIsAClientErrorNotAnInternalError() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new EnumBodyController())
+                .setControllerAdvice(handler)
+                .build();
+        for (String body : new String[] {"{\"kind\":\"BOGUS\"}", "{not-json"}) {
+            mockMvc.perform(post("/enum-body").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+    }
+
     @RestController
     static class UuidPathController {
 
         @GetMapping("/uuid-path/{id}")
         public String find(@PathVariable UUID id) {
             return id.toString();
+        }
+    }
+    enum Kind { A, B }
+
+    record KindBody(Kind kind) { }
+
+    @RestController
+    static class EnumBodyController {
+        @PostMapping("/enum-body")
+        public String accept(@RequestBody KindBody body) {
+            return String.valueOf(body.kind());
         }
     }
 }
