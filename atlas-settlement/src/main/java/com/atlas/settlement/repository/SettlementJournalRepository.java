@@ -1,10 +1,10 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.model.SellerBalance;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
 import com.atlas.settlement.persistence.projection.RefundJournalRecord;
-import com.atlas.settlement.persistence.projection.SellerBalance;
 import com.atlas.settlement.persistence.projection.SellerStatementRow;
 import com.atlas.settlement.persistence.projection.SellerStatementTotals;
 import java.sql.Timestamp;

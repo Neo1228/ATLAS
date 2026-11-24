@@ -1,4 +1,4 @@
-package com.atlas.settlement.persistence.projection;
+package com.atlas.settlement.model;
 
 import java.math.BigInteger;
 

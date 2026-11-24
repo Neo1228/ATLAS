@@ -43,6 +43,7 @@
   - 다른 모듈이 import하는 공개 어휘(상태 enum, 저장 계약의 값 타입)는 `model`, 내부(DB 행, SQL 결과)는 `persistence.*`다. 안쪽 이름(`persistence`)을 바깥이 쓰지 않는다.
   - application의 `controller` 하위 패키지는 엔드포인트가 속한 도메인 모듈 이름이다(호출자 `seller`, `buyer`로 나누지 않는다). 이 규칙은 `PackageLayoutRulesTest`가 검사한다.
   - 계약 하나에 구현이 하나고 로직 없이 위임만 하는 클래스는 만들지 않는다. SQL 구현이 계약을 직접 구현한다(`JdbcPayoutDispatchStore`).
+  - 도메인 모듈의 공개 `service` 패키지에는 다른 모듈이 부르는 계약(interface)과 값 타입만 둔다. 구현과 한 모듈 안에서만 쓰는 구체 클래스(정책, 암호화, 메일 발송 같은 내부 협력자)는 `service.impl`에 둔다. 이는 Spring Modulith의 "공개 인터페이스와 내부 구현 컴포넌트" 구분과 같다. `ModuleBoundaryTest.domainModulesExposeServicesOnlyAsContracts`가 검사한다. 구현 기술이 이름에 드러나는 구현은 기술을 앞에 붙인다(`CsvPayPalBalanceReportParser`).
 
 ## 검증과 한계
 

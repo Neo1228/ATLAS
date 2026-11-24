@@ -17,7 +17,7 @@ import com.atlas.catalog.service.SellerService;
 import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.provider.exchange.CachingExchangeRateProvider;
-import com.atlas.payment.service.FxConversionService;
+import com.atlas.payment.service.impl.FxConversionService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;

@@ -5,7 +5,6 @@ import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
-import com.atlas.payment.service.FxConversionService;
 import java.time.Clock;
 import java.time.Duration;
 import org.springframework.transaction.PlatformTransactionManager;

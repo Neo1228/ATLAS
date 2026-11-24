@@ -132,6 +132,24 @@ class ModuleBoundaryTest {
                 .importPackages("com.atlas");
     }
 
+    @Test
+    void domainModulesExposeServicesOnlyAsContracts() {
+        // 다른 모듈이 소비하는 서비스는 interface + *Impl이다(구체 클래스를 노출하면 소비자가 구현에 묶이고 mock·교체가 어렵다).
+        // 공개 service 패키지에 공개 구체 클래스가 있으면 이 규칙에 걸린다. 한 모듈 안에서만 쓰는 구체 클래스는 package-private으로 둔다.
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideInAPackage("com.atlas..service")
+                .and().resideOutsideOfPackage("com.atlas.application..")
+                .and().arePublic()
+                .and().areTopLevelClasses()
+                .and().areNotInterfaces()
+                .and().areNotRecords()
+                .and().areNotEnums()
+                .should().bePublic()
+                .allowEmptyShould(true)
+                .check(source);
+    }
+
     private static void enforceAllowedDependencies(JavaClasses source, String packagePattern, String... allowedPackages) {
         ArchRule rule = classes().that().resideInAPackage(packagePattern)
                 .should().onlyDependOnClassesThat().resideInAnyPackage(allowedPackages);

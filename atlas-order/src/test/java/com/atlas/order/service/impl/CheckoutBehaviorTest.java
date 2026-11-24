@@ -37,7 +37,6 @@ import com.atlas.order.repository.BuyerLockRepository;
 import com.atlas.order.repository.ExpirySweepLockRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
-import com.atlas.order.service.CheckoutIdempotencyKeys;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;

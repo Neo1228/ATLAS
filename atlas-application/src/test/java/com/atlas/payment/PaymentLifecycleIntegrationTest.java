@@ -47,7 +47,7 @@ import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
-import com.atlas.payment.service.FxConversionService;
+import com.atlas.payment.service.impl.FxConversionService;
 import com.atlas.payment.service.PayPalWebhookOperatorService;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.service.impl.OwnerLockRegistry;

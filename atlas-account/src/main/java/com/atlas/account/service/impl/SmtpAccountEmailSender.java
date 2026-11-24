@@ -1,10 +1,11 @@
-package com.atlas.account.service;
+package com.atlas.account.service.impl;
 
+import com.atlas.account.service.AccountEmailSender;
+import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
-import java.net.URI;
 
 @Component
 public class SmtpAccountEmailSender implements AccountEmailSender {

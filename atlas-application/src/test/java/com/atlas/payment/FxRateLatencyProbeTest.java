@@ -3,7 +3,7 @@ package com.atlas.payment;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.payment.provider.exchange.CachingExchangeRateProvider;
-import com.atlas.payment.service.FxConversionService;
+import com.atlas.payment.service.impl.FxConversionService;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

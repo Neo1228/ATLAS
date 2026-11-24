@@ -9,6 +9,7 @@ import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
+import com.atlas.settlement.service.impl.CsvPayPalBalanceReportParser;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,7 +38,7 @@ class PayPalBalanceReportReconciliationServiceTest {
     private final PayPalBalanceReportReconciliationService service = new PayPalBalanceReportReconciliationService(
             recordIds -> recordIds.stream().flatMap(id -> candidatesByRecordId
                     .getOrDefault(id, List.of()).stream()).toList(),
-            new PayPalBalanceReportParser());
+            new CsvPayPalBalanceReportParser());
 
     @Test
     void matchesCaptureAndRefundByExactProviderIdsAndTransactionFacts() {

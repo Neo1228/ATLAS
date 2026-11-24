@@ -15,7 +15,6 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.service.FxConversionService;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;

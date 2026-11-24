@@ -16,7 +16,6 @@ import com.atlas.payment.dto.request.PaymentRefundRequest;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
-import com.atlas.payment.service.FxConversionService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;

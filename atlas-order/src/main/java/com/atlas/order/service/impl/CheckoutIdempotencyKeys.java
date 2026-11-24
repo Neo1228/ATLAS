@@ -1,4 +1,4 @@
-package com.atlas.order.service;
+package com.atlas.order.service.impl;
 
 /**
  * checkout Idempotency-Key 상한.
