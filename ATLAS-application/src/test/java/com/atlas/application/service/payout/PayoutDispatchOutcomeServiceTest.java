@@ -11,7 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.atlas.settlement.service.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.math.BigDecimal;

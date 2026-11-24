@@ -1,5 +1,10 @@
 package com.atlas.settlement.service;
 
+import com.atlas.settlement.model.PayPalBalanceReportDailyTrend;
+import com.atlas.settlement.model.PayPalBalanceReportDisposition;
+import com.atlas.settlement.model.PayPalBalanceReportExceptionRow;
+import com.atlas.settlement.model.PayPalBalanceReportRow;
+import com.atlas.settlement.model.PayPalBalanceReportRun;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;

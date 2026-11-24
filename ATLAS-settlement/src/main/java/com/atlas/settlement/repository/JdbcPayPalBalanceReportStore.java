@@ -1,11 +1,11 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.model.PayPalBalanceReportDailyTrend;
+import com.atlas.settlement.model.PayPalBalanceReportDisposition;
+import com.atlas.settlement.model.PayPalBalanceReportExceptionRow;
+import com.atlas.settlement.model.PayPalBalanceReportRow;
+import com.atlas.settlement.model.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
-import com.atlas.settlement.service.PayPalBalanceReportDailyTrend;
-import com.atlas.settlement.service.PayPalBalanceReportDisposition;
-import com.atlas.settlement.service.PayPalBalanceReportExceptionRow;
-import com.atlas.settlement.service.PayPalBalanceReportRow;
-import com.atlas.settlement.service.PayPalBalanceReportRun;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.ArrayList;

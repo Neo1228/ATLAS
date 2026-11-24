@@ -6,8 +6,8 @@ import com.atlas.application.dto.response.PayPalBalanceReportReconciliationRespo
 import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.payment.service.PayPalReportMatchQuery;
-import com.atlas.settlement.service.ParsedPayPalReport;
-import com.atlas.settlement.service.ParsedPayPalReportRow;
+import com.atlas.settlement.model.ParsedPayPalReport;
+import com.atlas.settlement.model.ParsedPayPalReportRow;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
 import java.math.BigDecimal;
 import java.security.MessageDigest;

@@ -1,9 +1,9 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.model.PayoutDispatchMetrics;
+import com.atlas.settlement.model.PayoutDispatchPlan;
+import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.service.PayoutDispatchStore;
-import com.atlas.settlement.service.PayoutDispatchMetrics;
-import com.atlas.settlement.service.PayoutDispatchPlan;
-import com.atlas.settlement.service.PayoutDispatchRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;

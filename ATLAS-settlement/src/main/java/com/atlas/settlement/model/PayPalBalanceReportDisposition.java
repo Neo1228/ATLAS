@@ -1,4 +1,4 @@
-package com.atlas.settlement.service;
+package com.atlas.settlement.model;
 
 import java.time.Instant;
 import java.util.Objects;
