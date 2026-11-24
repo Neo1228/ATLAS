@@ -339,7 +339,7 @@ public class LocationReservationRepository {
         }
         if (currentLocationRow != null) locations.add(toSnapshot(currentLocationRow, items));
         return new ReservationWorkflowSnapshot(header.workflowId(), header.orderId(), header.idempotencyKey(),
-                header.state(), header.attemptCount(), header.nextAttemptAt(), header.createdAt(),
+                LocationReservationWorkflowState.valueOf(header.state()), header.attemptCount(), header.nextAttemptAt(), header.createdAt(),
                 header.updatedAt(), header.lastErrorCode(), locations);
     }
 
@@ -348,7 +348,7 @@ public class LocationReservationRepository {
     }
 
     private static ReservationWorkflowLocationSnapshot toSnapshot(LocationItemRow row, List<ReservationWorkflowItemRecord> items) {
-        return new ReservationWorkflowLocationSnapshot(row.locationId(), row.idempotencyKey(), row.state(), row.reservationId(),
+        return new ReservationWorkflowLocationSnapshot(row.locationId(), row.idempotencyKey(), LocationReservationState.valueOf(row.state()), row.reservationId(),
                 row.remoteExpiresAt(), row.lastErrorCode(), row.updatedAt(), List.copyOf(items));
     }
 

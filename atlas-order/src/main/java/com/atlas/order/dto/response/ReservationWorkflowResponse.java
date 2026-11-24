@@ -1,5 +1,7 @@
 package com.atlas.order.dto.response;
 
+import com.atlas.order.model.LocationReservationState;
+import com.atlas.order.model.LocationReservationWorkflowState;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -12,14 +14,14 @@ public final class ReservationWorkflowResponse {
             UUID workflowId,
             UUID orderId,
             String idempotencyKey,
-            String status,
+            LocationReservationWorkflowState status,
             List<LocationResult> locations,
             Instant createdAt,
             Instant updatedAt,
             boolean replayed) {
         public record LocationResult(
                 UUID fulfillmentLocationId,
-                String status,
+                LocationReservationState status,
                 UUID reservationId,
                 Instant expiresAt,
                 String lastErrorCode,

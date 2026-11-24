@@ -191,9 +191,9 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(workflowId);
         if (workflow == null) throw new OrderException(OrderException.Code.NOT_FOUND,
                 "Inventory reservation workflow not found");
-        if (workflow.state().equals(LocationReservationWorkflowState.CANCELLED.name())
-                || workflow.state().equals(LocationReservationWorkflowState.FAILED.name())
-                || workflow.state().equals(LocationReservationWorkflowState.NEEDS_REVIEW.name())
+        if (workflow.state() == LocationReservationWorkflowState.CANCELLED
+                || workflow.state() == LocationReservationWorkflowState.FAILED
+                || workflow.state() == LocationReservationWorkflowState.NEEDS_REVIEW
                 || cancelRequested(workflow)) {
             // 이미 요청된 취소는 recovery worker가 backoff에 따라 재시도하므로 반복 호출이 원격 호출을 늘리지 않는다.
             return response(workflow, true);
@@ -212,8 +212,8 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(workflowId);
         if (workflow == null) throw new OrderException(OrderException.Code.NOT_FOUND,
                 "Inventory reservation workflow not found");
-        if (workflow.state().equals(LocationReservationWorkflowState.CLAIMED.name())) return ClaimOutcome.CLAIMED;
-        if (!workflow.state().equals(LocationReservationWorkflowState.RESERVED.name())) {
+        if (workflow.state() == LocationReservationWorkflowState.CLAIMED) return ClaimOutcome.CLAIMED;
+        if (workflow.state() != LocationReservationWorkflowState.RESERVED) {
             return terminal(workflow.state()) || cancelRequested(workflow)
                     ? ClaimOutcome.REJECTED : ClaimOutcome.PENDING;
         }
@@ -223,7 +223,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         if (leaseToken == null) return ClaimOutcome.PENDING;
         ReservationWorkflowLease lease = new ReservationWorkflowLease(workflowId, leaseToken, leaseUntil);
         for (ReservationWorkflowLocationSnapshot location : workflow.locations()) {
-            if (location.state().equals(LocationReservationState.CLAIMED.name())) continue;
+            if (location.state() == LocationReservationState.CLAIMED) continue;
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return ClaimOutcome.PENDING;
             try {
@@ -292,31 +292,31 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     private void process(ReservationWorkflowLease lease) {
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(lease.workflowId());
         if (workflow == null) return;
-        if (workflow.state().equals(LocationReservationWorkflowState.COMPENSATING.name())
-                || workflow.state().equals(LocationReservationWorkflowState.COMPENSATION_REQUIRED.name())
-                || workflow.state().equals(LocationReservationWorkflowState.CANCEL_PENDING.name())) {
+        if (workflow.state() == LocationReservationWorkflowState.COMPENSATING
+                || workflow.state() == LocationReservationWorkflowState.COMPENSATION_REQUIRED
+                || workflow.state() == LocationReservationWorkflowState.CANCEL_PENDING) {
             compensate(workflow, lease);
             return;
         }
-        if (workflow.state().equals(LocationReservationWorkflowState.RESERVED.name())
-                || workflow.state().equals(LocationReservationWorkflowState.FAILED.name())
-                || workflow.state().equals(LocationReservationWorkflowState.NEEDS_REVIEW.name())) {
+        if (workflow.state() == LocationReservationWorkflowState.RESERVED
+                || workflow.state() == LocationReservationWorkflowState.FAILED
+                || workflow.state() == LocationReservationWorkflowState.NEEDS_REVIEW) {
             repository.finishWorkflow(workflow.workflowId(), lease.leaseToken(),
-                    LocationReservationWorkflowState.valueOf(workflow.state()), workflow.lastErrorCode(),
+                    workflow.state(), workflow.lastErrorCode(),
                     workflow.nextAttemptAt(), clock.instant());
             return;
         }
 
-        if ((workflow.state().equals(LocationReservationWorkflowState.PENDING.name())
-                || workflow.state().equals(LocationReservationWorkflowState.RETRY_PENDING.name()))
+        if ((workflow.state() == LocationReservationWorkflowState.PENDING
+                || workflow.state() == LocationReservationWorkflowState.RETRY_PENDING)
                 && workflow.locations().stream().allMatch(location ->
-                location.state().equals(LocationReservationState.PENDING.name()))) {
+                location.state() == LocationReservationState.PENDING)) {
             processPendingWorkflow(workflow, lease);
             return;
         }
 
         for (ReservationWorkflowLocationSnapshot location : workflow.locations()) {
-            if (location.state().equals(LocationReservationState.RESERVED.name())) {
+            if (location.state() == LocationReservationState.RESERVED) {
                 if (reservationUsable(location, clock.instant())) continue;
                 repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
                         location.fulfillmentLocationId(), LocationReservationState.RELEASE_PENDING,
@@ -324,11 +324,11 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 startCompensation(workflow, lease, "RESERVATION_EXPIRED");
                 return;
             }
-            if (location.state().equals(LocationReservationState.FAILED.name())) {
+            if (location.state() == LocationReservationState.FAILED) {
                 startCompensation(workflow, lease, location.lastErrorCode());
                 return;
             }
-            if (location.state().equals(LocationReservationState.RELEASED.name())) continue;
+            if (location.state() == LocationReservationState.RELEASED) continue;
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return;
             try {
@@ -374,7 +374,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         }
         ReservationWorkflowSnapshot current = repository.findByWorkflowId(workflow.workflowId());
         for (ReservationWorkflowLocationSnapshot location : current.locations()) {
-            if (location.state().equals(LocationReservationState.RESERVED.name())
+            if (location.state() == LocationReservationState.RESERVED
                     && !reservationUsable(location, clock.instant())) {
                 repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
                         location.fulfillmentLocationId(), LocationReservationState.RELEASE_PENDING,
@@ -511,12 +511,12 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     private void compensate(ReservationWorkflowSnapshot workflow, ReservationWorkflowLease lease) {
         if (workflow == null) return;
         for (ReservationWorkflowLocationSnapshot location : workflow.locations()) {
-            if (location.state().equals(LocationReservationState.FAILED.name())
-                    || location.state().equals(LocationReservationState.RELEASED.name())) continue;
+            if (location.state() == LocationReservationState.FAILED
+                    || location.state() == LocationReservationState.RELEASED) continue;
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return;
             try {
-                if (location.state().equals(LocationReservationState.CLAIMED.name())) {
+                if (location.state() == LocationReservationState.CLAIMED) {
                     // 매입 전 claim은 판매가 확정되지 않았으므로 판매 가능 수량으로 되돌린다.
                     inventory.restore(location.fulfillmentLocationId(), location.reservationId());
                 } else {
@@ -592,7 +592,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     }
 
     private boolean cancelRequested(ReservationWorkflowSnapshot workflow) {
-        return workflow.state().equals(LocationReservationWorkflowState.CANCEL_PENDING.name());
+        return workflow.state() == LocationReservationWorkflowState.CANCEL_PENDING;
     }
 
     private void finish(ReservationWorkflowSnapshot workflow, UUID leaseToken, LocationReservationWorkflowState state,
@@ -700,12 +700,12 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 workflow.updatedAt(), replayed);
     }
 
-    private boolean terminal(String state) {
-        return state.equals(LocationReservationWorkflowState.RESERVED.name())
-                || state.equals(LocationReservationWorkflowState.FAILED.name())
-                || state.equals(LocationReservationWorkflowState.CANCELLED.name())
-                || state.equals(LocationReservationWorkflowState.CLAIMED.name())
-                || state.equals(LocationReservationWorkflowState.NEEDS_REVIEW.name());
+    private boolean terminal(LocationReservationWorkflowState state) {
+        return state == LocationReservationWorkflowState.RESERVED
+                || state == LocationReservationWorkflowState.FAILED
+                || state == LocationReservationWorkflowState.CANCELLED
+                || state == LocationReservationWorkflowState.CLAIMED
+                || state == LocationReservationWorkflowState.NEEDS_REVIEW;
     }
 
     private void validateIdempotencyKey(String idempotencyKey) {

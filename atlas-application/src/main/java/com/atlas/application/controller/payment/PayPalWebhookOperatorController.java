@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/internal/payment/paypal/webhook-retries")
@@ -32,13 +31,7 @@ public class PayPalWebhookOperatorController {
     public WebhookRetryResponse.ExhaustedRetryPage exhausted(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        int boundedSize = size <= 0
-                ? PayPalWebhookOperatorService.DEFAULT_PAGE_SIZE
-                : Math.min(size, PayPalWebhookOperatorService.MAX_PAGE_SIZE);
-        if (page < 0 || (long) page * boundedSize > PayPalWebhookOperatorService.MAX_PAGE_OFFSET) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page offset is too large");
-        }
-        return service.listExhausted(page, boundedSize);
+        return service.listExhausted(page, size);
     }
 
     @PostMapping("/{eventId}/requeue")

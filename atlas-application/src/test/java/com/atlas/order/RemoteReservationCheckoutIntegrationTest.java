@@ -7,33 +7,34 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.order.dto.request.OrderRequest;
-import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.catalog.service.SellerService;
 import com.atlas.catalog.service.SellerCouponService;
-import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.SellerCouponRequest;
-import com.atlas.order.service.CartCheckoutService;
-import java.time.Duration;
-import java.util.List;
+import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
+import com.atlas.inventory.service.InventoryService;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.order.dto.request.SellerCouponRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.model.BuyerCheckoutState;
+import com.atlas.order.model.LocationReservationWorkflowState;
+import com.atlas.order.persistence.projection.LocationRestock;
+import com.atlas.order.repository.LocationRestockRepository;
+import com.atlas.order.service.CartCheckoutService;
+import com.atlas.order.service.CheckoutFinalizationService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.LocationReservationService;
-import com.atlas.order.service.CheckoutFinalizationService;
 import com.atlas.order.service.LocationRestockService;
-import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderFulfillmentService;
+import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderShipmentService;
-import com.atlas.order.repository.LocationRestockRepository;
-import com.atlas.order.persistence.projection.LocationRestock;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
@@ -392,7 +393,7 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
         assertThat(coordinator.claim(workflowId)).isEqualTo(LocationReservationService.ClaimOutcome.CLAIMED);
         INVENTORY.enqueue(transitioned(reservationId, "RELEASED"));
 
-        assertThat(coordinator.cancel(workflowId).status()).isEqualTo("CANCELLED");
+        assertThat(coordinator.cancel(workflowId).status()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
 
         assertThat(takeCommand(5, TimeUnit.SECONDS).getPath()).endsWith("/claim");
         assertThat(takeCommand(5, TimeUnit.SECONDS).getPath())

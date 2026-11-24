@@ -34,11 +34,11 @@ public class LocationReservationController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody LocationReservationRequest request) {
         ReservationWorkflowResponse.LocationReservation response = coordinator.submit(idempotencyKey, request);
-        if (response.status().equals(LocationReservationWorkflowState.RESERVED.name())) {
+        if (response.status() == LocationReservationWorkflowState.RESERVED) {
             return ResponseEntity.status(response.replayed() ? HttpStatus.OK : HttpStatus.CREATED).body(response);
         }
-        if (response.status().equals(LocationReservationWorkflowState.FAILED.name())
-                || response.status().equals(LocationReservationWorkflowState.NEEDS_REVIEW.name())) {
+        if (response.status() == LocationReservationWorkflowState.FAILED
+                || response.status() == LocationReservationWorkflowState.NEEDS_REVIEW) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
@@ -64,18 +64,18 @@ public class LocationReservationController {
     @PostMapping("/{workflowId}/reconcile")
     public ResponseEntity<ReservationWorkflowResponse.LocationReservation> reconcile(@PathVariable UUID workflowId) {
         ReservationWorkflowResponse.LocationReservation response = coordinator.retry(workflowId);
-        return ResponseEntity.status(response.status().equals(LocationReservationWorkflowState.RESERVED.name())
+        return ResponseEntity.status(response.status() == LocationReservationWorkflowState.RESERVED
                 ? HttpStatus.OK : HttpStatus.ACCEPTED).body(response);
     }
 
     @PostMapping("/{workflowId}/cancel")
     public ResponseEntity<ReservationWorkflowResponse.LocationReservation> cancel(@PathVariable UUID workflowId) {
         ReservationWorkflowResponse.LocationReservation response = coordinator.cancel(workflowId);
-        if (response.status().equals(LocationReservationWorkflowState.CANCELLED.name())
-                || response.status().equals(LocationReservationWorkflowState.FAILED.name())) {
+        if (response.status() == LocationReservationWorkflowState.CANCELLED
+                || response.status() == LocationReservationWorkflowState.FAILED) {
             return ResponseEntity.ok(response);
         }
-        if (response.status().equals(LocationReservationWorkflowState.NEEDS_REVIEW.name())) {
+        if (response.status() == LocationReservationWorkflowState.NEEDS_REVIEW) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
