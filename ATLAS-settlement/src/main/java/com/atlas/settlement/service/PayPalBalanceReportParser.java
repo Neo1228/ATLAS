@@ -1,8 +1,8 @@
 package com.atlas.settlement.service;
 
-import com.atlas.settlement.service.ParsedPayPalReport;
-import com.atlas.settlement.service.ParsedPayPalReportRow;
 import com.atlas.settlement.exception.SettlementException;
+import com.atlas.settlement.model.ParsedPayPalReport;
+import com.atlas.settlement.model.ParsedPayPalReportRow;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;

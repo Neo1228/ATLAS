@@ -1,7 +1,7 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.model.SellerPayoutProfile;
 import com.atlas.settlement.service.SellerPayoutProfileStore;
-import com.atlas.settlement.service.SellerPayoutProfile;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;

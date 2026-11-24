@@ -10,12 +10,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.settlement.service.PayoutDispatchMetrics;
-import com.atlas.settlement.service.PayoutDispatchRecord;
-import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsProvider;
+import com.atlas.settlement.model.PayoutDispatchMetrics;
+import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;

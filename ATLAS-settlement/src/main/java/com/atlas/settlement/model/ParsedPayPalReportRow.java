@@ -1,4 +1,4 @@
-package com.atlas.settlement.service;
+package com.atlas.settlement.model;
 
 import java.math.BigDecimal;
 

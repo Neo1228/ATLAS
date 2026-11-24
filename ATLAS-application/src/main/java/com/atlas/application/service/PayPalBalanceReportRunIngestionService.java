@@ -1,10 +1,10 @@
 package com.atlas.application.service;
 
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.RowResult;
 import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.Status;
-import com.atlas.settlement.service.PayPalBalanceReportRow;
-import com.atlas.settlement.service.PayPalBalanceReportRun;
+import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
+import com.atlas.settlement.model.PayPalBalanceReportRow;
+import com.atlas.settlement.model.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
