@@ -35,7 +35,7 @@ import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
-import com.atlas.payment.persistence.projection.ClaimedRetry;
+import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
 import com.atlas.payment.persistence.projection.WebhookRetryEvent;
 import com.atlas.payment.persistence.state.PaymentRefundState;
 import com.atlas.payment.persistence.state.PaymentState;
@@ -1046,7 +1046,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            Callable<List<ClaimedRetry>> claim = () -> {
+            Callable<List<ClaimedWebhookRetry>> claim = () -> {
                 ready.countDown();
                 start.await();
                 return retryRepository.claimDue();
@@ -1058,7 +1058,7 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             int claims = ((List<?>) first.get()).size() + ((List<?>) second.get()).size();
             assertThat(claims).isEqualTo(1);
 
-            ClaimedRetry claimed =
+            ClaimedWebhookRetry claimed =
                     retryRepository.claimDue().stream().findFirst().orElse(null);
             assertThat(claimed).isNull();
             String leaseOwner = jdbc.queryForObject(

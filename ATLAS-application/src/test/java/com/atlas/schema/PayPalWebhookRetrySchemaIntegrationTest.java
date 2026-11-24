@@ -9,8 +9,8 @@ import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.persistence.projection.ClaimedRetry;
-import com.atlas.payment.persistence.projection.PollResult;
+import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
+import com.atlas.payment.persistence.projection.WebhookRetryPollResult;
 import com.atlas.payment.persistence.state.WebhookRetryFailure;
 import com.atlas.payment.repository.PayPalWebhookRetryRepository;
 import com.atlas.payment.service.PaymentService;
@@ -114,10 +114,10 @@ class PayPalWebhookRetrySchemaIntegrationTest {
     @Test
     void expiredLeaseCanBeReclaimedButStaleWorkerCannotChangeItsHistoryOrQueue() {
         insertQueueRow("evt-lease", 0);
-        ClaimedRetry first = repository.claimDue().get(0);
+        ClaimedWebhookRetry first = repository.claimDue().get(0);
         jdbc.update("UPDATE paypal_webhook_retry SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE event_id = ?",
                 "evt-lease");
-        ClaimedRetry second = repository.claimDue().get(0);
+        ClaimedWebhookRetry second = repository.claimDue().get(0);
         assertThat(second.attempt()).isEqualTo(2);
         assertThat(second.leaseOwner()).isNotEqualTo(first.leaseOwner());
         assertThat(jdbc.queryForObject("""
@@ -154,10 +154,10 @@ class PayPalWebhookRetrySchemaIntegrationTest {
         CountDownLatch releaseFirst = new CountDownLatch(1);
         ExecutorService claimers = Executors.newFixedThreadPool(2);
         try {
-            Future<ClaimedRetry> firstClaim = claimers.submit(() -> {
+            Future<ClaimedWebhookRetry> firstClaim = claimers.submit(() -> {
                 TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
                 return transaction.execute(status -> {
-                    ClaimedRetry claimed = repository.claimDue().get(0);
+                    ClaimedWebhookRetry claimed = repository.claimDue().get(0);
                     firstClaimed.countDown();
                     try {
                         if (!releaseFirst.await(10, TimeUnit.SECONDS)) {
@@ -173,11 +173,11 @@ class PayPalWebhookRetrySchemaIntegrationTest {
             assertThat(firstClaimed.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(firstClaim.isDone()).isFalse();
 
-            Future<List<ClaimedRetry>> secondClaim = claimers.submit(repository::claimDue);
+            Future<List<ClaimedWebhookRetry>> secondClaim = claimers.submit(repository::claimDue);
             assertThat(secondClaim.get(5, TimeUnit.SECONDS)).isEmpty();
             releaseFirst.countDown();
 
-            ClaimedRetry claimed = firstClaim.get(5, TimeUnit.SECONDS);
+            ClaimedWebhookRetry claimed = firstClaim.get(5, TimeUnit.SECONDS);
             assertThat(claimed.attempt()).isEqualTo(1);
             assertThat(historyCount("evt-concurrent-claim")).isEqualTo(1);
             assertThat(jdbc.queryForObject(
@@ -210,13 +210,13 @@ class PayPalWebhookRetrySchemaIntegrationTest {
         });
         assertThat(plan).anyMatch(line -> line.contains("paypal_webhook_retry_reaper_idx"));
 
-        PollResult first = repository.pollDue();
+        WebhookRetryPollResult first = repository.pollDue();
         assertThat(first.reapedCount()).isEqualTo(8);
         assertThat(first.claimed()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE state = 'EXHAUSTED'",
                 Integer.class)).isEqualTo(8);
 
-        PollResult second = repository.pollDue();
+        WebhookRetryPollResult second = repository.pollDue();
         assertThat(second.reapedCount()).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paypal_webhook_retry WHERE state = 'EXHAUSTED'",
                 Integer.class)).isEqualTo(rowCount);
@@ -227,18 +227,18 @@ class PayPalWebhookRetrySchemaIntegrationTest {
     void queueRowWithPriorAttemptsAndRecreatedEventsKeepDistinctClaims() {
         insertQueueRow("evt-legacy", 3);
         assertThat(historyCount("evt-legacy")).isZero();
-        ClaimedRetry legacy = repository.claimDue().get(0);
+        ClaimedWebhookRetry legacy = repository.claimDue().get(0);
         assertThat(legacy.attempt()).isEqualTo(4);
         repository.complete("evt-legacy", legacy.leaseOwner());
         assertThat(historyCount("evt-legacy")).isEqualTo(1);
 
         insertQueueRow("evt-legacy", 0);
-        ClaimedRetry recreated = repository.claimDue().get(0);
+        ClaimedWebhookRetry recreated = repository.claimDue().get(0);
         assertThat(recreated.attempt()).isEqualTo(1);
         repository.complete("evt-legacy", recreated.leaseOwner());
         assertThat(historyCount("evt-legacy")).isEqualTo(2);
         insertQueueRow("evt-legacy", 0);
-        ClaimedRetry recreatedAgain = repository.claimDue().get(0);
+        ClaimedWebhookRetry recreatedAgain = repository.claimDue().get(0);
         assertThat(recreatedAgain.attempt()).isEqualTo(1);
         repository.complete("evt-legacy", recreatedAgain.leaseOwner());
         assertThat(historyCount("evt-legacy")).isEqualTo(3);
@@ -248,7 +248,7 @@ class PayPalWebhookRetrySchemaIntegrationTest {
     void workerRecreationAcknowledgesDuplicateFromPersistentRetryQueue() {
         insertQueueRow("evt-worker-recreation", 0);
 
-        ClaimedRetry initial = repository.claimDue().get(0);
+        ClaimedWebhookRetry initial = repository.claimDue().get(0);
         assertThat(initial.attempt()).isEqualTo(1);
         assertThat(repository.reschedule("evt-worker-recreation", initial.attempt(), initial.leaseOwner(),
                 WebhookRetryFailure.TRANSIENT_ERROR,

@@ -6,8 +6,8 @@ import com.atlas.application.dto.response.PayPalBalanceReportReconciliationRespo
 import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.payment.service.PayPalReportMatchQuery;
-import com.atlas.settlement.dto.response.ParsedBalanceReportResponse;
-import com.atlas.settlement.dto.response.ParsedBalanceReportRowResponse;
+import com.atlas.settlement.service.ParsedPayPalReport;
+import com.atlas.settlement.service.ParsedPayPalReportRow;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
 import java.math.BigDecimal;
 import java.security.MessageDigest;
@@ -41,8 +41,8 @@ public class PayPalBalanceReportReconciliationService {
     }
 
     public PayPalBalanceReportReconciliationResponse reconcile(byte[] reportContent) {
-        ParsedBalanceReportResponse report = parser.parse(reportContent);
-        List<ParsedBalanceReportRowResponse> rows = report.rows();
+        ParsedPayPalReport report = parser.parse(reportContent);
+        List<ParsedPayPalReportRow> rows = report.rows();
         Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts = providerFacts(rows);
         Map<String, List<Integer>> occurrences = new HashMap<>();
         for (int index = 0; index < rows.size(); index++) {
@@ -55,7 +55,7 @@ public class PayPalBalanceReportReconciliationService {
         int duplicate = 0;
         int mismatch = 0;
         for (int index = 0; index < rows.size(); index++) {
-            ParsedBalanceReportRowResponse row = rows.get(index);
+            ParsedPayPalReportRow row = rows.get(index);
             List<Integer> sameRecordIds = occurrences.get(row.recordId());
             RowResult result = sameRecordIds.size() > 1
                     ? repeatedRecord(row, index + 1, sameRecordIds, rows)
@@ -75,9 +75,9 @@ public class PayPalBalanceReportReconciliationService {
                         mismatch), results);
     }
 
-    private Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts(List<ParsedBalanceReportRowResponse> rows) {
+    private Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts(List<ParsedPayPalReportRow> rows) {
         Set<String> recordIds = new HashSet<>();
-        for (ParsedBalanceReportRowResponse row : rows) {
+        for (ParsedPayPalReportRow row : rows) {
             String type = normalize(row.recordType());
             if (SALE.equals(type) || REFUND.equals(type)) addIfPresent(recordIds, row.recordId());
             if (REFUND.equals(type)) addIfPresent(recordIds, row.relatedRecordId());
@@ -95,17 +95,17 @@ public class PayPalBalanceReportReconciliationService {
         if (value != null && !value.isBlank()) ids.add(value);
     }
 
-    private static RowResult repeatedRecord(ParsedBalanceReportRowResponse row, int rowNumber,
-            List<Integer> sameRecordIds, List<ParsedBalanceReportRowResponse> rows) {
-        ParsedBalanceReportRowResponse first = rows.get(sameRecordIds.getFirst());
+    private static RowResult repeatedRecord(ParsedPayPalReportRow row, int rowNumber,
+            List<Integer> sameRecordIds, List<ParsedPayPalReportRow> rows) {
+        ParsedPayPalReportRow first = rows.get(sameRecordIds.getFirst());
         boolean conflicting = sameRecordIds.stream().map(rows::get)
                 .anyMatch(other -> !sameReportFacts(first, other));
         return result(row, rowNumber, conflicting ? Status.MISMATCH : Status.DUPLICATE,
                 conflicting ? "DUPLICATE_REPORT_RECORD_FACTS_CONFLICT" : "DUPLICATE_REPORT_RECORD_ID");
     }
 
-    private static boolean sameReportFacts(ParsedBalanceReportRowResponse left,
-            ParsedBalanceReportRowResponse right) {
+    private static boolean sameReportFacts(ParsedPayPalReportRow left,
+            ParsedPayPalReportRow right) {
         return normalize(left.recordType()).equals(normalize(right.recordType()))
                 && normalize(left.recordSubtype()).equals(normalize(right.recordSubtype()))
                 && normalize(left.relatedRecordId()).equals(normalize(right.relatedRecordId()))
@@ -121,7 +121,7 @@ public class PayPalBalanceReportReconciliationService {
         return left == null ? right == null : right != null && left.compareTo(right) == 0;
     }
 
-    private static RowResult classify(ParsedBalanceReportRowResponse row, int rowNumber,
+    private static RowResult classify(ParsedPayPalReportRow row, int rowNumber,
             Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts) {
         String type = normalize(row.recordType());
         if (SALE.equals(type)) return classifySale(row, rowNumber, providerFacts);
@@ -132,7 +132,7 @@ public class PayPalBalanceReportReconciliationService {
         return result(row, rowNumber, Status.UNMATCHED, "UNSUPPORTED_PROVIDER_RECORD_TYPE");
     }
 
-    private static RowResult classifySale(ParsedBalanceReportRowResponse row, int rowNumber,
+    private static RowResult classifySale(ParsedPayPalReportRow row, int rowNumber,
             Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts) {
         List<PayPalReportMatchCandidateResponse> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
         if (candidates.isEmpty()) {
@@ -154,7 +154,7 @@ public class PayPalBalanceReportReconciliationService {
         return validateFacts(row, rowNumber, candidate, false, "EXACT_CAPTURE_ID_AND_AMOUNT_CURRENCY_MATCH");
     }
 
-    private static RowResult classifyRefund(ParsedBalanceReportRowResponse row, int rowNumber,
+    private static RowResult classifyRefund(ParsedPayPalReportRow row, int rowNumber,
             Map<String, List<PayPalReportMatchCandidateResponse>> providerFacts) {
         List<PayPalReportMatchCandidateResponse> candidates = providerFacts.getOrDefault(row.recordId(), List.of());
         if (candidates.isEmpty()) {
@@ -191,7 +191,7 @@ public class PayPalBalanceReportReconciliationService {
         return validateFacts(row, rowNumber, refund, true, "EXACT_REFUND_AND_CAPTURE_LINK_MATCH");
     }
 
-    private static RowResult validateFacts(ParsedBalanceReportRowResponse row, int rowNumber,
+    private static RowResult validateFacts(ParsedPayPalReportRow row, int rowNumber,
             PayPalReportMatchCandidateResponse candidate, boolean refund, String matchedReason) {
         if (candidate.providerAmountMinor() == null || candidate.providerAmountMinor() <= 0
                 || candidate.providerCurrency() == null || candidate.providerCurrency().isBlank()) {
@@ -206,7 +206,7 @@ public class PayPalBalanceReportReconciliationService {
         return result(row, rowNumber, Status.MATCHED, matchedReason);
     }
 
-    private static RowResult result(ParsedBalanceReportRowResponse row, int rowNumber, Status status,
+    private static RowResult result(ParsedPayPalReportRow row, int rowNumber, Status status,
             String reasonCode) {
         return new RowResult(rowNumber, row.recordId(), row.relatedRecordId(), row.originalRecordId(),
                 row.recordType(), row.recordSubtype(), row.currency(), row.grossAmount(),

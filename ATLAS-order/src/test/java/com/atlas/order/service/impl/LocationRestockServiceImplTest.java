@@ -11,9 +11,9 @@ import static org.mockito.Mockito.when;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.state.LocationReservationWorkflowState;
 import com.atlas.order.repository.LocationReservationRepository;
-import com.atlas.order.persistence.projection.WorkflowItemRecord;
-import com.atlas.order.persistence.projection.WorkflowLocationSnapshot;
-import com.atlas.order.persistence.projection.WorkflowSnapshot;
+import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
+import com.atlas.order.persistence.projection.ReservationWorkflowLocationSnapshot;
+import com.atlas.order.persistence.projection.ReservationWorkflowSnapshot;
 import com.atlas.order.repository.LocationRestockRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -40,7 +40,7 @@ class LocationRestockServiceImplTest {
         UUID locationB = UUID.randomUUID();
         UUID reservationA = UUID.randomUUID();
         UUID reservationB = UUID.randomUUID();
-        WorkflowSnapshot workflow = workflow(orderId,
+        ReservationWorkflowSnapshot workflow = workflow(orderId,
                 location(locationA, reservationA, sellerId, "sku-a", 2),
                 location(locationB, reservationB, sellerId, "sku-a", 1));
         when(workflows.findByWorkflowId(workflowId)).thenReturn(workflow);
@@ -50,9 +50,9 @@ class LocationRestockServiceImplTest {
                 Map.of(locationA, Map.of("sku-a", 1), locationB, Map.of("sku-a", 1)));
 
         verify(restocks).insert(LocationRestockServiceImpl.restockKey(refundId), locationA, refundId, orderId,
-                workflowId, reservationA, List.of(new WorkflowItemRecord(sellerId, "sku-a", 1)), NOW);
+                workflowId, reservationA, List.of(new ReservationWorkflowItemRecord(sellerId, "sku-a", 1)), NOW);
         verify(restocks).insert(LocationRestockServiceImpl.restockKey(refundId), locationB, refundId, orderId,
-                workflowId, reservationB, List.of(new WorkflowItemRecord(sellerId, "sku-a", 1)), NOW);
+                workflowId, reservationB, List.of(new ReservationWorkflowItemRecord(sellerId, "sku-a", 1)), NOW);
     }
 
     @Test
@@ -65,7 +65,7 @@ class LocationRestockServiceImplTest {
         UUID refundId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
         UUID location = UUID.randomUUID();
-        WorkflowSnapshot workflow = workflow(orderId, location(location, UUID.randomUUID(), sellerId, "sku-a", 1));
+        ReservationWorkflowSnapshot workflow = workflow(orderId, location(location, UUID.randomUUID(), sellerId, "sku-a", 1));
         when(workflows.findByWorkflowId(workflowId)).thenReturn(workflow);
 
         assertThatThrownBy(() -> service(workflows, restocks, inventory).stageAtLocations(refundId, orderId,
@@ -81,20 +81,20 @@ class LocationRestockServiceImplTest {
                 Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMinutes(1), 4);
     }
 
-    private static WorkflowSnapshot workflow(UUID orderId, WorkflowLocationSnapshot... locations) {
-        WorkflowSnapshot workflow = mock(WorkflowSnapshot.class);
+    private static ReservationWorkflowSnapshot workflow(UUID orderId, ReservationWorkflowLocationSnapshot... locations) {
+        ReservationWorkflowSnapshot workflow = mock(ReservationWorkflowSnapshot.class);
         when(workflow.orderId()).thenReturn(orderId);
         when(workflow.state()).thenReturn(LocationReservationWorkflowState.CLAIMED.name());
         when(workflow.locations()).thenReturn(List.of(locations));
         return workflow;
     }
 
-    private static WorkflowLocationSnapshot location(UUID locationId, UUID reservationId, UUID sellerId, String skuId,
+    private static ReservationWorkflowLocationSnapshot location(UUID locationId, UUID reservationId, UUID sellerId, String skuId,
             int quantity) {
-        WorkflowLocationSnapshot location = mock(WorkflowLocationSnapshot.class);
+        ReservationWorkflowLocationSnapshot location = mock(ReservationWorkflowLocationSnapshot.class);
         when(location.fulfillmentLocationId()).thenReturn(locationId);
         when(location.reservationId()).thenReturn(reservationId);
-        when(location.items()).thenReturn(List.of(new WorkflowItemRecord(sellerId, skuId, quantity)));
+        when(location.items()).thenReturn(List.of(new ReservationWorkflowItemRecord(sellerId, skuId, quantity)));
         return location;
     }
 }
