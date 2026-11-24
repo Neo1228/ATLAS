@@ -1,4 +1,4 @@
-# EXP-027 — K6 인증·PayPal order smoke 검증
+# EXP-027: K6 인증·PayPal order smoke 검증
 
 **상태:** checkout-only pilot 측정 완료 · EXP-027 실행에서 PayPal Sandbox order 미호출 · 별도 Sandbox E2E는 Issue #254/PR #262에서 완료
 
@@ -48,6 +48,7 @@
    - 원인: `AccountOwnershipInterceptor`가 모든 `{sellerId}` 경로에 Seller ownership을 강제
    - 수정: Seller ownership 검증은 `/api/sellers/` 경로에 한정. Buyer 경로의 `buyerRef` ownership 검증 유지
    - 회귀 테스트: [`AccountOwnershipInterceptorTest`](../../atlas-application/src/test/java/com/atlas/application/security/AccountOwnershipInterceptorTest.java)
+
 - `/api/sellers/` 외부에 Seller 소유 API를 추가하면 ownership 검증도 함께 추가
 
 1. **K6 종료 경계 iteration**
@@ -71,7 +72,7 @@
 
 ## 제한 및 이력
 
-- EXP-027 checkout-only pilot에서는 PayPal Sandbox order 미호출. 별도 Sandbox E2E (2026-11-13): KRW 2,000 → USD 1.50 (BOK 1,332.4 KRW/USD, 기준일 2026-11-13, provider amount 150 cents), Buyer approval·capture 성공, PayPal order `COMPLETED`, UNKNOWN capture 응답의 order GET 복구, K6 verification 1/1 `CAPTURED`·`PAID`·`CLAIMED`, KRW settlement journal 균형 확인 (PSP_CLEARING debit 2,000 / SELLER_PAYABLE credit 2,000). 근거: [Issue #254](https://github.com/Neo1228/ATLAS/issues/254) · [PR #262](https://github.com/Neo1228/ATLAS/pull/262) · [README PayPal Sandbox](../../README.md#paypal-sandbox)
+- EXP-027 checkout-only pilot에서는 PayPal Sandbox order 미호출. 별도 Sandbox E2E (2026-11-13): KRW 2,000 → USD 1.50 (BOK 1,332.4 KRW/USD, 기준일 2026-11-13, provider amount 150 cents), Buyer approval·capture 성공, PayPal order `COMPLETED`, UNKNOWN capture 응답의 order GET 복구, K6 verification 1/1 `CAPTURED`·`PAID`·`CLAIMED`, KRW settlement journal 균형 확인 (PSP_CLEARING debit 2,000 / SELLER_PAYABLE credit 2,000). 근거: [Issue #254](https://github.com/Neo1228/ATLAS/issues/254) · [PR #262](https://github.com/Neo1228/ATLAS/pull/262) · [README PayPal Sandbox](../operations-guide.md#paypal-sandbox)
 - 별도 E2E는 성공 capture·정산 경로의 근거이며 EXP-027 1초 pilot의 처리량·부하 결과와 무관. Expiry/approval 경합 검증 근거로도 사용 금지.
 - PayPal provider result `PENDING`은 API `AUTHORIZATION_PENDING`으로 매핑. Buyer approval 이후 authorization·capture 진행
 - 현재 expiry sweep는 `RESERVED`만 조회. `PAYMENT_PENDING` reservation은 provider 결과 확인·reconciliation 전까지 `checkoutExpiresAt` 뒤에도 유지. 단순 TTL로 inventory를 해제하지 않는 안전 우선 계약: [ADR-0029](../02-decisions/adr/ADR-0029-order-payment-recovery-contract.md)

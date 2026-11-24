@@ -1,4 +1,4 @@
-# ADR-0023 — Seller SKU 기간 한정 판매가
+# ADR-0023: Seller SKU 기간 한정 판매가
 
 - 상태: ✓ 구현·JDK 25/Testcontainers full Gradle check 통과 (42 suites, 207 tests, 0 failures/errors/skips); [PR #184](https://github.com/Neo1228/ATLAS/pull/184)
 - 결정: D-078

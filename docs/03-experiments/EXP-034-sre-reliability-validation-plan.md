@@ -44,8 +44,10 @@ Alert를 만들거나 운영 준비 완료를 선언하기 전에 서비스/제�
 ### 단계 B — 저비용 코드 정확성 및 관측
 
 1. 주입된 `MeterRegistry`를 사용해 기존 webhook retry poll의 duration, poll failure, claimed count, 제한된 outcome counter를 기록합니다. label은 고정된 소수의 outcome만 허용하며 event ID, order ID, exception 메시지, URL, 고객 정보를 넣지 않습니다.
+
 - 다음 다섯 가지 metric series를 사용합니다: `atlas.paypal.webhook.retry.runs{outcome=success|failure}`, `atlas.paypal.webhook.retry.claimed`, `atlas.paypal.webhook.retry.outcomes{outcome=accepted|duplicate|rescheduled|rejected|transient_failure|stale_claim|record_failure}`, `atlas.paypal.webhook.retry.duration`, `atlas.paypal.webhook.retry.attempt.duration`.
 - 기존 poll 경로에서만 갱신하며 주기적인 SQL query를 추가하지 않습니다. label에 event/order ID나 exception text를 넣지 않습니다.
+
 1. poll마다 또는 scrape마다 별도 query를 추가하지 않습니다. 담당자가 delivery 목표상 backlog age를 요구하는 경우에만 후속 작업으로 검토하며, 먼저 index와 query 비용을 입증합니다.
 1. 다음을 테스트합니다: due event가 없는 poll도 claim 0으로 관측됨, claim 수가 한 번만 증가함, success/duplicate, transient reschedule, permanent rejection, stale lease, repository poll failure가 의도한 outcome으로 기록됨, metrics가 retry/lease 의미를 바꾸지 않음.
 1. 기존 내부 Prometheus endpoint에서 metrics를 확인하고 management port를 새로 외부에 노출하지 않는지 검증합니다.

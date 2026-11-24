@@ -1,7 +1,7 @@
 # ADR-0037: Refresh family 기반 access token 폐기와 session 관리
 
 - 상태: 채택
-- 결정일: 2026-11-17
+- 날짜: 2026-11-17
 - 관련 이슈: [#291](https://github.com/Neo1228/ATLAS/issues/291)
 - 관련 결정: D-082, D-086, D-095, ADR-0027
 

@@ -121,6 +121,7 @@ docker compose --profile observability --profile loadtest run --rm k6 run \
 Timed workload는 4 HTTP request: Cart line 추가 2회, `POST /api/buyers/{buyerRef}/cart/checkout`, 응답의 checkoutId로 `POST /api/checkouts/{checkoutId}/payment`. 각 iteration은 고유 buyerRef/idempotency key 사용. A는 child order 1개, B는 2개 생성 확인. 당시 deterministic payment test adapter의 `paymentState=CAPTURED`만 완료로 계산.
 
 Seeded rows는 DB에 지속되고 API 삭제 endpoint가 없다. 각 controlled run 사이에는 해당 EXP-016 Compose project만 제거하고 `--volumes`로 PostgreSQL state를 초기화한 뒤 migrations를 다시 적용한다. 매 run은 새 RUN_ID와 동일한 fresh schema/seed policy를 사용한다.
+
 ### 초기 sweep 폐기 근거
 
 - 초기 exploratory sweep은 같은 DB를 초기화하지 않고 이어 실행해 transaction row 수가 누적됨. Seller별 결과 차이와 table-growth 효과를 분리할 수 없어 비교 결과에서 제외.

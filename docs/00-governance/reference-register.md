@@ -91,10 +91,12 @@
 REF-030~086, REF-087/089/092/094/095/096/097/098/099/100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115/116/117/118/119/120/121/122/123/124/125/126는 ATLAS
 
 PayPal API·지역·계정·자금 흐름은 구현 시점의 공식 문서로 확인한다.
+
 - Authorization 유효 기간과 honor 기간은 결제 공급자 정책이며 ATLAS inventory TTL과 별개다.
 - Webhook 재전송 기간도 구매자 결제 단계 TTL·API 기한과 별개다.
 
 ## 관련 문서
+
 - [ADR-0001](../02-decisions/adr/ADR-0001-architecture-style.md): D-037은 REF-023/050~052, D-038/D-039는 REF-050/053~058, D-040/D-041은 REF-059~067, D-043은 REF-068, Issue #75 검토는 REF-053~055/069~073을 참고한다. [ADR-0002](../02-decisions/adr/ADR-0002-runtime-technology-review.md)는 REF-059~086의 기술 선택 자료를 비교하며 자료별 적용 한계를 유지한다.
 - [EXP-014](../03-experiments/EXP-014-id-strategy-comparison.md)·[ADR-0007](../02-decisions/adr/ADR-0007-uuidv7-identifiers.md): REF-104/105는 UUIDv7 API 계약, REF-106은 다른 부하의 실측, REF-107은 key 크기와 public ID의 절충을 다룬다. 외부 측정은 ATLAS에서 재현되지 않았으며 ATLAS 실측 근거는 EXP-014뿐이다.
 - [요구사항과 미결정 범위](../01-requirements/requirements-index.md#project-context-and-scope): 합성 시나리오만 사용하며 실제 결제·보안·배포·운영 성능은 미승인.

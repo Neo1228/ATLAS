@@ -1,7 +1,7 @@
 # ADR-0025: Limited coupon capacity and redemption lifecycle
 
 - 상태: ✓ 구현·full Gradle check 통과 (42 suites, 218 tests, 0 failures/errors/skips); `bootJar` 성공
-- 결정일: 2026-11-09
+- 날짜: 2026-11-09
 - 관련 작업: [Issue #189](https://github.com/Neo1228/ATLAS/issues/189)
 - 선행 결정: [ADR-0024](ADR-0024-seller-coupon-allocation.md)
 - 검증 근거: [EXP-023](../../03-experiments/EXP-023-coupon-redemption-capacity.md) — local k6, Prometheus/Grafana/Postgres exporter, measured limitations.

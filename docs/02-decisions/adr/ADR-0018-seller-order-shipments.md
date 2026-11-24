@@ -1,4 +1,4 @@
-# ADR-0018 — SellerOrder Shipment과 부분 출고
+# ADR-0018: SellerOrder Shipment과 부분 출고
 
 - 상태: 승인
 - 결정: D-073

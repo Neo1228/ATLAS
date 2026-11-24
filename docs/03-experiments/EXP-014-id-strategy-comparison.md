@@ -1,4 +1,4 @@
-# EXP-014 — PostgreSQL 식별자 전략 비교
+# EXP-014: PostgreSQL 식별자 전략 비교
 
 **상태:** 실측 완료(2026-11-03). 소유자 결정에 따라 UUIDv7을 기본 ID로 채택했습니다. JPA/Testcontainers 통합 검사에서 Seller/Campaign/Ticket/Order 생성 ID와 PaymentAttempt.order_id가 UUID version 7임을 확인했습니다. 로컬 DB·인덱스 비교이며 운영 부하·처리 용량 측정은 아닙니다.
 

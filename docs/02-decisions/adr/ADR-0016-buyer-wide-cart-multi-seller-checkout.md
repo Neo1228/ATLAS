@@ -1,7 +1,7 @@
 # ADR-0016: Buyer-wide Cart와 Seller별 주문
 
 - 상태: 확정
-- 결정일: 2026-11-06
+- 날짜: 2026-11-06
 - 결정: [D-071](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-005, FR-007, FR-008](../../01-requirements/requirements-index.md)
 - 추적: [Issue #148](https://github.com/Neo1228/ATLAS/issues/148)

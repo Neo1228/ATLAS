@@ -1,7 +1,7 @@
 # ADR-0026: PayPal Sandbox 결제와 내부 정산 원장 연동
 
 - 상태: ✓ 확정
-- 결정일: 2026-11-09
+- 날짜: 2026-11-09
 - 결정 ID: [D-081](../../00-governance/decision-log.md), [D-085](../../00-governance/decision-log.md), [D-086](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-017/BR-017/INV-014](../../01-requirements/requirements-index.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
 - 통화 경계: [ADR-0030](ADR-0030-paypal-currency-boundary.md)

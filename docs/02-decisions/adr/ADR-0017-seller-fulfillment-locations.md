@@ -1,4 +1,4 @@
-# ADR-0017 — Seller fulfillment locations
+# ADR-0017: Seller fulfillment locations
 
 - 상태: 승인
 - 결정: D-072

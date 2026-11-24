@@ -2,7 +2,7 @@
 
 - 상태: Accepted — 구현 추적: [#420](https://github.com/Neo1228/ATLAS/issues/420)
 - 날짜: 2026-11-20
-- 관련 결정: [ADR-0026](ADR-0026-paypal-sandbox-payments.md), [ADR-0030](ADR-0030-paypal-currency-boundary.md), [EXP-041](../03-experiments/EXP-041-payment-external-fx-dependency.md)
+- 관련 결정: [ADR-0026](ADR-0026-paypal-sandbox-payments.md), [ADR-0030](ADR-0030-paypal-currency-boundary.md), [EXP-041](../../03-experiments/EXP-041-payment-external-fx-dependency.md)
 
 ## 문제
 

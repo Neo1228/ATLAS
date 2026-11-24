@@ -1,4 +1,4 @@
-# EXP-026 — 만료 작업 scheduler·다중 context 경합
+# EXP-026: 만료 작업 scheduler·다중 context 경합
 
 - 상태: Testcontainers에서 4회 반복 · runtime scheduler 설정 변경 없음
 - 관련 작업: [Issue #247](https://github.com/Neo1228/ATLAS/issues/247), [ADR-0031](../02-decisions/adr/ADR-0031-bounded-application-scheduler.md), [Issue #95](https://github.com/Neo1228/ATLAS/issues/95), [EXP-024](EXP-024-postgres-contention-observation.md)

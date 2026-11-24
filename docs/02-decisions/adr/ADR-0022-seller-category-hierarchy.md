@@ -1,4 +1,4 @@
-# ADR-0022 — Seller 상품 분류 계층과 하위 탐색
+# ADR-0022: Seller 상품 분류 계층과 하위 탐색
 
 - 상태: 계층 결정 유지·Product 단일 Category 연결은 D-083으로 대체
 - 결정: [D-077](../../00-governance/decision-log.md)

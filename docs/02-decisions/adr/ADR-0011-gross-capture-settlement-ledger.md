@@ -1,7 +1,7 @@
 # ADR-0011: 총액 캡처 정산 원장
 
 - 상태: ✓ 확정
-- 결정일: 2026-11-04
+- 날짜: 2026-11-04
 - 결정 ID: [D-066, D-071](../../00-governance/decision-log.md)
 - 관련 요구사항: Q-006
 - 관련 Issue: [Issue #115](https://github.com/Neo1228/ATLAS/issues/115)

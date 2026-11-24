@@ -1,4 +1,4 @@
-# EXP-017 — 쓰기 transaction·동시성 검증
+# EXP-017: 쓰기 transaction·동시성 검증
 
 **검증 결과:** commit `f0dca97874079461aa5d4ebfe5e5b0289acbc4ad` 기준 · PostgreSQL Testcontainers 18.6
 
@@ -11,6 +11,7 @@
 ## 환경·데이터·workload
 
 ### 실행 시나리오
+
 - Seller 1명, SKU 1개, initial available 2, 요청 수량 1
 - Executor 2개 worker; `CyclicBarrier(2)`로 service 호출 동시 시작
 - 같은 Buyer와 idempotency key로 `CartCheckoutService.checkout` 두 번 실행
@@ -42,6 +43,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
 
 ### 검증 결과
+
 - Gradle `check` + `bootJar`: 성공
 - 40 test suites · 201 tests · 0 failure · 0 error · 0 skipped
 - Testcontainers PostgreSQL 18.6

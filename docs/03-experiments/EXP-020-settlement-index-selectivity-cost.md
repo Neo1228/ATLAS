@@ -1,4 +1,4 @@
-# EXP-020 — 정산 인덱스 선택도·비용 A/B
+# EXP-020: 정산 인덱스 선택도·비용 A/B
 
 > **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
 
@@ -26,7 +26,7 @@
 
 ### 대상 경로와 데이터
 
-- Controller: [`SellerSettlementStatementController`](../../atlas-application/src/main/java/com/atlas/application/controller/seller/SellerSettlementStatementController.java)
+- Controller: [`SellerSettlementStatementController`](../../atlas-application/src/main/java/com/atlas/application/controller/settlement/SellerSettlementStatementController.java)
 - Service: [`SettlementServiceImpl.getSellerStatement`](../../atlas-settlement/src/main/java/com/atlas/settlement/service/impl/SettlementServiceImpl.java)
 - Repository: [`SettlementJournalRepository`](../../atlas-settlement/src/main/java/com/atlas/settlement/repository/SettlementJournalRepository.java)
 - 기존 의미/페이지 검증: [`SettlementStatementIntegrationTest`](../../atlas-application/src/test/java/com/atlas/settlement/SettlementStatementIntegrationTest.java)
@@ -37,6 +37,7 @@
 ## 결과
 
 ### Query plan
+
 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` · 각 range/query 3회 · median (ms). Page limit 100.
 
 | Half-open range | Seller 1 행 | Totals baseline → candidate | Page baseline → candidate | Plan 관찰 |

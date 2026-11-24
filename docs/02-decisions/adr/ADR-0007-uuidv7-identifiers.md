@@ -1,12 +1,13 @@
 # ADR-0007: UUIDv7 식별자
 
 - 상태: ✓ 확정
-- 결정일: 2026-11-03
+- 날짜: 2026-11-03
 - 결정 ID: D-056
 
 ## 배경
 
 EXP-014는 격리된 로컬 PostgreSQL 18.6에서 전략별 부모 100,000개와 자식 200,000개로 삽입 및 집합 기반 조회를 각각 5회 측정했습니다.
+
 - UUIDv7 부모 PK 인덱스는 UUIDv4보다 27.9% 작았습니다(3,178,496 대 4,407,296 bytes).
 - 부모 삽입 p50은 거의 같았습니다(211.49 대 212.64 ms).
 - 합산 삽입 rows/s p50도 거의 같았습니다(183,503.1 대 184,479.5).
@@ -26,6 +27,7 @@ EXP-014는 격리된 로컬 PostgreSQL 18.6에서 전략별 부모 100,000개와
 ## 결과와 한계
 
 Hibernate 7.4.13.Final의 UUID `VERSION_7` generation style은 `@Incubating`이다. Full Testcontainers/PostgreSQL suite에서 Seller, Campaign, Ticket, Order 및 PaymentAttempt `order_id` primary key의 version 7을 검증했다. PaymentAttempt의 별도 unique non-PK `attempt_id`는 UUIDv4로 유지한다.
+
 - EXP-014는 생성 비용을 제외했으며, 측정은 단일 세션의 작은 합성 workload다. Raw timing 편차와 같은 host의 Docker workload에 따른 resource contention 불확실성이 있다.
 - Set-based 조회는 parent sequential scan을 사용해 point lookup latency를 입증하지 않는다.
 - 동시 부하, 큰 working set, WAL/checkpoint 지속 부하 및 실제 application ID-generation 비용은 측정하지 않았다.
