@@ -1,5 +1,6 @@
 package com.atlas.account.dto.response;
 
+import com.atlas.account.model.AccountSuspensionActionType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -33,7 +34,7 @@ public final class AccountResponse {
      * 옮깁니다({@code ModuleBoundaryTest} 규칙).
      */
     public record SuspensionAction(
-            String action,
+            AccountSuspensionActionType action,
             String idempotencyKey,
             String actor,
             String reason,

@@ -4,6 +4,10 @@ import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.exception.AccountException.Code;
 import com.atlas.account.exception.AccountException;
+import com.atlas.account.model.AccountActionTokenPurpose;
+import com.atlas.account.model.AccountSuspensionActionType;
+import com.atlas.account.model.AuthAttemptScope.SubjectBucket;
+import com.atlas.account.model.AuthAttemptScope;
 import com.atlas.account.persistence.projection.AccountActionToken;
 import com.atlas.account.persistence.projection.AccountMfaSecret;
 import com.atlas.account.persistence.projection.AccountPrincipal;
@@ -91,14 +95,14 @@ public class AccountServiceImpl implements AccountService {
         // 가입도 인증 없이 호출 가능한 메일 발송 경로다. 남은 한도가 없으면 계정을 만들지 않는다.
         // 한도 확인과 비밀번호 해시(PBKDF2)는 DB 연결을 잡지 않은 채 transaction 밖에서 한다. 한도 저장은
         // 독립 transaction이라 바깥 transaction이 연결을 쥔 채 두 번째 연결을 요구하면 풀이 고갈된다.
-        if (!limiter.tryAcquire("EMAIL", email, origin, clock.instant())) throw invalidRequest();
+        if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, clock.instant())) throw invalidRequest();
         String passwordHash = passwords.encode(request.password());
         return transactions.execute(status -> {
             Optional<UUID> createdAccount = accounts.createAccount(email, passwordHash);
             if (createdAccount.isEmpty()) return new AccountResponse.Action(true);
             UUID accountId = createdAccount.get();
             accounts.createBuyer(accountId);
-            String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
+            String token = newActionToken(accountId, AccountActionTokenPurpose.EMAIL_VERIFICATION, EMAIL_VERIFICATION_LIFETIME);
             sendAfterCommit(() -> emailSender.sendVerification(email, token));
             return new AccountResponse.Action(true);
         });
@@ -108,10 +112,10 @@ public class AccountServiceImpl implements AccountService {
     public AccountResponse.Action requestPasswordReset(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
-        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountResponse.Action(true);
+        if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, now)) return new AccountResponse.Action(true);
         return transactions.execute(status -> {
             accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId -> {
-                String token = newActionToken(accountId, "PASSWORD_RESET", PASSWORD_RESET_LIFETIME);
+                String token = newActionToken(accountId, AccountActionTokenPurpose.PASSWORD_RESET, PASSWORD_RESET_LIFETIME);
                 sendAfterCommit(() -> emailSender.sendPasswordReset(email, token));
             });
             return new AccountResponse.Action(true);
@@ -122,10 +126,10 @@ public class AccountServiceImpl implements AccountService {
     public AccountResponse.Action requestEmailVerification(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
-        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountResponse.Action(true);
+        if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, now)) return new AccountResponse.Action(true);
         return transactions.execute(status -> {
             accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId -> {
-                String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
+                String token = newActionToken(accountId, AccountActionTokenPurpose.EMAIL_VERIFICATION, EMAIL_VERIFICATION_LIFETIME);
                 sendAfterCommit(() -> emailSender.sendVerification(email, token));
             });
             return new AccountResponse.Action(true);
@@ -135,7 +139,7 @@ public class AccountServiceImpl implements AccountService {
     @Transactional
     @Override
     public void verifyEmail(String presentedToken) {
-        AccountActionToken token = requireActionToken(presentedToken, "EMAIL_VERIFICATION");
+        AccountActionToken token = requireActionToken(presentedToken, AccountActionTokenPurpose.EMAIL_VERIFICATION);
         Instant now = clock.instant();
         if (!now.isBefore(token.expiresAt()) || !accounts.consumeActionToken(token.tokenId(), now)) {
             throw invalidActionToken();
@@ -151,7 +155,7 @@ public class AccountServiceImpl implements AccountService {
         String email = transactions.execute(status -> applyPasswordReset(presentedToken, newPassword));
         if (email == null) return;
         try {
-            limiter.resetSubject("LOGIN", normalizeEmail(email));
+            limiter.resetSubject(SubjectBucket.LOGIN, normalizeEmail(email));
         } catch (RuntimeException exception) {
             LOGGER.warn("Login lockout counter was not cleared after password reset: failureType={}",
                     exception.getClass().getSimpleName());
@@ -159,7 +163,7 @@ public class AccountServiceImpl implements AccountService {
     }
 
     private String applyPasswordReset(String presentedToken, String newPassword) {
-        AccountActionToken token = requireActionToken(presentedToken, "PASSWORD_RESET");
+        AccountActionToken token = requireActionToken(presentedToken, AccountActionTokenPurpose.PASSWORD_RESET);
         Instant now = clock.instant();
         if (!now.isBefore(token.expiresAt()) || !accounts.consumeActionToken(token.tokenId(), now)) {
             throw invalidActionToken();
@@ -182,7 +186,7 @@ public class AccountServiceImpl implements AccountService {
         // 한도 저장은 독립 transaction이므로 바깥 transaction 없이 호출한다. 로그인 전체를 하나의
         // transaction으로 묶으면 연결 1개를 쥔 채 두 번째 연결을 기다려, 동시 로그인이 풀 크기를
         // 넘는 순간 모든 요청이 서로를 기다리며 실패한다. PBKDF2도 연결을 쥐지 않은 채 계산한다.
-        if (!limiter.tryAcquire("LOGIN", email, origin == null ? "unknown" : origin, now)) {
+        if (!limiter.tryAcquire(AuthAttemptScope.LOGIN, email, origin == null ? "unknown" : origin, now)) {
             throw invalidCredentials();
         }
         Optional<AccountPrincipal> account = accounts.findActiveByEmail(email);
@@ -191,16 +195,16 @@ public class AccountServiceImpl implements AccountService {
         boolean passwordMatches = passwords.matches(request.password(), passwordHash);
         if (account.isEmpty() || storedPasswordHash.isEmpty() || !passwordMatches
                 || account.get().buyerId() == null) {
-            limiter.recordSubjectFailure("LOGIN", email, now);
+            limiter.recordSubjectFailure(SubjectBucket.LOGIN, email, now);
             throw invalidCredentials();
         }
         AccountResponse.Login response = transactions.execute(status ->
                 completeLogin(email, request.password(), passwordHash, account.get()));
         if (response == null) {
-            limiter.recordSubjectFailure("LOGIN", email, now);
+            limiter.recordSubjectFailure(SubjectBucket.LOGIN, email, now);
             throw invalidCredentials();
         }
-        limiter.resetSubject("LOGIN", email);
+        limiter.resetSubject(SubjectBucket.LOGIN, email);
         return response;
     }
 
@@ -289,17 +293,17 @@ public class AccountServiceImpl implements AccountService {
         // 계정을 잠금 없이 먼저 읽어 한도를 확인하고, 코드 검증과 챌린지 소모만 잠금 아래 짧게 수행한다.
         UUID accountId = accounts.findMfaChallengeAccount(challengeHash, now).orElseThrow(AccountServiceImpl::invalidCredentials);
         String mfaSubject = "mfa:" + accountId;
-        if (!limiter.tryAcquire("MFA", mfaSubject, mfaSubject, now)) {
+        if (!limiter.tryAcquire(AuthAttemptScope.MFA, mfaSubject, mfaSubject, now)) {
             transactions.executeWithoutResult(status -> accounts.consumeMfaChallenge(challengeHash, now));
             throw invalidCredentials();
         }
         AccountResponse.Token tokens = transactions.execute(status ->
                 verifyMfaAndIssue(accountId, challengeHash, request, now));
         if (tokens == null) {
-            limiter.recordSubjectFailure("MFA", mfaSubject, now);
+            limiter.recordSubjectFailure(SubjectBucket.MFA, mfaSubject, now);
             throw invalidCredentials();
         }
-        limiter.resetSubject("MFA", mfaSubject);
+        limiter.resetSubject(SubjectBucket.MFA, mfaSubject);
         return tokens;
     }
 
@@ -391,16 +395,16 @@ public class AccountServiceImpl implements AccountService {
     @Transactional
     @Override
     public void suspendAccount(UUID accountId, String reason, String actor, String idempotencyKey) {
-        applySuspension(accountId, true, reason, actor, idempotencyKey);
+        applySuspension(accountId, AccountSuspensionActionType.SUSPEND, reason, actor, idempotencyKey);
     }
 
     @Transactional
     @Override
     public void releaseAccount(UUID accountId, String reason, String actor, String idempotencyKey) {
-        applySuspension(accountId, false, reason, actor, idempotencyKey);
+        applySuspension(accountId, AccountSuspensionActionType.RELEASE, reason, actor, idempotencyKey);
     }
 
-    private void applySuspension(UUID accountId, boolean suspend, String reason, String actor,
+    private void applySuspension(UUID accountId, AccountSuspensionActionType action, String reason, String actor,
             String idempotencyKey) {
         if (accountId == null || !StringUtils.hasText(reason) || !StringUtils.hasText(actor)
                 || !StringUtils.hasText(idempotencyKey) || reason.length() > 500) {
@@ -411,8 +415,8 @@ public class AccountServiceImpl implements AccountService {
         }
         if (suspensions.actionRecorded(accountId, idempotencyKey)) return; // 재시도: 변화 없음
         Instant now = clock.instant();
-        boolean changed = suspensions.apply(accountId, suspend, idempotencyKey, actor, reason, now);
-        if (changed && suspend) {
+        boolean changed = suspensions.apply(accountId, action, idempotencyKey, actor, reason, now);
+        if (changed && action == AccountSuspensionActionType.SUSPEND) {
             accounts.revokeAllRefreshFamilies(accountId, now);
             accounts.revokeMfaChallenges(accountId, now);
         }
@@ -528,14 +532,15 @@ public class AccountServiceImpl implements AccountService {
         return tokenResponse(account, refreshToken, familyId);
     }
 
-    private String newActionToken(UUID accountId, String purpose, Duration lifetime) {
+    private String newActionToken(UUID accountId, AccountActionTokenPurpose purpose, Duration lifetime) {
         String token = newRefreshToken();
         Instant now = clock.instant();
         accounts.replaceActionToken(accountId, purpose, hashRefreshToken(token), now, now.plus(lifetime));
         return token;
     }
 
-    private AccountActionToken requireActionToken(String presentedToken, String purpose) {
+    private AccountActionToken requireActionToken(String presentedToken,
+            AccountActionTokenPurpose purpose) {
         if (!StringUtils.hasText(presentedToken) || presentedToken.length() > 128) {
             throw invalidActionToken();
         }

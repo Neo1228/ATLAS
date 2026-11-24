@@ -1,5 +1,6 @@
 package com.atlas.account.repository;
 
+import com.atlas.account.model.AccountActionTokenPurpose;
 import com.atlas.account.persistence.projection.AccountActionToken;
 import com.atlas.account.persistence.projection.AccountMfaSecret;
 import com.atlas.account.persistence.projection.AccountPrincipal;
@@ -88,21 +89,21 @@ public class AccountRepository {
         return accountIds.stream().findFirst();
     }
 
-    public void replaceActionToken(UUID accountId, String purpose, String tokenHash,
+    public void replaceActionToken(UUID accountId, AccountActionTokenPurpose purpose, String tokenHash,
             Instant issuedAt, Instant expiresAt) {
         jdbc.queryForObject("SELECT account_id FROM user_account WHERE account_id = ? FOR UPDATE",
                 UUID.class, accountId);
         jdbc.update("""
                 UPDATE account_action_token SET consumed_at = ?
                 WHERE account_id = ? AND purpose = ? AND consumed_at IS NULL
-                """, Timestamp.from(issuedAt), accountId, purpose);
+                """, Timestamp.from(issuedAt), accountId, purpose.name());
         jdbc.update("""
                 INSERT INTO account_action_token(account_id, purpose, token_hash, created_at, expires_at)
                 VALUES (?, ?, ?, ?, ?)
-                """, accountId, purpose, tokenHash, Timestamp.from(issuedAt), Timestamp.from(expiresAt));
+                """, accountId, purpose.name(), tokenHash, Timestamp.from(issuedAt), Timestamp.from(expiresAt));
     }
 
-    public Optional<AccountActionToken> findActionTokenForUpdate(String tokenHash, String purpose) {
+    public Optional<AccountActionToken> findActionTokenForUpdate(String tokenHash, AccountActionTokenPurpose purpose) {
         List<AccountActionToken> tokens = jdbc.query("""
                 SELECT token_id, account_id, purpose, expires_at, consumed_at
                 FROM account_action_token
@@ -110,8 +111,8 @@ public class AccountRepository {
                 FOR UPDATE
                 """, (row, number) -> new AccountActionToken(
                 row.getObject("token_id", UUID.class), row.getObject("account_id", UUID.class),
-                row.getString("purpose"), row.getTimestamp("expires_at").toInstant(),
-                instant(row, "consumed_at")), tokenHash, purpose);
+                AccountActionTokenPurpose.valueOf(row.getString("purpose")),
+                row.getTimestamp("expires_at").toInstant(), instant(row, "consumed_at")), tokenHash, purpose.name());
         return tokens.stream().findFirst();
     }
 

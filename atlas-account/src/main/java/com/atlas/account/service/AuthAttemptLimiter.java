@@ -1,5 +1,7 @@
 package com.atlas.account.service;
 
+import com.atlas.account.model.AuthAttemptScope.SubjectBucket;
+import com.atlas.account.model.AuthAttemptScope;
 import com.atlas.account.repository.AuthThrottleRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,14 +22,16 @@ public interface AuthAttemptLimiter {
      * 주체 출처 한도가 모두 남았는지 확인하고, 남았다면 출처 시도를 1 소비한다.
      *
      * <p>주체 실패는 인증이 실패한 뒤에만 기록해야 하므로 여기서 소비하지 않는다.
+     *
+     * <p>주체 축이 없는 범위(EMAIL)는 출처 한도만 본다.
      */
-    boolean tryAcquire(String scope, String subject, String origin, Instant now);
+    boolean tryAcquire(AuthAttemptScope scope, String subject, String origin, Instant now);
 
     /** 주체 실패를 1 기록한다. 성공한 인증은 {@link #resetSubject}로 되돌린다. */
-    void recordSubjectFailure(String scope, String subject, Instant now);
+    void recordSubjectFailure(SubjectBucket scope, String subject, Instant now);
 
     /** 인증 성공 시 주체 카운터를 비운다. 정상 사용자가 잠기지 않게 한다. */
-    void resetSubject(String scope, String subject);
+    void resetSubject(SubjectBucket scope, String subject);
 
     /**
      * 창이 오래 지난 카운터를 정리한다. row 수를 실제 활성 주체 수준으로 유지하기 위한 것으로,
