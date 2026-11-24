@@ -38,6 +38,15 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 public class LocationReservationServiceImpl implements LocationReservationService {
+    /**
+     * 이 서비스가 workflow 의 {@code last_error_code} 에 직접 기록하는 코드. 원격이 돌려주는 코드
+     * ({@link LocationClientException#RESERVATION_EXPIRED} 등)와 이름이 겹치지만 의미가 다르다: 원격 만료는
+     * 원격이 알려 준 사실이고 여기 코드는 이 서비스가 deadline 으로 판단한 결과다.
+     */
+    private static final String ERROR_RESERVATION_EXPIRED = "RESERVATION_EXPIRED";
+    private static final String ERROR_RESERVATION_EXPIRING = "RESERVATION_EXPIRING";
+    private static final String ERROR_CLAIM_RESULT_UNKNOWN = "CLAIM_RESULT_UNKNOWN";
+
     private static final Pattern SKU_IDENTIFIER = Pattern.compile("[A-Za-z0-9._-]{1,96}");
 
     private final LocationReservationRepository repository;
@@ -232,7 +241,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                         inventory.claim(location.fulfillmentLocationId(), location.reservationId());
                 if (claimed.status() != RemoteReservationStatus.CLAIMED) {
                     finish(workflow, lease.leaseToken(), LocationReservationWorkflowState.RESERVED,
-                            "CLAIM_RESULT_UNKNOWN", clock.instant());
+                            ERROR_CLAIM_RESULT_UNKNOWN, clock.instant());
                     return ClaimOutcome.PENDING;
                 }
                 repository.updateLocation(workflowId, lease.leaseToken(), location.fulfillmentLocationId(),
@@ -321,8 +330,8 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 if (reservationUsable(location, clock.instant())) continue;
                 repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
                         location.fulfillmentLocationId(), LocationReservationState.RELEASE_PENDING,
-                        location.reservationId(), location.remoteExpiresAt(), "RESERVATION_EXPIRED", clock.instant());
-                startCompensation(workflow, lease, "RESERVATION_EXPIRED");
+                        location.reservationId(), location.remoteExpiresAt(), ERROR_RESERVATION_EXPIRED, clock.instant());
+                startCompensation(workflow, lease, ERROR_RESERVATION_EXPIRED);
                 return;
             }
             if (location.state() == LocationReservationState.FAILED) {
@@ -341,8 +350,8 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 if (!reservationUsable(reserved.expiresAt(), clock.instant())) {
                     if (!repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
                             location.fulfillmentLocationId(), LocationReservationState.RELEASE_PENDING,
-                            reserved.reservationId(), reserved.expiresAt(), "RESERVATION_EXPIRING", clock.instant())) return;
-                    startCompensation(workflow, lease, "RESERVATION_EXPIRING");
+                            reserved.reservationId(), reserved.expiresAt(), ERROR_RESERVATION_EXPIRING, clock.instant())) return;
+                    startCompensation(workflow, lease, ERROR_RESERVATION_EXPIRING);
                     return;
                 }
                 if (!repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
@@ -371,8 +380,8 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                     && !reservationUsable(location, clock.instant())) {
                 repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
                         location.fulfillmentLocationId(), LocationReservationState.RELEASE_PENDING,
-                        location.reservationId(), location.remoteExpiresAt(), "RESERVATION_EXPIRED", clock.instant());
-                startCompensation(current, lease, "RESERVATION_EXPIRED");
+                        location.reservationId(), location.remoteExpiresAt(), ERROR_RESERVATION_EXPIRED, clock.instant());
+                startCompensation(current, lease, ERROR_RESERVATION_EXPIRED);
                 return;
             }
         }
@@ -407,8 +416,8 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 if (!reservationUsable(reserved.expiresAt(), clock.instant())) {
                     transitions.add(new LocationTransition(location.fulfillmentLocationId(),
                             LocationReservationState.RELEASE_PENDING, reserved.reservationId(),
-                            reserved.expiresAt(), "RESERVATION_EXPIRING"));
-                    compensateAfterBatch(workflow, lease, transitions, "RESERVATION_EXPIRING");
+                            reserved.expiresAt(), ERROR_RESERVATION_EXPIRING));
+                    compensateAfterBatch(workflow, lease, transitions, ERROR_RESERVATION_EXPIRING);
                     return;
                 }
                 transitions.add(new LocationTransition(location.fulfillmentLocationId(),
@@ -453,10 +462,10 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                     .map(transition -> transition.fulfillmentLocationId().equals(expired.fulfillmentLocationId())
                             ? new LocationTransition(transition.fulfillmentLocationId(),
                                     LocationReservationState.RELEASE_PENDING,
-                                    transition.reservationId(), transition.remoteExpiresAt(), "RESERVATION_EXPIRED")
+                                    transition.reservationId(), transition.remoteExpiresAt(), ERROR_RESERVATION_EXPIRED)
                             : transition)
                     .toList();
-            compensateAfterBatch(workflow, lease, compensating, "RESERVATION_EXPIRED");
+            compensateAfterBatch(workflow, lease, compensating, ERROR_RESERVATION_EXPIRED);
             return;
         }
         persistLocationTransitions(workflow, lease, transitions,
@@ -551,8 +560,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         try {
             inventory.cancel(location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey());
         } catch (LocationClientException exception) {
-            if (exception.failure() != LocationClientException.Failure.PERMANENT
-                    || !"INVALID_STATE".equals(exception.providerCode())) {
+            if (exception.failure() != LocationClientException.Failure.PERMANENT || !exception.isInvalidState()) {
                 throw exception;
             }
             inventory.restore(location.fulfillmentLocationId(), location.reservationId());
@@ -615,7 +623,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                 case RESERVED, CLAIMED -> stockAdmission.get().confirm(workflow.idempotencyKey());
                 // 재고 부족으로 끝난 건은 돌려줄 재고가 없다. 승인 때 낙관적으로 잡았던 수량만 정리한다.
                 case FAILED -> {
-                    if ("INSUFFICIENT_STOCK".equals(errorCode)) {
+                    if (LocationClientException.INSUFFICIENT_STOCK.equals(errorCode)) {
                         stockAdmission.get().confirm(workflow.idempotencyKey());
                     } else {
                         stockAdmission.get().release(workflow.idempotencyKey());

@@ -43,8 +43,8 @@ public class BuyerCheckoutController {
 
     @GetMapping("/payment/cancel")
     public CheckoutResponse paymentCancel(@PathVariable UUID checkoutId,
-            @RequestParam("state") String state) {
-        return checkoutPayments.cancelFromProvider(checkoutId, state);
+            @RequestParam("state") String cancelToken) {
+        return checkoutPayments.cancelFromProvider(checkoutId, cancelToken);
     }
 
     @GetMapping

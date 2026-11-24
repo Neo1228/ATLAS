@@ -220,8 +220,7 @@ public class HttpLocationClient implements LocationClient {
             // 계약 밖 응답은 업무 데이터로 해석하지 않고 HTTP status로만 분류한다.
         }
         int status = exception.getStatusCode().value();
-        if ("INSUFFICIENT_STOCK".equals(code) || "RESERVATION_CANCELLED".equals(code)
-                || "RESERVATION_EXPIRED".equals(code)) {
+        if (LocationClientException.isDefinitiveRejectionCode(code)) {
             return new LocationClientException(
                     LocationClientException.Failure.DEFINITIVE_REJECTION, code, "Inventory rejected the command");
         }

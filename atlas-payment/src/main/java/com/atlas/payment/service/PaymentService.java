@@ -73,7 +73,7 @@ public interface PaymentService {
      */
     boolean abandonUnstartedCheckout(UUID checkoutId);
     /** PayPal checkout 취소 callback의 {@code state}가 저장된 create-order 요청 ID와 일치하는지 확인한다. */
-    boolean matchesCheckoutCancelState(UUID checkoutId, String state);
+    boolean matchesCheckoutCancelToken(UUID checkoutId, String cancelToken);
     PaymentResponse findByAttemptId(UUID attemptId);
     PaymentRefundResponse prepareRefundOrder(UUID orderId, String idempotencyKey, long amountWon);
     PaymentRefundResponse prepareRefundCheckout(UUID checkoutId, String idempotencyKey, long amountWon);
