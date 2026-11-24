@@ -17,7 +17,7 @@
 ## 검증된 경로와 범위
 
 - Existing API: seller/product/SKU 생성 → Cart 등록 → checkout → checkout payment
-- `CAPTURED` 응답 검증. [기존 k6 setup/checkout 패턴](../../load-tests/buyer-checkout.js), [Settlement ledger integration test](../../ATLAS-application/src/test/java/com/atlas/settlement/SettlementLedgerIntegrationTest.java)
+- `CAPTURED` 응답 검증. [기존 k6 setup/checkout 패턴](../../load-tests/buyer-checkout.js), [Settlement ledger integration test](../../atlas-application/src/test/java/com/atlas/settlement/SettlementLedgerIntegrationTest.java)
 - 합성 fixture: 판매자 1곳 · SKU 1개 · 단가 100 KRW · 재고 100. 회차별 고유 buyer와 checkout `Idempotency-Key`
 - Setup은 별도 k6 `PHASE=seed`. SQL `prepare` snapshot 이후 `PHASE=measure`로 100회 직렬 checkout/capture 수행. 마지막에 SQL `snapshot`
 - Refund HTTP는 end-to-end request/response 계약 미검증으로 제외. 새 route·direct SQL business write 없음
@@ -91,7 +91,7 @@ flowchart LR
 - 과거 K6 harness는 retired. 현재 smoke는 기존 100-capture workload를 재현하지 않음
 - `요약 JSON`
 - Per-run SQL/K6 원자료: 요약 JSON의 `rawResultFile`, `rawK6SummaryFile` 경로
-- 스키마/entry-side 근거: [V10 settlement ledger migration](../../ATLAS-application/src/main/resources/db/migration/V10__gross_capture_settlement_ledger.sql)
+- 스키마/entry-side 근거: [V10 settlement ledger migration](../../atlas-application/src/main/resources/db/migration/V10__gross_capture_settlement_ledger.sql)
 - [EXP-020 정산 read/index 기준 실험](EXP-020-settlement-index-selectivity-cost.md)
 
 ## 참고 자료

@@ -37,6 +37,12 @@
   - 계약 자체가 공급자에 묶여 있으면 공급자 이름이 정확한 이름이다. `PayPalPayoutsProvider`는 PayPal 요청 id와 USD만을 전제로 하므로 `PayoutProvider`로 부르면 공급자를 바꿀 수 있다고 잘못 알린다. 공급자가 둘이 되는 시점에 요청·응답 타입과 함께 일반화한다.
   - `Service`는 역할을 말하지 않는다. 역할이 분명하면 그 역할의 단어를 쓴다(store, client, provider, sender, publisher). 요청이 큐나 workflow에 들어가기 전에 받을지 결정하는 일은 업계에서 admission control이라고 부르는 확립된 용어이므로 admission 계약을 `StockAdmissionService`에서 `StockAdmissionControl`로 바꿨다. 처음에는 ADR-0066의 문서 용어를 따라 `Gate`로 지었으나 gate는 admission control 안의 하위 메커니즘(capacity gate)을 가리키는 말이고 Fowler의 Gateway(외부 시스템 접근을 감싸는 객체)와도 다른 뜻이어서 계약 이름으로 쓰지 않는다. 속성(`admission-gate`)과 metric(`atlas.order.admission.gate`) 이름은 외부 계약이라 유지한다.
   - 인프라 구성 요소는 역할 뒤에 기술을 붙인다(`order-postgres`, `location-postgres`, `node-exporter`). 운영자가 서버 목록에서 무엇이 도는지 바로 알아야 하기 때문이며 저장소의 Compose 서비스 이름이 이미 이 방식이다.
+- 모듈과 패키지 이름(2026-11-24 추가). Gradle 문서의 권고(하위 프로젝트는 기본 이름 = 디렉터리 이름, 소문자 하이픈)와 Spring Modulith의 모듈 정의(모듈은 기반 패키지의 직접 하위 패키지)를 따른다.
+  - Gradle 프로젝트와 디렉터리는 같은 이름 `atlas-<모듈>`이다. 대문자 접두어와 `-module` 접미어, 이를 이어 주던 `projectDir` 매핑은 쓰지 않는다. 부팅 jar 이름도 프로젝트 이름에서 나오므로 `atlas-application.jar`다.
+  - 모듈의 루트 패키지는 `com.atlas.<모듈>` 한 단계이며 서로 겹치지 않는다. `inventory-location`은 `com.atlas.inventorylocation`이다. `com.atlas.inventory` 아래에 다른 모듈을 두면 `inventory..`를 허용하는 규칙이 그 모듈까지 허용한다.
+  - 다른 모듈이 import하는 공개 어휘(상태 enum, 저장 계약의 값 타입)는 `model`, 내부(DB 행, SQL 결과)는 `persistence.*`다. 안쪽 이름(`persistence`)을 바깥이 쓰지 않는다.
+  - application의 `controller` 하위 패키지는 엔드포인트가 속한 도메인 모듈 이름이다(호출자 `seller`, `buyer`로 나누지 않는다). 이 규칙은 `PackageLayoutRulesTest`가 검사한다.
+  - 계약 하나에 구현이 하나고 로직 없이 위임만 하는 클래스는 만들지 않는다. SQL 구현이 계약을 직접 구현한다(`JdbcPayoutDispatchStore`).
 
 ## 검증과 한계
 

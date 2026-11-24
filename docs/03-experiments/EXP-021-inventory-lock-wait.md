@@ -6,9 +6,9 @@
 
 요청 시작 barrier만으로는 PostgreSQL 내부 대기를 증명할 수 없음. 실제 blocker가 보유한 `inventory_pool` 행 때문에 `reserveAll`의 location-selector `SELECT ... FOR UPDATE OF pool`이 대기하는지 DB metadata로 확인하고, blocker 해제 후 예약 원자성과 capacity 보존을 검증.
 
-- 소스에서 확인한 대기 지점: [`JdbcLocationRepository.select`](../../ATLAS-inventory/src/main/java/com/atlas/inventory/repository/JdbcLocationRepository.java) → `SELECT ... FOR UPDATE OF pool`
+- 소스에서 확인한 대기 지점: [`JdbcLocationRepository.select`](../../atlas-inventory/src/main/java/com/atlas/inventory/repository/JdbcLocationRepository.java) → `SELECT ... FOR UPDATE OF pool`
 - 호출 순서: `reserveAll`은 seller/location 선택을 마친 뒤 stock mutation을 수행
-- 테스트: [`InventoryLockWaitIntegrationTest`](../../ATLAS-application/src/test/java/com/atlas/inventory/InventoryLockWaitIntegrationTest.java)
+- 테스트: [`InventoryLockWaitIntegrationTest`](../../atlas-application/src/test/java/com/atlas/inventory/InventoryLockWaitIntegrationTest.java)
 - 선행 근거: [EXP-019](EXP-019-inventory-batch-lock-order.md)는 요청 시작 barrier만 기록하며 DB lock wait는 관측하지 않음
 
 ## 환경·데이터·workload
@@ -26,14 +26,14 @@
 ## 결과
 
 - `InventoryLockWaitIntegrationTest`: **1 test · 0 failure · 0 error · 0 skipped**
-- 전체 `./gradlew --no-daemon check :application-module:bootJar`: **41 suites · 203 tests · 0 failure/error/skip · bootJar 성공**
+- 전체 `./gradlew --no-daemon check :atlas-application:bootJar`: **41 suites · 203 tests · 0 failure/error/skip · bootJar 성공**
 - 실제 waiter query와 blocker PID 확인, blocker 해제 뒤 batch reservation 및 capacity invariant 통과
 - Docker default context · PostgreSQL 18.6 · JDK 25.0.5
 
 ## 재현 방법
 
 ```sh
-./gradlew --no-daemon :application-module:test --tests com.atlas.inventory.InventoryLockWaitIntegrationTest
+./gradlew --no-daemon :atlas-application:test --tests com.atlas.inventory.InventoryLockWaitIntegrationTest
 ```
 
 ## 해석과 한계

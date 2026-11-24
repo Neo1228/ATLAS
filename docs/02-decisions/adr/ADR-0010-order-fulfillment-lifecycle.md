@@ -22,7 +22,7 @@ ATLAS는 Seller-SKU 구매 흐름을 결제 성공까지 구현했습니다. 다
 
 ## 결정
 
-`order-module` 안에서 주문·결제와 분리된 fulfillment lifecycle을 관리. 새 Gradle 모듈이나 별도 서비스는 추가하지 않습니다.
+`atlas-order` 안에서 주문·결제와 분리된 fulfillment lifecycle을 관리. 새 Gradle 모듈이나 별도 서비스는 추가하지 않습니다.
 
 - 모든 `PAID` Order에 fulfillment record 1건. `CART`와 `CAMPAIGN` 주문 모두 대상.
 - V9 migration은 기존 `PAID` Order를 `UNFULFILLED`로 backfill. Order·inventory 데이터는 변경하지 않음.

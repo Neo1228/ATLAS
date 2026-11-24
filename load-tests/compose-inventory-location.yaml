@@ -45,7 +45,7 @@ services:
       INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN to a random value of at least 32 characters}
       FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000001
     volumes:
-      - ../ATLAS-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
+      - ../atlas-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
     ports:
       - "127.0.0.1:8090:8090"
     restart: unless-stopped
@@ -64,7 +64,7 @@ services:
       INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN to a random value of at least 32 characters}
       FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000002
     volumes:
-      - ../ATLAS-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
+      - ../atlas-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
     ports:
       - "127.0.0.1:8091:8090"
     restart: unless-stopped

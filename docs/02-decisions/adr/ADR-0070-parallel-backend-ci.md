@@ -58,6 +58,6 @@ Backend CI가 한 job에서 직렬로 돌아 최근 성공 26회 기준 중앙�
 ## 재현
 
 ```sh
-ATLAS_TEST_SHARD=1/4 ./gradlew :application-module:test
+ATLAS_TEST_SHARD=1/4 ./gradlew :atlas-application:test
 python3 scripts/ci/update-test-shard-weights.py --run <Backend CI run id>
 ```

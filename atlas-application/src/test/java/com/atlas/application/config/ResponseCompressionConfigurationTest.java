@@ -33,7 +33,7 @@ class ResponseCompressionConfigurationTest {
     private static String applicationYaml() throws IOException {
         Path path = Path.of("src/main/resources/application.yml");
         if (!Files.exists(path)) {
-            path = Path.of("ATLAS-application/src/main/resources/application.yml");
+            path = Path.of("atlas-application/src/main/resources/application.yml");
         }
         assertThat(Files.exists(path)).as("운영 application.yml 을 찾아야 한다: %s", path.toAbsolutePath()).isTrue();
         return Files.readString(path, StandardCharsets.UTF_8);

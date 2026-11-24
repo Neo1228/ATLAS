@@ -103,14 +103,14 @@ Seed script는 허용된 두 크기의 fresh V1–V20 PostgreSQL schema에서 �
 각 dataset size는 별도 fresh DB에서 실행. Seed가 `atlas_query_evidence`가 아닌 DB 또는 이전 EXP-018 rows가 있으면 중단.
 
 ```sh
-./gradlew --no-daemon :application-module:bootJar
+./gradlew --no-daemon :atlas-application:bootJar
 docker run --rm -d --name atlas-query-evidence-pg \
   -e POSTGRES_DB=atlas_query_evidence -e POSTGRES_USER=atlas \
   -e POSTGRES_PASSWORD=atlas-local-only \
   -p 127.0.0.1:55432:5432 postgres:18.6
 ATLAS_DB_URL=jdbc:postgresql://127.0.0.1:55432/atlas_query_evidence \
 ATLAS_DB_USER=atlas ATLAS_DB_PASSWORD=atlas-local-only \
-java -jar ATLAS-application/build/libs/application-module.jar
+java -jar atlas-application/build/libs/atlas-application.jar
 docker cp docs/03-experiments/EXP-018-read-query-performance.sql \
   atlas-query-evidence-pg:/tmp/seed.sql
 docker exec atlas-query-evidence-pg psql -v ON_ERROR_STOP=1 \

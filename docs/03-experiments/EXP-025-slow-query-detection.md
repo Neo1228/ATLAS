@@ -8,7 +8,7 @@
 - 현재 application의 JDBC statement elapsed-time 감지 기능 부재.
 - YAML·PostgreSQL 설정 대신 Spring DI 경계의 code-managed detector 검증.
 - [datasource-proxy 1.10.1](https://central.sonatype.com/artifact/net.ttddyy/datasource-proxy/1.10.1) 사용; 자체 JDBC proxy 구현 회피.
-- [`SlowQueryDataSourceConfiguration`](../../ATLAS-application/src/main/java/com/atlas/application/config/SlowQueryDataSourceConfiguration.java)의 auto-configured `DataSource` 선택적 wrapping.
+- [`SlowQueryDataSourceConfiguration`](../../atlas-application/src/main/java/com/atlas/application/config/SlowQueryDataSourceConfiguration.java)의 auto-configured `DataSource` 선택적 wrapping.
 - `ATLAS_DB_SLOW_QUERY_THRESHOLD_MS` 미설정 시 기존 `DataSource` 유지와 detector 비활성 startup INFO 기록. 설정값은 양의 정수만 허용.
 - `afterQuery` callback에서 threshold 이상 JDBC elapsed time에 WARN 기록. HTTP request의 `requestId`, statement count, SHA-256 query fingerprint 포함. SQL text·bind value 기록 0건.
 
@@ -27,13 +27,13 @@
 ## 결과
 
 - Fast query의 slow log 0건, threshold 초과 prepared query의 WARN 1건.
-- 현재 revision의 focused test: `./gradlew --no-daemon --max-workers=1 :application-module:test --tests com.atlas.application.config.SlowQueryDataSourceConfigurationTest` 성공 · 4 tests · failure/error 0.
+- 현재 revision의 focused test: `./gradlew --no-daemon --max-workers=1 :atlas-application:test --tests com.atlas.application.config.SlowQueryDataSourceConfigurationTest` 성공 · 4 tests · failure/error 0.
 - Event에 requestId·elapsed·statement count·SHA-256 statement fingerprint 포함. SQL template와 `0.4` bind value 기록 0건.
 - Threshold 미설정 startup log에 detector 비활성 상태 포함.
 - 실제 Spring context에서 threshold 환경 변수 적용 시 `ProxyDataSource` 확인.
 - `DataSource.unwrap(HikariDataSource.class)` 성공과 `hikaricp.connections.active` meter 등록 확인.
 - Threshold 미설정 시 raw `DataSource` 유지; `0`, 음수, 비정수 입력은 startup 오류.
-- 현재 revision 전체 검증: `./gradlew --no-daemon --max-workers=1 check :application-module:bootJar` 성공 · failure/error 0.
+- 현재 revision 전체 검증: `./gradlew --no-daemon --max-workers=1 check :atlas-application:bootJar` 성공 · failure/error 0.
 
 ## 해석과 한계
 

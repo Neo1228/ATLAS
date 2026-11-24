@@ -40,7 +40,7 @@ Oversell은 막을 수 있으나 Owner가 선택한 Campaign 간 global FIFO를 
 - **식별자:** Seller=Tenant. Seller가 SKU를 소유하며 `(sellerId, skuId)`가 Seller-SKU 식별자입니다.
 - **Seller API:** 로컬 Seller 등록은 server-generated UUID를 반환합니다. 다른 요청은 `sellerId`를 전달하지만 이는 인증 주체가 아닌 데이터 식별자입니다.
   API 소유권 검증은 Account JWT/owner interceptor를 통해 이뤄집니다 ([ADR-0027](ADR-0027-account-jwt-authentication.md)); 이 ADR은 그 보안 경계를 변경하지 않습니다.
-- **재고:** Seller-SKU 등록 때 `initialStock`을 설정하고 pool을 한 번 생성합니다. Campaign 생성은 재고를 만들거나 늘리지 않습니다. 재고 pool/reservation은 `inventory-module` 소유입니다.
+- **재고:** Seller-SKU 등록 때 `initialStock`을 설정하고 pool을 한 번 생성합니다. Campaign 생성은 재고를 만들거나 늘리지 않습니다. 재고 pool/reservation은 `atlas-inventory` 소유입니다.
 - **대기열:** 모든 Campaign이 Seller-SKU 전역 FIFO와 K를 공유합니다. 새 Seller-SKU 등록 때 `maxActiveCheckouts`를 설정합니다.
 - **K 값:** Seller-SKU 등록 때 새 값을 설정합니다. 과거 Campaign의 K를 합산하거나 보존하지 않습니다 ([D-055](../../00-governance/decision-log.md)).
 - **모듈:** Seller, SKU, Campaign은 기존 `campaign-module` 소유입니다. 별도 Catalog/Seller module을 추가하지 않습니다.
@@ -86,7 +86,7 @@ flowchart LR
 - PostgreSQL/Testcontainers에서 두 Campaign의 동시 진입이 전역 순번/K/FIFO를 공유하는지 확인.
 - Campaign 간 reserve/claim/release 뒤에도 재고 보존식이 유지되는지 확인.
 - V6 빈 DB 시작과 데이터가 있는 DB의 fail-safe는 [D-055](../../00-governance/decision-log.md)·[ADR-0006](ADR-0006-v6-clean-start.md) 기준으로 검증. 기존 data mapping/aggregate test는 요구하지 않음.
-- `./gradlew --no-daemon check :application-module:bootJar` 통과. 부하 시험은 하지 않음.
+- `./gradlew --no-daemon check :atlas-application:bootJar` 통과. 부하 시험은 하지 않음.
 
 ## 재검토 조건
 

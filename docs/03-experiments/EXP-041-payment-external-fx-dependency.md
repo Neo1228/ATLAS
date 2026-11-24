@@ -128,7 +128,7 @@ replica 수에 따른 외부 호출 배수를 **실측했다.** 이전 시도는
 **해결: 컨테이너를 쓰지 않고 호스트에서 직접 실행했다.** JDK 21 로 `bootJar` 결과물을 실행하고, PayPal stub·ECOS stub·Mailpit·k6 를 모두 호스트에서 돌렸다. 그러면 모든 프로세스가 같은 네임스페이스에서 `127.0.0.1` 을 공유한다.
 
 ```text
-JDK 21 (host) + application-module.jar  :18090 (replica1), :18092 (replica2)
+JDK 21 (host) + atlas-application.jar  :18090 (replica1), :18092 (replica2)
 PostgreSQL 18.6 (docker, port 15432)    : 공유 DB
 paypal-stub.py (host)                   :18100
 ECOS stub (host)                        :18099

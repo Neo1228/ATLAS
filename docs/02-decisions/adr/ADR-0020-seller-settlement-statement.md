@@ -9,7 +9,7 @@
 
 ## 배경
 
-`settlement-module`은 capture journal, BuyerCheckout의 Seller별 allocation, 배송 전 local refund reversal을 기록하지만 Seller 명세를 조회하는 경로는 없음. Multi-Seller checkout의 gross를 Seller별로 중복 계산하지 않으며, 보존된 posting fact를 읽는 경로가 필요.
+`atlas-settlement`은 capture journal, BuyerCheckout의 Seller별 allocation, 배송 전 local refund reversal을 기록하지만 Seller 명세를 조회하는 경로는 없음. Multi-Seller checkout의 gross를 Seller별로 중복 계산하지 않으며, 보존된 posting fact를 읽는 경로가 필요.
 
 ATLAS는 local ledger simulation. PSP evidence 대조, Seller 지급, 실제 자금 이동을 제공하지 않음.
 

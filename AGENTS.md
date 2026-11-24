@@ -7,19 +7,19 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 ## 아키텍처와 데이터 흐름
 
 - Spring Boot 기반 **modular monolith**. `ATLAS-*` 디렉터리별로 도메인 책임을 나누며 애플리케이션은 하나로 실행.
-- 실제 디렉터리명은 `ATLAS-*`; Gradle project path는 [`settings.gradle`](settings.gradle)에 선언. 현재 task 이름은 `:application-module:...` 등 설정된 project path 사용.
+- 실제 디렉터리명은 `ATLAS-*`; Gradle project path는 [`settings.gradle`](settings.gradle)에 선언. 현재 task 이름은 `:atlas-application:...` 등 설정된 project path 사용.
 - 주요 흐름: Buyer cart/checkout → admission·inventory 예약 → PayPal authorization/capture → Seller별 order → shipment/return/refund → settlement ledger. Campaign 참여는 선택 경로. 세부 흐름은 README의 Mermaid diagram 참고.
 
 | 모듈 디렉터리 | 주 책임 |
 |---|---|
-| `ATLAS-application/` | Spring Boot 진입점, HTTP API, 보안·공통 오류, scheduler 설정과 migration |
-| `ATLAS-account/` | 계정과 인증 세션 |
-| `ATLAS-catalog/` | Seller, Product, category, SKU, 가격·판매 가능성 |
-| `ATLAS-admission/` | FIFO queue, ticket, checkout slot, Campaign과 구매 자격 |
-| `ATLAS-inventory/` | 재고 pool·reservation·location·transfer |
-| `ATLAS-order/` | Buyer checkout, Seller order, shipment, return/refund, Buyer cart와 item |
-| `ATLAS-payment/` | PayPal Sandbox authorization/capture/refund, webhook |
-| `ATLAS-settlement/` | 내부 capture/refund ledger와 Seller statement |
+| `atlas-application/` | Spring Boot 진입점, HTTP API, 보안·공통 오류, scheduler 설정과 migration |
+| `atlas-account/` | 계정과 인증 세션 |
+| `atlas-catalog/` | Seller, Product, category, SKU, 가격·판매 가능성 |
+| `atlas-admission/` | FIFO queue, ticket, checkout slot, Campaign과 구매 자격 |
+| `atlas-inventory/` | 재고 pool·reservation·location·transfer |
+| `atlas-order/` | Buyer checkout, Seller order, shipment, return/refund, Buyer cart와 item |
+| `atlas-payment/` | PayPal Sandbox authorization/capture/refund, webhook |
+| `atlas-settlement/` | 내부 capture/refund ledger와 Seller statement |
 
 | 계층 | 책임 | 두지 않을 책임 |
 |---|---|---|
@@ -34,9 +34,9 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 | 경로 | 용도 |
 |---|---|
 | `ATLAS-*/src/main/java/` | 각 모듈의 Java 구현 |
-| `ATLAS-application/src/main/java/com/atlas/AtlasApplication.java` | Spring Boot 진입점 |
+| `atlas-application/src/main/java/com/atlas/AtlasApplication.java` | Spring Boot 진입점 |
 | `ATLAS-*/src/test/java/` | JUnit 단위·통합 테스트 |
-| `ATLAS-application/src/main/resources/` | `application.yml`, 관측 설정, Flyway migration |
+| `atlas-application/src/main/resources/` | `application.yml`, 관측 설정, Flyway migration |
 | `config/checkstyle/checkstyle.xml` | Java Checkstyle 규칙 |
 | `compose.yaml`, `observability/` | PostgreSQL·실험 관측 환경 |
 | `load-tests/` | 시나리오별 k6 스크립트 |
@@ -48,8 +48,8 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 
 ```sh
 ./gradlew clean check
-./gradlew :application-module:bootRun
-./gradlew :application-module:bootJar
+./gradlew :atlas-application:bootRun
+./gradlew :atlas-application:bootJar
 git ls-files -z -- '*.md' | xargs -0 npx --yes markdownlint-cli2@0.24.0
 ```
 
@@ -94,7 +94,7 @@ PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환�
 - 인터페이스와 `*Impl`은 다른 Gradle 모듈이 쓰는 계약에만 사용. 한 모듈 안의 순수 계산은 구체 클래스로 유지. 같은 필드를 복사만 하는 DTO 사본을 만들지 않고 소유 모듈의 응답 DTO를 그대로 사용.
 - `Helper`, `Util`, `Manager`, `Support`, `Common` 같은 뭉뚱그린 이름 금지. 역할을 이름에 드러냄.
 - 40줄 안팎의 package-private 보조 클래스는 모듈마다 두는 것을 허용. 공유하려면 모듈 간 의존이 새로 생기므로 두 번째 사본이 생길 때 비용을 비교.
-- `ATLAS-application`은 진입점, HTTP, 보안, 스케줄러 조립이 책임. 도메인 규칙과 SQL은 도메인 모듈이 소유.
+- `atlas-application`은 진입점, HTTP, 보안, 스케줄러 조립이 책임. 도메인 규칙과 SQL은 도메인 모듈이 소유.
 
 ## 테스트와 품질 확인
 

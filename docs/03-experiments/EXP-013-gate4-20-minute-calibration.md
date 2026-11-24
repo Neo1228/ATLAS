@@ -10,7 +10,7 @@
 ## 환경·데이터·workload
 
 - Windows 10 호스트, Docker Desktop Linux 엔진 `29.7.2`, CPU 4개, 메모리 `4,109,647,872`바이트. `compose.yaml`의 PostgreSQL `18.6`; 애플리케이션과 생성기는 로컬 Compose 네트워크에서 실행했습니다. 격리 벤치마크가 아닌 공유 자원 진단입니다.
-- 애플리케이션: `eclipse-temurin:25-jre`에서 빌드한 `application-module.jar` (`sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0`). 호스트 포트는 공개하지 않았습니다.
+- 애플리케이션: `eclipse-temurin:25-jre`에서 빌드한 `atlas-application.jar` (`sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0`). 호스트 포트는 공개하지 않았습니다.
 - 생성기: 공식 `grafana/k6:2.3.0` (`sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba8`). 호스트에 k6를 설치하거나 애플리케이션 런타임 의존성을 추가하지 않았습니다.
 - 데이터베이스 격리: 일회용 `atlas_gate4`; Flyway V1–V5를 적용하고 Hibernate `ddl-auto=validate`를 통과했습니다. 최종 PostgreSQL 데이터베이스 목록에는 `atlas_gate4`가 없었습니다. 기존 `atlas` 데이터베이스는 부하 기록에 사용하지 않았습니다.
 - 스크립트: [`load-tests/gate4.js`](../../load-tests/gate4.js). 캠페인을 만들고 연 뒤 대기열 참가 1회, 결제 시도 1회를 수행하며 재고를 예약한 경우에만 결제합니다. 폴링, 재시도, 대기 시간, 인위적인 PSP 지연은 없습니다.
@@ -24,23 +24,23 @@ Windows의 Git Bash에서 실행:
 repoRoot="$(pwd -W)"
 docker compose up -d --wait postgres
 docker compose exec -T postgres createdb -U atlas atlas_gate4
-./gradlew :application-module:bootJar
+./gradlew :atlas-application:bootJar
 
 MSYS_NO_PATHCONV=1 docker run --rm --name atlas-gate4-app --network atlas_default \
   -e ATLAS_SERVER_ADDRESS=0.0.0.0 \
   -e ATLAS_DB_URL=jdbc:postgresql://postgres:5432/atlas_gate4 \
   -e ATLAS_DB_USER=atlas -e ATLAS_DB_PASSWORD=atlas-local-only \
-  -v "$repoRoot/ATLAS-application/build/libs/application-module.jar:/app.jar:ro" \
+  -v "$repoRoot/atlas-application/build/libs/atlas-application.jar:/app.jar:ro" \
   eclipse-temurin:25-jre java -jar /app.jar
 ```
 
 두 번째 터미널에서 고정한 k6 이미지로 사전 검증과 부하 프로필을 실행합니다.
 
 ```sh
-mkdir -p ATLAS-application/build/gate4-results
+mkdir -p atlas-application/build/gate4-results
 MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
   -v "$repoRoot/load-tests/gate4.js:/gate4.js:ro" \
-  -v "$repoRoot/ATLAS-application/build/gate4-results:/results" \
+  -v "$repoRoot/atlas-application/build/gate4-results:/results" \
   -e ATLAS_BASE_URL=http://atlas-gate4-app:8080 \
   -e GATE4_PROFILE=baseline -e GATE4_MODE=pilot \
   -e GATE4_RUN_ID=gate4-pilot-20261103 \
@@ -48,7 +48,7 @@ MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
 
 MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
   -v "$repoRoot/load-tests/gate4.js:/gate4.js:ro" \
-  -v "$repoRoot/ATLAS-application/build/gate4-results:/results" \
+  -v "$repoRoot/atlas-application/build/gate4-results:/results" \
   -e ATLAS_BASE_URL=http://atlas-gate4-app:8080 \
   -e GATE4_PROFILE=baseline -e GATE4_MODE=load \
   -e GATE4_RUN_ID=gate4-baseline-20261103 -e PREALLOCATED_VUS=1 \
@@ -56,7 +56,7 @@ MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
 
 MSYS_NO_PATHCONV=1 docker run --rm --network atlas_default \
   -v "$repoRoot/load-tests/gate4.js:/gate4.js:ro" \
-  -v "$repoRoot/ATLAS-application/build/gate4-results:/results" \
+  -v "$repoRoot/atlas-application/build/gate4-results:/results" \
   -e ATLAS_BASE_URL=http://atlas-gate4-app:8080 \
   -e GATE4_PROFILE=queue-backlog -e GATE4_MODE=load \
   -e GATE4_RUN_ID=gate4-queue-backlog-20261103 -e PREALLOCATED_VUS=1 \

@@ -55,9 +55,9 @@ docker --context "$CTX" network create "$NET"
 docker --context "$CTX" run -d --rm --name "$DB" --network "$NET" --network-alias "$DB" \
   -e POSTGRES_DB=atlas_catalog_perf -e POSTGRES_USER=atlas -e POSTGRES_PASSWORD=atlas-local-only postgres:18.6
 export JAVA_HOME="<JDK 25 home>"; export PATH="$JAVA_HOME/bin:$PATH"
-./gradlew --no-daemon :application-module:bootJar
+./gradlew --no-daemon :atlas-application:bootJar
 docker --context "$CTX" run -d --rm --name "$APP" --network "$NET" --network-alias catalog-app \
-  -v "$PWD/ATLAS-application/build/libs/application-module.jar:/app/atlas.jar:ro" \
+  -v "$PWD/atlas-application/build/libs/atlas-application.jar:/app/atlas.jar:ro" \
   -e ATLAS_SERVER_ADDRESS=0.0.0.0 -e ATLAS_DB_URL="jdbc:postgresql://$DB:5432/atlas_catalog_perf" \
   -e ATLAS_DB_USER=atlas -e ATLAS_DB_PASSWORD=atlas-local-only eclipse-temurin:25-jre java -jar /app/atlas.jar
 # Wait until Flyway has created the schema, then use a fresh DB for each exact size.

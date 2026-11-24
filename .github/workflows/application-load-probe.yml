@@ -46,23 +46,23 @@ jobs:
           echo "K6_TEST_ACCOUNT_PASSWORD=LoadTest-$(openssl rand -hex 12)" >> "$GITHUB_ENV"
       - name: Build application JAR and Compose image
         run: |
-          ./gradlew --no-daemon :application-module:bootJar
+          ./gradlew --no-daemon :atlas-application:bootJar
           docker compose --profile observability --profile loadtest build application
       - name: Run remote capacity probe
         env:
           LOAD_PROBE_MODE: ${{ inputs.mode }}
         run: |
-          mkdir -p ATLAS-application/build/k6-results
+          mkdir -p atlas-application/build/k6-results
           # The pinned k6 image runs as a non-root UID; this ephemeral Actions-only bind mount
           # must be writable for its end-of-test JSON summary.
-          chmod 0777 ATLAS-application/build/k6-results
+          chmod 0777 atlas-application/build/k6-results
           bash load-tests/run-exp033-capacity-matrix.sh
       - name: Upload k6 summaries and startup diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: exp033-application-capacity-probe
-          path: ATLAS-application/build/k6-results
+          path: atlas-application/build/k6-results
           retention-days: 7
           if-no-files-found: warn
       - name: Tear down ephemeral Compose stack and volumes

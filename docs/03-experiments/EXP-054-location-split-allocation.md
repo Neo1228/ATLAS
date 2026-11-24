@@ -41,5 +41,5 @@
 ## 재현
 
 - 저장소 명령만으로 재현할 수 있다. 위 표의 계수는 `SplitAllocationCheckoutIntegrationTest.singleLocationPolicyStopsAtThirtyWhileSplitReachesSixtyFive`의 assertion과 같다. 단일 정책은 (수락 30, 거절 40, W3 잔여 0, 초과 판매 0, 분할 0), 분할 허용 정책은 (수락 65, 거절 5, W3 잔여 0, 초과 판매 0, 분할 35)다.
-- 명령: `./gradlew :application-module:test --tests 'com.atlas.order.SplitAllocationCheckoutIntegrationTest'`와 `./gradlew :order-module:test --tests 'com.atlas.order.service.LocationAllocationPolicyTest'`. JDK 25와 Testcontainers 설정은 [ADR-0058](../02-decisions/adr/ADR-0058-distributed-fulfillment-stage-one-baseline.md)의 명령을 따른다.
+- 명령: `./gradlew :atlas-application:test --tests 'com.atlas.order.SplitAllocationCheckoutIntegrationTest'`와 `./gradlew :atlas-order:test --tests 'com.atlas.order.service.LocationAllocationPolicyTest'`. JDK 25와 Testcontainers 설정은 [ADR-0058](../02-decisions/adr/ADR-0058-distributed-fulfillment-stage-one-baseline.md)의 명령을 따른다.
 - 별도 측정 결과 파일은 없다. 값은 테스트 assertion이므로 git-ignore된 원본이 필요하지 않다.

@@ -91,7 +91,7 @@ case "$workload" in
         ;;
 esac
 
-results_dir="ATLAS-application/build/k6-results"
+results_dir="atlas-application/build/k6-results"
 api_url="http://127.0.0.1:18080"
 prometheus_url="http://127.0.0.1:9090"
 grafana_url="http://127.0.0.1:3000"

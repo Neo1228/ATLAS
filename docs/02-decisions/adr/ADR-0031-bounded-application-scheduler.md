@@ -18,10 +18,10 @@
 
 ## 검증
 
-[`SchedulingConcurrencyTest`](../../../ATLAS-application/src/test/java/com/atlas/application/config/SchedulingConcurrencyTest.java): 설정 pool 3과 테스트용 pool 1/3의 latch 실행 비교. 동시 실행·대기 동작만 검증하며 처리량 benchmark는 아님. 500 ms는 동기화 대기 구간이지 SLO가 아님.
+[`SchedulingConcurrencyTest`](../../../atlas-application/src/test/java/com/atlas/application/config/SchedulingConcurrencyTest.java): 설정 pool 3과 테스트용 pool 1/3의 latch 실행 비교. 동시 실행·대기 동작만 검증하며 처리량 benchmark는 아님. 500 ms는 동기화 대기 구간이지 SLO가 아님.
 
-- 구현: [SchedulingConfiguration](../../../ATLAS-application/src/main/java/com/atlas/application/config/SchedulingConfiguration.java) · [AdmissionServiceImpl](../../../ATLAS-admission/src/main/java/com/atlas/admission/service/impl/AdmissionServiceImpl.java)
-- 테스트: [SchedulingConfigurationTest](../../../ATLAS-application/src/test/java/com/atlas/application/config/SchedulingConfigurationTest.java)
+- 구현: [SchedulingConfiguration](../../../atlas-application/src/main/java/com/atlas/application/config/SchedulingConfiguration.java) · [AdmissionServiceImpl](../../../atlas-admission/src/main/java/com/atlas/admission/service/impl/AdmissionServiceImpl.java)
+- 테스트: [SchedulingConfigurationTest](../../../atlas-application/src/test/java/com/atlas/application/config/SchedulingConfigurationTest.java)
 
 ## 결과와 한계
 

@@ -26,10 +26,10 @@
 
 ### 대상 경로와 데이터
 
-- Controller: [`SellerSettlementStatementController`](../../ATLAS-application/src/main/java/com/atlas/application/controller/seller/SellerSettlementStatementController.java)
-- Service: [`SettlementServiceImpl.getSellerStatement`](../../ATLAS-settlement/src/main/java/com/atlas/settlement/service/impl/SettlementServiceImpl.java)
-- Repository: [`SettlementJournalRepository`](../../ATLAS-settlement/src/main/java/com/atlas/settlement/repository/SettlementJournalRepository.java)
-- 기존 의미/페이지 검증: [`SettlementStatementIntegrationTest`](../../ATLAS-application/src/test/java/com/atlas/settlement/SettlementStatementIntegrationTest.java)
+- Controller: [`SellerSettlementStatementController`](../../atlas-application/src/main/java/com/atlas/application/controller/seller/SellerSettlementStatementController.java)
+- Service: [`SettlementServiceImpl.getSellerStatement`](../../atlas-settlement/src/main/java/com/atlas/settlement/service/impl/SettlementServiceImpl.java)
+- Repository: [`SettlementJournalRepository`](../../atlas-settlement/src/main/java/com/atlas/settlement/repository/SettlementJournalRepository.java)
+- 기존 의미/페이지 검증: [`SettlementStatementIntegrationTest`](../../atlas-application/src/test/java/com/atlas/settlement/SettlementStatementIntegrationTest.java)
 - EXP-018 100k fixture: Seller 100명 · checkout journal 100,000건 · allocation 100,000건 · balanced entry 200,000건. 금액 100 KRW, `recorded_at` 초당 1건. Seller 1의 allocation 1,000건
 - 추가 branch fixture: Seller 1 direct capture 150 KRW + refund reversal 50 KRW, full-period에만 포함. Query branch 검증용 synthetic row; full PSP/refund workflow나 빈도 가정 아님
 - Candidate arm에만 `CREATE INDEX exp020_candidate_recorded_journal_idx ON settlement_journal (recorded_at, journal_id)` 생성

@@ -10,10 +10,10 @@
 
 ## 확인한 사실
 
-- 프로젝트는 `ATLAS-order`, `ATLAS-inventory`, `ATLAS-payment`, `ATLAS-settlement` 모듈로 주문·재고·결제·정산 책임을 나눈 modular monolith다.
+- 프로젝트는 `atlas-order`, `atlas-inventory`, `atlas-payment`, `atlas-settlement` 모듈로 주문·재고·결제·정산 책임을 나눈 modular monolith다.
 - 주문 진입은 `CartCheckoutService`/`CheckoutPaymentService`, 이행은 `OrderFulfillmentService`로 구분돼 있다. Seller fulfillment location과 shipment 개념도 이미 존재한다.
 - 기존 통합 테스트에는 `LocationRoutedCheckoutIntegrationTest`, `InventoryConcurrencyIntegrationTest`, `OrderShipmentIntegrationTest`, `OrderRefundLifecycleIntegrationTest`, `BuyerFlowIntegrationTest`, `PaymentWorkflowCrashWindowIntegrationTest`가 있다. 기존 coverage는 주문·위치·동시성·shipment/refund를 다루지만, refund provider 응답 유실 뒤 owner-side 적용을 recovery worker가 마치는 crash-window 회귀 테스트는 없었다.
-- 기본 PATH로 실행되는 JDK는 21.0.13.1이다. Java 25는 `/opt/homebrew/opt/openjdk@25`에 설치되어 있지만 Gradle이 자동 탐지하지 않아 최초 `:application-module:test` 시도가 `languageVersion=25` toolchain을 찾지 못하고 테스트 실행 전에 중단됐다. `JAVA_HOME`을 해당 설치 경로로 지정해 재실행한다.
+- 기본 PATH로 실행되는 JDK는 21.0.13.1이다. Java 25는 `/opt/homebrew/opt/openjdk@25`에 설치되어 있지만 Gradle이 자동 탐지하지 않아 최초 `:atlas-application:test` 시도가 `languageVersion=25` toolchain을 찾지 못하고 테스트 실행 전에 중단됐다. `JAVA_HOME`을 해당 설치 경로로 지정해 재실행한다.
 
 ## 결정
 
@@ -60,7 +60,7 @@
 | `BuyerFlowIntegrationTest` | 50 |
 | `PaymentWorkflowCrashWindowIntegrationTest` | 3 |
 
-같은 2026-11-23 no-cache `clean check` 전체는 11개 모듈 **746개 테스트**이며 skipped·failure·error가 모두 0이다. 모듈별 수는 `ATLAS-account` 29, `ATLAS-admission` 19, `ATLAS-application` 507, `ATLAS-campaign` 10, `ATLAS-cart` 7, `ATLAS-catalog` 37, `ATLAS-inventory` 5, `ATLAS-inventory-location` 20, `ATLAS-order` 48, `ATLAS-payment` 38, `ATLAS-settlement` 26이다(합 746).
+같은 2026-11-23 no-cache `clean check` 전체는 11개 모듈 **746개 테스트**이며 skipped·failure·error가 모두 0이다. 모듈별 수는 `atlas-account` 29, `atlas-admission` 19, `atlas-application` 507, `ATLAS-campaign` 10, `ATLAS-cart` 7, `atlas-catalog` 37, `atlas-inventory` 5, `atlas-inventory-location` 20, `atlas-order` 48, `atlas-payment` 38, `atlas-settlement` 26이다(합 746).
 
 이 ADR 이후 분산 이행 단계(ADR-0059~0064)에서 추가하거나 바꾼 테스트 클래스의 같은 실행 기준 테스트 수는 다음과 같다. 위 6개 클래스와 별개이며, 단일 실행 기준 수이므로 이후 변경으로 달라질 수 있다.
 
@@ -84,7 +84,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 # 아래 두 줄은 macOS에서 Colima로 Docker를 쓰는 환경에만 필요하다. Docker Desktop이나 Linux에서는 생략한다.
 export DOCKER_HOST="$(docker context inspect colima --format '{{ .Endpoints.docker.Host }}')"
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
-./gradlew --no-daemon :application-module:test \
+./gradlew --no-daemon :atlas-application:test \
   --tests 'com.atlas.inventory.InventoryConcurrencyIntegrationTest' \
   --tests 'com.atlas.order.LocationRoutedCheckoutIntegrationTest' \
   --tests 'com.atlas.order.OrderShipmentIntegrationTest' \

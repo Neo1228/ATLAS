@@ -28,18 +28,18 @@
 
 최근 25개 run의 전체 wall-clock은 중앙값 **약 255초**였고, Gradle 스텝이 그 대부분이었다.
 
-### Gradle profile (application-module 포함 3개 모듈 재실행)
+### Gradle profile (atlas-application 포함 3개 모듈 재실행)
 
 | 구간 | 시간 |
 | --- | ---: |
 | Startup | 2.231s |
 | Loading/Configuring projects | 1.346s |
 | **Task execution** | **3m18.57s** |
-| `:application-module:test` | **2m58.11s** |
-| `:application-module:compileTestJava` | 2.431s |
-| `:application-module:compileJava` | 1.460s |
+| `:atlas-application:test` | **2m58.11s** |
+| `:atlas-application:compileTestJava` | 2.431s |
+| `:atlas-application:compileJava` | 1.460s |
 
-즉 설정·컴파일 최적화 여지는 작고, `:application-module:test`가 사실상 전부다. 이 모듈은 테스트 302개 중 39개가 Testcontainers를 쓰고 23개가 각기 다른 `@DynamicPropertySource` 조합으로 Spring context를 띄운다.
+즉 설정·컴파일 최적화 여지는 작고, `:atlas-application:test`가 사실상 전부다. 이 모듈은 테스트 302개 중 39개가 Testcontainers를 쓰고 23개가 각기 다른 `@DynamicPropertySource` 조합으로 Spring context를 띄운다.
 
 ### Fork 병렬화 A/B (동일 머신, 전체 `check` 재실행)
 
@@ -49,9 +49,9 @@
 | **2** | **133.43s** | **−34%** |
 | 4 | 118.87s* | −41% |
 
-\* forks=4는 `:application-module:test`만 측정한 값(180s→118.87s)이며, forks=2 대비 추가 이득은 약 4초에 그쳤다. 수익 체감이 뚜렷해 CI 기본값은 2로 정했다.
+\* forks=4는 `:atlas-application:test`만 측정한 값(180s→118.87s)이며, forks=2 대비 추가 이득은 약 4초에 그쳤다. 수익 체감이 뚜렷해 CI 기본값은 2로 정했다.
 
-`:application-module:test` 단독: forks=1 **180s** → forks=2 **123s** → forks=4 **118.9s**.
+`:atlas-application:test` 단독: forks=1 **180s** → forks=2 **123s** → forks=4 **118.9s**.
 
 ## 해석과 한계
 
@@ -74,7 +74,7 @@ GitHub Actions runner는 `docker info`에서 **4 CPU / 15.61 GiB**로 확인했�
 | `44040216748` | 기존 main baseline | 218s | 61-task full check |
 | `44099437861` | forks=2, cache warm-up 전 | 252s | 전체 job 272s; 개선을 보이지 않음 |
 | `44101485246` | forks=2, 코드 변경 PR | 203s | 61 tasks all executed; 전체 job 238s |
-| `44101459322` | 변경 없는 source 재실행 | 13s | 61개 중 50개 FROM-CACHE, `application-module:test`도 캐시 복원 |
+| `44101459322` | 변경 없는 source 재실행 | 13s | 61개 중 50개 FROM-CACHE, `atlas-application:test`도 캐시 복원 |
 
 **결론:** Local 11-vCPU forks=2의 −34%는 runner 결과로 일반화하지 않습니다. Full execution 한 샘플은 baseline보다 15s 짧았으나, 한 번의 paired run이 아니므로 forks 효과라고 단정하지 않습니다. 13s run은 test output cache-hit이라 fresh test 실행으로 계산하지 않습니다. CI는 사용자가 선택한 2 forks를 유지하고, 로컬 기본 fork는 개발 머신의 발열/메모리 부담을 줄이도록 1로 둡니다.
 

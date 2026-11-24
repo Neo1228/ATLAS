@@ -18,7 +18,7 @@ Internal ledger는 확인된 capture/refund를 기록. Provider/bank statement r
 - 차변은 `PSP_CLEARING`, 대변은 `SELLER_PAYABLE`이며 두 항목의 금액은 동일한 gross 금액입니다.
 - 원장 원천 키는 `attemptId`. 같은 attempt·checkout·gross·Seller allocation facts replay는 no-op; 다른 payload 재사용은 conflict.
 - Campaign Order 또는 Cart의 모든 Seller Order를 `PAID`로 전환하고 inventory를 claim하는 transaction에 journal·entries·allocations를 포함. PaymentAttempt의 `CAPTURED`는 PSP 호출 뒤 먼저 commit. 후속 실패 시 order·inventory·ledger rollback 후 같은 attempt로 reconciliation 재시도.
-- `settlement-module`이 원장 계약·테이블을 소유하고 `order-module`이 확인된 capture facts를 전달합니다. 역방향 모듈 의존은 만들지 않습니다. Flyway migration은 `application-module`이 소유합니다.
+- `atlas-settlement`이 원장 계약·테이블을 소유하고 `atlas-order`이 확인된 capture facts를 전달합니다. 역방향 모듈 의존은 만들지 않습니다. Flyway migration은 `atlas-application`이 소유합니다.
 
 ## 현재 경계와 미결 정책
 

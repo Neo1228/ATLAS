@@ -1,21 +1,12 @@
 rootProject.name = 'atlas'
 
-include 'application-module'
-include 'catalog-module'
-include 'admission-module'
-include 'inventory-module'
-include 'order-module'
-include 'payment-module'
-include 'settlement-module'
-include 'account-module'
-include 'inventory-location-module'
+include 'atlas-application'
+include 'atlas-catalog'
+include 'atlas-admission'
+include 'atlas-inventory'
+include 'atlas-order'
+include 'atlas-payment'
+include 'atlas-settlement'
+include 'atlas-account'
+include 'atlas-inventory-location'
 
-project(':application-module').projectDir = file('ATLAS-application')
-project(':catalog-module').projectDir = file('ATLAS-catalog')
-project(':admission-module').projectDir = file('ATLAS-admission')
-project(':inventory-module').projectDir = file('ATLAS-inventory')
-project(':order-module').projectDir = file('ATLAS-order')
-project(':payment-module').projectDir = file('ATLAS-payment')
-project(':settlement-module').projectDir = file('ATLAS-settlement')
-project(':account-module').projectDir = file('ATLAS-account')
-project(':inventory-location-module').projectDir = file('ATLAS-inventory-location')

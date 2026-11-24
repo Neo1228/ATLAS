@@ -22,7 +22,7 @@ EXP-042 는 "DB 가 동시성을 이미 막으니 외부 락·큐가 필요 없�
 
 ## 어떻게 측정했는가
 
-테스트: `ATLAS-application/src/test/java/com/atlas/inventory/InventoryFlashSaleContentionIntegrationTest.java`
+테스트: `atlas-application/src/test/java/com/atlas/inventory/InventoryFlashSaleContentionIntegrationTest.java`
 
 - Testcontainers PostgreSQL 18.6, 실제 `InventoryService`·`SellerService`·`ProductService` 빈 사용
 - HTTP 계층만 제거하고 **프로덕션 경로 그대로** 호출

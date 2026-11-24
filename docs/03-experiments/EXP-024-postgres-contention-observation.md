@@ -10,7 +10,7 @@ Admission expiry, inventory batch reservation, coupon reservation에서 의도�
 - Admission: 서로 다른 Seller-SKU counter를 처리하는 expiry sweep
 - Inventory: 2개 pool을 선택하는 `reserveAll` batch
 - Coupon: cap이 설정된 `seller_coupon` row 예약
-- 테스트 전용 blocker와 [`PostgresLockWaitProbe`](../../ATLAS-application/src/test/java/com/atlas/PostgresLockWaitProbe.java) 사용
+- 테스트 전용 blocker와 [`PostgresLockWaitProbe`](../../atlas-application/src/test/java/com/atlas/PostgresLockWaitProbe.java) 사용
 
 ## 환경과 실행
 
@@ -25,7 +25,7 @@ Admission expiry, inventory batch reservation, coupon reservation에서 의도�
 재현 명령:
 
 ```sh
-./gradlew --no-daemon --rerun-tasks :application-module:test \
+./gradlew --no-daemon --rerun-tasks :atlas-application:test \
   --tests com.atlas.admission.AdmissionExpiryTransactionIntegrationTest \
   --tests com.atlas.SellerCouponRedemptionIntegrationTest \
   --tests com.atlas.inventory.InventoryLockWaitIntegrationTest
@@ -44,7 +44,7 @@ Admission expiry, inventory batch reservation, coupon reservation에서 의도�
 - 각 경로의 sample 수는 4. 범위만 기술; percentile·평균·성능 순위 추론 없음.
 - 세 경로 모두 지정 blocker와 waiter PID 관계를 확인하고 blocker 해제 후 invariant 통과.
 - `transactionid`는 PostgreSQL에서 관측된 wait event. 이 결과만으로 lock 경합이 실제 서비스 병목이라고 결론 내릴 수 없음.
-- 전체 검증: `./gradlew --no-daemon clean check :application-module:bootJar` 성공 · 57 test suites · 273 tests · failure/error/skip 0.
+- 전체 검증: `./gradlew --no-daemon clean check :atlas-application:bootJar` 성공 · 57 test suites · 273 tests · failure/error/skip 0.
 
 ## 해석과 다음 판단
 

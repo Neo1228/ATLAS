@@ -56,7 +56,7 @@ services:
       INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
       FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000001
     volumes:
-      - ../ATLAS-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
+      - ../atlas-inventory-location/build/libs/atlas-inventory-location.jar:/app/atlas-inventory-location.jar:ro
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8090 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
       interval: 2s
@@ -80,7 +80,7 @@ services:
 
   app:
     image: eclipse-temurin:25-jre
-    command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/application-module.jar"]
+    command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/atlas-application.jar"]
     depends_on:
       order-postgres:
         condition: service_healthy
@@ -115,7 +115,7 @@ services:
       # Spring Boot default is 10; set APP_POOL_SIZE to override for a pool-size sensitivity run.
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${APP_POOL_SIZE:-10}
     volumes:
-      - ../ATLAS-application/build/libs/application-module.jar:/app/application-module.jar:ro
+      - ../atlas-application/build/libs/atlas-application.jar:/app/atlas-application.jar:ro
     ports:
       - "127.0.0.1::8080"
       - "127.0.0.1::8081"
