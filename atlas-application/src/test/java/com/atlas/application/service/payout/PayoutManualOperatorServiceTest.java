@@ -11,9 +11,10 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.application.dto.request.SettlementHttpRequest;
 import com.atlas.settlement.dto.response.PayoutResponse;
-import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
 import com.atlas.settlement.service.SettlementPayoutService;
@@ -39,21 +40,21 @@ class PayoutManualOperatorServiceTest {
     @Test
     void manuallyConfirmedProviderSuccessUsesStoredFxAndRequiresExactAmount() {
         PayoutDispatchRecord record = needsReviewRecord();
-        PayoutResponse.SellerPayout needsReview = response(SettlementPayoutStatus.NEEDS_REVIEW);
-        PayoutResponse.SellerPayout confirmed = response(SettlementPayoutStatus.CONFIRMED);
+        PayoutResponse.SellerPayout needsReview = response(SettlementPayoutState.NEEDS_REVIEW);
+        PayoutResponse.SellerPayout confirmed = response(SettlementPayoutState.CONFIRMED);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(record));
         when(payouts.find(payoutId)).thenReturn(needsReview);
         when(payouts.confirmProviderSuccess(payoutId, 10_011, 11, 343)).thenReturn(confirmed);
-        when(dispatches.resolveNeedsReview(payoutId, "COMPLETED", "provider-batch", "provider-item",
+        when(dispatches.resolveNeedsReview(payoutId, PayoutDispatchState.COMPLETED, "provider-batch", "provider-item",
                 25L, 343L, "OPERATOR_PROVIDER_PAID")).thenReturn(true);
         when(actions.record(payoutId, "review-1", "PROVIDER_REVIEW_PAID", "operator-1",
                 "case-2026-001", NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.resolveProviderReview(payoutId, "review-1", "operator-1",
-                new SettlementHttpRequest.PayoutProviderResolution("PAID", "case-2026-001", "provider-batch",
+                new SettlementHttpRequest.PayoutProviderResolution(SettlementHttpRequest.ProviderOutcome.PAID, "case-2026-001", "provider-batch",
                         "provider-item", 730L, "USD", 25L));
 
-        assertThat(result.state()).isEqualTo(SettlementPayoutStatus.CONFIRMED);
+        assertThat(result.state()).isEqualTo(SettlementPayoutState.CONFIRMED);
         verify(payouts).confirmProviderSuccess(payoutId, 10_011, 11, 343);
         verify(actions).record(payoutId, "review-1", "PROVIDER_REVIEW_PAID", "operator-1",
                 "case-2026-001", NOW);
@@ -62,10 +63,10 @@ class PayoutManualOperatorServiceTest {
     @Test
     void rejectsManualProviderEvidenceThatChangesTheFrozenUsdAmount() {
         when(dispatches.find(payoutId)).thenReturn(Optional.of(needsReviewRecord()));
-        when(payouts.find(payoutId)).thenReturn(response(SettlementPayoutStatus.NEEDS_REVIEW));
+        when(payouts.find(payoutId)).thenReturn(response(SettlementPayoutState.NEEDS_REVIEW));
 
         assertThatThrownBy(() -> service.resolveProviderReview(payoutId, "review-2", "operator-1",
-                new SettlementHttpRequest.PayoutProviderResolution("PAID", "case-2026-002", "provider-batch",
+                new SettlementHttpRequest.PayoutProviderResolution(SettlementHttpRequest.ProviderOutcome.PAID, "case-2026-002", "provider-batch",
                         "provider-item", 731L, "USD", 25L)))
                 .isInstanceOf(SettlementException.class);
         verify(payouts, never()).confirmProviderSuccess(any(), anyLong(), anyLong(), anyLong());
@@ -76,19 +77,19 @@ class PayoutManualOperatorServiceTest {
     void confirmedNoTransferReleasesOnlyTheReviewedPayoutReservation() {
         PayoutDispatchRecord record = needsReviewRecord();
         when(dispatches.find(payoutId)).thenReturn(Optional.of(record));
-        when(payouts.find(payoutId)).thenReturn(response(SettlementPayoutStatus.NEEDS_REVIEW));
+        when(payouts.find(payoutId)).thenReturn(response(SettlementPayoutState.NEEDS_REVIEW));
         when(payouts.failWithProviderEvidence(payoutId, "OPERATOR_CONFIRMED_NO_TRANSFER"))
-                .thenReturn(response(SettlementPayoutStatus.FAILED));
-        when(dispatches.resolveNeedsReview(payoutId, "FAILED", null, null, 0L, 0L, "OPERATOR_NO_TRANSFER"))
+                .thenReturn(response(SettlementPayoutState.FAILED));
+        when(dispatches.resolveNeedsReview(payoutId, PayoutDispatchState.FAILED, null, null, 0L, 0L, "OPERATOR_NO_TRANSFER"))
                 .thenReturn(true);
         when(actions.record(payoutId, "review-no-transfer", "PROVIDER_REVIEW_NOT_PAID", "operator-1",
                 "paypal-case-2026-01", NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout failed = service.resolveProviderReview(payoutId, "review-no-transfer",
                 "operator-1", new SettlementHttpRequest.PayoutProviderResolution(
-                        "NOT_PAID", "paypal-case-2026-01", null, null, null, "USD", 0L));
+                        SettlementHttpRequest.ProviderOutcome.NOT_PAID, "paypal-case-2026-01", null, null, null, "USD", 0L));
 
-        assertThat(failed.state()).isEqualTo(SettlementPayoutStatus.FAILED);
+        assertThat(failed.state()).isEqualTo(SettlementPayoutState.FAILED);
         verify(payouts).failWithProviderEvidence(payoutId, "OPERATOR_CONFIRMED_NO_TRANSFER");
         verify(actions).record(payoutId, "review-no-transfer", "PROVIDER_REVIEW_NOT_PAID", "operator-1",
                 "paypal-case-2026-01", NOW);
@@ -97,10 +98,10 @@ class PayoutManualOperatorServiceTest {
         return new PayoutDispatchRecord(payoutId, 1, "v2:active:encrypted", "US", "USD",
                 10_000, 730, new BigDecimal("1371.25000000"), "BOK_ECOS", LocalDate.parse("2026-11-21"),
                 10_011, 11, null, null, null, "sender-batch", "sender-item", "request-id", "0".repeat(64),
-                null, null, null, null, "NEEDS_REVIEW", NOW, NOW, 8, NOW, "MAX_ATTEMPTS_OR_AGE", null, null);
+                null, null, null, null, PayoutDispatchState.NEEDS_REVIEW, NOW, NOW, 8, NOW, "MAX_ATTEMPTS_OR_AGE", null, null);
     }
 
-    private PayoutResponse.SellerPayout response(SettlementPayoutStatus state) {
+    private PayoutResponse.SellerPayout response(SettlementPayoutState state) {
         return new PayoutResponse.SellerPayout(payoutId, sellerId, NOW, NOW.plusSeconds(60), 10_000, 0,
                 state, NOW, null, null, null);
     }

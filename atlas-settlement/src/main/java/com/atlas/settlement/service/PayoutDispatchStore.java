@@ -3,6 +3,7 @@ package com.atlas.settlement.service;
 import com.atlas.settlement.model.PayoutDispatchMetrics;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchState;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -17,15 +18,15 @@ public interface PayoutDispatchStore {
 
     List<PayoutDispatchRecord> claim(int limit, Duration leaseDuration);
 
-    boolean reschedule(PayoutDispatchRecord r, Duration delay, String safeCode, String resultingStatus);
+    boolean reschedule(PayoutDispatchRecord r, Duration delay, String safeCode, PayoutDispatchState resultingStatus);
 
-    boolean transition(PayoutDispatchRecord r, String status, String safeCode);
+    boolean transition(PayoutDispatchRecord r, PayoutDispatchState status, String safeCode);
 
     boolean cancelPending(UUID payoutId);
 
     boolean requeueNeedsReview(UUID payoutId);
 
-    boolean resolveNeedsReview(UUID payoutId, String result, String batchId, String itemId, Long feeMinor, Long feeWon, String safeCode);
+    boolean resolveNeedsReview(UUID payoutId, PayoutDispatchState result, String batchId, String itemId, Long feeMinor, Long feeWon, String safeCode);
 
     boolean recordProviderEvidence(PayoutDispatchRecord r, String batchId, String batchStatus, String itemId, String itemStatus, Long feeMinor, String feeCurrency, Long feeWon);
 

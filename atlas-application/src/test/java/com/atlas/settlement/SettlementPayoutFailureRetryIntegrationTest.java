@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.settlement.dto.response.SettlementPayoutStatus;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
 import java.sql.Timestamp;
@@ -80,11 +80,11 @@ class SettlementPayoutFailureRetryIntegrationTest extends PayPalIntegrationTestS
         settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
 
         PayoutResponse.SellerPayout first = payouts.request(sellerId, PERIOD_START, PERIOD_END, "retry-key-1");
-        assertThat(first.state()).isEqualTo(SettlementPayoutStatus.REQUESTED);
+        assertThat(first.state()).isEqualTo(SettlementPayoutState.REQUESTED);
         assertThat(first.amountWon()).isEqualTo(8_000L);
 
         PayoutResponse.SellerPayout failed = payouts.fail(first.payoutId(), "BANK_REJECTED");
-        assertThat(failed.state()).isEqualTo(SettlementPayoutStatus.FAILED);
+        assertThat(failed.state()).isEqualTo(SettlementPayoutState.FAILED);
         // FAILED 는 더 이상 잔액을 예약하지 않는다. 돈은 다시 지급 가능하다.
         assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isZero();
         assertThat(payouts.summary(sellerId).payableAmountWon()).isEqualTo(8_000L);
@@ -92,26 +92,26 @@ class SettlementPayoutFailureRetryIntegrationTest extends PayPalIntegrationTestS
         // 같은 key 재전송은 같은 요청의 재시도다. 실패 결과를 FAILED 상태 그대로 돌려주고 새 지급을 만들지 않는다.
         PayoutResponse.SellerPayout replay = payouts.request(sellerId, PERIOD_START, PERIOD_END, "retry-key-1");
         assertThat(replay.payoutId()).isEqualTo(first.payoutId());
-        assertThat(replay.state()).isEqualTo(SettlementPayoutStatus.FAILED);
+        assertThat(replay.state()).isEqualTo(SettlementPayoutState.FAILED);
         assertThat(payoutCount(sellerId)).isEqualTo(1);
 
         // 새 key 로 같은 기간을 다시 요청하면 새 지급이 생긴다(이전 동작: FAILED 행을 돌려받았다).
         PayoutResponse.SellerPayout retried = payouts.request(sellerId, PERIOD_START, PERIOD_END, "retry-key-2");
         assertThat(retried.payoutId()).isNotEqualTo(first.payoutId());
-        assertThat(retried.state()).isEqualTo(SettlementPayoutStatus.REQUESTED);
+        assertThat(retried.state()).isEqualTo(SettlementPayoutState.REQUESTED);
         assertThat(retried.periodStart()).isEqualTo(PERIOD_START);
         assertThat(retried.periodEnd()).isEqualTo(PERIOD_END);
         assertThat(retried.amountWon()).isEqualTo(8_000L);
         assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(8_000L);
         // 실패한 지급은 이력으로 남는다.
-        assertThat(payouts.find(first.payoutId()).state()).isEqualTo(SettlementPayoutStatus.FAILED);
+        assertThat(payouts.find(first.payoutId()).state()).isEqualTo(SettlementPayoutState.FAILED);
         assertThat(payoutCount(sellerId)).isEqualTo(2);
 
         // 새 지급은 정상 수명주기를 끝까지 탈 수 있고, 확정되면 지급 가능 잔액이 0 이 된다.
         payouts.approve(retried.payoutId());
         payouts.markSent(retried.payoutId());
         PayoutResponse.SellerPayout confirmed = payouts.confirm(retried.payoutId());
-        assertThat(confirmed.state()).isEqualTo(SettlementPayoutStatus.CONFIRMED);
+        assertThat(confirmed.state()).isEqualTo(SettlementPayoutState.CONFIRMED);
         assertThat(payouts.summary(sellerId).payableAmountWon()).isZero();
         assertThat(payouts.summary(sellerId).confirmedPayoutAmountWon()).isEqualTo(8_000L);
     }
@@ -124,7 +124,7 @@ class SettlementPayoutFailureRetryIntegrationTest extends PayPalIntegrationTestS
         PayoutResponse.SellerPayout first = payouts.request(sellerId, PERIOD_START, PERIOD_END, "dup-key-1");
         payouts.fail(first.payoutId(), "BANK_REJECTED");
         PayoutResponse.SellerPayout active = payouts.request(sellerId, PERIOD_START, PERIOD_END, "dup-key-2");
-        assertThat(active.state()).isEqualTo(SettlementPayoutStatus.REQUESTED);
+        assertThat(active.state()).isEqualTo(SettlementPayoutState.REQUESTED);
 
         // 서비스 경로: 진행 중 지급이 있으면 새 key 라도 그 지급을 돌려준다(중복 지급 금지).
         PayoutResponse.SellerPayout duplicate = payouts.request(sellerId, PERIOD_START, PERIOD_END, "dup-key-3");

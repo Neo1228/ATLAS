@@ -1,11 +1,12 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.application.security.PayoutRecipientCipher;
-import com.atlas.settlement.dto.response.SettlementPayoutStatus;
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
+import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
 import com.atlas.settlement.service.SettlementPayoutService;
@@ -46,8 +47,8 @@ public class PayoutDispatchApprovalCommitService {
             String idempotencyKey, String actor, String reason) {
         if (!payoutId.equals(plan.payoutId())) throw invalid("Payout dispatch plan does not match payout");
         PayoutResponse.SellerPayout current = payouts.find(payoutId);
-        if (current.state() != SettlementPayoutStatus.REQUESTED
-                && current.state() != SettlementPayoutStatus.APPROVED) {
+        if (current.state() != SettlementPayoutState.REQUESTED
+                && current.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Only a requested payout can be approved for provider dispatch");
         }
         if (current.amountWon() != plan.requestedAmountWon()
@@ -59,9 +60,9 @@ public class PayoutDispatchApprovalCommitService {
         if (!sameRecipient(expectedRecipient, currentRecipient)) {
             throw conflict("Seller payout profile changed while approval was prepared");
         }
-        PayoutResponse.SellerPayout approved = current.state() == SettlementPayoutStatus.APPROVED
+        PayoutResponse.SellerPayout approved = current.state() == SettlementPayoutState.APPROVED
                 ? current : payouts.approve(payoutId);
-        if (approved.state() != SettlementPayoutStatus.APPROVED) {
+        if (approved.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Payout approval did not reach the approved state");
         }
         PayoutDispatchRecord record = dispatches.enqueue(plan);
@@ -81,7 +82,7 @@ public class PayoutDispatchApprovalCommitService {
     public PayoutResponse.SellerPayout replay(UUID payoutId, String idempotencyKey, String actor, String reason) {
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         if (actions.matches(payoutId, idempotencyKey, "PAYOUT_APPROVED", actor, reason)) return payout;
-        if (payout.state() != SettlementPayoutStatus.APPROVED) {
+        if (payout.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Payout approval is already terminal or in provider reconciliation");
         }
         recordAction(payoutId, idempotencyKey, "PAYOUT_APPROVAL_REPLAYED", actor, reason);
@@ -103,8 +104,8 @@ public class PayoutDispatchApprovalCommitService {
         PayoutDispatchRecord record = dispatches.find(payoutId)
                 .orElseThrow(() -> conflict("Payout has no provider dispatch record"));
         if (actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) return payout;
-        if ("NEEDS_REVIEW".equals(record.status())) {
-            if (payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) {
+        if (record.status() == PayoutDispatchState.NEEDS_REVIEW) {
+            if (payout.state() != SettlementPayoutState.NEEDS_REVIEW) {
                 throw conflict("Payout state does not permit provider requeue");
             }
             if (dispatches.requeueNeedsReview(payoutId)) {
@@ -113,13 +114,13 @@ public class PayoutDispatchApprovalCommitService {
             }
             PayoutDispatchRecord latest = dispatches.find(payoutId).orElseThrow(
                     () -> conflict("Payout dispatch record disappeared during requeue"));
-            if (("PENDING".equals(latest.status()) || "WAITING_PROVIDER".equals(latest.status()))
+            if ((latest.status() == PayoutDispatchState.PENDING || latest.status() == PayoutDispatchState.WAITING_PROVIDER)
                     && actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) {
                 return payout;
             }
             throw conflict("Payout is no longer eligible for provider requeue");
         }
-        if (("PENDING".equals(record.status()) || "WAITING_PROVIDER".equals(record.status()))
+        if ((record.status() == PayoutDispatchState.PENDING || record.status() == PayoutDispatchState.WAITING_PROVIDER)
                 && actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) {
             return payout;
         }

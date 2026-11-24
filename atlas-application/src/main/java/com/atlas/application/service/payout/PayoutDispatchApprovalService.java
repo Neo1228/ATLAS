@@ -6,7 +6,7 @@ import com.atlas.payment.dto.response.FxResponse;
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
-import com.atlas.settlement.dto.response.SettlementPayoutStatus;
+import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
@@ -54,11 +54,11 @@ public class PayoutDispatchApprovalService {
             return committer.replay(payoutId, idempotencyKey, actor, reason.trim());
         }
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
-        if (payout.state() != SettlementPayoutStatus.REQUESTED
-                && payout.state() != SettlementPayoutStatus.APPROVED) {
+        if (payout.state() != SettlementPayoutState.REQUESTED
+                && payout.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Only a requested payout can be approved for provider dispatch");
         }
-        if (payout.state() == SettlementPayoutStatus.APPROVED) {
+        if (payout.state() == SettlementPayoutState.APPROVED) {
             throw conflict("Approved payout has no durable provider intent and requires operator review");
         }
         SellerPayoutProfileService.ActiveRecipient recipient = profiles.requireActiveRecipient(payout.sellerId());
@@ -110,7 +110,7 @@ public class PayoutDispatchApprovalService {
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         return dispatches.find(payoutId)
                 .map(record -> new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payout.state().name(),
-                        record.status(), record.senderBatchId(), record.providerBatchId(), record.providerItemId(),
+                        record.status().name(), record.senderBatchId(), record.providerBatchId(), record.providerItemId(),
                         record.providerBatchStatus(), record.providerItemStatus(), record.requestedAmountWon(),
                         record.providerAmountMinor(), record.payoutCurrency(), record.fxRateWonPerUsd(),
                         record.fxSource(), record.fxAsOfDate(), record.attemptCount(), record.firstEnqueuedAt(),
@@ -134,7 +134,7 @@ public class PayoutDispatchApprovalService {
     }
 
     private SettlementHttpResponse.PayoutDispatchStatus toStatus(PayoutDispatchRecord record, String payoutState) {
-        return new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payoutState, record.status(),
+        return new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payoutState, record.status().name(),
                 record.senderBatchId(), record.providerBatchId(), record.providerItemId(),
                 record.providerBatchStatus(), record.providerItemStatus(), record.requestedAmountWon(),
                 record.providerAmountMinor(), record.payoutCurrency(), record.fxRateWonPerUsd(),

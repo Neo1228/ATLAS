@@ -14,7 +14,7 @@ public record PayoutDispatchRecord(
         Long providerFeeMinor, String providerFeeCurrency, Long providerFeeWon,
         String senderBatchId, String senderItemId, String paypalRequestId, String requestPayloadSha256,
         String providerBatchId, String providerItemId, String providerBatchStatus, String providerItemStatus,
-        String status, Instant availableAt, Instant firstEnqueuedAt, int attemptCount,
+        PayoutDispatchState status, Instant availableAt, Instant firstEnqueuedAt, int attemptCount,
         Instant lastAttemptAt, String lastErrorCode, UUID leaseToken, Instant leaseUntil) {
     @Override
     public String toString() {
