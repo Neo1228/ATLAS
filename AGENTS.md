@@ -41,6 +41,7 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 | `compose.yaml`, `observability/` | PostgreSQL·실험 관측 환경 |
 | `load-tests/` | 시나리오별 k6 스크립트 |
 | `docs/00-governance/`, `docs/01-requirements/`, `docs/02-decisions/`, `docs/03-experiments/` | 결정·요구사항·ADR·검증 근거의 정본 |
+| `docs/operations-guide.md` | README에서 옮긴 기능별 API 동작과 운영 절차 |
 | `.github/` | Issue/PR 템플릿과 CI workflow |
 | `settings.gradle`, `build.gradle`, `gradlew` | 모듈 mapping, 공통 빌드 설정, Gradle Wrapper |
 

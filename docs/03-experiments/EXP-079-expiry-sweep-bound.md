@@ -1,4 +1,6 @@
-# EXP-026: 만료 sweep 상한 적용 전후 비교
+# EXP-079: 만료 sweep 상한 적용 전후 비교
+
+- 이전 번호: EXP-026. 같은 번호를 쓰는 문서가 둘이어서 나중에 만든 이 문서의 번호를 바꿨다([#618](https://github.com/Neo1228/ATLAS/issues/618)). 이전 Issue와 PR 본문에서 EXP-026로 인용한 곳이 이 문서를 뜻할 수 있다.
 
 **상태:** 로컬 합성 데이터 측정 · 운영 부하/SLA 근거 아님
 
@@ -31,4 +33,4 @@
 
 ## 재현
 
-`docs/03-experiments/EXP-026-expiry-sweep-bound.sql`은 동일 비교를 실행 가능한 형태로 기록한다.
+`docs/03-experiments/EXP-079-expiry-sweep-bound.sql`은 동일 비교를 실행 가능한 형태로 기록한다.

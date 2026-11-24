@@ -1,4 +1,6 @@
-# EXP-027: seller 정산 명세 index 적용 전후
+# EXP-080: seller 정산 명세 index 적용 전후
+
+- 이전 번호: EXP-027. 같은 번호를 쓰는 문서가 둘이어서 나중에 만든 이 문서의 번호를 바꿨다([#618](https://github.com/Neo1228/ATLAS/issues/618)). 이전 Issue와 PR 본문에서 EXP-027로 인용한 곳이 이 문서를 뜻할 수 있다.
 
 **상태:** 로컬 합성 데이터 측정 · 운영 부하/SLA 근거 아님
 
@@ -43,4 +45,4 @@ V39 적용 후 plan 변화는 branch 1·3에 국한됩니다.
 
 ## 재현
 
-`docs/03-experiments/EXP-027-seller-statement-index.sql`에 동일 dataset·query를 기록했습니다.
+`docs/03-experiments/EXP-080-seller-statement-index.sql`에 동일 dataset·query를 기록했습니다.

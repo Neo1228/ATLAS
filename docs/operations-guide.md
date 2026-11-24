@@ -383,7 +383,7 @@ RATE=10000 CONSUMERS=12 BATCH=5000 POLL_MS=100 DURATION=30 load-tests/run-event-
 `RESERVED` 주문과 buyer checkout의 만료 처리는 1초 주기 scheduler가 담당합니다. 한 tick은 후보를 최대 `ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE`(기본 100)건까지만 조회하고, 경과 시간이 `ATLAS_ORDERS_EXPIRY_SWEEP_TIME_BUDGET`(기본 `PT2S`)을 넘으면 남은 후보를 다음 tick으로 넘깁니다. 후보별 개별 transaction·잠금 순서·상태 전이는 기존과 동일합니다.
 
 - 만료가 지연되면 해당 주문의 재고 reservation이 계속 점유되어 다른 구매자에게 품절로 보일 수 있으므로, backlog가 지속되면 batch를 키우거나 [ADR-0039](02-decisions/adr/ADR-0039-bounded-expiry-sweep.md)의 후속 검토를 따릅니다.
-- 상한 적용 전후 후보 조회 비용은 [EXP-026](03-experiments/EXP-026-expiry-sweep-bound.md)에 기록했습니다(로컬 합성 데이터, 운영 SLA 아님).
+- 상한 적용 전후 후보 조회 비용은 [EXP-079](03-experiments/EXP-079-expiry-sweep-bound.md)에 기록했습니다(로컬 합성 데이터, 운영 SLA 아님).
 
 ### Admission queue 만료
 
