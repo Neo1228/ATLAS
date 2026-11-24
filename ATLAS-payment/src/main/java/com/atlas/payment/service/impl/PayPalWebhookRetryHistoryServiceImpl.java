@@ -5,7 +5,7 @@ import com.atlas.payment.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
 import com.atlas.payment.dto.response.PayPalWebhookRetrySummary;
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.persistence.projection.RetrySummary;
+import com.atlas.payment.persistence.projection.WebhookRetrySummary;
 import com.atlas.payment.repository.PayPalWebhookRetryHistoryRepository;
 import com.atlas.payment.service.PayPalWebhookRetryHistoryService;
 import java.util.List;
@@ -23,7 +23,7 @@ public class PayPalWebhookRetryHistoryServiceImpl implements PayPalWebhookRetryH
     /** 최근 24시간 재시도 outcome 요약. */
     @Override
     public PayPalWebhookRetrySummary summary() {
-        RetrySummary summary = retries.summary();
+        WebhookRetrySummary summary = retries.summary();
         return new PayPalWebhookRetrySummary(summary.pending(), summary.exhausted(), summary.oldestPendingSince(),
                 summary.oldestExhaustedSince(), summary.expiredLeaseCount(), summary.last24HoursOutcomeCounts());
     }

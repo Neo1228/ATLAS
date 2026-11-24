@@ -1,7 +1,7 @@
 package com.atlas.payment.repository;
 
-import com.atlas.payment.persistence.projection.ClaimedRetry;
-import com.atlas.payment.persistence.projection.PollResult;
+import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
+import com.atlas.payment.persistence.projection.WebhookRetryPollResult;
 import com.atlas.payment.persistence.projection.WebhookRetryEvent;
 import com.atlas.payment.persistence.state.WebhookRetryFailure;
 import java.math.BigDecimal;
@@ -43,11 +43,11 @@ public class PayPalWebhookRetryRepository {
      * 새 lease token으로 최대 한 행을 claim합니다. Queue 전이, 만료 lease 종결, 새 이력 기록은
      * 하나의 SQL 문에서 원자적으로 처리합니다.
      */
-    public List<ClaimedRetry> claimDue() {
+    public List<ClaimedWebhookRetry> claimDue() {
         return pollDue().claimed();
     }
 
-    public PollResult pollDue() {
+    public WebhookRetryPollResult pollDue() {
         // 마지막 시도의 worker가 중단되면 다시 claim할 수 없으므로 lease 만료 시 이력을 종결하고
         // queue 행을 EXHAUSTED로 전환합니다. 마이그레이션 이전 lease에는 기존 이력이 없습니다.
         int reapedCount = jdbc.queryForObject("""
@@ -88,7 +88,7 @@ public class PayPalWebhookRetryRepository {
         // batch 크기 1은 의도적입니다. 여러 행을 claim하도록 바꾸면 batch UUID를 공유하지 말고
         // 각 행마다 별도의 lease token을 생성해야 합니다.
         String token = UUID.randomUUID().toString();
-        List<ClaimedRetry> claimed = jdbc.query("""
+        List<ClaimedWebhookRetry> claimed = jdbc.query("""
                 WITH due AS MATERIALIZED (
                     SELECT event_id, attempt_count, lease_owner
                     FROM paypal_webhook_retry
@@ -126,15 +126,15 @@ public class PayPalWebhookRetryRepository {
                 )
                 SELECT c.* FROM claimed c JOIN history h ON h.lease_token = c.lease_owner
                 """, this::mapClaim, MAX_ATTEMPTS, token, LEASE_SECONDS);
-        return new PollResult(claimed, reapedCount);
+        return new WebhookRetryPollResult(claimed, reapedCount);
     }
 
-    private ClaimedRetry mapClaim(ResultSet rs, int rowNum) throws SQLException {
+    private ClaimedWebhookRetry mapClaim(ResultSet rs, int rowNum) throws SQLException {
         BigDecimal amount = rs.getBigDecimal("resource_amount");
         WebhookRetryEvent event = new WebhookRetryEvent(rs.getString("event_id"), rs.getString("event_type"),
                 rs.getString("resource_id"), rs.getString("resource_status"), rs.getString("provider_order_id"),
                 rs.getString("related_capture_id"), amount, rs.getString("resource_currency"));
-        return new ClaimedRetry(event, rs.getInt("attempt_count"), rs.getString("lease_owner"));
+        return new ClaimedWebhookRetry(event, rs.getInt("attempt_count"), rs.getString("lease_owner"));
     }
 
     /** lease가 오래되었거나 만료·누락 또는 이미 종결된 경우 false를 반환합니다. */

@@ -1,7 +1,7 @@
 package com.atlas.order.repository;
 
 import com.atlas.order.persistence.projection.LocationRestock;
-import com.atlas.order.persistence.projection.WorkflowItemRecord;
+import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -22,7 +22,7 @@ public class LocationRestockRepository {
     /** 호출자의 transaction에 참여한다. 같은 key·location 재기록은 무시한다. */
     @Transactional
     public void insert(String restockKey, UUID locationId, UUID refundId, UUID orderId, UUID workflowId,
-                       UUID reservationId, List<WorkflowItemRecord> items, Instant now) {
+                       UUID reservationId, List<ReservationWorkflowItemRecord> items, Instant now) {
         int inserted = jdbc.update("""
                 INSERT INTO order_inventory_restock
                     (restock_key, fulfillment_location_id, refund_id, order_id, workflow_id, remote_reservation_id,
@@ -32,7 +32,7 @@ public class LocationRestockRepository {
                 """, restockKey, locationId, refundId, orderId, workflowId, reservationId,
                 Timestamp.from(now), Timestamp.from(now), Timestamp.from(now));
         if (inserted == 0) return;
-        for (WorkflowItemRecord item : items) {
+        for (ReservationWorkflowItemRecord item : items) {
             jdbc.update("""
                     INSERT INTO order_inventory_restock_item
                         (restock_key, fulfillment_location_id, seller_id, sku_id, quantity)
@@ -103,11 +103,11 @@ public void finish(String restockKey, UUID locationId, int attemptCount, String 
         return ageSeconds == null ? 0 : Math.max(0, ageSeconds);
     }
 
-    private List<WorkflowItemRecord> items(String restockKey, UUID locationId) {
+    private List<ReservationWorkflowItemRecord> items(String restockKey, UUID locationId) {
         return jdbc.query("""
                 SELECT seller_id, sku_id, quantity FROM order_inventory_restock_item
                 WHERE restock_key = ? AND fulfillment_location_id = ? ORDER BY seller_id, sku_id
-                """, (rs, row) -> new WorkflowItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"),
+                """, (rs, row) -> new ReservationWorkflowItemRecord(rs.getObject("seller_id", UUID.class), rs.getString("sku_id"),
                 rs.getInt("quantity")), restockKey, locationId);
     }
 }

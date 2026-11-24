@@ -7,7 +7,7 @@ import com.atlas.order.dto.response.ProductReviewResponse;
 import com.atlas.order.exception.OrderException.Code;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.projection.ProductReview;
-import com.atlas.order.persistence.projection.ReviewSummary;
+import com.atlas.order.persistence.projection.ProductReviewSummary;
 import com.atlas.order.repository.ProductReviewRepository;
 import com.atlas.order.service.OrderService;
 import com.atlas.order.service.ProductReviewService;
@@ -68,7 +68,7 @@ public class ProductReviewServiceImpl implements ProductReviewService {
         if (offset < 0 || offset > MAX_PAGE_OFFSET) {
             throw new OrderException(Code.INVALID_REQUEST, "offset must be between 0 and 10000");
         }
-        ReviewSummary summary = reviews.summary(productId);
+        ProductReviewSummary summary = reviews.summary(productId);
         List<ProductReview> fetched = reviews.list(productId, limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
         List<ProductReviewResponse> items = fetched.stream().limit(limit)

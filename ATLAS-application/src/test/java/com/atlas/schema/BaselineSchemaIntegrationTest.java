@@ -19,7 +19,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * 이전 상태에서 올리는 업그레이드는 검증하지 않는다. 아직 배포하지 않아 올려야 할 데이터가 없다.
  */
 @Testcontainers
-class FinalSchemaIntegrationTest {
+class BaselineSchemaIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 

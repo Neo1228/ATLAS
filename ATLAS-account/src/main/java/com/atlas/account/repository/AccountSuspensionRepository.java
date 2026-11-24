@@ -1,6 +1,6 @@
 package com.atlas.account.repository;
 
-import com.atlas.account.persistence.projection.SuspensionAction;
+import com.atlas.account.persistence.projection.AccountSuspensionAction;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -67,14 +67,14 @@ public class AccountSuspensionRepository {
     }
 
     /** 한 계정의 감사 기록을 최신순으로 돌려줍니다. 운영 확인용입니다. */
-    public List<SuspensionAction> history(UUID accountId, int limit) {
+    public List<AccountSuspensionAction> history(UUID accountId, int limit) {
         return jdbc.query("""
                 SELECT action, idempotency_key, actor, reason, created_at
                 FROM account_suspension_action
                 WHERE account_id = ?
                 ORDER BY created_at DESC
                 LIMIT ?
-                """, (rs, row) -> new SuspensionAction(
+                """, (rs, row) -> new AccountSuspensionAction(
                         rs.getString("action"),
                         rs.getString("idempotency_key"),
                         rs.getString("actor"),

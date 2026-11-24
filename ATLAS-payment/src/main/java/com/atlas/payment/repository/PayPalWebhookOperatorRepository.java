@@ -1,7 +1,7 @@
 package com.atlas.payment.repository;
 
-import com.atlas.payment.persistence.projection.ExhaustedRetryRow;
-import com.atlas.payment.persistence.projection.RequeueRecord;
+import com.atlas.payment.persistence.projection.ExhaustedWebhookRetryRow;
+import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -31,7 +31,7 @@ public class PayPalWebhookOperatorRepository {
         return total == null ? 0 : total;
     }
 
-    public List<ExhaustedRetryRow> listExhausted(int limit, long offset) {
+    public List<ExhaustedWebhookRetryRow> listExhausted(int limit, long offset) {
         return jdbc.query("""
                 SELECT event_id, event_type, attempt_count, created_at, finished_at
                 FROM paypal_webhook_retry
@@ -42,12 +42,12 @@ public class PayPalWebhookOperatorRepository {
     }
 
     /** 같은 멱등 키로 이전에 기록된 요청. 재큐 대상 행이 삭제돼도 감사 기록이 남아 있으면 재생할 수 있다. */
-    public Optional<RequeueRecord> findRequeueRecord(String idempotencyKey) {
+    public Optional<WebhookRequeueRecord> findRequeueRecord(String idempotencyKey) {
         return jdbc.query("""
                 SELECT event_id, actor, reason, outcome
                 FROM paypal_webhook_retry_operator_audit
                 WHERE idempotency_key = ?
-                """, (rs, rowNum) -> new RequeueRecord(
+                """, (rs, rowNum) -> new WebhookRequeueRecord(
                         rs.getString("event_id"), rs.getString("actor"),
                         rs.getString("reason"), rs.getString("outcome")), idempotencyKey)
                 .stream().findFirst();
@@ -95,8 +95,8 @@ public class PayPalWebhookOperatorRepository {
                 """, idempotencyKey, eventId, actor, reason);
     }
 
-    private static ExhaustedRetryRow mapExhausted(ResultSet rs) throws SQLException {
-        return new ExhaustedRetryRow(rs.getString("event_id"), rs.getString("event_type"),
+    private static ExhaustedWebhookRetryRow mapExhausted(ResultSet rs) throws SQLException {
+        return new ExhaustedWebhookRetryRow(rs.getString("event_id"), rs.getString("event_type"),
                 rs.getInt("attempt_count"), instant(rs.getTimestamp("created_at")),
                 instant(rs.getTimestamp("finished_at")));
     }

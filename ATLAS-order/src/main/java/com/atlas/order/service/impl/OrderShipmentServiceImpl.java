@@ -17,8 +17,8 @@ import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.repository.LocationReservationRepository;
-import com.atlas.order.persistence.projection.WorkflowLocationSnapshot;
-import com.atlas.order.persistence.projection.WorkflowSnapshot;
+import com.atlas.order.persistence.projection.ReservationWorkflowLocationSnapshot;
+import com.atlas.order.persistence.projection.ReservationWorkflowSnapshot;
 import com.atlas.order.repository.OrderShipmentRepository;
 import com.atlas.order.service.OrderShipmentService;
 import java.time.Clock;
@@ -198,9 +198,9 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
             }
             return order.fulfillmentLocationId();
         }
-        WorkflowSnapshot workflow = reservationWorkflows.get().findByWorkflowId(order.reservationWorkflowId());
+        ReservationWorkflowSnapshot workflow = reservationWorkflows.get().findByWorkflowId(order.reservationWorkflowId());
         if (workflow == null) throw conflict("Order inventory allocation not found");
-        List<WorkflowLocationSnapshot> locations = workflow.locations();
+        List<ReservationWorkflowLocationSnapshot> locations = workflow.locations();
         if (locations.size() == 1) {
             UUID only = locations.getFirst().fulfillmentLocationId();
             if (requested != null && !requested.equals(only)) {
@@ -209,7 +209,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
             return only;
         }
         if (requested == null) throw invalid("Split order shipments must specify a fulfillment location");
-        WorkflowLocationSnapshot location = locations.stream()
+        ReservationWorkflowLocationSnapshot location = locations.stream()
                 .filter(candidate -> candidate.fulfillmentLocationId().equals(requested)).findFirst()
                 .orElseThrow(() -> invalid("Shipment location is not allocated to this order"));
         Map<String, Integer> allocated = new HashMap<>();

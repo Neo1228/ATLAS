@@ -1,7 +1,7 @@
 package com.atlas.settlement.service;
 
-import com.atlas.settlement.dto.response.ParsedBalanceReportResponse;
-import com.atlas.settlement.dto.response.ParsedBalanceReportRowResponse;
+import com.atlas.settlement.service.ParsedPayPalReport;
+import com.atlas.settlement.service.ParsedPayPalReportRow;
 import com.atlas.settlement.exception.SettlementException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -28,7 +28,7 @@ public final class PayPalBalanceReportParser {
     public static final int MAX_REPORT_BYTES = 10 * 1024 * 1024;
     static final int MAX_REPORT_ROWS = 10_000;
 
-    public ParsedBalanceReportResponse parse(byte[] content) {
+    public ParsedPayPalReport parse(byte[] content) {
         if (content == null || content.length == 0 || content.length > MAX_REPORT_BYTES) {
             throw invalid();
         }
@@ -40,7 +40,7 @@ public final class PayPalBalanceReportParser {
         String reportStatus = null;
         Integer totalFiles = null;
         Integer totalRecords = null;
-        List<ParsedBalanceReportRowResponse> rows = new ArrayList<>();
+        List<ParsedPayPalReportRow> rows = new ArrayList<>();
 
         try (InputStreamReader reader = new InputStreamReader(
                 new ByteArrayInputStream(content), StandardCharsets.UTF_8.newDecoder()
@@ -106,10 +106,10 @@ public final class PayPalBalanceReportParser {
                 || (!rows.isEmpty() && totalRecords == null)) {
             throw invalid();
         }
-        return new ParsedBalanceReportResponse(reportName.trim(), List.copyOf(rows));
+        return new ParsedPayPalReport(reportName.trim(), List.copyOf(rows));
     }
 
-    private static ParsedBalanceReportRowResponse parseRow(CSVRecord record, Map<String, Integer> columns) {
+    private static ParsedPayPalReportRow parseRow(CSVRecord record, Map<String, Integer> columns) {
         String recordId = field(record, columns, "record id");
         String recordType = field(record, columns, "record type");
         String recordSubtype = field(record, columns, "record subtype");
@@ -119,7 +119,7 @@ public final class PayPalBalanceReportParser {
         String gross = fieldAlias(record, columns, "gross transaction amount", "gross amount");
         if (recordId.isBlank() || recordType.isBlank() || gross.isBlank()) throw invalid();
         try {
-            return new ParsedBalanceReportRowResponse(recordId, recordType, recordSubtype, relatedRecordId, originalRecordId, currency,
+            return new ParsedPayPalReportRow(recordId, recordType, recordSubtype, relatedRecordId, originalRecordId, currency,
                     new BigDecimal(gross), optionalAmount(record, columns, "total fees net billed"),
                     optionalAmount(record, columns, "net amount"), field(record, columns, "transfer id"));
         } catch (NumberFormatException exception) {

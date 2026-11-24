@@ -5,7 +5,7 @@ import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage;
 import com.atlas.payment.dto.response.PayPalWebhookRequeueResponse;
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.persistence.projection.RequeueRecord;
+import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
 import com.atlas.payment.repository.PayPalWebhookOperatorRepository;
 import com.atlas.payment.service.PayPalWebhookOperatorService;
 import java.util.List;
@@ -89,9 +89,9 @@ public class PayPalWebhookOperatorServiceImpl implements PayPalWebhookOperatorSe
     }
 
     private PayPalWebhookRequeueResponse findReplay(String eventId, String key, String actor, String reason) {
-        Optional<RequeueRecord> found = events.findRequeueRecord(key);
+        Optional<WebhookRequeueRecord> found = events.findRequeueRecord(key);
         if (found.isEmpty()) return null;
-        RequeueRecord record = found.get();
+        WebhookRequeueRecord record = found.get();
         if (!record.eventId().equals(eventId) || !record.actor().equals(actor)
                 || !record.reason().equals(reason)) {
             throw new PaymentException(Code.CONFLICT, "Idempotency-Key is already bound to another request");

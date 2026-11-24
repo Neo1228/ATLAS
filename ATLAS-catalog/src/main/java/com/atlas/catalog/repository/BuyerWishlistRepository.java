@@ -1,6 +1,6 @@
 package com.atlas.catalog.repository;
 
-import com.atlas.catalog.persistence.projection.SavedProduct;
+import com.atlas.catalog.persistence.projection.BuyerWishlistItem;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,24 +24,24 @@ public class BuyerWishlistRepository {
                 """, buyerRef, productId);
     }
 
-    public Optional<SavedProduct> find(String buyerRef, UUID productId) {
+    public Optional<BuyerWishlistItem> find(String buyerRef, UUID productId) {
         return jdbc.query("""
                 SELECT product_id, saved_at
                 FROM buyer_wishlist_item
                 WHERE buyer_ref = ? AND product_id = ?
-                """, (rs, rowNum) -> new SavedProduct(
+                """, (rs, rowNum) -> new BuyerWishlistItem(
                 rs.getObject("product_id", UUID.class), rs.getTimestamp("saved_at").toInstant()),
                 buyerRef, productId).stream().findFirst();
     }
 
-    public List<SavedProduct> list(String buyerRef, int limit, int offset) {
+    public List<BuyerWishlistItem> list(String buyerRef, int limit, int offset) {
         return jdbc.query("""
                 SELECT product_id, saved_at
                 FROM buyer_wishlist_item
                 WHERE buyer_ref = ?
                 ORDER BY saved_at DESC, product_id DESC
                 LIMIT ? OFFSET ?
-                """, (rs, rowNum) -> new SavedProduct(
+                """, (rs, rowNum) -> new BuyerWishlistItem(
                 rs.getObject("product_id", UUID.class), rs.getTimestamp("saved_at").toInstant()),
                 buyerRef, limit, offset);
     }

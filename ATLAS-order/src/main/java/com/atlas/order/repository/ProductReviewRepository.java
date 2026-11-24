@@ -1,7 +1,7 @@
 package com.atlas.order.repository;
 
 import com.atlas.order.persistence.projection.ProductReview;
-import com.atlas.order.persistence.projection.ReviewSummary;
+import com.atlas.order.persistence.projection.ProductReviewSummary;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -30,12 +30,12 @@ public class ProductReviewRepository {
                 """, REVIEW_MAPPER, buyerRef, productId, orderItemId, rating, body);
     }
 
-    public ReviewSummary summary(UUID productId) {
+    public ProductReviewSummary summary(UUID productId) {
         return jdbc.queryForObject("""
                 SELECT count(*) AS review_count, COALESCE(AVG(rating), 0)::numeric AS average_rating
                 FROM product_review
                 WHERE product_id = ?
-                """, (rs, rowNum) -> new ReviewSummary(
+                """, (rs, rowNum) -> new ProductReviewSummary(
                 rs.getLong("review_count"), rs.getBigDecimal("average_rating")), productId);
     }
 

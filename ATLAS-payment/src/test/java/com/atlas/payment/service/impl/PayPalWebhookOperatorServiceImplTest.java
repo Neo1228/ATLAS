@@ -14,7 +14,7 @@ import static org.mockito.Mockito.when;
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.repository.PayPalWebhookOperatorRepository;
-import com.atlas.payment.persistence.projection.RequeueRecord;
+import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
 import java.util.Optional;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +41,7 @@ class PayPalWebhookOperatorServiceImplTest {
 
     @Test
     void sameKeyReplaySurvivesQueueRowDeletionAndDoesNotTouchQueueOrProvider() {
-        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new RequeueRecord(EVENT, ACTOR, REASON, "REQUEUED")));
+        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new WebhookRequeueRecord(EVENT, ACTOR, REASON, "REQUEUED")));
 
         assertThat(service.requeue(EVENT, KEY, ACTOR, REASON).outcome()).isEqualTo("REQUEUED");
         verify(events, never()).lockExhausted(anyString());
@@ -51,7 +51,7 @@ class PayPalWebhookOperatorServiceImplTest {
 
     @Test
     void idempotencyKeyCannotBeReusedForDifferentActorEventOrReason() {
-        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new RequeueRecord(EVENT, ACTOR, REASON, "REQUEUED")));
+        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new WebhookRequeueRecord(EVENT, ACTOR, REASON, "REQUEUED")));
 
         assertConflict(() -> service.requeue(EVENT, KEY, "other-operator", REASON));
         assertConflict(() -> service.requeue("event-2", KEY, ACTOR, REASON));

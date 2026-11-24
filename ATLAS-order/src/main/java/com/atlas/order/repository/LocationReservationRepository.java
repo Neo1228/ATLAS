@@ -1,10 +1,10 @@
 package com.atlas.order.repository;
 
-import com.atlas.order.persistence.projection.WorkflowItemRecord;
-import com.atlas.order.persistence.projection.WorkflowLease;
-import com.atlas.order.persistence.projection.WorkflowLocationPlan;
-import com.atlas.order.persistence.projection.WorkflowLocationSnapshot;
-import com.atlas.order.persistence.projection.WorkflowSnapshot;
+import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
+import com.atlas.order.persistence.projection.ReservationWorkflowLease;
+import com.atlas.order.persistence.projection.ReservationWorkflowLocationPlan;
+import com.atlas.order.persistence.projection.ReservationWorkflowLocationSnapshot;
+import com.atlas.order.persistence.projection.ReservationWorkflowSnapshot;
 import com.atlas.order.persistence.state.LocationReservationState;
 import com.atlas.order.persistence.state.LocationReservationWorkflowState;
 import java.sql.ResultSet;
@@ -33,8 +33,8 @@ public class LocationReservationRepository {
     }
 
     @Transactional
-    public WorkflowSnapshot save(UUID workflowId, UUID orderId, String idempotencyKey,
-            List<WorkflowLocationPlan> plans, Instant now) {
+    public ReservationWorkflowSnapshot save(UUID workflowId, UUID orderId, String idempotencyKey,
+            List<ReservationWorkflowLocationPlan> plans, Instant now) {
         int inserted = jdbc.update("""
                 INSERT INTO order_inventory_reservation_workflow (
                     workflow_id, order_id, idempotency_key, workflow_state, attempt_count,
@@ -47,7 +47,7 @@ public class LocationReservationRepository {
             WorkflowHeader existing = findHeaderByIdempotencyKeyForUpdate(idempotencyKey);
             return existing == null ? null : withLocations(existing);
         }
-        for (WorkflowLocationPlan plan : plans) {
+        for (ReservationWorkflowLocationPlan plan : plans) {
             String locationKey = locationIdempotencyKey(workflowId, plan.fulfillmentLocationId());
             jdbc.update("""
                     INSERT INTO order_inventory_location_command (
@@ -55,7 +55,7 @@ public class LocationReservationRepository {
                         command_state, updated_at
                     ) VALUES (?, ?, ?, 'PENDING', ?)
                     """, workflowId, plan.fulfillmentLocationId(), locationKey, Timestamp.from(now));
-            for (WorkflowItemRecord item : plan.items()) {
+            for (ReservationWorkflowItemRecord item : plan.items()) {
                 jdbc.update("""
                         INSERT INTO order_inventory_location_item (
                             workflow_id, fulfillment_location_id, seller_id, sku_id, quantity
@@ -69,13 +69,13 @@ public class LocationReservationRepository {
     }
 
     @Transactional(readOnly = true)
-    public WorkflowSnapshot findByWorkflowId(UUID workflowId) {
+    public ReservationWorkflowSnapshot findByWorkflowId(UUID workflowId) {
         WorkflowHeader header = findHeaderByWorkflowId(workflowId);
         return header == null ? null : withLocations(header);
     }
 
     @Transactional(readOnly = true)
-    public WorkflowSnapshot findByIdempotencyKey(String idempotencyKey) {
+    public ReservationWorkflowSnapshot findByIdempotencyKey(String idempotencyKey) {
         WorkflowHeader header = findHeaderByIdempotencyKey(idempotencyKey);
         return header == null ? null : withLocations(header);
     }
@@ -196,7 +196,7 @@ public class LocationReservationRepository {
 
     /** 한 번에 한 workflow만 원자적으로 claim해 대기열의 lease 만료를 방지한다. */
     @Transactional
-    public WorkflowLease claimNextDue(Instant dueThrough, Instant now, Instant leaseUntil) {
+    public ReservationWorkflowLease claimNextDue(Instant dueThrough, Instant now, Instant leaseUntil) {
         UUID leaseToken = UUID.randomUUID();
         List<UUID> claims = jdbc.query("""
                 WITH next_due AS (
@@ -218,7 +218,7 @@ public class LocationReservationRepository {
                 """, (resultSet, rowNum) -> resultSet.getObject("workflow_id", UUID.class),
                 Timestamp.from(dueThrough), Timestamp.from(now), leaseToken,
                 Timestamp.from(leaseUntil), Timestamp.from(now));
-        return claims.isEmpty() ? null : new WorkflowLease(claims.getFirst(), leaseToken, leaseUntil);
+        return claims.isEmpty() ? null : new ReservationWorkflowLease(claims.getFirst(), leaseToken, leaseUntil);
     }
 
     @Transactional
@@ -302,7 +302,7 @@ public class LocationReservationRepository {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
-    private WorkflowSnapshot withLocations(WorkflowHeader header) {
+    private ReservationWorkflowSnapshot withLocations(WorkflowHeader header) {
         // (location, sku)당 한 row를 조회해 snapshot 조회마다 location별 추가 query(N+1)를 피한다.
         List<LocationItemRow> rows = jdbc.query("""
                 SELECT command.fulfillment_location_id, command.idempotency_key, command.command_state,
@@ -324,9 +324,9 @@ public class LocationReservationRepository {
                         resultSet.getObject("seller_id", UUID.class), resultSet.getString("sku_id"),
                 resultSet.getObject("quantity", Integer.class)),
                 header.workflowId());
-        List<WorkflowLocationSnapshot> locations = new ArrayList<>();
+        List<ReservationWorkflowLocationSnapshot> locations = new ArrayList<>();
         UUID currentLocation = null;
-        List<WorkflowItemRecord> items = null;
+        List<ReservationWorkflowItemRecord> items = null;
         LocationItemRow currentLocationRow = null;
         for (LocationItemRow row : rows) {
             if (!row.locationId().equals(currentLocation)) {
@@ -335,10 +335,10 @@ public class LocationReservationRepository {
                 currentLocationRow = row;
                 items = new ArrayList<>();
             }
-            if (row.skuId() != null) items.add(new WorkflowItemRecord(row.sellerId(), row.skuId(), row.quantity()));
+            if (row.skuId() != null) items.add(new ReservationWorkflowItemRecord(row.sellerId(), row.skuId(), row.quantity()));
         }
         if (currentLocationRow != null) locations.add(toSnapshot(currentLocationRow, items));
-        return new WorkflowSnapshot(header.workflowId(), header.orderId(), header.idempotencyKey(),
+        return new ReservationWorkflowSnapshot(header.workflowId(), header.orderId(), header.idempotencyKey(),
                 header.state(), header.attemptCount(), header.nextAttemptAt(), header.createdAt(),
                 header.updatedAt(), header.lastErrorCode(), locations);
     }
@@ -347,8 +347,8 @@ public class LocationReservationRepository {
         return workflowId + ":" + locationId;
     }
 
-    private static WorkflowLocationSnapshot toSnapshot(LocationItemRow row, List<WorkflowItemRecord> items) {
-        return new WorkflowLocationSnapshot(row.locationId(), row.idempotencyKey(), row.state(), row.reservationId(),
+    private static ReservationWorkflowLocationSnapshot toSnapshot(LocationItemRow row, List<ReservationWorkflowItemRecord> items) {
+        return new ReservationWorkflowLocationSnapshot(row.locationId(), row.idempotencyKey(), row.state(), row.reservationId(),
                 row.remoteExpiresAt(), row.lastErrorCode(), row.updatedAt(), List.copyOf(items));
     }
 
