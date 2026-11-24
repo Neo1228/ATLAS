@@ -36,9 +36,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+@Testcontainers
 @SpringBootTest
 @AutoConfigureMockMvc(addFilters = false)
-@Testcontainers
 class ProductCategoryHierarchyIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES =
