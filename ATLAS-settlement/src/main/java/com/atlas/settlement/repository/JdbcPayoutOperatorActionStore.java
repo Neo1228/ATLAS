@@ -1,5 +1,6 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.service.PayoutOperatorActionStore;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -11,14 +12,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Durable operator audit for decisions that create or release payout reservations. */
 @Repository
-public class PayoutOperatorActionRepository {
+public class JdbcPayoutOperatorActionStore implements PayoutOperatorActionStore {
     private final JdbcTemplate jdbc;
 
-    public PayoutOperatorActionRepository(JdbcTemplate jdbc) {
+    public JdbcPayoutOperatorActionStore(JdbcTemplate jdbc) {
         this.jdbc = Objects.requireNonNull(jdbc);
     }
 
     @Transactional
+    @Override
     public boolean record(UUID payoutId, String idempotencyKey, String action, String actor,
             String reason, Instant now) {
         int inserted = jdbc.update("""
@@ -37,6 +39,7 @@ public class PayoutOperatorActionRepository {
     }
 
     @Transactional(readOnly = true)
+    @Override
     public boolean matches(UUID payoutId, String idempotencyKey, String action, String actor, String reason) {
         List<AuditFacts> facts = jdbc.query("""
                 SELECT action, actor, reason FROM settlement_payout_operator_action

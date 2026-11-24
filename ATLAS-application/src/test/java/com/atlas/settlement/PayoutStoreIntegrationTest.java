@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.schema.BaselineSchema;
-import com.atlas.settlement.repository.PayoutDispatchRepository;
-import com.atlas.settlement.repository.PayoutOperatorActionRepository;
-import com.atlas.settlement.repository.SellerPayoutProfileRepository;
+import com.atlas.settlement.repository.JdbcPayoutDispatchStore;
+import com.atlas.settlement.repository.JdbcPayoutOperatorActionStore;
+import com.atlas.settlement.repository.JdbcSellerPayoutProfileStore;
 import com.atlas.settlement.service.PayoutDispatchMetrics;
 import com.atlas.settlement.service.PayoutDispatchPlan;
 import com.atlas.settlement.service.PayoutDispatchRecord;
@@ -14,9 +14,6 @@ import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
 import com.atlas.settlement.service.SellerPayoutProfile;
 import com.atlas.settlement.service.SellerPayoutProfileStore;
-import com.atlas.settlement.service.impl.PayoutDispatchStoreImpl;
-import com.atlas.settlement.service.impl.PayoutOperatorActionStoreImpl;
-import com.atlas.settlement.service.impl.SellerPayoutProfileStoreImpl;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -67,9 +64,9 @@ class PayoutStoreIntegrationTest {
     void clearRows() {
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("TRUNCATE seller, settlement_payout CASCADE");
-        profiles = new SellerPayoutProfileStoreImpl(new SellerPayoutProfileRepository(jdbc));
-        dispatches = new PayoutDispatchStoreImpl(new PayoutDispatchRepository(jdbc));
-        actions = new PayoutOperatorActionStoreImpl(new PayoutOperatorActionRepository(jdbc));
+        profiles = new JdbcSellerPayoutProfileStore(jdbc);
+        dispatches = new JdbcPayoutDispatchStore(jdbc);
+        actions = new JdbcPayoutOperatorActionStore(jdbc);
     }
 
     @Test
@@ -391,8 +388,7 @@ class PayoutStoreIntegrationTest {
         UUID second = enqueuePending();
         shiftAvailableAt(first, "-2 hours");
         shiftAvailableAt(second, "-1 hour");
-        PayoutDispatchStore otherWorker = new PayoutDispatchStoreImpl(
-                new PayoutDispatchRepository(new JdbcTemplate(newDataSource())));
+        PayoutDispatchStore otherWorker = new JdbcPayoutDispatchStore(new JdbcTemplate(newDataSource()));
         TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 
         List<PayoutDispatchRecord> concurrentClaim = transaction.execute(status -> {

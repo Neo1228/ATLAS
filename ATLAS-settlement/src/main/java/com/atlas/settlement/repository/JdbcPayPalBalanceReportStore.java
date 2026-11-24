@@ -1,5 +1,6 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.service.PayPalBalanceReportStore;
 import com.atlas.settlement.service.PayPalBalanceReportDailyTrend;
 import com.atlas.settlement.service.PayPalBalanceReportDisposition;
 import com.atlas.settlement.service.PayPalBalanceReportExceptionRow;
@@ -20,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** PayPal 보고서 사실과 disposition 감사 이력의 저장과 운영자 조회를 소유합니다. 이 테이블들의 SQL은 여기에만 둔다. */
 @Repository
-public class PayPalBalanceReportRunRepository {
+public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
     private static final RowMapper<PayPalBalanceReportRun> RUN_MAPPER = (rs, rowNum) ->
             new PayPalBalanceReportRun(rs.getObject("run_id", UUID.class), rs.getString("report_sha256"),
                     rs.getTimestamp("uploaded_at").toInstant(), rs.getString("report_format"), rs.getInt("row_count"),
@@ -49,12 +50,13 @@ public class PayPalBalanceReportRunRepository {
 
     private final JdbcTemplate jdbc;
 
-    public PayPalBalanceReportRunRepository(JdbcTemplate jdbc) {
+    public JdbcPayPalBalanceReportStore(JdbcTemplate jdbc) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
     }
 
     /** run과 행을 원자적으로 추가하며, 같은 SHA-256은 기존 run을 재사용합니다. */
     @Transactional
+    @Override
     public Optional<UUID> createRunIfAbsent(PayPalBalanceReportRun run, List<PayPalBalanceReportRow> rows) {
         Objects.requireNonNull(run, "run");
         List<PayPalBalanceReportRow> reportRows = List.copyOf(Objects.requireNonNull(rows, "rows"));
@@ -118,12 +120,14 @@ public class PayPalBalanceReportRunRepository {
         return Optional.of(run.runId());
     }
 
+    @Override
     public Optional<PayPalBalanceReportRun> findRunById(UUID runId) {
         Objects.requireNonNull(runId, "runId");
         return jdbc.query("SELECT " + RUN_COLUMNS + " FROM paypal_balance_report_run WHERE run_id = ?",
                 RUN_MAPPER, runId).stream().findFirst();
     }
 
+    @Override
     public Optional<PayPalBalanceReportRun> findRunBySha256(String reportSha256) {
         Objects.requireNonNull(reportSha256, "reportSha256");
         return jdbc.query("SELECT " + RUN_COLUMNS + " FROM paypal_balance_report_run WHERE report_sha256 = ?",
@@ -131,12 +135,14 @@ public class PayPalBalanceReportRunRepository {
     }
 
     /** 최근 run부터 한 페이지를 조회한다. 같은 시각의 run은 run_id 내림차순으로 정렬해 페이지가 흔들리지 않게 한다. */
+    @Override
     public List<PayPalBalanceReportRun> listRuns(int limit, int offset) {
         return jdbc.query("SELECT " + RUN_COLUMNS + " FROM paypal_balance_report_run "
                 + "ORDER BY uploaded_at DESC, run_id DESC LIMIT ? OFFSET ?", RUN_MAPPER, limit, offset);
     }
 
     /** 파서가 허용하는 최대 10,000개 행을 순서대로 조회합니다. */
+    @Override
     public List<PayPalBalanceReportRow> listAllRows(UUID runId) {
         Objects.requireNonNull(runId, "runId");
         return jdbc.query("SELECT " + ROW_COLUMNS + " FROM paypal_balance_report_row "
@@ -146,6 +152,7 @@ public class PayPalBalanceReportRunRepository {
 
     /** idempotency key가 없을 때 disposition을 추가합니다. */
     @Transactional
+    @Override
     public Optional<UUID> insertDispositionIfAbsent(PayPalBalanceReportDisposition disposition) {
         Objects.requireNonNull(disposition, "disposition");
         int inserted = jdbc.update("""
@@ -159,6 +166,7 @@ public class PayPalBalanceReportRunRepository {
         return inserted == 0 ? Optional.empty() : Optional.of(disposition.dispositionId());
     }
 
+    @Override
     public Optional<PayPalBalanceReportDisposition> findDispositionByIdempotencyKey(String idempotencyKey) {
         Objects.requireNonNull(idempotencyKey, "idempotencyKey");
         return jdbc.query("SELECT " + DISPOSITION_COLUMNS
@@ -167,6 +175,7 @@ public class PayPalBalanceReportRunRepository {
     }
 
     /** run과 행별 disposition 이력을 오래된 순서로 최대 limit건 조회합니다. */
+    @Override
     public List<PayPalBalanceReportDisposition> findDispositionHistory(UUID runId, int rowNumber, int limit) {
         Objects.requireNonNull(runId, "runId");
         if (rowNumber < 1 || rowNumber > 10_000) {
@@ -178,6 +187,7 @@ public class PayPalBalanceReportRunRepository {
     }
 
     /** 최근 30일(오늘 포함) 일별 UNMATCHED/MISMATCH 합계. 업로드가 없는 날은 0으로 채운다. */
+    @Override
     public List<PayPalBalanceReportDailyTrend> dailyTrend() {
         return jdbc.query("""
                 WITH days AS (
@@ -200,6 +210,7 @@ public class PayPalBalanceReportRunRepository {
     }
 
     /** 운영자 처리(disposition)가 아직 없는 예외 행 수. */
+    @Override
     public long countPendingExceptions() {
         Long pending = jdbc.queryForObject("""
                 SELECT COUNT(*)
@@ -214,6 +225,7 @@ public class PayPalBalanceReportRunRepository {
     }
 
     /** 모든 run의 예외 행. {@code status}, 업로드 기간, {@code recordId}는 null이면 조건에서 제외한다. */
+    @Override
     public List<PayPalBalanceReportExceptionRow> listExceptions(String status, LocalDate from, LocalDate to,
             String recordId, int fetchLimit, int offset) {
         StringBuilder sql = new StringBuilder("""
@@ -245,6 +257,7 @@ public class PayPalBalanceReportRunRepository {
         return jdbc.query(sql.toString(), EXCEPTION_ROW_MAPPER, args.toArray());
     }
 
+    @Override
     public List<PayPalBalanceReportExceptionRow> listRunRows(UUID runId, String status, String recordId,
             int fetchLimit, int offset) {
         StringBuilder sql = new StringBuilder("""
@@ -267,6 +280,7 @@ public class PayPalBalanceReportRunRepository {
         return jdbc.query(sql.toString(), EXCEPTION_ROW_MAPPER, args.toArray());
     }
 
+    @Override
     public Optional<String> findRowStatus(UUID runId, int rowNumber) {
         try {
             return Optional.ofNullable(jdbc.queryForObject(
