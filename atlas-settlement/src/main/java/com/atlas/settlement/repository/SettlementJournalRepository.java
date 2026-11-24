@@ -1,6 +1,7 @@
 package com.atlas.settlement.repository;
 
 import com.atlas.settlement.model.SellerBalance;
+import com.atlas.settlement.model.SettlementStatementEntryType;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
@@ -397,7 +398,8 @@ public class SettlementJournalRepository {
                 ORDER BY recorded_at ASC, journal_id ASC
                 LIMIT ?
                 """, (rs, n) -> new SellerStatementRow(rs.getObject("journal_id", UUID.class),
-                rs.getObject("order_id", UUID.class), rs.getObject("source_id", UUID.class), rs.getString("type"),
+                rs.getObject("order_id", UUID.class), rs.getObject("source_id", UUID.class),
+                SettlementStatementEntryType.valueOf(rs.getString("type")),
                 rs.getTimestamp("recorded_at").toInstant(), rs.getLong("amount")),
                 sellerId, Timestamp.from(from), Timestamp.from(to), sellerId, Timestamp.from(from), Timestamp.from(to),
                 sellerId, Timestamp.from(from), Timestamp.from(to), sellerId, Timestamp.from(from), Timestamp.from(to),

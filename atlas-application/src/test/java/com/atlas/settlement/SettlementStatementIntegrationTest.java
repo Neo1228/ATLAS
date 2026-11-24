@@ -6,27 +6,28 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.order.dto.response.OrderViewResponse;
-import com.atlas.order.dto.request.OrderRequest;
-import com.atlas.catalog.dto.request.ProductRequest;
-import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.admission.dto.request.AdmissionRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.order.service.CartService;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.service.CartCheckoutService;
+import com.atlas.order.service.CartService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.exception.SettlementException;
+import com.atlas.settlement.model.SettlementStatementEntryType;
 import com.atlas.settlement.service.SettlementService;
-import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.math.BigInteger;
 import java.time.Duration;
 import java.time.Instant;
@@ -108,11 +109,11 @@ class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
         var secondSellerCheckout = settlement.getSellerStatement(statementRequest(
                 secondSellerId, PERIOD_FROM, PERIOD_TO, 10, null));
         assertThat(firstSellerCheckout.items()).singleElement().satisfies(entry -> {
-            assertThat(entry.type()).isEqualTo(SellerSettlementStatementResponse.EntryType.CHECKOUT_ALLOCATION);
+            assertThat(entry.type()).isEqualTo(SettlementStatementEntryType.CHECKOUT_ALLOCATION);
             assertThat(entry.signedAmountWon()).isEqualTo(200);
         });
         assertThat(secondSellerCheckout.items()).singleElement().satisfies(entry -> {
-            assertThat(entry.type()).isEqualTo(SellerSettlementStatementResponse.EntryType.CHECKOUT_ALLOCATION);
+            assertThat(entry.type()).isEqualTo(SettlementStatementEntryType.CHECKOUT_ALLOCATION);
             assertThat(entry.signedAmountWon()).isEqualTo(900);
         });
         assertThat(firstSellerCheckout.items().get(0).signedAmountWon()
@@ -149,13 +150,13 @@ class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
                 .isEqualTo(fullPeriod.totals().netLedgerChangeWon());
 
         var campaignCapture = fullPeriod.items().stream()
-                .filter(entry -> entry.type() == SellerSettlementStatementResponse.EntryType.ORDER_CAPTURE)
+                .filter(entry -> entry.type() == SettlementStatementEntryType.ORDER_CAPTURE)
                 .findFirst().orElseThrow();
         assertThat(campaignCapture.orderId()).isEqualTo(paidCampaignOrder.orderId());
         assertThat(campaignCapture.sourceId()).isEqualTo(paidCampaignOrder.paymentAttemptId());
         assertThat(campaignCapture.signedAmountWon()).isEqualTo(75);
         var refundReversal = fullPeriod.items().stream()
-                .filter(entry -> entry.type() == SellerSettlementStatementResponse.EntryType.REFUND_REVERSAL)
+                .filter(entry -> entry.type() == SettlementStatementEntryType.REFUND_REVERSAL)
                 .findFirst().orElseThrow();
         assertThat(refundReversal.orderId()).isEqualTo(paidCampaignOrder.orderId());
         assertThat(refundReversal.sourceId()).isEqualTo(refundId);

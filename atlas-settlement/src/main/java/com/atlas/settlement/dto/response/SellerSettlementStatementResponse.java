@@ -1,5 +1,6 @@
 package com.atlas.settlement.dto.response;
 
+import com.atlas.settlement.model.SettlementStatementEntryType;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
@@ -45,20 +46,8 @@ public record SellerSettlementStatementResponse(
             BigInteger confirmedPayoutAmountWon) {
     }
 
-    public record Entry(UUID journalId, UUID orderId, UUID sourceId, EntryType type, Instant recordedAt,
+    public record Entry(UUID journalId, UUID orderId, UUID sourceId, SettlementStatementEntryType type, Instant recordedAt,
                         long signedAmountWon) {
     }
 
-    /**
-     * 명세 row 종류. journal 의 source 로 결정된다.
-     *
-     * <p>{@code PAYOUT} 은 지급 확정 분개다. 지급은 판매자의 지급 가능 잔액을 줄이므로
-     * signed amount 가 음수로 내려간다. capture/refund 와 달리 gross 를 늘리지 않는다.
-     */
-    public enum EntryType {
-        ORDER_CAPTURE,
-        CHECKOUT_ALLOCATION,
-        REFUND_REVERSAL,
-        PAYOUT
-    }
 }
