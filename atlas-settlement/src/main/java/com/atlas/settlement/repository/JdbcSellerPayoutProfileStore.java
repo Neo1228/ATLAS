@@ -1,6 +1,7 @@
 package com.atlas.settlement.repository;
 
 import com.atlas.settlement.model.SellerPayoutProfile;
+import com.atlas.settlement.model.SellerPayoutProfileActionType;
 import com.atlas.settlement.service.SellerPayoutProfileStore;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -77,7 +78,7 @@ public class JdbcSellerPayoutProfileStore implements SellerPayoutProfileStore {
     }
 
     @Override
-    public boolean recordAction(UUID sellerId, int profileVersion, String action, String idempotencyKey,
+    public boolean recordAction(UUID sellerId, int profileVersion, SellerPayoutProfileActionType action, String idempotencyKey,
             String requestHash, String actor, String reason, Instant now) {
         return jdbc.update("""
                 INSERT INTO seller_payout_profile_action (
@@ -85,7 +86,7 @@ public class JdbcSellerPayoutProfileStore implements SellerPayoutProfileStore {
                     actor, reason, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (seller_id, idempotency_key) DO NOTHING
-                """, sellerId, profileVersion, action, idempotencyKey, requestHash,
+                """, sellerId, profileVersion, action.name(), idempotencyKey, requestHash,
                 actor, reason, Timestamp.from(now)) == 1;
     }
 

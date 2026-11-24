@@ -109,14 +109,10 @@ public class PayoutDispatchApprovalService {
     public SettlementHttpResponse.PayoutDispatchStatus dispatchStatus(UUID payoutId) {
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         return dispatches.find(payoutId)
-                .map(record -> new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payout.state().name(),
-                        record.status().name(), record.senderBatchId(), record.providerBatchId(), record.providerItemId(),
-                        record.providerBatchStatus(), record.providerItemStatus(), record.requestedAmountWon(),
-                        record.providerAmountMinor(), record.payoutCurrency(), record.fxRateWonPerUsd(),
-                        record.fxSource(), record.fxAsOfDate(), record.attemptCount(), record.firstEnqueuedAt(),
-                        record.lastAttemptAt(), record.availableAt(), record.lastErrorCode()))
-                .orElseGet(() -> new SettlementHttpResponse.PayoutDispatchStatus(payout.payoutId(), payout.state().name(),
-                        "MANUAL_NO_PROVIDER_OUTBOX", null, null, null, null, null, payout.amountWon(),
+                .map(record -> toStatus(record, payout.state()))
+                // provider outbox 가 없는 수동 지급은 dispatchStatus 를 null 로 둔다.
+                .orElseGet(() -> new SettlementHttpResponse.PayoutDispatchStatus(payout.payoutId(), payout.state(),
+                        null, null, null, null, null, null, payout.amountWon(),
                         0, "KRW", null, null, null, 0, payout.requestedAt(), null, null, null));
     }
 
@@ -129,12 +125,13 @@ public class PayoutDispatchApprovalService {
         boolean hasMore = records.size() > boundedLimit;
         if (hasMore) records = records.subList(0, boundedLimit);
         List<SettlementHttpResponse.PayoutDispatchStatus> items = records.stream().map(record ->
-                toStatus(record, payouts.find(record.payoutId()).state().name())).toList();
+                toStatus(record, payouts.find(record.payoutId()).state())).toList();
         return new SettlementHttpResponse.PayoutDispatchReviewPage(boundedLimit, offset, hasMore, items);
     }
 
-    private SettlementHttpResponse.PayoutDispatchStatus toStatus(PayoutDispatchRecord record, String payoutState) {
-        return new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payoutState, record.status().name(),
+    private SettlementHttpResponse.PayoutDispatchStatus toStatus(PayoutDispatchRecord record,
+            SettlementPayoutState payoutState) {
+        return new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payoutState, record.status(),
                 record.senderBatchId(), record.providerBatchId(), record.providerItemId(),
                 record.providerBatchStatus(), record.providerItemStatus(), record.requestedAmountWon(),
                 record.providerAmountMinor(), record.payoutCurrency(), record.fxRateWonPerUsd(),

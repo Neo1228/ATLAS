@@ -5,6 +5,7 @@ import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.PayoutOperatorActionType;
 import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
@@ -38,12 +39,12 @@ public class PayoutManualOperatorService {
     public PayoutResponse.SellerPayout approve(UUID payoutId, String idempotencyKey, String actor, String reason) {
         validate(payoutId, idempotencyKey, actor, reason);
         requireNoProviderOutbox(payoutId);
-        if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_APPROVED", actor, reason.trim())) {
+        if (actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_APPROVED, actor, reason.trim())) {
             return payouts.find(payoutId);
         }
         PayoutResponse.SellerPayout approved = payouts.approve(payoutId);
         requireNoProviderOutbox(payoutId);
-        recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_APPROVED", actor, reason.trim());
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_APPROVED, actor, reason.trim());
         return approved;
     }
 
@@ -51,12 +52,13 @@ public class PayoutManualOperatorService {
     public PayoutResponse.SellerPayout markSent(UUID payoutId, String idempotencyKey, String actor, String evidenceReference) {
         validate(payoutId, idempotencyKey, actor, evidenceReference);
         requireNoProviderOutbox(payoutId);
-        if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_SENT", actor, evidenceReference.trim())) {
+        if (actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_SENT, actor,
+                evidenceReference.trim())) {
             return payouts.find(payoutId);
         }
         PayoutResponse.SellerPayout sent = payouts.markSent(payoutId);
         requireNoProviderOutbox(payoutId);
-        recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_SENT", actor, evidenceReference.trim());
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_SENT, actor, evidenceReference.trim());
         return sent;
     }
 
@@ -64,12 +66,13 @@ public class PayoutManualOperatorService {
     public PayoutResponse.SellerPayout confirm(UUID payoutId, String idempotencyKey, String actor, String evidenceReference) {
         validate(payoutId, idempotencyKey, actor, evidenceReference);
         requireNoProviderOutbox(payoutId);
-        if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_CONFIRMED", actor, evidenceReference.trim())) {
+        if (actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_CONFIRMED, actor,
+                evidenceReference.trim())) {
             return payouts.find(payoutId);
         }
         PayoutResponse.SellerPayout confirmed = payouts.confirm(payoutId);
         requireNoProviderOutbox(payoutId);
-        recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_CONFIRMED", actor, evidenceReference.trim());
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_CONFIRMED, actor, evidenceReference.trim());
         return confirmed;
     }
 
@@ -78,12 +81,12 @@ public class PayoutManualOperatorService {
             String actor, String reason) {
         validate(payoutId, idempotencyKey, actor, reason);
         requireNoProviderOutbox(payoutId);
-        if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_FAILED", actor, reason.trim())) {
+        if (actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_FAILED, actor, reason.trim())) {
             return payouts.find(payoutId);
         }
         PayoutResponse.SellerPayout failed = payouts.fail(payoutId, "MANUAL_NO_TRANSFER");
         requireNoProviderOutbox(payoutId);
-        recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_FAILED", actor, reason.trim());
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_PAYOUT_FAILED, actor, reason.trim());
         return failed;
     }
 
@@ -94,7 +97,7 @@ public class PayoutManualOperatorService {
         requireNoProviderOutbox(payoutId);
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         if (payout.state() == SettlementPayoutState.FAILED
-                && actions.matches(payoutId, idempotencyKey, "MANUAL_NO_TRANSFER_CONFIRMED",
+                && actions.matches(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_NO_TRANSFER_CONFIRMED,
                         actor, evidenceReference.trim())) {
             return payout;
         }
@@ -104,7 +107,8 @@ public class PayoutManualOperatorService {
         }
         PayoutResponse.SellerPayout failed = payouts.failWithProviderEvidence(payoutId, "MANUAL_NO_TRANSFER_CONFIRMED");
         requireNoProviderOutbox(payoutId);
-        recordAction(payoutId, idempotencyKey, "MANUAL_NO_TRANSFER_CONFIRMED", actor, evidenceReference.trim());
+        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.MANUAL_NO_TRANSFER_CONFIRMED, actor,
+                evidenceReference.trim());
         return failed;
     }
 
@@ -127,10 +131,11 @@ public class PayoutManualOperatorService {
             throw invalid("No-transfer resolution requires explicit zero-fee USD evidence");
         }
         boolean paid = request.outcome() == SettlementHttpRequest.ProviderOutcome.PAID;
-        String action = paid ? "PROVIDER_REVIEW_PAID" : "PROVIDER_REVIEW_NOT_PAID";
+        PayoutOperatorActionType action = paid
+                ? PayoutOperatorActionType.PROVIDER_REVIEW_PAID : PayoutOperatorActionType.PROVIDER_REVIEW_NOT_PAID;
         PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         if (record.status() == PayoutDispatchState.COMPLETED) {
-            if (!"PROVIDER_REVIEW_PAID".equals(action)
+            if (action != PayoutOperatorActionType.PROVIDER_REVIEW_PAID
                     || !actions.matches(payoutId, idempotencyKey, action, actor, request.evidenceReference().trim())) {
                 throw conflict("Provider review has already been resolved");
             }
@@ -143,7 +148,7 @@ public class PayoutManualOperatorService {
             return payout;
         }
         if (record.status() == PayoutDispatchState.FAILED) {
-            if (!"PROVIDER_REVIEW_NOT_PAID".equals(action)
+            if (action != PayoutOperatorActionType.PROVIDER_REVIEW_NOT_PAID
                     || !actions.matches(payoutId, idempotencyKey, action, actor, request.evidenceReference().trim())
                     || !Long.valueOf(0).equals(record.providerFeeMinor())
                     || !"USD".equals(record.providerFeeCurrency())
@@ -205,7 +210,7 @@ public class PayoutManualOperatorService {
         }
     }
 
-    private void recordAction(UUID payoutId, String idempotencyKey, String action,
+    private void recordAction(UUID payoutId, String idempotencyKey, PayoutOperatorActionType action,
             String actor, String reason) {
         if (!actions.record(payoutId, idempotencyKey, action, actor, reason, clock.instant())) {
             throw conflict("Payout operator idempotency key was reused for different facts");

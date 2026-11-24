@@ -8,7 +8,9 @@ import com.atlas.settlement.model.PayoutDispatchMetrics;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.PayoutOperatorActionType;
 import com.atlas.settlement.model.SellerPayoutProfile;
+import com.atlas.settlement.model.SellerPayoutProfileActionType;
 import com.atlas.settlement.repository.JdbcPayoutDispatchStore;
 import com.atlas.settlement.repository.JdbcPayoutOperatorActionStore;
 import com.atlas.settlement.repository.JdbcSellerPayoutProfileStore;
@@ -171,9 +173,9 @@ class PayoutStoreIntegrationTest {
         profiles.submit(sellerId, accountId, "US", SUBMITTED_AT);
         String firstHash = "a".repeat(64);
 
-        boolean first = profiles.recordAction(sellerId, 1, "SUBMIT", "key-1", firstHash, "seller", "초기 등록", SUBMITTED_AT);
+        boolean first = profiles.recordAction(sellerId, 1, SellerPayoutProfileActionType.PROFILE_SUBMITTED, "key-1", firstHash, "seller", "초기 등록", SUBMITTED_AT);
         boolean duplicate = profiles.recordAction(
-                sellerId, 1, "SUBMIT", "key-1", "b".repeat(64), "seller", "초기 등록", VERIFIED_AT);
+                sellerId, 1, SellerPayoutProfileActionType.PROFILE_SUBMITTED, "key-1", "b".repeat(64), "seller", "초기 등록", VERIFIED_AT);
 
         assertThat(first).isTrue();
         assertThat(duplicate).isFalse();
@@ -187,12 +189,12 @@ class PayoutStoreIntegrationTest {
         UUID otherSeller = seedSeller();
         profiles.submit(sellerId, seedAccount(sellerId), "US", SUBMITTED_AT);
         profiles.submit(otherSeller, seedAccount(otherSeller), "US", SUBMITTED_AT);
-        profiles.recordAction(sellerId, 1, "SUBMIT", "key-1", "a".repeat(64), "seller", "등록", SUBMITTED_AT);
+        profiles.recordAction(sellerId, 1, SellerPayoutProfileActionType.PROFILE_SUBMITTED, "key-1", "a".repeat(64), "seller", "등록", SUBMITTED_AT);
 
         assertThat(profiles.findRequestHash(sellerId, "key-2")).isEmpty();
         assertThat(profiles.findRequestHash(otherSeller, "key-1")).isEmpty();
         assertThat(profiles.recordAction(
-                otherSeller, 1, "SUBMIT", "key-1", "c".repeat(64), "seller", "등록", SUBMITTED_AT)).isTrue();
+                otherSeller, 1, SellerPayoutProfileActionType.PROFILE_SUBMITTED, "key-1", "c".repeat(64), "seller", "등록", SUBMITTED_AT)).isTrue();
         assertThat(profiles.findRequestHash(otherSeller, "key-1")).contains("c".repeat(64));
         assertThat(profiles.findRequestHash(sellerId, "key-1")).contains("a".repeat(64));
     }
@@ -201,8 +203,8 @@ class PayoutStoreIntegrationTest {
     void operatorActionIsRecordedOnceAndSameFactsReplayIsAccepted() {
         UUID payoutId = seedPayout();
 
-        boolean first = actions.record(payoutId, "op-key-1", "CANCEL", "operator-1", "중복 요청", SUBMITTED_AT);
-        boolean replay = actions.record(payoutId, "op-key-1", "CANCEL", "operator-1", "중복 요청", VERIFIED_AT);
+        boolean first = actions.record(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청", SUBMITTED_AT);
+        boolean replay = actions.record(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청", VERIFIED_AT);
 
         assertThat(first).isTrue();
         assertThat(replay).isTrue();
@@ -215,29 +217,29 @@ class PayoutStoreIntegrationTest {
     @Test
     void operatorActionWithConflictingFactsForSameKeyIsRejectedWithoutOverwriting() {
         UUID payoutId = seedPayout();
-        actions.record(payoutId, "op-key-1", "CANCEL", "operator-1", "중복 요청", SUBMITTED_AT);
+        actions.record(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청", SUBMITTED_AT);
 
-        assertThat(actions.record(payoutId, "op-key-1", "REQUEUE", "operator-1", "중복 요청", VERIFIED_AT)).isFalse();
-        assertThat(actions.record(payoutId, "op-key-1", "CANCEL", "operator-2", "중복 요청", VERIFIED_AT)).isFalse();
-        assertThat(actions.record(payoutId, "op-key-1", "CANCEL", "operator-1", "다른 사유", VERIFIED_AT)).isFalse();
+        assertThat(actions.record(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_REQUEUED, "operator-1", "중복 요청", VERIFIED_AT)).isFalse();
+        assertThat(actions.record(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-2", "중복 요청", VERIFIED_AT)).isFalse();
+        assertThat(actions.record(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "다른 사유", VERIFIED_AT)).isFalse();
 
         assertThat(count("settlement_payout_operator_action")).isEqualTo(1);
-        assertThat(actions.matches(payoutId, "op-key-1", "CANCEL", "operator-1", "중복 요청")).isTrue();
+        assertThat(actions.matches(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청")).isTrue();
     }
 
     @Test
     void operatorActionMatchesOnlyWhenEveryFactAndTheScopeAgree() {
         UUID payoutId = seedPayout();
         UUID otherPayout = seedPayout();
-        actions.record(payoutId, "op-key-1", "CANCEL", "operator-1", "중복 요청", SUBMITTED_AT);
+        actions.record(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청", SUBMITTED_AT);
 
-        assertThat(actions.matches(payoutId, "op-key-1", "CANCEL", "operator-1", "중복 요청")).isTrue();
-        assertThat(actions.matches(payoutId, "op-key-1", "REQUEUE", "operator-1", "중복 요청")).isFalse();
-        assertThat(actions.matches(payoutId, "op-key-1", "CANCEL", "operator-2", "중복 요청")).isFalse();
-        assertThat(actions.matches(payoutId, "op-key-1", "CANCEL", "operator-1", "다른 사유")).isFalse();
-        assertThat(actions.matches(payoutId, "op-key-2", "CANCEL", "operator-1", "중복 요청")).isFalse();
-        assertThat(actions.matches(otherPayout, "op-key-1", "CANCEL", "operator-1", "중복 요청")).isFalse();
-        assertThat(actions.record(otherPayout, "op-key-1", "REQUEUE", "operator-2", "재시도", SUBMITTED_AT)).isTrue();
+        assertThat(actions.matches(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청")).isTrue();
+        assertThat(actions.matches(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_REQUEUED, "operator-1", "중복 요청")).isFalse();
+        assertThat(actions.matches(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-2", "중복 요청")).isFalse();
+        assertThat(actions.matches(payoutId, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "다른 사유")).isFalse();
+        assertThat(actions.matches(payoutId, "op-key-2", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청")).isFalse();
+        assertThat(actions.matches(otherPayout, "op-key-1", PayoutOperatorActionType.PAYOUT_CANCELLED, "operator-1", "중복 요청")).isFalse();
+        assertThat(actions.record(otherPayout, "op-key-1", PayoutOperatorActionType.PAYOUT_REQUEUED, "operator-2", "재시도", SUBMITTED_AT)).isTrue();
     }
 
     @Test

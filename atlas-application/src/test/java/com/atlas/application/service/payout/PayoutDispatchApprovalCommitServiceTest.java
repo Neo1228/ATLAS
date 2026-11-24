@@ -16,6 +16,7 @@ import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
 import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.PayoutOperatorActionType;
 import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutOperatorActionStore;
@@ -59,7 +60,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         PayoutDispatchPlan plan = plan();
         PayoutResponse.SellerPayout approved = payout(SettlementPayoutState.APPROVED);
         stubApprovable(SettlementPayoutState.REQUESTED, approved, plan);
-        when(actions.record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW)).thenReturn(true);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON, NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON);
 
@@ -67,7 +68,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         InOrder order = inOrder(payouts, dispatches, actions);
         order.verify(payouts).approve(payoutId);
         order.verify(dispatches).enqueue(plan);
-        order.verify(actions).record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW);
+        order.verify(actions).record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON, NOW);
     }
 
     @Test
@@ -78,7 +79,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         when(profiles.requireActiveRecipient(sellerId)).thenReturn(recipient(3, EMAIL));
         when(dispatches.enqueue(plan)).thenReturn(dispatchRecord(PayoutDispatchState.PENDING, plan.requestPayloadSha256()));
         when(cipher.decrypt(CIPHERTEXT)).thenReturn(EMAIL);
-        when(actions.record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW)).thenReturn(true);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON, NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON);
 
@@ -91,11 +92,11 @@ class PayoutDispatchApprovalCommitServiceTest {
     void approveAcceptsEnqueuedFactsWhoseFxRateDiffersOnlyByScale() {
         PayoutDispatchPlan plan = plan();
         stubApprovable(SettlementPayoutState.REQUESTED, payout(SettlementPayoutState.APPROVED), plan);
-        when(actions.record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW)).thenReturn(true);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON, NOW)).thenReturn(true);
 
         service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON);
 
-        verify(actions).record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW);
+        verify(actions).record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON, NOW);
     }
 
     @Test
@@ -109,7 +110,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         verify(payouts, never()).find(any());
         verify(payouts, never()).approve(any());
         verify(dispatches, never()).enqueue(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @ParameterizedTest
@@ -124,7 +125,7 @@ class PayoutDispatchApprovalCommitServiceTest {
 
         verify(payouts, never()).approve(any());
         verify(dispatches, never()).enqueue(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -195,7 +196,7 @@ class PayoutDispatchApprovalCommitServiceTest {
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
         verify(dispatches, never()).enqueue(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -209,7 +210,7 @@ class PayoutDispatchApprovalCommitServiceTest {
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
         verify(cipher, never()).decrypt(anyString());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -222,14 +223,14 @@ class PayoutDispatchApprovalCommitServiceTest {
                 .isInstanceOfSatisfying(SettlementException.class,
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
     void approveFailsWhenOperatorIdempotencyKeyWasReusedForDifferentFacts() {
         PayoutDispatchPlan plan = plan();
         stubApprovable(SettlementPayoutState.REQUESTED, payout(SettlementPayoutState.APPROVED), plan);
-        when(actions.record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW)).thenReturn(false);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON, NOW)).thenReturn(false);
 
         assertThatThrownBy(() -> service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON))
                 .isInstanceOfSatisfying(SettlementException.class,
@@ -240,12 +241,12 @@ class PayoutDispatchApprovalCommitServiceTest {
     void replayReturnsPayoutWithoutRecordingAgainWhenSameApprovalActionAlreadyExists() {
         PayoutResponse.SellerPayout approved = payout(SettlementPayoutState.APPROVED);
         when(payouts.find(payoutId)).thenReturn(approved);
-        when(actions.matches(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON)).thenReturn(true);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.replay(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(approved);
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
         verify(dispatches, never()).enqueue(any());
         verify(payouts, never()).approve(any());
     }
@@ -254,13 +255,13 @@ class PayoutDispatchApprovalCommitServiceTest {
     void replayOfApprovedPayoutRecordsReplayActionWithClockInstant() {
         PayoutResponse.SellerPayout approved = payout(SettlementPayoutState.APPROVED);
         when(payouts.find(payoutId)).thenReturn(approved);
-        when(actions.matches(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON)).thenReturn(false);
-        when(actions.record(payoutId, KEY, "PAYOUT_APPROVAL_REPLAYED", ACTOR, REASON, NOW)).thenReturn(true);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON)).thenReturn(false);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVAL_REPLAYED, ACTOR, REASON, NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.replay(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(approved);
-        verify(actions).record(payoutId, KEY, "PAYOUT_APPROVAL_REPLAYED", ACTOR, REASON, NOW);
+        verify(actions).record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVAL_REPLAYED, ACTOR, REASON, NOW);
         verify(dispatches, never()).enqueue(any());
     }
 
@@ -268,13 +269,13 @@ class PayoutDispatchApprovalCommitServiceTest {
     @EnumSource(value = SettlementPayoutState.class, names = "APPROVED", mode = EnumSource.Mode.EXCLUDE)
     void replayRejectsPayoutThatLeftApprovedStateWithoutMatchingApprovalAction(SettlementPayoutState state) {
         when(payouts.find(payoutId)).thenReturn(payout(state));
-        when(actions.matches(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_APPROVED, ACTOR, REASON)).thenReturn(false);
 
         assertThatThrownBy(() -> service.replay(payoutId, KEY, ACTOR, REASON))
                 .isInstanceOfSatisfying(SettlementException.class,
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -282,7 +283,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         PayoutResponse.SellerPayout cancelled = payout(SettlementPayoutState.CANCELLED);
         when(payouts.cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED")).thenReturn(cancelled);
         when(dispatches.cancelPending(payoutId)).thenReturn(true);
-        when(actions.record(payoutId, KEY, "PAYOUT_CANCELLED", ACTOR, REASON, NOW)).thenReturn(true);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_CANCELLED, ACTOR, REASON, NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.cancel(payoutId, KEY, ACTOR, REASON);
 
@@ -290,7 +291,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         InOrder order = inOrder(payouts, dispatches, actions);
         order.verify(payouts).cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED");
         order.verify(dispatches).cancelPending(payoutId);
-        order.verify(actions).record(payoutId, KEY, "PAYOUT_CANCELLED", ACTOR, REASON, NOW);
+        order.verify(actions).record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_CANCELLED, ACTOR, REASON, NOW);
     }
 
     @Test
@@ -301,14 +302,14 @@ class PayoutDispatchApprovalCommitServiceTest {
         assertThatThrownBy(() -> service.cancel(payoutId, KEY, ACTOR, REASON)).isSameAs(conflict);
 
         verify(dispatches, never()).cancelPending(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
     void cancelFailsWhenOperatorIdempotencyKeyWasReusedForDifferentFacts() {
         when(payouts.cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED"))
                 .thenReturn(payout(SettlementPayoutState.CANCELLED));
-        when(actions.record(payoutId, KEY, "PAYOUT_CANCELLED", ACTOR, REASON, NOW)).thenReturn(false);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_CANCELLED, ACTOR, REASON, NOW)).thenReturn(false);
 
         assertThatThrownBy(() -> service.cancel(payoutId, KEY, ACTOR, REASON))
                 .isInstanceOfSatisfying(SettlementException.class,
@@ -320,16 +321,16 @@ class PayoutDispatchApprovalCommitServiceTest {
         PayoutResponse.SellerPayout review = payout(SettlementPayoutState.NEEDS_REVIEW);
         when(payouts.find(payoutId)).thenReturn(review);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.NEEDS_REVIEW, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false);
         when(dispatches.requeueNeedsReview(payoutId)).thenReturn(true);
-        when(actions.record(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON, NOW)).thenReturn(true);
+        when(actions.record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON, NOW)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(review);
         InOrder order = inOrder(dispatches, actions);
         order.verify(dispatches).requeueNeedsReview(payoutId);
-        order.verify(actions).record(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON, NOW);
+        order.verify(actions).record(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON, NOW);
     }
 
     @Test
@@ -337,13 +338,13 @@ class PayoutDispatchApprovalCommitServiceTest {
         PayoutResponse.SellerPayout review = payout(SettlementPayoutState.NEEDS_REVIEW);
         when(payouts.find(payoutId)).thenReturn(review);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.NEEDS_REVIEW, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(true);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(review);
         verify(dispatches, never()).requeueNeedsReview(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -356,7 +357,7 @@ class PayoutDispatchApprovalCommitServiceTest {
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
         verify(dispatches, never()).requeueNeedsReview(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @ParameterizedTest
@@ -364,14 +365,14 @@ class PayoutDispatchApprovalCommitServiceTest {
     void requeueNeedsReviewRejectsDispatchInReviewWhenPayoutIsNotInReviewState(SettlementPayoutState state) {
         when(payouts.find(payoutId)).thenReturn(payout(state));
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.NEEDS_REVIEW, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false);
 
         assertThatThrownBy(() -> service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON))
                 .isInstanceOfSatisfying(SettlementException.class,
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
         verify(dispatches, never()).requeueNeedsReview(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -380,13 +381,13 @@ class PayoutDispatchApprovalCommitServiceTest {
         when(payouts.find(payoutId)).thenReturn(review);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.NEEDS_REVIEW, sha())))
                 .thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.PENDING, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false, true);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false, true);
         when(dispatches.requeueNeedsReview(payoutId)).thenReturn(false);
 
         PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(review);
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -394,14 +395,14 @@ class PayoutDispatchApprovalCommitServiceTest {
         when(payouts.find(payoutId)).thenReturn(payout(SettlementPayoutState.NEEDS_REVIEW));
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.NEEDS_REVIEW, sha())))
                 .thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.COMPLETED, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false);
         when(dispatches.requeueNeedsReview(payoutId)).thenReturn(false);
 
         assertThatThrownBy(() -> service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON))
                 .isInstanceOfSatisfying(SettlementException.class,
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -409,7 +410,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         when(payouts.find(payoutId)).thenReturn(payout(SettlementPayoutState.NEEDS_REVIEW));
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.NEEDS_REVIEW, sha())))
                 .thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.PENDING, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false);
         when(dispatches.requeueNeedsReview(payoutId)).thenReturn(false);
 
         assertThatThrownBy(() -> service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON))
@@ -422,7 +423,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         when(payouts.find(payoutId)).thenReturn(payout(SettlementPayoutState.NEEDS_REVIEW));
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.NEEDS_REVIEW, sha())))
                 .thenReturn(Optional.empty());
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false);
         when(dispatches.requeueNeedsReview(payoutId)).thenReturn(false);
 
         assertThatThrownBy(() -> service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON))
@@ -437,7 +438,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         PayoutResponse.SellerPayout payout = payout(state);
         when(payouts.find(payoutId)).thenReturn(payout);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.WAITING_PROVIDER, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(true);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(true);
 
         PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
@@ -449,21 +450,21 @@ class PayoutDispatchApprovalCommitServiceTest {
     void requeueNeedsReviewRejectsPendingDispatchWhenNoRequeueActionWasRecorded() {
         when(payouts.find(payoutId)).thenReturn(payout(SettlementPayoutState.APPROVED));
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.PENDING, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false);
 
         assertThatThrownBy(() -> service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON))
                 .isInstanceOfSatisfying(SettlementException.class,
                         e -> assertThat(e.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
         verify(dispatches, never()).requeueNeedsReview(any());
-        verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
+        verify(actions, never()).record(any(), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
     void requeueNeedsReviewRejectsDispatchInTerminalStatus() {
         when(payouts.find(payoutId)).thenReturn(payout(SettlementPayoutState.CONFIRMED));
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord(PayoutDispatchState.COMPLETED, sha())));
-        when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
+        when(actions.matches(payoutId, KEY, PayoutOperatorActionType.PAYOUT_REQUEUED, ACTOR, REASON)).thenReturn(false);
 
         assertThatThrownBy(() -> service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON))
                 .isInstanceOfSatisfying(SettlementException.class,

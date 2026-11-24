@@ -1,6 +1,7 @@
 package com.atlas.settlement.service;
 
 import com.atlas.settlement.model.SellerPayoutProfile;
+import com.atlas.settlement.model.SellerPayoutProfileActionType;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,5 +17,6 @@ public interface SellerPayoutProfileStore {
 
     Optional<String> findRequestHash(UUID sellerId, String idempotencyKey);
 
-    boolean recordAction(UUID sellerId, int profileVersion, String action, String idempotencyKey, String requestHash, String actor, String reason, Instant now);
+    boolean recordAction(UUID sellerId, int profileVersion, SellerPayoutProfileActionType action, String idempotencyKey,
+            String requestHash, String actor, String reason, Instant now);
 }

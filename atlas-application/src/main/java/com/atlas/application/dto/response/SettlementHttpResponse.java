@@ -1,6 +1,9 @@
 package com.atlas.application.dto.response;
 
 import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
+import com.atlas.settlement.model.PayoutDispatchState;
+import com.atlas.settlement.model.SellerPayoutProfile.State;
+import com.atlas.settlement.model.SettlementPayoutState;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -21,13 +24,13 @@ public final class SettlementHttpResponse {
     /**
      * PII-free operator read model for payout reconciliation and retry state.
      *
-     * <p>dispatchStatus 는 {@code PayoutDispatchState} 이름이거나, provider outbox 가 없는 수동 지급을 뜻하는
-     * {@code MANUAL_NO_PROVIDER_OUTBOX} 이다. 후자는 enum 값이 아니라서 와이어 값은 문자열로 둔다.
+     * <p>dispatchStatus 는 PayPal provider outbox 의 처리 상태다. provider outbox 가 없는 수동 지급이면
+     * {@code null} 이고, 이때 outbox 에서 오는 provider 식별자·환율·시도 정보도 함께 비어 있다.
      */
     public record PayoutDispatchStatus(
             UUID payoutId,
-            String payoutState,
-            String dispatchStatus,
+            SettlementPayoutState payoutState,
+            PayoutDispatchState dispatchStatus,
             String senderBatchId,
             String providerBatchId,
             String providerItemId,
@@ -51,7 +54,7 @@ public final class SettlementHttpResponse {
             UUID sellerId,
             String countryCode,
             String payoutCurrency,
-            String status,
+            State status,
             int profileVersion,
             Instant updatedAt,
             Instant verifiedAt) {
