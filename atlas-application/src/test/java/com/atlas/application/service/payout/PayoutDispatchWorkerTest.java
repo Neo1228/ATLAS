@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.application.security.PayoutRecipientCipher;
 import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
+import com.atlas.payment.provider.paypal.payouts.PayPalPayoutException;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutsProvider;
 import com.atlas.settlement.model.PayoutDispatchMetrics;
 import com.atlas.settlement.model.PayoutDispatchRecord;
@@ -74,6 +75,39 @@ class PayoutDispatchWorkerTest {
 
         verify(provider, never()).createBatch(any());
         verify(outcomes).cancel(record);
+    }
+
+    @Test
+    void duplicateBatchWithOriginalIdWaitsAndPollsTheExistingBatch() {
+        PayoutDispatchRecord record = leasedRecord();
+        when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
+        when(payouts.beginDispatch(payoutId)).thenReturn(true);
+        when(provider.createBatch(any())).thenThrow(new PayPalPayoutException(
+                "duplicate", null, PayPalPayoutException.Classification.DUPLICATE_BATCH, "sender-batch", "ORIGINAL-1"));
+
+        worker.dispatchDue();
+
+        verify(outcomes).accepted(eq(record), eq("ORIGINAL-1"), eq("UNKNOWN"), isNull(), isNull(), isNull(), isNull(),
+                any(Duration.class));
+        verify(outcomes, never()).review(any(), any());
+        verify(outcomes, never()).fail(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void duplicateBatchWithoutOriginalIdEscalatesToReviewInsteadOfFailing() {
+        PayoutDispatchRecord record = leasedRecord();
+        when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(0, 0, 0, 0, 0, 0));
+        when(payouts.beginDispatch(payoutId)).thenReturn(true);
+        when(provider.createBatch(any())).thenThrow(new PayPalPayoutException(
+                "duplicate", null, PayPalPayoutException.Classification.DUPLICATE_BATCH, "sender-batch", null));
+
+        worker.dispatchDue();
+
+        verify(outcomes).review(eq(record), eq("DUPLICATE_WITHOUT_BATCH_ID"));
+        verify(outcomes, never()).accepted(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(outcomes, never()).fail(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

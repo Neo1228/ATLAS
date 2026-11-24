@@ -136,7 +136,9 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
             JsonNode root = objectMapper.readTree(bytes);
             JsonNode header = root.path("batch_header");
             String batchId = text(header, "payout_batch_id");
-            String senderBatchId = text(header, "sender_batch_id");
+            // 실제 Sandbox는 sender_batch_id를 batch_header.sender_batch_header 아래에 둔다.
+            String nestedSenderBatchId = text(header, "sender_batch_header", "sender_batch_id");
+            String senderBatchId = nestedSenderBatchId != null ? nestedSenderBatchId : text(header, "sender_batch_id");
             JsonNode batchAmount = header.path("amount");
             JsonNode batchFees = header.path("fees");
             List<PayPalPayoutBatchResponse.Item> items = new ArrayList<>();
@@ -171,28 +173,61 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
     private boolean isDuplicateBatch(String payload) {
         try {
             JsonNode root = objectMapper.readTree(payload);
-            String material = (Objects.toString(text(root, "name"), "") + " "
-                    + Objects.toString(text(root, "message"), "") + " "
-                    + Objects.toString(text(root, "details", "0", "issue"), "")).toLowerCase(Locale.ROOT);
-            return material.contains("sender_batch_id") && (material.contains("duplicate") || material.contains("already"));
+            // 실제 Sandbox는 message를 "User business error."로만 두고 식별 문구를 details[].issue에 담는다.
+            // JsonNode.path("0")은 배열 인덱스로 동작하지 않으므로 details를 순회해 읽는다.
+            StringBuilder material = new StringBuilder();
+            material.append(Objects.toString(text(root, "name"), "")).append(' ')
+                    .append(Objects.toString(text(root, "message"), ""));
+            JsonNode details = root.path("details");
+            if (details.isArray()) {
+                for (JsonNode detail : details) {
+                    material.append(' ').append(Objects.toString(text(detail, "field"), ""))
+                            .append(' ').append(Objects.toString(text(detail, "issue"), ""));
+                }
+            }
+            String lowered = material.toString().toLowerCase(Locale.ROOT);
+            return lowered.contains("sender_batch_id") && (lowered.contains("duplicate") || lowered.contains("already"));
         } catch (JacksonException ignored) { return false; }
     }
 
     private String extractOriginalBatchId(String payload) {
         try {
-            JsonNode links = objectMapper.readTree(payload).path("links");
-            if (!links.isArray()) return null;
-            for (JsonNode link : links) {
-                String href = text(link, "href");
-                if (href == null) continue;
-                try {
-                    String path = URI.create(href).getPath();
-                    if (path == null || !path.matches(".*/v1/payments/payouts/[A-Za-z0-9_-]{1,128}/?")) continue;
-                    String id = path.replaceAll(".*/v1/payments/payouts/", "").replaceAll("/$", "");
-                    if (SAFE_ID.matcher(id).matches()) return id;
-                } catch (IllegalArgumentException ignored) { /* Never follow provider-supplied links. */ }
+            JsonNode root = objectMapper.readTree(payload);
+            // 실제 Sandbox의 중복 거부는 최상위 links를 비워 두고 원래 배치를 details[].link에 담는다.
+            String fromTopLevel = batchIdFromLinks(root.path("links"));
+            if (fromTopLevel != null) return fromTopLevel;
+            JsonNode details = root.path("details");
+            if (details.isArray()) {
+                for (JsonNode detail : details) {
+                    String fromDetail = batchIdFromLinks(detail.path("link"));
+                    if (fromDetail != null) return fromDetail;
+                }
             }
         } catch (JacksonException ignored) { /* Duplicate can be identified without an original batch link. */ }
+        return null;
+    }
+
+    /** 링크 배열(또는 단일 링크)에서 payout batch ID만 꺼낸다. 제공된 URL은 따라가지 않는다. */
+    private String batchIdFromLinks(JsonNode links) {
+        if (links == null || links.isMissingNode() || links.isNull()) return null;
+        if (links.isObject()) return batchIdFromLink(links);
+        if (!links.isArray()) return null;
+        for (JsonNode link : links) {
+            String id = batchIdFromLink(link);
+            if (id != null) return id;
+        }
+        return null;
+    }
+
+    private String batchIdFromLink(JsonNode link) {
+        String href = text(link, "href");
+        if (href == null) return null;
+        try {
+            String path = URI.create(href).getPath();
+            if (path == null || !path.matches(".*/v1/payments/payouts/[A-Za-z0-9_-]{1,128}/?")) return null;
+            String id = path.replaceAll(".*/v1/payments/payouts/", "").replaceAll("/$", "");
+            return SAFE_ID.matcher(id).matches() ? id : null;
+        } catch (IllegalArgumentException ignored) { /* Never follow provider-supplied links. */ }
         return null;
     }
 
