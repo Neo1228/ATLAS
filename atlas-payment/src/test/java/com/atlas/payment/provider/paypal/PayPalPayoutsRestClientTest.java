@@ -135,6 +135,35 @@ class PayPalPayoutsRestClientTest {
         assertThat(receivedPath.get()).isEqualTo("/v1/payments/payouts");
     }
 
+    /** 실제 Sandbox가 돌려준 중복 거부 본문의 모양이다(2026-11-24, 식별자만 치환). 원래 배치는 details[].link에 있고 최상위 links는 비어 있다. */
+    @Test
+    void duplicateBatchReadsOriginalBatchIdFromDetailsLinkLikeTheRealSandbox() {
+        responseStatus.set(400);
+        responseBody.set("{\"name\":\"USER_BUSINESS_ERROR\",\"message\":\"User business error.\",\"debug_id\":\"debug-1\","
+                + "\"information_link\":\"https://developer.paypal.com/docs/api/payments.payouts-batch/#errors\","
+                + "\"details\":[{\"field\":\"SENDER_BATCH_ID\",\"location\":\"body\",\"issue\":\"Batch with given sender_batch_id already exists\","
+                + "\"link\":[{\"href\":\"https://api.sandbox.paypal.com/v1/payments/payouts/ORIGINAL-REAL-1\",\"rel\":\"self\",\"method\":\"GET\",\"encType\":\"application/json\"}]}],"
+                + "\"links\":[]}");
+        assertThatThrownBy(() -> client.createBatch(new PayPalPayoutRequest(
+                "batch-stable", "item-stable", "request-stable", "payee@example.com", 100, "USD")))
+                .isInstanceOfSatisfying(PayPalPayoutException.class, exception -> {
+                    assertThat(exception.getClassification()).isEqualTo(PayPalPayoutException.Classification.DUPLICATE_BATCH);
+                    assertThat(exception.getOriginalBatchId()).isEqualTo("ORIGINAL-REAL-1");
+                });
+    }
+
+    /** 실제 Sandbox의 배치 조회 응답은 sender_batch_id를 batch_header.sender_batch_header 아래에 둔다. */
+    @Test
+    void batchResponseReadsSenderBatchIdFromTheNestedHeaderLikeTheRealSandbox() {
+        responseStatus.set(200);
+        responseBody.set("{\"batch_header\":{\"payout_batch_id\":\"PAYOUT-REAL\",\"batch_status\":\"SUCCESS\","
+                + "\"sender_batch_header\":{\"sender_batch_id\":\"batch-stable\",\"email_subject\":\"You have a payout\"},"
+                + "\"amount\":{\"currency\":\"USD\",\"value\":\"1.00\"},\"fees\":{\"currency\":\"USD\",\"value\":\"0.02\"}},\"items\":[]}");
+        var result = client.getBatch("PAYOUT-REAL");
+        assertThat(result.batchId()).isEqualTo("PAYOUT-REAL");
+        assertThat(result.senderBatchId()).isEqualTo("batch-stable");
+    }
+
     @Test
     void rateLimitIsRetryableWithoutChangingTheCallerIds() {
         responseStatus.set(429);
