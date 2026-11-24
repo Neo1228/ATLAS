@@ -33,11 +33,31 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
 
     private final PaymentRecoveryRepository recovery;
 
-    private volatile PaymentRecoveryResponse.Metrics metricsSnapshot;
+    private volatile RecoveryMetricsSnapshot metricsSnapshot;
     private volatile long metricsFetchedAtNanos = Long.MIN_VALUE;
 
     public PaymentRecoveryServiceImpl(PaymentRecoveryRepository recovery) {
         this.recovery = Objects.requireNonNull(recovery);
+    }
+
+    @Override
+    public long statusCount(String status) {
+        return metricsSnapshot().statusCount(status);
+    }
+
+    @Override
+    public long stageCount(String stage, String status) {
+        return metricsSnapshot().stageCount(stage, status);
+    }
+
+    @Override
+    public double stageOldestDueAgeSeconds(String stage) {
+        return metricsSnapshot().stageOldestDueAgeSeconds(stage);
+    }
+
+    @Override
+    public double oldestDueAgeAnyStage() {
+        return metricsSnapshot().oldestDueAgeAnyStage();
     }
 
     /**
@@ -46,14 +66,13 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
      * <p>동시 스크레이프가 겹쳐도 여러 쿼리가 동시에 나가지 않도록 메서드 수준에서 직렬화한다.
      * 이 경로는 초당 소수 회만 호출되므로 경합 비용은 무시할 수 있다.
      */
-    @Override
-    public synchronized PaymentRecoveryResponse.Metrics metricsSnapshot() {
+    private synchronized RecoveryMetricsSnapshot metricsSnapshot() {
         long now = System.nanoTime();
         if (metricsSnapshot != null
                 && now - metricsFetchedAtNanos < METRICS_CACHE_TTL.toNanos()) {
             return metricsSnapshot;
         }
-        PaymentRecoveryResponse.Metrics fresh = toMetrics(recovery.metricsSnapshot());
+        RecoveryMetricsSnapshot fresh = recovery.metricsSnapshot();
         metricsSnapshot = fresh;
         metricsFetchedAtNanos = now;
         return fresh;
@@ -199,16 +218,6 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
         return new PaymentRecoveryResponse.ReviewItem(item.recoveryJobId(), item.operationType(), item.workStage(),
                 item.operationId(), item.paymentAttemptId(), item.orderId(), item.checkoutId(), item.attemptCount(),
                 item.manualRequeueCount(), item.firstEnqueuedAt(), item.lastAttemptAt(), item.lastErrorCode());
-    }
-
-    private static PaymentRecoveryResponse.Metrics toMetrics(
-            RecoveryMetricsSnapshot snapshot) {
-        Map<PaymentRecoveryResponse.Metrics.StageKey, PaymentRecoveryResponse.Metrics.StageMetrics> stages =
-                new HashMap<>();
-        snapshot.stages().forEach((key, value) -> stages.put(
-                new PaymentRecoveryResponse.Metrics.StageKey(key.stage(), key.status()),
-                new PaymentRecoveryResponse.Metrics.StageMetrics(value.total(), value.oldestDueAgeSeconds())));
-        return new PaymentRecoveryResponse.Metrics(Map.copyOf(snapshot.statusCounts()), Map.copyOf(stages));
     }
 
     private static PaymentRecoveryResponse.Requeue toRequeue(PaymentRecoveryRequeueRow row) {

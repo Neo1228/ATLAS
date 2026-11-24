@@ -2,6 +2,7 @@ package com.atlas.application.controller.order;
 
 import com.atlas.application.dto.response.PaymentHttpResponse;
 import com.atlas.application.dto.request.OrderHttpRequest;
+import com.atlas.application.service.PaymentRecoveryStatusService;
 import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.dto.response.RefundResponse;
 import com.atlas.order.dto.response.ReturnResponse;
@@ -13,7 +14,6 @@ import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderService;
 import jakarta.validation.Valid;
-import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +36,7 @@ public class OrderController {
     private final OrderReorderService reorders;
     private final OrderRefundService refunds;
     private final OrderReturnService returns;
-    private final Clock clock;
+    private final PaymentRecoveryStatusService paymentRecoveryStatus;
 
     @PostMapping("/campaigns/{campaignId}/tickets/{ticketId}/checkout")
     public OrderViewResponse.Order startCheckout(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
@@ -50,9 +50,7 @@ public class OrderController {
 
     @GetMapping("/orders/{orderId}/payment/status")
     public PaymentHttpResponse.RecoveryStatus paymentStatus(@PathVariable UUID orderId) {
-        OrderViewResponse.Order order = orders.find(orderId);
-        return PaymentHttpResponse.RecoveryStatus.from(
-                orderId, order.state(), order.paymentState(), order.checkoutExpiresAt(), clock.instant());
+        return paymentRecoveryStatus.status(orderId);
     }
 
     @PostMapping("/orders/{orderId}/reconcile")

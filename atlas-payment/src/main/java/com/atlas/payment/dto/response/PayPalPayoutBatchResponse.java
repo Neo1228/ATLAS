@@ -28,7 +28,5 @@ public record PayPalPayoutBatchResponse(
             String conversionToCurrency,
             BigDecimal conversionRate,
             boolean currencyConversionPresent) {
-        public boolean isFinalSuccess() { return "SUCCESS".equalsIgnoreCase(transactionStatus); }
-        public boolean isUnclaimed() { return "UNCLAIMED".equalsIgnoreCase(transactionStatus); }
     }
 }
