@@ -1,5 +1,6 @@
 # ADR-0003: 도메인 모듈과 계층 경계
 - 상태: ✓ 확정
+- 후속 변경(2026-11-24): 아래의 `ATLAS-<이름>` 디렉터리와 `<이름>-module` project 이름은 [ADR-0069](ADR-0069-layered-naming-and-runtime-configuration.md)에 따라 소문자 `atlas-<이름>` 하나로 통일됐다. 이 문서는 당시 결정의 기록이다.
 - 결정일: 2026-11-03
 - 담당자: Project Owner
 - 관련 결정: [D-037/D-038/D-047/D-050/D-051/D-053/D-054/D-061/D-066](../../00-governance/decision-log.md)
