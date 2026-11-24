@@ -122,9 +122,11 @@ jobs:
         run: |
           # 이 shard 가 Maven Central 에서 새로 받은 jar 수. 캐시가 데워져 있으면 0 이어야 한다(EXP-075).
           # 0 이 아닌 값이 main push 실행에서 보이면 verify 의 캐시에 shard 의존성이 빠졌다는 신호다.
-          downloaded=$(find "$HOME/.gradle/caches/modules-2/files-2.1" -type f -name '*.jar' -newer "$RUNNER_TEMP/before-gradle" 2>/dev/null | wc -l)
-          echo "DOWNLOADED_JARS $downloaded"
-          echo "shard ${{ matrix.shard }}/${{ strategy.job-total }}: Maven Central 에서 새로 받은 jar ${downloaded}개" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "$RUNNER_TEMP/before-gradle" ]; then
+            downloaded=$(find "$HOME/.gradle/caches/modules-2/files-2.1" -type f -name '*.jar' -newer "$RUNNER_TEMP/before-gradle" 2>/dev/null | wc -l) || downloaded=0
+            echo "DOWNLOADED_JARS $downloaded"
+            echo "shard ${{ matrix.shard }}/${{ strategy.job-total }}: Maven Central 에서 새로 받은 jar ${downloaded}개" >> "$GITHUB_STEP_SUMMARY"
+          fi
           python3 - <<'PY'
           import glob, re
           total = failed = 0
