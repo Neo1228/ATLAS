@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.exception.AccountException;
+import com.atlas.account.model.AuthAttemptScope.SubjectBucket;
+import com.atlas.account.model.AuthAttemptScope;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.repository.AuthThrottleRepository;
 import com.atlas.account.service.AccountService;
@@ -142,11 +144,11 @@ class AuthAttemptLimiterIntegrationTest {
         Instant now = Instant.now();
         String origin = "203.0.113." + UUID.randomUUID().toString().substring(0, 8);
 
-        assertThat(strict.tryAcquire("LOGIN", "a@example.com", origin, now)).isTrue();
-        assertThat(strict.tryAcquire("LOGIN", "b@example.com", origin, now)).isTrue();
-        assertThat(strict.tryAcquire("LOGIN", "c@example.com", origin, now)).isFalse();
+        assertThat(strict.tryAcquire(AuthAttemptScope.LOGIN, "a@example.com", origin, now)).isTrue();
+        assertThat(strict.tryAcquire(AuthAttemptScope.LOGIN, "b@example.com", origin, now)).isTrue();
+        assertThat(strict.tryAcquire(AuthAttemptScope.LOGIN, "c@example.com", origin, now)).isFalse();
         // 다른 출처는 영향받지 않는다.
-        assertThat(strict.tryAcquire("LOGIN", "d@example.com", "203.0.113.250", now)).isTrue();
+        assertThat(strict.tryAcquire(AuthAttemptScope.LOGIN, "d@example.com", "203.0.113.250", now)).isTrue();
     }
 
     @Test
@@ -155,8 +157,37 @@ class AuthAttemptLimiterIntegrationTest {
         Instant now = Instant.now();
         String origin = "192.0.2." + UUID.randomUUID().toString().substring(0, 8);
 
-        assertThat(strict.tryAcquire("EMAIL", "one@example.com", origin, now)).isTrue();
-        assertThat(strict.tryAcquire("EMAIL", "two@example.com", origin, now)).isFalse();
+        assertThat(strict.tryAcquire(AuthAttemptScope.EMAIL, "one@example.com", origin, now)).isTrue();
+        assertThat(strict.tryAcquire(AuthAttemptScope.EMAIL, "two@example.com", origin, now)).isFalse();
+    }
+
+    @Test
+    void everyScopeIsStoredWithinTheBucketConstraints() {
+        // 버킷 enum 값이 테이블 CHECK 제약과 어긋나면 PostgreSQL이 INSERT를 거절해 여기서 예외가 난다.
+        AuthAttemptLimiter wide = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
+                Duration.ofMinutes(15), 100, 100);
+        Instant now = Instant.now();
+        String subject = "scope-" + UUID.randomUUID();
+        String key = AuthAttemptLimiterImpl.key(subject);
+
+        for (AuthAttemptScope scope : AuthAttemptScope.values()) {
+            assertThat(wide.tryAcquire(scope, subject, subject, now)).isTrue();
+        }
+        for (SubjectBucket bucket : SubjectBucket.values()) {
+            wide.recordSubjectFailure(bucket, subject, now);
+        }
+
+        // MFA는 출처 제약에 값이 없어 LOGIN 출처 버킷을 같이 쓴다.
+        assertThat(jdbc.queryForList("SELECT scope FROM auth_origin_bucket WHERE origin_key = ? ORDER BY scope",
+                String.class, key)).containsExactly("EMAIL", "LOGIN");
+        assertThat(jdbc.queryForList("SELECT scope FROM auth_subject_bucket WHERE subject_key = ? ORDER BY scope",
+                String.class, key)).containsExactly("LOGIN", "MFA");
+
+        for (SubjectBucket bucket : SubjectBucket.values()) {
+            wide.resetSubject(bucket, subject);
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM auth_subject_bucket WHERE subject_key = ?",
+                Integer.class, key)).isZero();
     }
 
     @Test

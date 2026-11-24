@@ -1,5 +1,7 @@
 package com.atlas.account.service.impl;
 
+import com.atlas.account.model.AuthAttemptScope.SubjectBucket;
+import com.atlas.account.model.AuthAttemptScope;
 import com.atlas.account.repository.AuthThrottleRepository;
 import com.atlas.account.service.AuthAttemptLimiter;
 import java.nio.charset.StandardCharsets;
@@ -8,6 +10,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -50,35 +53,34 @@ public class AuthAttemptLimiterImpl implements AuthAttemptLimiter {
     }
 
     @Override
-    public boolean tryAcquire(String scope, String subject, String origin, Instant now) {
-        if (counters.activeSubjectFailures(scope, key(subject), now, windowMillis()) >= policy.subjectLimit()) {
+    public boolean tryAcquire(AuthAttemptScope scope, String subject, String origin, Instant now) {
+        // 주체 축이 없는 범위(EMAIL)는 auth_subject_bucket 제약상 row가 있을 수 없으므로 조회하지 않는다.
+        Optional<SubjectBucket> subjectBucket = scope.subjectBucket();
+        if (subjectBucket.isPresent() && counters.activeSubjectFailures(
+                subjectBucket.get(), key(subject), now, windowMillis()) >= policy.subjectLimit()) {
             return false;
         }
         // 소비도 독립 transaction이어야 한다. 인증이 실패해 바깥 transaction이 rollback돼도
         // 시도 횟수는 남아야 한도가 실제로 줄어든다.
         Integer attempts = transactions.execute(status ->
-                counters.incrementOriginAttempts(originScope(scope), key(origin), now, windowMillis()));
+                counters.incrementOriginAttempts(scope.originBucket(), key(origin), now, windowMillis()));
         return attempts != null && attempts <= policy.originLimit();
     }
 
     @Override
-    public void recordSubjectFailure(String scope, String subject, Instant now) {
+    public void recordSubjectFailure(SubjectBucket scope, String subject, Instant now) {
         transactions.executeWithoutResult(status ->
                 counters.recordSubjectFailure(scope, key(subject), now, windowMillis()));
     }
 
     @Override
-    public void resetSubject(String scope, String subject) {
+    public void resetSubject(SubjectBucket scope, String subject) {
         transactions.executeWithoutResult(status -> counters.deleteSubject(scope, key(subject)));
     }
 
     @Override
     public int purgeStale(Instant now, Duration retention, int limit) {
         return counters.purgeStale(now, Math.max(1, retention.toMillis()), limit);
-    }
-
-    private static String originScope(String scope) {
-        return "EMAIL".equals(scope) ? "EMAIL" : "LOGIN";
     }
 
     private long windowMillis() {

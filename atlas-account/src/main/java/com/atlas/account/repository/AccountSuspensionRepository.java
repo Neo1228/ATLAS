@@ -1,5 +1,6 @@
 package com.atlas.account.repository;
 
+import com.atlas.account.model.AccountSuspensionActionType;
 import com.atlas.account.persistence.projection.AccountSuspensionAction;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -46,11 +47,12 @@ public class AccountSuspensionRepository {
     /**
      * 계정 상태를 바꾸고 감사 기록을 남깁니다.
      *
-     * @param suspend {@code true} 면 DISABLED, {@code false} 면 ACTIVE 로 되돌립니다.
+     * @param action SUSPEND 면 DISABLED, RELEASE 면 ACTIVE 로 되돌립니다.
      * @return 상태가 실제로 바뀌었으면 {@code true}. 이미 그 상태였으면 {@code false}.
      */
-    public boolean apply(UUID accountId, boolean suspend, String idempotencyKey, String actor,
-            String reason, Instant now) {
+    public boolean apply(UUID accountId, AccountSuspensionActionType action, String idempotencyKey,
+            String actor, String reason, Instant now) {
+        boolean suspend = action == AccountSuspensionActionType.SUSPEND;
         String target = suspend ? "DISABLED" : "ACTIVE";
         String previous = suspend ? "ACTIVE" : "DISABLED";
         int updated = jdbc.update("""
@@ -61,7 +63,7 @@ public class AccountSuspensionRepository {
                 INSERT INTO account_suspension_action (
                     suspension_action_id, account_id, action, idempotency_key, actor, reason, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, UUID.randomUUID(), accountId, suspend ? "SUSPEND" : "RELEASE",
+                """, UUID.randomUUID(), accountId, action.name(),
                 idempotencyKey, actor, reason, Timestamp.from(now));
         return updated > 0;
     }
@@ -75,7 +77,7 @@ public class AccountSuspensionRepository {
                 ORDER BY created_at DESC
                 LIMIT ?
                 """, (rs, row) -> new AccountSuspensionAction(
-                        rs.getString("action"),
+                        AccountSuspensionActionType.valueOf(rs.getString("action")),
                         rs.getString("idempotency_key"),
                         rs.getString("actor"),
                         rs.getString("reason"),

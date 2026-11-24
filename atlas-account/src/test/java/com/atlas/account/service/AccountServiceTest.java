@@ -20,6 +20,8 @@ import static org.mockito.Mockito.times;
 import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.exception.AccountException;
+import com.atlas.account.model.AccountActionTokenPurpose;
+import com.atlas.account.model.AuthAttemptScope.SubjectBucket;
 import com.atlas.account.persistence.projection.AccountActionToken;
 import com.atlas.account.persistence.projection.AccountMfaSecret;
 import com.atlas.account.persistence.projection.AccountPrincipal;
@@ -85,7 +87,7 @@ class AccountServiceTest {
         assertTrue(result.accepted());
         verify(accounts).createBuyer(ACCOUNT_ID);
         verify(passwords).encode("long-enough-password");
-        verify(accounts).replaceActionToken(eq(ACCOUNT_ID), eq("EMAIL_VERIFICATION"), anyString(), eq(NOW),
+        verify(accounts).replaceActionToken(eq(ACCOUNT_ID), eq(AccountActionTokenPurpose.EMAIL_VERIFICATION), anyString(), eq(NOW),
                 eq(NOW.plus(Duration.ofHours(24))));
         verify(emailSender).sendVerification(eq("buyer@example.com"), anyString());
         verify(accessTokens, never()).issue(any(), any());
@@ -120,9 +122,9 @@ class AccountServiceTest {
 
     @Test
     void verifiesEmailOnlyAfterConsumingActionToken() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "EMAIL_VERIFICATION",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.EMAIL_VERIFICATION,
                 NOW.plusSeconds(60), null);
-        when(accounts.findActionTokenForUpdate(anyString(), eq("EMAIL_VERIFICATION")))
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.EMAIL_VERIFICATION)))
                 .thenReturn(Optional.of(token));
         when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(true);
 
@@ -134,9 +136,9 @@ class AccountServiceTest {
 
     @Test
     void rejectsExpiredEmailVerificationTokenWithoutChangingAccountState() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "EMAIL_VERIFICATION",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.EMAIL_VERIFICATION,
                 NOW.minusSeconds(1), null);
-        when(accounts.findActionTokenForUpdate(anyString(), eq("EMAIL_VERIFICATION")))
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.EMAIL_VERIFICATION)))
                 .thenReturn(Optional.of(token));
 
         AccountException error = assertThrows(AccountException.class, () -> service.verifyEmail("expired-token"));
@@ -148,9 +150,9 @@ class AccountServiceTest {
 
     @Test
     void rejectsReplayedEmailVerificationTokenWithoutChangingAccountState() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "EMAIL_VERIFICATION",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.EMAIL_VERIFICATION,
                 NOW.plusSeconds(60), NOW.minusSeconds(1));
-        when(accounts.findActionTokenForUpdate(anyString(), eq("EMAIL_VERIFICATION")))
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.EMAIL_VERIFICATION)))
                 .thenReturn(Optional.of(token));
 
         AccountException error = assertThrows(AccountException.class, () -> service.verifyEmail("replayed-token"));
@@ -162,9 +164,9 @@ class AccountServiceTest {
 
     @Test
     void rejectsExpiredPasswordResetTokenWithoutChangingPasswordOrSessions() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.PASSWORD_RESET,
                 NOW, null);
-        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.PASSWORD_RESET))).thenReturn(Optional.of(token));
 
         AccountException error = assertThrows(AccountException.class,
                 () -> service.resetPassword("expired-token", "new-long-password"));
@@ -179,9 +181,9 @@ class AccountServiceTest {
 
     @Test
     void rejectsReplayedPasswordResetTokenWithoutChangingPasswordOrSessions() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.PASSWORD_RESET,
                 NOW.plusSeconds(60), NOW.minusSeconds(1));
-        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.PASSWORD_RESET))).thenReturn(Optional.of(token));
 
         AccountException error = assertThrows(AccountException.class,
                 () -> service.resetPassword("replayed-token", "new-long-password"));
@@ -307,16 +309,16 @@ class AccountServiceTest {
         verify(emailSender, times(2)).sendVerification(eq("buyer@example.com"), anyString());
 
         ArgumentCaptor<String> tokenHashes = ArgumentCaptor.forClass(String.class);
-        verify(accounts, times(2)).replaceActionToken(eq(ACCOUNT_ID), eq("EMAIL_VERIFICATION"),
+        verify(accounts, times(2)).replaceActionToken(eq(ACCOUNT_ID), eq(AccountActionTokenPurpose.EMAIL_VERIFICATION),
                 tokenHashes.capture(), eq(NOW), eq(NOW.plus(Duration.ofHours(24))));
         assertNotEquals(tokenHashes.getAllValues().get(0), tokenHashes.getAllValues().get(1));
     }
 
     @Test
     void passwordResetConsumesTokenUpdatesPasswordAndRevokesAllSessions() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.PASSWORD_RESET,
                 NOW.plusSeconds(60), null);
-        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.PASSWORD_RESET))).thenReturn(Optional.of(token));
         when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(true);
 
         service.resetPassword("reset-token", "new-long-password");
@@ -329,38 +331,38 @@ class AccountServiceTest {
 
     @Test
     void passwordResetClearsTheLoginLockoutButNotTheMfaCounter() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.PASSWORD_RESET,
                 NOW.plusSeconds(60), null);
-        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.PASSWORD_RESET))).thenReturn(Optional.of(token));
         when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(true);
         when(accounts.findActiveById(ACCOUNT_ID)).thenReturn(Optional.of(principal()));
 
         service.resetPassword("reset-token", "new-long-password");
 
-        verify(limiter).resetSubject("LOGIN", "buyer@example.com");
-        verify(limiter, never()).resetSubject(eq("MFA"), anyString());
+        verify(limiter).resetSubject(SubjectBucket.LOGIN, "buyer@example.com");
+        verify(limiter, never()).resetSubject(eq(SubjectBucket.MFA), anyString());
     }
 
     @Test
     void failedPasswordResetLeavesTheLoginLockoutInPlace() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.PASSWORD_RESET,
                 NOW.plusSeconds(60), null);
-        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.PASSWORD_RESET))).thenReturn(Optional.of(token));
         when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(false);
 
         assertThrows(AccountException.class, () -> service.resetPassword("reset-token", "new-long-password"));
 
-        verify(limiter, never()).resetSubject(anyString(), anyString());
+        verify(limiter, never()).resetSubject(any(), anyString());
     }
 
     @Test
     void lockoutCounterFailureAfterTheCommittedResetDoesNotFailTheReset() {
-        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, "PASSWORD_RESET",
+        AccountActionToken token = new AccountActionToken(UUID.randomUUID(), ACCOUNT_ID, AccountActionTokenPurpose.PASSWORD_RESET,
                 NOW.plusSeconds(60), null);
-        when(accounts.findActionTokenForUpdate(anyString(), eq("PASSWORD_RESET"))).thenReturn(Optional.of(token));
+        when(accounts.findActionTokenForUpdate(anyString(), eq(AccountActionTokenPurpose.PASSWORD_RESET))).thenReturn(Optional.of(token));
         when(accounts.consumeActionToken(token.tokenId(), NOW)).thenReturn(true);
         when(accounts.findActiveById(ACCOUNT_ID)).thenReturn(Optional.of(principal()));
-        doThrow(new IllegalStateException("counter store down")).when(limiter).resetSubject(anyString(), anyString());
+        doThrow(new IllegalStateException("counter store down")).when(limiter).resetSubject(any(), anyString());
 
         service.resetPassword("reset-token", "new-long-password");
 
