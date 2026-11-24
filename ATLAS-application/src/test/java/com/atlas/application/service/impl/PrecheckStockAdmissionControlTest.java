@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-class PrecheckStockAdmissionServiceTest {
+class PrecheckStockAdmissionControlTest {
 
     private static final UUID LOCATION = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID SELLER = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
@@ -22,7 +22,7 @@ class PrecheckStockAdmissionServiceTest {
     @Test
     void rejectsOnlyWhenConfirmedStockIsShortAndNeverOnUncertainty() {
         LocationClient inventory = mock(LocationClient.class);
-        PrecheckStockAdmissionService gate = new PrecheckStockAdmissionService(inventory, Duration.ZERO);
+        PrecheckStockAdmissionControl gate = new PrecheckStockAdmissionControl(inventory, Duration.ZERO);
         List<StockClaimRequest> two = List.of(new StockClaimRequest(LOCATION, SELLER, "sku", 2));
 
         when(inventory.availableStock(any(), any(), any())).thenReturn(1L);
@@ -39,7 +39,7 @@ class PrecheckStockAdmissionServiceTest {
     @Test
     void confirmedSoldOutIsRememberedSoRepeatedRejectionsMakeNoRemoteCall() {
         LocationClient inventory = mock(LocationClient.class);
-        PrecheckStockAdmissionService gate = new PrecheckStockAdmissionService(inventory, Duration.ofMinutes(1));
+        PrecheckStockAdmissionControl gate = new PrecheckStockAdmissionControl(inventory, Duration.ofMinutes(1));
         List<StockClaimRequest> one = List.of(new StockClaimRequest(LOCATION, SELLER, "sku", 1));
         when(inventory.availableStock(any(), any(), any())).thenReturn(0L);
 

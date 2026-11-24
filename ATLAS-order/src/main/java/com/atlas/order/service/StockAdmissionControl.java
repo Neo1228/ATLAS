@@ -10,7 +10,7 @@ import java.util.List;
  * location의 조건부 UPDATE이며, gate가 틀리거나 사라져도 초과 예약은 생기지 않는다. gate가 하는 일은 확실히
  * 소진된 SKU의 요청을 싸게 거절하는 것뿐이다.
  */
-public interface StockAdmissionService {
+public interface StockAdmissionControl {
     /**
      * 같은 admissionKey로 다시 호출하면 수량을 다시 차감하지 않고 첫 결과를 돌려준다(멱등 재시도).
      * 판단할 수 없는 상태(저장소 장애 등)는 거절이 아니라 통과로 답한다. 정본 검증이 뒤에 남아 있기 때문이다.
