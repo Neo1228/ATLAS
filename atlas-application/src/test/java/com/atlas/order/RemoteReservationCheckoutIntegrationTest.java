@@ -379,6 +379,51 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
         assertThat(takeCommand(200, TimeUnit.MILLISECONDS)).isNull();
     }
 
+    /**
+     * 원격 claim 호출이 진행 중(lease 보유)일 때 도착한 구매자 취소는 그 자리에서 적용되지 않는다. 저장소가 진행 중인
+     * claim 의 lease 를 빼앗지 않기 때문이다. 취소가 사라지지 않고 복구 경로가 이어받는지 확인한다: 체크아웃은
+     * {@code CANCEL_PENDING} 으로 남고, claim 이 끝나 lease 가 풀린 뒤 {@code finalizeDue} 가 취소를 다시 보내
+     * 원격 예약을 취소하고 체크아웃을 {@code CANCELLED} 로 닫는다. 이 이어받기가 없으면 claim 이 이긴 재고가 취소된
+     * 주문 뒤에 남는다.
+     */
+    @Test
+    void cancelArrivingDuringAnInFlightClaimIsAppliedByRecoveryOnceTheClaimLeaseEnds() throws Exception {
+        Fixture fixture = fixture("remote-cancel-during-claim");
+        UUID reservationId = UUID.randomUUID();
+        INVENTORY.enqueue(reserved(reservationId));
+        CheckoutResponse reserved = checkout(fixture.buyer());
+        takeCommand(5, TimeUnit.SECONDS);
+        UUID workflowId = jdbc.queryForObject(
+                "SELECT reservation_workflow_id FROM purchase_order WHERE checkout_id = ?", UUID.class,
+                reserved.checkoutId());
+        // 원격 claim 호출 중인 상황: 다른 worker 가 lease 를 쥐고 있다.
+        jdbc.update("""
+                UPDATE order_inventory_reservation_workflow
+                SET lease_token = ?, lease_until = now() + interval '60 seconds'
+                WHERE workflow_id = ?
+                """, UUID.randomUUID(), workflowId);
+
+        checkoutPayments.cancel(reserved.checkoutId(), "cancel-during-claim-" + UUID.randomUUID());
+
+        assertThat(checkoutState(reserved.checkoutId())).isEqualTo("CANCEL_PENDING");
+        assertThat(workflowStates(reserved.checkoutId())).isEqualTo("RESERVED");
+        assertThat(takeCommand(200, TimeUnit.MILLISECONDS))
+                .as("진행 중인 claim 의 lease 를 빼앗지 않고 원격 호출도 하지 않는다").isNull();
+
+        // claim 이 기록되며 lease 가 풀린다. 이제 복구 경로가 취소를 다시 보낼 수 있다.
+        jdbc.update("""
+                UPDATE order_inventory_reservation_workflow SET lease_token = NULL, lease_until = NULL
+                WHERE workflow_id = ?
+                """, workflowId);
+        INVENTORY.enqueue(cancelled(reservationId));
+        finalizer.finalizeDue(10);
+
+        assertThat(workflowStates(reserved.checkoutId())).isEqualTo("CANCELLED");
+        assertThat(checkoutState(reserved.checkoutId())).isEqualTo("CANCELLED");
+        assertThat(orderStates(reserved.checkoutId())).isEqualTo("CANCELLED");
+        assertThat(takeCommand(5, TimeUnit.SECONDS).getPath()).endsWith("/cancel");
+    }
+
     @Test
     void cancellingClaimedWorkflowRestoresRemoteStock() throws Exception {
         Fixture fixture = fixture("remote-claimed-cancel");
