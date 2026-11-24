@@ -2,8 +2,10 @@ package com.atlas.settlement.repository;
 
 import com.atlas.settlement.model.PayPalBalanceReportDailyTrend;
 import com.atlas.settlement.model.PayPalBalanceReportDisposition;
+import com.atlas.settlement.model.PayPalBalanceReportDispositionType;
 import com.atlas.settlement.model.PayPalBalanceReportExceptionRow;
 import com.atlas.settlement.model.PayPalBalanceReportRow;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.model.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
 import java.sql.Timestamp;
@@ -33,11 +35,12 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
                     rs.getString("record_id"), rs.getString("related_record_id"), rs.getString("original_record_id"),
                     rs.getString("record_type"), rs.getString("record_subtype"), rs.getString("currency"),
                     rs.getBigDecimal("gross_amount"), rs.getBigDecimal("fee_amount"), rs.getBigDecimal("net_amount"),
-                    rs.getString("transfer_id"), rs.getString("status"), rs.getString("reason_code"));
+                    rs.getString("transfer_id"), PayPalBalanceReportRowStatus.valueOf(rs.getString("status")), rs.getString("reason_code"));
 
     private static final RowMapper<PayPalBalanceReportDisposition> DISPOSITION_MAPPER = (rs, rowNum) ->
             new PayPalBalanceReportDisposition(rs.getObject("disposition_id", UUID.class),
-                    rs.getObject("run_id", UUID.class), rs.getInt("row_number"), rs.getString("disposition"),
+                    rs.getObject("run_id", UUID.class), rs.getInt("row_number"),
+                    PayPalBalanceReportDispositionType.valueOf(rs.getString("disposition")),
                     rs.getString("actor"), rs.getString("reason"), rs.getString("idempotency_key"),
                     rs.getTimestamp("created_at").toInstant());
 
@@ -72,11 +75,10 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
                 throw new IllegalArgumentException("Each row must belong to the inserted run");
             }
             switch (row.status()) {
-                case "MATCHED" -> matched++;
-                case "UNMATCHED" -> unmatched++;
-                case "MISMATCH" -> mismatch++;
-                case "DUPLICATE" -> duplicate++;
-                default -> throw new IllegalArgumentException("Unsupported row status: " + row.status());
+                case MATCHED -> matched++;
+                case UNMATCHED -> unmatched++;
+                case MISMATCH -> mismatch++;
+                case DUPLICATE -> duplicate++;
             }
         }
         if (matched != run.matchedCount() || unmatched != run.unmatchedCount()
@@ -113,7 +115,7 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
                 ps.setBigDecimal(10, row.feeAmount());
                 ps.setBigDecimal(11, row.netAmount());
                 ps.setString(12, row.transferId());
-                ps.setString(13, row.status());
+                ps.setString(13, row.status().name());
                 ps.setString(14, row.reasonCode());
             });
         }
@@ -161,7 +163,7 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (idempotency_key) DO NOTHING
                 """, disposition.dispositionId(), disposition.runId(), disposition.rowNumber(),
-                disposition.disposition(), disposition.actor(), disposition.reason(), disposition.idempotencyKey(),
+                disposition.disposition().name(), disposition.actor(), disposition.reason(), disposition.idempotencyKey(),
                 Timestamp.from(disposition.createdAt()));
         return inserted == 0 ? Optional.empty() : Optional.of(disposition.dispositionId());
     }
@@ -226,7 +228,7 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
 
     /** 모든 run의 예외 행. {@code status}, 업로드 기간, {@code recordId}는 null이면 조건에서 제외한다. */
     @Override
-    public List<PayPalBalanceReportExceptionRow> listExceptions(String status, LocalDate from, LocalDate to,
+    public List<PayPalBalanceReportExceptionRow> listExceptions(PayPalBalanceReportRowStatus status, LocalDate from, LocalDate to,
             String recordId, int fetchLimit, int offset) {
         StringBuilder sql = new StringBuilder("""
                 SELECT r.run_id, r.row_number, r.record_id, r.related_record_id, r.record_type, r.status, r.reason_code
@@ -237,7 +239,7 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
         List<Object> args = new ArrayList<>();
         if (status != null) {
             sql.append(" AND r.status = ?");
-            args.add(status);
+            args.add(status.name());
         }
         if (from != null) {
             sql.append(" AND u.uploaded_at >= ?");
@@ -258,7 +260,7 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
     }
 
     @Override
-    public List<PayPalBalanceReportExceptionRow> listRunRows(UUID runId, String status, String recordId,
+    public List<PayPalBalanceReportExceptionRow> listRunRows(UUID runId, PayPalBalanceReportRowStatus status, String recordId,
             int fetchLimit, int offset) {
         StringBuilder sql = new StringBuilder("""
                 SELECT run_id, row_number, record_id, related_record_id, record_type, status, reason_code
@@ -268,7 +270,7 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
         args.add(runId);
         if (status != null) {
             sql.append(" AND status = ?");
-            args.add(status);
+            args.add(status.name());
         }
         if (recordId != null) {
             sql.append(" AND record_id = ?");
@@ -281,11 +283,12 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
     }
 
     @Override
-    public Optional<String> findRowStatus(UUID runId, int rowNumber) {
+    public Optional<PayPalBalanceReportRowStatus> findRowStatus(UUID runId, int rowNumber) {
         try {
-            return Optional.ofNullable(jdbc.queryForObject(
+            String status = jdbc.queryForObject(
                     "SELECT status FROM paypal_balance_report_row WHERE run_id = ? AND row_number = ?",
-                    String.class, runId, rowNumber));
+                    String.class, runId, rowNumber);
+            return Optional.ofNullable(status).map(PayPalBalanceReportRowStatus::valueOf);
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
@@ -294,5 +297,5 @@ public class JdbcPayPalBalanceReportStore implements PayPalBalanceReportStore {
     private static final RowMapper<PayPalBalanceReportExceptionRow> EXCEPTION_ROW_MAPPER = (rs, rowNum) ->
             new PayPalBalanceReportExceptionRow(rs.getObject("run_id", UUID.class), rs.getInt("row_number"),
                     rs.getString("record_id"), rs.getString("related_record_id"), rs.getString("record_type"),
-                    rs.getString("status"), rs.getString("reason_code"));
+                    PayPalBalanceReportRowStatus.valueOf(rs.getString("status")), rs.getString("reason_code"));
 }

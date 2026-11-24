@@ -2,6 +2,7 @@ package com.atlas.application.controller.settlement;
 
 import com.atlas.application.dto.request.SettlementHttpRequest;
 import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import jakarta.validation.Valid;
 import java.security.Principal;
@@ -49,7 +50,7 @@ public class PayPalBalanceReportOperatorController {
 
     @GetMapping("/exceptions")
     public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> exceptions(
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) PayPalBalanceReportRowStatus status,
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to,
             @RequestParam(required = false) String recordId,
@@ -60,7 +61,7 @@ public class PayPalBalanceReportOperatorController {
 
     @GetMapping("/runs/{runId}/rows")
     public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> rows(@PathVariable UUID runId,
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) PayPalBalanceReportRowStatus status,
             @RequestParam(required = false) String recordId,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset) {

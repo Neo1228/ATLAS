@@ -1,19 +1,23 @@
 package com.atlas.settlement.service.impl;
 
-import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
 import com.atlas.settlement.dto.response.PayPalBalanceReportResponse.OperatorSummary.DailyTrend;
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
 import com.atlas.settlement.exception.SettlementException.Code;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayPalBalanceReportDisposition;
+import com.atlas.settlement.model.PayPalBalanceReportDispositionType;
 import com.atlas.settlement.model.PayPalBalanceReportExceptionRow;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.model.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -24,8 +28,9 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     private static final int MAX_ACTOR_LENGTH = 128;
     private static final int MAX_REASON_LENGTH = 500;
     private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 128;
-    private static final List<String> EXCEPTION_STATUSES = List.of("UNMATCHED", "MISMATCH", "DUPLICATE");
-    private static final List<String> ROW_STATUSES = List.of("MATCHED", "UNMATCHED", "MISMATCH", "DUPLICATE");
+    private static final Set<PayPalBalanceReportRowStatus> EXCEPTION_STATUSES = EnumSet.of(
+            PayPalBalanceReportRowStatus.UNMATCHED, PayPalBalanceReportRowStatus.MISMATCH,
+            PayPalBalanceReportRowStatus.DUPLICATE);
 
     private final PayPalBalanceReportStore store;
 
@@ -61,7 +66,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listExceptions(String status, LocalDate from,
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listExceptions(PayPalBalanceReportRowStatus status, LocalDate from,
             LocalDate to, String recordId, int requestedLimit, int offset) {
         int limit = boundedLimit(requestedLimit);
         boundedOffset(offset);
@@ -74,14 +79,11 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listRunRows(UUID runId, String status,
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listRunRows(UUID runId, PayPalBalanceReportRowStatus status,
             String recordId, int requestedLimit, int offset) {
         requireRun(runId);
         int limit = boundedLimit(requestedLimit);
         boundedOffset(offset);
-        if (status != null && !ROW_STATUSES.contains(status)) {
-            throw badRequest("Unsupported row status");
-        }
         return page(store.listRunRows(runId, status, recordId, limit + 1, offset).stream()
                 .map(PayPalBalanceReportOperatorServiceImpl::rowResponse).toList(), limit, offset);
     }
@@ -95,12 +97,12 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportResponse.Disposition recordDisposition(UUID runId, int rowNumber, String disposition,
+    public PayPalBalanceReportResponse.Disposition recordDisposition(UUID runId, int rowNumber, PayPalBalanceReportDispositionType disposition,
             String actor, String reason, String idempotencyKey) {
         requireRun(runId);
         String cleanReason = validateDispositionInput(rowNumber, disposition, actor, reason, idempotencyKey);
-        String rowStatus = rowStatus(runId, rowNumber);
-        if ("MATCHED".equals(rowStatus)) {
+        PayPalBalanceReportRowStatus rowStatus = rowStatus(runId, rowNumber);
+        if (rowStatus == PayPalBalanceReportRowStatus.MATCHED) {
             throw new SettlementException(Code.CONFLICT, "Matched rows cannot be dispositioned");
         }
         if (!EXCEPTION_STATUSES.contains(rowStatus)) {
@@ -116,7 +118,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
                 .map(PayPalBalanceReportOperatorServiceImpl::toResponse)
                 .orElseThrow(() -> new SettlementException(Code.CONFLICT, "Idempotency key conflict"));
         if (existing.runId().equals(runId) && existing.rowNumber() == rowNumber
-                && existing.disposition().equals(disposition) && existing.actor().equals(actor)
+                && existing.disposition() == disposition && existing.actor().equals(actor)
                 && existing.reason().equals(cleanReason)) {
             return existing;
         }
@@ -124,12 +126,12 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
                 "Idempotency key was already used for a different disposition");
     }
 
-    private String validateDispositionInput(int rowNumber, String disposition, String actor, String reason,
+    private String validateDispositionInput(int rowNumber, PayPalBalanceReportDispositionType disposition, String actor, String reason,
             String idempotencyKey) {
         if (rowNumber < 1 || rowNumber > MAX_ROW_NUMBER) {
             throw badRequest("rowNumber must be between 1 and 10000");
         }
-        if (disposition == null || !List.of("CONFIRMED_EXTERNAL", "DEFERRED", "NEEDS_REVIEW").contains(disposition)) {
+        if (disposition == null) {
             throw badRequest("Unsupported disposition");
         }
         if (actor == null || actor.isBlank() || actor.length() > MAX_ACTOR_LENGTH) {
@@ -160,7 +162,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
         }
     }
 
-    private String rowStatus(UUID runId, int rowNumber) {
+    private PayPalBalanceReportRowStatus rowStatus(UUID runId, int rowNumber) {
         return store.findRowStatus(runId, rowNumber).orElseThrow(() -> notFound("Report row not found"));
     }
 

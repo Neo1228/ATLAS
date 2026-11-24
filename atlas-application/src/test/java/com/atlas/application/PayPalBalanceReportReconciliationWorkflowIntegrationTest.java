@@ -7,13 +7,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.atlas.application.dto.response.SettlementHttpResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
-import com.atlas.payment.dto.response.PayPalReportMatchResponse;
 import com.atlas.application.service.PayPalBalanceReportReconciliationService;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
+import com.atlas.payment.dto.response.PayPalReportMatchResponse;
 import com.atlas.payment.service.PayPalReportMatchQuery;
 import com.atlas.schema.BaselineSchema;
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
 import com.atlas.settlement.exception.SettlementException;
+import com.atlas.settlement.model.PayPalBalanceReportDispositionType;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.repository.JdbcPayPalBalanceReportStore;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
@@ -105,23 +107,23 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     void exceptionSearchAndDispositionAreBoundedAuditedAndIdempotent() {
         var run = ingestion.reconcile(REPORT.getBytes(StandardCharsets.UTF_8));
         var exception = run.rows().stream()
-                .filter(row -> row.status() == SettlementHttpResponse.PayPalBalanceReportReconciliation.Status.UNMATCHED)
+                .filter(row -> row.status() == PayPalBalanceReportRowStatus.UNMATCHED)
                 .findFirst().orElseThrow();
 
         var matched = run.rows().stream()
-                .filter(row -> row.status() == SettlementHttpResponse.PayPalBalanceReportReconciliation.Status.MATCHED)
+                .filter(row -> row.status() == PayPalBalanceReportRowStatus.MATCHED)
                 .findFirst().orElseThrow();
-        assertThatThrownBy(() -> operator.recordDisposition(run.runId(), matched.rowNumber(), "DEFERRED",
+        assertThatThrownBy(() -> operator.recordDisposition(run.runId(), matched.rowNumber(), PayPalBalanceReportDispositionType.DEFERRED,
                 "settlement-operator", "not an exception", "matched-row-key"))
                 .isInstanceOfSatisfying(SettlementException.class,
                         error -> assertThat(error.code()).isEqualTo(SettlementException.Code.CONFLICT));
 
-        var first = operator.recordDisposition(run.runId(), exception.rowNumber(), "DEFERRED",
+        var first = operator.recordDisposition(run.runId(), exception.rowNumber(), PayPalBalanceReportDispositionType.DEFERRED,
                 "settlement-operator", "Awaiting external evidence", "disposition-key-1");
-        var replay = operator.recordDisposition(run.runId(), exception.rowNumber(), "DEFERRED",
+        var replay = operator.recordDisposition(run.runId(), exception.rowNumber(), PayPalBalanceReportDispositionType.DEFERRED,
                 "settlement-operator", "Awaiting external evidence", "disposition-key-1");
         assertThat(replay.dispositionId()).isEqualTo(first.dispositionId());
-        assertThatThrownBy(() -> operator.recordDisposition(run.runId(), exception.rowNumber(), "DEFERRED",
+        assertThatThrownBy(() -> operator.recordDisposition(run.runId(), exception.rowNumber(), PayPalBalanceReportDispositionType.DEFERRED,
                 "settlement-operator", "different reason", "disposition-key-1"))
                 .isInstanceOfSatisfying(SettlementException.class,
                         error -> assertThat(error.code()).isEqualTo(SettlementException.Code.CONFLICT));
@@ -132,7 +134,7 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                 .map(component -> component.getName()).toList()).doesNotContain("idempotencyKey");
         assertThat(operator.summary().pendingDispositions()).isEqualTo(4);
 
-        var page = operator.listExceptions("UNMATCHED", null, null, exception.recordId(), 20, 0);
+        var page = operator.listExceptions(PayPalBalanceReportRowStatus.UNMATCHED, null, null, exception.recordId(), 20, 0);
         assertThat(page.items()).extracting(PayPalBalanceReportResponse.Row::recordId).contains(exception.recordId());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM paypal_balance_report_disposition", Integer.class))
                 .isEqualTo(1);
@@ -154,12 +156,12 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                     .isEqualTo(1);
 
             var exception = firstRun.rows().stream()
-                    .filter(row -> row.status() == SettlementHttpResponse.PayPalBalanceReportReconciliation.Status.UNMATCHED)
+                    .filter(row -> row.status() == PayPalBalanceReportRowStatus.UNMATCHED)
                     .findFirst().orElseThrow();
             List<Callable<PayPalBalanceReportResponse.Disposition>> dispositionTasks = List.of(
-                    () -> operator.recordDisposition(firstRun.runId(), exception.rowNumber(), "DEFERRED",
+                    () -> operator.recordDisposition(firstRun.runId(), exception.rowNumber(), PayPalBalanceReportDispositionType.DEFERRED,
                             "settlement-operator", "Awaiting external evidence", "concurrent-key"),
-                    () -> operator.recordDisposition(firstRun.runId(), exception.rowNumber(), "DEFERRED",
+                    () -> operator.recordDisposition(firstRun.runId(), exception.rowNumber(), PayPalBalanceReportDispositionType.DEFERRED,
                             "settlement-operator", "Awaiting external evidence", "concurrent-key"));
             var dispositionResults = executor.invokeAll(dispositionTasks);
 
@@ -173,11 +175,11 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     @Test
     void rejectsUnsupportedStatusAndClampsOperatorPages() {
         assertThat(operator.listRuns(101, 0).limit()).isEqualTo(100);
-        assertThatThrownBy(() -> operator.listExceptions("MATCHED", null, null, null, 20, 0))
+        assertThatThrownBy(() -> operator.listExceptions(PayPalBalanceReportRowStatus.MATCHED, null, null, null, 20, 0))
                 .isInstanceOfSatisfying(SettlementException.class,
                         error -> assertThat(error.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
-        assertThat(operator.listExceptions("UNMATCHED", null, null, null, 101, 0).limit()).isEqualTo(100);
-        assertThatThrownBy(() -> operator.listExceptions("UNMATCHED", null, null, null, 20, 10_001))
+        assertThat(operator.listExceptions(PayPalBalanceReportRowStatus.UNMATCHED, null, null, null, 101, 0).limit()).isEqualTo(100);
+        assertThatThrownBy(() -> operator.listExceptions(PayPalBalanceReportRowStatus.UNMATCHED, null, null, null, 20, 10_001))
                 .isInstanceOfSatisfying(SettlementException.class,
                         error -> assertThat(error.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
     }

@@ -1,27 +1,27 @@
 package com.atlas.settlement.service.impl;
 
-import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.exception.SettlementException;
+import com.atlas.settlement.model.RefundReservationState;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
 import com.atlas.settlement.persistence.projection.RefundJournalRecord;
+import com.atlas.settlement.persistence.projection.RefundReservation;
 import com.atlas.settlement.persistence.projection.SellerStatementRow;
-import org.springframework.transaction.annotation.Isolation;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.repository.SettlementPayoutRepository;
 import com.atlas.settlement.repository.SettlementRefundReservationRepository;
-import com.atlas.settlement.persistence.projection.RefundReservation;
 import com.atlas.settlement.service.SettlementService;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.DateTimeException;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.DateTimeException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -137,7 +138,7 @@ public class SettlementServiceImpl implements SettlementService {
         var reservation = refundReservations.find(request.refundId())
                 .orElseThrow(() -> conflict("Refund reservation must exist before posting"));
         validateRefundReservation(reservation, request);
-        if (!"RESERVED".equals(reservation.status()) && !"POSTED".equals(reservation.status())) {
+        if (reservation.status() != RefundReservationState.RESERVED && reservation.status() != RefundReservationState.POSTED) {
             throw conflict("Refund reservation is not active");
         }
         RefundJournalRecord facts = new RefundJournalRecord(
@@ -165,13 +166,16 @@ public class SettlementServiceImpl implements SettlementService {
         var existing = refundReservations.find(request.refundId());
         if (existing.isPresent()) {
             validateRefundReservation(existing.get(), request);
-            if ("RESERVED".equals(existing.get().status()) || "POSTED".equals(existing.get().status())) return;
+            if (existing.get().status() == RefundReservationState.RESERVED
+                    || existing.get().status() == RefundReservationState.POSTED) {
+                return;
+            }
             throw conflict("Refund reservation is not active");
         }
         var reservation = refundReservations.reserve(
                 request.refundId(), request.orderId(), request.sellerId(), request.amountWon(), now);
         validateRefundReservation(reservation, request);
-        if (!"RESERVED".equals(reservation.status())) throw conflict("Refund reservation is not active");
+        if (reservation.status() != RefundReservationState.RESERVED) throw conflict("Refund reservation is not active");
         payoutTotals.cancelUnsentForRefund(request.sellerId(), now);
     }
 
@@ -183,8 +187,8 @@ public class SettlementServiceImpl implements SettlementService {
         var reservation = refundReservations.find(request.refundId())
                 .orElseThrow(() -> conflict("Refund reservation was not found"));
         validateRefundReservation(reservation, request);
-        if ("POSTED".equals(reservation.status())) throw conflict("Posted refund reservation cannot be released");
-        if ("RELEASED".equals(reservation.status())) return;
+        if (reservation.status() == RefundReservationState.POSTED) throw conflict("Posted refund reservation cannot be released");
+        if (reservation.status() == RefundReservationState.RELEASED) return;
         if (!refundReservations.release(request.refundId(), clock.instant())) {
             throw conflict("Refund reservation changed before release");
         }

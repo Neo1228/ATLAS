@@ -1,8 +1,10 @@
 package com.atlas.application.dto.request;
 
+import com.atlas.settlement.model.PayPalBalanceReportDispositionType;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -54,7 +56,7 @@ public final class SettlementHttpRequest {
 
     /** 대사 행에 기록할 운영자 disposition 요청입니다. */
     public record PayPalBalanceReportDisposition(
-            @NotBlank @Size(max = 32) String disposition,
+            @NotNull PayPalBalanceReportDispositionType disposition,
             @NotBlank @Size(max = 500) String reason) {
     }
 }

@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.payment.dto.response.PayPalReportMatchResponse;
-import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.Status;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
 import com.atlas.settlement.service.impl.CsvPayPalBalanceReportParser;
@@ -54,8 +54,8 @@ class PayPalBalanceReportReconciliationServiceTest {
         assertThat(response.summary()).usingRecursiveComparison().isEqualTo(
                 new SettlementHttpResponse.PayPalBalanceReportReconciliation.Summary(7, 2, 2, 2, 1));
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
-                .containsExactly(Status.MATCHED, Status.MATCHED, Status.MISMATCH, Status.DUPLICATE,
-                        Status.DUPLICATE, Status.UNMATCHED, Status.UNMATCHED);
+                .containsExactly(PayPalBalanceReportRowStatus.MATCHED, PayPalBalanceReportRowStatus.MATCHED, PayPalBalanceReportRowStatus.MISMATCH, PayPalBalanceReportRowStatus.DUPLICATE,
+                        PayPalBalanceReportRowStatus.DUPLICATE, PayPalBalanceReportRowStatus.UNMATCHED, PayPalBalanceReportRowStatus.UNMATCHED);
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsExactly("EXACT_CAPTURE_ID_AND_AMOUNT_CURRENCY_MATCH", "EXACT_REFUND_AND_CAPTURE_LINK_MATCH",
                         "PROVIDER_AMOUNT_OR_CURRENCY_CONFLICT", "DUPLICATE_REPORT_RECORD_ID",
@@ -79,7 +79,7 @@ class PayPalBalanceReportReconciliationServiceTest {
         SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).singleElement().satisfies(row -> {
-            assertThat(row.status()).isEqualTo(Status.UNMATCHED);
+            assertThat(row.status()).isEqualTo(PayPalBalanceReportRowStatus.UNMATCHED);
             assertThat(row.reasonCode()).isEqualTo("PROVIDER_CAPTURE_ID_NOT_FOUND");
         });
     }
@@ -96,7 +96,7 @@ class PayPalBalanceReportReconciliationServiceTest {
         SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).singleElement().satisfies(row -> {
-            assertThat(row.status()).isEqualTo(Status.MISMATCH);
+            assertThat(row.status()).isEqualTo(PayPalBalanceReportRowStatus.MISMATCH);
             assertThat(row.reasonCode()).isEqualTo("REFUND_CAPTURE_ID_CONFLICT");
         });
     }
@@ -114,7 +114,7 @@ class PayPalBalanceReportReconciliationServiceTest {
         SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
-                .containsExactly(Status.MISMATCH, Status.UNMATCHED);
+                .containsExactly(PayPalBalanceReportRowStatus.MISMATCH, PayPalBalanceReportRowStatus.UNMATCHED);
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsExactly("PROVIDER_AMOUNT_OR_CURRENCY_CONFLICT", "REFUND_CAPTURE_LINK_REQUIRED");
     }
@@ -133,7 +133,7 @@ class PayPalBalanceReportReconciliationServiceTest {
         SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
-                .containsExactly(Status.UNMATCHED, Status.MISMATCH);
+                .containsExactly(PayPalBalanceReportRowStatus.UNMATCHED, PayPalBalanceReportRowStatus.MISMATCH);
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsExactly("PROVIDER_CAPTURE_NOT_CONFIRMED", "AMBIGUOUS_PROVIDER_RECORD_ID");
     }
@@ -176,7 +176,7 @@ class PayPalBalanceReportReconciliationServiceTest {
         SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
-                .containsExactly(Status.MISMATCH, Status.MISMATCH);
+                .containsExactly(PayPalBalanceReportRowStatus.MISMATCH, PayPalBalanceReportRowStatus.MISMATCH);
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsOnly("DUPLICATE_REPORT_RECORD_FACTS_CONFLICT");
     }
@@ -196,7 +196,7 @@ class PayPalBalanceReportReconciliationServiceTest {
         SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
-                .containsExactly(Status.MISMATCH, Status.MISMATCH);
+                .containsExactly(PayPalBalanceReportRowStatus.MISMATCH, PayPalBalanceReportRowStatus.MISMATCH);
         assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsOnly("DUPLICATE_REPORT_RECORD_FACTS_CONFLICT");
     }
@@ -215,7 +215,7 @@ class PayPalBalanceReportReconciliationServiceTest {
         SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).singleElement().satisfies(row -> {
-            assertThat(row.status()).isEqualTo(Status.UNMATCHED);
+            assertThat(row.status()).isEqualTo(PayPalBalanceReportRowStatus.UNMATCHED);
             assertThat(row.reasonCode()).isEqualTo("UNSUPPORTED_PROVIDER_RECORD_TYPE");
         });
     }

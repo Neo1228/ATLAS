@@ -4,6 +4,7 @@ import com.atlas.settlement.model.PayPalBalanceReportDailyTrend;
 import com.atlas.settlement.model.PayPalBalanceReportDisposition;
 import com.atlas.settlement.model.PayPalBalanceReportExceptionRow;
 import com.atlas.settlement.model.PayPalBalanceReportRow;
+import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.model.PayPalBalanceReportRun;
 import java.time.LocalDate;
 import java.util.List;
@@ -44,13 +45,13 @@ public interface PayPalBalanceReportStore {
     long countPendingExceptions();
 
     /** 모든 run의 예외 행입니다. status, 업로드 기간, recordId는 null이면 조건에서 제외합니다. */
-    List<PayPalBalanceReportExceptionRow> listExceptions(String status, LocalDate from, LocalDate to,
+    List<PayPalBalanceReportExceptionRow> listExceptions(PayPalBalanceReportRowStatus status, LocalDate from, LocalDate to,
             String recordId, int limit, int offset);
 
     /** 한 run의 행을 번호 순서로 한 페이지 조회합니다. status와 recordId는 null이면 조건에서 제외합니다. */
-    List<PayPalBalanceReportExceptionRow> listRunRows(UUID runId, String status, String recordId, int limit,
+    List<PayPalBalanceReportExceptionRow> listRunRows(UUID runId, PayPalBalanceReportRowStatus status, String recordId, int limit,
             int offset);
 
     /** 행의 대사 상태입니다. 행이 없으면 비어 있습니다. */
-    Optional<String> findRowStatus(UUID runId, int rowNumber);
+    Optional<PayPalBalanceReportRowStatus> findRowStatus(UUID runId, int rowNumber);
 }

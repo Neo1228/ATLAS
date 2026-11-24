@@ -7,7 +7,7 @@ import java.util.UUID;
 /** 대사 분류를 포함하는 불변 PayPal report 행입니다. */
 public record PayPalBalanceReportRow(UUID runId, int rowNumber, String recordId, String relatedRecordId,
         String originalRecordId, String recordType, String recordSubtype, String currency, BigDecimal grossAmount,
-        BigDecimal feeAmount, BigDecimal netAmount, String transferId, String status, String reasonCode) {
+        BigDecimal feeAmount, BigDecimal netAmount, String transferId, PayPalBalanceReportRowStatus status, String reasonCode) {
     public PayPalBalanceReportRow {
         Objects.requireNonNull(runId, "runId");
         Objects.requireNonNull(recordId, "recordId");
@@ -23,14 +23,9 @@ public record PayPalBalanceReportRow(UUID runId, int rowNumber, String recordId,
         requireLength(recordSubtype, 64, "recordSubtype");
         requireLength(currency, 3, "currency");
         requireLength(transferId, 256, "transferId");
-        requireLength(status, 16, "status");
         requireLength(reasonCode, 64, "reasonCode");
         if (recordId.isBlank() || recordType.isBlank()) {
             throw new IllegalArgumentException("recordId and recordType must not be blank");
-        }
-        if (!status.equals("MATCHED") && !status.equals("UNMATCHED")
-                && !status.equals("DUPLICATE") && !status.equals("MISMATCH")) {
-            throw new IllegalArgumentException("Unsupported report row status: " + status);
         }
     }
 
