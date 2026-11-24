@@ -103,25 +103,25 @@ public class PaymentRecoveryWorker {
         // Gauge 는 스크레이프마다 값을 읽으므로, 매번 DB 를 치지 않고 TTL 캐시를 통과한다.
         for (PaymentRecoveryJobStatus status : PaymentRecoveryJobStatus.values()) {
             Gauge.builder("atlas.payment.recovery.jobs", recovery,
-                    service -> service.metricsSnapshot().statusCount(status.name()))
+                    service -> service.statusCount(status.name()))
                     .tag("status", status.name())
                     .register(meters);
         }
         for (PaymentRecoveryWorkStage stage : PaymentRecoveryWorkStage.values()) {
             for (PaymentRecoveryJobStatus status : PaymentRecoveryJobStatus.values()) {
                 Gauge.builder("atlas.payment.recovery.stage.jobs", recovery,
-                        service -> service.metricsSnapshot().stageCount(stage.name(), status.name()))
+                        service -> service.stageCount(stage.name(), status.name()))
                         .tag("work_stage", stage.name())
                         .tag("status", status.name())
                         .register(meters);
             }
             Gauge.builder("atlas.payment.recovery.stage.oldest_due_age_seconds", recovery,
-                    service -> service.metricsSnapshot().stageOldestDueAgeSeconds(stage.name()))
+                    service -> service.stageOldestDueAgeSeconds(stage.name()))
                     .tag("work_stage", stage.name())
                     .register(meters);
         }
         Gauge.builder("atlas.payment.recovery.oldest_due_age_seconds", recovery,
-                service -> service.metricsSnapshot().oldestDueAgeAnyStage())
+                service -> service.oldestDueAgeAnyStage())
                 .register(meters);
     }
 
