@@ -1,8 +1,9 @@
 package com.atlas.application.service.impl;
 
-import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.request.LocationReservationItemRequest;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.exception.LocationClientException;
+import com.atlas.order.model.RemoteReservationStatus;
 import com.atlas.order.service.LocationClient;
 import java.net.URI;
 import java.time.Duration;
@@ -64,7 +65,8 @@ public class HttpLocationClient implements LocationClient {
                 throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_RESPONSE", "Inventory service returned no reservation identity or expiry");
             }
-            return new ReservationWorkflowResponse.RemoteReservation(response.reservationId(), response.status(), response.expiresAt());
+            return new ReservationWorkflowResponse.RemoteReservation(response.reservationId(), status(response),
+                    response.expiresAt());
         } catch (RestClientResponseException exception) {
             throw clientFailure(exception);
         } catch (ResourceAccessException exception) {
@@ -98,18 +100,19 @@ public class HttpLocationClient implements LocationClient {
 
     @Override
     public ReservationWorkflowResponse.RemoteReservation claim(UUID fulfillmentLocationId, UUID reservationId) {
-        return transition(fulfillmentLocationId, reservationId, "claim", Set.of("CLAIMED"));
+        return transition(fulfillmentLocationId, reservationId, "claim", Set.of(RemoteReservationStatus.CLAIMED));
     }
 
     @Override
     public ReservationWorkflowResponse.RemoteReservation release(UUID fulfillmentLocationId, UUID reservationId) {
         return transition(fulfillmentLocationId, reservationId, "release",
-                Set.of("RELEASED", "EXPIRED", "CANCELLED"));
+                Set.of(RemoteReservationStatus.RELEASED, RemoteReservationStatus.EXPIRED,
+                        RemoteReservationStatus.CANCELLED));
     }
 
     @Override
     public ReservationWorkflowResponse.RemoteReservation restore(UUID fulfillmentLocationId, UUID reservationId) {
-        return transition(fulfillmentLocationId, reservationId, "restore", Set.of("RELEASED"));
+        return transition(fulfillmentLocationId, reservationId, "restore", Set.of(RemoteReservationStatus.RELEASED));
     }
 
     @Override
@@ -129,7 +132,8 @@ public class HttpLocationClient implements LocationClient {
                 throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_OR_UNEXPECTED_RESPONSE", "Inventory restock result is unknown");
             }
-            return new ReservationWorkflowResponse.RemoteReservation(response.reservationId(), response.status(), response.expiresAt());
+            return new ReservationWorkflowResponse.RemoteReservation(response.reservationId(), status(response),
+                    response.expiresAt());
         } catch (RestClientResponseException exception) {
             throw clientFailure(exception);
         } catch (RestClientException exception) {
@@ -161,20 +165,25 @@ public class HttpLocationClient implements LocationClient {
     }
 
     private ReservationWorkflowResponse.RemoteReservation transition(UUID fulfillmentLocationId, UUID reservationId,
-            String operation, Set<String> acceptedStates) {
+            String operation, Set<RemoteReservationStatus> acceptedStates) {
         try {
             InventoryResponse response = client(fulfillmentLocationId).post()
                     .uri("/internal/v1/fulfillment-locations/{locationId}/reservations/{reservationId}/{operation}",
                             fulfillmentLocationId, reservationId, operation)
                     .retrieve()
                     .body(InventoryResponse.class);
-            if (response == null || !reservationId.equals(response.reservationId())
-                    || !acceptedStates.contains(response.status())) {
+            if (response == null || !reservationId.equals(response.reservationId())) {
                 throw new LocationClientException(
                         LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_OR_UNEXPECTED_RESPONSE", "Inventory location transition result is unknown");
             }
-            return new ReservationWorkflowResponse.RemoteReservation(response.reservationId(), response.status(), response.expiresAt());
+            RemoteReservationStatus status = status(response);
+            if (!acceptedStates.contains(status)) {
+                throw new LocationClientException(
+                        LocationClientException.Failure.RETRYABLE_UNKNOWN,
+                        "EMPTY_OR_UNEXPECTED_RESPONSE", "Inventory location transition result is unknown");
+            }
+            return new ReservationWorkflowResponse.RemoteReservation(response.reservationId(), status, response.expiresAt());
         } catch (RestClientResponseException exception) {
             throw clientFailure(exception);
         } catch (ResourceAccessException exception) {
@@ -224,6 +233,23 @@ public class HttpLocationClient implements LocationClient {
                 LocationClientException.Failure.PERMANENT, code, "Inventory command was rejected");
     }
 
+    /**
+     * 응답의 예약 상태 문자열을 이 경계에서 한 번 enum 으로 바꾼다. 모르는 값(또는 빈 값)은 inventory-location 이
+     * 따로 배포되어 이 서비스가 모르는 상태를 먼저 보낸 경우로 보고 재시도 가능한 unknown 으로 분류한다. 호출이 원격에서
+     * 이미 반영됐을 수 있어 확정 거절로 보면 잡힌 재고를 놓치고, 모든 명령이 Idempotency-Key 나 reservationId 로
+     * 멱등이라 같은 명령을 다시 보내는 것은 안전하다. transition 결과가 기대한 상태가 아닐 때의 기존 분류와도 같다.
+     */
+    private static RemoteReservationStatus status(InventoryResponse response) {
+        String value = response.status();
+        if (value != null) {
+            for (RemoteReservationStatus candidate : RemoteReservationStatus.values()) {
+                if (candidate.name().equals(value)) return candidate;
+            }
+        }
+        throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
+                "UNKNOWN_RESERVATION_STATUS", "Inventory service returned an unknown reservation status");
+    }
+
     private Map<UUID, URI> parseEndpoints(String configuration) {
         if (configuration == null || configuration.isBlank()) return Map.of();
         Map<UUID, URI> parsed = new HashMap<>();
@@ -253,6 +279,7 @@ public class HttpLocationClient implements LocationClient {
     private record CancellationRequest(UUID orderId) {
     }
 
+    /** {@code status} 는 {@link #status(InventoryResponse)} 에서 파싱하므로 역직렬화 단계에서는 문자열로 받는다. */
     private record InventoryResponse(UUID reservationId, String status, Instant expiresAt) {
     }
 

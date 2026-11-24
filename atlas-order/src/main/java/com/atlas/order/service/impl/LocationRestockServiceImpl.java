@@ -4,6 +4,7 @@ import com.atlas.order.dto.request.LocationReservationItemRequest;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.model.LocationReservationWorkflowState;
+import com.atlas.order.model.LocationRestockState;
 import com.atlas.order.persistence.projection.LocationRestock;
 import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
 import com.atlas.order.persistence.projection.ReservationWorkflowLocationSnapshot;
@@ -176,19 +177,19 @@ public class LocationRestockServiceImpl implements LocationRestockService {
             inventory.restock(restock.fulfillmentLocationId(), restock.reservationId(), restock.restockKey(),
                     restock.items().stream().map(item -> new LocationReservationItemRequest(
                             item.sellerId(), item.skuId(), item.quantity())).toList());
-            restocks.finish(restock.restockKey(), restock.fulfillmentLocationId(), restock.attemptCount(), "COMPLETED", null,
-                    clock.instant(), clock.instant());
+            restocks.finish(restock.restockKey(), restock.fulfillmentLocationId(), restock.attemptCount(),
+                    LocationRestockState.COMPLETED, null, clock.instant(), clock.instant());
         } catch (LocationClientException exception) {
             Instant now = clock.instant();
             boolean retryable = exception.failure() == LocationClientException.Failure.RETRYABLE_UNKNOWN;
             if (!retryable || restock.attemptCount() >= maxAttempts) {
                 // 자동 재시도로 해결되지 않는 재입고는 수량을 추정해 보정하지 않고 검토 대상으로 남긴다.
-                restocks.finish(restock.restockKey(), restock.fulfillmentLocationId(), restock.attemptCount(), "NEEDS_REVIEW",
-                        exception.providerCode(), now, now);
+                restocks.finish(restock.restockKey(), restock.fulfillmentLocationId(), restock.attemptCount(),
+                        LocationRestockState.NEEDS_REVIEW, exception.providerCode(), now, now);
                 return;
             }
-            restocks.finish(restock.restockKey(), restock.fulfillmentLocationId(), restock.attemptCount(), "PENDING",
-                    exception.providerCode(), now.plus(backoff(restock.attemptCount())), now);
+            restocks.finish(restock.restockKey(), restock.fulfillmentLocationId(), restock.attemptCount(),
+                    LocationRestockState.PENDING, exception.providerCode(), now.plus(backoff(restock.attemptCount())), now);
         }
     }
 

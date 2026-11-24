@@ -2,6 +2,7 @@ package com.atlas.order.dto.response;
 
 import com.atlas.order.model.LocationReservationState;
 import com.atlas.order.model.LocationReservationWorkflowState;
+import com.atlas.order.model.RemoteReservationStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -32,7 +33,8 @@ public final class ReservationWorkflowResponse {
         }
     }
 
-    public record RemoteReservation(UUID reservationId, String status, Instant expiresAt) {
+    /** 위치 재고 서비스 응답. {@code status} 는 HTTP 경계에서 파싱되어 null 이 아니다. */
+    public record RemoteReservation(UUID reservationId, RemoteReservationStatus status, Instant expiresAt) {
     }
 
     /** 주문 예약 이벤트 로그를 서비스 경계 밖으로 전달하는 응답 DTO. */

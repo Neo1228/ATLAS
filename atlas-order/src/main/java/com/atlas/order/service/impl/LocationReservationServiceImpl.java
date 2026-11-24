@@ -1,16 +1,17 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.request.LocationReservationItemRequest;
 import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
 import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.dto.response.ReservationWorkflowResponse.LocationReservation.LocationResult;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.model.LocationReservationState;
 import com.atlas.order.model.LocationReservationWorkflowState;
+import com.atlas.order.model.RemoteReservationStatus;
 import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
 import com.atlas.order.persistence.projection.ReservationWorkflowLease;
 import com.atlas.order.persistence.projection.ReservationWorkflowLocationPlan;
@@ -229,7 +230,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             try {
                 ReservationWorkflowResponse.RemoteReservation claimed =
                         inventory.claim(location.fulfillmentLocationId(), location.reservationId());
-                if (!"CLAIMED".equals(claimed.status())) {
+                if (claimed.status() != RemoteReservationStatus.CLAIMED) {
                     finish(workflow, lease.leaseToken(), LocationReservationWorkflowState.RESERVED,
                             "CLAIM_RESULT_UNKNOWN", clock.instant());
                     return ClaimOutcome.PENDING;
@@ -336,15 +337,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                         location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey(),
                         location.items().stream().map(item -> new LocationReservationItemRequest(
                                 item.sellerId(), item.skuId(), item.quantity())).toList());
-                if (!"RESERVED".equals(reserved.status())) {
-                    boolean terminal = "EXPIRED".equals(reserved.status()) || "RELEASED".equals(reserved.status())
-                            || "CANCELLED".equals(reserved.status());
-                    throw new LocationClientException(terminal
-                            ? LocationClientException.Failure.DEFINITIVE_REJECTION
-                            : LocationClientException.Failure.RETRYABLE_UNKNOWN,
-                            terminal ? "RESERVATION_" + reserved.status() : reserved.status(),
-                            "Inventory location returned a non-reserved state");
-                }
+                requireReserved(reserved);
                 if (!reservationUsable(reserved.expiresAt(), clock.instant())) {
                     if (!repository.updateLocation(workflow.workflowId(), lease.leaseToken(),
                             location.fulfillmentLocationId(), LocationReservationState.RELEASE_PENDING,
@@ -385,6 +378,21 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         }
         finish(current, lease.leaseToken(), LocationReservationWorkflowState.RESERVED, null, clock.instant());
     }
+
+    /**
+     * reserve 응답이 RESERVED 가 아니면 예외로 바꾼다. 끝난 예약(RELEASED/EXPIRED/CANCELLED)은 같은 key 로 다시
+     * 보내도 재고를 잡지 못하므로 확정 거절이고, CLAIMED 처럼 끝나지 않은 다른 상태는 다시 물어야 결과를 알 수 있다.
+     */
+    private static void requireReserved(ReservationWorkflowResponse.RemoteReservation reserved) {
+        RemoteReservationStatus status = reserved.status();
+        if (status == RemoteReservationStatus.RESERVED) return;
+        throw new LocationClientException(status.isTerminal()
+                ? LocationClientException.Failure.DEFINITIVE_REJECTION
+                : LocationClientException.Failure.RETRYABLE_UNKNOWN,
+                status.isTerminal() ? "RESERVATION_" + status.name() : status.name(),
+                "Inventory location returned a non-reserved state");
+    }
+
     private void processPendingWorkflow(ReservationWorkflowSnapshot workflow, ReservationWorkflowLease lease) {
         List<LocationTransition> transitions = new ArrayList<>(workflow.locations().size());
         for (ReservationWorkflowLocationSnapshot location : workflow.locations()) {
@@ -395,15 +403,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                         location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey(),
                         location.items().stream().map(item -> new LocationReservationItemRequest(
                                 item.sellerId(), item.skuId(), item.quantity())).toList());
-                if (!"RESERVED".equals(reserved.status())) {
-                    boolean definitive = "EXPIRED".equals(reserved.status()) || "RELEASED".equals(reserved.status())
-                            || "CANCELLED".equals(reserved.status());
-                    throw new LocationClientException(definitive
-                            ? LocationClientException.Failure.DEFINITIVE_REJECTION
-                            : LocationClientException.Failure.RETRYABLE_UNKNOWN,
-                            definitive ? "RESERVATION_" + reserved.status() : reserved.status(),
-                            "Inventory location returned a non-reserved state");
-                }
+                requireReserved(reserved);
                 if (!reservationUsable(reserved.expiresAt(), clock.instant())) {
                     transitions.add(new LocationTransition(location.fulfillmentLocationId(),
                             LocationReservationState.RELEASE_PENDING, reserved.reservationId(),

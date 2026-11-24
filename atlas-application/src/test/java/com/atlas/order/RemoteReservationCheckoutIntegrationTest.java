@@ -19,6 +19,7 @@ import com.atlas.order.dto.request.SellerCouponRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.model.LocationReservationWorkflowState;
+import com.atlas.order.model.LocationRestockState;
 import com.atlas.order.persistence.projection.LocationRestock;
 import com.atlas.order.repository.LocationRestockRepository;
 import com.atlas.order.service.CartCheckoutService;
@@ -425,12 +426,12 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
 
         // 늦게 깨어난 앞선 worker가 실패로 마감해도 뒤 worker의 claim 결과를 덮어쓰면 안 된다.
         restockRepository.finish(restockKey, locationId, stale.getFirst().attemptCount(),
-                "NEEDS_REVIEW", "STALE_WORKER",
+                LocationRestockState.NEEDS_REVIEW, "STALE_WORKER",
                 Instant.now(), Instant.now());
         assertThat(restockStates(refund.refundId())).isEqualTo("PENDING");
 
         restockRepository.finish(restockKey, locationId, current.getFirst().attemptCount(),
-                "COMPLETED", null, Instant.now(), Instant.now());
+                LocationRestockState.COMPLETED, null, Instant.now(), Instant.now());
         assertThat(restockStates(refund.refundId())).isEqualTo("COMPLETED");
     }
 
