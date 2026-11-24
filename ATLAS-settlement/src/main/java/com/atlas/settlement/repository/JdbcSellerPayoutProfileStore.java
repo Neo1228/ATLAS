@@ -1,5 +1,6 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.service.SellerPayoutProfileStore;
 import com.atlas.settlement.service.SellerPayoutProfile;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,13 +13,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class SellerPayoutProfileRepository {
+public class JdbcSellerPayoutProfileStore implements SellerPayoutProfileStore {
     private final JdbcTemplate jdbc;
 
-    public SellerPayoutProfileRepository(JdbcTemplate jdbc) {
+    public JdbcSellerPayoutProfileStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
+    @Override
     public Optional<SellerPayoutProfile> find(UUID sellerId) {
         return jdbc.query("""
                 SELECT seller_id, recipient_account_id, country_code, payout_currency, status,
@@ -27,6 +29,7 @@ public class SellerPayoutProfileRepository {
                 """, (row, number) -> map(row), sellerId).stream().findFirst();
     }
 
+    @Override
     public SellerPayoutProfile submit(UUID sellerId, UUID accountId, String countryCode, Instant now) {
         List<SellerPayoutProfile> rows = jdbc.query("""
                 INSERT INTO seller_payout_profile (
@@ -52,6 +55,7 @@ public class SellerPayoutProfileRepository {
                 () -> new IllegalStateException("Payout profile disappeared after submit")) : rows.getFirst();
     }
 
+    @Override
     public Optional<SellerPayoutProfile> verify(UUID sellerId, int expectedVersion, String actor, Instant now) {
         return jdbc.query("""
                 UPDATE seller_payout_profile
@@ -64,6 +68,7 @@ public class SellerPayoutProfileRepository {
                 sellerId, expectedVersion).stream().findFirst();
     }
 
+    @Override
     public Optional<String> findRequestHash(UUID sellerId, String idempotencyKey) {
         return jdbc.query("""
                 SELECT request_facts_sha256 FROM seller_payout_profile_action
@@ -71,6 +76,7 @@ public class SellerPayoutProfileRepository {
                 """, (row, number) -> row.getString(1), sellerId, idempotencyKey).stream().findFirst();
     }
 
+    @Override
     public boolean recordAction(UUID sellerId, int profileVersion, String action, String idempotencyKey,
             String requestHash, String actor, String reason, Instant now) {
         return jdbc.update("""

@@ -1,5 +1,6 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.PayoutDispatchMetrics;
 import com.atlas.settlement.service.PayoutDispatchPlan;
 import com.atlas.settlement.service.PayoutDispatchRecord;
@@ -15,12 +16,13 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public class PayoutDispatchRepository {
+public class JdbcPayoutDispatchStore implements PayoutDispatchStore {
     private final JdbcTemplate jdbc;
 
-    public PayoutDispatchRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    public JdbcPayoutDispatchStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     @Transactional(readOnly = true)
+    @Override
     public Optional<PayoutDispatchRecord> find(UUID payoutId) {
         return jdbc.query("SELECT * FROM settlement_payout_dispatch_outbox WHERE payout_id = ?",
                 (rs, row) -> map(rs), payoutId).stream().findFirst();
@@ -28,6 +30,7 @@ public class PayoutDispatchRepository {
 
     /** Idempotently enqueue approval-time facts; conflicting financial facts are never overwritten. */
     @Transactional
+    @Override
     public PayoutDispatchRecord enqueue(PayoutDispatchPlan p) {
         Objects.requireNonNull(p);
         jdbc.update("""
@@ -49,6 +52,7 @@ public class PayoutDispatchRepository {
 
     /** Lease due work atomically across instances. Expired leases are reclaimed with a fresh token. */
     @Transactional
+    @Override
     public List<PayoutDispatchRecord> claim(int limit, Duration leaseDuration) {
         if (limit <= 0 || leaseDuration.isNegative() || leaseDuration.isZero()) return List.of();
         return jdbc.query("""
@@ -69,6 +73,7 @@ public class PayoutDispatchRepository {
     }
 
     @Transactional
+    @Override
     public boolean reschedule(PayoutDispatchRecord r, Duration delay, String safeCode, String resultingStatus) {
         if (!List.of("PENDING", "WAITING_PROVIDER", "NEEDS_REVIEW").contains(resultingStatus))
             throw new IllegalArgumentException("Invalid dispatch retry status");
@@ -80,6 +85,7 @@ public class PayoutDispatchRepository {
     }
 
     @Transactional
+    @Override
     public boolean transition(PayoutDispatchRecord r, String status, String safeCode) {
         if (!List.of("COMPLETED", "FAILED", "CANCELLED", "NEEDS_REVIEW", "WAITING_PROVIDER", "PENDING").contains(status))
             throw new IllegalArgumentException("Invalid dispatch status");
@@ -90,6 +96,7 @@ public class PayoutDispatchRepository {
     }
 
     @Transactional
+    @Override
     public boolean cancelPending(UUID payoutId) {
         return jdbc.update("""
                 UPDATE settlement_payout_dispatch_outbox
@@ -99,6 +106,7 @@ public class PayoutDispatchRepository {
     }
 
     @Transactional
+    @Override
     public boolean requeueNeedsReview(UUID payoutId) {
         return jdbc.update("""
                 UPDATE settlement_payout_dispatch_outbox
@@ -110,6 +118,7 @@ public class PayoutDispatchRepository {
     }
 
     @Transactional
+    @Override
     public boolean resolveNeedsReview(UUID payoutId, String result, String batchId, String itemId,
             Long feeMinor, Long feeWon, String safeCode) {
         if (!List.of("COMPLETED", "FAILED").contains(result)) {
@@ -130,6 +139,7 @@ public class PayoutDispatchRepository {
     }
 
     @Transactional
+    @Override
     public boolean recordProviderEvidence(PayoutDispatchRecord r, String batchId, String batchStatus,
                                           String itemId, String itemStatus, Long feeMinor,
                                           String feeCurrency, Long feeWon) {
@@ -142,6 +152,7 @@ public class PayoutDispatchRepository {
                 r.payoutId(), r.leaseToken()) == 1;
     }
 
+    @Override
     public PayoutDispatchMetrics metricsSnapshot() {
         return jdbc.queryForObject("""
                 SELECT count(*) FILTER (WHERE status IN ('PENDING','WAITING_PROVIDER')) backlog,
@@ -158,6 +169,7 @@ public class PayoutDispatchRepository {
                 rs.getDouble("oldest_age_seconds")));
     }
 
+    @Override
     public List<PayoutDispatchRecord> findNeedsReview(int limit, int offset) {
         return jdbc.query("""
                 SELECT * FROM settlement_payout_dispatch_outbox
