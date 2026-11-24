@@ -70,7 +70,44 @@ jobs:
       - name: Run checkstyle, compile and the other modules' tests
         env:
           ATLAS_TEST_FORKS: '2'
-        run: ./gradlew --no-daemon check -x :atlas-application:test
+        run: ./gradlew --no-daemon --profile check -x :atlas-application:test
+      - name: DIAG resolve application testRuntimeClasspath (after verify check)
+        run: |
+          cat > "$RUNNER_TEMP/diag.init.gradle" <<'G'
+          allprojects {
+            afterEvaluate { p ->
+              if (p.configurations.names.contains('testRuntimeClasspath')) {
+                p.tasks.register('diagResolve') {
+                  doLast {
+                    def t0 = System.nanoTime()
+                    def n = p.configurations.testRuntimeClasspath.files.size()
+                    println "DIAG-RESOLVE ${p.path} files=${n} ms=${(System.nanoTime() - t0).intdiv(1000000)}"
+                  }
+                }
+              }
+            }
+          }
+          G
+          snap() {
+          d="$HOME/.gradle/caches/modules-2/files-2.1"
+          find "$d" -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' \) 2>/dev/null | sort > "$RUNNER_TEMP/files-$1.txt"
+          echo "DIAG snapshot=$1 files=$(wc -l < "$RUNNER_TEMP/files-$1.txt") jars=$(grep -c '\.jar$' "$RUNNER_TEMP/files-$1.txt") size_mb=$(du -sm "$d" 2>/dev/null | cut -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+          snap before
+          ./gradlew --no-daemon --console=plain -I "$RUNNER_TEMP/diag.init.gradle" :atlas-application:diagResolve 2>&1 | tee "$RUNNER_TEMP/diag-resolve.log" | grep -E 'DIAG-RESOLVE|BUILD|actionable'
+          snap after
+          comm -13 "$RUNNER_TEMP/files-before.txt" "$RUNNER_TEMP/files-after.txt" > "$RUNNER_TEMP/files-new.txt"
+          echo "DIAG (after verify check) newly_downloaded_files=$(wc -l < "$RUNNER_TEMP/files-new.txt") new_jars=$(grep -c '\.jar$' "$RUNNER_TEMP/files-new.txt")" | tee -a "$GITHUB_STEP_SUMMARY"
+          sed 's#.*/files-2.1/##' "$RUNNER_TEMP/files-new.txt" | grep '\.jar$' | awk -F/ '{print $1":"$2":"$3}' | sort > "$RUNNER_TEMP/new-jars.txt" || true
+          cat "$RUNNER_TEMP/new-jars.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: DIAG upload profile
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diag-profile-verify
+          path: build/reports/profile/*.html
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -105,11 +142,40 @@ jobs:
           cache-read-only: true
       - name: Verify Docker is available for PostgreSQL integration tests
         run: docker info
+      - name: DIAG resolve application testRuntimeClasspath (shard before tests)
+        run: |
+          cat > "$RUNNER_TEMP/diag.init.gradle" <<'G'
+          allprojects {
+            afterEvaluate { p ->
+              if (p.configurations.names.contains('testRuntimeClasspath')) {
+                p.tasks.register('diagResolve') {
+                  doLast {
+                    def t0 = System.nanoTime()
+                    def n = p.configurations.testRuntimeClasspath.files.size()
+                    println "DIAG-RESOLVE ${p.path} files=${n} ms=${(System.nanoTime() - t0).intdiv(1000000)}"
+                  }
+                }
+              }
+            }
+          }
+          G
+          snap() {
+          d="$HOME/.gradle/caches/modules-2/files-2.1"
+          find "$d" -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' \) 2>/dev/null | sort > "$RUNNER_TEMP/files-$1.txt"
+          echo "DIAG snapshot=$1 files=$(wc -l < "$RUNNER_TEMP/files-$1.txt") jars=$(grep -c '\.jar$' "$RUNNER_TEMP/files-$1.txt") size_mb=$(du -sm "$d" 2>/dev/null | cut -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+          snap before
+          ./gradlew --no-daemon --console=plain -I "$RUNNER_TEMP/diag.init.gradle" :atlas-application:diagResolve 2>&1 | tee "$RUNNER_TEMP/diag-resolve.log" | grep -E 'DIAG-RESOLVE|BUILD|actionable'
+          snap after
+          comm -13 "$RUNNER_TEMP/files-before.txt" "$RUNNER_TEMP/files-after.txt" > "$RUNNER_TEMP/files-new.txt"
+          echo "DIAG (shard before tests) newly_downloaded_files=$(wc -l < "$RUNNER_TEMP/files-new.txt") new_jars=$(grep -c '\.jar$' "$RUNNER_TEMP/files-new.txt")" | tee -a "$GITHUB_STEP_SUMMARY"
+          sed 's#.*/files-2.1/##' "$RUNNER_TEMP/files-new.txt" | grep '\.jar$' | awk -F/ '{print $1":"$2":"$3}' | sort > "$RUNNER_TEMP/new-jars.txt" || true
+          cat "$RUNNER_TEMP/new-jars.txt" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Run application tests for this shard
         env:
           ATLAS_TEST_FORKS: '2'
           ATLAS_TEST_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
-        run: ./gradlew --no-daemon :atlas-application:test
+        run: ./gradlew --no-daemon --profile :atlas-application:test
       - name: Summarize executed tests
         if: always()
         run: |
@@ -129,6 +195,14 @@ jobs:
           for name, seconds in sorted(times):
               print(f'CLASSTIME {name} {seconds:.1f}')
           PY
+      - name: DIAG upload profile
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diag-profile-app-${{ matrix.shard }}
+          path: build/reports/profile/*.html
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
