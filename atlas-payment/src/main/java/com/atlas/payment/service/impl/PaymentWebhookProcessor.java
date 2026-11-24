@@ -2,15 +2,17 @@ package com.atlas.payment.service.impl;
 
 import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest;
 
+import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.persistence.entity.PaymentAttempt;
-import com.atlas.payment.persistence.entity.PaymentRefundOperation;
 import com.atlas.payment.model.PaymentPhase;
 import com.atlas.payment.model.PaymentRefundState;
 import com.atlas.payment.model.PaymentState;
+import com.atlas.payment.persistence.entity.PaymentAttempt;
+import com.atlas.payment.persistence.entity.PaymentRefundOperation;
 import com.atlas.payment.provider.PaymentProvider;
-import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
-import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.provider.paypal.PayPalCaptureStatus;
+import com.atlas.payment.provider.paypal.PayPalRefundStatus;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
@@ -94,7 +96,7 @@ public final class PaymentWebhookProcessor {
                     return new PaymentWebhookResponse(false, false, null, null, null, false, true);
                 }
                 PaymentAttempt current = attempt.get();
-                if (!"COMPLETED".equalsIgnoreCase(event.resourceStatus())
+                if (PayPalCaptureStatus.fromIgnoringCase(event.resourceStatus()) != PayPalCaptureStatus.COMPLETED
                         || event.resourceAmount() == null || current.getTotalWon() == null
                         || !current.hasFxSnapshot()
                         || event.resourceAmount().compareTo(
@@ -131,17 +133,17 @@ public final class PaymentWebhookProcessor {
                     return new PaymentWebhookResponse(false, false, null, null, null, false, true);
                 }
                 PaymentRefundOperation current = operation.get();
-                String expectedStatus = switch (refundState) {
-                    case COMPLETED -> "COMPLETED";
-                    case PENDING, UNKNOWN -> "PENDING";
-                    case FAILED -> "FAILED";
+                PayPalRefundStatus expectedStatus = switch (refundState) {
+                    case COMPLETED -> PayPalRefundStatus.COMPLETED;
+                    case PENDING, UNKNOWN -> PayPalRefundStatus.PENDING;
+                    case FAILED -> PayPalRefundStatus.FAILED;
                 };
                 if (event.resourceAmount() == null || current.providerAmountMinor() == null
                         || event.resourceAmount().compareTo(
                                 BigDecimal.valueOf(current.providerAmountMinor(), 2)) != 0
                         || current.providerCurrency() == null
                         || !current.providerCurrency().equalsIgnoreCase(event.resourceCurrency())
-                        || !expectedStatus.equalsIgnoreCase(event.resourceStatus())
+                        || PayPalRefundStatus.fromIgnoringCase(event.resourceStatus()) != expectedStatus
                         || (event.relatedCaptureId() != null
                         && !current.captureId().equals(event.relatedCaptureId()))) {
                     return rejectedWebhook(event, now);

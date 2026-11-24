@@ -26,4 +26,15 @@ public enum PayPalCaptureStatus {
         }
         return UNKNOWN;
     }
+
+    /**
+     * 웹훅 resource status용. 웹훅 처리는 도입 때(#207)부터 {@code equalsIgnoreCase}로 비교해 왔으므로
+     * 같은 비교로 상수를 찾는다. REST 응답은 {@link #from(String)}처럼 대소문자를 구분한다.
+     */
+    public static PayPalCaptureStatus fromIgnoringCase(String value) {
+        for (PayPalCaptureStatus status : values()) {
+            if (status.name().equalsIgnoreCase(value)) return status;
+        }
+        return UNKNOWN;
+    }
 }
