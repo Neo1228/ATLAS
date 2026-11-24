@@ -43,7 +43,7 @@ shard 한 개의 테스트 step 시간은 117~255초인데 그 shard의 클래�
 
 ### 5. 로컬에서 같은 현상을 재현하고 위치를 좁혔다
 
-측정 조건: Apple 실리콘 Mac(Colima Docker VM 8 vCPU, 12.6GiB), main `e4982cda` 기준 별도 worktree, `:application-module:test` 전체(타임라인에 잡힌 클래스 110개), 실행마다 `cleanTest`와 `--no-build-cache`. Gradle 테스트 리스너로 클래스별 시작·종료 시각을 기록했다(init script, 저장소 밖). fork 번호는 로그에 없어서 겹치지 않는 구간을 두 트랙에 나누는 방식으로 추론했고 위반은 0건이었다. 실행 중 외부 Gradle 프로세스 수와 load를 15초마다 기록해 오염 여부를 가렸다.
+측정 조건: Apple 실리콘 Mac(Colima Docker VM 8 vCPU, 12.6GiB), main `e4982cda` 기준 별도 worktree, `:atlas-application:test` 전체(타임라인에 잡힌 클래스 110개), 실행마다 `cleanTest`와 `--no-build-cache`. Gradle 테스트 리스너로 클래스별 시작·종료 시각을 기록했다(init script, 저장소 밖). fork 번호는 로그에 없어서 겹치지 않는 구간을 두 트랙에 나누는 방식으로 추론했고 위반은 0건이었다. 실행 중 외부 Gradle 프로세스 수와 load를 15초마다 기록해 오염 여부를 가렸다.
 
 | 실행 | fork | 클래스 시간 합 | 클래스 구간 폭(wall) | 오염 |
 | --- | --- | --- | --- | --- |
