@@ -1,31 +1,21 @@
 package com.atlas.account.service;
 
-import com.atlas.account.dto.request.LoginRequest;
-import com.atlas.account.dto.request.MfaChallengeRequest;
-import com.atlas.account.dto.request.RefreshTokenRequest;
-import com.atlas.account.dto.request.RegisterBuyerRequest;
-import com.atlas.account.dto.response.AccountTokenResponse;
-import com.atlas.account.dto.response.AccountActionResponse;
-import com.atlas.account.dto.response.AccountLoginResponse;
-import com.atlas.account.dto.response.MfaEnrollmentResponse;
-import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
-import com.atlas.account.dto.response.AccountSessionPage;
-import com.atlas.account.dto.response.VerifiedSellerAccountResponse;
-import com.atlas.account.dto.response.AccountSuspensionActionResponse;
+import com.atlas.account.dto.response.AccountResponse;
+import com.atlas.account.dto.request.AccountRequest;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface AccountService {
-    AccountActionResponse registerBuyer(RegisterBuyerRequest request, String origin);
+    AccountResponse.Action registerBuyer(AccountRequest.RegisterBuyer request, String origin);
 
     /**
      * 메일 발송형 요청. 한도를 넘으면 메일을 보내지 않지만 응답은 동일하게 유지한다.
      * 응답을 바꾸면 계정 존재 여부가 드러나므로, 남은 한도 없음도 성공처럼 보여야 한다.
      */
-    AccountActionResponse requestPasswordReset(String requestedEmail, String origin);
+    AccountResponse.Action requestPasswordReset(String requestedEmail, String origin);
 
-    AccountActionResponse requestEmailVerification(String requestedEmail, String origin);
+    AccountResponse.Action requestEmailVerification(String requestedEmail, String origin);
 
     void verifyEmail(String presentedToken);
 
@@ -42,17 +32,17 @@ public interface AccountService {
     /**
      * @param origin 클라이언트 주소. 없으면 출처 축은 "unknown" 하나로 합산된다.
      */
-    AccountLoginResponse login(LoginRequest request, String origin);
+    AccountResponse.Login login(AccountRequest.Login request, String origin);
 
-    MfaEnrollmentResponse startMfaEnrollment(UUID accountId);
+    AccountResponse.MfaEnrollment startMfaEnrollment(UUID accountId);
 
-    MfaRecoveryCodesResponse confirmMfaEnrollment(UUID accountId, String code);
+    AccountResponse.MfaRecoveryCodes confirmMfaEnrollment(UUID accountId, String code);
 
     void disableMfa(UUID accountId, String code);
 
-    AccountTokenResponse completeMfaLogin(MfaChallengeRequest request);
+    AccountResponse.Token completeMfaLogin(AccountRequest.MfaChallenge request);
 
-    AccountTokenResponse refresh(RefreshTokenRequest request);
+    AccountResponse.Token refresh(AccountRequest.RefreshToken request);
 
     void logout(UUID accountId, UUID accessFamilyId, String refreshToken);
 
@@ -96,7 +86,7 @@ public interface AccountService {
     void releaseAccount(UUID accountId, String reason, String actor, String idempotencyKey);
 
     /** 한 계정의 정지·해제 감사 기록입니다. 운영 확인용입니다. */
-    List<AccountSuspensionActionResponse> suspensionHistory(UUID accountId, int limit);
+    List<AccountResponse.SuspensionAction> suspensionHistory(UUID accountId, int limit);
 
     void linkSeller(UUID accountId, UUID sellerId);
 
@@ -108,7 +98,7 @@ public interface AccountService {
      * Seller와 연결된 active account 중 이메일 검증이 완료된 identity를 조회한다.
      * 호출 account가 해당 Seller를 소유하지 않으면 조회를 거부한다.
      */
-    Optional<VerifiedSellerAccountResponse> findVerifiedSellerAccount(UUID accountId, UUID sellerId);
+    Optional<AccountResponse.VerifiedSellerAccount> findVerifiedSellerAccount(UUID accountId, UUID sellerId);
 
     /**
      * 요청 본문이 가리킨 Seller를 호출 account가 소유하는지 확인한다. 경로 변수로 알 수 있는 소유권은
@@ -125,7 +115,7 @@ public interface AccountService {
 
     boolean isAccessTokenFamilyActive(UUID accountId, UUID familyId);
 
-    AccountSessionPage listSessions( UUID accountId, UUID currentFamilyId, int requestedLimit, int offset);
+    AccountResponse.SessionPage listSessions( UUID accountId, UUID currentFamilyId, int requestedLimit, int offset);
 
     void revokeSession(UUID accountId, UUID familyId);
 }

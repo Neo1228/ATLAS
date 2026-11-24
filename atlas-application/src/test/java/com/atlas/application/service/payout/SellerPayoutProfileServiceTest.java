@@ -11,11 +11,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.atlas.account.dto.response.VerifiedSellerAccountResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.service.AccountService;
-import com.atlas.application.controller.dto.SellerPayoutProfileRequest;
-import com.atlas.application.controller.dto.SellerPayoutProfileResponse;
-import com.atlas.application.controller.dto.VerifySellerPayoutProfileRequest;
 import com.atlas.application.service.payout.SellerPayoutProfileService.ActiveRecipient;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;
@@ -60,7 +59,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.recordAction(sellerId, 1, "PROFILE_SUBMITTED", KEY, configureHash("US"),
                 accountId.toString(), CONFIRMATION_REASON, NOW)).thenReturn(true);
 
-        SellerPayoutProfileResponse response = service.configure(accountId, sellerId, KEY, request("us"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("us"));
 
         assertThat(response.sellerId()).isEqualTo(sellerId);
         assertThat(response.countryCode()).isEqualTo("US");
@@ -80,7 +79,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
 
-        SellerPayoutProfileResponse response = service.configure(accountId, sellerId, KEY, request("US"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
         assertThat(response.status()).isEqualTo("ACTIVE");
         assertThat(response.profileVersion()).isEqualTo(3);
@@ -100,7 +99,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
 
-        SellerPayoutProfileResponse response = service.configure(accountId, sellerId, KEY, request("ca"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("ca"));
 
         assertThat(response.status()).isEqualTo("PENDING_REVIEW");
         assertThat(response.countryCode()).isEqualTo("CA");
@@ -119,7 +118,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
 
-        SellerPayoutProfileResponse response = service.configure(accountId, sellerId, KEY, request("US"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
         assertThat(response.status()).isEqualTo("PENDING_REVIEW");
         verify(profiles).submit(sellerId, accountId, "US", NOW);
@@ -143,7 +142,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.findRequestHash(sellerId, KEY)).thenReturn(Optional.of(configureHash("US")));
         when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.PENDING_REVIEW, 1, accountId, "US")));
 
-        SellerPayoutProfileResponse response = service.configure(accountId, sellerId, KEY, request("US"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
         assertThat(response.status()).isEqualTo("PENDING_REVIEW");
         verify(profiles, never()).submit(any(), any(), anyString(), any());
@@ -176,7 +175,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(false);
 
-        SellerPayoutProfileResponse response = service.configure(accountId, sellerId, KEY, request("US"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.configure(accountId, sellerId, KEY, request("US"));
 
         assertThat(response.profileVersion()).isEqualTo(1);
         assertThat(response.status()).isEqualTo("PENDING_REVIEW");
@@ -245,9 +244,9 @@ class SellerPayoutProfileServiceTest {
 
     @Test
     void configureRequiresBothUsdWalletAndVerifiedEmailConfirmations() {
-        assertCode(() -> service.configure(accountId, sellerId, KEY, new SellerPayoutProfileRequest("US", false, true)),
+        assertCode(() -> service.configure(accountId, sellerId, KEY, new SettlementHttpRequest.SellerPayoutProfile("US", false, true)),
                 SettlementException.Code.INVALID_REQUEST);
-        assertCode(() -> service.configure(accountId, sellerId, KEY, new SellerPayoutProfileRequest("US", true, false)),
+        assertCode(() -> service.configure(accountId, sellerId, KEY, new SettlementHttpRequest.SellerPayoutProfile("US", true, false)),
                 SettlementException.Code.INVALID_REQUEST);
         verifyNoInteractions(profiles, accounts);
     }
@@ -286,7 +285,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.recordAction(sellerId, 1, "PROFILE_VERIFIED", KEY, verifyHash(1, "case-2026/11"),
                 "operator-1", "case-2026/11", NOW)).thenReturn(true);
 
-        SellerPayoutProfileResponse response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-2026/11"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-2026/11"));
 
         assertThat(response.status()).isEqualTo("ACTIVE");
         assertThat(response.verifiedAt()).isEqualTo(NOW);
@@ -298,7 +297,7 @@ class SellerPayoutProfileServiceTest {
     void verifyOfAnAlreadyActiveProfileIsANoOpThatReturnsTheProfile() {
         when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.ACTIVE, 2, accountId, "US")));
 
-        SellerPayoutProfileResponse response = service.verify(sellerId, "operator-1", KEY, verifyRequest(2, "case-1"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(2, "case-1"));
 
         assertThat(response.status()).isEqualTo("ACTIVE");
         verify(profiles, never()).verify(any(), anyInt(), anyString(), any());
@@ -338,7 +337,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.findRequestHash(sellerId, KEY)).thenReturn(Optional.of(verifyHash(1, "case-1")));
         when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.ACTIVE, 1, accountId, "US")));
 
-        SellerPayoutProfileResponse response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
 
         assertThat(response.status()).isEqualTo("ACTIVE");
         verify(profiles, never()).verify(any(), anyInt(), anyString(), any());
@@ -362,7 +361,7 @@ class SellerPayoutProfileServiceTest {
                 .thenReturn(Optional.of(profile(State.ACTIVE, 1, accountId, "US")));
         when(profiles.verify(sellerId, 1, "operator-1", NOW)).thenReturn(Optional.empty());
 
-        SellerPayoutProfileResponse response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
 
         assertThat(response.status()).isEqualTo("ACTIVE");
         verify(profiles, never()).recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(),
@@ -406,7 +405,7 @@ class SellerPayoutProfileServiceTest {
         when(profiles.recordAction(any(), anyInt(), anyString(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(false);
 
-        SellerPayoutProfileResponse response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
+        SettlementHttpResponse.SellerPayoutProfile response = service.verify(sellerId, "operator-1", KEY, verifyRequest(1, "case-1"));
 
         assertThat(response.status()).isEqualTo("ACTIVE");
     }
@@ -497,7 +496,7 @@ class SellerPayoutProfileServiceTest {
         when(accounts.ownsSeller(accountId, sellerId)).thenReturn(true);
         when(profiles.find(sellerId)).thenReturn(Optional.of(profile(State.ACTIVE, 5, accountId, "US")));
 
-        SellerPayoutProfileResponse response = service.find(accountId, sellerId);
+        SettlementHttpResponse.SellerPayoutProfile response = service.find(accountId, sellerId);
 
         assertThat(response.sellerId()).isEqualTo(sellerId);
         assertThat(response.status()).isEqualTo("ACTIVE");
@@ -594,7 +593,7 @@ class SellerPayoutProfileServiceTest {
 
     private void givenVerifiedAccount() {
         when(accounts.findVerifiedSellerAccount(accountId, sellerId))
-                .thenReturn(Optional.of(new VerifiedSellerAccountResponse(accountId, EMAIL)));
+                .thenReturn(Optional.of(new AccountResponse.VerifiedSellerAccount(accountId, EMAIL)));
     }
 
     private SellerPayoutProfile profile(State state, int version, UUID recipientAccountId, String country) {
@@ -603,12 +602,12 @@ class SellerPayoutProfileServiceTest {
                 active ? NOW : null, active ? "operator-1" : null);
     }
 
-    private SellerPayoutProfileRequest request(String country) {
-        return new SellerPayoutProfileRequest(country, true, true);
+    private SettlementHttpRequest.SellerPayoutProfile request(String country) {
+        return new SettlementHttpRequest.SellerPayoutProfile(country, true, true);
     }
 
-    private VerifySellerPayoutProfileRequest verifyRequest(int version, String evidence) {
-        return new VerifySellerPayoutProfileRequest(version, evidence);
+    private SettlementHttpRequest.VerifySellerPayoutProfile verifyRequest(int version, String evidence) {
+        return new SettlementHttpRequest.VerifySellerPayoutProfile(version, evidence);
     }
 
     private String configureHash(String country) {

@@ -2,12 +2,11 @@ package com.atlas.inventory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.request.ReserveInventoryRequest;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
 import java.util.ArrayList;
@@ -126,8 +125,8 @@ class InventoryFlashSaleContentionIntegrationTest {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = "flash-" + UUID.randomUUID();
         UUID productId = products.createProduct(sellerId,
-                new CreateProductRequest("flash-sale-" + UUID.randomUUID(), "description")).productId();
-        products.registerSku(sellerId, productId, new RegisterSellerSkuRequest(sku, 1000, initialStock));
+                new ProductRequest.CreateProduct("flash-sale-" + UUID.randomUUID(), "description")).productId();
+        products.registerSku(sellerId, productId, new ProductRequest.RegisterSellerSku(sku, 1000, initialStock));
 
         AtomicInteger success = new AtomicInteger();
         AtomicInteger soldOut = new AtomicInteger();
@@ -144,7 +143,7 @@ class InventoryFlashSaleContentionIntegrationTest {
                 for (int repeat = 0; repeat < ATTEMPTS_PER_BUYER; repeat++) {
                     long began = System.nanoTime();
                     try {
-                        inventory.reserve(new ReserveInventoryRequest(
+                        inventory.reserve(new InventoryRequest.ReserveInventory(
                                 UUID.randomUUID(), null, sellerId, sku, 1));
                         success.incrementAndGet();
                     } catch (InventoryException exception) {
@@ -171,13 +170,13 @@ class InventoryFlashSaleContentionIntegrationTest {
         executor.shutdown();
         executor.awaitTermination(30, TimeUnit.SECONDS);
 
-        InventoryPoolResponse pool = inventory.find(sellerId, sku);
+        InventoryResponse.Pool pool = inventory.find(sellerId, sku);
         return new Outcome(latencies, buyers * ATTEMPTS_PER_BUYER, success.get(), soldOut.get(),
                 otherFailures.get(), elapsedMillis, pool);
     }
 
     private record Outcome(List<Long> latencies, int attempts, int success, int soldOut,
-            int otherFailures, long elapsedMillis, InventoryPoolResponse pool) {
+            int otherFailures, long elapsedMillis, InventoryResponse.Pool pool) {
         double throughput() {
             return elapsedMillis == 0 ? 0 : attempts * 1000.0 / elapsedMillis;
         }

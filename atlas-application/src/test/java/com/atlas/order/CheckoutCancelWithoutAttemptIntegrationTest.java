@@ -2,12 +2,11 @@ package com.atlas.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.model.BuyerCheckoutState;
@@ -132,9 +131,9 @@ class CheckoutCancelWithoutAttemptIntegrationTest extends PayPalIntegrationTestS
     private Fixture checkoutAwaitingProviderCall() {
         UUID sellerId = sellers.createSeller().sellerId();
         var product = products.createProduct(sellerId,
-                new CreateProductRequest("cancel-no-attempt-" + UUID.randomUUID(), null));
+                new ProductRequest.CreateProduct("cancel-no-attempt-" + UUID.randomUUID(), null));
         String skuId = "cancel-no-attempt-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 1000, INITIAL_STOCK));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 1000, INITIAL_STOCK));
         String buyerRef = "cancel-no-attempt-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse checkout = cartCheckouts.checkout(buyerRef, "cancel-no-attempt-" + UUID.randomUUID());
@@ -154,7 +153,7 @@ class CheckoutCancelWithoutAttemptIntegrationTest extends PayPalIntegrationTestS
         List<String> childStates = jdbc.queryForList(
                 "SELECT state FROM purchase_order WHERE checkout_id = ?", String.class, fixture.checkoutId());
         assertThat(childStates).isNotEmpty().allMatch("CANCELLED"::equals);
-        InventoryPoolResponse pool = inventory.find(fixture.sellerId(), fixture.skuId());
+        InventoryResponse.Pool pool = inventory.find(fixture.sellerId(), fixture.skuId());
         assertThat(pool.reserved()).as("취소된 checkout 의 재고 예약은 풀려야 한다").isZero();
         assertThat(pool.available()).isEqualTo(INITIAL_STOCK);
     }

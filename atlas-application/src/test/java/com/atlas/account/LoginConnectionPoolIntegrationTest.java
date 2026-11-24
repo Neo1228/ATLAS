@@ -2,8 +2,7 @@ package com.atlas.account;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.account.dto.request.LoginRequest;
-import com.atlas.account.dto.request.MfaChallengeRequest;
+import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountService;
 import com.atlas.application.SingleConnectionPool;
@@ -66,7 +65,7 @@ class LoginConnectionPoolIntegrationTest {
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
 
-        var response = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        var response = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
 
         assertThat(response.tokens()).isNotNull();
     }
@@ -87,9 +86,9 @@ class LoginConnectionPoolIntegrationTest {
         assertThat(accounts.enableMfa(accountId, now)).isTrue();
         String recoveryCode = "recovery-" + UUID.randomUUID();
         accounts.replaceMfaRecoveryCodes(accountId, List.of(sha256Hex(recoveryCode)), now);
-        String challenge = accountService.login(new LoginRequest(email, password), "198.51.100.8").challengeToken();
+        String challenge = accountService.login(new AccountRequest.Login(email, password), "198.51.100.8").challengeToken();
 
-        var tokens = accountService.completeMfaLogin(new MfaChallengeRequest(challenge, null, recoveryCode));
+        var tokens = accountService.completeMfaLogin(new AccountRequest.MfaChallenge(challenge, null, recoveryCode));
 
         assertThat(tokens.accessToken()).isNotBlank();
     }

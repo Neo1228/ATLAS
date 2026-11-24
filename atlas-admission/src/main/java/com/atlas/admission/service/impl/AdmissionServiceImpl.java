@@ -1,14 +1,14 @@
 package com.atlas.admission.service.impl;
 
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.persistence.projection.DueTicketCandidate;
 import com.atlas.admission.persistence.projection.DueTicketCursor;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.service.AdmissionExpirySweepPolicy;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.model.CheckoutSlotReleaseReason;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.persistence.entity.QueueTicket;
 import com.atlas.admission.repository.TicketRepository;
@@ -17,10 +17,8 @@ import com.atlas.admission.repository.AdmissionPolicyRepository;
 import com.atlas.admission.persistence.entity.AdmissionPolicy;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.catalog.model.ProductSalesChannel;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -72,7 +70,7 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     @Override
     @Transactional
-    public void configureSellerSkuPolicy(ConfigureSellerSkuPolicyRequest request) {
+    public void configureSellerSkuPolicy(AdmissionRequest.ConfigureSellerSkuPolicy request) {
         if (request == null) throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST,
                 "Seller-SKU admission policy request is required");
         UUID sellerId = request.sellerId();
@@ -98,23 +96,23 @@ public class AdmissionServiceImpl implements AdmissionService {
     }
 
     @Transactional
-    public QueueTicketResponse join(JoinQueueRequest request) {
+    public AdmissionResponse.QueueTicket join(AdmissionRequest.JoinQueue request) {
         if (request == null || request.campaignId() == null || blank(request.skuId())
                 || request.skuId().length() > 128 || blank(request.buyerRef()) || request.buyerRef().length() > 256
                 || blank(request.idempotencyKey()) || request.idempotencyKey().length() > 256) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid queue join request");
         }
-        QueueTicketResponse prior = findByKey(request.campaignId(), request.idempotencyKey());
+        AdmissionResponse.QueueTicket prior = findByKey(request.campaignId(), request.idempotencyKey());
         if (prior != null) return replayPrior(prior, request);
-        Optional<CampaignResponse> openCampaign = campaigns.findOpenForAdmission(
+        Optional<AdmissionResponse.Campaign> openCampaign = campaigns.findOpenForAdmission(
                 request.campaignId(), request.skuId());
         if (openCampaign.isEmpty()) {
-            QueueTicketResponse concurrentPrior = findByKey(request.campaignId(), request.idempotencyKey());
+            AdmissionResponse.QueueTicket concurrentPrior = findByKey(request.campaignId(), request.idempotencyKey());
             if (concurrentPrior != null) return replayPrior(concurrentPrior, request);
             throw new CampaignException(CampaignException.Code.NOT_ELIGIBLE,
                     "Campaign is not open SKU " + request.skuId() + ": " + request.campaignId());
         }
-        CampaignResponse campaign = openCampaign.get();
+        AdmissionResponse.Campaign campaign = openCampaign.get();
         requireSellerSku(campaign);
         queueRepository.createCounterIfAbsent(campaign.sellerId(), campaign.skuId());
         if (!lockCounter(campaign.sellerId(), campaign.skuId())) {
@@ -123,7 +121,7 @@ public class AdmissionServiceImpl implements AdmissionService {
         AdmissionPolicy policy = requirePolicy(campaign.sellerId(), campaign.skuId());
         Instant now = clock.instant();
         expireDueTicketsForSellerSku(campaign.sellerId(), campaign.skuId(), now);
-        QueueTicketResponse concurrentPrior = findByKey(request.campaignId(), request.idempotencyKey());
+        AdmissionResponse.QueueTicket concurrentPrior = findByKey(request.campaignId(), request.idempotencyKey());
         if (concurrentPrior != null) {
             requireSamePayload(concurrentPrior, request);
             return requireTicket(request.campaignId(), concurrentPrior.ticketId());
@@ -140,7 +138,7 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     }
 
-    private QueueTicketResponse replayPrior(QueueTicketResponse prior, JoinQueueRequest request) {
+    private AdmissionResponse.QueueTicket replayPrior(AdmissionResponse.QueueTicket prior, AdmissionRequest.JoinQueue request) {
         requireSamePayload(prior, request);
         queueRepository.createCounterIfAbsent(prior.sellerId(), prior.skuId());
         if (!lockCounter(prior.sellerId(), prior.skuId())) {
@@ -150,8 +148,8 @@ public class AdmissionServiceImpl implements AdmissionService {
         return requireTicket(request.campaignId(), prior.ticketId());
     }
 
-    private SellerSkuResponse requireSellerSku(CampaignResponse campaign) {
-        SellerSkuResponse sellerSku = sellerSkus.findOrderableSellerSku(
+    private CatalogResponse.SellerSku requireSellerSku(AdmissionResponse.Campaign campaign) {
+        CatalogResponse.SellerSku sellerSku = sellerSkus.findOrderableSellerSku(
                 campaign.sellerId(), campaign.skuId(), ProductSalesChannel.CAMPAIGN);
         if (sellerSku == null) throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Campaign Seller-SKU is not registered");
         return sellerSku;
@@ -164,7 +162,7 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     @Override
     @Transactional(readOnly = true)
-    public QueueTicketResponse find(UUID campaignId, UUID ticketId) {
+    public AdmissionResponse.QueueTicket find(UUID campaignId, UUID ticketId) {
         return tickets.findByCampaignIdAndTicketId(campaignId, ticketId)
                 .map(AdmissionServiceImpl::toResponse)
                 .orElseThrow(() -> new AdmissionException(AdmissionException.Code.TICKET_NOT_FOUND,
@@ -173,9 +171,9 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     @Override
     @Transactional
-    public QueueTicketResponse requireCheckoutSlot(UUID campaignId, UUID ticketId) {
+    public AdmissionResponse.QueueTicket requireCheckoutSlot(UUID campaignId, UUID ticketId) {
         requireTicketKey(campaignId, ticketId);
-        QueueTicketResponse ticket = requireTicket(campaignId, ticketId);
+        AdmissionResponse.QueueTicket ticket = requireTicket(campaignId, ticketId);
         if (!lockCounter(ticket.sellerId(), ticket.skuId())) throw ticketNotFound(campaignId, ticketId);
         expireDueTicketsForSellerSku(ticket.sellerId(), ticket.skuId(), clock.instant());
         ticket = requireTicket(campaignId, ticketId);
@@ -187,9 +185,9 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     @Override
     @Transactional
-    public QueueTicketResponse startCheckout(UUID campaignId, UUID ticketId) {
+    public AdmissionResponse.QueueTicket startCheckout(UUID campaignId, UUID ticketId) {
         requireTicketKey(campaignId, ticketId);
-        QueueTicketResponse ticket = requireTicket(campaignId, ticketId);
+        AdmissionResponse.QueueTicket ticket = requireTicket(campaignId, ticketId);
         if (!lockCounter(ticket.sellerId(), ticket.skuId())) throw ticketNotFound(campaignId, ticketId);
         expireDueTicketsForSellerSku(ticket.sellerId(), ticket.skuId(), clock.instant());
         ticket = requireTicket(campaignId, ticketId);
@@ -203,10 +201,10 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     @Override
     @Transactional
-    public QueueTicketResponse releaseCheckoutSlot(UUID campaignId, UUID ticketId, CheckoutSlotReleaseReason reason) {
+    public AdmissionResponse.QueueTicket releaseCheckoutSlot(UUID campaignId, UUID ticketId, CheckoutSlotReleaseReason reason) {
         requireTicketKey(campaignId, ticketId);
         if (reason == null) throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Release reason is required");
-        QueueTicketResponse ticket = requireTicket(campaignId, ticketId);
+        AdmissionResponse.QueueTicket ticket = requireTicket(campaignId, ticketId);
         if (!lockCounter(ticket.sellerId(), ticket.skuId())) throw ticketNotFound(campaignId, ticketId);
         expireDueTicketsForSellerSku(ticket.sellerId(), ticket.skuId(), clock.instant());
         ticket = requireTicket(campaignId, ticketId);
@@ -310,11 +308,11 @@ public class AdmissionServiceImpl implements AdmissionService {
         return expired;
     }
 
-    private QueueTicketResponse findByKey(UUID campaignId, String key) {
+    private AdmissionResponse.QueueTicket findByKey(UUID campaignId, String key) {
         return tickets.findByCampaignIdAndIdempotencyKey(campaignId, key).map(AdmissionServiceImpl::toResponse).orElse(null);
     }
 
-    private QueueTicketResponse requireSamePayload(QueueTicketResponse prior, JoinQueueRequest request) {
+    private AdmissionResponse.QueueTicket requireSamePayload(AdmissionResponse.QueueTicket prior, AdmissionRequest.JoinQueue request) {
         if (!tickets.existsByCampaignIdAndTicketIdAndSkuIdAndBuyerRef(request.campaignId(), prior.ticketId(), request.skuId(), request.buyerRef())) {
             throw new AdmissionException(AdmissionException.Code.IDEMPOTENCY_PAYLOAD_MISMATCH, "Idempotency key was already used with a different payload: " + request.campaignId() + "/" + request.idempotencyKey());
         }
@@ -323,8 +321,8 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     private boolean lockCounter(UUID sellerId, String skuId) { return queueRepository.lockCounter(sellerId, skuId); }
 
-    private QueueTicketResponse requireTicket(UUID campaignId, UUID ticketId) {
-        QueueTicketResponse ticket = find(campaignId, ticketId);
+    private AdmissionResponse.QueueTicket requireTicket(UUID campaignId, UUID ticketId) {
+        AdmissionResponse.QueueTicket ticket = find(campaignId, ticketId);
         if (ticket == null) throw ticketNotFound(campaignId, ticketId);
         return ticket;
     }
@@ -365,8 +363,8 @@ public class AdmissionServiceImpl implements AdmissionService {
         return requirePolicy(sellerId, skuId).getMaxActiveCheckouts();
     }
 
-    private static QueueTicketResponse toResponse(QueueTicket entity) {
-        return new QueueTicketResponse(entity.getTicketId(), entity.getCampaignId(), entity.getSellerId(), entity.getSkuId(), entity.getBuyerRef(), entity.getSequence(), entity.getStatus(), entity.getExpiresAt(), entity.isCheckoutSlotHeld());
+    private static AdmissionResponse.QueueTicket toResponse(QueueTicket entity) {
+        return new AdmissionResponse.QueueTicket(entity.getTicketId(), entity.getCampaignId(), entity.getSellerId(), entity.getSkuId(), entity.getBuyerRef(), entity.getSequence(), entity.getStatus(), entity.getExpiresAt(), entity.isCheckoutSlotHeld());
     }
 
     private static boolean blank(String value) { return value == null || value.isBlank(); }

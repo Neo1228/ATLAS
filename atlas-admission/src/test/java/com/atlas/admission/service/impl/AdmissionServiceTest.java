@@ -14,8 +14,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.persistence.entity.AdmissionPolicy;
 import com.atlas.admission.persistence.entity.QueueTicket;
@@ -27,10 +28,8 @@ import com.atlas.admission.repository.AdmissionPolicyRepository;
 import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.TicketRepository;
 import com.atlas.admission.exception.CampaignException;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.model.CampaignStatus;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
@@ -95,7 +94,7 @@ class AdmissionServiceTest {
     @BeforeEach
     void sellerSkuExists() {
         when(sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN))
-                .thenReturn(new SellerSkuResponse(sellerId, UUID.randomUUID(), skuId, "Product",
+                .thenReturn(new CatalogResponse.SellerSku(sellerId, UUID.randomUUID(), skuId, "Product",
                         1000, null, null, null, 1000));
     }
 
@@ -108,7 +107,7 @@ class AdmissionServiceTest {
                         ? Optional.empty() : Optional.of(policyForPromotion));
         when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
 
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 4));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 4));
 
         verify(sellerSkus).findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN);
         verify(policies).save(argThat(policy ->
@@ -122,7 +121,7 @@ class AdmissionServiceTest {
         when(policies.findBySellerIdAndSkuId(sellerId, skuId)).thenReturn(Optional.of(existing));
         when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
 
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 5));
 
         assertEquals(5, existing.getMaxActiveCheckouts());
         verify(policies).save(existing);
@@ -143,10 +142,10 @@ class AdmissionServiceTest {
         QueueTicket waitingTicket = mock(QueueTicket.class);
         when(waitingTicket.getCampaignId()).thenReturn(waitingCampaignId);
         when(tickets.findById(oldestWaitingTicket)).thenReturn(Optional.of(waitingTicket));
-        when(campaigns.find(waitingCampaignId)).thenReturn(new CampaignResponse(
+        when(campaigns.find(waitingCampaignId)).thenReturn(new AdmissionResponse.Campaign(
                 waitingCampaignId, sellerId, skuId, CampaignStatus.OPEN, waitingTicketTtl));
 
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 2));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 2));
 
         verify(queueRepository).lockCounter(sellerId, skuId);
         verify(tickets).findWaitingForSellerSku(eq(sellerId), eq(skuId), eq(TicketStatus.WAITING),
@@ -159,7 +158,7 @@ class AdmissionServiceTest {
         when(sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN)).thenReturn(null);
 
         assertThrows(AdmissionException.class, () -> admission.configureSellerSkuPolicy(
-                new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 3)));
+                new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 3)));
     }
 
     @Test
@@ -187,7 +186,7 @@ class AdmissionServiceTest {
         QueueTicket waitingTicket = mock(QueueTicket.class);
         when(waitingTicket.getCampaignId()).thenReturn(waitingCampaignId);
         when(tickets.findById(firstWaitingTicket)).thenReturn(Optional.of(waitingTicket));
-        when(campaigns.find(waitingCampaignId)).thenReturn(new CampaignResponse(
+        when(campaigns.find(waitingCampaignId)).thenReturn(new AdmissionResponse.Campaign(
                 waitingCampaignId, sellerId, skuId, CampaignStatus.OPEN, waitingTicketTtl));
         Method promote = AdmissionServiceImpl.class.getDeclaredMethod("promote", UUID.class, String.class);
         promote.setAccessible(true);
@@ -206,7 +205,7 @@ class AdmissionServiceTest {
         String idempotencyKey = "join-key";
         UUID ticketId = UUID.randomUUID();
         when(campaigns.findOpenForAdmission(campaignId, skuId)).thenReturn(Optional.of(
-                new CampaignResponse(campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5))));
+                new AdmissionResponse.Campaign(campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5))));
         when(policies.findBySellerIdAndSkuId(sellerId, skuId))
                 .thenReturn(Optional.of(new AdmissionPolicy(sellerId, skuId, 1)));
         when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
@@ -226,7 +225,7 @@ class AdmissionServiceTest {
         when(tickets.save(any(QueueTicket.class))).thenReturn(savedTicket);
         when(tickets.findByCampaignIdAndTicketId(campaignId, ticketId)).thenReturn(Optional.of(savedTicket));
 
-        admission.join(new JoinQueueRequest(campaignId, skuId, buyerRef, idempotencyKey));
+        admission.join(new AdmissionRequest.JoinQueue(campaignId, skuId, buyerRef, idempotencyKey));
 
         InOrder interactions = inOrder(queueRepository, policies);
         interactions.verify(queueRepository).createCounterIfAbsent(sellerId, skuId);
@@ -239,13 +238,13 @@ class AdmissionServiceTest {
     void unavailableProductRejectsJoinBeforeQueueOrIdempotencySideEffects() {
         UUID campaignId = UUID.randomUUID();
         when(campaigns.findOpenForAdmission(campaignId, skuId)).thenReturn(Optional.of(
-                new CampaignResponse(campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5))));
+                new AdmissionResponse.Campaign(campaignId, sellerId, skuId, CampaignStatus.OPEN, Duration.ofMinutes(5))));
         when(policies.findBySellerIdAndSkuId(sellerId, skuId))
                 .thenReturn(Optional.of(new AdmissionPolicy(sellerId, skuId, 2)));
         when(sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN))
                 .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "Unavailable"));
 
-        assertThrows(CatalogException.class, () -> admission.join(new JoinQueueRequest(
+        assertThrows(CatalogException.class, () -> admission.join(new AdmissionRequest.JoinQueue(
                 campaignId, skuId, "buyer", "idempotency")));
 
         verify(queueRepository, never()).createCounterIfAbsent(sellerId, skuId);
@@ -260,7 +259,7 @@ class AdmissionServiceTest {
         when(campaigns.findOpenForAdmission(campaignId, skuId)).thenReturn(Optional.empty());
 
         CampaignException exception = assertThrows(CampaignException.class,
-                () -> admission.join(new JoinQueueRequest(campaignId, skuId, "buyer", "new-key")));
+                () -> admission.join(new AdmissionRequest.JoinQueue(campaignId, skuId, "buyer", "new-key")));
 
         assertEquals(CampaignException.Code.NOT_ELIGIBLE, exception.code());
         verify(queueRepository, never()).createCounterIfAbsent(sellerId, skuId);
@@ -293,7 +292,7 @@ class AdmissionServiceTest {
                 .thenReturn(true);
         when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
 
-        admission.join(new JoinQueueRequest(campaignId, skuId, "buyer", key));
+        admission.join(new AdmissionRequest.JoinQueue(campaignId, skuId, "buyer", key));
 
         verify(sellerSkus, never()).findOrderableSellerSku(
                 sellerId, skuId, ProductSalesChannel.CAMPAIGN);
@@ -321,7 +320,7 @@ class AdmissionServiceTest {
         QueueTicket waitingTicket = mock(QueueTicket.class);
         when(waitingTicket.getCampaignId()).thenReturn(campaignId);
         when(tickets.findById(waitingId)).thenReturn(Optional.of(waitingTicket));
-        when(campaigns.find(campaignId)).thenReturn(new CampaignResponse(
+        when(campaigns.find(campaignId)).thenReturn(new AdmissionResponse.Campaign(
                 campaignId, sellerId, skuId, CampaignStatus.OPEN, waitingTicketTtl));
 
         admission.releaseCheckoutSlot(campaignId, ticketId, CheckoutSlotReleaseReason.PRODUCT_NOT_ORDERABLE);

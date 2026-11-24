@@ -1,13 +1,12 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.request.LocationReservationItemRequest;
 import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
 import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.request.StockClaimRequest;
-import com.atlas.order.dto.response.LocationReservationResponse.LocationResult;
-import com.atlas.order.dto.response.LocationReservationResponse;
-import com.atlas.order.dto.response.RemoteReservationResponse;
+import com.atlas.order.dto.response.ReservationWorkflowResponse.LocationReservation.LocationResult;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.model.LocationReservationState;
@@ -82,7 +81,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     }
 
     @Override
-    public LocationReservationResponse stage(String idempotencyKey,
+    public ReservationWorkflowResponse.LocationReservation stage(String idempotencyKey,
             LocationReservationRequest request) {
         UUID candidateId = UUID.randomUUID();
         ReservationWorkflowSnapshot workflow = persistIntent(candidateId, idempotencyKey, request);
@@ -90,7 +89,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     }
 
     @Override
-    public LocationReservationResponse submit(String idempotencyKey,
+    public ReservationWorkflowResponse.LocationReservation submit(String idempotencyKey,
             LocationReservationRequest request) {
         rejectIfAdmissionExhausted(idempotencyKey, request);
         UUID candidateId = UUID.randomUUID();
@@ -148,7 +147,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     }
 
     @Override
-    public LocationReservationResponse find(UUID workflowId) {
+    public ReservationWorkflowResponse.LocationReservation find(UUID workflowId) {
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(workflowId);
         if (workflow == null) throw new OrderException(OrderException.Code.NOT_FOUND,
                 "Inventory reservation workflow not found");
@@ -156,7 +155,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     }
 
     @Override
-    public LocationReservationResponse retry(UUID workflowId) {
+    public ReservationWorkflowResponse.LocationReservation retry(UUID workflowId) {
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(workflowId);
         if (workflow == null) throw new OrderException(OrderException.Code.NOT_FOUND,
                 "Inventory reservation workflow not found");
@@ -169,13 +168,13 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     }
 
     @Override
-    public List<LocationReservationResponse> needsReview(int limit) {
+    public List<ReservationWorkflowResponse.LocationReservation> needsReview(int limit) {
         if (limit < 1 || limit > 200) throw invalid("limit must be between 1 and 200");
         return repository.findNeedsReviewIds(limit).stream().map(this::find).toList();
     }
 
     @Override
-    public LocationReservationResponse releaseNeedsReview(UUID workflowId) {
+    public ReservationWorkflowResponse.LocationReservation releaseNeedsReview(UUID workflowId) {
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(workflowId);
         if (workflow == null) throw new OrderException(OrderException.Code.NOT_FOUND,
                 "Inventory reservation workflow not found");
@@ -188,7 +187,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
     }
 
     @Override
-    public LocationReservationResponse cancel(UUID workflowId) {
+    public ReservationWorkflowResponse.LocationReservation cancel(UUID workflowId) {
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(workflowId);
         if (workflow == null) throw new OrderException(OrderException.Code.NOT_FOUND,
                 "Inventory reservation workflow not found");
@@ -228,7 +227,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return ClaimOutcome.PENDING;
             try {
-                RemoteReservationResponse claimed =
+                ReservationWorkflowResponse.RemoteReservation claimed =
                         inventory.claim(location.fulfillmentLocationId(), location.reservationId());
                 if (!"CLAIMED".equals(claimed.status())) {
                     finish(workflow, lease.leaseToken(), LocationReservationWorkflowState.RESERVED,
@@ -333,7 +332,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return;
             try {
-                RemoteReservationResponse reserved = inventory.reserve(
+                ReservationWorkflowResponse.RemoteReservation reserved = inventory.reserve(
                         location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey(),
                         location.items().stream().map(item -> new LocationReservationItemRequest(
                                 item.sellerId(), item.skuId(), item.quantity())).toList());
@@ -392,7 +391,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
             lease = renewLeaseIfNeeded(lease);
             if (lease == null) return;
             try {
-                RemoteReservationResponse reserved = inventory.reserve(
+                ReservationWorkflowResponse.RemoteReservation reserved = inventory.reserve(
                         location.fulfillmentLocationId(), workflow.orderId(), location.idempotencyKey(),
                         location.items().stream().map(item -> new LocationReservationItemRequest(
                                 item.sellerId(), item.skuId(), item.quantity())).toList());
@@ -689,14 +688,14 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         return existing.equals(plans);
     }
 
-    private LocationReservationResponse response(ReservationWorkflowSnapshot workflow, boolean replayed) {
+    private ReservationWorkflowResponse.LocationReservation response(ReservationWorkflowSnapshot workflow, boolean replayed) {
         List<LocationResult> locations = workflow.locations().stream()
                 .map(location -> new LocationResult(location.fulfillmentLocationId(), location.state(),
                         location.reservationId(), location.remoteExpiresAt(), location.lastErrorCode(),
-                        location.items().stream().map(item -> new LocationReservationResponse.Item(
+                        location.items().stream().map(item -> new ReservationWorkflowResponse.LocationReservation.Item(
                                 item.sellerId(), item.skuId(), item.quantity())).toList()))
                 .toList();
-        return new LocationReservationResponse(workflow.workflowId(), workflow.orderId(),
+        return new ReservationWorkflowResponse.LocationReservation(workflow.workflowId(), workflow.orderId(),
                 workflow.idempotencyKey(), workflow.state(), locations, workflow.createdAt(),
                 workflow.updatedAt(), replayed);
     }

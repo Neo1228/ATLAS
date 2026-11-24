@@ -8,16 +8,15 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.order.dto.request.ReorderCartRequest;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.catalog.exception.CatalogException;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.order.service.CartService;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
@@ -71,14 +70,14 @@ class OrderReorderServiceImplTest {
                 .thenReturn(Optional.of(UUID.randomUUID()));
         when(sellerSkus.findOrderableSellerSkus(SELLER_ID, List.of(SKU_ID),
                 ProductSalesChannel.ONLINE_STORE))
-                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product",
+                .thenReturn(List.of(new CatalogResponse.SellerSku(SELLER_ID, PRODUCT_ID, SKU_ID, "Product",
                         100, null, null, null, 100)));
-        when(carts.mergeItems(any(ReorderCartRequest.class))).thenReturn(expected);
+        when(carts.mergeItems(any(OrderRequest.ReorderCart.class))).thenReturn(expected);
 
-        assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
+        assertEquals(expected, service.reorder(new OrderRequest.Reorder(ORDER_ID, "reorder-key", true)));
 
-        verify(carts).mergeItems(new ReorderCartRequest(BUYER_REF, true,
-                List.of(new ReorderCartRequest.Item(SELLER_ID, PRODUCT_ID, SKU_ID, 2))));
+        verify(carts).mergeItems(new OrderRequest.ReorderCart(BUYER_REF, true,
+                List.of(new OrderRequest.ReorderCart.Item(SELLER_ID, PRODUCT_ID, SKU_ID, 2))));
         verify(carts, never()).find(BUYER_REF);
     }
 
@@ -91,9 +90,9 @@ class OrderReorderServiceImplTest {
                 .thenReturn(Optional.of(new ExistingReorder(ORDER_ID, true)));
         when(carts.find(BUYER_REF)).thenReturn(expected);
 
-        assertEquals(expected, service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", true)));
+        assertEquals(expected, service.reorder(new OrderRequest.Reorder(ORDER_ID, "reorder-key", true)));
         verify(carts).find(BUYER_REF);
-        verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
+        verify(carts, never()).mergeItems(any(OrderRequest.ReorderCart.class));
         verify(inventory, never()).findFulfillmentLocation(any(), any());
     }
 
@@ -103,15 +102,15 @@ class OrderReorderServiceImplTest {
                 BUYER_REF, OrderState.PAID, NOW.plusSeconds(600), null, NOW, NOW);
         when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(campaignOrder));
         OrderException campaign = assertThrows(OrderException.class,
-                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
+                () -> service.reorder(new OrderRequest.Reorder(ORDER_ID, "reorder-key", false)));
         assertEquals(OrderException.Code.CONFLICT, campaign.code());
 
         when(orders.findWithLockByOrderId(ORDER_ID)).thenReturn(Optional.of(terminalCartOrder(OrderState.RESERVED)));
         OrderException active = assertThrows(OrderException.class,
-                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
+                () -> service.reorder(new OrderRequest.Reorder(ORDER_ID, "reorder-key", false)));
         assertEquals(OrderException.Code.CONFLICT, active.code());
         verify(items, never()).findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID);
-        verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
+        verify(carts, never()).mergeItems(any(OrderRequest.ReorderCart.class));
     }
 
     @Test
@@ -126,13 +125,13 @@ class OrderReorderServiceImplTest {
                 .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "unavailable"));
 
         CatalogException unavailable = assertThrows(CatalogException.class,
-                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
+                () -> service.reorder(new OrderRequest.Reorder(ORDER_ID, "reorder-key", false)));
 
         assertEquals(CatalogException.Code.PRODUCT_NOT_ORDERABLE, unavailable.code());
         verify(inventory, never()).findFulfillmentLocation(any(), any());
         verify(reorderRequests, never()).insertIfAbsent(eq(SELLER_ID), eq(BUYER_REF), eq("reorder-key"),
                 eq(ORDER_ID), eq(false), any(Instant.class));
-        verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
+        verify(carts, never()).mergeItems(any(OrderRequest.ReorderCart.class));
     }
 
     @Test
@@ -144,17 +143,17 @@ class OrderReorderServiceImplTest {
         when(items.findByOrderOrderIdOrderBySkuIdAsc(ORDER_ID)).thenReturn(List.of(item));
         when(sellerSkus.findOrderableSellerSkus(SELLER_ID, List.of(SKU_ID),
                 ProductSalesChannel.ONLINE_STORE))
-                .thenReturn(List.of(new SellerSkuResponse(SELLER_ID, PRODUCT_ID, SKU_ID, "Product",
+                .thenReturn(List.of(new CatalogResponse.SellerSku(SELLER_ID, PRODUCT_ID, SKU_ID, "Product",
                         100, null, null, null, 100)));
         when(inventory.findFulfillmentLocation(eq(SELLER_ID), any()))
                 .thenReturn(Optional.empty());
 
         InventoryException unavailable = assertThrows(InventoryException.class,
-                () -> service.reorder(new OrderReorderRequest(ORDER_ID, "reorder-key", false)));
+                () -> service.reorder(new OrderRequest.Reorder(ORDER_ID, "reorder-key", false)));
         assertEquals(InventoryException.Code.INSUFFICIENT_STOCK, unavailable.code());
         verify(reorderRequests, never()).insertIfAbsent(eq(SELLER_ID), eq(BUYER_REF), eq("reorder-key"),
                 eq(ORDER_ID), eq(false), any(Instant.class));
-        verify(carts, never()).mergeItems(any(ReorderCartRequest.class));
+        verify(carts, never()).mergeItems(any(OrderRequest.ReorderCart.class));
     }
 
     @Test

@@ -5,10 +5,10 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
 import com.atlas.account.config.AccountSecurityConfiguration;
 import com.atlas.application.config.PayPalReportOperatorSecurityConfiguration;
 import com.atlas.application.controller.settlement.PayPalBalanceReportOperatorController;
-import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import java.util.List;
@@ -50,7 +50,7 @@ class PayPalBalanceReportOperatorSecurityTest {
 
     @BeforeEach
     void setUp() {
-        when(operator.summary()).thenReturn(new PayPalBalanceReportOperatorSummary(List.of(), 0, 0, 0));
+        when(operator.summary()).thenReturn(new PayPalBalanceReportResponse.OperatorSummary(List.of(), 0, 0, 0));
     }
 
     @Test

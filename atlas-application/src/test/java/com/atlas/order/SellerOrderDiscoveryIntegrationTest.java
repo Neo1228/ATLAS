@@ -5,15 +5,13 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.account.service.AccountService;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderHistoryPageResponse;
-import com.atlas.order.dto.response.SellerOrderDetailResponse;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.OrderService;
 import java.util.UUID;
@@ -71,9 +69,9 @@ class SellerOrderDiscoveryIntegrationTest {
     void sellerDiscoversOrderAndItemIdsThroughSellerScopedHttpResponses() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         var product = products.createProduct(sellerId,
-                new CreateProductRequest("seller-discovery-" + UUID.randomUUID(), null));
+                new ProductRequest.CreateProduct("seller-discovery-" + UUID.randomUUID(), null));
         String skuId = "seller-discovery-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 1000, 5));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 1000, 5));
 
         String buyerRef = "seller-discovery-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
@@ -85,14 +83,14 @@ class SellerOrderDiscoveryIntegrationTest {
                         .with(jwt().jwt(token -> token.subject(sellerAccountId.toString()))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        OrderHistoryPageResponse page = objectMapper.readValue(listJson, OrderHistoryPageResponse.class);
+        OrderViewResponse.HistoryPage page = objectMapper.readValue(listJson, OrderViewResponse.HistoryPage.class);
         assertThat(page.orders()).anyMatch(entry -> entry.orderId().equals(expectedOrderId));
 
         String detailJson = mockMvc.perform(get("/api/sellers/{sellerId}/orders/{orderId}", sellerId, expectedOrderId)
                         .with(jwt().jwt(token -> token.subject(sellerAccountId.toString()))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        SellerOrderDetailResponse detail = objectMapper.readValue(detailJson, SellerOrderDetailResponse.class);
+        OrderViewResponse.SellerOrderDetail detail = objectMapper.readValue(detailJson, OrderViewResponse.SellerOrderDetail.class);
         assertThat(detail.orderId()).isEqualTo(expectedOrderId);
         assertThat(detail.items()).singleElement().satisfies(item -> {
             assertThat(item.orderItemId()).isNotNull();
@@ -126,15 +124,15 @@ class SellerOrderDiscoveryIntegrationTest {
         UUID sellerA = sellers.createSeller().sellerId();
         UUID sellerB = sellers.createSeller().sellerId();
         var productA = products.createProduct(sellerA,
-                new CreateProductRequest("seller-a-" + UUID.randomUUID(), null));
+                new ProductRequest.CreateProduct("seller-a-" + UUID.randomUUID(), null));
         String skuA = "seller-a-" + UUID.randomUUID();
-        products.registerSku(sellerA, productA.productId(), new RegisterSellerSkuRequest(skuA, 500, 5));
+        products.registerSku(sellerA, productA.productId(), new ProductRequest.RegisterSellerSku(skuA, 500, 5));
 
         String buyerRef = "isolation-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerA, buyerRef, skuA, 1);
         checkouts.checkout(buyerRef, "isolation-" + UUID.randomUUID());
 
-        OrderHistoryPageResponse sellerBPage = orders.findSellerOrderHistory(sellerB, 20, null);
+        OrderViewResponse.HistoryPage sellerBPage = orders.findSellerOrderHistory(sellerB, 20, null);
         assertThat(sellerBPage.orders())
                 .as("다른 판매자의 주문이 섞이면 안 된다")
                 .allMatch(entry -> entry.sellerId().equals(sellerB));

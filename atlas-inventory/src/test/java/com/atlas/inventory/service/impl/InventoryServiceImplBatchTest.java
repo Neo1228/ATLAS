@@ -10,8 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
-import com.atlas.inventory.dto.request.ReserveInventoryRequest;
+import com.atlas.inventory.dto.request.InventoryRequest;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.persistence.entity.Reservation;
 import com.atlas.inventory.model.ReservationStatus;
@@ -73,9 +72,9 @@ class InventoryServiceImplBatchTest {
         when(stock.claim(seller, "B", locationId, 3)).thenReturn(1);
         when(stock.release(seller, "A", locationId, 2)).thenReturn(1);
         when(stock.release(seller, "B", locationId, 3)).thenReturn(1);
-        var request = new ReserveInventoryBatchRequest(orderId, null, List.of(
-                new ReserveInventoryBatchRequest.Item(seller, "B", 3),
-                new ReserveInventoryBatchRequest.Item(seller, "A", 2)));
+        var request = new InventoryRequest.ReserveInventoryBatch(orderId, null, List.of(
+                new InventoryRequest.ReserveInventoryBatch.Item(seller, "B", 3),
+                new InventoryRequest.ReserveInventoryBatch.Item(seller, "A", 2)));
 
         var result = service.reserveAll(request);
         assertEquals(List.of("A", "B"), result.stream().map(r -> r.skuId()).toList());
@@ -94,9 +93,9 @@ class InventoryServiceImplBatchTest {
     void insufficientLaterLineThrowsTypedErrorAndRollsBackTransaction() {
         when(stock.reserve(seller, "A", locationId, 2)).thenReturn(1);
         when(stock.reserve(seller, "B", locationId, 3)).thenReturn(0);
-        var request = new ReserveInventoryBatchRequest(orderId, null, List.of(
-                new ReserveInventoryBatchRequest.Item(seller, "A", 2),
-                new ReserveInventoryBatchRequest.Item(seller, "B", 3)));
+        var request = new InventoryRequest.ReserveInventoryBatch(orderId, null, List.of(
+                new InventoryRequest.ReserveInventoryBatch.Item(seller, "A", 2),
+                new InventoryRequest.ReserveInventoryBatch.Item(seller, "B", 3)));
 
         InventoryException exception = assertThrows(InventoryException.class, () -> service.reserveAll(request));
         assertEquals(InventoryException.Code.INSUFFICIENT_STOCK, exception.code());
@@ -106,7 +105,7 @@ class InventoryServiceImplBatchTest {
     @Test
     void singleTryReserveReturnsEmptyOnZeroUpdatedRowsWithoutSavingReservation() {
         when(stock.reserve(seller, "SKU", locationId, 1)).thenReturn(0);
-        var request = new ReserveInventoryRequest(orderId, UUID.randomUUID(), seller, "SKU", 1);
+        var request = new InventoryRequest.ReserveInventory(orderId, UUID.randomUUID(), seller, "SKU", 1);
 
         assertFalse(service.tryReserve(request).isPresent());
         verify(reservations, never()).save(any(Reservation.class));

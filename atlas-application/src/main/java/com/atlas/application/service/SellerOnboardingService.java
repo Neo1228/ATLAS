@@ -1,7 +1,7 @@
 package com.atlas.application.service;
 
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.account.service.AccountService;
-import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.SellerService;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -18,8 +18,8 @@ public class SellerOnboardingService {
     }
 
     @Transactional
-    public SellerResponse createSeller(UUID accountId) {
-        SellerResponse seller = sellers.createSeller();
+    public CatalogResponse.Seller createSeller(UUID accountId) {
+        CatalogResponse.Seller seller = sellers.createSeller();
         accounts.linkSeller(accountId, seller.sellerId());
         return seller;
     }

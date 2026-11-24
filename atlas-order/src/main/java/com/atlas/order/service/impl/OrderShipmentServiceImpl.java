@@ -1,7 +1,7 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.request.OrderShipmentRequest;
-import com.atlas.order.dto.response.OrderShipmentResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderFulfillment;
 import com.atlas.order.persistence.entity.OrderItem;
@@ -59,7 +59,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
 
     @Override
     @Transactional
-    public OrderShipmentResponse create(OrderShipmentRequest request) {
+    public OrderViewResponse.Shipment create(OrderRequest.Shipment request) {
         Normalized facts = normalize(request);
         PurchaseOrder order = lockOrder(facts.orderId());
         requirePaid(order);
@@ -124,7 +124,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<OrderShipmentResponse> findAll(String buyerRef, UUID orderId) {
+    public List<OrderViewResponse.Shipment> findAll(String buyerRef, UUID orderId) {
         if (buyerRef == null || buyerRef.isBlank()) {
             throw invalid("Buyer reference is required");
         }
@@ -139,7 +139,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
 
     @Override
     @Transactional
-    public OrderShipmentResponse deliver(UUID sellerId, UUID orderId, UUID shipmentId) {
+    public OrderViewResponse.Shipment deliver(UUID sellerId, UUID orderId, UUID shipmentId) {
         PurchaseOrder order = lockOrder(orderId);
         requirePaid(order);
         requireSeller(order, sellerId);
@@ -252,7 +252,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
                 current.shippedQuantity(), Math.addExact(current.deliveredQuantity(), quantity)));
     }
 
-    private static Normalized normalize(OrderShipmentRequest request) {
+    private static Normalized normalize(OrderRequest.Shipment request) {
         if (request == null || request.sellerId() == null || request.orderId() == null
                 || request.idempotencyKey() == null || request.items() == null || request.items().isEmpty()) {
             throw invalid("Shipment request is incomplete");
@@ -266,7 +266,7 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
             throw invalid("Invalid shipment facts");
         }
         TreeMap<UUID, Integer> quantities = new TreeMap<>();
-        for (OrderShipmentRequest.Item item : request.items()) {
+        for (OrderRequest.Shipment.Item item : request.items()) {
             if (item == null || item.orderItemId() == null || item.quantity() <= 0
                     || quantities.putIfAbsent(item.orderItemId(), item.quantity()) != null) {
                 throw invalid("Shipment items must have unique order item IDs and positive quantities");
@@ -292,12 +292,12 @@ public class OrderShipmentServiceImpl implements OrderShipmentService {
         return existing.equals(facts.quantities());
     }
 
-    private static OrderShipmentResponse response(OrderShipment shipment) {
-        List<OrderShipmentResponse.Item> items = new ArrayList<>();
+    private static OrderViewResponse.Shipment response(OrderShipment shipment) {
+        List<OrderViewResponse.Shipment.Item> items = new ArrayList<>();
         for (OrderShipmentItem item : shipment.items()) {
-            items.add(new OrderShipmentResponse.Item(item.orderItemId(), item.quantity()));
+            items.add(new OrderViewResponse.Shipment.Item(item.orderItemId(), item.quantity()));
         }
-        return new OrderShipmentResponse(shipment.shipmentId(), shipment.orderId(), shipment.idempotencyKey(),
+        return new OrderViewResponse.Shipment(shipment.shipmentId(), shipment.orderId(), shipment.idempotencyKey(),
                 shipment.status(), shipment.carrierCode(), shipment.trackingNumber(), shipment.shippedAt(),
                 shipment.deliveredAt(), items, shipment.fulfillmentLocationId());
     }

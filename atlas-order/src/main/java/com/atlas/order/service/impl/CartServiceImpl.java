@@ -1,6 +1,7 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.request.ReorderCartRequest;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.order.dto.response.CartItemResponse;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.exception.CartException;
@@ -8,7 +9,6 @@ import com.atlas.order.persistence.entity.Cart;
 import com.atlas.order.persistence.entity.CartItem;
 import com.atlas.order.repository.CartRepository;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.service.SellerSkuService;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -42,7 +42,7 @@ public class CartServiceImpl implements CartService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public CartResponse mergeItems(ReorderCartRequest request) {
+    public CartResponse mergeItems(OrderRequest.ReorderCart request) {
         if (request == null) {
             throw invalid("request required");
         }
@@ -53,7 +53,7 @@ public class CartServiceImpl implements CartService {
 
         Map<Key, Integer> quantities = new LinkedHashMap<>();
         Map<Key, UUID> products = new LinkedHashMap<>();
-        for (ReorderCartRequest.Item item : request.items()) {
+        for (OrderRequest.ReorderCart.Item item : request.items()) {
             if (item == null || item.sellerId() == null || item.productId() == null || item.quantity() <= 0) {
                 throw invalid("valid sellerId, productId and positive quantity required");
             }
@@ -74,11 +74,11 @@ public class CartServiceImpl implements CartService {
         for (Key key : quantities.keySet()) {
             requestedSkuIdsBySeller.computeIfAbsent(key.sellerId(), ignored -> new ArrayList<>()).add(key.skuId());
         }
-        Map<UUID, Map<String, SellerSkuResponse>> requestedSkusBySeller =
+        Map<UUID, Map<String, CatalogResponse.SellerSku>> requestedSkusBySeller =
                 findSellerSkus(requestedSkuIdsBySeller);
         for (Key key : quantities.keySet()) {
-            Map<String, SellerSkuResponse> skusById = requestedSkusBySeller.get(key.sellerId());
-            SellerSkuResponse sku = skusById == null ? null : skusById.get(key.skuId());
+            Map<String, CatalogResponse.SellerSku> skusById = requestedSkusBySeller.get(key.sellerId());
+            CatalogResponse.SellerSku sku = skusById == null ? null : skusById.get(key.skuId());
             if (sku == null || !key.sellerId().equals(sku.sellerId())) {
                 throw new CartException(CartException.Code.SKU_NOT_FOUND, "seller SKU not found");
             }
@@ -163,20 +163,20 @@ public class CartServiceImpl implements CartService {
                 .orElseThrow(() -> new CartException(CartException.Code.NOT_FOUND, "cart not found"));
     }
 
-    private SellerSkuResponse requireSellerSku(UUID sellerId, String skuId) {
-        SellerSkuResponse sku = sellerSkus.find(sellerId, skuId);
+    private CatalogResponse.SellerSku requireSellerSku(UUID sellerId, String skuId) {
+        CatalogResponse.SellerSku sku = sellerSkus.find(sellerId, skuId);
         if (sku == null || !sellerId.equals(sku.sellerId())) {
             throw new CartException(CartException.Code.SKU_NOT_FOUND, "seller SKU not found");
         }
         return sku;
     }
 
-    private Map<UUID, Map<String, SellerSkuResponse>> findSellerSkus(
+    private Map<UUID, Map<String, CatalogResponse.SellerSku>> findSellerSkus(
             Map<UUID, List<String>> skuIdsBySeller) {
-        Map<UUID, Map<String, SellerSkuResponse>> skusBySeller = new HashMap<>();
+        Map<UUID, Map<String, CatalogResponse.SellerSku>> skusBySeller = new HashMap<>();
         for (Map.Entry<UUID, List<String>> sellerItems : skuIdsBySeller.entrySet()) {
-            Map<String, SellerSkuResponse> bySku = new HashMap<>();
-            for (SellerSkuResponse sku : sellerSkus.findAll(sellerItems.getKey(), sellerItems.getValue())) {
+            Map<String, CatalogResponse.SellerSku> bySku = new HashMap<>();
+            for (CatalogResponse.SellerSku sku : sellerSkus.findAll(sellerItems.getKey(), sellerItems.getValue())) {
                 bySku.put(sku.skuId(), sku);
             }
             skusBySeller.put(sellerItems.getKey(), bySku);
@@ -190,10 +190,10 @@ public class CartServiceImpl implements CartService {
         for (CartItem item : cartItems) {
             skuIdsBySeller.computeIfAbsent(item.sellerId(), ignored -> new ArrayList<>()).add(item.skuId());
         }
-        Map<UUID, Map<String, SellerSkuResponse>> skusBySeller = findSellerSkus(skuIdsBySeller);
+        Map<UUID, Map<String, CatalogResponse.SellerSku>> skusBySeller = findSellerSkus(skuIdsBySeller);
         List<CartItemResponse> items = cartItems.stream().map(item -> {
-            Map<String, SellerSkuResponse> sellerSkusById = skusBySeller.get(item.sellerId());
-            SellerSkuResponse sku = sellerSkusById == null ? null : sellerSkusById.get(item.skuId());
+            Map<String, CatalogResponse.SellerSku> sellerSkusById = skusBySeller.get(item.sellerId());
+            CatalogResponse.SellerSku sku = sellerSkusById == null ? null : sellerSkusById.get(item.skuId());
             if (sku == null || !item.sellerId().equals(sku.sellerId())) {
                 throw new CartException(CartException.Code.SKU_NOT_FOUND, "seller SKU not found");
             }

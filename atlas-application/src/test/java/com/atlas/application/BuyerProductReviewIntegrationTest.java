@@ -6,9 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.atlas.order.dto.response.ReviewResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.order.dto.response.ProductReviewResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.repository.ProductReviewRepository;
 import com.atlas.order.service.OrderService;
@@ -76,7 +76,7 @@ class BuyerProductReviewIntegrationTest {
         jdbc.update("INSERT INTO order_item (order_item_id) VALUES (?)", orderItemId);
         when(orders.findDeliveredOrderItemId("buyer-1", productId)).thenReturn(Optional.of(orderItemId));
 
-        ProductReviewResponse created = reviews.create("buyer-1", productId, 5, "Arrived as described");
+        ReviewResponse.ProductReview created = reviews.create("buyer-1", productId, 5, "Arrived as described");
 
         assertThat(created.rating()).isEqualTo(5);
         assertThat(created.body()).isEqualTo("Arrived as described");

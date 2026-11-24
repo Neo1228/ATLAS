@@ -10,10 +10,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductListingPageResponse;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
@@ -25,7 +24,6 @@ import com.atlas.catalog.repository.ProductCategoryAssignmentRepository;
 import com.atlas.catalog.repository.ProductCategoryRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
-import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.model.ProductStatus;
@@ -71,7 +69,7 @@ class ProductServiceImplTest {
         when(products.findAvailableChannelsByProductIdIn(
                 List.of(first.getProductId(), second.getProductId()))).thenReturn(List.of());
 
-        ProductListingPageResponse page = service.listProductsPage(sellerId, null, "  BLUE ", 2,
+        CatalogResponse.ProductListingPage page = service.listProductsPage(sellerId, null, "  BLUE ", 2,
                 encodeV3Cursor(sellerId, "blue", sellerId, cursorProduct));
 
         assertEquals(2, page.items().size());
@@ -84,7 +82,7 @@ class ProductServiceImplTest {
     void listingDefaultsLimitAndNormalizesMissingQuery() {
         when(products.findListingPage(null, null, "", null, null, 11, null, null, now)).thenReturn(List.of());
 
-        ProductListingPageResponse page = service.listProductsPage(null, null, null, null, null);
+        CatalogResponse.ProductListingPage page = service.listProductsPage(null, null, null, null, null);
 
         assertEquals(List.of(), page.items());
         assertNull(page.nextCursor());
@@ -159,7 +157,7 @@ class ProductServiceImplTest {
                 .thenReturn(Optional.of(defaultCategory));
         when(products.saveAndFlush(any(Product.class))).thenAnswer(call -> call.getArgument(0));
 
-        var response = service.createProduct(sellerId, new CreateProductRequest("Tea", "description"));
+        var response = service.createProduct(sellerId, new ProductRequest.CreateProduct("Tea", "description"));
 
         assertEquals(sellerId, response.sellerId());
         assertEquals("Tea", response.name());
@@ -176,15 +174,15 @@ class ProductServiceImplTest {
         when(sellerSkus.findBySellerIdAndSkuId(sellerId, "TEA-1")).thenReturn(Optional.empty());
         when(sellerSkus.saveAndFlush(any(SellerSku.class))).thenAnswer(call -> call.getArgument(0));
 
-        SellerSkuResponse response = service.registerSku(sellerId, productId,
-                new RegisterSellerSkuRequest("TEA-1", 1200, 0));
+        CatalogResponse.SellerSku response = service.registerSku(sellerId, productId,
+                new ProductRequest.RegisterSellerSku("TEA-1", 1200, 0));
 
         assertEquals("Tea", response.productName());
         assertEquals(1200, response.priceWon());
         ArgumentCaptor<SellerSku> savedSku = ArgumentCaptor.forClass(SellerSku.class);
         verify(sellerSkus).saveAndFlush(savedSku.capture());
         assertEquals(now, savedSku.getValue().getCreatedAt());
-        verify(inventory).createInventoryPool(new CreateInventoryPoolRequest(sellerId, "TEA-1", 0));
+        verify(inventory).createInventoryPool(new InventoryRequest.CreateInventoryPool(sellerId, "TEA-1", 0));
     }
 
     @Test
@@ -195,7 +193,7 @@ class ProductServiceImplTest {
         when(sellerSkus.findBySellerIdAndSkuId(sellerId, "TEA-1")).thenReturn(Optional.of(sku));
         when(sellerSkus.save(sku)).thenReturn(sku);
 
-        SellerSkuResponse response = service.updateSkuPrice(sellerId, productId, "TEA-1", 1500);
+        CatalogResponse.SellerSku response = service.updateSkuPrice(sellerId, productId, "TEA-1", 1500);
 
         assertEquals(1500, response.priceWon());
         assertEquals("Tea", response.productName());
@@ -206,16 +204,16 @@ class ProductServiceImplTest {
     void rejectsUnknownSeller() {
         when(sellers.existsById(sellerId)).thenReturn(false);
         CatalogException error = assertThrows(CatalogException.class,
-                () -> service.createProduct(sellerId, new CreateProductRequest("Tea", "description")));
+                () -> service.createProduct(sellerId, new ProductRequest.CreateProduct("Tea", "description")));
         assertEquals(Code.NOT_FOUND, error.code());
     }
 
     @Test
     void rejectsInvalidSkuAndNonPositivePrice() {
         CatalogException invalidSku = assertThrows(CatalogException.class,
-                () -> service.registerSku(sellerId, productId, new RegisterSellerSkuRequest(" ", 1200, 0)));
+                () -> service.registerSku(sellerId, productId, new ProductRequest.RegisterSellerSku(" ", 1200, 0)));
         CatalogException invalidPrice = assertThrows(CatalogException.class,
-                () -> service.registerSku(sellerId, productId, new RegisterSellerSkuRequest("TEA-1", 0, 0)));
+                () -> service.registerSku(sellerId, productId, new ProductRequest.RegisterSellerSku("TEA-1", 0, 0)));
         assertEquals(Code.INVALID_REQUEST, invalidSku.code());
         assertEquals(Code.INVALID_REQUEST, invalidPrice.code());
         verify(products, never()).findById(productId);
@@ -241,7 +239,7 @@ class ProductServiceImplTest {
         when(products.findPublicOrderableByProductId(listingProductId)).thenReturn(Optional.of(listingProduct));
 
         List<String> productSkus = service.findProduct(listingProductId).variants().stream()
-                .map(SellerSkuResponse::skuId).toList();
+                .map(CatalogResponse.SellerSku::skuId).toList();
 
         assertEquals(List.of("SKU-A", "SKU-Z"), productSkus);
     }

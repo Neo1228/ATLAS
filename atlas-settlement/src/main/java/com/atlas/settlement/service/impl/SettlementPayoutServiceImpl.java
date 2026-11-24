@@ -1,8 +1,6 @@
 package com.atlas.settlement.service.impl;
 
-import com.atlas.settlement.dto.response.PayoutRiskSnapshotResponse;
-import com.atlas.settlement.dto.response.PayoutSummaryResponse;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.SellerBalance;
@@ -43,7 +41,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse request(UUID sellerId, Instant periodStart, Instant periodEnd,
+    public PayoutResponse.SellerPayout request(UUID sellerId, Instant periodStart, Instant periodEnd,
             String idempotencyKey) {
         if (sellerId == null || periodStart == null || periodEnd == null || idempotencyKey == null
                 || idempotencyKey.isBlank() || idempotencyKey.length() > 128) {
@@ -93,8 +91,8 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse approve(UUID payoutId) {
-        SellerPayoutResponse payout = requirePayout(payoutId);
+    public PayoutResponse.SellerPayout approve(UUID payoutId) {
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         return transition(payoutId, SettlementPayoutState.REQUESTED, SettlementPayoutState.APPROVED);
     }
@@ -102,7 +100,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
     @Transactional
     @Override
     public boolean beginDispatch(UUID payoutId) {
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         if (payout.state() == SettlementPayoutStatus.CANCELLED) return false;
@@ -117,7 +115,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse markProviderAccepted(UUID payoutId) {
+    public PayoutResponse.SellerPayout markProviderAccepted(UUID payoutId) {
         return providerTransition(payoutId, SettlementPayoutState.SENT,
                 Set.of(SettlementPayoutState.DISPATCHING, SettlementPayoutState.UNKNOWN,
                         SettlementPayoutState.UNCLAIMED, SettlementPayoutState.NEEDS_REVIEW));
@@ -125,14 +123,14 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse markProviderUnknown(UUID payoutId) {
+    public PayoutResponse.SellerPayout markProviderUnknown(UUID payoutId) {
         return providerTransition(payoutId, SettlementPayoutState.UNKNOWN,
                 Set.of(SettlementPayoutState.DISPATCHING));
     }
 
     @Transactional
     @Override
-    public SellerPayoutResponse markProviderUnclaimed(UUID payoutId) {
+    public PayoutResponse.SellerPayout markProviderUnclaimed(UUID payoutId) {
         return providerTransition(payoutId, SettlementPayoutState.UNCLAIMED,
                 Set.of(SettlementPayoutState.DISPATCHING, SettlementPayoutState.SENT,
                         SettlementPayoutState.UNKNOWN, SettlementPayoutState.NEEDS_REVIEW));
@@ -140,9 +138,9 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse markProviderNeedsReview(UUID payoutId, String reasonCode) {
+    public PayoutResponse.SellerPayout markProviderNeedsReview(UUID payoutId, String reasonCode) {
         validateFailureCode(reasonCode);
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         if (payout.state() == SettlementPayoutStatus.NEEDS_REVIEW) return payout;
@@ -153,16 +151,16 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
             throw conflict("Only an externally attempted payout can require provider review");
         }
         if (payouts.markNeedsReview(payoutId, reasonCode, clock.instant())) return requirePayout(payoutId);
-        SellerPayoutResponse latest = requirePayout(payoutId);
+        PayoutResponse.SellerPayout latest = requirePayout(payoutId);
         if (latest.state() == SettlementPayoutStatus.NEEDS_REVIEW) return latest;
         throw conflict("Payout could not be moved to provider review");
     }
 
     @Transactional
     @Override
-    public SellerPayoutResponse failWithProviderEvidence(UUID payoutId, String failureCode) {
+    public PayoutResponse.SellerPayout failWithProviderEvidence(UUID payoutId, String failureCode) {
         validateFailureCode(failureCode);
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         if (payout.state() == SettlementPayoutStatus.FAILED) return payout;
@@ -176,23 +174,23 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         if (payouts.failWithProviderEvidence(payoutId, failureCode, clock.instant())) {
             return requirePayout(payoutId);
         }
-        SellerPayoutResponse latest = requirePayout(payoutId);
+        PayoutResponse.SellerPayout latest = requirePayout(payoutId);
         if (latest.state() == SettlementPayoutStatus.FAILED) return latest;
         throw conflict("Provider evidence could not fail payout");
     }
 
     @Transactional
     @Override
-    public SellerPayoutResponse markSent(UUID payoutId) {
-        SellerPayoutResponse payout = requirePayout(payoutId);
+    public PayoutResponse.SellerPayout markSent(UUID payoutId) {
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         return transition(payoutId, SettlementPayoutState.APPROVED, SettlementPayoutState.SENT);
     }
 
     @Transactional
     @Override
-    public SellerPayoutResponse confirm(UUID payoutId) {
-        SellerPayoutResponse payout = requirePayout(payoutId);
+    public PayoutResponse.SellerPayout confirm(UUID payoutId) {
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         if (payout.state() == SettlementPayoutStatus.CONFIRMED) return payout;
@@ -201,7 +199,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         }
         Instant now = clock.instant();
         if (!payouts.transition(payoutId, SettlementPayoutState.SENT, SettlementPayoutState.CONFIRMED, now)) {
-            SellerPayoutResponse latest = requirePayout(payoutId);
+            PayoutResponse.SellerPayout latest = requirePayout(payoutId);
             if (latest.state() == SettlementPayoutStatus.CONFIRMED) return latest;
             throw conflict("Payout could not be confirmed");
         }
@@ -211,9 +209,9 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse confirmProviderSuccess(UUID payoutId, long providerDebitBookValueWon,
+    public PayoutResponse.SellerPayout confirmProviderSuccess(UUID payoutId, long providerDebitBookValueWon,
             long fxRoundingExpenseWon, long providerFeeWon) {
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         if (payout.state() == SettlementPayoutStatus.CONFIRMED) {
@@ -243,7 +241,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         Instant now = clock.instant();
         if (!payouts.confirmWithProviderEvidence(
                 payoutId, providerDebitBookValueWon, fxRoundingExpenseWon, providerFeeWon, now)) {
-            SellerPayoutResponse latest = requirePayout(payoutId);
+            PayoutResponse.SellerPayout latest = requirePayout(payoutId);
             if (latest.state() == SettlementPayoutStatus.CONFIRMED
                     && payouts.providerConfirmationMatches(
                             payoutId, providerDebitBookValueWon, fxRoundingExpenseWon, providerFeeWon)) {
@@ -257,9 +255,9 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse fail(UUID payoutId, String failureCode) {
+    public PayoutResponse.SellerPayout fail(UUID payoutId, String failureCode) {
         validateFailureCode(failureCode);
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         if (payout.state() == SettlementPayoutStatus.FAILED) return payout;
@@ -273,9 +271,9 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
 
     @Transactional
     @Override
-    public SellerPayoutResponse cancelBeforeDispatch(UUID payoutId, String reasonCode) {
+    public PayoutResponse.SellerPayout cancelBeforeDispatch(UUID payoutId, String reasonCode) {
         validateFailureCode(reasonCode);
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         if (payout.state() == SettlementPayoutStatus.CANCELLED) return payout;
@@ -284,20 +282,20 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
             throw conflict("Payout cannot be cancelled after provider dispatch begins");
         }
         if (payouts.cancelBeforeDispatch(payoutId, reasonCode, clock.instant())) return requirePayout(payoutId);
-        SellerPayoutResponse latest = requirePayout(payoutId);
+        PayoutResponse.SellerPayout latest = requirePayout(payoutId);
         if (latest.state() == SettlementPayoutStatus.CANCELLED) return latest;
         throw conflict("Payout cancellation was rejected");
     }
 
     @Override
-    public SellerPayoutResponse find(UUID payoutId) {
+    public PayoutResponse.SellerPayout find(UUID payoutId) {
         return requirePayout(payoutId);
     }
 
     @Override
-    public SellerPayoutResponse findForSeller(UUID sellerId, UUID payoutId) {
+    public PayoutResponse.SellerPayout findForSeller(UUID sellerId, UUID payoutId) {
         if (sellerId == null || payoutId == null) throw invalid("Seller and payout are required");
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         if (!payout.sellerId().equals(sellerId)) {
             throw notFound("Payout not found");
         }
@@ -305,7 +303,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
     }
 
     @Override
-    public List<SellerPayoutResponse> findBySeller(UUID sellerId, int limit) {
+    public List<PayoutResponse.SellerPayout> findBySeller(UUID sellerId, int limit) {
         if (sellerId == null) throw invalid("Seller is required");
         int bounded = limit <= 0 ? 20 : Math.min(limit, MAX_PAYOUT_LIST);
         return payouts.findBySeller(sellerId, bounded).stream()
@@ -319,23 +317,23 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
     }
 
     @Override
-    public PayoutSummaryResponse summary(UUID sellerId) {
+    public PayoutResponse.Summary summary(UUID sellerId) {
         SellerBalance balance = balance(sellerId);
         long pendingPayout = payouts.pendingAmount(sellerId);
         long pendingRefund = refundReservations.pendingAmount(sellerId);
         BigInteger available = balance.payableAmountWon()
                 .subtract(BigInteger.valueOf(pendingPayout).add(BigInteger.valueOf(pendingRefund)))
                 .max(BigInteger.ZERO);
-        return new PayoutSummaryResponse(balance.payableAmountWon().longValueExact(), available.longValueExact(),
+        return new PayoutResponse.Summary(balance.payableAmountWon().longValueExact(), available.longValueExact(),
                 balance.reserveAmountWon().longValueExact(), balance.feeAmountWon().longValueExact(),
                 pendingPayout, pendingRefund, payouts.confirmedAmount(sellerId));
     }
 
     @Override
-    public PayoutRiskSnapshotResponse riskSnapshot() {
+    public PayoutResponse.RiskSnapshot riskSnapshot() {
         var exposure = payouts.negativePayableExposure();
         var refunds = refundReservations.metricsSnapshot();
-        return new PayoutRiskSnapshotResponse(exposure.sellerCount(), exposure.exposureAmountWon(),
+        return new PayoutResponse.RiskSnapshot(exposure.sellerCount(), exposure.exposureAmountWon(),
                 refunds.reservationCount(), refunds.amountWon());
     }
 
@@ -357,9 +355,9 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
                 .max(BigInteger.ZERO).longValueExact();
     }
 
-    private SellerPayoutResponse transition(UUID payoutId, SettlementPayoutState expected,
+    private PayoutResponse.SellerPayout transition(UUID payoutId, SettlementPayoutState expected,
             SettlementPayoutState next) {
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         SettlementPayoutStatus expectedStatus = SettlementPayoutStatus.valueOf(expected.name());
         SettlementPayoutStatus nextStatus = SettlementPayoutStatus.valueOf(next.name());
         if (payout.state() == nextStatus) return payout;
@@ -367,16 +365,16 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
             throw conflict("Payout is in " + payout.state() + ", expected " + expectedStatus);
         }
         if (!payouts.transition(payoutId, expected, next, clock.instant())) {
-            SellerPayoutResponse latest = requirePayout(payoutId);
+            PayoutResponse.SellerPayout latest = requirePayout(payoutId);
             if (latest.state() == nextStatus) return latest;
             throw conflict("Payout transition was rejected");
         }
         return requirePayout(payoutId);
     }
 
-    private SellerPayoutResponse providerTransition(UUID payoutId, SettlementPayoutState next,
+    private PayoutResponse.SellerPayout providerTransition(UUID payoutId, SettlementPayoutState next,
             Set<SettlementPayoutState> allowed) {
-        SellerPayoutResponse payout = requirePayout(payoutId);
+        PayoutResponse.SellerPayout payout = requirePayout(payoutId);
         journals.lockSellerPayouts(payout.sellerId());
         payout = requirePayout(payoutId);
         SettlementPayoutStatus nextStatus = SettlementPayoutStatus.valueOf(next.name());
@@ -386,12 +384,12 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
             throw conflict("Provider transition is not allowed from " + payout.state());
         }
         if (payouts.transition(payoutId, currentState, next, clock.instant())) return requirePayout(payoutId);
-        SellerPayoutResponse latest = requirePayout(payoutId);
+        PayoutResponse.SellerPayout latest = requirePayout(payoutId);
         if (latest.state() == nextStatus) return latest;
         throw conflict("Provider payout transition was rejected");
     }
 
-    private static SettlementPayoutState persistenceState(SellerPayoutResponse payout) {
+    private static SettlementPayoutState persistenceState(PayoutResponse.SellerPayout payout) {
         return SettlementPayoutState.valueOf(payout.state().name());
     }
 
@@ -401,7 +399,7 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
      * <p>Payout 은 별도 journal 로 기록하고 source_payout_id 로 연결해, 지급 1건이 분개 1건임을
      * DB 제약으로 보장한다.
      */
-    private void recordPayoutJournal(SellerPayoutResponse payout, long fxRoundingExpenseWon,
+    private void recordPayoutJournal(PayoutResponse.SellerPayout payout, long fxRoundingExpenseWon,
             long providerFeeWon, Instant now) {
         long clearingCredit;
         try {
@@ -426,19 +424,19 @@ public class SettlementPayoutServiceImpl implements SettlementPayoutService {
         journals.insertEntry(journalId, payout.sellerId(), "PSP_CLEARING", "CREDIT", clearingCredit, now);
     }
 
-    private SellerPayoutResponse requirePayout(UUID payoutId) {
+    private PayoutResponse.SellerPayout requirePayout(UUID payoutId) {
         if (payoutId == null) throw invalid("Payout is required");
         return toDto(payouts.find(payoutId).orElseThrow(() -> notFound("Payout not found")));
     }
 
-    private static SellerPayoutResponse toDto(SettlementPayoutRow row) {
-        return new SellerPayoutResponse(row.payoutId(), row.sellerId(), row.periodStart(),
+    private static PayoutResponse.SellerPayout toDto(SettlementPayoutRow row) {
+        return new PayoutResponse.SellerPayout(row.payoutId(), row.sellerId(), row.periodStart(),
                 row.periodEnd(), row.amountWon(), row.settledAmountWon(),
                 SettlementPayoutStatus.valueOf(row.state().name()), row.requestedAt(),
                 row.sentAt(), row.confirmedAt(), row.cancelledAt());
     }
 
-    private static SellerPayoutResponse requireSameFacts(SellerPayoutResponse prior, UUID sellerId,
+    private static PayoutResponse.SellerPayout requireSameFacts(PayoutResponse.SellerPayout prior, UUID sellerId,
             Instant periodStart, Instant periodEnd) {
         if (!prior.sellerId().equals(sellerId) || !prior.periodStart().equals(periodStart)
                 || !prior.periodEnd().equals(periodEnd)) {

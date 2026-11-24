@@ -2,6 +2,7 @@ package com.atlas.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.application.config.ReservationEventConfiguration;
 import com.atlas.application.service.impl.KafkaReservationEventPublisher;
 import com.atlas.application.service.ReservationEventWorker;
@@ -9,7 +10,6 @@ import com.atlas.order.repository.ReservationEventRepository;
 import com.atlas.order.persistence.projection.ReservationEvent;
 import com.atlas.order.service.ReservationEventService;
 import com.atlas.order.service.impl.ReservationEventServiceImpl;
-import com.atlas.order.dto.response.ReservationEventResponse;
 import com.atlas.order.service.ReservationEventPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
@@ -163,7 +163,7 @@ class ReservationEventKafkaIntegrationTest {
         }
 
         @Override
-        public void publish(List<ReservationEventResponse> batch) {
+        public void publish(List<ReservationWorkflowResponse.ReservationEvent> batch) {
             delegate.publish(batch);
             if (failuresLeft.getAndDecrement() > 0) throw new IllegalStateException("forced publish failure");
         }

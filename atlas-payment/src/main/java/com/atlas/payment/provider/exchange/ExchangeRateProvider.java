@@ -1,7 +1,7 @@
 package com.atlas.payment.provider.exchange;
 
-import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
+import com.atlas.payment.dto.response.FxResponse;
 
 public interface ExchangeRateProvider {
-    ExchangeRateQuoteResponse latestUsdKrwRate();
+    FxResponse.ExchangeRateQuote latestUsdKrwRate();
 }

@@ -9,8 +9,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.controller.dto.PayoutProviderResolutionRequest;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchRecord;
@@ -39,8 +39,8 @@ class PayoutManualOperatorServiceTest {
     @Test
     void manuallyConfirmedProviderSuccessUsesStoredFxAndRequiresExactAmount() {
         PayoutDispatchRecord record = needsReviewRecord();
-        SellerPayoutResponse needsReview = response(SettlementPayoutStatus.NEEDS_REVIEW);
-        SellerPayoutResponse confirmed = response(SettlementPayoutStatus.CONFIRMED);
+        PayoutResponse.SellerPayout needsReview = response(SettlementPayoutStatus.NEEDS_REVIEW);
+        PayoutResponse.SellerPayout confirmed = response(SettlementPayoutStatus.CONFIRMED);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(record));
         when(payouts.find(payoutId)).thenReturn(needsReview);
         when(payouts.confirmProviderSuccess(payoutId, 10_011, 11, 343)).thenReturn(confirmed);
@@ -49,8 +49,8 @@ class PayoutManualOperatorServiceTest {
         when(actions.record(payoutId, "review-1", "PROVIDER_REVIEW_PAID", "operator-1",
                 "case-2026-001", NOW)).thenReturn(true);
 
-        SellerPayoutResponse result = service.resolveProviderReview(payoutId, "review-1", "operator-1",
-                new PayoutProviderResolutionRequest("PAID", "case-2026-001", "provider-batch",
+        PayoutResponse.SellerPayout result = service.resolveProviderReview(payoutId, "review-1", "operator-1",
+                new SettlementHttpRequest.PayoutProviderResolution("PAID", "case-2026-001", "provider-batch",
                         "provider-item", 730L, "USD", 25L));
 
         assertThat(result.state()).isEqualTo(SettlementPayoutStatus.CONFIRMED);
@@ -65,7 +65,7 @@ class PayoutManualOperatorServiceTest {
         when(payouts.find(payoutId)).thenReturn(response(SettlementPayoutStatus.NEEDS_REVIEW));
 
         assertThatThrownBy(() -> service.resolveProviderReview(payoutId, "review-2", "operator-1",
-                new PayoutProviderResolutionRequest("PAID", "case-2026-002", "provider-batch",
+                new SettlementHttpRequest.PayoutProviderResolution("PAID", "case-2026-002", "provider-batch",
                         "provider-item", 731L, "USD", 25L)))
                 .isInstanceOf(SettlementException.class);
         verify(payouts, never()).confirmProviderSuccess(any(), anyLong(), anyLong(), anyLong());
@@ -84,8 +84,8 @@ class PayoutManualOperatorServiceTest {
         when(actions.record(payoutId, "review-no-transfer", "PROVIDER_REVIEW_NOT_PAID", "operator-1",
                 "paypal-case-2026-01", NOW)).thenReturn(true);
 
-        SellerPayoutResponse failed = service.resolveProviderReview(payoutId, "review-no-transfer",
-                "operator-1", new PayoutProviderResolutionRequest(
+        PayoutResponse.SellerPayout failed = service.resolveProviderReview(payoutId, "review-no-transfer",
+                "operator-1", new SettlementHttpRequest.PayoutProviderResolution(
                         "NOT_PAID", "paypal-case-2026-01", null, null, null, "USD", 0L));
 
         assertThat(failed.state()).isEqualTo(SettlementPayoutStatus.FAILED);
@@ -100,8 +100,8 @@ class PayoutManualOperatorServiceTest {
                 null, null, null, null, "NEEDS_REVIEW", NOW, NOW, 8, NOW, "MAX_ATTEMPTS_OR_AGE", null, null);
     }
 
-    private SellerPayoutResponse response(SettlementPayoutStatus state) {
-        return new SellerPayoutResponse(payoutId, sellerId, NOW, NOW.plusSeconds(60), 10_000, 0,
+    private PayoutResponse.SellerPayout response(SettlementPayoutStatus state) {
+        return new PayoutResponse.SellerPayout(payoutId, sellerId, NOW, NOW.plusSeconds(60), 10_000, 0,
                 state, NOW, null, null, null);
     }
 }

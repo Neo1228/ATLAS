@@ -1,12 +1,7 @@
 package com.atlas.inventorylocation.controller;
 
-import com.atlas.inventorylocation.dto.request.InventoryCancellationRequest;
-import com.atlas.inventorylocation.dto.request.InventoryReservationRequest;
-import com.atlas.inventorylocation.dto.request.InventoryRestockRequest;
-import com.atlas.inventorylocation.dto.request.LocationStockRequest;
-import com.atlas.inventorylocation.dto.response.InventoryReservationResponse;
-import com.atlas.inventorylocation.dto.response.InventoryStockResponse;
-import com.atlas.inventorylocation.dto.response.InventoryAvailabilityResponse;
+import com.atlas.inventorylocation.dto.response.LocationResponse;
+import com.atlas.inventorylocation.dto.request.LocationRequest;
 import com.atlas.inventorylocation.service.InventoryReservationService;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -31,70 +26,70 @@ public class InventoryReservationController {
     }
 
     @PutMapping("/stock/{sellerId}/{skuId}")
-    public InventoryStockResponse setStock(@PathVariable UUID fulfillmentLocationId,
-            @PathVariable UUID sellerId, @PathVariable String skuId, @Valid @RequestBody LocationStockRequest request) {
+    public LocationResponse.Stock setStock(@PathVariable UUID fulfillmentLocationId,
+            @PathVariable UUID sellerId, @PathVariable String skuId, @Valid @RequestBody LocationRequest.Stock request) {
         return reservations.setInitialCapacity(fulfillmentLocationId, sellerId, skuId, request);
     }
 
     @GetMapping("/stock/{sellerId}/{skuId}")
-    public InventoryStockResponse getStock(@PathVariable UUID fulfillmentLocationId,
+    public LocationResponse.Stock getStock(@PathVariable UUID fulfillmentLocationId,
             @PathVariable UUID sellerId, @PathVariable String skuId) {
         return reservations.findStock(fulfillmentLocationId, sellerId, skuId);
     }
 
     @GetMapping("/availability/{sellerId}/{skuId}")
-    public InventoryAvailabilityResponse availableStock(@PathVariable UUID fulfillmentLocationId,
+    public LocationResponse.Availability availableStock(@PathVariable UUID fulfillmentLocationId,
             @PathVariable UUID sellerId, @PathVariable String skuId) {
-        return new InventoryAvailabilityResponse(fulfillmentLocationId, sellerId, skuId,
+        return new LocationResponse.Availability(fulfillmentLocationId, sellerId, skuId,
                 reservations.availableStock(fulfillmentLocationId, sellerId, skuId));
     }
 
     @PostMapping("/reservations")
-    public ResponseEntity<InventoryReservationResponse> reserve(
+    public ResponseEntity<LocationResponse.Reservation> reserve(
             @PathVariable UUID fulfillmentLocationId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody InventoryReservationRequest request) {
-        InventoryReservationResponse response = reservations.reserve(
+            @Valid @RequestBody LocationRequest.Reservation request) {
+        LocationResponse.Reservation response = reservations.reserve(
                 fulfillmentLocationId, idempotencyKey, request);
         return ResponseEntity.status(response.replayed() ? HttpStatus.OK : HttpStatus.CREATED).body(response);
     }
 
     @PostMapping("/reservations/cancel")
-    public InventoryReservationResponse cancel(
+    public LocationResponse.Reservation cancel(
             @PathVariable UUID fulfillmentLocationId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody InventoryCancellationRequest request) {
+            @Valid @RequestBody LocationRequest.Cancellation request) {
         return reservations.cancel(fulfillmentLocationId, idempotencyKey, request);
     }
 
     @GetMapping("/reservations/{reservationId}")
-    public InventoryReservationResponse findReservation(@PathVariable UUID fulfillmentLocationId,
+    public LocationResponse.Reservation findReservation(@PathVariable UUID fulfillmentLocationId,
             @PathVariable UUID reservationId) {
         return reservations.findReservation(fulfillmentLocationId, reservationId);
     }
 
     @PostMapping("/reservations/{reservationId}/claim")
-    public InventoryReservationResponse claim(@PathVariable UUID fulfillmentLocationId,
+    public LocationResponse.Reservation claim(@PathVariable UUID fulfillmentLocationId,
             @PathVariable UUID reservationId) {
         return reservations.claim(fulfillmentLocationId, reservationId);
     }
 
     @PostMapping("/reservations/{reservationId}/release")
-    public InventoryReservationResponse release(@PathVariable UUID fulfillmentLocationId,
+    public LocationResponse.Reservation release(@PathVariable UUID fulfillmentLocationId,
             @PathVariable UUID reservationId) {
         return reservations.release(fulfillmentLocationId, reservationId);
     }
 
     @PostMapping("/reservations/{reservationId}/restore")
-    public InventoryReservationResponse restore(@PathVariable UUID fulfillmentLocationId,
+    public LocationResponse.Reservation restore(@PathVariable UUID fulfillmentLocationId,
             @PathVariable UUID reservationId) {
         return reservations.restore(fulfillmentLocationId, reservationId);
     }
 
     @PostMapping("/reservations/{reservationId}/restock")
-    public InventoryReservationResponse restock(@PathVariable UUID fulfillmentLocationId,
+    public LocationResponse.Reservation restock(@PathVariable UUID fulfillmentLocationId,
             @PathVariable UUID reservationId, @RequestHeader("Idempotency-Key") String restockKey,
-            @Valid @RequestBody InventoryRestockRequest request) {
+            @Valid @RequestBody LocationRequest.Restock request) {
         return reservations.restock(fulfillmentLocationId, reservationId, restockKey, request.items());
     }
 }

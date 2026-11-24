@@ -2,11 +2,10 @@ package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.request.ReserveInventoryRequest;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.service.CartCheckoutService;
@@ -76,11 +75,11 @@ class ConcurrentPaymentPreparationIntegrationTest extends PayPalIntegrationTestS
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = "concurrent-prep-" + UUID.randomUUID();
         UUID productId = products.createProduct(sellerId,
-                new CreateProductRequest("concurrent-prep-" + UUID.randomUUID(), "d")).productId();
-        products.registerSku(sellerId, productId, new RegisterSellerSkuRequest(sku, 5000, 10));
+                new ProductRequest.CreateProduct("concurrent-prep-" + UUID.randomUUID(), "d")).productId();
+        products.registerSku(sellerId, productId, new ProductRequest.RegisterSellerSku(sku, 5000, 10));
 
         UUID orderId = UUID.randomUUID();
-        inventory.reserve(new ReserveInventoryRequest(orderId, null, sellerId, sku, 1));
+        inventory.reserve(new InventoryRequest.ReserveInventory(orderId, null, sellerId, sku, 1));
 
         int callers = 8;
         ExecutorService executor = Executors.newFixedThreadPool(callers);

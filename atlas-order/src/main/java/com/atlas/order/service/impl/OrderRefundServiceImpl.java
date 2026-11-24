@@ -1,9 +1,9 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.OrderRefundRequest;
-import com.atlas.order.dto.response.OrderRefundResponse;
-import com.atlas.order.dto.response.OrderRefundSummaryResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.OrderReturn;
@@ -27,7 +27,6 @@ import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.model.PaymentRefundState;
 import com.atlas.payment.service.PaymentService;
-import com.atlas.settlement.dto.request.RefundPostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -88,31 +87,31 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     }
 
     @Override
-    public OrderRefundResponse refund(OrderRefundRequest request) {
+    public RefundResponse.Refund refund(OrderRequest.Refund request) {
         return refund(request, null);
     }
 
     @Override
-    public OrderRefundResponse processInspectedReturnRefund(UUID returnId) {
+    public RefundResponse.Refund processInspectedReturnRefund(UUID returnId) {
         return refund(inspectedReturnRequest(returnId), returnId);
     }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public OrderRefundResponse prepareInspectedReturnRefund(UUID returnId) {
-        OrderRefundRequest request = inspectedReturnRequest(returnId);
+    public RefundResponse.Refund prepareInspectedReturnRefund(UUID returnId) {
+        OrderRequest.Refund request = inspectedReturnRequest(returnId);
         RefundRecord reserved = reserveRefund(request, returnId);
         OrderRefundPaymentStatus status = refunds.paymentStatus(reserved.refundId());
         return response(reserved, status, null);
     }
 
-    private OrderRefundRequest inspectedReturnRequest(UUID returnId) {
+    private OrderRequest.Refund inspectedReturnRequest(UUID returnId) {
         if (returnId == null) throw invalidRequest("Return id required");
         OrderReturn row = returns.findWithItemsByReturnId(returnId)
                 .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Return not found"));
-        List<OrderRefundRequest.Item> passed = row.items().stream()
+        List<OrderRequest.Refund.Item> passed = row.items().stream()
                 .filter(item -> item.inspectionResult() == OrderReturnInspectionResult.PASSED)
-                .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                .map(item -> new OrderRequest.Refund.Item(item.orderItemId(), item.quantity()))
                 .sorted((left, right) -> left.orderItemId().compareTo(right.orderItemId())).toList();
         if (passed.isEmpty()) throw conflict("Return has no passed inspection lines");
         // 영구 실패한 이전 시도가 있으면 회차를 올려 새 송금 작업을 만든다.
@@ -126,10 +125,10 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         // 주문이므로 같은 주문 안에서만 센다.
         int priorAttempts = refunds.countByKeyPrefix(row.orderId(), baseKey + "-r");
         String idempotencyKey = priorAttempts == 0 ? baseKey : baseKey + "-r" + priorAttempts;
-        return new OrderRefundRequest(row.sellerId(), row.orderId(), idempotencyKey, passed);
+        return new OrderRequest.Refund(row.sellerId(), row.orderId(), idempotencyKey, passed);
     }
 
-    private OrderRefundResponse refund(OrderRefundRequest request, UUID returnId) {
+    private RefundResponse.Refund refund(OrderRequest.Refund request, UUID returnId) {
         if (request == null) throw invalidRequest("Refund request is required");
         RefundRecord reserved = reserveRefund(request, returnId);
         OrderRefundPaymentStatus currentStatus = refunds.paymentStatus(reserved.refundId());
@@ -160,7 +159,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             if (!isRetryableProviderFailure(exception)) {
                 transactions.execute(status -> {
                     refunds.updatePaymentStatus(reserved.refundId(), OrderRefundPaymentStatus.FAILED);
-                    settlement.releaseRefundReservation(new RefundPostingRequest(
+                    settlement.releaseRefundReservation(new SettlementPostingRequest.Refund(
                             reserved.orderId(), reserved.refundId(), reserved.sellerId(),
                             reserved.recordedAmountWon()));
                     return null;
@@ -171,13 +170,13 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         return finalizeRefund(reserved, payment);
     }
 
-    private RefundRecord reserveRefund(OrderRefundRequest request, UUID returnId) {
+    private RefundRecord reserveRefund(OrderRequest.Refund request, UUID returnId) {
         if (request == null) throw invalidRequest("Refund request is required");
         UUID sellerId = request.sellerId();
         UUID orderId = request.orderId();
         String idempotencyKey = request.idempotencyKey();
         validateRequest(sellerId, orderId, idempotencyKey);
-        List<OrderRefundRequest.Item> requestItems = normalize(request);
+        List<OrderRequest.Refund.Item> requestItems = normalize(request);
         return Objects.requireNonNull(transactions.execute(transaction -> {
             if (returnId != null) {
                 PurchaseOrder returnOrder = lockOrder(orderId);
@@ -193,9 +192,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 if (persisted.status() != OrderReturnStatus.RECEIVED || returnFulfillment != FulfillmentStatus.DELIVERED
                         || !persisted.sellerId().equals(sellerId))
                     throw conflict("Return must be received for this delivered seller order");
-                List<OrderRefundRequest.Item> passedFacts = persisted.items().stream()
+                List<OrderRequest.Refund.Item> passedFacts = persisted.items().stream()
                         .filter(item -> item.inspectionResult() == OrderReturnInspectionResult.PASSED)
-                        .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                        .map(item -> new OrderRequest.Refund.Item(item.orderItemId(), item.quantity()))
                         .sorted((left, right) -> left.orderItemId().compareTo(right.orderItemId())).toList();
                 if (!passedFacts.equals(requestItems))
                     throw conflict("Refund lines must exactly match persisted passed inspection lines");
@@ -206,8 +205,8 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             var existing = refunds.findByIdempotencyKey(orderId, idempotencyKey);
             if (existing.isPresent()) {
                 RefundRecord prior = existing.get();
-                List<OrderRefundRequest.Item> priorItems = prior.items().stream()
-                        .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                List<OrderRequest.Refund.Item> priorItems = prior.items().stream()
+                        .map(item -> new OrderRequest.Refund.Item(item.orderItemId(), item.quantity()))
                         .sorted((left, right) -> left.orderItemId().compareTo(right.orderItemId()))
                         .toList();
                 if (!prior.sellerId().equals(sellerId) || !prior.orderId().equals(orderId)
@@ -239,9 +238,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 if (!row.sellerId().equals(sellerId) || row.status() != OrderReturnStatus.RECEIVED
                         || fulfillmentStatus != FulfillmentStatus.DELIVERED)
                     throw conflict("Return must be received for this delivered seller order");
-                List<OrderRefundRequest.Item> passed = row.items().stream()
+                List<OrderRequest.Refund.Item> passed = row.items().stream()
                         .filter(item -> item.inspectionResult() == OrderReturnInspectionResult.PASSED)
-                        .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                        .map(item -> new OrderRequest.Refund.Item(item.orderItemId(), item.quantity()))
                         .sorted((left, right) -> left.orderItemId().compareTo(right.orderItemId())).toList();
                 if (!passed.equals(requestItems))
                     throw conflict("Refund lines must exactly match persisted passed inspection lines");
@@ -272,7 +271,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         }
                     }
                 }
-                for (OrderRefundRequest.Item line : requestItems) {
+                for (OrderRequest.Refund.Item line : requestItems) {
                     OrderItem item = orderItemsById.get(line.orderItemId());
                     if (item == null) throw invalidRequest("Refund item does not belong to order");
                     int previouslyRefunded = alreadyRefunded.getOrDefault(item.orderItemId(), 0);
@@ -299,7 +298,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             String paymentKey = paymentIdempotencyKey(order, idempotencyKey);
             UUID refundId = refunds.insertRequest(orderId, sellerId, idempotencyKey, paymentKey,
                     recordedAmountWon, resultStatus, createdAt);
-            for (OrderRefundRequest.Item line : requestItems) {
+            for (OrderRequest.Refund.Item line : requestItems) {
                 refunds.insertRequestItem(refundId, line.orderItemId(), line.quantity());
             }
             if (refunds.paymentStatus(refundId) != OrderRefundPaymentStatus.NOT_APPLICABLE) {
@@ -309,7 +308,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                                 order.checkoutId(), paymentKey, recordedAmountWon);
                 refunds.linkPaymentOperation(refundId, payment.refundOperationId());
                 refunds.updatePaymentStatus(refundId, refundStatus(payment.status()));
-                settlement.reserveRefund(new RefundPostingRequest(
+                settlement.reserveRefund(new SettlementPostingRequest.Refund(
                         orderId, refundId, sellerId, recordedAmountWon));
             }
             return refunds.findByRefundId(refundId)
@@ -318,7 +317,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     }
 
     @Override
-    public OrderRefundResponse reconcilePayPalRefund(UUID paymentOperationId) {
+    public RefundResponse.Refund reconcilePayPalRefund(UUID paymentOperationId) {
         if (paymentOperationId == null) throw invalidRequest("Payment refund operation id is required");
         RefundRecord reserved = Objects.requireNonNull(transactions.execute(transaction ->
                 refunds.findByPaymentOperationId(paymentOperationId)
@@ -327,14 +326,14 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         return finalizeRefund(reserved, payments.findRefundOperation(paymentOperationId));
     }
 
-    private OrderRefundResponse finalizeRefund(RefundRecord reserved, PaymentRefundResponse payment) {
+    private RefundResponse.Refund finalizeRefund(RefundRecord reserved, PaymentRefundResponse payment) {
         if (payment == null || payment.refundOperationId() == null
                 || payment.amountWon() != reserved.recordedAmountWon()
                 || !"KRW".equals(payment.currency())) {
             throw conflict("PayPal refund facts do not match the order refund request");
         }
         OrderRefundPaymentStatus nextStatus = refundStatus(payment.status());
-        OrderRefundResponse applied = Objects.requireNonNull(transactions.execute(transaction -> {
+        RefundResponse.Refund applied = Objects.requireNonNull(transactions.execute(transaction -> {
             refunds.linkPaymentOperation(reserved.refundId(), payment.refundOperationId());
             boolean changed = refunds.updatePaymentStatus(reserved.refundId(), nextStatus);
             OrderRefundPaymentStatus currentStatus = refunds.paymentStatus(reserved.refundId());
@@ -344,7 +343,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             if (changed && currentStatus == OrderRefundPaymentStatus.COMPLETED) {
                 applyConfirmedRefund(current);
             } else if (currentStatus == OrderRefundPaymentStatus.FAILED) {
-                settlement.releaseRefundReservation(new RefundPostingRequest(
+                settlement.releaseRefundReservation(new SettlementPostingRequest.Refund(
                         current.orderId(), current.refundId(), current.sellerId(), current.recordedAmountWon()));
             }
             if ((currentStatus == OrderRefundPaymentStatus.COMPLETED
@@ -409,7 +408,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 inventory.restoreClaimed(order.orderId(), refund.sellerId(), quantity.getKey(), quantity.getValue());
             }
         }
-        settlement.recordRefund(new RefundPostingRequest(
+        settlement.recordRefund(new SettlementPostingRequest.Refund(
                 order.orderId(), refund.refundId(), refund.sellerId(), refund.recordedAmountWon()));
 
         Map<UUID, Integer> completed = refunds.completedRefundedQuantitiesByOrder(order.orderId());
@@ -439,17 +438,17 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     }
 
     @Override
-    public OrderRefundSummaryResponse find(UUID sellerId, UUID orderId) {
+    public RefundResponse.RefundSummary find(UUID sellerId, UUID orderId) {
         if (sellerId == null || orderId == null) throw invalidRequest("sellerId and orderId are required");
         PurchaseOrder order = requireOrder(orderId);
         if (!order.sellerId().equals(sellerId)) throw conflict("Seller does not own order");
         return refunds.findSummary(orderId)
                 .map(summary -> {
                     if (!summary.sellerId().equals(sellerId)) throw conflict("Refund summary seller does not match order");
-                    return new OrderRefundSummaryResponse(orderId, summary.status(), summary.recordedAmountWon(),
+                    return new RefundResponse.RefundSummary(orderId, summary.status(), summary.recordedAmountWon(),
                             summary.updatedAt());
                 })
-                .orElseGet(() -> new OrderRefundSummaryResponse(orderId, OrderRefundStatus.NONE, 0, null));
+                .orElseGet(() -> new RefundResponse.RefundSummary(orderId, OrderRefundStatus.NONE, 0, null));
     }
 
     private PurchaseOrder requireOrder(UUID orderId) {
@@ -462,13 +461,13 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 OrderException.Code.NOT_FOUND, "Order not found"));
     }
 
-    private static List<OrderRefundRequest.Item> normalize(OrderRefundRequest request) {
+    private static List<OrderRequest.Refund.Item> normalize(OrderRequest.Refund request) {
         if (request == null || request.items() == null || request.items().isEmpty()) {
             throw invalidRequest("At least one refund item is required");
         }
-        List<OrderRefundRequest.Item> lines = new ArrayList<>(request.items().size());
+        List<OrderRequest.Refund.Item> lines = new ArrayList<>(request.items().size());
         HashSet<UUID> itemIds = new HashSet<>();
-        for (OrderRefundRequest.Item item : request.items()) {
+        for (OrderRequest.Refund.Item item : request.items()) {
             if (item == null || item.orderItemId() == null || item.quantity() <= 0) {
                 throw invalidRequest("Refund item id and positive quantity are required");
             }
@@ -508,9 +507,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         }
     }
 
-    private static OrderRefundResponse response(RefundRecord refund, OrderRefundPaymentStatus paymentStatus,
+    private static RefundResponse.Refund response(RefundRecord refund, OrderRefundPaymentStatus paymentStatus,
                                                 String providerRefundId) {
-        return new OrderRefundResponse(refund.refundId(), refund.orderId(), refund.recordedAmountWon(),
+        return new RefundResponse.Refund(refund.refundId(), refund.orderId(), refund.recordedAmountWon(),
                 refund.status(), paymentStatus, providerRefundId, refund.createdAt());
     }
 

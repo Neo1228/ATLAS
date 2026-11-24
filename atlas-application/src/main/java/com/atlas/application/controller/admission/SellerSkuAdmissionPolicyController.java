@@ -1,8 +1,8 @@
 package com.atlas.application.controller.admission;
 
+import com.atlas.application.dto.request.AdmissionHttpRequest;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.application.controller.dto.ConfigureSellerSkuPolicyHttpRequest;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +21,8 @@ public class SellerSkuAdmissionPolicyController {
 
     @PutMapping
     public void configure(@PathVariable UUID sellerId, @PathVariable String skuId,
-            @Valid @RequestBody ConfigureSellerSkuPolicyHttpRequest request) {
+            @Valid @RequestBody AdmissionHttpRequest.ConfigureSellerSkuPolicy request) {
         admission.configureSellerSkuPolicy(
-                new ConfigureSellerSkuPolicyRequest(sellerId, skuId, request.maxActiveCheckouts()));
+                new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, request.maxActiveCheckouts()));
     }
 }

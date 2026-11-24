@@ -6,7 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.account.dto.response.AccountActionResponse;
+import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.service.AccountService;
 import com.atlas.application.config.ApiSecurityConfiguration;
 import com.atlas.application.controller.account.AccountController;
@@ -41,7 +41,7 @@ class AccountControllerSecurityTest {
     @BeforeEach
     void allowRequestsPastAccountOwnershipInterceptor() throws Exception {
         when(ownership.preHandle(any(), any(), any())).thenReturn(true);
-        when(accounts.registerBuyer(any(), any())).thenReturn(new AccountActionResponse(true));
+        when(accounts.registerBuyer(any(), any())).thenReturn(new AccountResponse.Action(true));
     }
 
     @Test

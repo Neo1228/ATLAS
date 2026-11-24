@@ -1,9 +1,9 @@
 package com.atlas.application.controller.payment;
 
-import com.atlas.application.dto.request.PaymentRecoveryRequeueRequest;
-import com.atlas.application.dto.response.PaymentRecoveryReviewPage;
+import com.atlas.application.dto.request.PaymentHttpRequest;
+import com.atlas.application.dto.response.PaymentHttpResponse;
 import com.atlas.application.service.PaymentRecoveryOperatorService;
-import com.atlas.payment.dto.response.PaymentRecoveryRequeueResponse;
+import com.atlas.payment.dto.response.PaymentRecoveryResponse;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.util.UUID;
@@ -30,19 +30,19 @@ public class PaymentRecoveryOperatorController {
     }
 
     @GetMapping("/needs-review")
-    public PaymentRecoveryReviewPage needsReview(
+    public PaymentHttpResponse.RecoveryReviewPage needsReview(
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         return service.listNeedsReview(limit, offset);
     }
 
     @PostMapping("/{recoveryJobId}/requeue")
-    public ResponseEntity<PaymentRecoveryRequeueResponse> requeue(
+    public ResponseEntity<PaymentRecoveryResponse.Requeue> requeue(
             @PathVariable UUID recoveryJobId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody PaymentRecoveryRequeueRequest request,
+            @Valid @RequestBody PaymentHttpRequest.RecoveryRequeue request,
             Principal principal) {
-        PaymentRecoveryRequeueResponse response = service.requeue(
+        PaymentRecoveryResponse.Requeue response = service.requeue(
                 recoveryJobId, idempotencyKey, principal == null ? null : principal.getName(), request.reason());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }

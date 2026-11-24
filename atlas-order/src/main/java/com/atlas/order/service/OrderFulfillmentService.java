@@ -1,10 +1,10 @@
 package com.atlas.order.service;
 
-import com.atlas.order.dto.response.OrderFulfillmentResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
 import java.util.UUID;
 
 public interface OrderFulfillmentService {
-    OrderFulfillmentResponse find(UUID orderId);
-    OrderFulfillmentResponse start(UUID sellerId, UUID orderId);
+    OrderViewResponse.Fulfillment find(UUID orderId);
+    OrderViewResponse.Fulfillment start(UUID sellerId, UUID orderId);
     void initialize(UUID orderId);
 }

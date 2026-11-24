@@ -6,21 +6,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.service.OrderService;
@@ -69,11 +65,11 @@ class PaidOrderCancelContractIntegrationTest extends PayPalIntegrationTestSuppor
 
     @Test
     void cancellingPaidCampaignOrderIsRejectedAndLeavesOrderPaid() throws Exception {
-        CampaignResponse campaign = openCampaign(1);
-        QueueTicketResponse ticket = join(campaign, "paid-cancel-buyer");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        OrderResponse pending = orders.submitPayment(order.orderId());
-        OrderResponse paid = orders.completePaymentApproval(order.orderId(),
+        AdmissionResponse.Campaign campaign = openCampaign(1);
+        AdmissionResponse.QueueTicket ticket = join(campaign, "paid-cancel-buyer");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderViewResponse.Order pending = orders.submitPayment(order.orderId());
+        OrderViewResponse.Order paid = orders.completePaymentApproval(order.orderId(),
                 approvalToken(pending.paymentApprovalUrl()));
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
@@ -93,10 +89,10 @@ class PaidOrderCancelContractIntegrationTest extends PayPalIntegrationTestSuppor
                         .contains("\"code\":\"CONFLICT\""));
 
         // 거절된 취소는 주문·결제·재고 어느 것도 바꾸지 않는다.
-        OrderResponse after = orders.find(order.orderId());
+        OrderViewResponse.Order after = orders.find(order.orderId());
         assertThat(after.state()).isEqualTo(OrderState.PAID);
         assertThat(after.paymentState()).isEqualTo(PaymentState.CAPTURED);
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.available()).isZero();
@@ -104,37 +100,37 @@ class PaidOrderCancelContractIntegrationTest extends PayPalIntegrationTestSuppor
 
     @Test
     void cancellingAlreadyCancelledOrderStaysIdempotent() {
-        CampaignResponse campaign = openCampaign(1);
-        QueueTicketResponse ticket = join(campaign, "cancelled-cancel-buyer");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        AdmissionResponse.Campaign campaign = openCampaign(1);
+        AdmissionResponse.QueueTicket ticket = join(campaign, "cancelled-cancel-buyer");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
         assertThat(order.state()).isEqualTo(OrderState.RESERVED);
 
-        OrderResponse cancelled = orders.cancel(order.orderId(), "cancel-first-" + order.orderId());
+        OrderViewResponse.Order cancelled = orders.cancel(order.orderId(), "cancel-first-" + order.orderId());
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
 
         assertThatCode(() -> orders.cancel(order.orderId(), "cancel-retry-" + order.orderId()))
                 .doesNotThrowAnyException();
         assertThat(orders.cancel(order.orderId(), "cancel-first-" + order.orderId())).isEqualTo(cancelled);
         assertThat(orders.find(order.orderId()).state()).isEqualTo(OrderState.CANCELLED);
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isZero();
     }
 
-    private CampaignResponse openCampaign(int initialStock) {
+    private AdmissionResponse.Campaign openCampaign(int initialStock) {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "paid-cancel-sku-" + UUID.randomUUID();
-        ProductResponse product = products.createProduct(sellerId,
-                new CreateProductRequest("Product " + skuId, null));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 100, initialStock));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, skuId, Duration.ofMinutes(5)));
+        CatalogResponse.Product product = products.createProduct(sellerId,
+                new ProductRequest.CreateProduct("Product " + skuId, null));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, initialStock));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, skuId, Duration.ofMinutes(5)));
         return campaigns.open(campaign.campaignId());
     }
 
-    private QueueTicketResponse join(CampaignResponse campaign, String buyerPrefix) {
-        return admission.join(new JoinQueueRequest(campaign.campaignId(), campaign.skuId(),
+    private AdmissionResponse.QueueTicket join(AdmissionResponse.Campaign campaign, String buyerPrefix) {
+        return admission.join(new AdmissionRequest.JoinQueue(campaign.campaignId(), campaign.skuId(),
                 buyerPrefix + "-" + UUID.randomUUID(), "join-" + UUID.randomUUID()));
     }
 }

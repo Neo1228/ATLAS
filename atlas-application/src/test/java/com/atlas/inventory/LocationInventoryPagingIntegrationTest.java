@@ -3,11 +3,10 @@ package com.atlas.inventory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.response.LocationInventoryPageResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
 import java.util.ArrayList;
@@ -47,11 +46,11 @@ class LocationInventoryPagingIntegrationTest {
     @Test
     void followingTheCursorReturnsEverySkuExactlyOnceInOrder() {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Paged", "paging fixture"));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Paged", "paging fixture"));
         List<String> registered = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             String sku = "paging-sku-%02d".formatted(i);
-            products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 100, 2));
+            products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(sku, 100, 2));
             registered.add(sku);
         }
         UUID locationId = jdbc.queryForObject(
@@ -62,7 +61,7 @@ class LocationInventoryPagingIntegrationTest {
         String cursor = null;
         int pages = 0;
         do {
-            LocationInventoryPageResponse page = inventory.findLocationInventoryPage(sellerId, locationId, 2, cursor);
+            InventoryResponse.LocationInventoryPage page = inventory.findLocationInventoryPage(sellerId, locationId, 2, cursor);
             assertThat(page.items()).hasSizeLessThanOrEqualTo(2);
             page.items().forEach(item -> seen.add(item.skuId()));
             cursor = page.nextCursor();

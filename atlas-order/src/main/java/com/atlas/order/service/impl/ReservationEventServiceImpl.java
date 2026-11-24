@@ -1,6 +1,6 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.response.ReservationEventResponse;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.persistence.projection.ReservationEvent;
 import com.atlas.order.repository.ReservationEventRepository;
 import com.atlas.order.service.ReservationEventPublisher;
@@ -29,7 +29,7 @@ public class ReservationEventServiceImpl implements ReservationEventService {
 
     @Transactional(readOnly = true)
     @Override
-    public List<ReservationEventResponse> readEvents(String consumerGroup, int limit) {
+    public List<ReservationWorkflowResponse.ReservationEvent> readEvents(String consumerGroup, int limit) {
         return repository.readEvents(consumerGroup, limit).stream()
                 .map(ReservationEventServiceImpl::toResponse)
                 .toList();
@@ -37,7 +37,7 @@ public class ReservationEventServiceImpl implements ReservationEventService {
 
     @Transactional
     @Override
-    public void advance(String consumerGroup, ReservationEventResponse last) {
+    public void advance(String consumerGroup, ReservationWorkflowResponse.ReservationEvent last) {
         repository.advance(consumerGroup, toProjection(last));
     }
 
@@ -69,12 +69,12 @@ public class ReservationEventServiceImpl implements ReservationEventService {
         }
     }
 
-    private static ReservationEventResponse toResponse(ReservationEvent event) {
-        return new ReservationEventResponse(event.eventSeq(), event.txId(), event.workflowId(), event.orderId(),
+    private static ReservationWorkflowResponse.ReservationEvent toResponse(ReservationEvent event) {
+        return new ReservationWorkflowResponse.ReservationEvent(event.eventSeq(), event.txId(), event.workflowId(), event.orderId(),
                 event.aggregateVersion(), event.eventType(), event.lastErrorCode(), event.occurredAt());
     }
 
-    private static ReservationEvent toProjection(ReservationEventResponse event) {
+    private static ReservationEvent toProjection(ReservationWorkflowResponse.ReservationEvent event) {
         return new ReservationEvent(event.eventSeq(), event.txId(), event.workflowId(), event.orderId(),
                 event.aggregateVersion(), event.eventType(), event.lastErrorCode(), event.occurredAt());
     }

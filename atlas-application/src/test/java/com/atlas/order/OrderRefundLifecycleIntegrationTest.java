@@ -8,21 +8,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.response.ReturnResponse;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderRefundResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.model.FulfillmentStatus;
-import com.atlas.order.dto.request.OrderShipmentRequest;
-import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.model.OrderRefundStatus;
 import com.atlas.order.model.OrderRefundPaymentStatus;
 import com.atlas.order.model.OrderState;
@@ -33,11 +31,6 @@ import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderShipmentService;
-import com.atlas.order.dto.request.OrderReturnInspectionRequest;
-import com.atlas.order.dto.request.OrderReturnRequest;
-import com.atlas.order.dto.response.OrderReturnResponse;
-import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
-import com.atlas.order.dto.response.SellerOrderReturnResponse;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderService;
@@ -105,25 +98,25 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     void returnRequestIsDeliveryGatedAndReceiptDoesNotRefundOrRestock() {
         Fixture fixture = paidOrder(1, 2, 125);
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnRequest request = returnRequest(buyerRef, fixture.orderId(), "return-delivery-key",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 1));
+        OrderRequest.Return request = returnRequest(buyerRef, fixture.orderId(), "return-delivery-key",
+                new OrderRequest.Return.Item(fixture.orderItemId(), 1));
         assertThatThrownBy(() -> returns.request(request)).isInstanceOf(OrderException.class);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_return WHERE order_id = ?",
                 Integer.class, fixture.orderId())).isZero();
         assertThat(refundRequestCount(fixture.orderId())).isZero();
         assertStock(fixture, 1, 1);
         deliver(fixture);
-        OrderReturnResponse created = returns.request(request);
+        ReturnResponse.OrderReturn created = returns.request(request);
         assertThatThrownBy(() -> returns.receive(UUID.randomUUID(), fixture.orderId(), created.returnId()))
                 .isInstanceOf(OrderException.class);
         assertThat(created.status()).isEqualTo(OrderReturnStatus.REQUESTED);
-        OrderReturnResponse received = returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
+        ReturnResponse.OrderReturn received = returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
         assertThat(received.status()).isEqualTo(OrderReturnStatus.RECEIVED);
         assertThat(refundRequestCount(fixture.orderId())).isZero();
         assertStock(fixture, 1, 1);
         assertThat(returns.request(request)).isEqualTo(received);
         assertThatThrownBy(() -> returns.request(returnRequest(buyerRef, fixture.orderId(), "return-delivery-key",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 2)))).isInstanceOf(OrderException.class);
+                new OrderRequest.Return.Item(fixture.orderItemId(), 2)))).isInstanceOf(OrderException.class);
         assertThatThrownBy(() -> returns.find("not-the-buyer", fixture.orderId(), created.returnId()))
                 .isInstanceOf(OrderException.class);
         assertThatThrownBy(() -> returns.find(buyerRef, fixture.orderId(), UUID.randomUUID()))
@@ -153,7 +146,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 .andExpect(jsonPath("$.status").value("REQUESTED"))
                 .andExpect(jsonPath("$.paymentStatus").value("NOT_APPLICABLE"))
                 .andReturn().getResponse().getContentAsString();
-        UUID returnId = objectMapper.readValue(response, OrderReturnResponse.class).returnId();
+        UUID returnId = objectMapper.readValue(response, ReturnResponse.OrderReturn.class).returnId();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt",
                         fixture.sellerId(), fixture.orderId(), returnId))
                 .andExpect(status().isOk())
@@ -186,28 +179,28 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         Fixture sellerA = paidOrder(2, 2, 125);
         deliver(sellerA);
         String buyerA = buyerRef(sellerA.orderId());
-        OrderReturnResponse returnA1 = returns.request(returnRequest(buyerA, sellerA.orderId(), "seller-return-a1",
-                new OrderReturnRequest.Item(sellerA.orderItemId(), 1)));
-        OrderReturnResponse returnA2 = returns.request(returnRequest(buyerA, sellerA.orderId(), "seller-return-a2",
-                new OrderReturnRequest.Item(sellerA.orderItemId(), 1)));
+        ReturnResponse.OrderReturn returnA1 = returns.request(returnRequest(buyerA, sellerA.orderId(), "seller-return-a1",
+                new OrderRequest.Return.Item(sellerA.orderItemId(), 1)));
+        ReturnResponse.OrderReturn returnA2 = returns.request(returnRequest(buyerA, sellerA.orderId(), "seller-return-a2",
+                new OrderRequest.Return.Item(sellerA.orderItemId(), 1)));
 
         Fixture sellerB = paidOrder(1, 1, 175);
         deliver(sellerB);
         String buyerB = buyerRef(sellerB.orderId());
-        OrderReturnResponse returnB = returns.request(returnRequest(buyerB, sellerB.orderId(), "seller-return-b",
-                new OrderReturnRequest.Item(sellerB.orderItemId(), 1)));
+        ReturnResponse.OrderReturn returnB = returns.request(returnRequest(buyerB, sellerB.orderId(), "seller-return-b",
+                new OrderRequest.Return.Item(sellerB.orderItemId(), 1)));
 
         String firstBody = mockMvc.perform(get("/api/sellers/{sellerId}/returns", sellerA.sellerId())
                         .param("status", "REQUESTED")
                         .param("limit", "1"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        SellerOrderReturnPageResponse first = objectMapper.readValue(firstBody, SellerOrderReturnPageResponse.class);
+        ReturnResponse.SellerOrderReturnPage first = objectMapper.readValue(firstBody, ReturnResponse.SellerOrderReturnPage.class);
         assertThat(first.returns()).hasSize(1);
         assertThat(first.returns().getFirst().returnId()).isIn(returnA1.returnId(), returnA2.returnId());
         assertThat(first.returns().getFirst().sellerId()).isEqualTo(sellerA.sellerId());
         assertThat(first.returns().getFirst().orderId()).isEqualTo(sellerA.orderId());
-        assertThat(first.returns().getFirst().items()).extracting(SellerOrderReturnResponse.Item::orderItemId)
+        assertThat(first.returns().getFirst().items()).extracting(ReturnResponse.SellerOrderReturn.Item::orderItemId)
                 .containsExactly(sellerA.orderItemId());
         assertThat(firstBody).doesNotContain(buyerA, buyerB, "buyerRef");
         assertThat(first.nextCursor()).isNotBlank();
@@ -218,18 +211,18 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                         .param("cursor", first.nextCursor()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        SellerOrderReturnPageResponse second = objectMapper.readValue(secondBody, SellerOrderReturnPageResponse.class);
+        ReturnResponse.SellerOrderReturnPage second = objectMapper.readValue(secondBody, ReturnResponse.SellerOrderReturnPage.class);
         assertThat(second.returns()).singleElement()
                 .satisfies(row -> assertThat(row.returnId()).isNotEqualTo(first.returns().getFirst().returnId()));
         assertThat(second.returns().getFirst().returnId()).isIn(returnA1.returnId(), returnA2.returnId());
         assertThat(second.returns().getFirst().returnId()).isNotEqualTo(returnB.returnId());
         assertThat(second.nextCursor()).isNull();
 
-        SellerOrderReturnPageResponse sellerBPage = objectMapper.readValue(mockMvc.perform(
+        ReturnResponse.SellerOrderReturnPage sellerBPage = objectMapper.readValue(mockMvc.perform(
                         get("/api/sellers/{sellerId}/returns", sellerB.sellerId()).param("limit", "10"))
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString(), SellerOrderReturnPageResponse.class);
-        assertThat(sellerBPage.returns()).extracting(SellerOrderReturnResponse::returnId)
+                .andReturn().getResponse().getContentAsString(), ReturnResponse.SellerOrderReturnPage.class);
+        assertThat(sellerBPage.returns()).extracting(ReturnResponse.SellerOrderReturn::returnId)
                 .containsExactly(returnB.returnId());
         assertThat(returns.findForSeller(sellerA.sellerId(), OrderReturnStatus.RECEIVED, 10, null).returns())
                 .isEmpty();
@@ -277,14 +270,14 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         MultiItemFixture fixture = paidOrderWithTwoItems();
         deliver(fixture.sellerId(), fixture.orderId());
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnResponse created = returns.request(new OrderReturnRequest(buyerRef, fixture.orderId(),
-                "return-mixed-key", List.of(new OrderReturnRequest.Item(fixture.firstItemId(), 1),
-                new OrderReturnRequest.Item(fixture.secondItemId(), 1))));
+        ReturnResponse.OrderReturn created = returns.request(new OrderRequest.Return(buyerRef, fixture.orderId(),
+                "return-mixed-key", List.of(new OrderRequest.Return.Item(fixture.firstItemId(), 1),
+                new OrderRequest.Return.Item(fixture.secondItemId(), 1))));
         returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
-        OrderReturnResponse inspected = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(),
-                new OrderReturnInspectionRequest(List.of(
-                        new OrderReturnInspectionRequest.Item(fixture.firstItemId(), OrderReturnInspectionRequest.Result.PASSED),
-                        new OrderReturnInspectionRequest.Item(fixture.secondItemId(), OrderReturnInspectionRequest.Result.FAILED))));
+        ReturnResponse.OrderReturn inspected = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(),
+                new OrderRequest.ReturnInspection(List.of(
+                        new OrderRequest.ReturnInspection.Item(fixture.firstItemId(), OrderRequest.ReturnInspection.Result.PASSED),
+                        new OrderRequest.ReturnInspection.Item(fixture.secondItemId(), OrderRequest.ReturnInspection.Result.FAILED))));
         assertThat(inspected.status()).isEqualTo(OrderReturnStatus.PARTIALLY_RECORDED);
         assertThat(inspected.items()).filteredOn(item -> item.orderItemId().equals(fixture.firstItemId()))
                 .singleElement().satisfies(item -> {
@@ -297,12 +290,12 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(inventory.find(fixture.sellerId(), fixture.firstSkuId()).claimed()).isZero();
         assertThat(inventory.find(fixture.sellerId(), fixture.secondSkuId()).claimed()).isEqualTo(1);
         assertThat(returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(),
-                new OrderReturnInspectionRequest(List.of(
-                        new OrderReturnInspectionRequest.Item(fixture.firstItemId(), OrderReturnInspectionRequest.Result.PASSED),
-                        new OrderReturnInspectionRequest.Item(fixture.secondItemId(), OrderReturnInspectionRequest.Result.FAILED)))))
+                new OrderRequest.ReturnInspection(List.of(
+                        new OrderRequest.ReturnInspection.Item(fixture.firstItemId(), OrderRequest.ReturnInspection.Result.PASSED),
+                        new OrderRequest.ReturnInspection.Item(fixture.secondItemId(), OrderRequest.ReturnInspection.Result.FAILED)))))
                 .isEqualTo(inspected);
-        assertThatThrownBy(() -> returns.request(new OrderReturnRequest(buyerRef, fixture.orderId(),
-                "failed-line-retry", List.of(new OrderReturnRequest.Item(fixture.secondItemId(), 1)))))
+        assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef, fixture.orderId(),
+                "failed-line-retry", List.of(new OrderRequest.Return.Item(fixture.secondItemId(), 1)))))
                 .isInstanceOf(OrderException.class);
     }
     @Test
@@ -312,15 +305,15 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 fixture.orderItemId(), 1));
         deliver(fixture);
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnResponse first = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-two-units",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 2)));
+        ReturnResponse.OrderReturn first = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-two-units",
+                new OrderRequest.Return.Item(fixture.orderItemId(), 2)));
         returns.receive(fixture.sellerId(), fixture.orderId(), first.returnId());
-        OrderReturnResponse passed = returns.inspect(fixture.sellerId(), fixture.orderId(), first.returnId(),
-                new OrderReturnInspectionRequest(List.of(new OrderReturnInspectionRequest.Item(
-                        fixture.orderItemId(), OrderReturnInspectionRequest.Result.PASSED))));
+        ReturnResponse.OrderReturn passed = returns.inspect(fixture.sellerId(), fixture.orderId(), first.returnId(),
+                new OrderRequest.ReturnInspection(List.of(new OrderRequest.ReturnInspection.Item(
+                        fixture.orderItemId(), OrderRequest.ReturnInspection.Result.PASSED))));
         assertThat(passed.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
         assertThatThrownBy(() -> returns.request(returnRequest(buyerRef, fixture.orderId(), "return-over-total",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 1))))
+                new OrderRequest.Return.Item(fixture.orderItemId(), 1))))
                 .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
     }
@@ -329,12 +322,12 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         Fixture fixture = paidOrder(1, 1, 125);
         deliver(fixture);
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnResponse created = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-failed-key",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+        ReturnResponse.OrderReturn created = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-failed-key",
+                new OrderRequest.Return.Item(fixture.orderItemId(), 1)));
         returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
-        OrderReturnInspectionRequest failed = new OrderReturnInspectionRequest(List.of(
-                new OrderReturnInspectionRequest.Item(fixture.orderItemId(), OrderReturnInspectionRequest.Result.FAILED)));
-        OrderReturnResponse inspected = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(), failed);
+        OrderRequest.ReturnInspection failed = new OrderRequest.ReturnInspection(List.of(
+                new OrderRequest.ReturnInspection.Item(fixture.orderItemId(), OrderRequest.ReturnInspection.Result.FAILED)));
+        ReturnResponse.OrderReturn inspected = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(), failed);
         assertThat(inspected.status()).isEqualTo(OrderReturnStatus.INSPECTION_FAILED);
         assertThat(refundRequestCount(fixture.orderId())).isZero();
         assertThat(journalCountForOrder(fixture.orderId())).isZero();
@@ -342,18 +335,18 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(), failed))
                 .isEqualTo(inspected);
         assertThatThrownBy(() -> returns.request(returnRequest(buyerRef, fixture.orderId(), "failed-quantity-key",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 1)))).isInstanceOf(OrderException.class);
+                new OrderRequest.Return.Item(fixture.orderItemId(), 1)))).isInstanceOf(OrderException.class);
     }
     @Test
     void settlementFailureRollsBackRefundFinalizationAndRetainsPreparedInspectionForRetry() {
         Fixture fixture = paidOrder(1, 1, 125);
         deliver(fixture);
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnResponse created = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-rollback-key",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+        ReturnResponse.OrderReturn created = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-rollback-key",
+                new OrderRequest.Return.Item(fixture.orderItemId(), 1)));
         returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
-        OrderReturnInspectionRequest passed = new OrderReturnInspectionRequest(List.of(
-                new OrderReturnInspectionRequest.Item(fixture.orderItemId(), OrderReturnInspectionRequest.Result.PASSED)));
+        OrderRequest.ReturnInspection passed = new OrderRequest.ReturnInspection(List.of(
+                new OrderRequest.ReturnInspection.Item(fixture.orderItemId(), OrderRequest.ReturnInspection.Result.PASSED)));
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_return_settlement() RETURNS TRIGGER AS $$
                 BEGIN
@@ -373,7 +366,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 .isInstanceOf(RuntimeException.class);
         jdbc.execute("DROP TRIGGER IF EXISTS fail_return_settlement_trigger ON settlement_entry");
         jdbc.execute("DROP FUNCTION IF EXISTS fail_return_settlement()");
-        OrderReturnResponse unchanged = returns.find(buyerRef, fixture.orderId(), created.returnId());
+        ReturnResponse.OrderReturn unchanged = returns.find(buyerRef, fixture.orderId(), created.returnId());
         assertThat(unchanged.status()).isEqualTo(OrderReturnStatus.RECEIVED);
         assertThat(unchanged.items().get(0).inspectionResult()).isEqualTo(OrderReturnInspectionResult.PASSED);
         assertThat(unchanged.items().get(0).refundId()).isNotNull();
@@ -381,7 +374,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(refundRequestCount(fixture.orderId())).isEqualTo(1);
         assertThat(journalCountForOrder(fixture.orderId())).isZero();
         assertStock(fixture, 0, 1);
-        OrderReturnResponse retried = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(), passed);
+        ReturnResponse.OrderReturn retried = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(), passed);
         assertThat(retried.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
         assertThat(retried.items().get(0).refundId()).isEqualTo(unchanged.items().get(0).refundId());
         assertThat(retried.items().get(0).refundAmountWon()).isEqualTo(unchanged.items().get(0).refundAmountWon());
@@ -392,17 +385,17 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     void partialAndFullRefundsReplayAndRestoreOnlyRequestedUnitsWithoutChangingPaidState() {
         Fixture fixture = paidOrder(2, 5, 125);
         UUID itemId = fixture.orderItemId();
-        OrderRefundRequest oneUnit = request(fixture.sellerId(), fixture.orderId(), "refund-partial-key",
+        OrderRequest.Refund oneUnit = request(fixture.sellerId(), fixture.orderId(), "refund-partial-key",
                 itemId, 1);
 
         queueRefundStatus("PENDING");
-        OrderRefundResponse pendingRefund = refunds.refund(oneUnit);
+        RefundResponse.Refund pendingRefund = refunds.refund(oneUnit);
         assertThat(pendingRefund.paymentStatus())
                 .isEqualTo(OrderRefundPaymentStatus.PENDING);
         assertStock(fixture, 3, 2);
         assertThat(journalCountForRefund(pendingRefund.refundId())).isZero();
 
-        OrderRefundResponse partial = refunds.refund(oneUnit);
+        RefundResponse.Refund partial = refunds.refund(oneUnit);
         assertThat(partial.paymentStatus())
                 .isEqualTo(OrderRefundPaymentStatus.COMPLETED);
 
@@ -434,7 +427,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(journalCountForRefund(partial.refundId())).isEqualTo(1);
 
         fulfillments.start(fixture.sellerId(), fixture.orderId());
-        OrderRefundResponse full = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
+        RefundResponse.Refund full = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
                 "refund-final-key", itemId, 1));
 
         assertThat(full.refundAmountWon()).isEqualTo(125);
@@ -447,7 +440,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 new Entry("PSP_CLEARING", "DEBIT", 250),
                 new Entry("SELLER_PAYABLE", "CREDIT", 250));
         assertThatThrownBy(() -> createShipment(fixture.sellerId(), fixture.orderId(),
-                List.of(new OrderShipmentRequest.Item(fixture.orderItemId(), 1))))
+                List.of(new OrderRequest.Shipment.Item(fixture.orderItemId(), 1))))
                 .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code())
                         .isEqualTo(OrderException.Code.CONFLICT));
@@ -457,17 +450,17 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Test
     void unknownRefundRetainsQuantityUntilProviderGetConfirmsCompletion() {
         Fixture fixture = paidOrder(1, 2, 125);
-        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(), "refund-unknown-key",
+        OrderRequest.Refund request = request(fixture.sellerId(), fixture.orderId(), "refund-unknown-key",
                 fixture.orderItemId(), 1);
 
         queueRefundStatus("UNKNOWN");
-        OrderRefundResponse unknown = refunds.refund(request);
+        RefundResponse.Refund unknown = refunds.refund(request);
         assertThat(unknown.paymentStatus())
                 .isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
         assertStock(fixture, 1, 1);
         assertThat(journalCountForRefund(unknown.refundId())).isZero();
 
-        OrderRefundResponse completed = refunds.refund(request);
+        RefundResponse.Refund completed = refunds.refund(request);
         assertThat(completed.paymentStatus())
                 .isEqualTo(OrderRefundPaymentStatus.COMPLETED);
         assertStock(fixture, 2, 0);
@@ -479,17 +472,17 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Test
     void lostRefundResponseStaysUnknownAndSameKeyReplayReusesProviderRequestId() {
         Fixture fixture = paidOrder(1, 2, 125);
-        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(), "refund-lost-response-key",
+        OrderRequest.Refund request = request(fixture.sellerId(), fixture.orderId(), "refund-lost-response-key",
                 fixture.orderItemId(), 1);
 
         disconnectNextRefundResponse();
-        OrderRefundResponse unknown = refunds.refund(request);
+        RefundResponse.Refund unknown = refunds.refund(request);
         assertThat(unknown.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
         assertStock(fixture, 1, 1);
         assertThat(journalCountForRefund(unknown.refundId())).isZero();
         assertThat(refundRequestIds()).hasSize(1);
 
-        OrderRefundResponse completed = refunds.refund(request);
+        RefundResponse.Refund completed = refunds.refund(request);
         assertThat(completed.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
         assertThat(completed.refundId()).isEqualTo(unknown.refundId());
         assertThat(refundRequestIds()).hasSize(2).containsOnly(refundRequestIds().getFirst());
@@ -507,22 +500,22 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         Fixture fixture = paidOrder(1, 1, 125);
         deliver(fixture);
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnResponse created = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-status-key",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+        ReturnResponse.OrderReturn created = returns.request(returnRequest(buyerRef, fixture.orderId(), "return-status-key",
+                new OrderRequest.Return.Item(fixture.orderItemId(), 1)));
         returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
-        OrderReturnInspectionRequest inspection = new OrderReturnInspectionRequest(List.of(
-                new OrderReturnInspectionRequest.Item(fixture.orderItemId(), OrderReturnInspectionRequest.Result.PASSED)));
+        OrderRequest.ReturnInspection inspection = new OrderRequest.ReturnInspection(List.of(
+                new OrderRequest.ReturnInspection.Item(fixture.orderItemId(), OrderRequest.ReturnInspection.Result.PASSED)));
 
         queueRefundStatus("UNKNOWN");
-        OrderReturnResponse unknown = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(),
+        ReturnResponse.OrderReturn unknown = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(),
                 inspection);
         assertThat(unknown.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
         assertThat(unknown.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
         assertThat(unknown.items().get(0).refundId()).isNotNull();
 
-        OrderRefundResponse completed = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
+        RefundResponse.Refund completed = refunds.refund(request(fixture.sellerId(), fixture.orderId(),
                 "return-" + created.returnId(), fixture.orderItemId(), 1));
-        OrderReturnResponse refreshed = returns.find(buyerRef, fixture.orderId(), created.returnId());
+        ReturnResponse.OrderReturn refreshed = returns.find(buyerRef, fixture.orderId(), created.returnId());
         assertThat(completed.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
         assertThat(refreshed.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
         assertThat(refreshed.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
@@ -534,9 +527,9 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     void refundSummaryAndFulfillmentGateAggregateAcrossOrderItems() {
         MultiItemFixture fixture = paidOrderWithTwoItems();
 
-        OrderRefundResponse firstRefund = refunds.refund(new OrderRefundRequest(
+        RefundResponse.Refund firstRefund = refunds.refund(new OrderRequest.Refund(
                 fixture.sellerId(), fixture.orderId(), "multi-item-first-refund",
-                List.of(new OrderRefundRequest.Item(fixture.firstItemId(), 1))));
+                List.of(new OrderRequest.Refund.Item(fixture.firstItemId(), 1))));
 
         assertThat(firstRefund.status()).isEqualTo(OrderRefundStatus.PARTIALLY_RECORDED);
         assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status())
@@ -551,9 +544,9 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 new Entry("PSP_CLEARING", "CREDIT", 100),
                 new Entry("SELLER_PAYABLE", "DEBIT", 100));
 
-        OrderRefundResponse secondRefund = refunds.refund(new OrderRefundRequest(
+        RefundResponse.Refund secondRefund = refunds.refund(new OrderRequest.Refund(
                 fixture.sellerId(), fixture.orderId(), "multi-item-second-refund",
-                List.of(new OrderRefundRequest.Item(fixture.secondItemId(), 1))));
+                List.of(new OrderRequest.Refund.Item(fixture.secondItemId(), 1))));
 
         assertThat(secondRefund.status()).isEqualTo(OrderRefundStatus.FULLY_RECORDED);
         assertThat(refunds.find(fixture.sellerId(), fixture.orderId()).status())
@@ -569,8 +562,8 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 new Entry("PSP_CLEARING", "DEBIT", 350),
                 new Entry("SELLER_PAYABLE", "CREDIT", 350));
         assertThatThrownBy(() -> createShipment(fixture.sellerId(), fixture.orderId(), List.of(
-                new OrderShipmentRequest.Item(fixture.firstItemId(), 1),
-                new OrderShipmentRequest.Item(fixture.secondItemId(), 1))))
+                new OrderRequest.Shipment.Item(fixture.firstItemId(), 1),
+                new OrderRequest.Shipment.Item(fixture.secondItemId(), 1))))
                 .isInstanceOf(OrderException.class)
                 .satisfies(error -> assertThat(((OrderException) error).code()).isEqualTo(OrderException.Code.CONFLICT));
     }
@@ -594,7 +587,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
         fulfillments.start(paid.sellerId(), paid.orderId());
         createShipment(paid.sellerId(), paid.orderId(), List.of(
-                new OrderShipmentRequest.Item(paid.orderItemId(), 1)));
+                new OrderRequest.Shipment.Item(paid.orderItemId(), 1)));
         assertThatThrownBy(() -> refunds.refund(request(paid.sellerId(), paid.orderId(),
                 "shipped-refund-key", paid.orderItemId(), 1)))
                 .isInstanceOf(OrderException.class)
@@ -607,26 +600,26 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Test
     void concurrentRetryCreatesOneRefundAndRestoresStockOnce() throws Exception {
         Fixture fixture = paidOrder(1, 5, 300);
-        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(),
+        OrderRequest.Refund request = request(fixture.sellerId(), fixture.orderId(),
                 "concurrent-refund-key", fixture.orderItemId(), 1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            Future<OrderRefundResponse> first = executor.submit(() -> {
+            Future<RefundResponse.Refund> first = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
                 return refunds.refund(request);
             });
-            Future<OrderRefundResponse> second = executor.submit(() -> {
+            Future<RefundResponse.Refund> second = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
                 return refunds.refund(request);
             });
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();
-            OrderRefundResponse one = first.get(10, TimeUnit.SECONDS);
-            OrderRefundResponse two = second.get(10, TimeUnit.SECONDS);
+            RefundResponse.Refund one = first.get(10, TimeUnit.SECONDS);
+            RefundResponse.Refund two = second.get(10, TimeUnit.SECONDS);
             assertThat(one).isEqualTo(two);
             assertStock(fixture, 5, 0);
             assertThat(journalCountForRefund(one.refundId())).isEqualTo(1);
@@ -642,27 +635,27 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         Fixture fixture = paidOrder(2, 2, 125);
         deliver(fixture);
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnRequest firstRequest = returnRequest(buyerRef, fixture.orderId(), "concurrent-return-one",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 2));
-        OrderReturnRequest secondRequest = returnRequest(buyerRef, fixture.orderId(), "concurrent-return-two",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 2));
+        OrderRequest.Return firstRequest = returnRequest(buyerRef, fixture.orderId(), "concurrent-return-one",
+                new OrderRequest.Return.Item(fixture.orderItemId(), 2));
+        OrderRequest.Return secondRequest = returnRequest(buyerRef, fixture.orderId(), "concurrent-return-two",
+                new OrderRequest.Return.Item(fixture.orderItemId(), 2));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            Future<OrderReturnResponse> first = executor.submit(() -> {
+            Future<ReturnResponse.OrderReturn> first = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
                 return returns.request(firstRequest);
             });
-            Future<OrderReturnResponse> second = executor.submit(() -> {
+            Future<ReturnResponse.OrderReturn> second = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
                 return returns.request(secondRequest);
             });
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();
-            OrderReturnResponse accepted = null;
+            ReturnResponse.OrderReturn accepted = null;
             int conflicts = 0;
             try {
                 accepted = first.get(10, TimeUnit.SECONDS);
@@ -696,7 +689,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 WHERE return_record.order_id = ?
                 """, Long.class, fixture.orderId());
         assertThat(acceptedQuantity).isLessThanOrEqualTo(2L).isEqualTo(2L);
-        OrderReturnResponse persisted = returns.find(buyerRef, fixture.orderId(),
+        ReturnResponse.OrderReturn persisted = returns.find(buyerRef, fixture.orderId(),
                 jdbc.queryForObject("SELECT return_id FROM order_return WHERE order_id = ?",
                         UUID.class, fixture.orderId()));
         assertThat(persisted.status()).isEqualTo(OrderReturnStatus.REQUESTED);
@@ -715,24 +708,24 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         Fixture fixture = paidOrder(2, 2, 125);
         deliver(fixture);
         String buyerRef = buyerRef(fixture.orderId());
-        OrderReturnResponse requested = returns.request(returnRequest(buyerRef, fixture.orderId(),
-                "concurrent-inspection-return", new OrderReturnRequest.Item(fixture.orderItemId(), 2)));
+        ReturnResponse.OrderReturn requested = returns.request(returnRequest(buyerRef, fixture.orderId(),
+                "concurrent-inspection-return", new OrderRequest.Return.Item(fixture.orderItemId(), 2)));
         returns.receive(fixture.sellerId(), fixture.orderId(), requested.returnId());
-        OrderReturnInspectionRequest passed = new OrderReturnInspectionRequest(List.of(
-                new OrderReturnInspectionRequest.Item(fixture.orderItemId(),
-                        OrderReturnInspectionRequest.Result.PASSED)));
+        OrderRequest.ReturnInspection passed = new OrderRequest.ReturnInspection(List.of(
+                new OrderRequest.ReturnInspection.Item(fixture.orderItemId(),
+                        OrderRequest.ReturnInspection.Result.PASSED)));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
-        OrderReturnResponse firstResult;
-        OrderReturnResponse secondResult;
+        ReturnResponse.OrderReturn firstResult;
+        ReturnResponse.OrderReturn secondResult;
         try {
-            Future<OrderReturnResponse> first = executor.submit(() -> {
+            Future<ReturnResponse.OrderReturn> first = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
                 return returns.inspect(fixture.sellerId(), fixture.orderId(), requested.returnId(), passed);
             });
-            Future<OrderReturnResponse> second = executor.submit(() -> {
+            Future<ReturnResponse.OrderReturn> second = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
                 return returns.inspect(fixture.sellerId(), fixture.orderId(), requested.returnId(), passed);
@@ -747,7 +740,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         }
 
         assertThat(firstResult).isEqualTo(secondResult);
-        OrderReturnResponse persisted = returns.find(buyerRef, fixture.orderId(), requested.returnId());
+        ReturnResponse.OrderReturn persisted = returns.find(buyerRef, fixture.orderId(), requested.returnId());
         assertThat(persisted.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
         assertThat(persisted.items()).singleElement().satisfies(item -> {
             assertThat(item.orderItemId()).isEqualTo(fixture.orderItemId());
@@ -842,7 +835,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Test
     void settlementFailureRollsBackRefundStateInventoryAndReversalBeforeRetry() {
         Fixture fixture = paidOrder(1, 5, 450);
-        OrderRefundRequest request = request(fixture.sellerId(), fixture.orderId(),
+        OrderRequest.Refund request = request(fixture.sellerId(), fixture.orderId(),
                 "rollback-refund-key", fixture.orderItemId(), 1);
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_refund_settlement_entry() RETURNS TRIGGER AS $$
@@ -875,7 +868,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 String.class, request.idempotencyKey())).isEqualTo("PENDING");
         assertThat(journalCountForOrder(fixture.orderId())).isZero();
 
-        OrderRefundResponse recovered = refunds.refund(request);
+        RefundResponse.Refund recovered = refunds.refund(request);
         assertThat(recovered.status()).isEqualTo(OrderRefundStatus.FULLY_RECORDED);
         assertStock(fixture, 5, 0);
         assertThat(journalCountForRefund(recovered.refundId())).isEqualTo(1);
@@ -895,10 +888,10 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         Fixture fixture = paidOrder(1, 2, 125);
         String buyerRef = buyerRef(fixture.orderId());
         deliver(fixture);
-        OrderReturnResponse created = returns.request(returnRequest(buyerRef, fixture.orderId(),
-                "return-list-key", new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+        ReturnResponse.OrderReturn created = returns.request(returnRequest(buyerRef, fixture.orderId(),
+                "return-list-key", new OrderRequest.Return.Item(fixture.orderItemId(), 1)));
 
-        List<OrderReturnResponse> listed = returns.findForBuyer(buyerRef, fixture.orderId());
+        List<ReturnResponse.OrderReturn> listed = returns.findForBuyer(buyerRef, fixture.orderId());
 
         assertThat(listed).hasSize(1);
         assertThat(listed.getFirst().returnId()).isEqualTo(created.returnId());
@@ -911,7 +904,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         String buyerRef = buyerRef(fixture.orderId());
         deliver(fixture);
         returns.request(returnRequest(buyerRef, fixture.orderId(), "return-http-key",
-                new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+                new OrderRequest.Return.Item(fixture.orderItemId(), 1)));
 
         mockMvc.perform(get("/api/buyers/{buyerRef}/orders/{orderId}/returns", buyerRef, fixture.orderId()))
                 .andExpect(status().isOk())
@@ -925,7 +918,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         Fixture fixture = paidOrder(1, 2, 125);
         deliver(fixture);
         returns.request(returnRequest(buyerRef(fixture.orderId()), fixture.orderId(),
-                "return-other-key", new OrderReturnRequest.Item(fixture.orderItemId(), 1)));
+                "return-other-key", new OrderRequest.Return.Item(fixture.orderItemId(), 1)));
 
         // 존재 여부를 노출하지 않도록 소유하지 않은 주문은 NOT_FOUND 다.
         assertThatThrownBy(() -> returns.findForBuyer("someone-else", fixture.orderId()))
@@ -941,8 +934,8 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(returns.findForBuyer(buyerRef(fixture.orderId()), fixture.orderId())).isEmpty();
     }
 
-    private OrderReturnRequest returnRequest(String buyerRef, UUID orderId, String key, OrderReturnRequest.Item item) {
-        return new OrderReturnRequest(buyerRef, orderId, key, List.of(item));
+    private OrderRequest.Return returnRequest(String buyerRef, UUID orderId, String key, OrderRequest.Return.Item item) {
+        return new OrderRequest.Return(buyerRef, orderId, key, List.of(item));
     }
 
     private void deliver(Fixture fixture) {
@@ -974,15 +967,15 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
             if (item.quantity() <= 0) {
                 continue;
             }
-            OrderShipmentResponse shipment = createShipment(sellerId, orderId,
-                    List.of(new OrderShipmentRequest.Item(item.orderItemId(), item.quantity())));
+            OrderViewResponse.Shipment shipment = createShipment(sellerId, orderId,
+                    List.of(new OrderRequest.Shipment.Item(item.orderItemId(), item.quantity())));
             shipments.deliver(sellerId, orderId, shipment.shipmentId());
         }
     }
 
-    private OrderShipmentResponse createShipment(
-            UUID sellerId, UUID orderId, List<OrderShipmentRequest.Item> items) {
-        return shipments.create(new OrderShipmentRequest(sellerId, orderId,
+    private OrderViewResponse.Shipment createShipment(
+            UUID sellerId, UUID orderId, List<OrderRequest.Shipment.Item> items) {
+        return shipments.create(new OrderRequest.Shipment(sellerId, orderId,
                 "test-shipment-" + UUID.randomUUID(), null, null, items));
     }
 
@@ -991,23 +984,23 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     private MultiItemFixture paidOrderWithTwoItems() {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Multi-item refund test", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Multi-item refund test", null));
         String firstSkuId = "multi-refund-a-" + UUID.randomUUID();
         String secondSkuId = "multi-refund-b-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSkuId, 100, 1));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSkuId, 250, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(firstSkuId, 100, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(secondSkuId, 250, 1));
         String buyerRef = "multi-refund-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, firstSkuId, 1);
         carts.setItemQuantity(sellerId, buyerRef, secondSkuId, 1);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "multi-refund-checkout-" + UUID.randomUUID());
-        OrderResponse reserved = checkout.orders().get(0);
+        OrderViewResponse.Order reserved = checkout.orders().get(0);
         UUID firstItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
                 UUID.class, reserved.orderId(), firstSkuId);
         UUID secondItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
                 UUID.class, reserved.orderId(), secondSkuId);
-        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().get(0);
+        OrderViewResponse.Order paid = completePayPalCheckout(checkout.checkoutId()).orders().get(0);
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         return new MultiItemFixture(sellerId, paid.orderId(), firstItemId, firstSkuId, secondItemId, secondSkuId,
                 paid.paymentAttemptId());
@@ -1015,7 +1008,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     private void assertPool(UUID sellerId, String skuId, int available, int reserved, int claimed,
             int initialCapacity) {
-        InventoryPoolResponse pool = inventory.find(sellerId, skuId);
+        InventoryResponse.Pool pool = inventory.find(sellerId, skuId);
         assertThat(pool.available()).isEqualTo(available);
         assertThat(pool.reserved()).isEqualTo(reserved);
         assertThat(pool.claimed()).isEqualTo(claimed);
@@ -1024,7 +1017,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     private Fixture paidOrder(int quantity, int initialStock, long unitPriceWon) {
         Fixture fixture = createOrder(quantity, initialStock, unitPriceWon);
-        OrderResponse paid = completePayPalCheckout(fixture.checkoutId()).orders().get(0);
+        OrderViewResponse.Order paid = completePayPalCheckout(fixture.checkoutId()).orders().get(0);
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         return new Fixture(fixture.sellerId(), fixture.orderId(), fixture.orderItemId(), fixture.skuId(),
                 fixture.checkoutId(), paid.paymentAttemptId());
@@ -1041,34 +1034,34 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     private Fixture createOrder(int quantity, int initialStock, long unitPriceWon) {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Refund test product", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Refund test product", null));
         String skuId = "refund-" + UUID.randomUUID();
         products.registerSku(sellerId, product.productId(),
-                new RegisterSellerSkuRequest(skuId, unitPriceWon, initialStock));
+                new ProductRequest.RegisterSellerSku(skuId, unitPriceWon, initialStock));
         String buyerRef = "refund-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, quantity);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "refund-checkout-" + UUID.randomUUID());
-        OrderResponse order = checkout.orders().get(0);
+        OrderViewResponse.Order order = checkout.orders().get(0);
         UUID orderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, order.orderId());
         return new Fixture(sellerId, order.orderId(), orderItemId, skuId, checkout.checkoutId(), null);
     }
 
-    private static OrderRefundRequest request(UUID sellerId, UUID orderId, String idempotencyKey,
+    private static OrderRequest.Refund request(UUID sellerId, UUID orderId, String idempotencyKey,
             UUID orderItemId, int quantity) {
-        return new OrderRefundRequest(sellerId, orderId, idempotencyKey,
-                List.of(new OrderRefundRequest.Item(orderItemId, quantity)));
+        return new OrderRequest.Refund(sellerId, orderId, idempotencyKey,
+                List.of(new OrderRequest.Refund.Item(orderItemId, quantity)));
     }
 
     private void assertStock(Fixture fixture, int available, int claimed) {
-        InventoryPoolResponse stock = inventory.find(fixture.sellerId(), fixture.skuId());
+        InventoryResponse.Pool stock = inventory.find(fixture.sellerId(), fixture.skuId());
         assertThat(stock.available()).isEqualTo(available);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isEqualTo(claimed);
     }
 
     private void assertStock(Fixture fixture, int available, int reserved, int claimed) {
-        InventoryPoolResponse stock = inventory.find(fixture.sellerId(), fixture.skuId());
+        InventoryResponse.Pool stock = inventory.find(fixture.sellerId(), fixture.skuId());
         assertThat(stock.available()).isEqualTo(available);
         assertThat(stock.reserved()).isEqualTo(reserved);
         assertThat(stock.claimed()).isEqualTo(claimed);
@@ -1128,9 +1121,9 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         // 서로 다른 checkout 의 두 판매자가 같은 key 를 써도 둘 다 환불된다(예전에는 전역 UNIQUE 로 409).
         Fixture first = paidOrder(1, 2, 125);
         Fixture second = paidOrder(1, 2, 300);
-        OrderRefundResponse firstRefund = refunds.refund(request(first.sellerId(), first.orderId(), sharedKey,
+        RefundResponse.Refund firstRefund = refunds.refund(request(first.sellerId(), first.orderId(), sharedKey,
                 first.orderItemId(), 1));
-        OrderRefundResponse secondRefund = refunds.refund(request(second.sellerId(), second.orderId(), sharedKey,
+        RefundResponse.Refund secondRefund = refunds.refund(request(second.sellerId(), second.orderId(), sharedKey,
                 second.orderItemId(), 1));
         assertThat(firstRefund.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
         assertThat(secondRefund.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
@@ -1148,25 +1141,25 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         String skuA = "refund-scope-a-" + UUID.randomUUID();
         String skuB = "refund-scope-b-" + UUID.randomUUID();
         products.registerSku(sellerA, products.createProduct(sellerA,
-                new CreateProductRequest("Refund scope A", null)).productId(),
-                new RegisterSellerSkuRequest(skuA, 125, 2));
+                new ProductRequest.CreateProduct("Refund scope A", null)).productId(),
+                new ProductRequest.RegisterSellerSku(skuA, 125, 2));
         products.registerSku(sellerB, products.createProduct(sellerB,
-                new CreateProductRequest("Refund scope B", null)).productId(),
-                new RegisterSellerSkuRequest(skuB, 125, 2));
+                new ProductRequest.CreateProduct("Refund scope B", null)).productId(),
+                new ProductRequest.RegisterSellerSku(skuB, 125, 2));
         String buyerRef = "refund-scope-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerA, buyerRef, skuA, 1);
         carts.setItemQuantity(sellerB, buyerRef, skuB, 1);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "refund-scope-checkout-" + UUID.randomUUID());
         assertThat(checkout.orders()).hasSize(2);
-        List<OrderResponse> paidOrders = completePayPalCheckout(checkout.checkoutId()).orders();
+        List<OrderViewResponse.Order> paidOrders = completePayPalCheckout(checkout.checkoutId()).orders();
         assertThat(paidOrders).hasSize(2);
-        for (OrderResponse paid : paidOrders) {
+        for (OrderViewResponse.Order paid : paidOrders) {
             assertThat(paid.state()).isEqualTo(OrderState.PAID);
             UUID orderItemId = jdbc.queryForObject(
                     "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, paid.orderId());
             UUID sellerId = jdbc.queryForObject(
                     "SELECT seller_id FROM purchase_order WHERE order_id = ?", UUID.class, paid.orderId());
-            OrderRefundResponse refund = refunds.refund(request(sellerId, paid.orderId(), sharedKey,
+            RefundResponse.Refund refund = refunds.refund(request(sellerId, paid.orderId(), sharedKey,
                     orderItemId, 1));
             assertThat(refund.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
             assertThat(refund.refundAmountWon()).isEqualTo(125);
@@ -1182,7 +1175,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
         // 같은 주문 안에서 같은 key 로 다른 품목을 보내면 여전히 CONFLICT 다.
         MultiItemFixture multi = paidOrderWithTwoItems();
-        OrderRefundResponse multiRefund = refunds.refund(request(multi.sellerId(), multi.orderId(), sharedKey,
+        RefundResponse.Refund multiRefund = refunds.refund(request(multi.sellerId(), multi.orderId(), sharedKey,
                 multi.firstItemId(), 1));
         assertThat(refunds.refund(request(multi.sellerId(), multi.orderId(), sharedKey,
                 multi.firstItemId(), 1))).isEqualTo(multiRefund);

@@ -3,19 +3,14 @@ package com.atlas.admission;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.model.CampaignStatus;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
-import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
@@ -55,30 +50,30 @@ class CampaignLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
 
     @Test
     void closingCampaignRejectsNewJoinsButKeepsExistingTicketReplayable() {
-        SellerResponse seller = sellers.createSeller();
+        CatalogResponse.Seller seller = sellers.createSeller();
         String skuId = "campaign-close-" + UUID.randomUUID();
-        ProductResponse product = products.createProduct(seller.sellerId(),
-                new CreateProductRequest("campaign close " + UUID.randomUUID(), "description"));
-        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("campaign close " + UUID.randomUUID(), "description"));
+        products.registerSku(seller.sellerId(), product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(
                 seller.sellerId(), skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
 
-        JoinQueueRequest existingRequest = new JoinQueueRequest(
+        AdmissionRequest.JoinQueue existingRequest = new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-close-" + UUID.randomUUID(), "join-before-close");
-        QueueTicketResponse original = admission.join(existingRequest);
+        AdmissionResponse.QueueTicket original = admission.join(existingRequest);
 
         assertThat(campaigns.close(seller.sellerId(), campaign.campaignId()).status())
                 .isEqualTo(CampaignStatus.CLOSED);
         assertThat(campaigns.close(seller.sellerId(), campaign.campaignId()).status())
                 .isEqualTo(CampaignStatus.CLOSED);
 
-        QueueTicketResponse replay = admission.join(existingRequest);
+        AdmissionResponse.QueueTicket replay = admission.join(existingRequest);
         assertThat(replay.ticketId()).isEqualTo(original.ticketId());
         assertThat(admission.find(campaign.campaignId(), original.ticketId()).status())
                 .isEqualTo(original.status());
-        assertThatThrownBy(() -> admission.join(new JoinQueueRequest(
+        assertThatThrownBy(() -> admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, existingRequest.buyerRef(), "join-after-close")))
                 .isInstanceOf(CampaignException.class)
                 .satisfies(exception -> assertThat(((CampaignException) exception).code())

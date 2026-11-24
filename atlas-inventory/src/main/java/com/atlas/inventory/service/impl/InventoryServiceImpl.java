@@ -1,17 +1,7 @@
 package com.atlas.inventory.service.impl;
 
-import com.atlas.inventory.dto.request.CreateFulfillmentLocationRequest;
-import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
-import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
-import com.atlas.inventory.dto.request.ReserveInventoryRequest;
-import com.atlas.inventory.dto.request.TransferInventoryRequest;
-import com.atlas.inventory.dto.request.UpdateFulfillmentLocationRequest;
-import com.atlas.inventory.dto.response.InventoryLocationResponse;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
-import com.atlas.inventory.dto.response.InventoryTransferResponse;
-import com.atlas.inventory.dto.response.LocationInventoryPageResponse;
-import com.atlas.inventory.dto.response.LocationInventoryResponse;
-import com.atlas.inventory.dto.response.ReservationResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.persistence.entity.InventoryPool;
 import com.atlas.inventory.persistence.entity.Reservation;
@@ -65,12 +55,12 @@ public class InventoryServiceImpl implements InventoryService {
         this.transactions=new TransactionTemplate(Objects.requireNonNull(transactionManager));
     }
 
-    @Override public void createInventoryPool(CreateInventoryPoolRequest request) {
+    @Override public void createInventoryPool(InventoryRequest.CreateInventoryPool request) {
         Objects.requireNonNull(request,"request is required"); validSku(request.sellerId(),request.skuId());
         if(request.initialStock()<0) throw invalid("initial stock must not be negative");
         transactions.executeWithoutResult(s->stock.ensurePool(request.sellerId(),request.skuId(),request.initialStock()));
     }
-    @Override public InventoryLocationResponse createLocation(CreateFulfillmentLocationRequest r) {
+    @Override public InventoryResponse.Location createLocation(InventoryRequest.CreateFulfillmentLocation r) {
         Objects.requireNonNull(r); validSeller(r.sellerId());
         if(blank(r.code())||r.code().length()>64||blank(r.name())||r.name().length()>128||r.priority()<0) throw invalid("invalid location code, name or priority");
         InventoryLocationRecord location = Objects.requireNonNull(transactions.execute(status ->
@@ -79,11 +69,11 @@ public class InventoryServiceImpl implements InventoryService {
         return locationResponse(location);
     }
     @Override
-    public List<InventoryLocationResponse> findLocations(UUID sellerId) {
+    public List<InventoryResponse.Location> findLocations(UUID sellerId) {
         validSeller(sellerId);
         return locations.find(sellerId).stream().map(InventoryServiceImpl::locationResponse).toList();
     }
-    @Override public InventoryLocationResponse updateLocation(UpdateFulfillmentLocationRequest r){
+    @Override public InventoryResponse.Location updateLocation(InventoryRequest.UpdateFulfillmentLocation r){
         Objects.requireNonNull(r); validSeller(r.sellerId()); if(r.locationId()==null||blank(r.name())||r.name().length()>128||r.priority()<0) throw invalid("invalid location update");
         InventoryLocationRecord location = Objects.requireNonNull(transactions.execute(status ->
                 locations.update(r.sellerId(), r.locationId(), r.name(), r.priority(), r.active())))
@@ -92,16 +82,16 @@ public class InventoryServiceImpl implements InventoryService {
         return locationResponse(location);
     }
     @Override
-    public List<LocationInventoryResponse> findLocationInventory(UUID sellerId, UUID locationId) {
+    public List<InventoryResponse.LocationInventory> findLocationInventory(UUID sellerId, UUID locationId) {
         validSeller(sellerId);
         Objects.requireNonNull(locationId);
         return pools.findAllByIdSellerIdAndIdLocationIdOrderByIdSkuId(sellerId, locationId).stream()
-                .map(pool -> new LocationInventoryResponse(sellerId, locationId, pool.getId().getSkuId(),
+                .map(pool -> new InventoryResponse.LocationInventory(sellerId, locationId, pool.getId().getSkuId(),
                         pool.getInitialCapacity(), pool.getAvailable(), pool.getReserved(), pool.getClaimed()))
                 .toList();
     }
     @Override
-    public LocationInventoryPageResponse findLocationInventoryPage(
+    public InventoryResponse.LocationInventoryPage findLocationInventoryPage(
             UUID sellerId, UUID locationId, Integer limit, String afterSkuId) {
         validSeller(sellerId);
         Objects.requireNonNull(locationId);
@@ -112,19 +102,19 @@ public class InventoryServiceImpl implements InventoryService {
         List<InventoryPool> fetched = pools.findByIdSellerIdAndIdLocationIdAndIdSkuIdGreaterThanOrderByIdSkuId(
                         sellerId, locationId, afterSkuId == null ? "" : afterSkuId, Limit.of(pageSize + 1));
         boolean hasNext = fetched.size() > pageSize;
-        List<LocationInventoryResponse> items = fetched.stream().limit(pageSize)
-                .map(pool -> new LocationInventoryResponse(sellerId, locationId, pool.getId().getSkuId(),
+        List<InventoryResponse.LocationInventory> items = fetched.stream().limit(pageSize)
+                .map(pool -> new InventoryResponse.LocationInventory(sellerId, locationId, pool.getId().getSkuId(),
                         pool.getInitialCapacity(), pool.getAvailable(), pool.getReserved(), pool.getClaimed()))
                 .toList();
-        return new LocationInventoryPageResponse(items, hasNext ? items.getLast().skuId() : null);
+        return new InventoryResponse.LocationInventoryPage(items, hasNext ? items.getLast().skuId() : null);
     }
 
-    @Override public Optional<UUID> findFulfillmentLocation(UUID sellerId,List<ReserveInventoryBatchRequest.Item> items){
+    @Override public Optional<UUID> findFulfillmentLocation(UUID sellerId,List<InventoryRequest.ReserveInventoryBatch.Item> items){
         validSeller(sellerId); validateItems(sellerId,items);
         return locations.advisorySelect(sellerId, requiredQuantities(items));
     }
     @Override
-    public InventoryTransferResponse transfer(TransferInventoryRequest request) {
+    public InventoryResponse.Transfer transfer(InventoryRequest.TransferInventory request) {
         if (request == null) {
             throw invalid("Inventory transfer request is required");
         }
@@ -159,13 +149,13 @@ public class InventoryServiceImpl implements InventoryService {
         };
     }
     @Override
-    public ReservationResponse reserve(ReserveInventoryRequest request) {
+    public InventoryResponse.Reservation reserve(InventoryRequest.ReserveInventory request) {
         return tryReserve(request).orElseThrow(() -> new InventoryException(
                 InventoryException.Code.UNAVAILABLE, "inventory unavailable"));
     }
 
     @Override
-    public Optional<ReservationResponse> tryReserve(ReserveInventoryRequest request) {
+    public Optional<InventoryResponse.Reservation> tryReserve(InventoryRequest.ReserveInventory request) {
         Objects.requireNonNull(request);
         validSku(request.sellerId(), request.skuId());
         validOrder(request.orderId());
@@ -200,19 +190,19 @@ public class InventoryServiceImpl implements InventoryService {
     }
 
     @Override
-    public List<ReservationResponse> reserveAll(ReserveInventoryBatchRequest request) {
+    public List<InventoryResponse.Reservation> reserveAll(InventoryRequest.ReserveInventoryBatch request) {
         Objects.requireNonNull(request);
         validateOrder(request.orderId());
         if (request.items() == null || request.items().isEmpty()) {
             throw invalid("reservation lines are required");
         }
 
-        List<ReserveInventoryBatchRequest.Item> items = request.items().stream()
-                .sorted(Comparator.comparing(ReserveInventoryBatchRequest.Item::sellerId)
-                        .thenComparing(ReserveInventoryBatchRequest.Item::skuId))
+        List<InventoryRequest.ReserveInventoryBatch.Item> items = request.items().stream()
+                .sorted(Comparator.comparing(InventoryRequest.ReserveInventoryBatch.Item::sellerId)
+                        .thenComparing(InventoryRequest.ReserveInventoryBatch.Item::skuId))
                 .toList();
         for (int i = 0; i < items.size(); i++) {
-            ReserveInventoryBatchRequest.Item item = items.get(i);
+            InventoryRequest.ReserveInventoryBatch.Item item = items.get(i);
             validSku(item.sellerId(), item.skuId());
             if (item.quantity() < 1) throw invalid("quantity must be positive");
             if (i > 0
@@ -232,9 +222,9 @@ public class InventoryServiceImpl implements InventoryService {
                 return prior.stream().map(InventoryServiceImpl::response).toList();
             }
 
-            Map<UUID, List<ReserveInventoryBatchRequest.Item>> bySeller = items.stream()
+            Map<UUID, List<InventoryRequest.ReserveInventoryBatch.Item>> bySeller = items.stream()
                     .collect(Collectors.groupingBy(
-                            ReserveInventoryBatchRequest.Item::sellerId, TreeMap::new, Collectors.toList()));
+                            InventoryRequest.ReserveInventoryBatch.Item::sellerId, TreeMap::new, Collectors.toList()));
             Map<UUID, UUID> chosen = new HashMap<>();
             for (var seller : bySeller.entrySet()) {
                 UUID location = locations.select(seller.getKey(), requiredQuantities(seller.getValue()))
@@ -245,7 +235,7 @@ public class InventoryServiceImpl implements InventoryService {
             }
 
             ArrayList<Reservation> saved = new ArrayList<>();
-            for (ReserveInventoryBatchRequest.Item item : items) {
+            for (InventoryRequest.ReserveInventoryBatch.Item item : items) {
                 UUID location = chosen.get(item.sellerId());
                 if (stock.reserve(item.sellerId(), item.skuId(), location, item.quantity()) != 1) {
                     throw new InventoryException(
@@ -261,26 +251,26 @@ public class InventoryServiceImpl implements InventoryService {
     }
 
     @Override
-    public ReservationResponse claim(UUID orderId) {
+    public InventoryResponse.Reservation claim(UUID orderId) {
         return first(claimAll(orderId));
     }
 
     @Override
-    public List<ReservationResponse> claimAll(UUID orderId) {
+    public List<InventoryResponse.Reservation> claimAll(UUID orderId) {
         return transition(orderId, ReservationStatus.CLAIMED);
     }
 
     @Override
-    public ReservationResponse release(UUID orderId) {
+    public InventoryResponse.Reservation release(UUID orderId) {
         return first(releaseAll(orderId));
     }
 
     @Override
-    public List<ReservationResponse> releaseAll(UUID orderId) {
+    public List<InventoryResponse.Reservation> releaseAll(UUID orderId) {
         return transition(orderId, ReservationStatus.RELEASED);
     }
 
-    private List<ReservationResponse> transition(UUID orderId, ReservationStatus target) {
+    private List<InventoryResponse.Reservation> transition(UUID orderId, ReservationStatus target) {
         validOrder(orderId);
         return Objects.requireNonNull(transactions.execute(status -> {
             stock.lockOrder(orderId);
@@ -332,13 +322,13 @@ public class InventoryServiceImpl implements InventoryService {
             reservations.save(reservation);
         });
     }
-    @Override public ReservationResponse findReservation(UUID orderId){return first(findReservations(orderId));}
-    @Override public List<ReservationResponse> findReservations(UUID orderId){validOrder(orderId);return reservations.findAllByOrderIdOrderBySellerIdAscSkuIdAsc(orderId).stream().map(InventoryServiceImpl::response).toList();}
+    @Override public InventoryResponse.Reservation findReservation(UUID orderId){return first(findReservations(orderId));}
+    @Override public List<InventoryResponse.Reservation> findReservations(UUID orderId){validOrder(orderId);return reservations.findAllByOrderIdOrderBySellerIdAscSkuIdAsc(orderId).stream().map(InventoryServiceImpl::response).toList();}
     @Override
-    public Map<UUID, List<ReservationResponse>> findReservationsByOrderIds(Collection<UUID> orderIds) {
+    public Map<UUID, List<InventoryResponse.Reservation>> findReservationsByOrderIds(Collection<UUID> orderIds) {
         if (orderIds == null || orderIds.isEmpty()) return Map.of();
         orderIds.forEach(InventoryServiceImpl::validOrder);
-        Map<UUID, List<ReservationResponse>> grouped = new LinkedHashMap<>();
+        Map<UUID, List<InventoryResponse.Reservation>> grouped = new LinkedHashMap<>();
         for (Reservation reservation : reservations.findAllByOrderIdIn(orderIds)) {
             grouped.computeIfAbsent(reservation.getOrderId(), key -> new ArrayList<>())
                     .add(response(reservation));
@@ -346,35 +336,35 @@ public class InventoryServiceImpl implements InventoryService {
         return Map.copyOf(grouped);
     }
     @Override
-    public InventoryPoolResponse find(UUID sellerId, String skuId) {
+    public InventoryResponse.Pool find(UUID sellerId, String skuId) {
         validSku(sellerId, skuId);
         InventoryPoolSummary summary = inventoryReads.find(sellerId, skuId);
         return summary == null ? null : poolResponse(summary);
     }
 
     @Override
-    public List<InventoryPoolResponse> findAll(UUID sellerId) {
+    public List<InventoryResponse.Pool> findAll(UUID sellerId) {
         validSeller(sellerId);
         return inventoryReads.findAll(sellerId).stream().map(InventoryServiceImpl::poolResponse).toList();
     }
 
-    private static InventoryPoolResponse poolResponse(InventoryPoolSummary summary) {
-        return new InventoryPoolResponse(summary.sellerId(), summary.skuId(), summary.initialCapacity(),
+    private static InventoryResponse.Pool poolResponse(InventoryPoolSummary summary) {
+        return new InventoryResponse.Pool(summary.sellerId(), summary.skuId(), summary.initialCapacity(),
                 summary.available(), summary.reserved(), summary.claimed());
     }
 
-    private static InventoryLocationResponse locationResponse(InventoryLocationRecord record) {
-        return new InventoryLocationResponse(record.locationId(), record.sellerId(), record.code(),
+    private static InventoryResponse.Location locationResponse(InventoryLocationRecord record) {
+        return new InventoryResponse.Location(record.locationId(), record.sellerId(), record.code(),
                 record.name(), record.priority(), record.active());
     }
 
-    private static InventoryTransferResponse transferResponse(InventoryTransferRecord record) {
-        return new InventoryTransferResponse(record.transferId(), record.sellerId(), record.skuId(),
+    private static InventoryResponse.Transfer transferResponse(InventoryTransferRecord record) {
+        return new InventoryResponse.Transfer(record.transferId(), record.sellerId(), record.skuId(),
                 record.sourceLocationId(), record.destinationLocationId(), record.idempotencyKey(),
                 record.quantity(), record.reason(), record.createdAt());
     }
     private static boolean matches(
-            List<Reservation> prior, UUID campaign, List<ReserveInventoryBatchRequest.Item> items) {
+            List<Reservation> prior, UUID campaign, List<InventoryRequest.ReserveInventoryBatch.Item> items) {
         return Objects.equals(prior.get(0).getCampaignId(), campaign)
                 && prior.size() == items.size()
                 && items.stream().allMatch(item -> prior.stream().anyMatch(reservation ->
@@ -384,9 +374,9 @@ public class InventoryServiceImpl implements InventoryService {
     }
 
     private static Map<String, Integer> requiredQuantities(
-            List<ReserveInventoryBatchRequest.Item> items) {
+            List<InventoryRequest.ReserveInventoryBatch.Item> items) {
         Map<String, Integer> quantities = new TreeMap<>();
-        for (ReserveInventoryBatchRequest.Item item : items) {
+        for (InventoryRequest.ReserveInventoryBatch.Item item : items) {
             int current = quantities.getOrDefault(item.skuId(), 0);
             if (current > Integer.MAX_VALUE - item.quantity()) {
                 throw invalid("total reservation quantity exceeds supported range");
@@ -396,23 +386,23 @@ public class InventoryServiceImpl implements InventoryService {
         return quantities;
     }
 
-    private static void validateItems(UUID seller, List<ReserveInventoryBatchRequest.Item> items) {
+    private static void validateItems(UUID seller, List<InventoryRequest.ReserveInventoryBatch.Item> items) {
         if (items == null || items.isEmpty()) throw invalid("reservation lines are required");
-        for (ReserveInventoryBatchRequest.Item item : items) {
+        for (InventoryRequest.ReserveInventoryBatch.Item item : items) {
             if (!seller.equals(item.sellerId())) throw invalid("seller mismatch");
             validSku(item.sellerId(), item.skuId());
             if (item.quantity() < 1) throw invalid("quantity must be positive");
         }
     }
 
-    private static ReservationResponse response(Reservation reservation) {
-        return new ReservationResponse(
+    private static InventoryResponse.Reservation response(Reservation reservation) {
+        return new InventoryResponse.Reservation(
                 reservation.getOrderId(), reservation.getCampaignId(), reservation.getSellerId(),
                 reservation.getSkuId(), reservation.getQuantity(), reservation.getStatus(),
                 reservation.getLocationId());
     }
 
-    private static ReservationResponse first(List<ReservationResponse> reservations) {
+    private static InventoryResponse.Reservation first(List<InventoryResponse.Reservation> reservations) {
         if (reservations == null || reservations.isEmpty()) {
             throw new InventoryException(InventoryException.Code.NOT_FOUND, "reservation not found");
         }

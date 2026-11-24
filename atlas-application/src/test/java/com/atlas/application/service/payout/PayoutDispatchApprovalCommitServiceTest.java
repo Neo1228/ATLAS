@@ -10,8 +10,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.application.security.PayoutRecipientCipher;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
@@ -56,11 +56,11 @@ class PayoutDispatchApprovalCommitServiceTest {
     @Test
     void approveRequestedPayoutApprovesThenEnqueuesThenRecordsAuditActionWithClockInstant() {
         PayoutDispatchPlan plan = plan();
-        SellerPayoutResponse approved = payout(SettlementPayoutStatus.APPROVED);
+        PayoutResponse.SellerPayout approved = payout(SettlementPayoutStatus.APPROVED);
         stubApprovable(SettlementPayoutStatus.REQUESTED, approved, plan);
         when(actions.record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW)).thenReturn(true);
 
-        SellerPayoutResponse result = service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(approved);
         InOrder order = inOrder(payouts, dispatches, actions);
@@ -72,14 +72,14 @@ class PayoutDispatchApprovalCommitServiceTest {
     @Test
     void approveAlreadyApprovedPayoutNeverApprovesAgainButStillConvergesOnTheSameDispatch() {
         PayoutDispatchPlan plan = plan();
-        SellerPayoutResponse approved = payout(SettlementPayoutStatus.APPROVED);
+        PayoutResponse.SellerPayout approved = payout(SettlementPayoutStatus.APPROVED);
         when(payouts.find(payoutId)).thenReturn(approved);
         when(profiles.requireActiveRecipient(sellerId)).thenReturn(recipient(3, EMAIL));
         when(dispatches.enqueue(plan)).thenReturn(dispatchRecord("PENDING", plan.requestPayloadSha256()));
         when(cipher.decrypt(CIPHERTEXT)).thenReturn(EMAIL);
         when(actions.record(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON, NOW)).thenReturn(true);
 
-        SellerPayoutResponse result = service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.approve(payoutId, plan, recipient(3, EMAIL), KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(approved);
         verify(payouts, never()).approve(any());
@@ -237,11 +237,11 @@ class PayoutDispatchApprovalCommitServiceTest {
 
     @Test
     void replayReturnsPayoutWithoutRecordingAgainWhenSameApprovalActionAlreadyExists() {
-        SellerPayoutResponse approved = payout(SettlementPayoutStatus.APPROVED);
+        PayoutResponse.SellerPayout approved = payout(SettlementPayoutStatus.APPROVED);
         when(payouts.find(payoutId)).thenReturn(approved);
         when(actions.matches(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON)).thenReturn(true);
 
-        SellerPayoutResponse result = service.replay(payoutId, KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.replay(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(approved);
         verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
@@ -251,12 +251,12 @@ class PayoutDispatchApprovalCommitServiceTest {
 
     @Test
     void replayOfApprovedPayoutRecordsReplayActionWithClockInstant() {
-        SellerPayoutResponse approved = payout(SettlementPayoutStatus.APPROVED);
+        PayoutResponse.SellerPayout approved = payout(SettlementPayoutStatus.APPROVED);
         when(payouts.find(payoutId)).thenReturn(approved);
         when(actions.matches(payoutId, KEY, "PAYOUT_APPROVED", ACTOR, REASON)).thenReturn(false);
         when(actions.record(payoutId, KEY, "PAYOUT_APPROVAL_REPLAYED", ACTOR, REASON, NOW)).thenReturn(true);
 
-        SellerPayoutResponse result = service.replay(payoutId, KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.replay(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(approved);
         verify(actions).record(payoutId, KEY, "PAYOUT_APPROVAL_REPLAYED", ACTOR, REASON, NOW);
@@ -278,12 +278,12 @@ class PayoutDispatchApprovalCommitServiceTest {
 
     @Test
     void cancelCancelsPayoutBeforeDispatchThenCancelsPendingDispatchThenRecordsAction() {
-        SellerPayoutResponse cancelled = payout(SettlementPayoutStatus.CANCELLED);
+        PayoutResponse.SellerPayout cancelled = payout(SettlementPayoutStatus.CANCELLED);
         when(payouts.cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED")).thenReturn(cancelled);
         when(dispatches.cancelPending(payoutId)).thenReturn(true);
         when(actions.record(payoutId, KEY, "PAYOUT_CANCELLED", ACTOR, REASON, NOW)).thenReturn(true);
 
-        SellerPayoutResponse result = service.cancel(payoutId, KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.cancel(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(cancelled);
         InOrder order = inOrder(payouts, dispatches, actions);
@@ -316,14 +316,14 @@ class PayoutDispatchApprovalCommitServiceTest {
 
     @Test
     void requeueNeedsReviewRequeuesDispatchAndRecordsActionWhenNoActionWasRecordedYet() {
-        SellerPayoutResponse review = payout(SettlementPayoutStatus.NEEDS_REVIEW);
+        PayoutResponse.SellerPayout review = payout(SettlementPayoutStatus.NEEDS_REVIEW);
         when(payouts.find(payoutId)).thenReturn(review);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord("NEEDS_REVIEW", sha())));
         when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false);
         when(dispatches.requeueNeedsReview(payoutId)).thenReturn(true);
         when(actions.record(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON, NOW)).thenReturn(true);
 
-        SellerPayoutResponse result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(review);
         InOrder order = inOrder(dispatches, actions);
@@ -333,12 +333,12 @@ class PayoutDispatchApprovalCommitServiceTest {
 
     @Test
     void requeueNeedsReviewIsIdempotentWhenSameRequeueActionAlreadyRecorded() {
-        SellerPayoutResponse review = payout(SettlementPayoutStatus.NEEDS_REVIEW);
+        PayoutResponse.SellerPayout review = payout(SettlementPayoutStatus.NEEDS_REVIEW);
         when(payouts.find(payoutId)).thenReturn(review);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord("NEEDS_REVIEW", sha())));
         when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(true);
 
-        SellerPayoutResponse result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(review);
         verify(dispatches, never()).requeueNeedsReview(any());
@@ -375,14 +375,14 @@ class PayoutDispatchApprovalCommitServiceTest {
 
     @Test
     void requeueNeedsReviewReturnsPayoutWhenConcurrentRequeueMovedDispatchBackToPendingWithSameAction() {
-        SellerPayoutResponse review = payout(SettlementPayoutStatus.NEEDS_REVIEW);
+        PayoutResponse.SellerPayout review = payout(SettlementPayoutStatus.NEEDS_REVIEW);
         when(payouts.find(payoutId)).thenReturn(review);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord("NEEDS_REVIEW", sha())))
                 .thenReturn(Optional.of(dispatchRecord("PENDING", sha())));
         when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(false, true);
         when(dispatches.requeueNeedsReview(payoutId)).thenReturn(false);
 
-        SellerPayoutResponse result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(review);
         verify(actions, never()).record(any(), anyString(), anyString(), anyString(), anyString(), any());
@@ -433,12 +433,12 @@ class PayoutDispatchApprovalCommitServiceTest {
     @EnumSource(value = SettlementPayoutStatus.class, names = {"APPROVED", "NEEDS_REVIEW"})
     void requeueNeedsReviewReturnsPayoutForAlreadyWaitingDispatchWhenSameActionWasRecorded(
             SettlementPayoutStatus state) {
-        SellerPayoutResponse payout = payout(state);
+        PayoutResponse.SellerPayout payout = payout(state);
         when(payouts.find(payoutId)).thenReturn(payout);
         when(dispatches.find(payoutId)).thenReturn(Optional.of(dispatchRecord("WAITING_PROVIDER", sha())));
         when(actions.matches(payoutId, KEY, "PAYOUT_REQUEUED", ACTOR, REASON)).thenReturn(true);
 
-        SellerPayoutResponse result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
+        PayoutResponse.SellerPayout result = service.requeueNeedsReview(payoutId, KEY, ACTOR, REASON);
 
         assertThat(result).isSameAs(payout);
         verify(dispatches, never()).requeueNeedsReview(any());
@@ -471,7 +471,7 @@ class PayoutDispatchApprovalCommitServiceTest {
         verify(dispatches, never()).requeueNeedsReview(any());
     }
 
-    private void stubApprovable(SettlementPayoutStatus currentState, SellerPayoutResponse approved,
+    private void stubApprovable(SettlementPayoutStatus currentState, PayoutResponse.SellerPayout approved,
             PayoutDispatchPlan plan) {
         when(payouts.find(payoutId)).thenReturn(payout(currentState));
         when(profiles.requireActiveRecipient(sellerId)).thenReturn(recipient(3, EMAIL));
@@ -480,13 +480,13 @@ class PayoutDispatchApprovalCommitServiceTest {
         when(cipher.decrypt(CIPHERTEXT)).thenReturn(EMAIL);
     }
 
-    private SellerPayoutResponse payout(SettlementPayoutStatus state) {
+    private PayoutResponse.SellerPayout payout(SettlementPayoutStatus state) {
         return payout(state, AMOUNT_WON, sellerId);
     }
 
-    private SellerPayoutResponse payout(SettlementPayoutStatus state, long amountWon, UUID owner) {
+    private PayoutResponse.SellerPayout payout(SettlementPayoutStatus state, long amountWon, UUID owner) {
         Instant requestedAt = Instant.parse("2026-11-22T00:00:00Z");
-        return new SellerPayoutResponse(payoutId, owner, requestedAt, requestedAt.plusSeconds(60), amountWon, 0,
+        return new PayoutResponse.SellerPayout(payoutId, owner, requestedAt, requestedAt.plusSeconds(60), amountWon, 0,
                 state, requestedAt, null, null, null);
     }
 

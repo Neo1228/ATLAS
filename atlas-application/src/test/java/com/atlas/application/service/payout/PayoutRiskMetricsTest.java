@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.service.SettlementPayoutService;
-import com.atlas.settlement.dto.response.PayoutRiskSnapshotResponse;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +15,7 @@ class PayoutRiskMetricsTest {
         SettlementPayoutService payouts = mock(SettlementPayoutService.class);
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         PayoutRiskMetrics metrics = new PayoutRiskMetrics(payouts, registry);
-        when(payouts.riskSnapshot()).thenReturn(new PayoutRiskSnapshotResponse(2, 1_500, 3, 4_000));
+        when(payouts.riskSnapshot()).thenReturn(new PayoutResponse.RiskSnapshot(2, 1_500, 3, 4_000));
 
         metrics.refresh();
 

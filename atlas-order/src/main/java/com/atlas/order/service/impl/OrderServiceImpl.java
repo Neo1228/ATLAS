@@ -1,20 +1,18 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.admission.model.CheckoutSlotReleaseReason;
-import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
-import com.atlas.inventory.dto.request.ReserveInventoryRequest;
-import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.response.OrderHistoryPageResponse;
-import com.atlas.order.dto.response.OrderItemResponse;
-import com.atlas.order.dto.response.OrderResponse;
-import com.atlas.order.dto.response.SellerOrderDetailResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
@@ -31,7 +29,6 @@ import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentService;
-import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -102,7 +99,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse startCheckout(UUID campaignId, UUID ticketId) {
+    public OrderViewResponse.Order startCheckout(UUID campaignId, UUID ticketId) {
         if (campaignId == null || ticketId == null) throw invalidRequest();
         CheckoutStartOutcome outcome = transactions.execute(status -> {
             var existingOrder = repository.findByTicketId(ticketId);
@@ -114,9 +111,9 @@ public final class OrderServiceImpl implements OrderService {
                 }
                 return new CheckoutStartOutcome(toResponse(existing), null);
             }
-            QueueTicketResponse ticket = admission.requireCheckoutSlot(campaignId, ticketId);
+            AdmissionResponse.QueueTicket ticket = admission.requireCheckoutSlot(campaignId, ticketId);
             Instant now = clock.instant();
-            SellerSkuResponse sku;
+            CatalogResponse.SellerSku sku;
             try {
                 sku = sellerSkus.findOrderableSellerSku(ticket.sellerId(), ticket.skuId(),
                         ProductSalesChannel.CAMPAIGN, now);
@@ -134,7 +131,7 @@ public final class OrderServiceImpl implements OrderService {
                     ticket.buyerRef(), OrderState.RESERVED, now.plus(checkoutWindow), null, now, now));
             items.save(new OrderItem(saved, sku.productId(), ticket.sellerId(), sku.skuId(),
                     sku.productName(), 1, sku.effectivePriceWon()));
-            ReservationResponse reservation = inventory.tryReserve(new ReserveInventoryRequest(
+            InventoryResponse.Reservation reservation = inventory.tryReserve(new InventoryRequest.ReserveInventory(
                     saved.orderId(), campaignId, ticket.sellerId(), sku.skuId(), 1)).orElse(null);
             boolean reserved = reservation != null;
             if (reserved) {
@@ -156,7 +153,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse submitPayment(UUID orderId) {
+    public OrderViewResponse.Order submitPayment(UUID orderId) {
         if (orderId == null) throw invalidRequest();
         if (findOrder(orderId).checkoutId() != null) {
             throw new OrderException(OrderException.Code.CONFLICT,
@@ -165,7 +162,7 @@ public final class OrderServiceImpl implements OrderService {
         return withOrderLock(orderId, () -> submitPaymentLocked(orderId));
     }
 
-    private OrderResponse submitPaymentLocked(UUID orderId) {
+    private OrderViewResponse.Order submitPaymentLocked(UUID orderId) {
         PurchaseOrder prepared = transactions.execute(status -> {
             PurchaseOrder order = lockOrder(orderId);
             if (order.state() == OrderState.RESERVED && !clock.instant().isBefore(order.checkoutExpiresAt())) {
@@ -222,7 +219,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse completePaymentApproval(UUID orderId, String providerOrderId) {
+    public OrderViewResponse.Order completePaymentApproval(UUID orderId, String providerOrderId) {
         PaymentResponse payment = payments.completeApproval(orderId, providerOrderId);
         if (payment.state() == PaymentState.AUTHORIZATION_PENDING
                 || payment.state() == PaymentState.CAPTURE_PENDING
@@ -234,7 +231,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse reconcilePayment(UUID orderId, String idempotencyKey) {
+    public OrderViewResponse.Order reconcilePayment(UUID orderId, String idempotencyKey) {
         if (orderId == null || invalidIdempotencyKey(idempotencyKey)) throw invalidRequest();
         if (findOrder(orderId).checkoutId() != null) {
             throw new OrderException(OrderException.Code.CONFLICT,
@@ -243,7 +240,7 @@ public final class OrderServiceImpl implements OrderService {
         return withOrderLock(orderId, () -> reconcilePaymentLocked(orderId, idempotencyKey));
     }
 
-    private OrderResponse reconcilePaymentLocked(UUID orderId, String idempotencyKey) {
+    private OrderViewResponse.Order reconcilePaymentLocked(UUID orderId, String idempotencyKey) {
         PurchaseOrder order = findOrder(orderId);
         PaymentResponse payment = payments.find(orderId);
         if (payment == null && order.state() != OrderState.PAYMENT_SUBMITTED
@@ -270,7 +267,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse cancel(UUID orderId, String idempotencyKey) {
+    public OrderViewResponse.Order cancel(UUID orderId, String idempotencyKey) {
         if (orderId == null || invalidIdempotencyKey(idempotencyKey)) throw invalidRequest();
         if (findOrder(orderId).checkoutId() != null) {
             throw new OrderException(OrderException.Code.CONFLICT,
@@ -279,7 +276,7 @@ public final class OrderServiceImpl implements OrderService {
         return withOrderLock(orderId, () -> cancelLocked(orderId, idempotencyKey));
     }
 
-    private OrderResponse cancelLocked(UUID orderId, String idempotencyKey) {
+    private OrderViewResponse.Order cancelLocked(UUID orderId, String idempotencyKey) {
         PurchaseOrder current = transactions.execute(status -> {
             PurchaseOrder order = lockOrder(orderId);
             if (order.state() == OrderState.PAID) {
@@ -319,7 +316,7 @@ public final class OrderServiceImpl implements OrderService {
         return applyPayment(orderId, payment);
     }
 
-    private OrderResponse cancelWithoutPayment(UUID orderId) {
+    private OrderViewResponse.Order cancelWithoutPayment(UUID orderId) {
         return transactions.execute(status -> {
             PurchaseOrder current = lockOrder(orderId);
             if (!current.state().isTerminal()) {
@@ -330,25 +327,25 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse find(UUID orderId) {
+    public OrderViewResponse.Order find(UUID orderId) {
         if (orderId == null) throw invalidRequest();
         return transactions.execute(status -> toResponse(requireOrder(orderId)));
     }
 
     @Override
-    public SellerOrderDetailResponse findSellerOrder(UUID sellerId, UUID orderId) {
+    public OrderViewResponse.SellerOrderDetail findSellerOrder(UUID sellerId, UUID orderId) {
         if (sellerId == null || orderId == null) throw invalidRequest();
         return transactions.execute(status -> {
             PurchaseOrder order = requireOrder(orderId);
             if (!sellerId.equals(order.sellerId())) {
                 throw new OrderException(OrderException.Code.NOT_FOUND, "Order not found");
             }
-            OrderResponse detail = toResponse(order);
+            OrderViewResponse.Order detail = toResponse(order);
             if (detail.items().isEmpty()
                     || detail.items().stream().anyMatch(item -> !sellerId.equals(item.sellerId()))) {
                 throw new OrderException(OrderException.Code.NOT_FOUND, "Order not found");
             }
-            return new SellerOrderDetailResponse(detail.orderId(), sellerId, order.source(), detail.state(),
+            return new OrderViewResponse.SellerOrderDetail(detail.orderId(), sellerId, order.source(), detail.state(),
                     order.createdAt(), detail.checkoutExpiresAt(), detail.inventoryState(),
                     detail.fulfillmentLocationId(), detail.items(), detail.totalPriceWon(),
                     detail.sellerCouponCode(), detail.couponDiscountWon());
@@ -356,7 +353,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public List<OrderResponse> findAll(List<UUID> orderIds) {
+    public List<OrderViewResponse.Order> findAll(List<UUID> orderIds) {
         if (orderIds == null) throw invalidRequest();
         if (orderIds.isEmpty()) return List.of();
         List<UUID> distinct = orderIds.stream().distinct().toList();
@@ -365,13 +362,13 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderHistoryPageResponse findBuyerOrderHistory(String buyerRef, Integer requestedLimit,
+    public OrderViewResponse.HistoryPage findBuyerOrderHistory(String buyerRef, Integer requestedLimit,
             String cursor) {
         return history.buyerHistory(buyerRef, requestedLimit, cursor);
     }
 
     @Override
-    public OrderHistoryPageResponse findSellerOrderHistory(UUID sellerId, Integer requestedLimit,
+    public OrderViewResponse.HistoryPage findSellerOrderHistory(UUID sellerId, Integer requestedLimit,
             String cursor) {
         return history.sellerHistory(sellerId, requestedLimit, cursor);
     }
@@ -417,7 +414,7 @@ public final class OrderServiceImpl implements OrderService {
         return expired;
     }
 
-    private OrderResponse applyPayment(UUID orderId, PaymentResponse payment) {
+    private OrderViewResponse.Order applyPayment(UUID orderId, PaymentResponse payment) {
         return transactions.execute(status -> {
             PurchaseOrder order = lockOrder(orderId);
             if (order.source() == OrderSource.CAMPAIGN) {
@@ -474,7 +471,7 @@ public final class OrderServiceImpl implements OrderService {
             }
             grossAmountWon = Math.addExact(grossAmountWon, item.lineTotalWon());
         }
-        settlement.recordCapture(new CapturePostingRequest(
+        settlement.recordCapture(new SettlementPostingRequest.Capture(
                 order.orderId(), payment.attemptId(), sellerId, grossAmountWon));
     }
 
@@ -494,7 +491,7 @@ public final class OrderServiceImpl implements OrderService {
     }
 
     private void releaseReservations(UUID orderId) {
-        List<ReservationResponse> reservations = inventory.findReservations(orderId);
+        List<InventoryResponse.Reservation> reservations = inventory.findReservations(orderId);
         if (reservations.stream().anyMatch(reservation -> reservation.status() == ReservationStatus.RESERVED)) {
             inventory.releaseAll(orderId);
         }
@@ -514,14 +511,14 @@ public final class OrderServiceImpl implements OrderService {
         requireOrder(orderId).updateState(state, paymentAttemptId, updatedAt);
     }
 
-    private List<OrderResponse> assembleResponses(List<UUID> orderIds) {
+    private List<OrderViewResponse.Order> assembleResponses(List<UUID> orderIds) {
         Map<UUID, PurchaseOrder> ordersById = repository.findAllById(orderIds).stream()
                 .collect(Collectors.toMap(PurchaseOrder::orderId, order -> order));
         if (ordersById.size() != orderIds.size()) {
             throw new OrderException(OrderException.Code.NOT_FOUND, "Order not found");
         }
         List<PurchaseOrder> orders = orderIds.stream().map(ordersById::get).toList();
-        Map<UUID, List<ReservationResponse>> reservationsByOrder = inventory.findReservationsByOrderIds(orderIds);
+        Map<UUID, List<InventoryResponse.Reservation>> reservationsByOrder = inventory.findReservationsByOrderIds(orderIds);
         Map<UUID, List<OrderItem>> itemsByOrder = items.findAllByOrderIds(orderIds).stream()
                 .collect(Collectors.groupingBy(item -> item.order().orderId()));
         Map<UUID, PaymentResponse> checkoutPayments = new HashMap<>();
@@ -533,7 +530,7 @@ public final class OrderServiceImpl implements OrderService {
                 checkoutPayments.computeIfAbsent(order.checkoutId(), payments::findCheckout);
             }
         }
-        Map<UUID, QueueTicketResponse> tickets = new HashMap<>();
+        Map<UUID, AdmissionResponse.QueueTicket> tickets = new HashMap<>();
         for (PurchaseOrder order : orders) {
             if (order.source() == OrderSource.CAMPAIGN) {
                 tickets.computeIfAbsent(order.ticketId(), key -> admission.find(order.campaignId(), key));
@@ -553,28 +550,28 @@ public final class OrderServiceImpl implements OrderService {
         if (orderId == null) throw invalidRequest();
     }
 
-    private OrderResponse toResponse(PurchaseOrder order) {
-        List<ReservationResponse> reservations = inventory.findReservations(order.orderId());
+    private OrderViewResponse.Order toResponse(PurchaseOrder order) {
+        List<InventoryResponse.Reservation> reservations = inventory.findReservations(order.orderId());
         PaymentResponse payment = order.checkoutId() == null
                 ? payments.find(order.orderId()) : payments.findCheckout(order.checkoutId());
-        QueueTicketResponse ticket = order.source() == OrderSource.CAMPAIGN
+        AdmissionResponse.QueueTicket ticket = order.source() == OrderSource.CAMPAIGN
                 ? admission.find(order.campaignId(), order.ticketId()) : null;
         return toResponse(order, reservations,
                 items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId()), payment, ticket);
     }
 
-    private OrderResponse toResponse(PurchaseOrder order, List<ReservationResponse> reservations,
-            List<OrderItem> orderItems, PaymentResponse payment, QueueTicketResponse ticket) {
+    private OrderViewResponse.Order toResponse(PurchaseOrder order, List<InventoryResponse.Reservation> reservations,
+            List<OrderItem> orderItems, PaymentResponse payment, AdmissionResponse.QueueTicket ticket) {
         PaymentState paymentState = payment == null ? PaymentState.NOT_STARTED : payment.state();
         UUID paymentAttemptId = order.paymentAttemptId() != null
                 ? order.paymentAttemptId() : payment == null ? null : payment.attemptId();
-        List<OrderItemResponse> itemResponses = orderItems.stream().map(item -> new OrderItemResponse(
+        List<OrderViewResponse.Item> itemResponses = orderItems.stream().map(item -> new OrderViewResponse.Item(
                 item.orderItemId(), item.productId(), item.sellerId(), item.skuId(), item.productName(),
                 item.quantity(), item.unitPriceWon(), item.couponDiscountWon(), item.lineTotalWon())).toList();
         long totalPriceWon = 0;
         for (OrderItem item : orderItems) totalPriceWon = Math.addExact(totalPriceWon, item.lineTotalWon());
         ReservationStatus inventoryState = reservations.isEmpty() ? null : reservations.get(0).status();
-        return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), paymentAttemptId,
+        return new OrderViewResponse.Order(order.orderId(), order.campaignId(), order.ticketId(), paymentAttemptId,
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState,
                 ticket == null ? null : ticket.status(), order.source(), order.fulfillmentLocationId(),
                 itemResponses, totalPriceWon, order.sellerCouponCode(), order.couponDiscountWon(),
@@ -603,5 +600,5 @@ public final class OrderServiceImpl implements OrderService {
         return total;
     }
 
-    private record CheckoutStartOutcome(OrderResponse response, CatalogException failure) { }
+    private record CheckoutStartOutcome(OrderViewResponse.Order response, CatalogException failure) { }
 }

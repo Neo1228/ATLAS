@@ -2,21 +2,16 @@ package com.atlas;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.service.impl.AdmissionServiceImpl;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
-import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.request.ReserveInventoryRequest;
 import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.service.CheckoutPaymentService;
@@ -146,10 +141,10 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
 
             UUID sellerId = sellers.createSeller().sellerId();
             String skuId = "multi-instance-expiry-" + UUID.randomUUID();
-            ProductResponse product = products.createProduct(sellerId,
-                    new CreateProductRequest("Multi-instance expiry", "shared expiry fixture"));
+            CatalogResponse.Product product = products.createProduct(sellerId,
+                    new ProductRequest.CreateProduct("Multi-instance expiry", "shared expiry fixture"));
             products.registerSku(sellerId, product.productId(),
-                    new RegisterSellerSkuRequest(skuId, 100, 2));
+                    new ProductRequest.RegisterSellerSku(skuId, 100, 2));
 
             UUID earlierCheckoutId = UUID.fromString("00000000-0000-0000-0000-000000000001");
             UUID blockedCheckoutId = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
@@ -262,19 +257,19 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
     private DueTicketProfile createDueTicketProfile(int dueTicketCount) {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "scheduler-expiry-" + dueTicketCount + "-" + UUID.randomUUID();
-        ProductResponse product = products.createProduct(sellerId,
-                new CreateProductRequest("Expiry profile " + skuId, "scheduler expiry fixture"));
+        CatalogResponse.Product product = products.createProduct(sellerId,
+                new ProductRequest.CreateProduct("Expiry profile " + skuId, "scheduler expiry fixture"));
         int initialStock = dueTicketCount + 3;
         products.registerSku(sellerId, product.productId(),
-                new RegisterSellerSkuRequest(skuId, 100, initialStock));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 1));
-        CampaignResponse campaign = campaigns.create(
-                new CreateCampaignRequest(sellerId, skuId, Duration.ofMinutes(5)));
+                new ProductRequest.RegisterSellerSku(skuId, 100, initialStock));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(
+                new AdmissionRequest.CreateCampaign(sellerId, skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
 
-        List<QueueTicketResponse> tickets = new ArrayList<>(dueTicketCount);
+        List<AdmissionResponse.QueueTicket> tickets = new ArrayList<>(dueTicketCount);
         for (int index = 0; index < dueTicketCount; index++) {
-            tickets.add(admission.join(new JoinQueueRequest(
+            tickets.add(admission.join(new AdmissionRequest.JoinQueue(
                     campaign.campaignId(), skuId,
                     "scheduler-expiry-buyer-" + UUID.randomUUID(),
                     "scheduler-expiry-key-" + UUID.randomUUID())));
@@ -347,7 +342,7 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
 
     private void insertDueCartCheckout(
             UUID checkoutId, UUID orderId, UUID sellerId, String skuId, String buyerRef, Instant expiresAt) {
-        inventory.reserve(new ReserveInventoryRequest(orderId, null, sellerId, skuId, 1));
+        inventory.reserve(new InventoryRequest.ReserveInventory(orderId, null, sellerId, skuId, 1));
         jdbc.update("""
                 INSERT INTO buyer_checkout (
                     checkout_id, buyer_ref, idempotency_key, state, total_won, created_at, updated_at
@@ -406,6 +401,6 @@ class ScheduledExpiryMultiInstanceIntegrationTest extends PayPalIntegrationTestS
     }
 
     private record DueTicketProfile(UUID sellerId, String skuId, UUID campaignId,
-                                    List<QueueTicketResponse> tickets) {
+                                    List<AdmissionResponse.QueueTicket> tickets) {
     }
 }

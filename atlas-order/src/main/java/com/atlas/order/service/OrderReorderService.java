@@ -1,9 +1,9 @@
 package com.atlas.order.service;
 
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.dto.response.CartResponse;
-import com.atlas.order.dto.request.OrderReorderRequest;
 import java.util.UUID;
 
 public interface OrderReorderService {
-    CartResponse reorder(OrderReorderRequest request);
+    CartResponse reorder(OrderRequest.Reorder request);
 }

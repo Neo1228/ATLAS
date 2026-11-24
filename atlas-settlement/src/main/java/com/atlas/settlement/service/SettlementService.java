@@ -1,17 +1,15 @@
 package com.atlas.settlement.service;
 
-import com.atlas.settlement.dto.request.CapturePostingRequest;
-import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
-import com.atlas.settlement.dto.request.RefundPostingRequest;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 
 
 public interface SettlementService {
-    void recordCapture(CapturePostingRequest request);
-    void recordCheckoutCapture(CheckoutSettlementPostingRequest request);
-    void recordRefund(RefundPostingRequest request);
-    void reserveRefund(RefundPostingRequest request);
-    void releaseRefundReservation(RefundPostingRequest request);
+    void recordCapture(SettlementPostingRequest.Capture request);
+    void recordCheckoutCapture(SettlementPostingRequest.CheckoutSettlement request);
+    void recordRefund(SettlementPostingRequest.Refund request);
+    void reserveRefund(SettlementPostingRequest.Refund request);
+    void releaseRefundReservation(SettlementPostingRequest.Refund request);
     SellerSettlementStatementResponse getSellerStatement(SellerSettlementStatementRequest request);
 }

@@ -7,8 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.catalog.dto.request.CreateProductCategoryRequest;
-import com.atlas.catalog.dto.request.UpdateProductCategoryRequest;
+import com.atlas.catalog.dto.request.ProductCategoryRequest;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.ProductCategory;
@@ -31,7 +30,7 @@ class ProductCategoryServiceImplTest {
         when(categories.saveAndFlush(any(ProductCategory.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = service.createCategory(sellerId, new CreateProductCategoryRequest("SHOES", "Shoes"));
+        var response = service.createCategory(sellerId, new ProductCategoryRequest.Create("SHOES", "Shoes"));
 
         assertEquals(sellerId, response.sellerId());
         assertEquals("SHOES", response.code());
@@ -44,7 +43,7 @@ class ProductCategoryServiceImplTest {
         when(categories.existsBySellerIdAndCode(sellerId, "SHOES")).thenReturn(true);
 
         CatalogException exception = assertThrows(CatalogException.class,
-                () -> service.createCategory(sellerId, new CreateProductCategoryRequest("SHOES", "Shoes")));
+                () -> service.createCategory(sellerId, new ProductCategoryRequest.Create("SHOES", "Shoes")));
 
         assertEquals(Code.CONFLICT, exception.code());
     }
@@ -55,7 +54,7 @@ class ProductCategoryServiceImplTest {
         when(categories.findByCategoryIdAndSellerId(categoryId, sellerId)).thenReturn(Optional.empty());
 
         CatalogException exception = assertThrows(CatalogException.class, () -> service.updateCategoryName(sellerId,
-                categoryId, new UpdateProductCategoryRequest("New name")));
+                categoryId, new ProductCategoryRequest.Update("New name")));
 
         assertEquals(Code.NOT_FOUND, exception.code());
         verify(categories).findByCategoryIdAndSellerId(categoryId, sellerId);
@@ -69,7 +68,7 @@ class ProductCategoryServiceImplTest {
         when(categories.findByCategoryIdAndSellerId(categoryId, sellerId)).thenReturn(Optional.of(uncategorized));
 
         CatalogException exception = assertThrows(CatalogException.class, () -> service.updateCategoryName(sellerId,
-                categoryId, new UpdateProductCategoryRequest("Other")));
+                categoryId, new ProductCategoryRequest.Update("Other")));
 
         assertEquals(Code.CONFLICT, exception.code());
     }

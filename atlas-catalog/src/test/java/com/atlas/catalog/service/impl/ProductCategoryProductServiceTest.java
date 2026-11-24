@@ -12,8 +12,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.response.ProductListingPageResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
@@ -60,7 +60,7 @@ class ProductCategoryProductServiceTest {
         when(products.saveAndFlush(any(Product.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = service.createProduct(sellerId, new CreateProductRequest("Item", null));
+        var response = service.createProduct(sellerId, new ProductRequest.CreateProduct("Item", null));
 
         assertEquals(List.of(categoryId), response.categoryIds());
     }
@@ -74,7 +74,7 @@ class ProductCategoryProductServiceTest {
 
         CatalogException exception = assertThrows(CatalogException.class,
                 () -> service.createProduct(sellerId,
-                        new CreateProductRequest("Item", null, List.of(foreignCategory))));
+                        new ProductRequest.CreateProduct("Item", null, List.of(foreignCategory))));
 
         assertEquals(Code.NOT_FOUND, exception.code());
     }
@@ -85,7 +85,7 @@ class ProductCategoryProductServiceTest {
 
         CatalogException exception = assertThrows(CatalogException.class,
                 () -> service.createProduct(sellerId,
-                        new CreateProductRequest("Item", null, List.of(categoryId, categoryId))));
+                        new ProductRequest.CreateProduct("Item", null, List.of(categoryId, categoryId))));
 
         assertEquals(Code.INVALID_REQUEST, exception.code());
         verify(products, never()).save(any(Product.class));
@@ -106,7 +106,7 @@ class ProductCategoryProductServiceTest {
         when(otherCategory.getCode()).thenReturn("OTHER");
 
         CatalogException exception = assertThrows(CatalogException.class,
-                () -> service.createProduct(sellerId, new CreateProductRequest("Item", null, requestedIds)));
+                () -> service.createProduct(sellerId, new ProductRequest.CreateProduct("Item", null, requestedIds)));
 
         assertEquals(Code.INVALID_REQUEST, exception.code());
         verify(products, never()).save(any(Product.class));
@@ -248,7 +248,7 @@ class ProductCategoryProductServiceTest {
                 isNull(), isNull(), any(Instant.class))).thenReturn(List.of(first, second));
         when(sellerSkus.findAllByProductIdIn(List.of(firstId))).thenReturn(List.of());
 
-        ProductListingPageResponse page = service.listProductsPage(sellerId, categoryId, null, 1, null);
+        CatalogResponse.ProductListingPage page = service.listProductsPage(sellerId, categoryId, null, 1, null);
 
         String decoded = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
         assertTrue(decoded.startsWith("v5:false:"));

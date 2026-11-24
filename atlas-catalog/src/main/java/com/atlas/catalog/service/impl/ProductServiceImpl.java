@@ -1,11 +1,8 @@
 package com.atlas.catalog.service.impl;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductListingPageResponse;
-import com.atlas.catalog.dto.response.ProductListingResponse;
-import com.atlas.catalog.dto.response.ProductResponse;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
@@ -20,7 +17,6 @@ import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.inventory.dto.request.CreateInventoryPoolRequest;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.model.ProductStatus;
@@ -58,7 +54,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public ProductResponse createProduct(UUID sellerId, CreateProductRequest request) {
+    public CatalogResponse.Product createProduct(UUID sellerId, ProductRequest.CreateProduct request) {
         if (sellerId == null || request == null || request.name() == null || request.name().isBlank()) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product configuration");
         }
@@ -76,7 +72,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public ProductResponse updateProductCategories(UUID sellerId, UUID productId, List<UUID> categoryIds) {
+    public CatalogResponse.Product updateProductCategories(UUID sellerId, UUID productId, List<UUID> categoryIds) {
         if (sellerId == null || productId == null) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product category assignment");
         }
@@ -97,7 +93,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public ProductResponse updateStatus(UUID sellerId, UUID productId, ProductStatus status) {
+    public CatalogResponse.Product updateStatus(UUID sellerId, UUID productId, ProductStatus status) {
         if (sellerId == null || productId == null || status == null)
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product status update");
         Product product = requireOwnedProduct(sellerId, productId);
@@ -111,7 +107,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public ProductResponse updateChannelAvailability(UUID sellerId, UUID productId, ProductSalesChannel channel,
+    public CatalogResponse.Product updateChannelAvailability(UUID sellerId, UUID productId, ProductSalesChannel channel,
             boolean available) {
         if (sellerId == null || productId == null || channel == null)
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product channel availability update");
@@ -127,7 +123,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public SellerSkuResponse registerSku(UUID sellerId, UUID productId, RegisterSellerSkuRequest request) {
+    public CatalogResponse.SellerSku registerSku(UUID sellerId, UUID productId, ProductRequest.RegisterSellerSku request) {
         if (sellerId == null || productId == null || request == null || request.skuId() == null
                 || request.skuId().isBlank() || request.skuId().length() > 128
                 || request.priceWon() <= 0 || request.initialStock() < 0)
@@ -139,13 +135,13 @@ public class ProductServiceImpl implements ProductService {
         }
         SellerSku sku = sellerSkus.saveAndFlush(new SellerSku(sellerId, productId, request.skuId(),
                 request.priceWon(), clock.instant()));
-        inventory.createInventoryPool(new CreateInventoryPoolRequest(sellerId, request.skuId(), request.initialStock()));
+        inventory.createInventoryPool(new InventoryRequest.CreateInventoryPool(sellerId, request.skuId(), request.initialStock()));
         return toResponse(product, sku, clock.instant());
     }
 
     @Override
     @Transactional
-    public SellerSkuResponse updateSkuPrice(UUID sellerId, UUID productId, String skuId, long priceWon) {
+    public CatalogResponse.SellerSku updateSkuPrice(UUID sellerId, UUID productId, String skuId, long priceWon) {
         if (sellerId == null || productId == null || skuId == null || skuId.isBlank() || priceWon <= 0) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid seller SKU price update");
         }
@@ -160,7 +156,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public SellerSkuResponse setSkuSalePrice(UUID sellerId, UUID productId, String skuId, long salePriceWon,
+    public CatalogResponse.SellerSku setSkuSalePrice(UUID sellerId, UUID productId, String skuId, long salePriceWon,
             Instant startsAt, Instant endsAt) {
         if (sellerId == null || productId == null || skuId == null || skuId.isBlank() || salePriceWon <= 0
                 || startsAt == null || endsAt == null || !startsAt.isBefore(endsAt)) {
@@ -177,7 +173,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public SellerSkuResponse clearSkuSalePrice(UUID sellerId, UUID productId, String skuId) {
+    public CatalogResponse.SellerSku clearSkuSalePrice(UUID sellerId, UUID productId, String skuId) {
         if (sellerId == null || productId == null || skuId == null || skuId.isBlank()) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid SKU sale price cancellation");
         }
@@ -206,14 +202,14 @@ public class ProductServiceImpl implements ProductService {
      */
     @Override
     @Transactional(readOnly = true)
-    public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
+    public CatalogResponse.ProductListingPage listProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
         return listProductsPage(sellerId, categoryId, query, null, null, requestedLimit, cursor);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public ProductListingPageResponse listProductsPage(UUID sellerId, UUID categoryId, String query,
+    public CatalogResponse.ProductListingPage listProductsPage(UUID sellerId, UUID categoryId, String query,
             Long minPriceWon, Long maxPriceWon, Integer requestedLimit, String cursor) {
         return listProductsPageInternal(
                 sellerId, categoryId, query, minPriceWon, maxPriceWon, requestedLimit, cursor, false);
@@ -221,13 +217,13 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    public ProductListingPageResponse listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
+    public CatalogResponse.ProductListingPage listSellerProductsPage(UUID sellerId, UUID categoryId, String query,
             Integer requestedLimit, String cursor) {
         if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID required");
         return listProductsPageInternal(sellerId, categoryId, query, null, null, requestedLimit, cursor, true);
     }
 
-    private ProductListingPageResponse listProductsPageInternal(
+    private CatalogResponse.ProductListingPage listProductsPageInternal(
             UUID sellerId, UUID categoryId, String query, Long minPriceWon, Long maxPriceWon,
             Integer requestedLimit, String cursor, boolean managementScope) {
         ListingCursor position = decodeCursor(cursor);
@@ -272,7 +268,7 @@ public class ProductServiceImpl implements ProductService {
         boolean hasMore = fetched.size() > limit;
         List<Product> page = fetched.stream().limit(limit).toList();
         List<UUID> productIds = page.stream().map(Product::getProductId).toList();
-        if (productIds.isEmpty()) return new ProductListingPageResponse(List.of(), null);
+        if (productIds.isEmpty()) return new CatalogResponse.ProductListingPage(List.of(), null);
         Map<UUID, Product> productsById = page.stream().collect(Collectors.toMap(Product::getProductId, product -> product));
         // 채널·카테고리는 읽기 모델에서 한 번에 읽는다. 원본 3개 테이블을 다시 읽으면
         // buffer 1,132, 이 투영을 쓰면 103 이다(로컬 2M 상품 실측, 이슈 #389).
@@ -288,21 +284,21 @@ public class ProductServiceImpl implements ProductService {
             categoryIdsByProductId.put(row.productId(), row.categories());
         }
         Instant pricingAt = asOf;
-        Map<UUID, List<SellerSkuResponse>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
+        Map<UUID, List<CatalogResponse.SellerSku>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
                 .map(sku -> toResponse(productsById.get(sku.getProductId()), sku, pricingAt))
-                .collect(Collectors.groupingBy(SellerSkuResponse::productId));
-        List<ProductListingResponse> items = page.stream().map(product -> new ProductListingResponse(
+                .collect(Collectors.groupingBy(CatalogResponse.SellerSku::productId));
+        List<CatalogResponse.ProductListing> items = page.stream().map(product -> new CatalogResponse.ProductListing(
                 toResponse(product, categoryIdsByProductId.getOrDefault(product.getProductId(), List.of()),
                         availableChannelsByProductId.getOrDefault(product.getProductId(), List.of())),
                 variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
-                        .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList())).toList();
+                        .sorted(Comparator.comparing(CatalogResponse.SellerSku::skuId)).toList())).toList();
         String nextCursor = null;
         if (hasMore) {
             Product last = page.getLast();
             nextCursor = encodeCursor(sellerId, categoryId, keyword, minPriceWon, maxPriceWon,
                     last.getSellerId(), last.getProductId(), managementScope);
         }
-        return new ProductListingPageResponse(items, nextCursor);
+        return new CatalogResponse.ProductListingPage(items, nextCursor);
     }
 
     @Override
@@ -314,7 +310,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    public ProductListingResponse findProduct(UUID productId) {
+    public CatalogResponse.ProductListing findProduct(UUID productId) {
         if (productId == null) throw new CatalogException(Code.INVALID_REQUEST, "Product ID required");
         Product product = products.findPublicOrderableByProductId(productId)
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Unknown product: " + productId));
@@ -369,15 +365,15 @@ public class ProductServiceImpl implements ProductService {
                 new ProductCategoryAssignment(sellerId, productId, categoryId)).toList();
     }
 
-    private ProductListingResponse toListing(Product product) {
+    private CatalogResponse.ProductListing toListing(Product product) {
         Instant pricingAt = clock.instant();
-        List<SellerSkuResponse> variants = sellerSkus.findAllByProductId(product.getProductId()).stream()
+        List<CatalogResponse.SellerSku> variants = sellerSkus.findAllByProductId(product.getProductId()).stream()
                 .map(sku -> toResponse(product, sku, pricingAt))
-                .sorted(Comparator.comparing(SellerSkuResponse::skuId)).toList();
-        return new ProductListingResponse(toResponse(product), variants);
+                .sorted(Comparator.comparing(CatalogResponse.SellerSku::skuId)).toList();
+        return new CatalogResponse.ProductListing(toResponse(product), variants);
     }
 
-    private ProductResponse toResponse(Product product) {
+    private CatalogResponse.Product toResponse(Product product) {
         List<UUID> categoryIds = categoryAssignments
                 .findAllBySellerIdAndProductIdOrderByCategoryIdAsc(product.getSellerId(), product.getProductId())
                 .stream().map(ProductCategoryAssignment::getCategoryId).toList();
@@ -385,16 +381,16 @@ public class ProductServiceImpl implements ProductService {
                 .filter(Map.Entry::getValue).map(Map.Entry::getKey).sorted().toList());
     }
 
-    private static ProductResponse toResponse(Product product, List<UUID> categoryIds,
+    private static CatalogResponse.Product toResponse(Product product, List<UUID> categoryIds,
             List<ProductSalesChannel> availableChannels) {
         List<UUID> allCategoryIds = new ArrayList<>(categoryIds);
         allCategoryIds.add(product.getPrimaryCategoryId());
-        return new ProductResponse(product.getProductId(), product.getSellerId(), product.getName(),
+        return new CatalogResponse.Product(product.getProductId(), product.getSellerId(), product.getName(),
                 product.getDescription(), allCategoryIds, product.getStatus(), availableChannels);
     }
 
-    private static SellerSkuResponse toResponse(Product product, SellerSku sku, Instant asOf) {
-        return new SellerSkuResponse(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
+    private static CatalogResponse.SellerSku toResponse(Product product, SellerSku sku, Instant asOf) {
+        return new CatalogResponse.SellerSku(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
                 product.getName(), sku.getPriceWon(), sku.getSalePriceWon(), sku.getSaleStartsAt(),
                 sku.getSaleEndsAt(), sku.effectivePriceAt(asOf));
 

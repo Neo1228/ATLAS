@@ -1,8 +1,8 @@
 package com.atlas.application.controller.order;
 
-import com.atlas.application.controller.dto.OrderShipmentHttpRequest;
-import com.atlas.order.dto.request.OrderShipmentRequest;
-import com.atlas.order.dto.response.OrderShipmentResponse;
+import com.atlas.application.dto.request.OrderHttpRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.service.OrderShipmentService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -24,22 +24,22 @@ public class OrderShipmentController {
     private final OrderShipmentService shipments;
 
     @PostMapping("/sellers/{sellerId}/orders/{orderId}/shipments")
-    public OrderShipmentResponse create(@PathVariable UUID sellerId, @PathVariable UUID orderId,
+    public OrderViewResponse.Shipment create(@PathVariable UUID sellerId, @PathVariable UUID orderId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody OrderShipmentHttpRequest request) {
-        return shipments.create(new OrderShipmentRequest(sellerId, orderId, idempotencyKey,
+            @Valid @RequestBody OrderHttpRequest.Shipment request) {
+        return shipments.create(new OrderRequest.Shipment(sellerId, orderId, idempotencyKey,
                 request.carrierCode(), request.trackingNumber(),
-                request.items().stream().map(item -> new OrderShipmentRequest.Item(
+                request.items().stream().map(item -> new OrderRequest.Shipment.Item(
                         item.orderItemId(), item.quantity())).toList(), request.fulfillmentLocationId()));
     }
 
     @GetMapping("/buyers/{buyerRef}/orders/{orderId}/shipments")
-    public List<OrderShipmentResponse> findAll(@PathVariable String buyerRef, @PathVariable UUID orderId) {
+    public List<OrderViewResponse.Shipment> findAll(@PathVariable String buyerRef, @PathVariable UUID orderId) {
         return shipments.findAll(buyerRef, orderId);
     }
 
     @PutMapping("/sellers/{sellerId}/orders/{orderId}/shipments/{shipmentId}/delivery")
-    public OrderShipmentResponse deliver(@PathVariable UUID sellerId, @PathVariable UUID orderId,
+    public OrderViewResponse.Shipment deliver(@PathVariable UUID sellerId, @PathVariable UUID orderId,
             @PathVariable UUID shipmentId) {
         return shipments.deliver(sellerId, orderId, shipmentId);
     }

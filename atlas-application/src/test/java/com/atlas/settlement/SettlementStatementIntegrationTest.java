@@ -6,20 +6,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
@@ -122,24 +119,24 @@ class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
                 + secondSellerCheckout.items().get(0).signedAmountWon()).isEqualTo(checkoutGross);
 
         String campaignSkuId = registerSku(firstSellerId, 75, 2);
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(firstSellerId, campaignSkuId, 1));
-        CampaignResponse campaign = campaigns.create(
-                new CreateCampaignRequest(firstSellerId, campaignSkuId, Duration.ofMinutes(5)));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(firstSellerId, campaignSkuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(
+                new AdmissionRequest.CreateCampaign(firstSellerId, campaignSkuId, Duration.ofMinutes(5)));
         campaign = campaigns.open(campaign.campaignId());
         String campaignBuyer = "statement-campaign-buyer-" + UUID.randomUUID();
-        var ticket = admission.join(new JoinQueueRequest(
+        var ticket = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), campaignSkuId, campaignBuyer, "statement-ticket-" + UUID.randomUUID()));
-        OrderResponse reservedCampaignOrder = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        OrderResponse campaignPending = orders.submitPayment(reservedCampaignOrder.orderId());
-        OrderResponse paidCampaignOrder = orders.completePaymentApproval(reservedCampaignOrder.orderId(),
+        OrderViewResponse.Order reservedCampaignOrder = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderViewResponse.Order campaignPending = orders.submitPayment(reservedCampaignOrder.orderId());
+        OrderViewResponse.Order paidCampaignOrder = orders.completePaymentApproval(reservedCampaignOrder.orderId(),
                 approvalToken(campaignPending.paymentApprovalUrl()));
         assertThat(paidCampaignOrder.state()).isEqualTo(OrderState.PAID);
 
         UUID campaignOrderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, paidCampaignOrder.orderId());
-        UUID refundId = refunds.refund(new OrderRefundRequest(firstSellerId, paidCampaignOrder.orderId(),
+        UUID refundId = refunds.refund(new OrderRequest.Refund(firstSellerId, paidCampaignOrder.orderId(),
                 "statement-refund-" + UUID.randomUUID(),
-                List.of(new OrderRefundRequest.Item(campaignOrderItemId, 1)))).refundId();
+                List.of(new OrderRequest.Refund.Item(campaignOrderItemId, 1)))).refundId();
         assertThat(orders.find(paidCampaignOrder.orderId()).state()).isEqualTo(OrderState.PAID);
         var fullPeriod = settlement.getSellerStatement(statementRequest(
                 firstSellerId, PERIOD_FROM, PERIOD_TO, 100, null));
@@ -288,9 +285,9 @@ class SettlementStatementIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     private String registerSku(UUID sellerId, long priceWon, int initialStock) {
-        var product = products.createProduct(sellerId, new CreateProductRequest("Statement product", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Statement product", null));
         String skuId = "statement-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, priceWon, initialStock));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, priceWon, initialStock));
         return skuId;
     }
 

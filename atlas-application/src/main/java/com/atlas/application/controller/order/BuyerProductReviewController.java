@@ -1,8 +1,7 @@
 package com.atlas.application.controller.order;
 
-import com.atlas.application.controller.dto.CreateProductReviewRequest;
-import com.atlas.order.dto.response.ProductReviewPage;
-import com.atlas.order.dto.response.ProductReviewResponse;
+import com.atlas.application.dto.request.OrderHttpRequest;
+import com.atlas.order.dto.response.ReviewResponse;
 import com.atlas.order.service.ProductReviewService;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -27,13 +26,13 @@ public class BuyerProductReviewController {
 
     @PostMapping("/buyers/{buyerRef}/reviews")
     @ResponseStatus(HttpStatus.CREATED)
-    public ProductReviewResponse create(@PathVariable String buyerRef,
-            @Valid @RequestBody CreateProductReviewRequest request) {
+    public ReviewResponse.ProductReview create(@PathVariable String buyerRef,
+            @Valid @RequestBody OrderHttpRequest.CreateProductReview request) {
         return reviews.create(buyerRef, request.productId(), request.rating(), request.body());
     }
 
     @GetMapping("/products/{productId}/reviews")
-    public ProductReviewPage list(@PathVariable UUID productId,
+    public ReviewResponse.Page list(@PathVariable UUID productId,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         return reviews.list(productId, limit, offset);

@@ -11,13 +11,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.payment.dto.response.WebhookRetryResponse;
 import com.atlas.account.config.AccountSecurityConfiguration;
 import com.atlas.application.config.PayPalReportOperatorSecurityConfiguration;
 import com.atlas.application.config.PayPalWebhookOperatorSecurityConfiguration;
 import com.atlas.application.controller.payment.PayPalWebhookOperatorController;
-import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage;
-import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage.Item;
-import com.atlas.payment.dto.response.PayPalWebhookRequeueResponse;
+import com.atlas.payment.dto.response.WebhookRetryResponse.ExhaustedRetryPage.Item;
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import com.atlas.payment.service.PayPalWebhookOperatorService;
 import java.time.Instant;
@@ -80,7 +79,7 @@ class PayPalWebhookOperatorSecurityTest {
 
     @Test
     void authenticatedReadReturnsSafePageAndBoundsRequestedSize() throws Exception {
-        when(service.listExhausted(0, 100)).thenReturn(new PayPalWebhookExhaustedRetryPage(
+        when(service.listExhausted(0, 100)).thenReturn(new WebhookRetryResponse.ExhaustedRetryPage(
                 List.of(new Item("event-1", "PAYMENT.CAPTURE.COMPLETED", 8,
                         Instant.parse("2026-11-01T10:00:00Z"), Instant.parse("2026-11-01T10:01:00Z"))),
                 0, 100, 1, 1));
@@ -104,7 +103,7 @@ class PayPalWebhookOperatorSecurityTest {
     @Test
     void authenticatedRequeueReturnsAcceptedAndUsesOperatorPrincipal() throws Exception {
         when(service.requeue("event-1", "key-1", "webhook-operator", "manual review"))
-                .thenReturn(new PayPalWebhookRequeueResponse("event-1", "REQUEUED"));
+                .thenReturn(new WebhookRetryResponse.Requeue("event-1", "REQUEUED"));
 
         mvc.perform(post(PATH + "/event-1/requeue").with(httpBasic("webhook-operator", PASSWORD))
                         .header("Idempotency-Key", "key-1").contentType("application/json")

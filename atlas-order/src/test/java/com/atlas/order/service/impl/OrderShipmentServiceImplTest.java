@@ -8,7 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.order.dto.request.OrderShipmentRequest;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderFulfillment;
 import com.atlas.order.persistence.entity.OrderItem;
@@ -42,9 +42,9 @@ class OrderShipmentServiceImplTest {
         UUID order = UUID.randomUUID();
         UUID item = UUID.randomUUID();
 
-        OrderException failure = assertThrows(OrderException.class, () -> service.create(new OrderShipmentRequest(
+        OrderException failure = assertThrows(OrderException.class, () -> service.create(new OrderRequest.Shipment(
                 seller, order, " key ", null, null,
-                List.of(new OrderShipmentRequest.Item(item, 1), new OrderShipmentRequest.Item(item, 2)))));
+                List.of(new OrderRequest.Shipment.Item(item, 1), new OrderRequest.Shipment.Item(item, 2)))));
 
         assertEquals(OrderException.Code.INVALID_REQUEST, failure.code());
         verify(orders, never()).findWithLockByOrderId(order);
@@ -56,7 +56,7 @@ class OrderShipmentServiceImplTest {
                 mock(OrderItemRepository.class), mock(OrderShipmentRepository.class),
                 mock(OrderFulfillmentRepository.class), mock(OrderRefundRepository.class),
                 Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), Optional.empty());
-        OrderShipmentRequest request = new OrderShipmentRequest(UUID.randomUUID(), UUID.randomUUID(), "key",
+        OrderRequest.Shipment request = new OrderRequest.Shipment(UUID.randomUUID(), UUID.randomUUID(), "key",
                 null, null, null);
 
         OrderException failure = assertThrows(OrderException.class, () -> service.create(request));
@@ -92,8 +92,8 @@ class OrderShipmentServiceImplTest {
         OrderShipmentServiceImpl service = new OrderShipmentServiceImpl(
                 orders, orderItems, shipments, fulfillments, refunds,
                 Clock.fixed(Instant.EPOCH.plusSeconds(2), ZoneOffset.UTC), Optional.empty());
-        OrderShipmentRequest request = new OrderShipmentRequest(sellerId, orderId, "foreign-item", null, null,
-                List.of(new OrderShipmentRequest.Item(orderItemId, 1)));
+        OrderRequest.Shipment request = new OrderRequest.Shipment(sellerId, orderId, "foreign-item", null, null,
+                List.of(new OrderRequest.Shipment.Item(orderItemId, 1)));
 
         OrderException failure = assertThrows(OrderException.class, () -> service.create(request));
 

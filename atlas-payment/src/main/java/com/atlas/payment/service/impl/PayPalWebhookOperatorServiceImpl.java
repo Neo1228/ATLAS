@@ -1,8 +1,7 @@
 package com.atlas.payment.service.impl;
 
-import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage.Item;
-import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage;
-import com.atlas.payment.dto.response.PayPalWebhookRequeueResponse;
+import com.atlas.payment.dto.response.WebhookRetryResponse;
+import com.atlas.payment.dto.response.WebhookRetryResponse.ExhaustedRetryPage.Item;
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
@@ -32,7 +31,7 @@ public class PayPalWebhookOperatorServiceImpl implements PayPalWebhookOperatorSe
     }
 
     @Override
-    public PayPalWebhookExhaustedRetryPage listExhausted(int page, int requestedSize) {
+    public WebhookRetryResponse.ExhaustedRetryPage listExhausted(int page, int requestedSize) {
         if (page < 0) throw new PaymentException(Code.INVALID_REQUEST, "page must be non-negative");
         int size = requestedSize <= 0 ? DEFAULT_PAGE_SIZE : Math.min(requestedSize, MAX_PAGE_SIZE);
         long offset = (long) page * size;
@@ -45,11 +44,11 @@ public class PayPalWebhookOperatorServiceImpl implements PayPalWebhookOperatorSe
                         row.createdAt(), row.finishedAt()))
                 .toList();
         int pages = count == 0 ? 0 : (int) ((count + size - 1) / size);
-        return new PayPalWebhookExhaustedRetryPage(items, page, size, count, pages);
+        return new WebhookRetryResponse.ExhaustedRetryPage(items, page, size, count, pages);
     }
 
     @Override
-    public PayPalWebhookRequeueResponse requeue(String eventId, String idempotencyKey, String actor, String reason) {
+    public WebhookRetryResponse.Requeue requeue(String eventId, String idempotencyKey, String actor, String reason) {
         validate(idempotencyKey, actor, reason);
         try {
             return transactions.execute(status -> requeueInTransaction(eventId, idempotencyKey, actor, reason));
@@ -58,8 +57,8 @@ public class PayPalWebhookOperatorServiceImpl implements PayPalWebhookOperatorSe
         }
     }
 
-    private PayPalWebhookRequeueResponse requeueInTransaction(String eventId, String key, String actor, String reason) {
-        PayPalWebhookRequeueResponse replay = findReplay(eventId, key, actor, reason);
+    private WebhookRetryResponse.Requeue requeueInTransaction(String eventId, String key, String actor, String reason) {
+        WebhookRetryResponse.Requeue replay = findReplay(eventId, key, actor, reason);
         if (replay != null) return replay;
 
         if (!events.lockExhausted(eventId)) {
@@ -79,16 +78,16 @@ public class PayPalWebhookOperatorServiceImpl implements PayPalWebhookOperatorSe
             throw new PaymentException(Code.CONFLICT, "retry event is no longer EXHAUSTED");
         }
         events.recordRequeue(key, eventId, actor, reason);
-        return new PayPalWebhookRequeueResponse(eventId, "REQUEUED");
+        return new WebhookRetryResponse.Requeue(eventId, "REQUEUED");
     }
 
-    private PayPalWebhookRequeueResponse replayOrConflict(String eventId, String key, String actor, String reason) {
-        PayPalWebhookRequeueResponse replay = findReplay(eventId, key, actor, reason);
+    private WebhookRetryResponse.Requeue replayOrConflict(String eventId, String key, String actor, String reason) {
+        WebhookRetryResponse.Requeue replay = findReplay(eventId, key, actor, reason);
         if (replay != null) return replay;
         throw new PaymentException(Code.CONFLICT, "Idempotency-Key is already bound to another request");
     }
 
-    private PayPalWebhookRequeueResponse findReplay(String eventId, String key, String actor, String reason) {
+    private WebhookRetryResponse.Requeue findReplay(String eventId, String key, String actor, String reason) {
         Optional<WebhookRequeueRecord> found = events.findRequeueRecord(key);
         if (found.isEmpty()) return null;
         WebhookRequeueRecord record = found.get();
@@ -96,7 +95,7 @@ public class PayPalWebhookOperatorServiceImpl implements PayPalWebhookOperatorSe
                 || !record.reason().equals(reason)) {
             throw new PaymentException(Code.CONFLICT, "Idempotency-Key is already bound to another request");
         }
-        return new PayPalWebhookRequeueResponse(eventId, record.outcome());
+        return new WebhookRetryResponse.Requeue(eventId, record.outcome());
     }
 
     private static void validate(String key, String actor, String reason) {

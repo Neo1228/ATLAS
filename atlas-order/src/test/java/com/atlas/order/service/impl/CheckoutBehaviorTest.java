@@ -14,18 +14,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.order.service.CartService;
-import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.model.CheckoutSlotReleaseReason;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.OrderItem;
@@ -42,7 +43,6 @@ import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentService;
-import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.lang.reflect.Field;
 import java.time.Clock;
@@ -134,14 +134,14 @@ class CheckoutBehaviorTest {
         InventoryService inventory = mock(InventoryService.class);
         SellerSkuService catalog = mock(SellerSkuService.class);
         UUID productId = UUID.randomUUID();
-        QueueTicketResponse ticket = new QueueTicketResponse(TICKET, CAMPAIGN, SELLER, "SKU-1", "buyer", 1,
+        AdmissionResponse.QueueTicket ticket = new AdmissionResponse.QueueTicket(TICKET, CAMPAIGN, SELLER, "SKU-1", "buyer", 1,
                 TicketStatus.CHECKOUT_STARTED, NOW.plusSeconds(600), true);
         when(orders.findByTicketId(TICKET)).thenReturn(Optional.empty());
         when(admission.requireCheckoutSlot(CAMPAIGN, TICKET)).thenReturn(ticket);
         when(admission.startCheckout(CAMPAIGN, TICKET)).thenReturn(ticket);
         when(catalog.findOrderableSellerSku(eq(SELLER), eq("SKU-1"), eq(ProductSalesChannel.CAMPAIGN),
                 any(Instant.class)))
-                .thenReturn(new SellerSkuResponse(SELLER, productId, "SKU-1", "Product", 1_500,
+                .thenReturn(new CatalogResponse.SellerSku(SELLER, productId, "SKU-1", "Product", 1_500,
                         1_200L, NOW.minusSeconds(1), NOW.plusSeconds(600), 1_200));
         when(inventory.tryReserve(any())).thenReturn(Optional.empty());
         when(inventory.findReservations(any())).thenReturn(List.of());
@@ -177,7 +177,7 @@ class CheckoutBehaviorTest {
         AdmissionService admission = mock(AdmissionService.class);
         InventoryService inventory = mock(InventoryService.class);
         SellerSkuService catalog = mock(SellerSkuService.class);
-        QueueTicketResponse ticket = new QueueTicketResponse(TICKET, CAMPAIGN, SELLER, "SKU-1", "buyer", 1,
+        AdmissionResponse.QueueTicket ticket = new AdmissionResponse.QueueTicket(TICKET, CAMPAIGN, SELLER, "SKU-1", "buyer", 1,
                 TicketStatus.CHECKOUT_STARTED, NOW.plusSeconds(600), true);
         when(orders.findByTicketId(TICKET)).thenReturn(Optional.empty());
         when(admission.requireCheckoutSlot(CAMPAIGN, TICKET)).thenReturn(ticket);
@@ -237,11 +237,11 @@ class CheckoutBehaviorTest {
                 payments, mock(SellerSkuService.class), settlement, fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
 
-        OrderResponse response = service.reconcilePayment(orderId, "captured-reconciliation");
+        OrderViewResponse.Order response = service.reconcilePayment(orderId, "captured-reconciliation");
 
         assertEquals(OrderState.PAID, response.state());
         assertEquals(PaymentState.CAPTURED, response.paymentState());
-        verify(settlement).recordCapture(new CapturePostingRequest(orderId, attemptId, SELLER, 2_000));
+        verify(settlement).recordCapture(new SettlementPostingRequest.Capture(orderId, attemptId, SELLER, 2_000));
         verify(inventory).claimAll(orderId);
         verify(inventory, never()).releaseAll(orderId);
         verify(fulfillment).initialize(orderId);
@@ -312,7 +312,7 @@ class CheckoutBehaviorTest {
                 mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
 
-        OrderResponse response = service.reconcilePayment(orderId, "crash-recovery-key");
+        OrderViewResponse.Order response = service.reconcilePayment(orderId, "crash-recovery-key");
 
         assertEquals(OrderState.PAYMENT_UNKNOWN, response.state());
         assertEquals(PaymentState.UNKNOWN, response.paymentState());
@@ -460,10 +460,10 @@ class CheckoutBehaviorTest {
                 mock(SettlementService.class), fixedClock(), Duration.ofMinutes(10), 100, Duration.ofSeconds(2),
                 sweepLock());
 
-        List<OrderResponse> responses = service.findAll(List.of(second.orderId(), first.orderId()));
+        List<OrderViewResponse.Order> responses = service.findAll(List.of(second.orderId(), first.orderId()));
 
         assertEquals(List.of(second.orderId(), first.orderId()),
-                responses.stream().map(OrderResponse::orderId).toList());
+                responses.stream().map(OrderViewResponse.Order::orderId).toList());
 
         verify(payments, times(1)).findCheckout(checkoutId);
         verify(items, times(1)).findAllByOrderIds(any());

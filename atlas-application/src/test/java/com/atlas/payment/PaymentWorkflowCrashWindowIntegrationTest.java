@@ -7,16 +7,15 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.model.OrderRefundPaymentStatus;
 import com.atlas.order.model.OrderState;
@@ -203,7 +202,7 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
         assertThat(jdbc.queryForObject(
                 "SELECT status FROM order_fulfillment WHERE order_id = ?", String.class, orderId))
                 .isEqualTo("UNFULFILLED");
-        InventoryPoolResponse pool = inventory.find(sellerId, skuId);
+        InventoryResponse.Pool pool = inventory.find(sellerId, skuId);
         assertThat(pool.available()).isZero();
         assertThat(pool.reserved()).isZero();
         assertThat(pool.claimed()).isEqualTo(1);
@@ -222,7 +221,7 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
     void lostRefundResponseIsRecoveredAndAppliedExactlyOnce() {
         CheckoutResponse reserved = reservedCheckout();
         UUID checkoutId = reserved.checkoutId();
-        OrderResponse reservedOrder = reserved.orders().getFirst();
+        OrderViewResponse.Order reservedOrder = reserved.orders().getFirst();
         UUID orderId = reservedOrder.orderId();
         UUID sellerId = reservedOrder.items().getFirst().sellerId();
         String skuId = reservedOrder.items().getFirst().skuId();
@@ -237,8 +236,8 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
         assertThat(inventory.find(sellerId, skuId).claimed()).isEqualTo(1);
 
         String idempotencyKey = "crash-window-refund-" + UUID.randomUUID();
-        OrderRefundRequest request = new OrderRefundRequest(
-                sellerId, orderId, idempotencyKey, List.of(new OrderRefundRequest.Item(orderItemId, 1)));
+        OrderRequest.Refund request = new OrderRequest.Refund(
+                sellerId, orderId, idempotencyKey, List.of(new OrderRequest.Refund.Item(orderItemId, 1)));
         disconnectNextRefundResponse();
         var unknown = refunds.refund(request);
 
@@ -284,9 +283,9 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
 
     private CheckoutResponse reservedCheckout() {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Crash window product", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Crash window product", null));
         String skuId = "crash-window-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 17_200, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 17_200, 1));
         String buyerRef = "crash-window-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         return cartCheckouts.checkout(buyerRef, "crash-window-checkout-" + UUID.randomUUID());

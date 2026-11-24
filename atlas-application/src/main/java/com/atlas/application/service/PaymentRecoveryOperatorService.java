@@ -1,9 +1,9 @@
 package com.atlas.application.service;
 
-import com.atlas.application.dto.response.PaymentRecoveryReviewPage;
+import com.atlas.application.dto.response.PaymentHttpResponse;
+import com.atlas.payment.dto.response.PaymentRecoveryResponse;
 import com.atlas.application.exception.ApplicationException.Code;
 import com.atlas.application.exception.ApplicationException;
-import com.atlas.payment.dto.response.PaymentRecoveryRequeueResponse;
 import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.service.PaymentRecoveryService;
 import java.util.Objects;
@@ -30,17 +30,17 @@ public class PaymentRecoveryOperatorService {
         this.recovery = Objects.requireNonNull(recovery);
     }
 
-    public PaymentRecoveryReviewPage listNeedsReview(int limit, int offset) {
+    public PaymentHttpResponse.RecoveryReviewPage listNeedsReview(int limit, int offset) {
         int boundedLimit = limit <= 0 ? DEFAULT_PAGE_SIZE : Math.min(limit, MAX_PAGE_SIZE);
         if (offset < 0 || offset > MAX_PAGE_OFFSET) {
             throw new ApplicationException(Code.INVALID_REQUEST, "recovery page offset is too large");
         }
-        return new PaymentRecoveryReviewPage(
+        return new PaymentHttpResponse.RecoveryReviewPage(
                 recovery.listNeedsReview(boundedLimit, offset), boundedLimit, offset,
                 recovery.count(PaymentRecoveryJobStatus.NEEDS_REVIEW));
     }
 
-    public PaymentRecoveryRequeueResponse requeue(
+    public PaymentRecoveryResponse.Requeue requeue(
             UUID recoveryJobId, String idempotencyKey, String actor, String reason) {
         validate(recoveryJobId, idempotencyKey, actor, reason);
         return recovery.requeueNeedsReview(

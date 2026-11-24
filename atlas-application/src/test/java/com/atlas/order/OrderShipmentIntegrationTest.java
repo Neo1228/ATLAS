@@ -8,19 +8,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.OrderRefundRequest;
-import com.atlas.order.dto.request.OrderReturnRequest;
-import com.atlas.order.dto.request.OrderShipmentRequest;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
-import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.model.FulfillmentStatus;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
@@ -90,9 +86,9 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
 
         assertThat(orders.findDeliveredOrderItemId(buyerRef, productId)).isEmpty();
         fulfillments.start(fixture.sellerId(), fixture.orderId());
-        OrderShipmentResponse shipment = shipments.create(new OrderShipmentRequest(
+        OrderViewResponse.Shipment shipment = shipments.create(new OrderRequest.Shipment(
                 fixture.sellerId(), fixture.orderId(), "verified-review-" + UUID.randomUUID(),
-                "TEST", "TRACK-REVIEW", List.of(new OrderShipmentRequest.Item(fixture.orderItemId(), 1))));
+                "TEST", "TRACK-REVIEW", List.of(new OrderRequest.Shipment.Item(fixture.orderItemId(), 1))));
         assertThat(orders.findDeliveredOrderItemId(buyerRef, productId)).isEmpty();
 
         shipments.deliver(fixture.sellerId(), fixture.orderId(), shipment.shipmentId());
@@ -189,32 +185,32 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
     @Test
     void partialRefundAllowsIncrementalShipmentsAndReturnOnlyAfterNetDelivery() throws Exception {
         Fixture fixture = paidOrder(3);
-        refunds.refund(new OrderRefundRequest(fixture.sellerId(), fixture.orderId(),
+        refunds.refund(new OrderRequest.Refund(fixture.sellerId(), fixture.orderId(),
                 "partial-refund-" + fixture.orderId(),
-                List.of(new OrderRefundRequest.Item(fixture.orderItemId(), 1))));
+                List.of(new OrderRequest.Refund.Item(fixture.orderItemId(), 1))));
         fulfillments.start(fixture.sellerId(), fixture.orderId());
         var first = shipments.create(shipmentRequest(fixture, "partial-a-" + fixture.orderId(), 1));
         mockMvc.perform(get("/api/orders/{orderId}/fulfillment", fixture.orderId()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PARTIALLY_SHIPPED"));
-        assertThatThrownBy(() -> returns.request(new OrderReturnRequest(buyerRef(fixture.orderId()),
+        assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef(fixture.orderId()),
                 fixture.orderId(), "early-return-" + fixture.orderId(),
-                List.of(new OrderReturnRequest.Item(fixture.orderItemId(), 1)))))
+                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)))))
                 .isInstanceOf(OrderException.class);
         var second = shipments.create(shipmentRequest(fixture, "partial-b-" + fixture.orderId(), 1));
         assertThatThrownBy(() -> shipments.create(shipmentRequest(fixture, "partial-c-" + fixture.orderId(), 1)))
                 .isInstanceOf(OrderException.class);
         mockMvc.perform(get("/api/orders/{orderId}/fulfillment", fixture.orderId()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SHIPPED"));
-        assertThatThrownBy(() -> returns.request(new OrderReturnRequest(buyerRef(fixture.orderId()),
+        assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef(fixture.orderId()),
                 fixture.orderId(), "return-before-delivery-" + fixture.orderId(),
-                List.of(new OrderReturnRequest.Item(fixture.orderItemId(), 1)))))
+                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)))))
                 .isInstanceOf(OrderException.class);
         shipments.deliver(fixture.sellerId(), fixture.orderId(), first.shipmentId());
         mockMvc.perform(get("/api/orders/{orderId}/fulfillment", fixture.orderId()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SHIPPED"));
-        assertThatThrownBy(() -> returns.request(new OrderReturnRequest(buyerRef(fixture.orderId()),
+        assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef(fixture.orderId()),
                 fixture.orderId(), "return-after-one-delivery-" + fixture.orderId(),
-                List.of(new OrderReturnRequest.Item(fixture.orderItemId(), 1)))))
+                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)))))
                 .isInstanceOf(OrderException.class);
         shipments.deliver(fixture.sellerId(), fixture.orderId(), second.shipmentId());
         mockMvc.perform(get("/api/orders/{orderId}/fulfillment", fixture.orderId()))
@@ -268,16 +264,16 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
         MultiItemFixture fixture = paidOrderWithTwoItems();
         fulfillments.start(fixture.sellerId(), fixture.orderId());
 
-        OrderShipmentResponse first = shipments.create(new OrderShipmentRequest(
+        OrderViewResponse.Shipment first = shipments.create(new OrderRequest.Shipment(
                 fixture.sellerId(), fixture.orderId(), "multi-shipment-first-" + fixture.orderId(), null, null,
-                List.of(new OrderShipmentRequest.Item(fixture.firstOrderItemId(), 1))));
+                List.of(new OrderRequest.Shipment.Item(fixture.firstOrderItemId(), 1))));
         assertThat(fulfillments.find(fixture.orderId()).status()).isEqualTo(FulfillmentStatus.PARTIALLY_SHIPPED);
 
-        OrderShipmentResponse second = shipments.create(new OrderShipmentRequest(
+        OrderViewResponse.Shipment second = shipments.create(new OrderRequest.Shipment(
                 fixture.sellerId(), fixture.orderId(), "multi-shipment-second-" + fixture.orderId(), null, null,
-                List.of(new OrderShipmentRequest.Item(fixture.secondOrderItemId(), 1))));
+                List.of(new OrderRequest.Shipment.Item(fixture.secondOrderItemId(), 1))));
         assertThat(fulfillments.find(fixture.orderId()).status()).isEqualTo(FulfillmentStatus.SHIPPED);
-        List<OrderShipmentResponse> listed = shipments.findAll(fixture.buyerRef(), fixture.orderId());
+        List<OrderViewResponse.Shipment> listed = shipments.findAll(fixture.buyerRef(), fixture.orderId());
         assertThat(listed).hasSize(2).allSatisfy(shipment -> assertThat(shipment.items()).hasSize(1));
 
         shipments.deliver(fixture.sellerId(), fixture.orderId(), first.shipmentId());
@@ -295,9 +291,9 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
         Future<Boolean> refund = workers.submit(() -> {
             barrier.await();
             try {
-                refunds.refund(new OrderRefundRequest(fixture.sellerId(), fixture.orderId(),
+                refunds.refund(new OrderRequest.Refund(fixture.sellerId(), fixture.orderId(),
                         "race-refund-" + fixture.orderId(),
-                        List.of(new OrderRefundRequest.Item(fixture.orderItemId(), 1))));
+                        List.of(new OrderRequest.Refund.Item(fixture.orderItemId(), 1))));
                 return true;
             } catch (OrderException rejected) { return false; }
         });
@@ -335,62 +331,62 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
         return jdbc.queryForObject("SELECT buyer_ref FROM purchase_order WHERE order_id = ?", String.class, orderId);
     }
 
-    private OrderShipmentRequest shipmentRequest(Fixture fixture, String key, int quantity) {
-        return new OrderShipmentRequest(fixture.sellerId(), fixture.orderId(), key, null, null,
-                List.of(new OrderShipmentRequest.Item(fixture.orderItemId(), quantity)));
+    private OrderRequest.Shipment shipmentRequest(Fixture fixture, String key, int quantity) {
+        return new OrderRequest.Shipment(fixture.sellerId(), fixture.orderId(), key, null, null,
+                List.of(new OrderRequest.Shipment.Item(fixture.orderItemId(), quantity)));
     }
 
     private Fixture paidOrder(int quantity) {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Shipment partial test", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Shipment partial test", null));
         String skuId = "shipment-partial-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 250, quantity));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 250, quantity));
         String buyerRef = "shipment-partial-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, quantity);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "shipment-partial-checkout-" + UUID.randomUUID());
-        OrderResponse reserved = checkout.orders().getFirst();
+        OrderViewResponse.Order reserved = checkout.orders().getFirst();
         UUID orderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, reserved.orderId());
-        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
+        OrderViewResponse.Order paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
         assertThat(paid.state().name()).isEqualTo("PAID");
         return new Fixture(sellerId, paid.orderId(), orderItemId);
     }
 
     private MultiItemFixture paidOrderWithTwoItems() {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Shipment multi-item test", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Shipment multi-item test", null));
         String firstSku = "shipment-a-" + UUID.randomUUID();
         String secondSku = "shipment-b-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 250, 1));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 400, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(firstSku, 250, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(secondSku, 400, 1));
         String buyerRef = "shipment-multi-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, firstSku, 1);
         carts.setItemQuantity(sellerId, buyerRef, secondSku, 1);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "shipment-multi-checkout-" + UUID.randomUUID());
-        OrderResponse reserved = checkout.orders().getFirst();
+        OrderViewResponse.Order reserved = checkout.orders().getFirst();
         UUID firstItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
                 UUID.class, reserved.orderId(), firstSku);
         UUID secondItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ? AND sku_id = ?",
                 UUID.class, reserved.orderId(), secondSku);
-        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
+        OrderViewResponse.Order paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
         assertThat(paid.state().name()).isEqualTo("PAID");
         return new MultiItemFixture(sellerId, paid.orderId(), buyerRef, firstItemId, secondItemId);
     }
 
     private Fixture paidOrder() {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Shipment HTTP test", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Shipment HTTP test", null));
         String skuId = "shipment-http-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 250, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 250, 1));
         String buyerRef = "shipment-http-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "shipment-http-checkout-" + UUID.randomUUID());
-        OrderResponse reserved = checkout.orders().getFirst();
+        OrderViewResponse.Order reserved = checkout.orders().getFirst();
         UUID orderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, reserved.orderId());
-        OrderResponse paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
+        OrderViewResponse.Order paid = completePayPalCheckout(checkout.checkoutId()).orders().getFirst();
         assertThat(paid.state().name()).isEqualTo("PAID");
         return new Fixture(sellerId, paid.orderId(), orderItemId);
     }

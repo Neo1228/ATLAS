@@ -7,27 +7,22 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
 
-import com.atlas.admission.dto.request.JoinQueueRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.response.ReturnResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.request.CreateFulfillmentLocationRequest;
-import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
-import com.atlas.inventory.dto.response.InventoryLocationResponse;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
-import com.atlas.order.dto.response.OrderReturnResponse;
-import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.time.Duration;
@@ -92,25 +87,25 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
         stock(sellerId, priorityUuid, firstSku, 3);
         stock(sellerId, priorityUuid, secondSku, 3);
         assertThat(inventory.findFulfillmentLocation(sellerId, List.of(
-                new ReserveInventoryBatchRequest.Item(sellerId, firstSku, 1),
-                new ReserveInventoryBatchRequest.Item(sellerId, secondSku, 1)))).contains(priorityUuid);
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerId, firstSku, 1),
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerId, secondSku, 1)))).contains(priorityUuid);
         jdbc.update("UPDATE inventory_location SET active=FALSE WHERE location_id=?", priorityUuid);
         assertThat(inventory.findFulfillmentLocation(sellerId, List.of(
-                new ReserveInventoryBatchRequest.Item(sellerId, firstSku, 1),
-                new ReserveInventoryBatchRequest.Item(sellerId, secondSku, 1)))).contains(lowUuid);
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerId, firstSku, 1),
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerId, secondSku, 1)))).contains(lowUuid);
 
         UUID splitSeller = sellers.createSeller().sellerId();
         String splitA = createSku(splitSeller, "split-a", 0);
         String splitB = createSku(splitSeller, "split-b", 0);
-        InventoryLocationResponse left = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location left = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 splitSeller, "LEFT-" + UUID.randomUUID(), "Left", 0));
-        InventoryLocationResponse right = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location right = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 splitSeller, "RIGHT-" + UUID.randomUUID(), "Right", 1));
         adjustments.adjust(splitSeller, splitA, left.locationId(), "split-a-" + UUID.randomUUID(), 2, "seed");
         adjustments.adjust(splitSeller, splitB, right.locationId(), "split-b-" + UUID.randomUUID(), 2, "seed");
         assertThat(inventory.findFulfillmentLocation(splitSeller, List.of(
-                new ReserveInventoryBatchRequest.Item(splitSeller, splitA, 1),
-                new ReserveInventoryBatchRequest.Item(splitSeller, splitB, 1)))).isEmpty();
+                new InventoryRequest.ReserveInventoryBatch.Item(splitSeller, splitA, 1),
+                new InventoryRequest.ReserveInventoryBatch.Item(splitSeller, splitB, 1)))).isEmpty();
     }
 
     @Test
@@ -120,9 +115,9 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
         String stockedSku = createSku(stockedSeller, "atomic-stocked", 2);
         String splitA = createSku(splitSeller, "atomic-split-a", 0);
         String splitB = createSku(splitSeller, "atomic-split-b", 0);
-        InventoryLocationResponse left = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location left = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 splitSeller, "LEFT-" + UUID.randomUUID(), "Left", 0));
-        InventoryLocationResponse right = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location right = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 splitSeller, "RIGHT-" + UUID.randomUUID(), "Right", 1));
         adjustments.adjust(splitSeller, splitA, left.locationId(), "left-" + UUID.randomUUID(), 2, "seed");
         adjustments.adjust(splitSeller, splitB, right.locationId(), "right-" + UUID.randomUUID(), 2, "seed");
@@ -148,9 +143,9 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
         String sharedSku = "shared-location-" + UUID.randomUUID();
         createSkuWithId(sellerA, "multi-a", sharedSku, 0);
         createSkuWithId(sellerB, "multi-b", sharedSku, 0);
-        InventoryLocationResponse locationA = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location locationA = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerA, "PICK-" + UUID.randomUUID(), "Pick A", 0));
-        InventoryLocationResponse locationB = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location locationB = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerB, "PICK-" + UUID.randomUUID(), "Pick B", 0));
         stock(sellerA, locationA.locationId(), sharedSku, 3);
         stock(sellerB, locationB.locationId(), sharedSku, 3);
@@ -170,15 +165,15 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
     void campaignReservationAndCancellationUseThePersistedLocation() {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, "campaign-location", 0);
-        InventoryLocationResponse location = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location location = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerId, "CAMPAIGN-" + UUID.randomUUID(), "Campaign stock", 0));
         adjustments.adjust(sellerId, sku, location.locationId(), "campaign-stock-" + UUID.randomUUID(), 4, "seed");
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, sku, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, sku, Duration.ofMinutes(5)));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, sku, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, sku, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
-        var ticket = admission.join(new JoinQueueRequest(campaign.campaignId(), sku,
+        var ticket = admission.join(new AdmissionRequest.JoinQueue(campaign.campaignId(), sku,
                 "campaign-buyer-" + UUID.randomUUID(), "campaign-join-" + UUID.randomUUID()));
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
         UUID selectedLocation = orderLocation(order);
         assertThat(selectedLocation).isEqualTo(location.locationId());
 
@@ -196,18 +191,18 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
     void paymentAndCancelHttpRoutesKeepTheReservationLocation() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, "route-payment", 0);
-        InventoryLocationResponse location = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location location = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerId, "PAYMENT-" + UUID.randomUUID(), "Payment location", 0));
         adjustments.adjust(sellerId, sku, location.locationId(), "payment-stock-" + UUID.randomUUID(), 1, "seed");
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, sku, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, sku, Duration.ofMinutes(5)));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, sku, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, sku, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
-        var ticket = admission.join(new JoinQueueRequest(campaign.campaignId(), sku,
+        var ticket = admission.join(new AdmissionRequest.JoinQueue(campaign.campaignId(), sku,
                 "route-payment-buyer-" + UUID.randomUUID(), "route-payment-ticket-" + UUID.randomUUID()));
-        OrderResponse order = mapper.readValue(mockMvc.perform(
+        OrderViewResponse.Order order = mapper.readValue(mockMvc.perform(
                         post("/api/campaigns/{campaignId}/tickets/{ticketId}/checkout",
                                 campaign.campaignId(), ticket.ticketId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderResponse.class);
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderViewResponse.Order.class);
 
         mockMvc.perform(post("/api/orders/{orderId}/payment", order.orderId()))
                 .andExpect(status().isOk());
@@ -229,7 +224,7 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
     void passedReturnRestocksTheOriginalLocationAfterRoutingPriorityChanges() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, "return-location", 0);
-        InventoryLocationResponse origin = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location origin = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerId, "ORIGIN-" + UUID.randomUUID(), "Original", 10));
         adjustments.adjust(sellerId, sku, origin.locationId(), "origin-stock-" + UUID.randomUUID(), 1,
                 "initial location stock");
@@ -240,7 +235,7 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
                         .header("Idempotency-Key", "location-checkout-" + UUID.randomUUID()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = mapper.readValue(checkoutJson, CheckoutResponse.class);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
         assertThat(order.fulfillmentLocationId()).isEqualTo(origin.locationId());
 
         CheckoutResponse paymentPending = mapper.readValue(mockMvc.perform(
@@ -254,12 +249,12 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
         assertThat(paid.orders().getFirst().state().name()).isEqualTo("PAID");
 
-        InventoryLocationResponse preferred = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location preferred = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerId, "PREFERRED-" + UUID.randomUUID(), "Preferred", 0));
         adjustments.adjust(sellerId, sku, preferred.locationId(), "preferred-stock-" + UUID.randomUUID(), 1,
                 "new preferred location stock");
         assertThat(inventory.findFulfillmentLocation(sellerId, List.of(
-                new ReserveInventoryBatchRequest.Item(sellerId, sku, 1)))).contains(preferred.locationId());
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerId, sku, 1)))).contains(preferred.locationId());
 
         mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start",
                         sellerId, order.orderId()))
@@ -276,7 +271,7 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SHIPPED"))
                 .andReturn().getResponse().getContentAsString();
-        UUID shipmentId = mapper.readValue(shipmentJson, OrderShipmentResponse.class).shipmentId();
+        UUID shipmentId = mapper.readValue(shipmentJson, OrderViewResponse.Shipment.class).shipmentId();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/shipments/{shipmentId}/delivery",
                         sellerId, order.orderId(), shipmentId))
                 .andExpect(status().isOk())
@@ -288,7 +283,7 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"items\":[{\"orderItemId\":\"" + orderItemId + "\",\"quantity\":1}]}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        UUID returnId = mapper.readValue(returnJson, OrderReturnResponse.class).returnId();
+        UUID returnId = mapper.readValue(returnJson, ReturnResponse.OrderReturn.class).returnId();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt",
                         sellerId, order.orderId(), returnId))
                 .andExpect(status().isOk());
@@ -317,17 +312,17 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
     }
 
     private String createSku(UUID sellerId, String label, int capacity) {
-        ProductResponse product = products.createProduct(sellerId,
-                new CreateProductRequest(label + "-" + UUID.randomUUID(), null));
+        CatalogResponse.Product product = products.createProduct(sellerId,
+                new ProductRequest.CreateProduct(label + "-" + UUID.randomUUID(), null));
         String sku = label + "-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 100, capacity));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(sku, 100, capacity));
         return sku;
     }
 
     private void createSkuWithId(UUID sellerId, String label, String sku, int capacity) {
-        ProductResponse product = products.createProduct(sellerId,
-                new CreateProductRequest(label + "-" + UUID.randomUUID(), null));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 100, capacity));
+        CatalogResponse.Product product = products.createProduct(sellerId,
+                new ProductRequest.CreateProduct(label + "-" + UUID.randomUUID(), null));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(sku, 100, capacity));
     }
 
     private void insertLocation(UUID sellerId, UUID locationId, String code, String name, int priority) {
@@ -350,7 +345,7 @@ class LocationRoutedCheckoutIntegrationTest extends PayPalIntegrationTestSupport
                 Integer.class, buyer);
     }
 
-    private UUID orderLocation(OrderResponse order) {
+    private UUID orderLocation(OrderViewResponse.Order order) {
         return jdbc.queryForObject("SELECT fulfillment_location_id FROM purchase_order WHERE order_id=?",
                 UUID.class, order.orderId());
     }

@@ -1,6 +1,6 @@
 package com.atlas.order.service;
 
-import com.atlas.order.dto.response.ReservationEventResponse;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import java.util.List;
 
 /**
@@ -11,5 +11,5 @@ import java.util.List;
  */
 public interface ReservationEventPublisher {
 
-    void publish(List<ReservationEventResponse> batch);
+    void publish(List<ReservationWorkflowResponse.ReservationEvent> batch);
 }

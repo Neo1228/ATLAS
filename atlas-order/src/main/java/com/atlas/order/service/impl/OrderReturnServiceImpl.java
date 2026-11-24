@@ -1,11 +1,8 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.request.OrderReturnInspectionRequest;
-import com.atlas.order.dto.request.OrderReturnRequest;
-import com.atlas.order.dto.response.OrderRefundResponse;
-import com.atlas.order.dto.response.OrderReturnResponse;
-import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
-import com.atlas.order.dto.response.SellerOrderReturnResponse;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.response.ReturnResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.OrderReturn;
@@ -67,13 +64,13 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     @Override
-    public OrderReturnResponse request(OrderReturnRequest request) {
+    public ReturnResponse.OrderReturn request(OrderRequest.Return request) {
         if (request == null || request.buyerRef() == null || request.buyerRef().isBlank()
                 || request.orderId() == null || request.idempotencyKey() == null || request.idempotencyKey().isBlank()
                 || request.idempotencyKey().length() > 128 || request.items() == null || request.items().isEmpty()) {
             throw invalid("Buyer, order, key, and return lines are required");
         }
-        List<OrderReturnRequest.Item> lines = normalize(request.items());
+        List<OrderRequest.Return.Item> lines = normalize(request.items());
         return Objects.requireNonNull(transactions.execute(tx -> {
             PurchaseOrder order = lockOrder(request.orderId());
             if (!order.buyerRef().equals(request.buyerRef())) throw conflict("Buyer does not own order");
@@ -104,7 +101,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                     .filter(shipment -> shipment.status() == OrderShipmentStatus.DELIVERED)
                     .toList();
             Map<UUID, UUID> shipmentByItem = new HashMap<>();
-            for (OrderReturnRequest.Item line : lines) {
+            for (OrderRequest.Return.Item line : lines) {
                 OrderItem item = byId.get(line.orderItemId());
                 if (item == null || !item.sellerId().equals(order.sellerId())) throw invalid("Return item does not belong to this seller order");
                 int eligible = item.quantity() - refunded.getOrDefault(item.orderItemId(), 0) - claimed.getOrDefault(item.orderItemId(), 0);
@@ -121,7 +118,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     @Override
-    public OrderReturnResponse find(String buyerRef, UUID orderId, UUID returnId) {
+    public ReturnResponse.OrderReturn find(String buyerRef, UUID orderId, UUID returnId) {
         if (buyerRef == null || orderId == null || returnId == null) throw invalid("Buyer, order and return are required");
         OrderReturn row = returns.findWithItemsByReturnId(returnId).orElseThrow(() -> notFound("Return not found"));
         if (!row.orderId().equals(orderId) || !row.buyerRef().equals(buyerRef)) throw conflict("Buyer does not own return");
@@ -129,7 +126,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     @Override
-    public List<OrderReturnResponse> findForBuyer(String buyerRef, UUID orderId) {
+    public List<ReturnResponse.OrderReturn> findForBuyer(String buyerRef, UUID orderId) {
         if (buyerRef == null || buyerRef.isBlank() || orderId == null) {
             throw invalid("Buyer and order are required");
         }
@@ -147,7 +144,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     @Override
-    public SellerOrderReturnPageResponse findForSeller(UUID sellerId, OrderReturnStatus status,
+    public ReturnResponse.SellerOrderReturnPage findForSeller(UUID sellerId, OrderReturnStatus status,
             Integer requestedLimit, String cursor) {
         if (sellerId == null) throw invalid("Seller is required");
         int limit = requestedLimit == null ? 20 : requestedLimit;
@@ -160,21 +157,21 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                             position.returnId(), PageRequest.of(0, limit + 1));
             boolean hasNext = fetched.size() > limit;
             List<OrderReturn> page = hasNext ? fetched.subList(0, limit) : fetched;
-            if (page.isEmpty()) return new SellerOrderReturnPageResponse(List.of(), null);
+            if (page.isEmpty()) return new ReturnResponse.SellerOrderReturnPage(List.of(), null);
 
             List<UUID> returnIds = page.stream().map(OrderReturn::returnId).toList();
             Map<UUID, OrderReturn> withItems = new HashMap<>();
             returns.findWithItemsByReturnIdIn(returnIds).forEach(row -> withItems.put(row.returnId(), row));
-            List<SellerOrderReturnResponse> responses = page.stream()
+            List<ReturnResponse.SellerOrderReturn> responses = page.stream()
                     .map(row -> sellerResponse(withItems.get(row.returnId())))
                     .toList();
             String nextCursor = hasNext ? encodeSellerReturnCursor(page.get(page.size() - 1)) : null;
-            return new SellerOrderReturnPageResponse(responses, nextCursor);
+            return new ReturnResponse.SellerOrderReturnPage(responses, nextCursor);
         }));
     }
 
     @Override
-    public OrderReturnResponse receive(UUID sellerId, UUID orderId, UUID returnId) {
+    public ReturnResponse.OrderReturn receive(UUID sellerId, UUID orderId, UUID returnId) {
         if (sellerId == null || orderId == null || returnId == null) throw invalid("Seller, order and return are required");
         return Objects.requireNonNull(transactions.execute(tx -> {
             lockOrder(orderId);
@@ -188,10 +185,10 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     @Override
-    public OrderReturnResponse inspect(UUID sellerId, UUID orderId, UUID returnId, OrderReturnInspectionRequest request) {
+    public ReturnResponse.OrderReturn inspect(UUID sellerId, UUID orderId, UUID returnId, OrderRequest.ReturnInspection request) {
         if (sellerId == null || orderId == null || returnId == null || request == null || request.items() == null)
             throw invalid("반품 검수 결과가 필요합니다.");
-        List<OrderReturnInspectionRequest.Item> decisions = new ArrayList<>(request.items());
+        List<OrderRequest.ReturnInspection.Item> decisions = new ArrayList<>(request.items());
         InspectionPreparation preparation = Objects.requireNonNull(transactions.execute(tx -> {
             lockOrder(orderId);
             OrderReturn row = lockedReturn(orderId, returnId);
@@ -249,7 +246,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             }
 
             returns.saveAndFlush(row);
-            OrderRefundResponse preparedRefund = refunds.prepareInspectedReturnRefund(returnId);
+            RefundResponse.Refund preparedRefund = refunds.prepareInspectedReturnRefund(returnId);
             if (preparedRefund.refundAmountWon() != totalAmountWon) {
                 throw new IllegalStateException("검수 금액과 준비된 환불 금액이 일치하지 않습니다.");
             }
@@ -264,7 +261,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         }));
         if (preparation.completedResponse() != null) return preparation.completedResponse();
 
-        OrderRefundResponse refund = refunds.processInspectedReturnRefund(returnId);
+        RefundResponse.Refund refund = refunds.processInspectedReturnRefund(returnId);
         if (!preparation.refundId().equals(refund.refundId())) {
             throw conflict("환불 처리 중 준비된 환불 식별자가 변경되었습니다.");
         }
@@ -308,7 +305,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     private static void ownSeller(OrderReturn row, UUID sellerId, UUID orderId) {
         if (!row.orderId().equals(orderId) || !row.sellerId().equals(sellerId)) throw conflict("Seller does not own return");
     }
-    private OrderShipment resolveShipment(OrderReturnRequest.Item line, List<OrderShipment> deliveredShipments,
+    private OrderShipment resolveShipment(OrderRequest.Return.Item line, List<OrderShipment> deliveredShipments,
             List<OrderReturn> existingReturns) {
         List<OrderShipment> candidates = deliveredShipments.stream()
                 .filter(shipment -> shipment.items().stream()
@@ -346,21 +343,21 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         return eligible.getFirst();
     }
 
-    private static boolean sameFacts(OrderReturn prior, List<OrderReturnRequest.Item> request) {
+    private static boolean sameFacts(OrderReturn prior, List<OrderRequest.Return.Item> request) {
         if (prior.items().size() != request.size()) return false;
-        Map<UUID, OrderReturnRequest.Item> byItem = new HashMap<>();
+        Map<UUID, OrderRequest.Return.Item> byItem = new HashMap<>();
         request.forEach(line -> byItem.put(line.orderItemId(), line));
         return prior.items().stream().allMatch(item -> {
-            OrderReturnRequest.Item line = byItem.get(item.orderItemId());
+            OrderRequest.Return.Item line = byItem.get(item.orderItemId());
             return line != null && line.quantity() == item.quantity()
                     && (line.shipmentId() == null || line.shipmentId().equals(item.shipmentId()));
         });
     }
 
-    private static List<OrderReturnRequest.Item> normalize(List<OrderReturnRequest.Item> lines) {
-        List<OrderReturnRequest.Item> result = new ArrayList<>();
+    private static List<OrderRequest.Return.Item> normalize(List<OrderRequest.Return.Item> lines) {
+        List<OrderRequest.Return.Item> result = new ArrayList<>();
         HashSet<UUID> ids = new HashSet<>();
-        for (OrderReturnRequest.Item line : lines) {
+        for (OrderRequest.Return.Item line : lines) {
             if (line == null || line.orderItemId() == null || line.quantity() <= 0) {
                 throw invalid("Return line id and positive quantity are required");
             }
@@ -369,10 +366,10 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             }
             result.add(line);
         }
-        result.sort(Comparator.comparing(OrderReturnRequest.Item::orderItemId));
+        result.sort(Comparator.comparing(OrderRequest.Return.Item::orderItemId));
         return List.copyOf(result);
     }
-    private static Map<UUID, OrderReturnInspectionResult> normalizeDecisions(List<OrderReturnInspectionRequest.Item> lines) {
+    private static Map<UUID, OrderReturnInspectionResult> normalizeDecisions(List<OrderRequest.ReturnInspection.Item> lines) {
         Map<UUID, OrderReturnInspectionResult> map = new HashMap<>();
         for (var line : lines) {
             if (line == null || line.orderItemId() == null || line.result() == null
@@ -389,17 +386,17 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         return input.size() == row.items().size() && row.items().stream().allMatch(i -> i.inspectionResult() != null
                 && i.inspectionResult() == input.get(i.orderItemId()));
     }
-    private OrderReturnResponse response(OrderReturn row) {
-        return new OrderReturnResponse(row.returnId(), row.orderId(), row.sellerId(), row.buyerRef(), row.status(),
+    private ReturnResponse.OrderReturn response(OrderReturn row) {
+        return new ReturnResponse.OrderReturn(row.returnId(), row.orderId(), row.sellerId(), row.buyerRef(), row.status(),
                 paymentStatus(row), row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream().map(i ->
-                new OrderReturnResponse.Item(i.orderItemId(), i.quantity(), i.shipmentId(),
+                new ReturnResponse.OrderReturn.Item(i.orderItemId(), i.quantity(), i.shipmentId(),
                         i.inspectionResult(), i.refundId(), i.refundAmountWon(), i.inspectedAt())).toList());
     }
 
-    private SellerOrderReturnResponse sellerResponse(OrderReturn row) {
-        return new SellerOrderReturnResponse(row.returnId(), row.orderId(), row.sellerId(), row.status(),
+    private ReturnResponse.SellerOrderReturn sellerResponse(OrderReturn row) {
+        return new ReturnResponse.SellerOrderReturn(row.returnId(), row.orderId(), row.sellerId(), row.status(),
                 paymentStatus(row), row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream()
-                .map(item -> new SellerOrderReturnResponse.Item(item.orderItemId(), item.quantity(),
+                .map(item -> new ReturnResponse.SellerOrderReturn.Item(item.orderItemId(), item.quantity(),
                         item.inspectionResult(), item.refundId(), item.refundAmountWon(), item.inspectedAt()))
                 .toList());
     }
@@ -429,8 +426,8 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     private record SellerReturnCursor(Instant requestedAt, UUID returnId) { }
-    private record InspectionPreparation(OrderReturnResponse completedResponse, UUID refundId, Instant inspectedAt) {
-        private static InspectionPreparation completed(OrderReturnResponse response) {
+    private record InspectionPreparation(ReturnResponse.OrderReturn completedResponse, UUID refundId, Instant inspectedAt) {
+        private static InspectionPreparation completed(ReturnResponse.OrderReturn response) {
             return new InspectionPreparation(response, null, null);
         }
 

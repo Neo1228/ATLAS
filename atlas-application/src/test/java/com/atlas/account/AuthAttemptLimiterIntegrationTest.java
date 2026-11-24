@@ -3,7 +3,7 @@ package com.atlas.account;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.account.dto.request.LoginRequest;
+import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.exception.AccountException;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.repository.AuthThrottleRepository;
@@ -63,18 +63,18 @@ class AuthAttemptLimiterIntegrationTest {
     void repeatedWrongPasswordsLockTheSubjectAndStopPasswordHashing() {
         final String email = verifiedAccount();
 
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password-1"), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, "wrong-password-1"), ORIGIN))
                 .isInstanceOf(AccountException.class);
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password-2"), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, "wrong-password-2"), ORIGIN))
                 .isInstanceOf(AccountException.class);
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password-3"), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, "wrong-password-3"), ORIGIN))
                 .isInstanceOf(AccountException.class);
 
         assertThat(failures("LOGIN", email)).isEqualTo(3);
 
         // 한도를 넘은 뒤에는 올바른 비밀번호도 거절된다. 검증 전에 막히므로 CPU를 쓰지 않는다.
         long startedAt = System.nanoTime();
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, PASSWORD), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN))
                 .isInstanceOf(AccountException.class)
                 .hasFieldOrPropertyWithValue("code", AccountException.Code.INVALID_CREDENTIALS);
         long elapsedNanos = System.nanoTime() - startedAt;
@@ -88,15 +88,15 @@ class AuthAttemptLimiterIntegrationTest {
     void successfulLoginClearsTheFailureCounter() {
         String email = verifiedAccount();
 
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password"), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, "wrong-password"), ORIGIN))
                 .isInstanceOf(AccountException.class);
         assertThat(failures("LOGIN", email)).isEqualTo(1);
 
-        accountService.login(new LoginRequest(email, PASSWORD), ORIGIN);
+        accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN);
 
         assertThat(failures("LOGIN", email)).isZero();
         // 초기화 후에는 다시 정상 로그인이 가능하다.
-        assertThat(accountService.login(new LoginRequest(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
+        assertThat(accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
     }
 
     @Test
@@ -104,10 +104,10 @@ class AuthAttemptLimiterIntegrationTest {
         String email = verifiedAccount();
         for (int attempt = 1; attempt <= 3; attempt++) {
             String wrongPassword = "wrong-password-" + attempt;
-            assertThatThrownBy(() -> accountService.login(new LoginRequest(email, wrongPassword), ORIGIN))
+            assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, wrongPassword), ORIGIN))
                     .isInstanceOf(AccountException.class);
         }
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, PASSWORD), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN))
                 .isInstanceOf(AccountException.class);
 
         // 창이 지난 상태를 재현한다. 잠금은 시간이 지나면 스스로 풀려야 한다.
@@ -116,13 +116,13 @@ class AuthAttemptLimiterIntegrationTest {
                 WHERE scope = 'LOGIN'
                 """);
 
-        assertThat(accountService.login(new LoginRequest(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
+        assertThat(accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
     }
 
     @Test
     void countersAreKeyedByDigestAndNeverStoreTheRawEmailOrAddress() {
         String email = verifiedAccount();
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password"), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, "wrong-password"), ORIGIN))
                 .isInstanceOf(AccountException.class);
 
         var rows = jdbc.queryForList("""
@@ -162,7 +162,7 @@ class AuthAttemptLimiterIntegrationTest {
     @Test
     void staleCountersArePurgedSoRowCountFollowsActiveSubjects() {
         String email = verifiedAccount();
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password"), ORIGIN))
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, "wrong-password"), ORIGIN))
                 .isInstanceOf(AccountException.class);
         assertThat(failures("LOGIN", email)).isEqualTo(1);
 

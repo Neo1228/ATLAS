@@ -3,14 +3,14 @@ package com.atlas.settlement;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
@@ -18,7 +18,6 @@ import com.atlas.order.service.OrderService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentService;
-import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.util.List;
 import java.util.UUID;
@@ -77,7 +76,7 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
         String providerOrderId = authorizationPending.paymentApprovalUrl()
                 .substring(authorizationPending.paymentApprovalUrl().lastIndexOf('/') + 1);
         CheckoutResponse completed = checkoutPayments.completeApproval(checkout.checkoutId(), providerOrderId);
-        OrderResponse paid = completed.orders().get(0);
+        OrderViewResponse.Order paid = completed.orders().get(0);
 
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
         assertThat(paid.paymentState()).isEqualTo(PaymentState.CAPTURED);
@@ -86,7 +85,7 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
                 new Entry("PSP_CLEARING", "DEBIT", 250),
                 new Entry("SELLER_PAYABLE", "CREDIT", 250));
 
-        OrderResponse replayed = checkoutPayments.reconcile(checkout.checkoutId(), "paid-replay-" + checkout.checkoutId()).orders().get(0);
+        OrderViewResponse.Order replayed = checkoutPayments.reconcile(checkout.checkoutId(), "paid-replay-" + checkout.checkoutId()).orders().get(0);
 
         assertThat(replayed.state()).isEqualTo(OrderState.PAID);
         assertThat(journalCount(paid.paymentAttemptId())).isEqualTo(1);
@@ -107,7 +106,7 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
                 .substring(authorizationPending.paymentApprovalUrl().lastIndexOf('/') + 1);
         queueAuthorizationStatus("DENIED");
         CheckoutResponse declinedCheckout = checkoutPayments.completeApproval(checkout.checkoutId(), providerOrderId);
-        OrderResponse declined = declinedCheckout.orders().get(0);
+        OrderViewResponse.Order declined = declinedCheckout.orders().get(0);
 
         assertThat(declined.paymentState()).isEqualTo(PaymentState.DECLINED);
         assertThat(declined.paymentAttemptId()).isNotNull();
@@ -126,7 +125,7 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(authorizationPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         String providerOrderId = authorizationPending.paymentApprovalUrl()
                 .substring(authorizationPending.paymentApprovalUrl().lastIndexOf('/') + 1);
-        OrderResponse pending = authorizationPending.orders().get(0);
+        OrderViewResponse.Order pending = authorizationPending.orders().get(0);
         assertThat(pending.paymentAttemptId()).isNotNull();
         jdbc.execute("""
                 CREATE OR REPLACE FUNCTION fail_seller_payable_entry() RETURNS TRIGGER AS $$
@@ -147,7 +146,7 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
         assertThatThrownBy(() -> checkoutPayments.completeApproval(checkout.checkoutId(), providerOrderId))
                 .isInstanceOf(RuntimeException.class);
             assertThat(journalCount(pending.paymentAttemptId())).isZero();
-            OrderResponse unchanged = orders.find(pending.orderId());
+            OrderViewResponse.Order unchanged = orders.find(pending.orderId());
             assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);
             assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
             assertThat(unchanged.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
@@ -156,7 +155,7 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
             jdbc.execute("DROP FUNCTION IF EXISTS fail_seller_payable_entry()");
         }
 
-        OrderResponse recovered = checkoutPayments.reconcile(
+        OrderViewResponse.Order recovered = checkoutPayments.reconcile(
                 checkout.checkoutId(), "settlement-downstream-" + checkout.checkoutId()).orders().get(0);
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(journalCount(recovered.paymentAttemptId())).isEqualTo(1);
@@ -170,7 +169,7 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
         UUID orderId = UUID.randomUUID();
         UUID attemptId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
-        CapturePostingRequest request = new CapturePostingRequest(orderId, attemptId, sellerId, 4_500);
+        SettlementPostingRequest.Capture request = new SettlementPostingRequest.Capture(orderId, attemptId, sellerId, 4_500);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -203,9 +202,9 @@ class SettlementLedgerIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     private String registerSku(UUID sellerId, long priceWon, int initialStock) {
-        var product = products.createProduct(sellerId, new CreateProductRequest("Ledger test product", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Ledger test product", null));
         String skuId = "ledger-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, priceWon, initialStock));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, priceWon, initialStock));
         return skuId;
     }
 

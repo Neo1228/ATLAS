@@ -1,6 +1,6 @@
 package com.atlas.application.controller.admission;
 
-import com.atlas.admission.dto.response.CampaignResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.admission.service.CampaignService;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,7 +18,7 @@ public class SellerCampaignController {
     }
 
     @PostMapping("/{campaignId}/close")
-    public CampaignResponse close(@PathVariable UUID sellerId, @PathVariable UUID campaignId) {
+    public AdmissionResponse.Campaign close(@PathVariable UUID sellerId, @PathVariable UUID campaignId) {
         return campaigns.close(sellerId, campaignId);
     }
 }

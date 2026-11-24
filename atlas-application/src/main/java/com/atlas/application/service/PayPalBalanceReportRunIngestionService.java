@@ -1,8 +1,8 @@
 package com.atlas.application.service;
 
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.RowResult;
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.Status;
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult;
+import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.Status;
 import com.atlas.settlement.model.PayPalBalanceReportRow;
 import com.atlas.settlement.model.PayPalBalanceReportRun;
 import com.atlas.settlement.service.PayPalBalanceReportStore;
@@ -28,8 +28,8 @@ public class PayPalBalanceReportRunIngestionService {
         this.store = Objects.requireNonNull(store);
     }
 
-    public PayPalBalanceReportReconciliationResponse reconcile(byte[] reportContent) {
-        PayPalBalanceReportReconciliationResponse calculated = reconciliationService.reconcile(reportContent);
+    public SettlementHttpResponse.PayPalBalanceReportReconciliation reconcile(byte[] reportContent) {
+        SettlementHttpResponse.PayPalBalanceReportReconciliation calculated = reconciliationService.reconcile(reportContent);
         Instant uploadedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
         UUID runId = UUID.randomUUID();
         PayPalBalanceReportRun run = toRun(runId, uploadedAt, calculated);
@@ -46,7 +46,7 @@ public class PayPalBalanceReportRunIngestionService {
         List<RowResult> historicalRows = store.listAllRows(existing.runId()).stream()
                 .map(PayPalBalanceReportRunIngestionService::toResponseRow)
                 .toList();
-        PayPalBalanceReportReconciliationResponse.Summary historicalSummary = new PayPalBalanceReportReconciliationResponse.Summary(
+        SettlementHttpResponse.PayPalBalanceReportReconciliation.Summary historicalSummary = new SettlementHttpResponse.PayPalBalanceReportReconciliation.Summary(
                 existing.rowCount(), existing.matchedCount(), existing.unmatchedCount(),
                 existing.duplicateCount(), existing.mismatchCount());
         return withRun(calculated, existing.runId(), existing.uploadedAt(), true, historicalSummary, historicalRows);
@@ -55,8 +55,8 @@ public class PayPalBalanceReportRunIngestionService {
     private static PayPalBalanceReportRun toRun(
             UUID runId,
             Instant uploadedAt,
-            PayPalBalanceReportReconciliationResponse response) {
-        PayPalBalanceReportReconciliationResponse.Summary summary = response.summary();
+            SettlementHttpResponse.PayPalBalanceReportReconciliation response) {
+        SettlementHttpResponse.PayPalBalanceReportReconciliation.Summary summary = response.summary();
         return new PayPalBalanceReportRun(
                 runId,
                 response.reportSha256(),
@@ -104,14 +104,14 @@ public class PayPalBalanceReportRunIngestionService {
                 row.reasonCode());
     }
 
-    private static PayPalBalanceReportReconciliationResponse withRun(
-            PayPalBalanceReportReconciliationResponse source,
+    private static SettlementHttpResponse.PayPalBalanceReportReconciliation withRun(
+            SettlementHttpResponse.PayPalBalanceReportReconciliation source,
             UUID runId,
             Instant uploadedAt,
             boolean duplicateUpload,
-            PayPalBalanceReportReconciliationResponse.Summary summary,
+            SettlementHttpResponse.PayPalBalanceReportReconciliation.Summary summary,
             List<RowResult> rows) {
-        return new PayPalBalanceReportReconciliationResponse(
+        return new SettlementHttpResponse.PayPalBalanceReportReconciliation(
                 runId,
                 uploadedAt,
                 duplicateUpload,

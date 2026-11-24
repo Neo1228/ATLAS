@@ -2,8 +2,8 @@ package com.atlas.settlement;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.settlement.dto.request.CapturePostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.util.Map;
 import java.util.TreeMap;
@@ -56,7 +56,7 @@ class SettlementZeroRateIntegrationTest extends PayPalIntegrationTestSupport {
         UUID sellerId = UUID.randomUUID();
         jdbc.update("INSERT INTO seller(seller_id) VALUES (?)", sellerId);
 
-        settlement.recordCapture(new CapturePostingRequest(
+        settlement.recordCapture(new SettlementPostingRequest.Capture(
                 UUID.randomUUID(), UUID.randomUUID(), sellerId, 5_000));
 
         Map<String, Long> credits = new TreeMap<>();

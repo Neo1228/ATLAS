@@ -1,10 +1,10 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.response.CartItemResponse;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.service.CartService;
 import com.atlas.catalog.service.SellerCouponService;
-import com.atlas.order.dto.response.LocationReservationResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.PurchaseOrder;
@@ -87,7 +87,7 @@ public class CheckoutFinalizationServiceImpl implements CheckoutFinalizationServ
     }
 
     // 복구 poll은 workflow 상태만 읽는다. 원격 재시도 시점은 coordinator recovery의 backoff가 결정한다.
-    private void settle(UUID checkoutId, Function<UUID, LocationReservationResponse> observe) {
+    private void settle(UUID checkoutId, Function<UUID, ReservationWorkflowResponse.LocationReservation> observe) {
         List<PurchaseOrder> childOrders = transactions.execute(status ->
                 orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId));
         if (childOrders == null || childOrders.isEmpty()
@@ -96,7 +96,7 @@ public class CheckoutFinalizationServiceImpl implements CheckoutFinalizationServ
                     "Checkout has no persisted reservation workflow mapping");
         }
 
-        Map<UUID, LocationReservationResponse> outcomes = new HashMap<>();
+        Map<UUID, ReservationWorkflowResponse.LocationReservation> outcomes = new HashMap<>();
         for (PurchaseOrder order : childOrders) {
             outcomes.put(order.orderId(), observe.apply(order.reservationWorkflowId()));
         }
@@ -158,7 +158,7 @@ public class CheckoutFinalizationServiceImpl implements CheckoutFinalizationServ
     private void compensate(UUID checkoutId, List<PurchaseOrder> childOrders) {
         boolean compensated = true;
         for (PurchaseOrder order : childOrders) {
-            LocationReservationResponse response = coordinator.cancel(order.reservationWorkflowId());
+            ReservationWorkflowResponse.LocationReservation response = coordinator.cancel(order.reservationWorkflowId());
             if (!"FAILED".equals(response.status()) && !"CANCELLED".equals(response.status())) {
                 compensated = false;
             }

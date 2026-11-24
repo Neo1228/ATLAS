@@ -3,11 +3,11 @@ package com.atlas.order.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
-import com.atlas.order.dto.request.ReorderCartRequest;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.persistence.entity.Cart;
 import com.atlas.order.repository.CartRepository;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.service.SellerSkuService;
 import java.util.List;
 import java.util.Optional;
@@ -39,18 +39,18 @@ class CartServiceMergeItemsTest {
         cart.setItemQuantity(sellerA, "kept", 7);
         cart.setItemQuantity(sellerA, "sku", 2);
 
-        SellerSkuResponse sellerBSku =
-                new SellerSkuResponse(sellerB, product, "sku", "item", 100L, null, null, null, 100L);
-        SellerSkuResponse sellerAKept =
-                new SellerSkuResponse(sellerA, UUID.randomUUID(), "kept", "kept", 100L, null, null, null, 100L);
-        SellerSkuResponse sellerASku =
-                new SellerSkuResponse(sellerA, UUID.randomUUID(), "sku", "other", 100L, null, null, null, 100L);
+        CatalogResponse.SellerSku sellerBSku =
+                new CatalogResponse.SellerSku(sellerB, product, "sku", "item", 100L, null, null, null, 100L);
+        CatalogResponse.SellerSku sellerAKept =
+                new CatalogResponse.SellerSku(sellerA, UUID.randomUUID(), "kept", "kept", 100L, null, null, null, 100L);
+        CatalogResponse.SellerSku sellerASku =
+                new CatalogResponse.SellerSku(sellerA, UUID.randomUUID(), "sku", "other", 100L, null, null, null, 100L);
         when(skus.findAll(sellerA, List.of("kept", "sku"))).thenReturn(List.of(sellerAKept, sellerASku));
         when(skus.findAll(sellerB, List.of("sku"))).thenReturn(List.of(sellerBSku));
         when(carts.findWithLockByBuyerRef(buyer)).thenReturn(Optional.of(cart));
 
-        CartResponse response = service.mergeItems(new ReorderCartRequest(buyer, true, List.of(
-                new ReorderCartRequest.Item(sellerB, product, "sku", 3))));
+        CartResponse response = service.mergeItems(new OrderRequest.ReorderCart(buyer, true, List.of(
+                new OrderRequest.ReorderCart.Item(sellerB, product, "sku", 3))));
 
         assertEquals(3, response.items().size());
         assertEquals(7, quantity(response, sellerA, "kept"));

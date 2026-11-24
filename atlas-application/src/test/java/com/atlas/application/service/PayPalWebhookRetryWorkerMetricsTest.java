@@ -5,10 +5,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
-import com.atlas.payment.dto.response.ClaimedWebhookRetryResponse;
+import com.atlas.payment.dto.response.WebhookRetryResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.dto.response.WebhookRetryPollResponse;
 import com.atlas.payment.model.WebhookRetryFailure;
 import com.atlas.payment.service.PayPalWebhookRetryService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -33,7 +32,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsSuccessfulEmptyPollAsZeroClaims() {
-        when(retries.pollDue()).thenReturn(new WebhookRetryPollResponse(List.of(), 0));
+        when(retries.pollDue()).thenReturn(new WebhookRetryResponse.RetryPoll(List.of(), 0));
 
         worker.retryDueEvents();
 
@@ -46,7 +45,7 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void publishesOldestPendingRetryAgeAndStaysSilentWhenTheQueueIsEmpty() {
-        when(retries.pollDue()).thenReturn(new WebhookRetryPollResponse(List.of(), 0));
+        when(retries.pollDue()).thenReturn(new WebhookRetryResponse.RetryPoll(List.of(), 0));
         when(retries.oldestPendingAgeSeconds()).thenReturn(42.5, (Double) null);
 
         worker.retryDueEvents();
@@ -59,8 +58,8 @@ class PayPalWebhookRetryWorkerMetricsTest {
 
     @Test
     void recordsReapedTerminalRowsInOneTaglessSeries() {
-        when(retries.pollDue()).thenReturn(new WebhookRetryPollResponse(List.of(), 3),
-                new WebhookRetryPollResponse(List.of(), 2));
+        when(retries.pollDue()).thenReturn(new WebhookRetryResponse.RetryPoll(List.of(), 3),
+                new WebhookRetryResponse.RetryPoll(List.of(), 2));
 
         worker.retryDueEvents();
         worker.retryDueEvents();
@@ -78,10 +77,10 @@ class PayPalWebhookRetryWorkerMetricsTest {
         PaymentWebhookEventResponse rescheduled = event("rescheduled");
         PaymentWebhookEventResponse rejected = event("rejected");
         doReturn(
-                new WebhookRetryPollResponse(List.of(claim(accepted, "lease-1")), 0),
-                new WebhookRetryPollResponse(List.of(claim(duplicate, "lease-2")), 0),
-                new WebhookRetryPollResponse(List.of(claim(rescheduled, "lease-3")), 0),
-                new WebhookRetryPollResponse(
+                new WebhookRetryResponse.RetryPoll(List.of(claim(accepted, "lease-1")), 0),
+                new WebhookRetryResponse.RetryPoll(List.of(claim(duplicate, "lease-2")), 0),
+                new WebhookRetryResponse.RetryPoll(List.of(claim(rescheduled, "lease-3")), 0),
+                new WebhookRetryResponse.RetryPoll(
                         List.of(claim(rejected, "lease-4")), 0)).when(retries).pollDue();
         when(webhooks.processVerified(accepted)).thenReturn(result(false, true, false));
         when(webhooks.processVerified(duplicate)).thenReturn(result(true, true, false));
@@ -117,8 +116,8 @@ class PayPalWebhookRetryWorkerMetricsTest {
     void recordsTransientFailureAndStaleLeaseOutcomes() {
         PaymentWebhookEventResponse transientFailure = event("transient");
         PaymentWebhookEventResponse staleLease = event("stale");
-        doReturn(new WebhookRetryPollResponse(List.of(claim(transientFailure, "lease-1")), 0),
-                new WebhookRetryPollResponse(List.of(claim(staleLease, "lease-2")), 0))
+        doReturn(new WebhookRetryResponse.RetryPoll(List.of(claim(transientFailure, "lease-1")), 0),
+                new WebhookRetryResponse.RetryPoll(List.of(claim(staleLease, "lease-2")), 0))
                 .when(retries).pollDue();
         when(webhooks.processVerified(transientFailure)).thenThrow(new IllegalStateException("provider unavailable"));
         when(retries.reschedule(transientFailure.eventId(), 1, "lease-1",
@@ -151,8 +150,8 @@ class PayPalWebhookRetryWorkerMetricsTest {
         return meters.counter(OUTCOMES_METRIC, "outcome", outcome).count();
     }
 
-    private static ClaimedWebhookRetryResponse claim(PaymentWebhookEventResponse event, String leaseOwner) {
-        return new ClaimedWebhookRetryResponse(event, 1, leaseOwner);
+    private static WebhookRetryResponse.ClaimedWebhookRetry claim(PaymentWebhookEventResponse event, String leaseOwner) {
+        return new WebhookRetryResponse.ClaimedWebhookRetry(event, 1, leaseOwner);
     }
 
     private static PaymentWebhookEventResponse event(String id) {

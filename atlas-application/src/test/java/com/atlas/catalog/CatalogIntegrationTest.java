@@ -9,10 +9,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductListingPageResponse;
-import com.atlas.catalog.dto.response.ProductResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.repository.ProductRepository;
@@ -92,9 +90,9 @@ class CatalogIntegrationTest {
         assertThat(products.findListingPage(firstSeller, null, "needle", null, null, 10))
                 .hasSize(3).allSatisfy(product -> assertThat(product.getSellerId()).isEqualTo(firstSeller));
         productService.registerSku(expected.get(0).getSellerId(), expected.get(0).getProductId(),
-                new RegisterSellerSkuRequest("CURRENT-PAGE-SKU", 100, 1));
+                new ProductRequest.RegisterSellerSku("CURRENT-PAGE-SKU", 100, 1));
         productService.registerSku(expected.get(2).getSellerId(), expected.get(2).getProductId(),
-                new RegisterSellerSkuRequest("LOOKAHEAD-SKU", 100, 1));
+                new ProductRequest.RegisterSellerSku("LOOKAHEAD-SKU", 100, 1));
         var servicePage = productService.listProductsPage(null, null, " NEEDLE ", 2, null);
         assertThat(servicePage.items()).hasSize(2);
         assertThat(servicePage.nextCursor()).isNotBlank();
@@ -111,8 +109,8 @@ class CatalogIntegrationTest {
         String firstHttpBody = mockMvc.perform(get("/api/products").param("query", " NEEDLE ").param("limit", "2"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        ProductListingPageResponse firstHttpPage =
-                objectMapper.readValue(firstHttpBody, ProductListingPageResponse.class);
+        CatalogResponse.ProductListingPage firstHttpPage =
+                objectMapper.readValue(firstHttpBody, CatalogResponse.ProductListingPage.class);
         assertThat(firstHttpPage.items()).extracting(item -> item.product().productId())
                 .containsExactlyElementsOf(expectedIds.subList(0, 2));
         assertThat(firstHttpPage.nextCursor()).isNotBlank();
@@ -122,7 +120,7 @@ class CatalogIntegrationTest {
                         .param("cursor", firstHttpPage.nextCursor()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        ProductListingPageResponse nextHttpPage = objectMapper.readValue(nextHttpBody, ProductListingPageResponse.class);
+        CatalogResponse.ProductListingPage nextHttpPage = objectMapper.readValue(nextHttpBody, CatalogResponse.ProductListingPage.class);
         assertThat(nextHttpPage.items()).extracting(item -> item.product().productId())
                 .containsExactlyElementsOf(expectedIds.subList(2, 4));
         assertThat(nextHttpPage.nextCursor()).isNull();
@@ -172,25 +170,25 @@ class CatalogIntegrationTest {
         Instant activeEnd = now.plusSeconds(3600);
 
         productService.registerSku(sellerId, activeSaleA.getProductId(),
-                new RegisterSellerSkuRequest("price-a-" + UUID.randomUUID(), 50_000, 1));
+                new ProductRequest.RegisterSellerSku("price-a-" + UUID.randomUUID(), 50_000, 1));
         productService.setSkuSalePrice(sellerId, activeSaleA.getProductId(),
                 sellerSkuId(activeSaleA), 20_000, activeStart, activeEnd);
         productService.registerSku(sellerId, activeSaleB.getProductId(),
-                new RegisterSellerSkuRequest("price-b-" + UUID.randomUUID(), 60_000, 1));
+                new ProductRequest.RegisterSellerSku("price-b-" + UUID.randomUUID(), 60_000, 1));
         productService.setSkuSalePrice(sellerId, activeSaleB.getProductId(),
                 sellerSkuId(activeSaleB), 22_000, activeStart, activeEnd);
         productService.registerSku(sellerId, futureSale.getProductId(),
-                new RegisterSellerSkuRequest("price-future-" + UUID.randomUUID(), 40_000, 1));
+                new ProductRequest.RegisterSellerSku("price-future-" + UUID.randomUUID(), 40_000, 1));
         productService.setSkuSalePrice(sellerId, futureSale.getProductId(),
                 sellerSkuId(futureSale), 10_000, now.plusSeconds(3600), now.plusSeconds(7200));
         productService.registerSku(sellerId, expiredSale.getProductId(),
-                new RegisterSellerSkuRequest("price-expired-" + UUID.randomUUID(), 50_000, 1));
+                new ProductRequest.RegisterSellerSku("price-expired-" + UUID.randomUUID(), 50_000, 1));
         productService.setSkuSalePrice(sellerId, expiredSale.getProductId(),
                 sellerSkuId(expiredSale), 5_000, now.minusSeconds(7200), now.minusSeconds(3600));
 
-        ProductListingPageResponse firstPage = productService.listProductsPage(null, null, null,
+        CatalogResponse.ProductListingPage firstPage = productService.listProductsPage(null, null, null,
                 20_000L, 22_000L, 1, null);
-        ProductListingPageResponse secondPage = productService.listProductsPage(null, null, null,
+        CatalogResponse.ProductListingPage secondPage = productService.listProductsPage(null, null, null,
                 20_000L, 22_000L, 1, firstPage.nextCursor());
 
         assertThat(firstPage.items()).hasSize(1);
@@ -252,10 +250,10 @@ class CatalogIntegrationTest {
     void rollsBackSellerSkuWhenInventoryPoolCreationFails() {
         UUID sellerId = sellerService.createSeller().sellerId();
         UUID productId = productService.createProduct(sellerId,
-                new CreateProductRequest("atomic registration", null)).productId();
+                new ProductRequest.CreateProduct("atomic registration", null)).productId();
         String successfulSku = "atomic-success-" + UUID.randomUUID();
 
-        productService.registerSku(sellerId, productId, new RegisterSellerSkuRequest(successfulSku, 100, 2));
+        productService.registerSku(sellerId, productId, new ProductRequest.RegisterSellerSku(successfulSku, 100, 2));
 
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM seller_sku WHERE seller_id = ? AND sku_id = ?",
                 Integer.class, sellerId, successfulSku)).isEqualTo(1);
@@ -280,7 +278,7 @@ class CatalogIntegrationTest {
                 """);
         try {
             assertThatThrownBy(() -> productService.registerSku(sellerId, productId,
-                    new RegisterSellerSkuRequest(failingSku, 100, 2)))
+                    new ProductRequest.RegisterSellerSku(failingSku, 100, 2)))
                     .isInstanceOf(RuntimeException.class)
                     .hasStackTraceContaining("simulated inventory pool insert failure");
         } finally {
@@ -298,9 +296,9 @@ class CatalogIntegrationTest {
     void sellerCanScheduleAndClearSkuSalePriceThroughHttp() throws Exception {
         UUID sellerId = sellerService.createSeller().sellerId();
         UUID productId = productService.createProduct(sellerId,
-                new CreateProductRequest("sale-price-" + UUID.randomUUID(), "description")).productId();
+                new ProductRequest.CreateProduct("sale-price-" + UUID.randomUUID(), "description")).productId();
         String skuId = "sale-sku-" + UUID.randomUUID();
-        productService.registerSku(sellerId, productId, new RegisterSellerSkuRequest(skuId, 1000, 1));
+        productService.registerSku(sellerId, productId, new ProductRequest.RegisterSellerSku(skuId, 1000, 1));
         Instant startsAt = Instant.now().minusSeconds(60);
         Instant endsAt = Instant.now().plusSeconds(3600);
         String path = "/api/sellers/{sellerId}/products/{productId}/skus/{skuId}/sale-price";
@@ -360,7 +358,7 @@ class CatalogIntegrationTest {
     void sellerControlsProductOrderabilityAndPublicVisibility() throws Exception {
         UUID sellerId = sellerService.createSeller().sellerId();
         UUID productId = productService.createProduct(
-                sellerId, new CreateProductRequest("orderability-" + UUID.randomUUID(), "description")).productId();
+                sellerId, new ProductRequest.CreateProduct("orderability-" + UUID.randomUUID(), "description")).productId();
         String base = "/api/sellers/" + sellerId + "/products/" + productId;
 
         mockMvc.perform(put(base + "/channel-availability")
@@ -420,24 +418,24 @@ class CatalogIntegrationTest {
     void publicAndSellerCursorsCannotCrossListingScopes() throws Exception {
         UUID sellerId = sellerService.createSeller().sellerId();
         productService.createProduct(sellerId,
-                new CreateProductRequest("scope-active-1-" + UUID.randomUUID(), "description"));
+                new ProductRequest.CreateProduct("scope-active-1-" + UUID.randomUUID(), "description"));
         productService.createProduct(sellerId,
-                new CreateProductRequest("scope-active-2-" + UUID.randomUUID(), "description"));
+                new ProductRequest.CreateProduct("scope-active-2-" + UUID.randomUUID(), "description"));
         UUID inactiveProduct = productService.createProduct(sellerId,
-                new CreateProductRequest("scope-inactive-" + UUID.randomUUID(), "description")).productId();
+                new ProductRequest.CreateProduct("scope-inactive-" + UUID.randomUUID(), "description")).productId();
         mockMvc.perform(put("/api/sellers/{sellerId}/products/{productId}/status", sellerId, inactiveProduct)
                         .contentType("application/json")
                         .content("{\"status\":\"INACTIVE\"}"))
                 .andExpect(status().isOk());
 
-        ProductListingPageResponse publicPage = objectMapper.readValue(
+        CatalogResponse.ProductListingPage publicPage = objectMapper.readValue(
                 mockMvc.perform(get("/api/products").param("sellerId", sellerId.toString()).param("limit", "1"))
                         .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
-                ProductListingPageResponse.class);
-        ProductListingPageResponse sellerPage = objectMapper.readValue(
+                CatalogResponse.ProductListingPage.class);
+        CatalogResponse.ProductListingPage sellerPage = objectMapper.readValue(
                 mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId).param("limit", "1"))
                         .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
-                ProductListingPageResponse.class);
+                CatalogResponse.ProductListingPage.class);
         assertThat(publicPage.nextCursor()).isNotBlank();
         assertThat(sellerPage.nextCursor()).isNotBlank();
 
@@ -452,7 +450,7 @@ class CatalogIntegrationTest {
     }
 
     private Product create(UUID sellerId, String name) {
-        UUID productId = productService.createProduct(sellerId, new CreateProductRequest(name, "description"))
+        UUID productId = productService.createProduct(sellerId, new ProductRequest.CreateProduct(name, "description"))
                 .productId();
         return products.findById(productId).orElseThrow();
     }
@@ -461,7 +459,7 @@ class CatalogIntegrationTest {
                 product.getProductId());
     }
 
-    private List<UUID> productIds(ProductListingPageResponse page) {
+    private List<UUID> productIds(CatalogResponse.ProductListingPage page) {
         return page.items().stream().map(item -> item.product().productId()).toList();
     }
 
@@ -500,11 +498,11 @@ class CatalogIntegrationTest {
                                 + categoryId + "\",\"" + relatedCategoryId + "\"]}"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(objectMapper.readValue(productBody, ProductResponse.class).categoryIds())
+        assertThat(objectMapper.readValue(productBody, CatalogResponse.Product.class).categoryIds())
                 .containsExactlyElementsOf(List.of(categoryId, relatedCategoryId).stream().sorted().toList());
         UUID productId = UUID.fromString(objectMapper.readTree(productBody).get("productId").stringValue());
         String skuId = "catalog-category-" + UUID.randomUUID();
-        productService.registerSku(sellerId, productId, new RegisterSellerSkuRequest(skuId, 100, 3));
+        productService.registerSku(sellerId, productId, new ProductRequest.RegisterSellerSku(skuId, 100, 3));
         String inventoryQuery = """
                 SELECT initial_capacity, available, reserved, claimed
                 FROM inventory_pool
@@ -532,21 +530,21 @@ class CatalogIntegrationTest {
         String globalSellerBody = mockMvc.perform(get("/api/products")
                         .param("sellerId", sellerId.toString()).param("categoryId", categoryId.toString()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        ProductListingPageResponse globalSellerPage =
-                objectMapper.readValue(globalSellerBody, ProductListingPageResponse.class);
+        CatalogResponse.ProductListingPage globalSellerPage =
+                objectMapper.readValue(globalSellerBody, CatalogResponse.ProductListingPage.class);
         assertThat(globalSellerPage.items()).hasSize(2).allSatisfy(item ->
                 assertThat(item.product().categoryIds()).contains(categoryId));
         String relatedPageBody = mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
                         .param("categoryId", relatedCategoryId.toString()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        ProductListingPageResponse relatedPage =
-                objectMapper.readValue(relatedPageBody, ProductListingPageResponse.class);
+        CatalogResponse.ProductListingPage relatedPage =
+                objectMapper.readValue(relatedPageBody, CatalogResponse.ProductListingPage.class);
         assertThat(relatedPage.items()).hasSize(1);
         assertThat(relatedPage.items().getFirst().product().productId()).isEqualTo(productId);
         String pageBody = mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId)
                         .param("categoryId", categoryId.toString()).param("query", "TEA").param("limit", "1"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        ProductListingPageResponse page = objectMapper.readValue(pageBody, ProductListingPageResponse.class);
+        CatalogResponse.ProductListingPage page = objectMapper.readValue(pageBody, CatalogResponse.ProductListingPage.class);
         assertThat(page.items()).hasSize(1);
         UUID firstPageProductId = page.items().getFirst().product().productId();
         assertThat(page.items().getFirst().product().categoryIds()).contains(categoryId);
@@ -555,7 +553,7 @@ class CatalogIntegrationTest {
                         .param("categoryId", categoryId.toString()).param("query", "TEA").param("limit", "1")
                         .param("cursor", page.nextCursor()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        ProductListingPageResponse nextPage = objectMapper.readValue(nextPageBody, ProductListingPageResponse.class);
+        CatalogResponse.ProductListingPage nextPage = objectMapper.readValue(nextPageBody, CatalogResponse.ProductListingPage.class);
         assertThat(nextPage.items()).hasSize(1);
         UUID secondPageProductId = nextPage.items().getFirst().product().productId();
         assertThat(secondPageProductId).isNotEqualTo(firstPageProductId);
@@ -599,7 +597,7 @@ class CatalogIntegrationTest {
     void listingProjectionFollowsCatalogWritesWithinTheSameTransaction() {
         UUID sellerId = sellerService.createSeller().sellerId();
         UUID productId = productService.createProduct(
-                sellerId, new CreateProductRequest("projection-" + UUID.randomUUID(), "description")).productId();
+                sellerId, new ProductRequest.CreateProduct("projection-" + UUID.randomUUID(), "description")).productId();
 
         // 생성 직후: 기본 채널 두 개가 투영에 들어와 있어야 한다.
         assertThat(projectionChannels(productId))

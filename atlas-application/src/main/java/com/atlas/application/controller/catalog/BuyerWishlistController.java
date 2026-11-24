@@ -1,7 +1,6 @@
 package com.atlas.application.controller.catalog;
 
-import com.atlas.catalog.dto.response.BuyerWishlistItemResponse;
-import com.atlas.catalog.dto.response.BuyerWishlistPage;
+import com.atlas.catalog.dto.response.BuyerWishlistResponse;
 import com.atlas.catalog.service.BuyerWishlistService;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -24,14 +23,14 @@ public class BuyerWishlistController {
     }
 
     @GetMapping
-    public BuyerWishlistPage list(@PathVariable String buyerRef,
+    public BuyerWishlistResponse.Page list(@PathVariable String buyerRef,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         return wishlist.list(buyerRef, limit, offset);
     }
 
     @PostMapping("/products/{productId}")
-    public BuyerWishlistItemResponse save(@PathVariable String buyerRef, @PathVariable UUID productId) {
+    public BuyerWishlistResponse.Item save(@PathVariable String buyerRef, @PathVariable UUID productId) {
         return wishlist.save(buyerRef, productId);
     }
 

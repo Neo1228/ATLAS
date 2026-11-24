@@ -2,23 +2,18 @@ package com.atlas.admission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.PostgresLockWaitProbe;
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.persistence.projection.DueTicketCandidate;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.TicketRepository;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.service.impl.AdmissionServiceImpl;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
-import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
@@ -77,9 +72,9 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
 
     @Test
     void expiresUnlockedSellerSkuAndSkipsAnotherInstanceHoldingTheNextCounter() throws Exception {
-        SellerResponse seller = sellers.createSeller();
-        ProductResponse product = products.createProduct(seller.sellerId(),
-                new CreateProductRequest("admission expiry " + UUID.randomUUID(), "description"));
+        CatalogResponse.Seller seller = sellers.createSeller();
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("admission expiry " + UUID.randomUUID(), "description"));
         DueTicket first = createDueTicket(seller.sellerId(), product, "first");
         DueTicket second = createDueTicket(seller.sellerId(), product, "second");
 
@@ -136,21 +131,21 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
 
     @Test
     void increasingPolicyCapacityImmediatelyPromotesNextWaitingTicketInFifoOrder() {
-        SellerResponse seller = sellers.createSeller();
-        ProductResponse product = products.createProduct(seller.sellerId(),
-                new CreateProductRequest("admission capacity " + UUID.randomUUID(), "description"));
+        CatalogResponse.Seller seller = sellers.createSeller();
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("admission capacity " + UUID.randomUUID(), "description"));
         String skuId = "admission-capacity-" + UUID.randomUUID();
-        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+        products.registerSku(seller.sellerId(), product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(
                 seller.sellerId(), skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
 
-        QueueTicketResponse first = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket first = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-1", "capacity-1"));
-        QueueTicketResponse second = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket second = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-2", "capacity-2"));
-        QueueTicketResponse third = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket third = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-3", "capacity-3"));
 
         assertThat(first.sequence()).isEqualTo(1);
@@ -160,7 +155,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
         assertThat(second.status()).isEqualTo(TicketStatus.WAITING);
         assertThat(third.status()).isEqualTo(TicketStatus.WAITING);
 
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 2));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 2));
 
         assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
@@ -173,16 +168,16 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
 
     @Test
     void joinContendingWithCapacityDecreaseUsesCommittedPolicy() throws Exception {
-        SellerResponse seller = sellers.createSeller();
-        ProductResponse product = products.createProduct(seller.sellerId(),
-                new CreateProductRequest("admission policy race " + UUID.randomUUID(), "description"));
+        CatalogResponse.Seller seller = sellers.createSeller();
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("admission policy race " + UUID.randomUUID(), "description"));
         String skuId = "admission-policy-race-" + UUID.randomUUID();
-        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 2));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+        products.registerSku(seller.sellerId(), product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 2));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(
                 seller.sellerId(), skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
-        QueueTicketResponse first = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket first = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-policy-race-1", "policy-race-1"));
         assertThat(first.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
 
@@ -198,14 +193,14 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
             Future<?> configuration = executor.submit(() -> new TransactionTemplate(transactionManager)
                     .executeWithoutResult(status -> {
                         admission.configureSellerSkuPolicy(
-                                new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
+                                new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 1));
                         blockerPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
                         configurationLocked.countDown();
                         awaitLatch(releaseConfiguration);
                     }));
             assertThat(configurationLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
-            Future<QueueTicketResponse> join = executor.submit(() -> admission.join(new JoinQueueRequest(
+            Future<AdmissionResponse.QueueTicket> join = executor.submit(() -> admission.join(new AdmissionRequest.JoinQueue(
                     campaign.campaignId(), skuId, "buyer-policy-race-2", "policy-race-2")));
             try (Connection observer = dataSource.getConnection()) {
                 int observerPid = PostgresLockWaitProbe.backendPid(observer);
@@ -216,7 +211,7 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
 
             releaseConfiguration.countDown();
             configuration.get(10, TimeUnit.SECONDS);
-            QueueTicketResponse second = join.get(10, TimeUnit.SECONDS);
+            AdmissionResponse.QueueTicket second = join.get(10, TimeUnit.SECONDS);
 
             assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
                     .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
@@ -233,28 +228,28 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
 
     @Test
     void capacityIncreaseExpiresHeldTicketBeforePromotingOldestEligibleWaiters() {
-        SellerResponse seller = sellers.createSeller();
-        ProductResponse product = products.createProduct(seller.sellerId(),
-                new CreateProductRequest("admission expired capacity " + UUID.randomUUID(), "description"));
+        CatalogResponse.Seller seller = sellers.createSeller();
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("admission expired capacity " + UUID.randomUUID(), "description"));
         String skuId = "admission-expired-capacity-" + UUID.randomUUID();
-        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+        products.registerSku(seller.sellerId(), product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(
                 seller.sellerId(), skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
 
-        QueueTicketResponse expiredActive = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket expiredActive = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-expired-active", "expired-active"));
-        QueueTicketResponse oldestWaiting = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket oldestWaiting = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-oldest-waiting", "oldest-waiting"));
-        QueueTicketResponse nextWaiting = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket nextWaiting = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-next-waiting", "next-waiting"));
-        QueueTicketResponse lastWaiting = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket lastWaiting = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-last-waiting", "last-waiting"));
         jdbc.update("UPDATE admission_ticket SET expires_at = ? WHERE ticket_id = ?",
                 Timestamp.from(Instant.now().minus(Duration.ofHours(1))), expiredActive.ticketId());
 
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 2));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 2));
 
         assertThat(admission.find(campaign.campaignId(), expiredActive.ticketId()).status())
                 .isEqualTo(TicketStatus.EXPIRED);
@@ -269,19 +264,19 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
 
     @Test
     void scheduledExpiryDoesNotExpireTheTwoHundredFirstCandidateForOneSellerSku() {
-        SellerResponse seller = sellers.createSeller();
+        CatalogResponse.Seller seller = sellers.createSeller();
         String skuId = "admission-expiry-page-" + UUID.randomUUID();
-        ProductResponse product = products.createProduct(seller.sellerId(),
-                new CreateProductRequest("admission expiry page " + UUID.randomUUID(), "description"));
-        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("admission expiry page " + UUID.randomUUID(), "description"));
+        products.registerSku(seller.sellerId(), product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(
                 seller.sellerId(), skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
 
-        List<QueueTicketResponse> tickets = new ArrayList<>();
+        List<AdmissionResponse.QueueTicket> tickets = new ArrayList<>();
         for (int i = 0; i < 201; i++) {
-            tickets.add(admission.join(new JoinQueueRequest(campaign.campaignId(), skuId,
+            tickets.add(admission.join(new AdmissionRequest.JoinQueue(campaign.campaignId(), skuId,
                     "buyer-page-" + i + "-" + UUID.randomUUID(), "expiry-page-" + i + "-" + UUID.randomUUID())));
         }
         Instant dueAt = Instant.now().minus(Duration.ofHours(1));
@@ -298,14 +293,14 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
                 String.class, ticketIdOutsidePage)).isNotEqualTo("EXPIRED");
     }
 
-    private DueTicket createDueTicket(UUID sellerId, ProductResponse product, String label) {
+    private DueTicket createDueTicket(UUID sellerId, CatalogResponse.Product product, String label) {
         String skuId = "admission-expiry-" + label + "-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(
                 sellerId, skuId, Duration.ofMinutes(5)));
         campaigns.open(campaign.campaignId());
-        QueueTicketResponse ticket = admission.join(new JoinQueueRequest(
+        AdmissionResponse.QueueTicket ticket = admission.join(new AdmissionRequest.JoinQueue(
                 campaign.campaignId(), skuId, "buyer-" + UUID.randomUUID(), "expiry-" + UUID.randomUUID()));
         jdbc.update("UPDATE admission_ticket SET expires_at = ? WHERE ticket_id = ?",
                 Timestamp.from(Instant.now().minus(Duration.ofHours(1))), ticket.ticketId());
@@ -335,5 +330,5 @@ class AdmissionExpiryTransactionIntegrationTest extends PayPalIntegrationTestSup
         }
     }
 
-    private record DueTicket(String skuId, QueueTicketResponse ticket) {}
+    private record DueTicket(String skuId, AdmissionResponse.QueueTicket ticket) {}
 }

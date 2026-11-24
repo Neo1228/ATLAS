@@ -3,13 +3,10 @@ package com.atlas.settlement;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.atlas.settlement.dto.response.PayoutResponse;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.settlement.dto.request.CapturePostingRequest;
-import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
-import com.atlas.settlement.dto.request.RefundPostingRequest;
-import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
@@ -96,8 +93,8 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void payoutOutboxEnqueueIsIdempotentAndLeaseTokensFenceStaleWorkers() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 "outbox-lease-payout");
         payouts.approve(payout.payoutId());
@@ -129,7 +126,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         UUID orderId = UUID.randomUUID();
 
         // gross 10,000 -> fee 1,000 / reserve 1,000 / seller 8,000
-        settlement.recordCapture(new CapturePostingRequest(orderId, UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(orderId, UUID.randomUUID(), sellerId, 10_000));
 
         Map<String, Long> debits = entryTotals(sellerId, "DEBIT");
         Map<String, Long> credits = entryTotals(sellerId, "CREDIT");
@@ -168,10 +165,10 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         UUID orderA = createCheckoutOrder(checkoutId, sellerA);
         UUID orderB = createCheckoutOrder(checkoutId, sellerB);
 
-        settlement.recordCheckoutCapture(new CheckoutSettlementPostingRequest(checkoutId,
+        settlement.recordCheckoutCapture(new SettlementPostingRequest.CheckoutSettlement(checkoutId,
                 UUID.randomUUID(), 25_000, List.of(
-                        new SellerOrderAllocationRequest(orderA, sellerA, 10_000),
-                        new SellerOrderAllocationRequest(orderB, sellerB, 15_000))));
+                        new SettlementPostingRequest.SellerOrderAllocation(orderA, sellerA, 10_000),
+                        new SettlementPostingRequest.SellerOrderAllocation(orderB, sellerB, 15_000))));
 
         // seller 마다 자기 몫만 본다. 각 10% 수수료·보류.
         assertThat(payouts.balance(sellerA).payableAmountWon().longValueExact()).isEqualTo(8_000L);
@@ -189,8 +186,8 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void balanceReflectsCaptureRefundAndReserve() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        RefundPostingRequest refund = new RefundPostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SettlementPostingRequest.Refund refund = new SettlementPostingRequest.Refund(UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
         settlement.reserveRefund(refund);
         settlement.recordRefund(refund);
 
@@ -208,7 +205,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void payoutRequestUsesLedgerBalanceAndRejectsDuplicatePeriod() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
         Instant start = Instant.parse("2026-11-01T00:00:00Z");
         Instant end = Instant.parse("2026-12-01T00:00:00Z");
 
@@ -219,13 +216,13 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
                 "SELECT COALESCE(SUM(amount_won),0) FROM settlement_payout WHERE seller_id = ? "
                 + "AND state IN ('REQUESTED','APPROVED','SENT')", Long.class, sellerId))
                 .as("pending amount before request").isZero();
-        SellerPayoutResponse created = payouts.request(sellerId, start, end, "payout-key-1");
+        PayoutResponse.SellerPayout created = payouts.request(sellerId, start, end, "payout-key-1");
         // 지급 금액은 호출자가 아니라 원장 잔액이 정한다(보류 1,000 제외).
         assertThat(created.amountWon()).isEqualTo(8_000L);
         assertThat(created.state()).isEqualTo(SettlementPayoutStatus.REQUESTED);
 
         // 같은 기간 재요청은 중복 지급을 만들지 않고 기존 지급을 돌려준다.
-        SellerPayoutResponse duplicate = payouts.request(sellerId, start, end, "payout-key-2");
+        PayoutResponse.SellerPayout duplicate = payouts.request(sellerId, start, end, "payout-key-2");
         assertThat(duplicate.payoutId()).isEqualTo(created.payoutId());
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM settlement_payout WHERE seller_id = ?", Integer.class, sellerId))
@@ -235,18 +232,18 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void definitiveRefundFailureReleasesItsHoldForANewPayoutRequest() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        RefundPostingRequest refund = new RefundPostingRequest(
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        SettlementPostingRequest.Refund refund = new SettlementPostingRequest.Refund(
                 UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
         settlement.reserveRefund(refund);
-        SellerPayoutResponse first = payouts.request(sellerId,
+        PayoutResponse.SellerPayout first = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 "refund-held-payout");
         assertThat(first.amountWon()).isEqualTo(6_000);
 
         settlement.releaseRefundReservation(refund);
 
-        SellerPayoutResponse second = payouts.request(sellerId,
+        PayoutResponse.SellerPayout second = payouts.request(sellerId,
                 Instant.parse("2026-12-01T00:00:00Z"), Instant.parse("2027-01-01T00:00:00Z"),
                 "refund-release-payout");
         assertThat(second.amountWon()).isEqualTo(2_000);
@@ -257,21 +254,21 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void refundCommitmentPreemptsApprovedPayoutBeforeProviderDispatch() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
         Instant start = Instant.parse("2026-11-01T00:00:00Z");
         Instant end = Instant.parse("2026-12-01T00:00:00Z");
-        SellerPayoutResponse payout = payouts.request(sellerId, start, end, "refund-preempted-payout");
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId, start, end, "refund-preempted-payout");
         payouts.approve(payout.payoutId());
-        RefundPostingRequest refund = new RefundPostingRequest(
+        SettlementPostingRequest.Refund refund = new SettlementPostingRequest.Refund(
                 UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
 
         settlement.reserveRefund(refund);
 
-        SellerPayoutResponse cancelled = payouts.find(payout.payoutId());
+        PayoutResponse.SellerPayout cancelled = payouts.find(payout.payoutId());
         assertThat(cancelled.state()).isEqualTo(SettlementPayoutStatus.CANCELLED);
         assertThat(cancelled.cancelledAt()).isNotNull();
         assertThat(payouts.beginDispatch(payout.payoutId())).isFalse();
-        SellerPayoutResponse replacement = payouts.request(sellerId, start, end, "replacement-payout");
+        PayoutResponse.SellerPayout replacement = payouts.request(sellerId, start, end, "replacement-payout");
         assertThat(replacement.amountWon()).isEqualTo(6_000);
         assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(6_000);
         assertThat(payouts.summary(sellerId).pendingRefundAmountWon()).isEqualTo(2_000);
@@ -281,14 +278,14 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void refundPostingPreservesPayoutCreatedFromBalanceAfterTheRefundHold() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 12_500));
-        RefundPostingRequest refund = new RefundPostingRequest(
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 12_500));
+        SettlementPostingRequest.Refund refund = new SettlementPostingRequest.Refund(
                 UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
         settlement.reserveRefund(refund);
         Instant start = Instant.parse("2026-11-01T00:00:00Z");
         Instant end = Instant.parse("2026-12-01T00:00:00Z");
 
-        SellerPayoutResponse payout = payouts.request(sellerId, start, end, "refund-covered-payout");
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId, start, end, "refund-covered-payout");
         assertThat(payout.amountWon()).isEqualTo(8_000);
         settlement.reserveRefund(refund);
         settlement.recordRefund(refund);
@@ -302,14 +299,14 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void refundAfterDispatchFenceKeepsPayoutReservedForProviderReconciliation() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 "dispatch-wins-payout");
         payouts.approve(payout.payoutId());
         assertThat(payouts.beginDispatch(payout.payoutId())).isTrue();
 
-        settlement.reserveRefund(new RefundPostingRequest(
+        settlement.reserveRefund(new SettlementPostingRequest.Refund(
                 UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000));
 
         assertThat(payouts.find(payout.payoutId()).state()).isEqualTo(SettlementPayoutStatus.DISPATCHING);
@@ -321,12 +318,12 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void concurrentRefundReservationAndDispatchHaveOneSellerLockWinner() throws Exception {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 "concurrent-refund-dispatch");
         payouts.approve(payout.payoutId());
-        RefundPostingRequest refund = new RefundPostingRequest(
+        SettlementPostingRequest.Refund refund = new SettlementPostingRequest.Refund(
                 UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -362,13 +359,13 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void successfulRefundAfterDispatchedPayoutSurfacesNegativePayableCreditExposure() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 "refund-credit-exposure-payout");
         payouts.approve(payout.payoutId());
         assertThat(payouts.beginDispatch(payout.payoutId())).isTrue();
-        RefundPostingRequest refund = new RefundPostingRequest(
+        SettlementPostingRequest.Refund refund = new SettlementPostingRequest.Refund(
                 UUID.randomUUID(), UUID.randomUUID(), sellerId, 2_000);
         settlement.reserveRefund(refund);
 
@@ -385,14 +382,14 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void providerSuccessPostsSellerPrincipalRoundingAndFeeAsBalancedLedgerEntries() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 "provider-confirmed-payout");
         payouts.approve(payout.payoutId());
         payouts.beginDispatch(payout.payoutId());
 
-        SellerPayoutResponse confirmed = payouts.confirmProviderSuccess(payout.payoutId(), 8_011, 11, 25);
+        PayoutResponse.SellerPayout confirmed = payouts.confirmProviderSuccess(payout.payoutId(), 8_011, 11, 25);
         assertThat(payouts.confirmProviderSuccess(payout.payoutId(), 8_011, 11, 25).state())
                 .isEqualTo(SettlementPayoutStatus.CONFIRMED);
         assertThatThrownBy(() -> payouts.confirmProviderSuccess(payout.payoutId(), 8_011, 11, 26))
@@ -412,15 +409,15 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void providerFailureEvidenceCanReleaseAnAttemptedPayoutReservation() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"),
                 "provider-failed-payout");
         payouts.approve(payout.payoutId());
         payouts.beginDispatch(payout.payoutId());
         payouts.markProviderUnknown(payout.payoutId());
 
-        SellerPayoutResponse failed = payouts.failWithProviderEvidence(
+        PayoutResponse.SellerPayout failed = payouts.failWithProviderEvidence(
                 payout.payoutId(), "PAYOUT_ITEM_FAILED");
 
         assertThat(failed.state()).isEqualTo(SettlementPayoutStatus.FAILED);
@@ -432,14 +429,14 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void confirmedPayoutPostsBalancedJournalAndZeroesPayable() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
         Instant start = Instant.parse("2026-11-01T00:00:00Z");
         Instant end = Instant.parse("2026-12-01T00:00:00Z");
-        SellerPayoutResponse requested = payouts.request(sellerId, start, end, "payout-confirm-key");
+        PayoutResponse.SellerPayout requested = payouts.request(sellerId, start, end, "payout-confirm-key");
 
         payouts.approve(requested.payoutId());
         payouts.markSent(requested.payoutId());
-        SellerPayoutResponse confirmed = payouts.confirm(requested.payoutId());
+        PayoutResponse.SellerPayout confirmed = payouts.confirm(requested.payoutId());
 
         assertThat(confirmed.state()).isEqualTo(SettlementPayoutStatus.CONFIRMED);
         // 지급 후 지급 가능 잔액은 0 이 된다(원장 분개로 반영).
@@ -457,10 +454,10 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void pendingPayoutReservesBalanceSoDifferentPeriodsCannotDoublePay() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
         // payable 8,000 (보류 1,000, 수수료 1,000)
 
-        SellerPayoutResponse first = payouts.request(sellerId,
+        PayoutResponse.SellerPayout first = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"), "first-period");
         assertThat(first.amountWon()).isEqualTo(8_000L);
 
@@ -479,7 +476,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void concurrentDifferentPeriodPayoutRequestsCannotDoubleReserve() throws Exception {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
 
         int racers = 4;
         CountDownLatch start = new CountDownLatch(1);
@@ -516,8 +513,8 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void payoutCannotBeConfirmedBeforeItIsSent() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse requested = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout requested = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"), "skip-sent-key");
 
         assertThatThrownBy(() -> payouts.confirm(requested.payoutId()))
@@ -528,10 +525,10 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void sentPayoutCannotBeFailedWithoutProviderEvidence() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
         Instant start = Instant.parse("2026-11-01T00:00:00Z");
         Instant end = Instant.parse("2026-12-01T00:00:00Z");
-        SellerPayoutResponse requested = payouts.request(sellerId, start, end, "sent-unknown-key");
+        PayoutResponse.SellerPayout requested = payouts.request(sellerId, start, end, "sent-unknown-key");
         payouts.approve(requested.payoutId());
         payouts.markSent(requested.payoutId());
 
@@ -541,7 +538,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         assertThat(payouts.find(requested.payoutId()).state()).isEqualTo(SettlementPayoutStatus.SENT);
         assertThat(payouts.summary(sellerId).pendingPayoutAmountWon()).isEqualTo(8_000L);
 
-        SellerPayoutResponse replay = payouts.request(sellerId, start, end, "sent-unknown-replay");
+        PayoutResponse.SellerPayout replay = payouts.request(sellerId, start, end, "sent-unknown-replay");
         assertThat(replay.payoutId()).isEqualTo(requested.payoutId());
         assertThat(replay.amountWon()).isEqualTo(8_000L);
     }
@@ -549,8 +546,8 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void concurrentConfirmOnlySucceedsOnceAndPostsOneJournal() throws Exception {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
-        SellerPayoutResponse requested = payouts.request(sellerId,
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        PayoutResponse.SellerPayout requested = payouts.request(sellerId,
                 Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"), "race-key");
         payouts.approve(requested.payoutId());
         payouts.markSent(requested.payoutId());
@@ -584,7 +581,7 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
     @Test
     void statementExposesBalanceBreakdownAlongsidePeriodFlow() {
         UUID sellerId = createSeller();
-        settlement.recordCapture(new CapturePostingRequest(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
+        settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));
         Instant from = Instant.now().minus(1, ChronoUnit.DAYS);
         Instant to = Instant.now().plus(1, ChronoUnit.DAYS);
 

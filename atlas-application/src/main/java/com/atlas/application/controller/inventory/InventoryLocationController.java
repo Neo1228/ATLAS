@@ -1,16 +1,8 @@
 package com.atlas.application.controller.inventory;
 
-import com.atlas.application.controller.dto.AdjustInventoryCapacityHttpRequest;
-import com.atlas.application.controller.dto.CreateFulfillmentLocationHttpRequest;
-import com.atlas.application.controller.dto.InventoryAdjustmentHttpResponse;
-import com.atlas.application.controller.dto.InventoryLocationHttpResponse;
-import com.atlas.application.controller.dto.InventoryTransferHttpResponse;
-import com.atlas.application.controller.dto.LocationInventoryPageHttpResponse;
-import com.atlas.application.controller.dto.TransferInventoryHttpRequest;
-import com.atlas.application.controller.dto.UpdateFulfillmentLocationHttpRequest;
-import com.atlas.inventory.dto.request.CreateFulfillmentLocationRequest;
-import com.atlas.inventory.dto.request.TransferInventoryRequest;
-import com.atlas.inventory.dto.request.UpdateFulfillmentLocationRequest;
+import com.atlas.application.dto.request.InventoryHttpRequest;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
 import com.atlas.inventory.service.InventoryService;
 import jakarta.validation.Valid;
@@ -35,46 +27,46 @@ public class InventoryLocationController {
     private final InventoryCapacityAdjustmentService adjustments;
 
     @PostMapping("/fulfillment-locations")
-    public InventoryLocationHttpResponse create(@PathVariable UUID sellerId,
-            @Valid @RequestBody CreateFulfillmentLocationHttpRequest request) {
-        return InventoryLocationHttpResponse.from(inventory.createLocation(
-                new CreateFulfillmentLocationRequest(sellerId, request.code(), request.name(), request.priority())));
+    public InventoryResponse.Location create(@PathVariable UUID sellerId,
+            @Valid @RequestBody InventoryHttpRequest.CreateFulfillmentLocation request) {
+        return inventory.createLocation(
+                new InventoryRequest.CreateFulfillmentLocation(sellerId, request.code(), request.name(), request.priority()));
     }
 
     @GetMapping("/fulfillment-locations")
-    public List<InventoryLocationHttpResponse> find(@PathVariable UUID sellerId) {
-        return inventory.findLocations(sellerId).stream().map(InventoryLocationHttpResponse::from).toList();
+    public List<InventoryResponse.Location> find(@PathVariable UUID sellerId) {
+        return inventory.findLocations(sellerId).stream().toList();
     }
 
     @PutMapping("/fulfillment-locations/{locationId}")
-    public InventoryLocationHttpResponse update(@PathVariable UUID sellerId, @PathVariable UUID locationId,
-            @Valid @RequestBody UpdateFulfillmentLocationHttpRequest request) {
-        return InventoryLocationHttpResponse.from(inventory.updateLocation(new UpdateFulfillmentLocationRequest(
-                sellerId, locationId, request.name(), request.priority(), request.active())));
+    public InventoryResponse.Location update(@PathVariable UUID sellerId, @PathVariable UUID locationId,
+            @Valid @RequestBody InventoryHttpRequest.UpdateFulfillmentLocation request) {
+        return inventory.updateLocation(new InventoryRequest.UpdateFulfillmentLocation(
+                sellerId, locationId, request.name(), request.priority(), request.active()));
     }
 
     @GetMapping("/inventory/locations/{locationId}")
-    public LocationInventoryPageHttpResponse inventory(@PathVariable UUID sellerId,
+    public InventoryResponse.LocationInventoryPage inventory(@PathVariable UUID sellerId,
             @PathVariable UUID locationId, @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String after) {
-        return LocationInventoryPageHttpResponse.from(
-                inventory.findLocationInventoryPage(sellerId, locationId, limit, after));
+        return 
+                inventory.findLocationInventoryPage(sellerId, locationId, limit, after);
     }
 
     @PostMapping("/inventory/locations/{locationId}/skus/{skuId}/capacity-adjustments")
-    public InventoryAdjustmentHttpResponse adjust(@PathVariable UUID sellerId, @PathVariable UUID locationId,
+    public InventoryResponse.Adjustment adjust(@PathVariable UUID sellerId, @PathVariable UUID locationId,
             @PathVariable String skuId, @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody AdjustInventoryCapacityHttpRequest request) {
-        return InventoryAdjustmentHttpResponse.from(adjustments.adjust(sellerId, skuId, locationId,
-                idempotencyKey, request.delta(), request.reason()));
+            @Valid @RequestBody InventoryHttpRequest.AdjustInventoryCapacity request) {
+        return adjustments.adjust(sellerId, skuId, locationId,
+                idempotencyKey, request.delta(), request.reason());
     }
 
     @PostMapping("/inventory/transfers")
-    public InventoryTransferHttpResponse transfer(@PathVariable UUID sellerId,
+    public InventoryResponse.Transfer transfer(@PathVariable UUID sellerId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody TransferInventoryHttpRequest request) {
-        return InventoryTransferHttpResponse.from(inventory.transfer(new TransferInventoryRequest(sellerId,
+            @Valid @RequestBody InventoryHttpRequest.TransferInventory request) {
+        return inventory.transfer(new InventoryRequest.TransferInventory(sellerId,
                 request.skuId(), request.sourceLocationId(), request.destinationLocationId(), request.quantity(),
-                idempotencyKey, request.reason())));
+                idempotencyKey, request.reason()));
     }
 }

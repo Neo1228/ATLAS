@@ -1,10 +1,9 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.account.dto.response.VerifiedSellerAccountResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.service.AccountService;
-import com.atlas.application.controller.dto.SellerPayoutProfileRequest;
-import com.atlas.application.controller.dto.SellerPayoutProfileResponse;
-import com.atlas.application.controller.dto.VerifySellerPayoutProfileRequest;
 import com.atlas.payment.provider.paypal.PayPalPayoutsProperties;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.SellerPayoutProfile;
@@ -42,8 +41,8 @@ public class SellerPayoutProfileService {
     }
 
     @Transactional
-    public SellerPayoutProfileResponse configure(UUID accountId, UUID sellerId, String idempotencyKey,
-            SellerPayoutProfileRequest request) {
+    public SettlementHttpResponse.SellerPayoutProfile configure(UUID accountId, UUID sellerId, String idempotencyKey,
+            SettlementHttpRequest.SellerPayoutProfile request) {
         if (accountId == null || sellerId == null || request == null || !StringUtils.hasText(idempotencyKey)
                 || idempotencyKey.length() > 128 || !request.usdWalletConfirmed()
                 || !request.verifiedAccountEmailConfirmed()) {
@@ -51,7 +50,7 @@ public class SellerPayoutProfileService {
         }
         String countryCode = normalizeCountry(request.countryCode());
         requireSupportedCountry(countryCode);
-        VerifiedSellerAccountResponse account = accounts.findVerifiedSellerAccount(accountId, sellerId)
+        AccountResponse.VerifiedSellerAccount account = accounts.findVerifiedSellerAccount(accountId, sellerId)
                 .orElseThrow(() -> conflict("An active Seller account with a verified email is required"));
         String requestHash = hash("profile|" + account.accountId() + "|" + sellerId + "|" + countryCode + "|USD");
         Optional<String> priorHash = profiles.findRequestHash(sellerId, idempotencyKey);
@@ -86,8 +85,8 @@ public class SellerPayoutProfileService {
     }
 
     @Transactional
-    public SellerPayoutProfileResponse verify(UUID sellerId, String actor, String idempotencyKey,
-            VerifySellerPayoutProfileRequest request) {
+    public SettlementHttpResponse.SellerPayoutProfile verify(UUID sellerId, String actor, String idempotencyKey,
+            SettlementHttpRequest.VerifySellerPayoutProfile request) {
         if (sellerId == null || !StringUtils.hasText(actor) || actor.length() > 128
                 || !StringUtils.hasText(idempotencyKey) || idempotencyKey.length() > 128 || request == null
                 || request.profileVersion() < 1 || !StringUtils.hasText(request.evidenceReference())
@@ -111,7 +110,7 @@ public class SellerPayoutProfileService {
             throw conflict("Only a payout profile pending review can be verified");
         }
         requireSupportedCountry(profile.countryCode());
-        VerifiedSellerAccountResponse account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
+        AccountResponse.VerifiedSellerAccount account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
                 .orElseThrow(() -> conflict("The linked Seller account is not active or email-verified"));
         Instant now = clock.instant();
         Optional<SellerPayoutProfile> verifiedProfile =
@@ -138,7 +137,7 @@ public class SellerPayoutProfileService {
     }
 
     @Transactional(readOnly = true)
-    public SellerPayoutProfileResponse find(UUID accountId, UUID sellerId) {
+    public SettlementHttpResponse.SellerPayoutProfile find(UUID accountId, UUID sellerId) {
         if (accountId == null || sellerId == null) throw invalid("Account and Seller are required");
         if (!accounts.ownsSeller(accountId, sellerId)) {
             throw notFound("Seller payout profile not found");
@@ -153,7 +152,7 @@ public class SellerPayoutProfileService {
             throw conflict("Seller payout profile is not active");
         }
         requireSupportedCountry(profile.countryCode());
-        VerifiedSellerAccountResponse account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
+        AccountResponse.VerifiedSellerAccount account = accounts.findVerifiedSellerAccount(profile.recipientAccountId(), sellerId)
                 .orElseThrow(() -> conflict("The linked Seller account is not active or email-verified"));
         return new ActiveRecipient(sellerId, profile.recipientAccountId(), profile.profileVersion(),
                 profile.countryCode(), profile.payoutCurrency(), account.email());
@@ -189,8 +188,8 @@ public class SellerPayoutProfileService {
         }
     }
 
-    private static SellerPayoutProfileResponse toResponse(SellerPayoutProfile profile) {
-        return new SellerPayoutProfileResponse(profile.sellerId(), profile.countryCode(), profile.payoutCurrency(),
+    private static SettlementHttpResponse.SellerPayoutProfile toResponse(SellerPayoutProfile profile) {
+        return new SettlementHttpResponse.SellerPayoutProfile(profile.sellerId(), profile.countryCode(), profile.payoutCurrency(),
                 profile.state().name(), profile.profileVersion(), profile.updatedAt(), profile.verifiedAt());
     }
 

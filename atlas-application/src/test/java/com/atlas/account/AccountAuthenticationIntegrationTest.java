@@ -8,10 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.account.dto.request.LoginRequest;
-import com.atlas.account.dto.request.RefreshTokenRequest;
-import com.atlas.account.dto.response.AccountLoginResponse;
-import com.atlas.account.dto.response.AccountTokenResponse;
+import com.atlas.account.dto.response.AccountResponse;
+import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.exception.AccountException;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountEmailSender;
@@ -192,8 +190,8 @@ class AccountAuthenticationIntegrationTest {
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
         String buyerRef = accountService.buyerRef(accountId);
-        AccountLoginResponse firstLogin = accountService.login(new LoginRequest(email, password), "198.51.100.7");
-        AccountLoginResponse secondLogin = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountResponse.Login firstLogin = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
+        AccountResponse.Login secondLogin = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
         String cartPath = "/api/buyers/" + buyerRef + "/cart";
 
         assertThat(firstLogin.mfaRequired()).isFalse();
@@ -233,11 +231,11 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse initial = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountResponse.Login initial = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
         UUID familyId = UUID.fromString(SignedJWT.parse(initial.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
 
-        AccountTokenResponse rotated = accountService.refresh(new RefreshTokenRequest(initial.tokens().refreshToken()));
+        AccountResponse.Token rotated = accountService.refresh(new AccountRequest.RefreshToken(initial.tokens().refreshToken()));
         assertThat(UUID.fromString(SignedJWT.parse(rotated.accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"))).isEqualTo(familyId);
         mockMvc.perform(get("/api/auth/sessions")
@@ -247,7 +245,7 @@ class AccountAuthenticationIntegrationTest {
                         .header("Authorization", "Bearer " + rotated.accessToken()))
                 .andExpect(status().isOk());
 
-        assertThatThrownBy(() -> accountService.refresh(new RefreshTokenRequest(initial.tokens().refreshToken())))
+        assertThatThrownBy(() -> accountService.refresh(new AccountRequest.RefreshToken(initial.tokens().refreshToken())))
                 .isInstanceOf(AccountException.class);
 
         mockMvc.perform(get("/api/auth/sessions")
@@ -328,8 +326,8 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse first = accountService.login(new LoginRequest(email, password), "198.51.100.7");
-        AccountLoginResponse second = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountResponse.Login first = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
+        AccountResponse.Login second = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
         UUID firstFamily = UUID.fromString(SignedJWT.parse(first.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
         UUID secondFamily = UUID.fromString(SignedJWT.parse(second.tokens().accessToken())
@@ -375,7 +373,7 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse login = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountResponse.Login login = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
         UUID familyId = UUID.fromString(SignedJWT.parse(login.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
         jdbc.update("UPDATE refresh_token_family SET created_at = ?, expires_at = ? WHERE family_id = ?",
@@ -395,8 +393,8 @@ class AccountAuthenticationIntegrationTest {
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
         String buyerRef = accountService.buyerRef(accountId);
-        AccountLoginResponse first = accountService.login(new LoginRequest(email, password), "198.51.100.7");
-        AccountLoginResponse second = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountResponse.Login first = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
+        AccountResponse.Login second = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
         UUID firstFamily = UUID.fromString(SignedJWT.parse(first.tokens().accessToken())
                 .getJWTClaimsSet().getStringClaim("sid"));
         UUID secondFamily = UUID.fromString(SignedJWT.parse(second.tokens().accessToken())
@@ -446,7 +444,7 @@ class AccountAuthenticationIntegrationTest {
         UUID otherAccountId = accounts.createAccount(otherEmail, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(otherAccountId);
         accounts.verifyEmail(otherAccountId, Instant.now());
-        AccountLoginResponse other = accountService.login(new LoginRequest(otherEmail, password), "198.51.100.7");
+        AccountResponse.Login other = accountService.login(new AccountRequest.Login(otherEmail, password), "198.51.100.7");
         mockMvc.perform(delete(sessionsPath + "/{familyId}", secondFamily)
                         .header("Authorization", "Bearer " + other.tokens().accessToken()))
                 .andExpect(status().isNoContent());
@@ -466,8 +464,8 @@ class AccountAuthenticationIntegrationTest {
         mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + other.tokens().accessToken()))
                 .andExpect(status().isOk());
 
-        AccountLoginResponse afterReset = accountService.login(
-                new LoginRequest(email, "new-long-enough-password-456"), "198.51.100.7");
+        AccountResponse.Login afterReset = accountService.login(
+                new AccountRequest.Login(email, "new-long-enough-password-456"), "198.51.100.7");
         mockMvc.perform(get(sessionsPath).header("Authorization", "Bearer " + afterReset.tokens().accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1));
@@ -489,19 +487,19 @@ class AccountAuthenticationIntegrationTest {
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
         for (int attempt = 0; attempt < 10; attempt++) {
-            assertThatThrownBy(() -> accountService.login(new LoginRequest(email, "wrong-password-123"), origin)).isInstanceOf(AccountException.class);
+            assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, "wrong-password-123"), origin)).isInstanceOf(AccountException.class);
         }
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, password), origin)).isInstanceOf(AccountException.class);
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, password), origin)).isInstanceOf(AccountException.class);
 
         accountService.requestPasswordReset(email, origin);
         String resetToken = testEmailSender.passwordResetTokens.poll();
         assertThat(resetToken).isNotBlank();
         assertThatThrownBy(() -> accountService.resetPassword("not-a-real-token", newPassword)).isInstanceOf(AccountException.class);
-        assertThatThrownBy(() -> accountService.login(new LoginRequest(email, password), origin)).isInstanceOf(AccountException.class);
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, password), origin)).isInstanceOf(AccountException.class);
 
         accountService.resetPassword(resetToken, newPassword);
 
-        assertThat(accountService.login(new LoginRequest(email, newPassword), origin).tokens()).isNotNull();
+        assertThat(accountService.login(new AccountRequest.Login(email, newPassword), origin).tokens()).isNotNull();
     }
 
     private static void await(CountDownLatch latch) {
@@ -548,8 +546,8 @@ class AccountAuthenticationIntegrationTest {
         UUID accountId = accounts.createAccount(email, passwordEncoder.encode(password)).orElseThrow();
         accounts.createBuyer(accountId);
         accounts.verifyEmail(accountId, Instant.now());
-        AccountLoginResponse first = accountService.login(new LoginRequest(email, password), "198.51.100.7");
-        AccountLoginResponse second = accountService.login(new LoginRequest(email, password), "198.51.100.7");
+        AccountResponse.Login first = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
+        AccountResponse.Login second = accountService.login(new AccountRequest.Login(email, password), "198.51.100.7");
         String closurePath = "/api/auth/account";
 
         // 잘못된 비밀번호는 계정을 건드리지 않는다.
