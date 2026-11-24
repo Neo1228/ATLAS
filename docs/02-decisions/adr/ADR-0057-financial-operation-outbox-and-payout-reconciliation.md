@@ -1,7 +1,7 @@
 # ADR-0057: 금융 provider 작업을 durable operation으로 실행하고 증거로 원장을 확정한다
 
 - 상태: Accepted — Sandbox-only 구현. Live 송금은 별도 출시 gate.
-- 결정일: 2026-11-22
+- 날짜: 2026-11-22
 - 관련: [ADR-0026](ADR-0026-paypal-sandbox-payments.md), [ADR-0029](ADR-0029-order-payment-recovery-contract.md), [ADR-0030](ADR-0030-paypal-currency-boundary.md), [ADR-0052](ADR-0052-settlement-fee-reserve-payout.md), [ADR-0053](ADR-0053-shared-infra-adoption-gates.md)
 - 추적: [D-123](../../00-governance/decision-log.md#d-123), [Issue #456](https://github.com/Neo1228/ATLAS/issues/456)
 

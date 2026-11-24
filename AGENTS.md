@@ -54,6 +54,7 @@ git ls-files -z -- '*.md' | xargs -0 npx --yes markdownlint-cli2@0.24.0
 ```
 
 PostgreSQL이 필요한 통합 테스트는 Docker를 사용. 로컬 실행 환경·Sandbox 환경 변수와 `.env.local` 처리 기준은 README 참고. 애플리케이션은 `.env.local`을 자동 로드하지 않음.
+
 ## Runtime과 도구
 
 - 애플리케이션은 JDK 25와 Gradle Wrapper 사용. Node.js는 application runtime이 아님.

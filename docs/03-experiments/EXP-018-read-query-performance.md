@@ -1,4 +1,4 @@
-# EXP-018 — 상품·정산 조회 계획 기준선
+# EXP-018: 상품·정산 조회 계획 기준선
 
 > **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
 
@@ -58,6 +58,7 @@ Candidate-index A/B: PostgreSQL 18.6 image defaults, 동일한 100k checkout-onl
 재현 가능한 run 및 plan-node 요약: ``index-candidate-ab.json``. 후보 index read A/B는 disposable DB에서만 수행. 10초/100k (0.01%)의 강한 selectivity에서 큰 차이 확인. Full-period allocation index 읽기 개선은 synthetic A/B 결과; write 비용은 아래 별도 측정.
 
 **V28 migration:** `settlement_seller_allocation(seller_id, journal_id)` B-tree lookup index 추가.
+
 - Read A/B: Seller 선택도 1% (`1,000/100,000`)에서 totals·page SQL 실행시간 합 43.778 → 40.601 ms (−3.177 ms, −7.3%). Allocation scan은 100k rows 전체 scan에서 1k matches bitmap scan으로 전환.
 - Write A/B: allocation 100k건 단일 insert에서 arm median 240.331 [210.628–379.020] → 354.606 [296.626–465.204] ms. Median 차이 +114.275 ms (+47.5%); paired median 차이 +95.080 ms/100k (+0.9508 μs/allocation), 5개 paired delta 모두 양수.
 - WAL: 38,600,443 → 51,360,745 bytes/100k (+12,760,302 bytes, +33.06%), 추가 127.6 bytes/allocation.

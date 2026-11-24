@@ -1,7 +1,7 @@
 # ADR-0028: HTTP 오류 상관관계 ID와 공통 로그
 
 - 상태: ✓ 확정
-- 결정일: 2026-11-10
+- 날짜: 2026-11-10
 - 결정 ID: [D-046](../../00-governance/decision-log.md#detailed-decision-records)
 - 관련 Issue: [Issue #78](https://github.com/Neo1228/ATLAS/issues/78)
 

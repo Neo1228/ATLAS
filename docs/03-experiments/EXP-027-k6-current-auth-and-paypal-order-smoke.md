@@ -1,4 +1,4 @@
-# EXP-027 — K6 인증·PayPal order smoke 검증
+# EXP-027: K6 인증·PayPal order smoke 검증
 
 **상태:** checkout-only pilot 측정 완료 · EXP-027 실행에서 PayPal Sandbox order 미호출 · 별도 Sandbox E2E는 Issue #254/PR #262에서 완료
 
@@ -48,6 +48,7 @@
    - 원인: `AccountOwnershipInterceptor`가 모든 `{sellerId}` 경로에 Seller ownership을 강제
    - 수정: Seller ownership 검증은 `/api/sellers/` 경로에 한정. Buyer 경로의 `buyerRef` ownership 검증 유지
    - 회귀 테스트: [`AccountOwnershipInterceptorTest`](../../atlas-application/src/test/java/com/atlas/application/security/AccountOwnershipInterceptorTest.java)
+
 - `/api/sellers/` 외부에 Seller 소유 API를 추가하면 ownership 검증도 함께 추가
 
 1. **K6 종료 경계 iteration**

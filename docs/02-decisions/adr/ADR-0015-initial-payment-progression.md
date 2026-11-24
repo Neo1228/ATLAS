@@ -1,4 +1,4 @@
-# ADR-0015 — 초기 payment-operation progression
+# ADR-0015: 초기 payment-operation progression
 
 > [!WARNING]
 > 이 ADR은 초기 provider operation 저장 방식의 역사 기록. 현재 결제 흐름은 [ADR-0026 PayPal Sandbox](ADR-0026-paypal-sandbox-payments.md)와 [ADR-0029 recovery contract](ADR-0029-order-payment-recovery-contract.md) 기준.

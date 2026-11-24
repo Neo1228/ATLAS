@@ -1,10 +1,11 @@
-# EXP-019 — Inventory batch lock order 검증
+# EXP-019: Inventory batch lock order 검증
 
 **상태:** PostgreSQL Testcontainers 검증 기록
 
 ## 목적과 범위
 
 서로 다른 Order가 두 Seller-SKU를 반대 입력 순서로 동시에 예약할 때 deadlock 없이 atomic reservation과 inventory conservation을 유지하는지 검증.
+
 ## 환경·데이터·workload
 
 - Testcontainers PostgreSQL 18.6

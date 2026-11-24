@@ -126,6 +126,7 @@ DB_CONTAINER=atlas-inventory-order-coordinator-postgres-1 RATE=1000 DURATION=30s
 Location A/B API는 각각 `http://127.0.0.1:8090`·`http://127.0.0.1:8091`이다. K6 scenario·runner와 Compose 정의는 추적되는 `load-tests/`에 두고, 실행 JSON과 service token만 git-ignore된 `.local/distributed-fulfillment/`에 보관한다. Inventory 경계와 수치는 [ADR-0059](02-decisions/adr/ADR-0059-independent-inventory-location-service.md)·[EXP-053](03-experiments/EXP-053-inventory-location-failure-load.md), coordinator/lease 정책은 [ADR-0060](02-decisions/adr/ADR-0060-order-inventory-reservation-workflow.md)·[ADR-0064](02-decisions/adr/ADR-0064-order-inventory-just-in-time-lease-claims.md) 참조.
 
 느린 SQL 감지는 Java `DataSource` decorator로 선택 활성화.
+
 - `ATLAS_DB_SLOW_QUERY_THRESHOLD_MS`: 측정 근거가 있는 양의 임계값(ms). 미설정 시 감지기 비활성화.
 - 기록 항목: HTTP 요청의 `requestId`, datasource bean 이름, 경과 시간, 성공 여부, statement 수, SHA-256 statement fingerprint. SQL text·literal·bind value 기록 0건.
 - 감지기 활성·비활성 상태는 startup INFO 로그로 기록.
@@ -176,6 +177,7 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 ### PayPal Sandbox
 
 사전 조건:
+
 - Business app credentials, BOK ECOS API key (기본 provider 사용 시) 또는 무가입 Frankfurter provider 선택, Sandbox Buyer 계정.
 - `.env.local`: `ATLAS_PAYMENT_PROVIDER=paypal`, Sandbox `PAYPAL_BASE_URL`, `ATLAS_PUBLIC_BASE_URL=http://127.0.0.1:18080`, `ATLAS_PAYMENT_RETURN_PORT=18080`.
 - 승인 callback 준비: `docker compose --env-file .env.local up -d --build --wait application` (host `18080` → container `8080`).

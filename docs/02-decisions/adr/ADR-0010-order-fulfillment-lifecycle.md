@@ -1,7 +1,7 @@
 # ADR-0010: 주문 이행·배송 상태 관리
 
 - 상태: ✓ 확정
-- 결정일: 2026-11-04
+- 날짜: 2026-11-04
 - 담당자: Project Owner
 - 관련 결정: [D-065/D-071](../../00-governance/decision-log.md)
 - 관련 Issue: [Issue #117](https://github.com/Neo1228/ATLAS/issues/117)
@@ -77,6 +77,7 @@ sequenceDiagram
 - 사용자·업무 경계의 자동화는 synthetic API 시나리오. 실제 carrier·인증 구현으로 해석하지 않음.
 
 ## 판단 근거
+
 - 美团技术团队, [美团外卖订单中心的演进](https://tech.meituan.com/2016/09/09/mt-waimai-order-evolution.html): 결제→판매자 처리→배송→수령→사후 처리로 이어지는 주문 여정을 설명합니다. 결제 뒤 이행을 별도 상태로 관리하는 업무 순서만 참고합니다. 2016년 대규모 음식 배달 사례이므로 아키텍처·SLO·용량 수치는 ATLAS에 적용하지 않습니다.
 - Shopify Help Center, [Fulfilling your own orders individually](https://help.shopify.com/en/manual/fulfillment/fulfilling-orders/single-fulfillment): manual `In progress`/`Fulfilled` states, carrier tracking constraints for `Delivered`, and multiple fulfillment examples.
 - ATLAS accepts idempotent retries of the same state, one shipment per order, and manual local delivery. Shopify shipment/carrier policies are not adopted.

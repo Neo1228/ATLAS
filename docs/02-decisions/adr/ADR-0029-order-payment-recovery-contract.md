@@ -1,7 +1,7 @@
 # ADR-0029: 주문 결제·재고 복구 계약
 
 - 상태: ✓ 확정
-- 결정일: 2026-11-10
+- 날짜: 2026-11-10
 
 ## 배경
 
@@ -36,6 +36,7 @@
 - 새 `saga`, `outbox`, queue, 분산 lock은 도입하지 않습니다.
   현재 DB transaction, row lock, unique constraint, durable operation row, provider retry ID를 사용합니다.
   추가 운영 인프라는 장애·지연 근거가 생길 때 별도 결정합니다.
+
 ### 반품 검수와 PayPal 환불
 
 ```mermaid

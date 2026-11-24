@@ -1,7 +1,7 @@
 # ADR-0024: Seller coupon 할인 배분과 환불 snapshot
 
 - 상태: ✓ 구현·JDK 25/local PostgreSQL Testcontainers full Gradle check 통과 (41 suites, 212 tests, 0 failures/errors/skips); `bootJar` 성공
-- 결정일: 2026-11-09
+- 날짜: 2026-11-09
 - 관련 작업: [Issue #186](https://github.com/Neo1228/ATLAS/issues/186)
 - 선행 결정: [ADR-0023](ADR-0023-seller-sku-time-bounded-sale-price.md)
 

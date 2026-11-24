@@ -1,4 +1,4 @@
-# EXP-025 — Java 기반 slow-query 감지
+# EXP-025: Java 기반 slow-query 감지
 
 - 상태: Code path·Testcontainers 검증 완료 · production threshold·proxy overhead 미측정
 - 관련 작업: [Issue #251](https://github.com/Neo1228/ATLAS/issues/251), [EXP-024](EXP-024-postgres-contention-observation.md)

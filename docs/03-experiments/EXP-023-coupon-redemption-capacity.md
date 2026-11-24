@@ -63,6 +63,7 @@ Unlimited와 cap=128 profile은 각각 128건 checkout/capture 성공. Capacity 
 ## 해석과 한계
 
 ### 관측 지표
+
 - Prometheus scrape interval은 **5초**. 128-attempt burst 대부분이 다음 scrape 전에 완료되어 sampled metric은 peak concurrency를 보여 주지 않음.
 - `pg_locks_count`는 lock object 수이며 wait duration이 아님. Row-wait percentile은 측정하지 않음.
 - Tempo/Alloy는 한 application→PostgreSQL path라 사용하지 않음. Toxiproxy는 failure hypothesis가 DB contention이어서 사용하지 않음.

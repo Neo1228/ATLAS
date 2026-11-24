@@ -1,4 +1,4 @@
-# EXP-022 — 정산 애플리케이션 쓰기 비용 A/B
+# EXP-022: 정산 애플리케이션 쓰기 비용 A/B
 
 > **원자료 보관 정책:** 이 문서의 표가 측정 결과의 정본이다. k6 summary·EXPLAIN JSON 같은 원자료는 재현 시 로컬에서 다시 생성하며 저장소에 커밋하지 않는다(용량과 노이즈 때문).
 
@@ -91,7 +91,7 @@ flowchart LR
 - 과거 K6 harness는 retired. 현재 smoke는 기존 100-capture workload를 재현하지 않음
 - `요약 JSON`
 - Per-run SQL/K6 원자료: 요약 JSON의 `rawResultFile`, `rawK6SummaryFile` 경로
-- 스키마/entry-side 근거: [V10 settlement ledger migration](../../atlas-application/src/main/resources/db/migration/V10__gross_capture_settlement_ledger.sql)
+- 스키마/entry-side 근거: [V10 settlement ledger migration](https://github.com/Neo1228/ATLAS/blob/8bfc366bb23647993518591b06c3b9c8f6034adf/ATLAS-application/src/main/resources/db/migration/V10__gross_capture_settlement_ledger.sql)(#529에서 기준 스키마로 통합되기 전 커밋)
 - [EXP-020 정산 read/index 기준 실험](EXP-020-settlement-index-selectivity-cost.md)
 
 ## 참고 자료

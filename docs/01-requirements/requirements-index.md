@@ -36,6 +36,7 @@
 ## 프로젝트 배경과 범위
 
 ### 목적과 장기 범위 — 목표 확정, 후속 업무 상세·순서 미정
+
 - 목적: **PayPal AI Hackathon** 참가를 위해 full e-commerce platform의 Catalog·구매·결제·fulfillment 흐름과 transaction 정합성을 구현·검증.
 - 현재 구현: Catalog/category/channel availability, Buyer-wide Cart와 multi-Seller Order, Campaign admission, location inventory, PayPal Sandbox, account/JWT, shipment/return, internal settlement ledger와 statement. 상세 계약은 아래 FR/BR/INV 항목.
 - 미정 정책과 확장 순서: [Q-002](#assumptions-and-open-questions), [Q-003](#assumptions-and-open-questions), [Q-006](#assumptions-and-open-questions), [Q-010](#assumptions-and-open-questions).
@@ -49,14 +50,17 @@
 | Order 이후 | Shipment, Return/inspection, refund, internal ledger·Seller statement | 핵심 흐름 구현. return 기간·write-off·재검수와 accounting reconciliation은 Q-006/Q-010 |
 
 장기 범위와 현재 경계:
+
 - 결제 provider는 PayPal Sandbox; provider operation, order·fulfillment 상태는 분리. 확정 결과만 내부 ledger와 재고에 반영 ([D-081](../00-governance/decision-log.md), [ADR-0026](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md), [ADR-0029](../02-decisions/adr/ADR-0029-order-payment-recovery-contract.md)).
 
 확정된 경계:
+
 - `buyerRef`·`sellerId`는 resource ID이며 인증 정보로 사용 금지. Account principal과 Buyer/Seller ownership 검사 ([D-082](../00-governance/decision-log.md), [ADR-0027](../02-decisions/adr/ADR-0027-account-jwt-authentication.md)).
 - 최초 판매 모델은 수량형 SKU. 지정 좌석·시간대 판매는 Q-002/Q-010에서 추가 정책 결정.
 - 성능 profile은 Q-008의 합성 workload와 해당 data shape에 한정해 해석.
 
 제안된 성공 기준:
+
 - 정책·불변조건을 검증 가능한 시나리오에 연결.
 - 장애·경합·복구 절차와 한계를 기록.
 - 성능·복구 주장은 환경을 명시한 반복 측정 근거 필수.
@@ -65,6 +69,7 @@
 <a id="assumptions-and-open-questions"></a>
 
 ## 가정과 미결정 사항
+
 상태: `✓ 해결`, `? 미정`, `△ 가정`(미검증). 기준 해결과 세부 경계 확정은 별도.
 
 | ID | 상태 | 질문·경계 |
@@ -92,11 +97,13 @@
 - PayPal Sandbox capture/refund 실행 범위는 [D-081](../00-governance/decision-log.md), [ADR-0026](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md). Provider/bank reconciliation, fee, reserve, 회계 정정 정책은 Q-006에서 결정.
 
 Q-006 관련 기록:
+
 - 결정: [D-066/D-068/D-071/D-075/D-081/D-085/D-086/D-087](../00-governance/decision-log.md)
 - 설계: [ADR-0011](../02-decisions/adr/ADR-0011-gross-capture-settlement-ledger.md) · [ADR-0013](../02-decisions/adr/ADR-0013-pre-shipment-refund-recording.md) · [ADR-0016](../02-decisions/adr/ADR-0016-buyer-wide-cart-multi-seller-checkout.md) · [ADR-0020](../02-decisions/adr/ADR-0020-seller-settlement-statement.md)
 - 추적: [Issue #115](https://github.com/Neo1228/ATLAS/issues/115) · [Issue #163](https://github.com/Neo1228/ATLAS/issues/163)
 
 ### Q-008 부하 계약 — 보고 전용
+
 - 기준 입력: D-033이 승인한 합성 workload 10,000 Buyer session/60분(약 2.8 session/s).
 - 2×·4× 비교 단계는 약 5.6·11.1 session/s. 측정용 workload이며 수요 예측 근거에서 제외. 전체 Buyer 흐름과 mixed arrival distribution 사용.
 - Ingress·completed·dropped session/s와 반복 횟수 기록. 단계별 request RPS도 구분하며, DB QPS는 해당 query 범위를 직접 측정한 경우에만 기록.
@@ -107,6 +114,7 @@ Q-006 관련 기록:
 <a id="business-rules-and-domain-invariants"></a>
 
 ## 업무 규칙과 도메인 불변조건
+
 상태: `✓ 확정 기준`, `? 미정`. 합성 시나리오 계약과 실험 결과의 구분.
 
 | ID | 규칙·불변조건 | 상태 | 미정 범위 |

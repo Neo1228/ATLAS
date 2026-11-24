@@ -1,4 +1,4 @@
-# ADR-0019 — Seller 상품 분류와 Catalog filter
+# ADR-0019: Seller 상품 분류와 Catalog filter
 
 - 상태: 대체됨 · 현재 category hierarchy는 [ADR-0022](ADR-0022-seller-category-hierarchy.md)
 - 결정: D-074

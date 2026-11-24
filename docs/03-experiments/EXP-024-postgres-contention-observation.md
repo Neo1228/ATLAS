@@ -1,4 +1,4 @@
-# EXP-024 — PostgreSQL 경합 관측
+# EXP-024: PostgreSQL 경합 관측
 
 - 상태: 4회 반복 관측 완료 · 성능 튜닝 근거로는 불충분
 - 관련 작업: [Issue #246](https://github.com/Neo1228/ATLAS/issues/246), [ADR-0005](../02-decisions/adr/ADR-0005-seller-sku-inventory-global-admission.md), [ADR-0025](../02-decisions/adr/ADR-0025-limited-coupon-redemption.md), [ADR-0031](../02-decisions/adr/ADR-0031-bounded-application-scheduler.md)

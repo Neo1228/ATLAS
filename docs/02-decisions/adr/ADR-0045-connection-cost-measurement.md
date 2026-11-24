@@ -1,10 +1,10 @@
-# ADR-0045 — 커넥션 비용은 점유율이 아니라 획득 횟수로 측정한다
+# ADR-0045: 커넥션 비용은 점유율이 아니라 획득 횟수로 측정한다
 
 - **상태:** 채택 (Accepted)
 - **일자:** 2026-11-19
 - **관련:** [#373](https://github.com/Neo1228/ATLAS/issues/373), [#375](https://github.com/Neo1228/ATLAS/issues/375),
   [#376](https://github.com/Neo1228/ATLAS/issues/376)
-- **결정 로그:** [D-104](../00-governance/decision-log.md#d-104)
+- **결정 로그:** [D-104](../../00-governance/decision-log.md#d-104)
 
 ## 배경
 

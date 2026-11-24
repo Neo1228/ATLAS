@@ -1,4 +1,4 @@
-# EXP-021 — 재고 lock-wait 관측
+# EXP-021: 재고 lock-wait 관측
 
 **상태:** PostgreSQL Testcontainers lock-wait scenario 검증 완료 · application code 변경 없음
 
@@ -6,7 +6,7 @@
 
 요청 시작 barrier만으로는 PostgreSQL 내부 대기를 증명할 수 없음. 실제 blocker가 보유한 `inventory_pool` 행 때문에 `reserveAll`의 location-selector `SELECT ... FOR UPDATE OF pool`이 대기하는지 DB metadata로 확인하고, blocker 해제 후 예약 원자성과 capacity 보존을 검증.
 
-- 소스에서 확인한 대기 지점: [`JdbcLocationRepository.select`](../../atlas-inventory/src/main/java/com/atlas/inventory/repository/JdbcLocationRepository.java) → `SELECT ... FOR UPDATE OF pool`
+- 소스에서 확인한 대기 지점: [`LocationRepository.select`](../../atlas-inventory/src/main/java/com/atlas/inventory/repository/LocationRepository.java)(옛 이름 `JdbcLocationRepository`) → `SELECT ... FOR UPDATE OF pool`
 - 호출 순서: `reserveAll`은 seller/location 선택을 마친 뒤 stock mutation을 수행
 - 테스트: [`InventoryLockWaitIntegrationTest`](../../atlas-application/src/test/java/com/atlas/inventory/InventoryLockWaitIntegrationTest.java)
 - 선행 근거: [EXP-019](EXP-019-inventory-batch-lock-order.md)는 요청 시작 barrier만 기록하며 DB lock wait는 관측하지 않음
@@ -16,6 +16,7 @@
 - PostgreSQL 18.6 Testcontainers · 판매자 2곳 · SKU 2개 · location별 pool capacity 1
 
 ### 실행 시나리오
+
 - 별도 backend blocker가 UUID 순서상 두 번째 seller의 pool row를 잠금
 - Worker가 `reserveAll`을 시작하고 해당 selector query에서 대기
 - Observer는 100 ms 간격으로 최대 15초 `pg_stat_activity`·`pg_blocking_pids`를 조회

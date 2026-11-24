@@ -1,14 +1,17 @@
 # ADR-0001: 초기 아키텍처 방향
+
 - 상태: ✓ 구조·기술 방향 승인. 구현·배포는 별도 승인 대상.
-- 결정일: 2026-11-02
+- 날짜: 2026-11-02
 - 담당: 프로젝트 책임자
 - 관련 요구사항: [FR-001~003](../../01-requirements/requirements-index.md), [NFR-001~002](../../01-requirements/requirements-index.md)
 
 ## 배경
+
 - 주문·재고·결제·정산의 정합성과 장애 복구를 검증할 구조 필요.
 - 팀 규모, 부하, 배포 제약은 미정. 독립 서비스를 운영할 근거 없음.
 
 ## 판단 기준
+
 - 모듈별 데이터 소유권과 transaction 경계를 검증할 수 있는가.
 - 운영 부담이 낮고 통합·장애 시험을 재현할 수 있는가.
 - 별도 queue/cache/broker는 병목을 측정하고 비교 가능한 이점을 확인한 뒤 검토.
@@ -23,6 +26,7 @@
 | C. 단순 monolith | 단일 application, 명시적 모듈·데이터 경계 없음 | 시작이 단순 | 결합 증가, 변경·검증 어려움 |
 
 ## 결정
+
 - **아키텍처:** Modular Monolith First. 한 번의 배포 안에서 모듈 경계와 데이터 소유권 유지.
 - **Runtime:** JDK 25 LTS, Spring Boot 4.1.2, PostgreSQL 18.6, Gradle Wrapper 9.8.2.
 - **Test tooling:** Testcontainers 2.0.5 verifies PostgreSQL behavior; ArchUnit 1.5.1 checks package dependencies without `package-info` markers.
@@ -43,6 +47,7 @@ flowchart LR
 ```
 
 ## Gate 3 초기 모듈·데이터 설계
+
 모듈 범위는 현재 Buyer 흐름에 한정합니다. 이름·경계는 실제 불변조건과 의존 관계에 따라 검토하며 장기 기능 전체를 미리 모듈로 고정하지 않습니다.
 
 | 모듈 | 현재 범위의 책임 | 경계 |
@@ -94,6 +99,7 @@ flowchart LR
 | DB QPS | 선언한 query 범위의 초당 query만 기록 | API RPS와 다른 단위. 현재 실측 없음 |
 
 Q-008 합성 workload:
+
 - 기준: Buyer session 10,000/60분(약 2.8 session/s), 2×·4× 단계.
 - 미정: burst 구간, think time, 동시성, request mix, 실행 환경, 자원 설정 ([Q-008](../../01-requirements/requirements-index.md#assumptions-and-open-questions)).
 - EXP-013은 로컬 20분 측정이며 대기열 경합을 확인하지 못함 ([보고서](../../03-experiments/EXP-013-gate4-20-minute-calibration.md)).
@@ -101,12 +107,14 @@ Q-008 합성 workload:
 - **의존성 선택:** 유지관리 중인 라이브러리와 직접 구현을 기능·운영·보안·라이선스 비용으로 비교. 대안과 실행·테스트·빌드 적용 범위를 기록 ([Issue #75](https://github.com/Neo1228/ATLAS/issues/75)).
 
 ## 재검토 조건
+
 - 독립된 team/deployment가 필요해짐.
 - 모듈 간 변경·장애 결합이 커짐.
 - 부하 시험에서 단일 deployment 또는 PostgreSQL 병목이 반복 확인됨.
 - 데이터 소유권이 바뀌거나 실측 결과가 현재 가설과 맞지 않음.
 
 ## 판단 근거
+
 - [REF-023](../../00-governance/reference-register.md): Shopify 재고 사례는 MySQL·Shopify 환경에 한정. PostgreSQL schema나 처리량 목표로 일반화하지 않음.
 - [REF-050/052~055/098](../../00-governance/reference-register.md): modular monolith와 경계 검사 사례. Shopify는 의미상 package 이름과 runtime 의존이 어긋날 수 있다고 지적. ArchUnit은 ATLAS가 정한 package 규칙만 검사하며 도메인 경계를 보증하지 않음.
 - [REF-056~058](../../00-governance/reference-register.md): PostgreSQL lock/sequence 의미와 vendor 재고 사례. 운영 PostgreSQL 버전은 미정. Vendor 성능 주장은 독립 검증되지 않음.

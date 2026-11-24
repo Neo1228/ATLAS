@@ -34,6 +34,7 @@ FX 고시 캐시가 **프로세스 로컬**이다(`CachingExchangeRateProvider`)
 `CachingExchangeRateProvider` 는 60초 TTL, 10분 max-stale, `volatile` 필드, 로컬 `ReentrantLock` 단일 비행을 쓴다(`CachingExchangeRateProvider.java:28-55,61-85`).
 
 EXP-041 실측:
+
 - 캐시 도입 전: 결제 3건 → 최소 3회 호출, 환율 변환 5건 → 5회
 - 캐시 도입 후: warm 상태 결제 3건 → **0회**
 - replica 2대 cold TTL 창 → **각 1회 = 총 2회**
