@@ -13,6 +13,11 @@ dependencies {
 
     testImplementation 'com.tngtech.archunit:archunit:1.5.1'
 
+ // order 가 이 서비스의 응답을 해석하는 어휘(예약 상태, 오류 코드)가 이 서비스와 같은지 테스트가 비교한다.
+ // 비교하려면 order 의 enum 이 보여야 하지만 두 서비스는 독립 배포되므로 main 의존은 만들지 않는다.
+ // 테스트 범위에서만, 그리고 order 가 끌고 오는 런타임 의존(JPA 등)은 이 서비스의 테스트 클래스패스에 넣지 않는다.
+ testImplementation(project(':atlas-order')) { transitive = false }
+
     testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'

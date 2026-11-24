@@ -46,11 +46,6 @@ subprojects {
         // CI runner 실측은 로컬 A/B와 달라 EXP-030에 별도로 기록한다.
         maxParallelForks = (System.getenv('ATLAS_TEST_FORKS') ?: '1') as int
         forkEvery = 0
-        // 두 서비스의 어휘 계약 파일은 테스트가 실행 중에 읽는다. 입력으로 선언하지 않으면 파일만 바뀐 경우
-        // Gradle 이 test 를 up-to-date/캐시로 건너뛰어 계약 위반을 놓친다.
-        inputs.file(rootProject.file('contracts/inventory-location-vocabulary.json'))
-            .withPropertyName('inventoryLocationVocabularyContract')
-            .withPathSensitivity(PathSensitivity.NONE)
     }
 }
 
