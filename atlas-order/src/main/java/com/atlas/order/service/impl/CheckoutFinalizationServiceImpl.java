@@ -1,18 +1,20 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.response.ReservationWorkflowResponse;
+import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.order.dto.response.CartItemResponse;
 import com.atlas.order.dto.response.CartResponse;
-import com.atlas.order.service.CartService;
-import com.atlas.catalog.service.SellerCouponService;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.exception.OrderException;
+import com.atlas.order.model.BuyerCheckoutState;
+import com.atlas.order.model.LocationReservationState;
+import com.atlas.order.model.LocationReservationWorkflowState;
+import com.atlas.order.model.OrderState;
 import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.PurchaseOrder;
-import com.atlas.order.model.BuyerCheckoutState;
-import com.atlas.order.model.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
 import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
+import com.atlas.order.service.CartService;
 import com.atlas.order.service.CheckoutFinalizationService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.LocationReservationService;
@@ -101,7 +103,7 @@ public class CheckoutFinalizationServiceImpl implements CheckoutFinalizationServ
             outcomes.put(order.orderId(), observe.apply(order.reservationWorkflowId()));
         }
         boolean failed = outcomes.values().stream().anyMatch(response ->
-                "FAILED".equals(response.status()) || "NEEDS_REVIEW".equals(response.status()));
+                response.status() == LocationReservationWorkflowState.FAILED || response.status() == LocationReservationWorkflowState.NEEDS_REVIEW);
         if (failed) {
             compensate(checkoutId, childOrders);
             return;
@@ -116,10 +118,10 @@ public class CheckoutFinalizationServiceImpl implements CheckoutFinalizationServ
             return;
         }
         boolean allReserved = outcomes.values().stream().allMatch(response ->
-                "RESERVED".equals(response.status())
+                response.status() == LocationReservationWorkflowState.RESERVED
                         && !response.locations().isEmpty()
                         && response.locations().stream().allMatch(location ->
-                        "RESERVED".equals(location.status()) && location.expiresAt() != null
+                        location.status() == LocationReservationState.RESERVED && location.expiresAt() != null
                                 && location.expiresAt().isAfter(clock.instant())));
         if (!allReserved) return;
         Instant remoteDeadline = outcomes.values().stream()
@@ -159,7 +161,7 @@ public class CheckoutFinalizationServiceImpl implements CheckoutFinalizationServ
         boolean compensated = true;
         for (PurchaseOrder order : childOrders) {
             ReservationWorkflowResponse.LocationReservation response = coordinator.cancel(order.reservationWorkflowId());
-            if (!"FAILED".equals(response.status()) && !"CANCELLED".equals(response.status())) {
+            if (response.status() != LocationReservationWorkflowState.FAILED && response.status() != LocationReservationWorkflowState.CANCELLED) {
                 compensated = false;
             }
         }

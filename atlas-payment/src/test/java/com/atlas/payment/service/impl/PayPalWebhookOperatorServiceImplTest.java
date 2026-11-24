@@ -1,20 +1,11 @@
 package com.atlas.payment.service.impl;
 
-import com.atlas.payment.service.PayPalWebhookOperatorService;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
-import com.atlas.payment.repository.PayPalWebhookOperatorRepository;
 import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
+import com.atlas.payment.repository.PayPalWebhookOperatorRepository;
+import com.atlas.payment.service.PayPalWebhookOperatorService;
+import java.util.List;
 import java.util.Optional;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +13,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class PayPalWebhookOperatorServiceImplTest {
     private static final String EVENT = "event-1";
@@ -105,6 +106,40 @@ class PayPalWebhookOperatorServiceImplTest {
 
         assertConflict(() -> service.requeue(EVENT, KEY, ACTOR, REASON));
         verify(events, never()).recordRequeue(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void listExhaustedBoundsTheRequestedPageSizeBeforeQueryingTheQueue() {
+        when(events.countExhausted()).thenReturn(0L);
+        when(events.listExhausted(anyInt(), anyLong())).thenReturn(List.of());
+
+        assertThat(service.listExhausted(0, 1000).size()).isEqualTo(PayPalWebhookOperatorService.MAX_PAGE_SIZE);
+        assertThat(service.listExhausted(0, 0).size()).isEqualTo(PayPalWebhookOperatorService.DEFAULT_PAGE_SIZE);
+        verify(events).listExhausted(PayPalWebhookOperatorService.MAX_PAGE_SIZE, 0L);
+        verify(events).listExhausted(PayPalWebhookOperatorService.DEFAULT_PAGE_SIZE, 0L);
+    }
+
+    @Test
+    void listExhaustedRejectsNegativePagesAndOffsetsBeyondTheLimitWithoutQueryingTheQueue() {
+        assertInvalid(() -> service.listExhausted(-1, 20));
+        assertInvalid(() -> service.listExhausted(101, 100));
+        verify(events, never()).listExhausted(anyInt(), anyLong());
+    }
+
+    @Test
+    void listExhaustedAllowsTheLargestOffsetExactlyAtTheLimit() {
+        when(events.countExhausted()).thenReturn(0L);
+        when(events.listExhausted(anyInt(), anyLong())).thenReturn(List.of());
+
+        service.listExhausted(100, 100);
+
+        verify(events).listExhausted(100, 10_000L);
+    }
+
+    private static void assertInvalid(ThrowingCallable call) {
+        assertThatThrownBy(call)
+                .isInstanceOfSatisfying(PaymentException.class,
+                        error -> assertThat(error.code()).isEqualTo(Code.INVALID_REQUEST));
     }
 
     private static void assertConflict(ThrowingCallable call) {

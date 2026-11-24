@@ -73,7 +73,7 @@ public class LocationRestockServiceImpl implements LocationRestockService {
     public void stage(UUID refundId, UUID orderId, UUID workflowId, UUID sellerId, Map<String, Integer> quantitiesBySku) {
         ReservationWorkflowSnapshot workflow = workflows.findByWorkflowId(workflowId);
         if (workflow == null || !workflow.orderId().equals(orderId)
-                || !workflow.state().equals(LocationReservationWorkflowState.CLAIMED.name())) {
+                || workflow.state() != LocationReservationWorkflowState.CLAIMED) {
             throw new OrderException(OrderException.Code.CONFLICT, "Order inventory is not claimed for restock");
         }
         Map<String, Integer> remaining = new LinkedHashMap<>(quantitiesBySku);
@@ -103,7 +103,7 @@ public class LocationRestockServiceImpl implements LocationRestockService {
             Map<UUID, Map<String, Integer>> quantitiesByLocation) {
         ReservationWorkflowSnapshot workflow = workflows.findByWorkflowId(workflowId);
         if (workflow == null || !workflow.orderId().equals(orderId)
-                || !workflow.state().equals(LocationReservationWorkflowState.CLAIMED.name())) {
+                || workflow.state() != LocationReservationWorkflowState.CLAIMED) {
             throw new OrderException(OrderException.Code.CONFLICT, "Order inventory is not claimed for restock");
         }
         Map<UUID, Map<String, Integer>> remaining = new LinkedHashMap<>();

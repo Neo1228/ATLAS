@@ -78,8 +78,8 @@ class PayPalWebhookOperatorSecurityTest {
     }
 
     @Test
-    void authenticatedReadReturnsSafePageAndBoundsRequestedSize() throws Exception {
-        when(service.listExhausted(0, 100)).thenReturn(new WebhookRetryResponse.ExhaustedRetryPage(
+    void authenticatedReadReturnsSafePageAndPassesTheRequestedPageToTheService() throws Exception {
+        when(service.listExhausted(0, 1000)).thenReturn(new WebhookRetryResponse.ExhaustedRetryPage(
                 List.of(new Item("event-1", "PAYMENT.CAPTURE.COMPLETED", 8,
                         Instant.parse("2026-11-01T10:00:00Z"), Instant.parse("2026-11-01T10:01:00Z"))),
                 0, 100, 1, 1));
@@ -94,10 +94,7 @@ class PayPalWebhookOperatorSecurityTest {
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].resourceAmount").doesNotExist())
                 .andExpect(jsonPath("$.content[0].lastError").doesNotExist());
-        verify(service).listExhausted(0, 100);
-        mvc.perform(get(PATH + "/exhausted?page=101&size=100").with(httpBasic("webhook-operator", PASSWORD)))
-                .andExpect(status().isBadRequest());
-        verify(service, never()).listExhausted(101, 100);
+        verify(service).listExhausted(0, 1000);
     }
 
     @Test

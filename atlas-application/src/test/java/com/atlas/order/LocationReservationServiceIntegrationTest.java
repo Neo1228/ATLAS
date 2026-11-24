@@ -1,21 +1,18 @@
 package com.atlas.order;
 
-import com.atlas.order.dto.response.ReservationWorkflowResponse;
-import com.atlas.order.service.StockAdmissionControl;
-import com.atlas.order.service.impl.LocationReservationServiceImpl;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import com.atlas.order.exception.OrderException;
-import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
+import com.atlas.order.dto.request.LocationReservationRequest;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
+import com.atlas.order.exception.OrderException;
+import com.atlas.order.model.LocationReservationState;
+import com.atlas.order.model.LocationReservationWorkflowState;
 import com.atlas.order.repository.LocationReservationRepository;
-import com.atlas.order.service.LocationReservationService;
 import com.atlas.order.service.LocationClient;
+import com.atlas.order.service.LocationReservationService;
+import com.atlas.order.service.StockAdmissionControl;
+import com.atlas.order.service.impl.LocationReservationServiceImpl;
+import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
@@ -27,6 +24,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
+import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,15 +38,15 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.RecordedRequest;
-import okhttp3.mockwebserver.SocketPolicy;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
 @AutoConfigureMockMvc
@@ -127,10 +128,10 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         ReservationWorkflowResponse.LocationReservation response = coordinator.submit(key,
                 request(orderId, allocation(LOCATION_B, "sku-b"), allocation(LOCATION_A, "sku-a")));
 
-        assertThat(response.status()).isEqualTo("FAILED");
+        assertThat(response.status()).isEqualTo(LocationReservationWorkflowState.FAILED);
         assertThat(response.locations().stream()
                 .map(ReservationWorkflowResponse.LocationReservation.LocationResult::status).toList())
-                .containsExactly("RELEASED", "FAILED");
+                .containsExactly(LocationReservationState.RELEASED, LocationReservationState.FAILED);
         RecordedRequest firstA = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
         RecordedRequest secondA = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
         RecordedRequest firstB = INVENTORY_B.takeRequest(5, TimeUnit.SECONDS);
@@ -148,18 +149,18 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         INVENTORY_B.enqueue(reserved(reservationB));
         ReservationWorkflowResponse.LocationReservation reserved = coordinator.submit("cancel-" + UUID.randomUUID(),
                 request(UUID.randomUUID(), allocation(LOCATION_A, "sku-a"), allocation(LOCATION_B, "sku-b")));
-        assertThat(reserved.status()).isEqualTo("RESERVED");
+        assertThat(reserved.status()).isEqualTo(LocationReservationWorkflowState.RESERVED);
         INVENTORY_A.enqueue(cancelled(reservationA));
         INVENTORY_B.enqueue(cancelled(reservationB));
 
         ReservationWorkflowResponse.LocationReservation cancelled = coordinator.cancel(reserved.workflowId());
         ReservationWorkflowResponse.LocationReservation repeated = coordinator.cancel(reserved.workflowId());
 
-        assertThat(cancelled.status()).isEqualTo("CANCELLED");
+        assertThat(cancelled.status()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
         assertThat(cancelled.locations().stream()
                 .map(ReservationWorkflowResponse.LocationReservation.LocationResult::status).toList())
-                .containsOnly("RELEASED");
-        assertThat(repeated.status()).isEqualTo("CANCELLED");
+                .containsOnly(LocationReservationState.RELEASED);
+        assertThat(repeated.status()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations");
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations/cancel");
         assertThat(INVENTORY_B.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations");
@@ -178,8 +179,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
 
         ReservationWorkflowResponse.LocationReservation pending = coordinator.cancel(reserved.workflowId());
 
-        assertThat(pending.status()).isEqualTo("CANCEL_PENDING");
-        assertThat(pending.locations().getFirst().status()).isEqualTo("RELEASE_PENDING");
+        assertThat(pending.status()).isEqualTo(LocationReservationWorkflowState.CANCEL_PENDING);
+        assertThat(pending.locations().getFirst().status()).isEqualTo(LocationReservationState.RELEASE_PENDING);
         INVENTORY_A.enqueue(cancelled(reservationA));
         jdbc.update("UPDATE order_inventory_reservation_workflow SET next_attempt_at = now() - interval '1 second'"
                 + " WHERE workflow_id = ?", reserved.workflowId());
@@ -187,8 +188,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         assertThat(coordinator.recoverDue(10)).isEqualTo(1);
 
         ReservationWorkflowResponse.LocationReservation recovered = coordinator.find(reserved.workflowId());
-        assertThat(recovered.status()).isEqualTo("CANCELLED");
-        assertThat(recovered.locations().getFirst().status()).isEqualTo("RELEASED");
+        assertThat(recovered.status()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
+        assertThat(recovered.locations().getFirst().status()).isEqualTo(LocationReservationState.RELEASED);
         INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
         RecordedRequest firstCancel = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
         RecordedRequest secondCancel = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
@@ -204,7 +205,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
                 request(UUID.randomUUID(), allocation(LOCATION_A, "sku-a")));
         INVENTORY_A.enqueue(new MockResponse().setResponseCode(503));
         assertThat(coordinator.claim(reserved.workflowId()).name()).isEqualTo("PENDING");
-        assertThat(coordinator.find(reserved.workflowId()).locations().getFirst().status()).isEqualTo("RESERVED");
+        assertThat(coordinator.find(reserved.workflowId()).locations().getFirst().status()).isEqualTo(LocationReservationState.RESERVED);
 
         // 원격은 이미 CLAIMED라 cancel이 INVALID_STATE로 거부된다. 판매가 확정되지 않았으므로 restore로 되돌려야 한다.
         INVENTORY_A.enqueue(new MockResponse().setResponseCode(409)
@@ -217,8 +218,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
 
         ReservationWorkflowResponse.LocationReservation cancelled = coordinator.cancel(reserved.workflowId());
 
-        assertThat(cancelled.status()).isEqualTo("CANCELLED");
-        assertThat(cancelled.locations().getFirst().status()).isEqualTo("RELEASED");
+        assertThat(cancelled.status()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
+        assertThat(cancelled.locations().getFirst().status()).isEqualTo(LocationReservationState.RELEASED);
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations");
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/claim");
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations/cancel");
@@ -260,8 +261,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         ReservationWorkflowResponse.LocationReservation released = coordinator.releaseNeedsReview(reserved.workflowId());
         ReservationWorkflowResponse.LocationReservation repeated = coordinator.releaseNeedsReview(reserved.workflowId());
 
-        assertThat(released.locations().getFirst().status()).isEqualTo("RELEASED");
-        assertThat(released.status()).isIn("FAILED", "CANCELLED");
+        assertThat(released.locations().getFirst().status()).isEqualTo(LocationReservationState.RELEASED);
+        assertThat(released.status()).isIn(LocationReservationWorkflowState.FAILED, LocationReservationWorkflowState.CANCELLED);
         assertThat(repeated.status()).isEqualTo(released.status());
         assertThat(coordinator.needsReview(10)).extracting(ReservationWorkflowResponse.LocationReservation::workflowId)
                 .doesNotContain(reserved.workflowId());
@@ -285,12 +286,12 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         ReservationWorkflowResponse.LocationReservation response = coordinator.submit(key,
                 request(orderId, allocation(LOCATION_A, "sku-a"), allocation(LOCATION_B, "sku-b")));
 
-        assertThat(response.status()).isEqualTo("FAILED");
+        assertThat(response.status()).isEqualTo(LocationReservationWorkflowState.FAILED);
         assertThat(repository.findByWorkflowId(response.workflowId()).lastErrorCode())
                 .isEqualTo("RESERVATION_EXPIRED");
         assertThat(response.locations().stream()
                 .map(ReservationWorkflowResponse.LocationReservation.LocationResult::status).toList())
-                .containsExactly("RELEASED", "RELEASED");
+                .containsExactly(LocationReservationState.RELEASED, LocationReservationState.RELEASED);
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations");
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations/cancel");
         assertThat(INVENTORY_B.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations");
@@ -305,7 +306,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         ReservationWorkflowResponse.LocationReservation pending = coordinator.submit(key,
                 request(orderId, allocation(LOCATION_A, "sku-a")));
 
-        assertThat(pending.status()).isEqualTo("RETRY_PENDING");
+        assertThat(pending.status()).isEqualTo(LocationReservationWorkflowState.RETRY_PENDING);
         RecordedRequest originalRequest = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
         String remoteIdempotencyKey = originalRequest.getHeader("Idempotency-Key");
         UUID remoteReservationId = UUID.randomUUID();
@@ -318,11 +319,11 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         ReservationWorkflowResponse.LocationReservation recovered = restartedCoordinator.retry(pending.workflowId());
         RecordedRequest retriedRequest = INVENTORY_A.takeRequest(5, TimeUnit.SECONDS);
 
-        assertThat(recovered.status()).isEqualTo("RESERVED");
+        assertThat(recovered.status()).isEqualTo(LocationReservationWorkflowState.RESERVED);
         assertThat(recovered.workflowId()).isEqualTo(pending.workflowId());
         assertThat(retriedRequest.getHeader("Idempotency-Key")).isEqualTo(remoteIdempotencyKey);
         assertThat(recovered.locations().getFirst().reservationId()).isEqualTo(remoteReservationId);
-        assertThat(repository.findByWorkflowId(pending.workflowId()).state()).isEqualTo("RESERVED");
+        assertThat(repository.findByWorkflowId(pending.workflowId()).state()).isEqualTo(LocationReservationWorkflowState.RESERVED);
     }
 
     @Test
@@ -401,8 +402,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         }
 
         assertThat(INVENTORY_A.getRequestCount() - requestsBefore).isEqualTo(2);
-        assertThat(coordinator.find(firstWorkflowId).status()).isEqualTo("RESERVED");
-        assertThat(coordinator.find(queuedWorkflowId).status()).isEqualTo("RESERVED");
+        assertThat(coordinator.find(firstWorkflowId).status()).isEqualTo(LocationReservationWorkflowState.RESERVED);
+        assertThat(coordinator.find(queuedWorkflowId).status()).isEqualTo(LocationReservationWorkflowState.RESERVED);
     }
 
     @Test
@@ -431,7 +432,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
                     FROM order_inventory_reservation_workflow WHERE workflow_id = ?
                     """, Boolean.class, workflowId);
             assertThat(leaseHasRenewalMargin).isTrue();
-            assertThat(submission.get(5, TimeUnit.SECONDS).status()).isEqualTo("RESERVED");
+            assertThat(submission.get(5, TimeUnit.SECONDS).status()).isEqualTo(LocationReservationWorkflowState.RESERVED);
         }
     }
 
@@ -467,8 +468,8 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         }
 
         assertThat(INVENTORY_A.getRequestCount() - requestsBefore).isEqualTo(2);
-        assertThat(coordinator.find(firstWorkflowId).status()).isEqualTo("RETRY_PENDING");
-        assertThat(coordinator.find(secondWorkflowId).status()).isEqualTo("RESERVED");
+        assertThat(coordinator.find(firstWorkflowId).status()).isEqualTo(LocationReservationWorkflowState.RETRY_PENDING);
+        assertThat(coordinator.find(secondWorkflowId).status()).isEqualTo(LocationReservationWorkflowState.RESERVED);
     }
 
     @Test
@@ -512,7 +513,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
             assertThat(repository.requestCancellation(workflowId, clock.instant())).isTrue();
             ReservationWorkflowResponse.LocationReservation cancelled = submission.get(5, TimeUnit.SECONDS);
 
-            assertThat(cancelled.status()).isEqualTo("CANCEL_PENDING");
+            assertThat(cancelled.status()).isEqualTo(LocationReservationWorkflowState.CANCEL_PENDING);
             List<String> uncommittedStates = jdbc.queryForList("""
                     SELECT command_state
                     FROM order_inventory_location_command
@@ -525,7 +526,7 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
             INVENTORY_B.enqueue(cancelled(reservationB));
             assertThat(coordinator.recoverDue(1)).isEqualTo(1);
 
-            assertThat(repository.findByWorkflowId(workflowId).state()).isEqualTo("CANCELLED");
+            assertThat(repository.findByWorkflowId(workflowId).state()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
             List<String> releasedStates = jdbc.queryForList("""
                     SELECT command_state
                     FROM order_inventory_location_command

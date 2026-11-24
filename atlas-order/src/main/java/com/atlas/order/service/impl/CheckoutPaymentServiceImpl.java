@@ -1,31 +1,32 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.settlement.dto.request.SettlementPostingRequest;
-import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.inventory.dto.response.InventoryResponse;
 import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.catalog.service.SellerCouponService;
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.exception.OrderException;
+import com.atlas.order.model.BuyerCheckoutState;
+import com.atlas.order.model.LocationReservationState;
+import com.atlas.order.model.LocationReservationWorkflowState;
+import com.atlas.order.model.OrderState;
 import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
-import com.atlas.order.model.BuyerCheckoutState;
-import com.atlas.order.model.LocationReservationWorkflowState;
-import com.atlas.order.model.OrderState;
 import com.atlas.order.repository.BuyerCheckoutRepository;
-import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.ExpirySweepLockRepository;
+import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.ExpirySweepPolicy;
-import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.LocationReservationService;
+import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -266,8 +267,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         if (coordinator == null) return false;
         for (PurchaseOrder order : children) {
             if (order.reservationWorkflowId() == null) continue;
-            if (!LocationReservationWorkflowState.CLAIMED.name()
-                    .equals(coordinator.find(order.reservationWorkflowId()).status())) return false;
+            if (coordinator.find(order.reservationWorkflowId()).status() != LocationReservationWorkflowState.CLAIMED) {
+                return false;
+            }
         }
         return true;
     }
@@ -565,9 +567,9 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         boolean released = true;
         for (PurchaseOrder order : children) {
             var response = coordinator.cancel(order.reservationWorkflowId());
-            boolean terminal = "FAILED".equals(response.status()) || "CANCELLED".equals(response.status());
+            boolean terminal = response.status() == LocationReservationWorkflowState.FAILED || response.status() == LocationReservationWorkflowState.CANCELLED;
             boolean allReleased = !response.locations().isEmpty()
-                    && response.locations().stream().allMatch(location -> "RELEASED".equals(location.status()));
+                    && response.locations().stream().allMatch(location -> location.status() == LocationReservationState.RELEASED);
             if (!terminal && !allReleased) released = false;
         }
         if (!released) return find(checkoutId);

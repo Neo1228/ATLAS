@@ -84,7 +84,7 @@ class LocationRestockServiceImplTest {
     private static ReservationWorkflowSnapshot workflow(UUID orderId, ReservationWorkflowLocationSnapshot... locations) {
         ReservationWorkflowSnapshot workflow = mock(ReservationWorkflowSnapshot.class);
         when(workflow.orderId()).thenReturn(orderId);
-        when(workflow.state()).thenReturn(LocationReservationWorkflowState.CLAIMED.name());
+        when(workflow.state()).thenReturn(LocationReservationWorkflowState.CLAIMED);
         when(workflow.locations()).thenReturn(List.of(locations));
         return workflow;
     }
