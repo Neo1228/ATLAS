@@ -7,7 +7,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 
 ![ATLAS 실행 구조](docs/images/architecture.png)
 
-로컬 compose 기준 실행 구조다. "켬" 영역(재고 예약, 결제, Redis와 Kafka)은 기본으로 꺼져 있고 설정을 켜야 동작한다. 원본은 [architecture.excalidraw](docs/images/architecture.excalidraw), 사실 근거는 [architecture.yaml](docs/images/architecture.yaml) 상단 주석에 있다.
+로컬 compose 기준 실행 구조다. "켬" 영역(재고 예약, 결제, Redis와 Kafka)은 기본으로 꺼져 있고 설정을 켜야 동작한다. 로고는 벤더 원문에서 사용 조건을 확인한 제품(Apache Kafka, Mailpit)만 넣었고 나머지는 이름만 적었다. 사실 근거와 로고 출처, 다시 만드는 법은 [architecture.yaml](docs/images/architecture.yaml) 상단 주석에 있다.
 
 ## 현재 기능과 모듈
 

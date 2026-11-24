@@ -14,6 +14,19 @@
 #  smtp               | SPRING_MAIL_HOST 기본 mailpit:1025 (기본 구성에서 켜짐)                           | compose.yaml:42-43
 #  redis (선택)       | admission-gate.enabled=true일 때만 빈 생성                   | RedisStockAdmissionControlConfiguration.java:13
 #  kafka (선택)       | event-relay.enabled=true일 때만 빈 생성                      | ReservationEventConfiguration.java:23
+#  로고 정책          | 벤더 원문에서 로고 사용 조건을 확인한 제품만 로고를 쓴다. 나머지는 이름만 쓴다.
+#   kafka  사용        | ASF FAQ: 변경하지 않은 공식 로고면 가능. kafka-logo-no-text.png 512x512 그대로 | https://www.apache.org/foundation/marks/faq/ , https://kafka.apache.org/logos/
+#   mailpit 사용       | MIT 저장소의 server/ui/favicon.svg, 커밋 d54514ceb52c377307464850ddbaedbcbe70e1de | https://github.com/axllent/mailpit (LICENSE: MIT, Ralph Slooten)
+#   spring 안 씀       | 로고는 Broadcom이 변경 없이 쓰는 데만 허용 | https://spring.io/trademarks
+#   postgresql 안 씀   | 수정 금지, 다른 로고와 함께 제시 금지, 귀속 문구 필요 | https://www.postgresql.org/about/policies/trademarks/
+#   redis 안 씀        | 정책이 서술적 이름 사용만 명시하고 로고는 불분명 | https://redis.io/legal/trademark-policy/
+#   paypal 안 씀       | Newsroom 자산은 "마케팅이나 광고에는 쓸 수 없다"는 문구가 있어 README 사용이 해당하는지 판단 못 함 | PayPal Brand Elements Q4 2020 (filecache.mediaroom.com/mr5mr_paypal/179756/download/PayPal_Brand_Elements_Q42020.pdf)
+#   nginx 안 씀        | F5 상표 정책 페이지에서 로고 조항을 확인하지 못함 | https://www.f5.com/company/policies/trademarks
+# 다시 만드는 법(excalidraw-architecture 스킬): kafka-official, mailpit-official은 스킬 기본 자산에 없으므로 임시 자산 폴더에 먼저 등록한다.
+#   export EXCALIDRAW_ARCH_ASSETS=<스킬 assets를 복사한 폴더>
+#   add_logo.py file kafka-official kafka-logo-no-text.png --name "Apache Kafka" --source https://kafka.apache.org/logos/kafka-logo-no-text.png --license "ASF logo, unmodified, permitted per https://www.apache.org/foundation/marks/faq/ ; trademark: Apache Software Foundation"
+#   add_logo.py file mailpit-official favicon.svg --name Mailpit --source https://github.com/axllent/mailpit/blob/d54514ceb52c377307464850ddbaedbcbe70e1de/server/ui/favicon.svg --license "MIT (c) 2022-Now Ralph Slooten"
+#   build.py architecture.yaml --out <폴더>/architecture.excalidraw --png <폴더>/architecture.png   (.excalidraw 원본은 저장소에 올리지 않는다)
 # Composition: application을 가운데(행2 열2)에 두고 호출 방향을 오른쪽과 위아래로 펼친다. 켜야 동작하는 영역은 서로 겹치지 않게 세로로 쌓는다. 호출자는 왼쪽,
 #  저장소와 독립 runtime은 오른쪽, 메일은 위, 선택 요소(redis, kafka)는 아래 한 영역에 모아 "기본은 꺼짐"을 공간으로 표현한다.
 #  기본으로 켜지지 않는 경로(재고 예약, 결제, Redis, Kafka)는 "켬" 영역으로 묶어 "기본은 꺼짐"을 공간으로 표현한다.
@@ -23,6 +36,7 @@ meta:
   layout: grid
   direction: LTR
   seed: 7
+  logo_policy: always
   grid: {gutter: 80, gutter_y: 120, group_gap: 64}
 groups:
   - {id: locrt, title: 재고 예약 켬, kind: zone}
@@ -31,7 +45,7 @@ groups:
 nodes:
   - {id: client, kind: client, title: API 호출자, subtitle: "브라우저, 부하 도구", at: [2, 0]}
   - {id: cache, kind: gateway, title: 카탈로그 캐시, subtitle: 선택 프로파일, at: [0,1]}
-  - {id: smtp, kind: external_source, title: 메일 서버, subtitle: 개발은 Mailpit, at: [0,2]}
+  - {id: smtp, kind: external_source, title: 메일 서버, subtitle: 개발은 Mailpit, logo: mailpit-official, at: [0,2]}
   - {id: paypal, kind: external_source, title: PayPal sandbox, group: pay, at: [3,3]}
   - {id: fx, kind: external_source, title: 환율 API, subtitle: BOK ECOS 기본, group: pay, at: [4,3]}
   - {id: pg, kind: database, title: PostgreSQL, subtitle: 주 데이터, at: [1,3]}
@@ -39,7 +53,7 @@ nodes:
   - {id: loc, kind: service, title: 재고 위치, subtitle: Spring Boot, group: locrt, at: [2,3]}
   - {id: locpg, kind: database, title: PostgreSQL, subtitle: 위치 전용, group: locrt, at: [2,4]}
   - {id: redis, kind: cache, title: Redis, group: opt, at: [4,1]}
-  - {id: kafka, kind: service, title: Kafka, group: opt, at: [4,2]}
+  - {id: kafka, kind: service, title: Kafka, logo: kafka-official, group: opt, at: [4,2]}
 edges:
   - {from: client, to: app, label: HTTP, emphasis: primary}
   - {from: client, to: cache, label: HTTP}
