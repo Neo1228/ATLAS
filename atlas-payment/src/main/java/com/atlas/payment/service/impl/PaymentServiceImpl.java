@@ -4,7 +4,7 @@ import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest
 import static com.atlas.payment.service.impl.PaymentPreconditions.notFound;
 import static com.atlas.payment.service.impl.PaymentPreconditions.validateOwnerAndKey;
 
-import com.atlas.payment.dto.response.FxConversionResponse;
+import com.atlas.payment.dto.response.FxResponse;
 import com.atlas.payment.dto.response.PaymentProviderResponse;
 import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.dto.request.PaymentRequest;
@@ -440,7 +440,7 @@ public class PaymentServiceImpl implements PaymentService {
             throw invalidRequest("A saved FX snapshot is required for this PayPal operation");
         }
 
-        FxConversionResponse conversion;
+        FxResponse.FxConversion conversion;
         try {
             conversion = fxConversionService.convertKrwToUsdCents(attempt.getTotalWon());
         } catch (IllegalArgumentException | ArithmeticException invalidAmount) {

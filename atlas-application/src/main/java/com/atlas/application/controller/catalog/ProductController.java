@@ -1,16 +1,9 @@
 package com.atlas.application.controller.catalog;
 
-import com.atlas.application.controller.dto.SetSkuSalePriceRequest;
-import com.atlas.application.controller.dto.UpdateProductChannelAvailabilityRequest;
-import com.atlas.application.controller.dto.UpdateProductStatusRequest;
-import com.atlas.application.controller.dto.UpdateSkuPriceRequest;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.request.UpdateProductCategoryAssignmentRequest;
-import com.atlas.catalog.dto.response.ProductListingPageResponse;
-import com.atlas.catalog.dto.response.ProductListingResponse;
-import com.atlas.catalog.dto.response.ProductResponse;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.application.dto.request.CatalogHttpRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductCategoryRequest;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -36,12 +29,12 @@ public class ProductController {
 
     @PostMapping("/sellers/{sellerId}/products")
     @ResponseStatus(HttpStatus.CREATED)
-    public ProductResponse createProduct(@PathVariable UUID sellerId, @Valid @RequestBody CreateProductRequest request) {
+    public CatalogResponse.Product createProduct(@PathVariable UUID sellerId, @Valid @RequestBody ProductRequest.CreateProduct request) {
         return products.createProduct(sellerId, request);
     }
 
     @GetMapping("/products")
-    public ProductListingPageResponse listProducts(@RequestParam(required = false) UUID sellerId,
+    public CatalogResponse.ProductListingPage listProducts(@RequestParam(required = false) UUID sellerId,
             @RequestParam(required = false) String query, @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) Long minPriceWon, @RequestParam(required = false) Long maxPriceWon,
             @RequestParam(required = false) Integer limit, @RequestParam(required = false) String cursor) {
@@ -49,56 +42,56 @@ public class ProductController {
     }
 
     @GetMapping("/sellers/{sellerId}/products")
-    public ProductListingPageResponse listSellerProducts(@PathVariable UUID sellerId,
+    public CatalogResponse.ProductListingPage listSellerProducts(@PathVariable UUID sellerId,
             @RequestParam(required = false) String query, @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) Integer limit, @RequestParam(required = false) String cursor) {
  return products.listSellerProductsPage(sellerId, categoryId, query, limit, cursor);
     }
 
     @GetMapping("/products/{productId}")
-    public ProductListingResponse findProduct(@PathVariable UUID productId) {
+    public CatalogResponse.ProductListing findProduct(@PathVariable UUID productId) {
         return products.findProduct(productId);
     }
 
  @PutMapping("/sellers/{sellerId}/products/{productId}/status")
- public ProductResponse updateProductStatus(@PathVariable UUID sellerId, @PathVariable UUID productId,
- @Valid @RequestBody UpdateProductStatusRequest request) {
+ public CatalogResponse.Product updateProductStatus(@PathVariable UUID sellerId, @PathVariable UUID productId,
+ @Valid @RequestBody CatalogHttpRequest.UpdateProductStatus request) {
  return products.updateStatus(sellerId, productId, request.status());
  }
 
  @PutMapping("/sellers/{sellerId}/products/{productId}/channel-availability")
- public ProductResponse updateProductChannelAvailability(@PathVariable UUID sellerId, @PathVariable UUID productId,
- @Valid @RequestBody UpdateProductChannelAvailabilityRequest request) {
+ public CatalogResponse.Product updateProductChannelAvailability(@PathVariable UUID sellerId, @PathVariable UUID productId,
+ @Valid @RequestBody CatalogHttpRequest.UpdateProductChannelAvailability request) {
  return products.updateChannelAvailability(sellerId, productId, request.channel(), request.available());
  }
 
     @PutMapping("/sellers/{sellerId}/products/{productId}/categories")
-    public ProductResponse updateProductCategories(@PathVariable UUID sellerId, @PathVariable UUID productId,
-            @Valid @RequestBody UpdateProductCategoryAssignmentRequest request) {
+    public CatalogResponse.Product updateProductCategories(@PathVariable UUID sellerId, @PathVariable UUID productId,
+            @Valid @RequestBody ProductCategoryRequest.UpdateAssignment request) {
         return products.updateProductCategories(sellerId, productId, request.categoryIds());
     }
 
     @PostMapping("/sellers/{sellerId}/products/{productId}/skus")
     @ResponseStatus(HttpStatus.CREATED)
-    public SellerSkuResponse registerSku(@PathVariable UUID sellerId, @PathVariable UUID productId,
-            @Valid @RequestBody RegisterSellerSkuRequest request) {
+    public CatalogResponse.SellerSku registerSku(@PathVariable UUID sellerId, @PathVariable UUID productId,
+            @Valid @RequestBody ProductRequest.RegisterSellerSku request) {
         return products.registerSku(sellerId, productId, request);
     }
 
     @PutMapping("/sellers/{sellerId}/products/{productId}/skus/{skuId}/price")
-    public SellerSkuResponse updateSkuPrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
-            @PathVariable String skuId, @Valid @RequestBody UpdateSkuPriceRequest request) {
+    public CatalogResponse.SellerSku updateSkuPrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
+            @PathVariable String skuId, @Valid @RequestBody CatalogHttpRequest.UpdateSkuPrice request) {
         return products.updateSkuPrice(sellerId, productId, skuId, request.priceWon());
     }
     @PutMapping("/sellers/{sellerId}/products/{productId}/skus/{skuId}/sale-price")
-    public SellerSkuResponse setSkuSalePrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
-            @PathVariable String skuId, @Valid @RequestBody SetSkuSalePriceRequest request) {
+    public CatalogResponse.SellerSku setSkuSalePrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
+            @PathVariable String skuId, @Valid @RequestBody CatalogHttpRequest.SetSkuSalePrice request) {
         return products.setSkuSalePrice(sellerId, productId, skuId, request.salePriceWon(),
                 request.startsAt(), request.endsAt());
     }
 
     @DeleteMapping("/sellers/{sellerId}/products/{productId}/skus/{skuId}/sale-price")
-    public SellerSkuResponse clearSkuSalePrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
+    public CatalogResponse.SellerSku clearSkuSalePrice(@PathVariable UUID sellerId, @PathVariable UUID productId,
             @PathVariable String skuId) {
         return products.clearSkuSalePrice(sellerId, productId, skuId);
     }

@@ -11,10 +11,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.catalog.service.SellerSkuService;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.model.OrderSource;
 import com.atlas.order.model.OrderState;
@@ -282,7 +282,7 @@ class PayPalWebhookServiceTest {
             thread.setDaemon(true);
             return thread;
         });
-        Future<OrderResponse> synchronousReconciliation = null;
+        Future<OrderViewResponse.Order> synchronousReconciliation = null;
         Future<?> webhook = null;
         try {
             synchronousReconciliation = executor.submit(

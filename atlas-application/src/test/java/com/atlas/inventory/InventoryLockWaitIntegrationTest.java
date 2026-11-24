@@ -2,14 +2,12 @@ package com.atlas.inventory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.PostgresLockWaitProbe;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
-import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 import java.sql.Connection;
@@ -73,9 +71,9 @@ class InventoryLockWaitIntegrationTest {
         registerSku(sellerB, skuB);
         UUID campaignId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
-        List<ReserveInventoryBatchRequest.Item> items = List.of(
-                new ReserveInventoryBatchRequest.Item(sellerA, skuA, 1),
-                new ReserveInventoryBatchRequest.Item(sellerB, skuB, 1));
+        List<InventoryRequest.ReserveInventoryBatch.Item> items = List.of(
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerA, skuA, 1),
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerB, skuB, 1));
         String blockedSku = blockedSeller.equals(sellerA) ? skuA : skuB;
         UUID blockedLocation = jdbc.queryForObject(
                 "SELECT location_id FROM inventory_pool WHERE seller_id = ? AND sku_id = ?",
@@ -83,7 +81,7 @@ class InventoryLockWaitIntegrationTest {
 
         ExecutorService workerExecutor = Executors.newSingleThreadExecutor();
         Connection blocker = null;
-        Future<List<ReservationResponse>> worker = null;
+        Future<List<InventoryResponse.Reservation>> worker = null;
         int blockerPid = -1;
         try {
             blocker = dataSource.getConnection();
@@ -100,7 +98,7 @@ class InventoryLockWaitIntegrationTest {
             }
 
             worker = workerExecutor.submit(() -> inventory.reserveAll(
-                    new ReserveInventoryBatchRequest(orderId, campaignId, items)));
+                    new InventoryRequest.ReserveInventoryBatch(orderId, campaignId, items)));
             try (Connection observer = dataSource.getConnection()) {
                 int observerPid = PostgresLockWaitProbe.backendPid(observer);
                 PostgresLockWaitProbe.Observation observation = PostgresLockWaitProbe.awaitWaiter(
@@ -115,7 +113,7 @@ class InventoryLockWaitIntegrationTest {
                         Long.toString(POLL_INTERVAL.toMillis()));
                 assertThat(inventory.findReservations(orderId)).isEmpty();
                 for (var item : items) {
-                    InventoryPoolResponse pool = inventory.find(item.sellerId(), item.skuId());
+                    InventoryResponse.Pool pool = inventory.find(item.sellerId(), item.skuId());
                     assertThat(pool.available()).isEqualTo(1);
                     assertThat(pool.reserved()).isZero();
                     assertThat(pool.claimed()).isZero();
@@ -125,12 +123,12 @@ class InventoryLockWaitIntegrationTest {
             blocker.commit();
             blocker.close();
             blocker = null;
-            List<ReservationResponse> reservations = worker.get(WAIT_DEADLINE.toMillis(), TimeUnit.MILLISECONDS);
+            List<InventoryResponse.Reservation> reservations = worker.get(WAIT_DEADLINE.toMillis(), TimeUnit.MILLISECONDS);
             assertThat(reservations).hasSize(2).allSatisfy(reservation ->
                     assertThat(reservation.status()).isEqualTo(ReservationStatus.RESERVED));
             assertThat(inventory.findReservations(orderId)).hasSize(2);
             for (var item : items) {
-                InventoryPoolResponse pool = inventory.find(item.sellerId(), item.skuId());
+                InventoryResponse.Pool pool = inventory.find(item.sellerId(), item.skuId());
                 assertThat(pool.initialCapacity()).isEqualTo(1);
                 assertThat(pool.available()).isZero();
                 assertThat(pool.reserved()).isEqualTo(1);
@@ -159,7 +157,7 @@ class InventoryLockWaitIntegrationTest {
 
     private void registerSku(UUID sellerId, String sku) {
         var product = products.createProduct(sellerId,
-                new CreateProductRequest("lock-wait-" + UUID.randomUUID(), null));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 1, 1));
+                new ProductRequest.CreateProduct("lock-wait-" + UUID.randomUUID(), null));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(sku, 1, 1));
     }
 }

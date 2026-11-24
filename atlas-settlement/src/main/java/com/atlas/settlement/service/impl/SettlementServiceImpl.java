@@ -1,12 +1,9 @@
 package com.atlas.settlement.service.impl;
 
-import com.atlas.settlement.dto.request.CapturePostingRequest;
-import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
-import com.atlas.settlement.dto.request.RefundPostingRequest;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.exception.SettlementException;
-import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
@@ -56,7 +53,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     @Override
     @Transactional
-    public void recordCapture(CapturePostingRequest request) {
+    public void recordCapture(SettlementPostingRequest.Capture request) {
         validate(request);
         CaptureJournalRecord facts = new CaptureJournalRecord(
                 request.orderId(), request.attemptId(), request.sellerId(), request.grossAmountWon());
@@ -79,7 +76,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     @Override
     @Transactional
-    public void recordCheckoutCapture(CheckoutSettlementPostingRequest request) {
+    public void recordCheckoutCapture(SettlementPostingRequest.CheckoutSettlement request) {
         CheckoutSettlementRecord facts = validateAndNormalizeCheckoutCapture(request);
         Instant recordedAt = clock.instant();
         Optional<UUID> journalId = journals.insertCheckoutIfAbsent(facts, recordedAt);
@@ -102,7 +99,7 @@ public class SettlementServiceImpl implements SettlementService {
         }
     }
 
-    static CheckoutSettlementRecord validateAndNormalizeCheckoutCapture(CheckoutSettlementPostingRequest request) {
+    static CheckoutSettlementRecord validateAndNormalizeCheckoutCapture(SettlementPostingRequest.CheckoutSettlement request) {
         if (request == null || request.checkoutId() == null || request.attemptId() == null
                 || request.totalAmountWon() <= 0 || request.allocations() == null || request.allocations().isEmpty()) {
             throw invalid("Checkout, attempt, and positive settlement allocations are required");
@@ -110,7 +107,7 @@ public class SettlementServiceImpl implements SettlementService {
         List<CheckoutSettlementAllocation> allocations = new ArrayList<>();
         Set<UUID> orderIds = new HashSet<>();
         long total = 0;
-        for (SellerOrderAllocationRequest allocation : request.allocations()) {
+        for (SettlementPostingRequest.SellerOrderAllocation allocation : request.allocations()) {
             if (allocation == null || allocation.orderId() == null || allocation.sellerId() == null
                     || allocation.amountWon() <= 0 || !orderIds.add(allocation.orderId())) {
                 throw invalid("Checkout allocations must have unique orders and positive amounts");
@@ -133,7 +130,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     @Override
     @Transactional
-    public void recordRefund(RefundPostingRequest request) {
+    public void recordRefund(SettlementPostingRequest.Refund request) {
         validate(request);
         journals.lockSellerPayouts(request.sellerId());
         Instant recordedAt = clock.instant();
@@ -161,7 +158,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     @Override
     @Transactional
-    public void reserveRefund(RefundPostingRequest request) {
+    public void reserveRefund(SettlementPostingRequest.Refund request) {
         validate(request);
         journals.lockSellerPayouts(request.sellerId());
         Instant now = clock.instant();
@@ -180,7 +177,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     @Override
     @Transactional
-    public void releaseRefundReservation(RefundPostingRequest request) {
+    public void releaseRefundReservation(SettlementPostingRequest.Refund request) {
         validate(request);
         journals.lockSellerPayouts(request.sellerId());
         var reservation = refundReservations.find(request.refundId())
@@ -194,7 +191,7 @@ public class SettlementServiceImpl implements SettlementService {
     }
 
     private static void validateRefundReservation(
-            RefundReservation reservation, RefundPostingRequest request) {
+            RefundReservation reservation, SettlementPostingRequest.Refund request) {
         if (!reservation.refundId().equals(request.refundId()) || !reservation.orderId().equals(request.orderId())
                 || !reservation.sellerId().equals(request.sellerId())
                 || reservation.amountWon() != request.amountWon()) {
@@ -208,14 +205,14 @@ public class SettlementServiceImpl implements SettlementService {
         }
     }
 
-    private static void validate(CapturePostingRequest request) {
+    private static void validate(SettlementPostingRequest.Capture request) {
         if (request == null || request.orderId() == null || request.attemptId() == null || request.sellerId() == null
                 || request.grossAmountWon() <= 0) {
             throw invalid("Capture posting facts are invalid");
         }
     }
 
-    private static void validate(RefundPostingRequest request) {
+    private static void validate(SettlementPostingRequest.Refund request) {
         if (request == null || request.orderId() == null || request.refundId() == null || request.sellerId() == null
                 || request.amountWon() <= 0) {
             throw invalid("Refund posting facts are invalid");

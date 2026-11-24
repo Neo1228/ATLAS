@@ -1,7 +1,7 @@
 package com.atlas.catalog.service;
 
-import com.atlas.catalog.dto.response.SellerResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
 
 public interface SellerService {
-    SellerResponse createSeller();
+    CatalogResponse.Seller createSeller();
 }

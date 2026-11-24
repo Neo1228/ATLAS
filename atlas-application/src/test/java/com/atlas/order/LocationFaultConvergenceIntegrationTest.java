@@ -2,10 +2,10 @@ package com.atlas.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
-import com.atlas.order.dto.response.LocationReservationResponse;
 import com.atlas.order.service.LocationReservationService.ClaimOutcome;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import com.atlas.payment.PayPalIntegrationTestSupport;

@@ -6,15 +6,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
+import com.atlas.payment.dto.response.PayPalReportMatchResponse;
 import com.atlas.application.service.PayPalBalanceReportReconciliationService;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
-import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
-import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import com.atlas.payment.service.PayPalReportMatchQuery;
 import com.atlas.schema.BaselineSchema;
-import com.atlas.settlement.dto.response.PayPalBalanceReportDispositionResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportRowResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.repository.JdbcPayPalBalanceReportStore;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
@@ -72,11 +70,11 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
 
         PayPalReportMatchQuery matchQuery = mock(PayPalReportMatchQuery.class);
         when(matchQuery.findByRecordIds(any())).thenReturn(List.of(
-                new PayPalReportMatchCandidateResponse("capture-1", PayPalReportMatchKind.CAPTURE,
+                new PayPalReportMatchResponse.Candidate("capture-1", PayPalReportMatchResponse.Kind.CAPTURE,
                         true, "capture-1", 10_000L, "USD"),
-                new PayPalReportMatchCandidateResponse("refund-1", PayPalReportMatchKind.REFUND,
+                new PayPalReportMatchResponse.Candidate("refund-1", PayPalReportMatchResponse.Kind.REFUND,
                         true, "capture-1", 1_000L, "USD"),
-                new PayPalReportMatchCandidateResponse("capture-mismatch", PayPalReportMatchKind.CAPTURE,
+                new PayPalReportMatchResponse.Candidate("capture-mismatch", PayPalReportMatchResponse.Kind.CAPTURE,
                         true, "capture-mismatch", 5_000L, "USD")));
         JdbcPayPalBalanceReportStore store = new JdbcPayPalBalanceReportStore(jdbc);
         PayPalBalanceReportReconciliationService reconciliation =
@@ -107,11 +105,11 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     void exceptionSearchAndDispositionAreBoundedAuditedAndIdempotent() {
         var run = ingestion.reconcile(REPORT.getBytes(StandardCharsets.UTF_8));
         var exception = run.rows().stream()
-                .filter(row -> row.status() == PayPalBalanceReportReconciliationResponse.Status.UNMATCHED)
+                .filter(row -> row.status() == SettlementHttpResponse.PayPalBalanceReportReconciliation.Status.UNMATCHED)
                 .findFirst().orElseThrow();
 
         var matched = run.rows().stream()
-                .filter(row -> row.status() == PayPalBalanceReportReconciliationResponse.Status.MATCHED)
+                .filter(row -> row.status() == SettlementHttpResponse.PayPalBalanceReportReconciliation.Status.MATCHED)
                 .findFirst().orElseThrow();
         assertThatThrownBy(() -> operator.recordDisposition(run.runId(), matched.rowNumber(), "DEFERRED",
                 "settlement-operator", "not an exception", "matched-row-key"))
@@ -130,12 +128,12 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
 
         var history = operator.dispositionHistory(run.runId(), exception.rowNumber());
         assertThat(history).hasSize(1);
-        assertThat(Arrays.stream(PayPalBalanceReportDispositionResponse.class.getRecordComponents())
+        assertThat(Arrays.stream(PayPalBalanceReportResponse.Disposition.class.getRecordComponents())
                 .map(component -> component.getName()).toList()).doesNotContain("idempotencyKey");
         assertThat(operator.summary().pendingDispositions()).isEqualTo(4);
 
         var page = operator.listExceptions("UNMATCHED", null, null, exception.recordId(), 20, 0);
-        assertThat(page.items()).extracting(PayPalBalanceReportRowResponse::recordId).contains(exception.recordId());
+        assertThat(page.items()).extracting(PayPalBalanceReportResponse.Row::recordId).contains(exception.recordId());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM paypal_balance_report_disposition", Integer.class))
                 .isEqualTo(1);
     }
@@ -144,7 +142,7 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     void concurrentDuplicateUploadsAndDispositionsPersistOnlyOnce() throws Exception {
         try (var executor = Executors.newFixedThreadPool(4)) {
             byte[] content = REPORT.getBytes(StandardCharsets.UTF_8);
-            List<Callable<PayPalBalanceReportReconciliationResponse>> uploadTasks = List.of(
+            List<Callable<SettlementHttpResponse.PayPalBalanceReportReconciliation>> uploadTasks = List.of(
                     () -> ingestion.reconcile(content),
                     () -> ingestion.reconcile(content));
             var uploadResults = executor.invokeAll(uploadTasks);
@@ -156,9 +154,9 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                     .isEqualTo(1);
 
             var exception = firstRun.rows().stream()
-                    .filter(row -> row.status() == PayPalBalanceReportReconciliationResponse.Status.UNMATCHED)
+                    .filter(row -> row.status() == SettlementHttpResponse.PayPalBalanceReportReconciliation.Status.UNMATCHED)
                     .findFirst().orElseThrow();
-            List<Callable<PayPalBalanceReportDispositionResponse>> dispositionTasks = List.of(
+            List<Callable<PayPalBalanceReportResponse.Disposition>> dispositionTasks = List.of(
                     () -> operator.recordDisposition(firstRun.runId(), exception.rowNumber(), "DEFERRED",
                             "settlement-operator", "Awaiting external evidence", "concurrent-key"),
                     () -> operator.recordDisposition(firstRun.runId(), exception.rowNumber(), "DEFERRED",

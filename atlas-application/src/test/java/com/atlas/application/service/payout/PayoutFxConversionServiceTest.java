@@ -3,7 +3,7 @@ package com.atlas.application.service.payout;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
+import com.atlas.payment.dto.response.FxResponse;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,7 @@ class PayoutFxConversionServiceTest {
 
     @Test
     void roundsUsdCentsUpAndBalancesSellerPrincipalWithExplicitRoundingExpense() {
-        var quote = new ExchangeRateQuoteResponse(new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-10-31"));
+        var quote = new FxResponse.ExchangeRateQuote(new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-10-31"));
 
         var result = conversions.convert(10_000, quote);
 
@@ -27,7 +27,7 @@ class PayoutFxConversionServiceTest {
 
     @Test
     void refusesPayoutsWhoseOneCentRoundingCostWouldExceedOnePercent() {
-        var quote = new ExchangeRateQuoteResponse(new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-10-31"));
+        var quote = new FxResponse.ExchangeRateQuote(new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-10-31"));
 
         assertThatThrownBy(() -> conversions.convert(1, quote))
                 .isInstanceOf(IllegalArgumentException.class)

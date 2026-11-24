@@ -1,7 +1,6 @@
 package com.atlas.catalog.service.impl;
 
-import com.atlas.catalog.dto.response.BuyerWishlistItemResponse;
-import com.atlas.catalog.dto.response.BuyerWishlistPage;
+import com.atlas.catalog.dto.response.BuyerWishlistResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.projection.BuyerWishlistItem;
@@ -29,7 +28,7 @@ public class BuyerWishlistServiceImpl implements BuyerWishlistService {
     }
 
     @Override
-    public BuyerWishlistItemResponse save(String buyerRef, UUID productId) {
+    public BuyerWishlistResponse.Item save(String buyerRef, UUID productId) {
         requireBuyerRef(buyerRef);
         Objects.requireNonNull(productId, "productId");
         if (!products.isPublicOrderable(productId)) {
@@ -37,12 +36,12 @@ public class BuyerWishlistServiceImpl implements BuyerWishlistService {
         }
         wishlist.saveIfAbsent(buyerRef, productId);
         return wishlist.find(buyerRef, productId)
-                .map(item -> new BuyerWishlistItemResponse(item.productId(), item.savedAt()))
+                .map(item -> new BuyerWishlistResponse.Item(item.productId(), item.savedAt()))
                 .orElseThrow(() -> new IllegalStateException("Saved wishlist item was not persisted"));
     }
 
     @Override
-    public BuyerWishlistPage list(String buyerRef, int requestedLimit, int offset) {
+    public BuyerWishlistResponse.Page list(String buyerRef, int requestedLimit, int offset) {
         requireBuyerRef(buyerRef);
         int limit = requestedLimit == 0 ? DEFAULT_LIMIT : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
@@ -53,11 +52,11 @@ public class BuyerWishlistServiceImpl implements BuyerWishlistService {
         }
         List<BuyerWishlistItem> fetched = wishlist.list(buyerRef, limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
-        List<BuyerWishlistItemResponse> items = fetched.stream()
+        List<BuyerWishlistResponse.Item> items = fetched.stream()
                 .limit(limit)
-                .map(item -> new BuyerWishlistItemResponse(item.productId(), item.savedAt()))
+                .map(item -> new BuyerWishlistResponse.Item(item.productId(), item.savedAt()))
                 .toList();
-        return new BuyerWishlistPage(items, limit, offset, hasMore);
+        return new BuyerWishlistResponse.Page(items, limit, offset, hasMore);
     }
 
     @Override

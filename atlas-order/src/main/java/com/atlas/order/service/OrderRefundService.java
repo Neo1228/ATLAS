@@ -1,14 +1,13 @@
 package com.atlas.order.service;
 
-import com.atlas.order.dto.request.OrderRefundRequest;
-import com.atlas.order.dto.response.OrderRefundResponse;
-import com.atlas.order.dto.response.OrderRefundSummaryResponse;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import java.util.UUID;
 
 public interface OrderRefundService {
-    OrderRefundResponse refund(OrderRefundRequest request);
-    OrderRefundResponse processInspectedReturnRefund(UUID returnId);
-    OrderRefundResponse prepareInspectedReturnRefund(UUID returnId);
-    OrderRefundResponse reconcilePayPalRefund(UUID paymentOperationId);
-    OrderRefundSummaryResponse find(UUID sellerId, UUID orderId);
+    RefundResponse.Refund refund(OrderRequest.Refund request);
+    RefundResponse.Refund processInspectedReturnRefund(UUID returnId);
+    RefundResponse.Refund prepareInspectedReturnRefund(UUID returnId);
+    RefundResponse.Refund reconcilePayPalRefund(UUID paymentOperationId);
+    RefundResponse.RefundSummary find(UUID sellerId, UUID orderId);
 }

@@ -1,4 +1,12 @@
 package com.atlas;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
+import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.model.ProductStatus;
@@ -16,38 +24,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.model.CheckoutSlotReleaseReason;
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.service.impl.AdmissionServiceImpl;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.service.CartService;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.admission.dto.response.CampaignResponse;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
-import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.account.dto.response.AccountTokenResponse;
-import com.atlas.account.dto.response.AccountLoginResponse;
 import com.atlas.account.service.AccountEmailSender;
 import com.atlas.account.service.AccountService;
-import com.atlas.account.dto.response.MfaEnrollmentResponse;
-import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.model.ReservationStatus;
-import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.response.OrderFulfillmentResponse;
-import com.atlas.order.dto.response.OrderHistoryPageResponse;
-import com.atlas.order.dto.response.OrderResponse;
-import com.atlas.order.dto.response.OrderItemResponse;
-import com.atlas.order.dto.response.OrderRefundResponse;
-import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.model.FulfillmentStatus;
@@ -165,7 +152,7 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
     private CheckoutResponse completePayPalCheckout(UUID checkoutId) {
         return completePayPalCheckout(checkoutLifecycle.submit(checkoutId));
     }
-    private AccountTokenResponse createBuyerAccount(String email) throws Exception {
+    private AccountResponse.Token createBuyerAccount(String email) throws Exception {
         String body = "{\"email\":\"" + email + "\",\"password\":\"long-enough-password\"}";
         mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -181,10 +168,10 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                         .content(body))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readValue(loginResponse, AccountLoginResponse.class).tokens();
+        return objectMapper.readValue(loginResponse, AccountResponse.Login.class).tokens();
     }
 
-    private void authenticateBuyer(AccountTokenResponse account) {
+    private void authenticateBuyer(AccountResponse.Token account) {
         Instant now = clock.instant();
         Jwt jwt = Jwt.withTokenValue("order-history-" + account.accountId())
                 .header("alg", "none")
@@ -252,9 +239,9 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
 
     @Test
     void campaignCheckoutRejectsProductWhenCampaignChannelIsDisabled() {
-        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
-        QueueTicketResponse failedTicket = join(campaign, "buyer-product-channel", "campaign-channel-disabled");
-        QueueTicketResponse waitingTicket = join(campaign, "buyer-product-channel-next", "campaign-channel-next");
+        AdmissionResponse.Campaign campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket failedTicket = join(campaign, "buyer-product-channel", "campaign-channel-disabled");
+        AdmissionResponse.QueueTicket waitingTicket = join(campaign, "buyer-product-channel-next", "campaign-channel-next");
         assertThat(failedTicket.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
         assertThat(waitingTicket.status()).isEqualTo(TicketStatus.WAITING);
 
@@ -271,11 +258,11 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE ticket_id = ?",
                 Integer.class, failedTicket.ticketId())).isZero();
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(2);
         assertThat(stock.reserved()).isZero();
         products.updateChannelAvailability(campaign.sellerId(), productId, ProductSalesChannel.CAMPAIGN, true);
-        QueueTicketResponse rejoined = join(campaign, "buyer-product-channel", "campaign-channel-reactivated");
+        AdmissionResponse.QueueTicket rejoined = join(campaign, "buyer-product-channel", "campaign-channel-reactivated");
         assertThat(rejoined.ticketId()).isNotEqualTo(failedTicket.ticketId());
         assertThat(admission.find(campaign.campaignId(), failedTicket.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_FAILED);
@@ -286,9 +273,9 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "mixed-channel-" + UUID.randomUUID();
         registerProductSku(sellerId, skuId, 100, 1);
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 1));
-        CampaignResponse campaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "mixed-channel-" + UUID.randomUUID(),
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 1));
+        AdmissionResponse.Campaign campaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "mixed-channel-" + UUID.randomUUID(),
                 "mixed-channel-" + UUID.randomUUID());
         String buyerRef = "mixed-channel-cart-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
@@ -304,13 +291,13 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                     return null;
                 }
             });
-            Future<OrderResponse> campaignAttempt = executor.submit(() -> {
+            Future<OrderViewResponse.Order> campaignAttempt = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return orders.startCheckout(campaign.campaignId(), ticket.ticketId());
             });
 
             CheckoutResponse cartResult = cartAttempt.get(20, TimeUnit.SECONDS);
-            OrderResponse campaignResult = campaignAttempt.get(20, TimeUnit.SECONDS);
+            OrderViewResponse.Order campaignResult = campaignAttempt.get(20, TimeUnit.SECONDS);
             long successfulReservations = (cartResult == null ? 0 : cartResult.orders().stream()
                     .filter(order -> order.inventoryState() == ReservationStatus.RESERVED).count())
                     + (campaignResult.inventoryState() == ReservationStatus.RESERVED ? 1 : 0);
@@ -323,7 +310,7 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                 assertThat(admission.find(campaign.campaignId(), ticket.ticketId()).checkoutSlotHeld()).isFalse();
             }
 
-            InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+            InventoryResponse.Pool stock = inventory.find(sellerId, skuId);
             assertConserved(stock);
             assertThat(stock.available() + stock.reserved() + stock.claimed()).isEqualTo(1);
             assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_reservation WHERE seller_id = ? AND sku_id = ? AND status = 'RESERVED'",
@@ -358,7 +345,7 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
     void reservedCartOrderCanCompleteAfterProductDeactivation() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "deactivate-cart-" + UUID.randomUUID();
-        ProductResponse product = registerProductSku(sellerId, skuId, 100, 2);
+        CatalogResponse.Product product = registerProductSku(sellerId, skuId, 100, 2);
         String buyerRef = "deactivate-cart-buyer-" + UUID.randomUUID();
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
                         buyerRef, sellerId, skuId)
@@ -370,7 +357,7 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                                 .header("Idempotency-Key", "deactivate-cart-" + UUID.randomUUID()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),
                 CheckoutResponse.class);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
         assertThat(order.state()).isEqualTo(OrderState.RESERVED);
         assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         products.updateStatus(sellerId, product.productId(), ProductStatus.INACTIVE);
@@ -381,7 +368,7 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
             assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
             assertThat(paidOrder.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
         });
-        InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+        InventoryResponse.Pool stock = inventory.find(sellerId, skuId);
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isEqualTo(1);
@@ -390,16 +377,16 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
     @Test
     void cartCheckoutRejectsDeactivatedProductWithoutChangingCartOrInventory() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse availableProduct = products.createProduct(
-                sellerId, new CreateProductRequest("orderable-cart-product", null));
-        ProductResponse inactiveProduct = products.createProduct(
-                sellerId, new CreateProductRequest("inactive-cart-product", null));
+        CatalogResponse.Product availableProduct = products.createProduct(
+                sellerId, new ProductRequest.CreateProduct("orderable-cart-product", null));
+        CatalogResponse.Product inactiveProduct = products.createProduct(
+                sellerId, new ProductRequest.CreateProduct("inactive-cart-product", null));
         String availableSku = "orderable-cart-" + UUID.randomUUID();
         String inactiveSku = "inactive-cart-" + UUID.randomUUID();
         products.registerSku(sellerId, availableProduct.productId(),
-                new RegisterSellerSkuRequest(availableSku, 100, 2));
+                new ProductRequest.RegisterSellerSku(availableSku, 100, 2));
         products.registerSku(sellerId, inactiveProduct.productId(),
-                new RegisterSellerSkuRequest(inactiveSku, 200, 3));
+                new ProductRequest.RegisterSellerSku(inactiveSku, 200, 3));
         String buyerRef = "inactive-product-cart-" + UUID.randomUUID();
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
                         buyerRef, sellerId, availableSku)
@@ -422,8 +409,8 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM purchase_order WHERE buyer_ref = ?", Integer.class, buyerRef)).isZero();
         assertThat(carts.find(buyerRef).items()).hasSize(2);
-        InventoryPoolResponse availableStock = inventory.find(sellerId, availableSku);
-        InventoryPoolResponse inactiveStock = inventory.find(sellerId, inactiveSku);
+        InventoryResponse.Pool availableStock = inventory.find(sellerId, availableSku);
+        InventoryResponse.Pool inactiveStock = inventory.find(sellerId, inactiveSku);
         assertThat(availableStock.available()).isEqualTo(2);
         assertThat(availableStock.reserved()).isZero();
         assertThat(inactiveStock.available()).isEqualTo(3);
@@ -432,10 +419,10 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
 
     @Test
     void FIFOAdmissionAndIdempotencyReleaseWindowAtInitialPaymentSubmission() throws Exception {
-        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
-        QueueTicketResponse first = join(campaign, "buyer-a", "key-a");
-        QueueTicketResponse second = join(campaign, "buyer-b", "key-b");
-        QueueTicketResponse replay = join(campaign, "buyer-a", "key-a");
+        AdmissionResponse.Campaign campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket first = join(campaign, "buyer-a", "key-a");
+        AdmissionResponse.QueueTicket second = join(campaign, "buyer-b", "key-b");
+        AdmissionResponse.QueueTicket replay = join(campaign, "buyer-a", "key-a");
 
         assertThat(first.sequence()).isEqualTo(1);
         assertThat(second.sequence()).isEqualTo(2);
@@ -445,8 +432,8 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
                 .isInstanceOfSatisfying(AdmissionException.class, exception ->
                         assertThat(exception.code()).isEqualTo(AdmissionException.Code.IDEMPOTENCY_PAYLOAD_MISMATCH));
 
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), first.ticketId());
-        OrderResponse checkoutReplay = orders.startCheckout(campaign.campaignId(), first.ticketId());
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), first.ticketId());
+        OrderViewResponse.Order checkoutReplay = orders.startCheckout(campaign.campaignId(), first.ticketId());
         assertThat(checkoutReplay.orderId()).isEqualTo(order.orderId());
 assertUuidV7(campaign.sellerId());
 assertUuidV7(campaign.campaignId());
@@ -454,21 +441,21 @@ assertUuidV7(first.ticketId());
 assertUuidV7(order.orderId());
         assertThat(order.state()).isEqualTo(OrderState.RESERVED);
         assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
-        OrderResponse paymentPending = orders.submitPayment(order.orderId());
-        OrderResponse paid = orders.completePaymentApproval(order.orderId(),
+        OrderViewResponse.Order paymentPending = orders.submitPayment(order.orderId());
+        OrderViewResponse.Order paid = orders.completePaymentApproval(order.orderId(),
                 approvalToken(paymentPending.paymentApprovalUrl()));
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
 
-        OrderFulfillmentResponse fulfillment = objectMapper.readValue(
+        OrderViewResponse.Fulfillment fulfillment = objectMapper.readValue(
                 mockMvc.perform(get("/api/orders/{orderId}/fulfillment", order.orderId()))
                         .andExpect(status().isOk())
                         .andReturn().getResponse().getContentAsString(),
-                OrderFulfillmentResponse.class);
+                OrderViewResponse.Fulfillment.class);
         assertThat(fulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
 
-        OrderResponse reconciled = orders.reconcilePayment(order.orderId(), "initial-recovery-" + order.orderId());
+        OrderViewResponse.Order reconciled = orders.reconcilePayment(order.orderId(), "initial-recovery-" + order.orderId());
         assertThat(reconciled.state()).isEqualTo(OrderState.PAID);
-        OrderFulfillmentResponse repeatedFulfillment = orderFulfillments.find(order.orderId());
+        OrderViewResponse.Fulfillment repeatedFulfillment = orderFulfillments.find(order.orderId());
         assertThat(repeatedFulfillment.status()).isEqualTo(FulfillmentStatus.UNFULFILLED);
         assertThat(repeatedFulfillment.createdAt()).isEqualTo(fulfillment.createdAt());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM order_fulfillment WHERE order_id = ?",
@@ -481,7 +468,7 @@ assertUuidV7(paymentOrderId);
         assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
 
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isEqualTo(1);
@@ -490,27 +477,27 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void concurrentJoinsAllocateUniqueSequencesAndPromoteWaitingTicketsInFifoOrder() throws Exception {
-        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        AdmissionResponse.Campaign campaign = openCampaign(2, 1, Duration.ofMinutes(5));
         CyclicBarrier start = new CyclicBarrier(3);
 
         try (var executor = Executors.newFixedThreadPool(3)) {
-            Future<QueueTicketResponse> first = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> first = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(campaign, "buyer-race-a", "race-key-a");
             });
-            Future<QueueTicketResponse> second = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> second = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(campaign, "buyer-race-b", "race-key-b");
             });
-            Future<QueueTicketResponse> third = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> third = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(campaign, "buyer-race-c", "race-key-c");
             });
 
-            List<QueueTicketResponse> tickets = new ArrayList<>(
+            List<AdmissionResponse.QueueTicket> tickets = new ArrayList<>(
                     List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS),
                             third.get(10, TimeUnit.SECONDS)));
-            tickets.sort(Comparator.comparingLong(QueueTicketResponse::sequence));
+            tickets.sort(Comparator.comparingLong(AdmissionResponse.QueueTicket::sequence));
 
             assertThat(tickets.get(0).sequence()).isEqualTo(1);
             assertThat(tickets.get(1).sequence()).isEqualTo(2);
@@ -518,7 +505,7 @@ assertUuidV7(paymentOrderId);
             assertThat(tickets.get(0).status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
             assertThat(tickets.get(1).status()).isEqualTo(TicketStatus.WAITING);
             assertThat(tickets.get(2).status()).isEqualTo(TicketStatus.WAITING);
-            assertThat(tickets).extracting(QueueTicketResponse::checkoutSlotHeld)
+            assertThat(tickets).extracting(AdmissionResponse.QueueTicket::checkoutSlotHeld)
                     .containsExactly(true, false, false);
 
             admission.releaseCheckoutSlot(campaign.campaignId(), tickets.get(0).ticketId(),
@@ -539,7 +526,7 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void concurrentJoinWithSameIdempotencyKeyReturnsOneTicket() throws Exception {
-        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        AdmissionResponse.Campaign campaign = openCampaign(2, 1, Duration.ofMinutes(5));
         String buyerRef = "buyer-duplicate-join-" + UUID.randomUUID();
         String idempotencyKey = "duplicate-join-" + UUID.randomUUID();
         jdbc.update("INSERT INTO admission_counter (seller_id, sku_id, last_sequence) VALUES (?, ?, 0) "
@@ -556,11 +543,11 @@ assertUuidV7(paymentOrderId);
                     result.next();
                 }
             }
-            Future<QueueTicketResponse> first = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> first = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(campaign, buyerRef, idempotencyKey);
             });
-            Future<QueueTicketResponse> second = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> second = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(campaign, buyerRef, idempotencyKey);
             });
@@ -581,8 +568,8 @@ assertUuidV7(paymentOrderId);
             }
             assertThat(blockedJoinCount).isEqualTo(2);
             lockConnection.commit();
-            QueueTicketResponse firstResult = first.get(10, TimeUnit.SECONDS);
-            QueueTicketResponse secondResult = second.get(10, TimeUnit.SECONDS);
+            AdmissionResponse.QueueTicket firstResult = first.get(10, TimeUnit.SECONDS);
+            AdmissionResponse.QueueTicket secondResult = second.get(10, TimeUnit.SECONDS);
 
             assertThat(secondResult.ticketId()).isEqualTo(firstResult.ticketId());
             assertThat(secondResult.sequence()).isEqualTo(firstResult.sequence());
@@ -600,39 +587,39 @@ assertUuidV7(paymentOrderId);
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "shared-" + UUID.randomUUID();
         registerProductSku(sellerId, skuId, 100, 3);
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 1));
-        CampaignResponse firstCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
-        CampaignResponse secondCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 1));
+        AdmissionResponse.Campaign firstCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
+        AdmissionResponse.Campaign secondCampaign = openCampaign(sellerId, skuId, Duration.ofMinutes(5));
         CyclicBarrier start = new CyclicBarrier(3);
 
         try (var executor = Executors.newFixedThreadPool(3)) {
-            Future<QueueTicketResponse> first = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> first = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(firstCampaign, "global-buyer-a", "global-key-a");
             });
-            Future<QueueTicketResponse> second = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> second = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(secondCampaign, "global-buyer-b", "global-key-b");
             });
-            Future<QueueTicketResponse> third = executor.submit(() -> {
+            Future<AdmissionResponse.QueueTicket> third = executor.submit(() -> {
                 start.await(10, TimeUnit.SECONDS);
                 return join(secondCampaign, "global-buyer-c", "global-key-c");
             });
 
-            List<QueueTicketResponse> tickets = new ArrayList<>(
+            List<AdmissionResponse.QueueTicket> tickets = new ArrayList<>(
                     List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS),
                             third.get(10, TimeUnit.SECONDS)));
-            tickets.sort(Comparator.comparingLong(QueueTicketResponse::sequence));
+            tickets.sort(Comparator.comparingLong(AdmissionResponse.QueueTicket::sequence));
 
-            assertThat(tickets).extracting(QueueTicketResponse::sequence).containsExactly(1L, 2L, 3L);
-            assertThat(tickets).extracting(QueueTicketResponse::status)
+            assertThat(tickets).extracting(AdmissionResponse.QueueTicket::sequence).containsExactly(1L, 2L, 3L);
+            assertThat(tickets).extracting(AdmissionResponse.QueueTicket::status)
                     .containsExactly(TicketStatus.CHECKOUT_ACTIVE, TicketStatus.WAITING, TicketStatus.WAITING);
             assertThat(tickets.get(0).sellerId()).isEqualTo(sellerId);
             for (int index = 0; index < 2; index++) {
-                QueueTicketResponse active = tickets.get(index);
+                AdmissionResponse.QueueTicket active = tickets.get(index);
                 admission.releaseCheckoutSlot(active.campaignId(), active.ticketId(),
                         CheckoutSlotReleaseReason.BUYER_CANCELLED);
-                QueueTicketResponse next = tickets.get(index + 1);
+                AdmissionResponse.QueueTicket next = tickets.get(index + 1);
                 assertThat(admission.find(next.campaignId(), next.ticketId()).status())
                         .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
             }
@@ -640,22 +627,22 @@ assertUuidV7(paymentOrderId);
 
         UUID anotherSellerId = sellers.createSeller().sellerId();
         registerProductSku(anotherSellerId, skuId, 100, 1);
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(anotherSellerId, skuId, 1));
-        CampaignResponse otherSellerCampaign = openCampaign(anotherSellerId, skuId, Duration.ofMinutes(5));
-        QueueTicketResponse otherSellerTicket = join(otherSellerCampaign, "other-seller", "other-seller-key");
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(anotherSellerId, skuId, 1));
+        AdmissionResponse.Campaign otherSellerCampaign = openCampaign(anotherSellerId, skuId, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket otherSellerTicket = join(otherSellerCampaign, "other-seller", "other-seller-key");
         assertThat(otherSellerTicket.sequence()).isEqualTo(1);
         assertThat(otherSellerTicket.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
     }
 
     @Test
     void soldOutCheckoutReturnsFailureWithoutPaymentAndReleasesQueueSlot() {
-        CampaignResponse campaign = openCampaign(1, 2, Duration.ofMinutes(5));
-        QueueTicketResponse firstTicket = join(campaign, "buyer-first", "first-stock-key");
-        QueueTicketResponse secondTicket = join(campaign, "buyer-second", "second-stock-key");
-        QueueTicketResponse thirdTicket = join(campaign, "buyer-third", "third-stock-key");
-        OrderResponse first = orders.startCheckout(campaign.campaignId(), firstTicket.ticketId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 2, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket firstTicket = join(campaign, "buyer-first", "first-stock-key");
+        AdmissionResponse.QueueTicket secondTicket = join(campaign, "buyer-second", "second-stock-key");
+        AdmissionResponse.QueueTicket thirdTicket = join(campaign, "buyer-third", "third-stock-key");
+        OrderViewResponse.Order first = orders.startCheckout(campaign.campaignId(), firstTicket.ticketId());
 
-        OrderResponse soldOut = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
+        OrderViewResponse.Order soldOut = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
         assertThat(soldOut.state()).isEqualTo(OrderState.FAILED);
         assertThat(soldOut.paymentAttemptId()).isNull();
         assertThat(soldOut.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
@@ -664,38 +651,38 @@ assertUuidV7(paymentOrderId);
         assertThat(admission.find(campaign.campaignId(), thirdTicket.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
 
-        InventoryPoolResponse held = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool held = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(held.available()).isZero();
         assertThat(held.reserved()).isEqualTo(1);
         assertConserved(held);
-        OrderResponse paymentPending = orders.submitPayment(first.orderId());
-        OrderResponse paid = orders.completePaymentApproval(first.orderId(),
+        OrderViewResponse.Order paymentPending = orders.submitPayment(first.orderId());
+        OrderViewResponse.Order paid = orders.completePaymentApproval(first.orderId(),
                 approvalToken(paymentPending.paymentApprovalUrl()));
         assertThat(paid.state()).isEqualTo(OrderState.PAID);
     }
 
     @Test
     void unknownAuthorizationKeepsHoldThenReconcilesSameAttempt() {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-recovery", "recovery-key");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-recovery", "recovery-key");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
 
-        OrderResponse pending = orders.submitPayment(order.orderId());
+        OrderViewResponse.Order pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         String providerOrderId = pending.paymentApprovalUrl()
                 .substring(pending.paymentApprovalUrl().lastIndexOf('/') + 1);
         queueAuthorizationStatus("UNKNOWN");
-        OrderResponse unknown = orders.completePaymentApproval(order.orderId(), providerOrderId);
+        OrderViewResponse.Order unknown = orders.completePaymentApproval(order.orderId(), providerOrderId);
         assertThat(unknown.state()).isEqualTo(OrderState.PAYMENT_UNKNOWN);
         assertThat(unknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
         assertThat(unknown.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         assertThat(unknown.ticketState()).isEqualTo(TicketStatus.CHECKOUT_SUBMITTED);
 
-        OrderResponse recovered = orders.reconcilePayment(order.orderId(), "authorization-recovery-" + order.orderId());
+        OrderViewResponse.Order recovered = orders.reconcilePayment(order.orderId(), "authorization-recovery-" + order.orderId());
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(1);
         assertConserved(stock);
     }
@@ -704,18 +691,18 @@ assertUuidV7(paymentOrderId);
     void acceptsMaximumLengthReconcileAndCancelKeys() {
         String maximumKey = "x".repeat(221);
 
-        CampaignResponse reconcileCampaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse reconcileTicket = join(reconcileCampaign, "buyer-max-reconcile",
+        AdmissionResponse.Campaign reconcileCampaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket reconcileTicket = join(reconcileCampaign, "buyer-max-reconcile",
                 "max-reconcile-ticket");
-        OrderResponse reconcileOrder = orders.startCheckout(reconcileCampaign.campaignId(),
+        OrderViewResponse.Order reconcileOrder = orders.startCheckout(reconcileCampaign.campaignId(),
                 reconcileTicket.ticketId());
         orders.submitPayment(reconcileOrder.orderId());
         assertThatCode(() -> orders.reconcilePayment(reconcileOrder.orderId(), maximumKey))
                 .doesNotThrowAnyException();
 
-        CampaignResponse cancelCampaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse cancelTicket = join(cancelCampaign, "buyer-max-cancel", "max-cancel-ticket");
-        OrderResponse cancelOrder = orders.startCheckout(cancelCampaign.campaignId(), cancelTicket.ticketId());
+        AdmissionResponse.Campaign cancelCampaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket cancelTicket = join(cancelCampaign, "buyer-max-cancel", "max-cancel-ticket");
+        OrderViewResponse.Order cancelOrder = orders.startCheckout(cancelCampaign.campaignId(), cancelTicket.ticketId());
         orders.submitPayment(cancelOrder.orderId());
         assertThatCode(() -> orders.cancel(cancelOrder.orderId(), maximumKey))
                 .doesNotThrowAnyException();
@@ -723,10 +710,10 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void oversizedReconcileAndCancelKeysAreRejectedBeforeProviderPersistence() {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-oversized-key", "oversized-key-ticket");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        OrderResponse pending = orders.submitPayment(order.orderId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-oversized-key", "oversized-key-ticket");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderViewResponse.Order pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
 
         String oversizedKey = "x".repeat(222);
@@ -743,20 +730,20 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void cancellationVoidsRecoveredAuthorizationInsteadOfCapturingIt() {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-cancel", "cancel-key");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-cancel", "cancel-key");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
 
-        OrderResponse pending = orders.submitPayment(order.orderId());
+        OrderViewResponse.Order pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
-        OrderResponse cancelled = orders.cancel(order.orderId(), "cancel-operation-1");
+        OrderViewResponse.Order cancelled = orders.cancel(order.orderId(), "cancel-operation-1");
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
         assertThat(orders.cancel(order.orderId(), "cancel-operation-1")).isEqualTo(cancelled);
 
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isZero();
@@ -765,29 +752,29 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void pendingCancellationRetainsReservationUntilLateAuthorizationIsVoided() {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-pending-cancel", "pending-cancel-key");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        OrderResponse pending = orders.submitPayment(order.orderId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-pending-cancel", "pending-cancel-key");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderViewResponse.Order pending = orders.submitPayment(order.orderId());
         assertThat(pending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
 
         queueOrderStatus("CREATED");
-        OrderResponse cancelPending = orders.cancel(order.orderId(), "cancel-pending-" + order.orderId());
+        OrderViewResponse.Order cancelPending = orders.cancel(order.orderId(), "cancel-pending-" + order.orderId());
 
         assertThat(cancelPending.state()).isEqualTo(OrderState.CANCEL_PENDING);
         assertThat(cancelPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
-        InventoryPoolResponse held = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool held = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(held.reserved()).isEqualTo(1);
         assertThat(held.claimed()).isZero();
         assertConserved(held);
 
         queueOrderStatus("APPROVED");
         queueAuthorizationStatus("CREATED");
-        OrderResponse cancelled = orders.cancel(order.orderId(), "cancel-reconcile-" + order.orderId());
+        OrderViewResponse.Order cancelled = orders.cancel(order.orderId(), "cancel-reconcile-" + order.orderId());
 
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
-        InventoryPoolResponse released = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool released = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(released.available()).isEqualTo(1);
         assertThat(released.reserved()).isZero();
         assertThat(released.claimed()).isZero();
@@ -796,15 +783,15 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void reconciliationEndpointExposesRecoveredPaymentAndInventoryState() throws Exception {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-api-recovery", "api-recovery-key");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-api-recovery", "api-recovery-key");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
 
-        OrderResponse pending = orders.submitPayment(order.orderId());
+        OrderViewResponse.Order pending = orders.submitPayment(order.orderId());
         String providerOrderId = pending.paymentApprovalUrl()
                 .substring(pending.paymentApprovalUrl().lastIndexOf('/') + 1);
         queueAuthorizationStatus("UNKNOWN");
-        OrderResponse unknown = orders.completePaymentApproval(order.orderId(), providerOrderId);
+        OrderViewResponse.Order unknown = orders.completePaymentApproval(order.orderId(), providerOrderId);
         assertThat(unknown.paymentState()).isEqualTo(PaymentState.UNKNOWN);
         mockMvc.perform(post("/api/orders/{orderId}/reconcile", order.orderId())
                         .header("Idempotency-Key", "reconcile-" + order.orderId()))
@@ -813,9 +800,9 @@ assertUuidV7(paymentOrderId);
                         .contains("\"state\":\"PAID\"", "\"paymentState\":\"CAPTURED\"",
                                 "\"paymentAttemptId\":\"" + unknown.paymentAttemptId() + "\""));
 
-        OrderResponse recovered = orders.find(order.orderId());
+        OrderViewResponse.Order recovered = orders.find(order.orderId());
         assertThat(recovered.paymentAttemptId()).isEqualTo(unknown.paymentAttemptId());
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(1);
         assertThat(orders.reconcilePayment(order.orderId(), "reconcile-" + order.orderId()))
                 .isEqualTo(recovered);
@@ -834,9 +821,9 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void cancellationEndpointVoidsPendingAuthorizationAndReleasesInventory() throws Exception {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-api-cancel", "api-cancel-key");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-api-cancel", "api-cancel-key");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
 
         orders.submitPayment(order.orderId());
         mockMvc.perform(post("/api/orders/{orderId}/cancel", order.orderId())
@@ -845,9 +832,9 @@ assertUuidV7(paymentOrderId);
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .contains("\"state\":\"CANCELLED\"", "\"paymentState\":\"VOIDED\""));
 
-        OrderResponse cancelled = orders.find(order.orderId());
+        OrderViewResponse.Order cancelled = orders.find(order.orderId());
         assertThat(cancelled.state()).isEqualTo(OrderState.CANCELLED);
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isZero();
@@ -862,8 +849,8 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void scheduledAdmissionExpiryRemainsInternalAndExpiresDueTickets() {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-queue-expiry", "queue-expiry-key");
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-queue-expiry", "queue-expiry-key");
         clock.advance(Duration.ofMinutes(6));
 
         admissionServiceImpl.expireDueTickets();
@@ -872,19 +859,19 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void unsubmittedCheckoutExpiryReleasesHoldAndExpiresTicket() {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "buyer-expiry", "expiry-key");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "buyer-expiry", "expiry-key");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
         clock.advance(Duration.ofMinutes(10));
         orderServiceImpl.expireDueOrders();
 
-        OrderResponse expired = orders.find(order.orderId());
+        OrderViewResponse.Order expired = orders.find(order.orderId());
         assertThat(expired.state()).isEqualTo(OrderState.EXPIRED);
         assertThat(expired.paymentAttemptId()).isNull();
         assertThat(expired.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
         assertThat(expired.inventoryState()).isEqualTo(ReservationStatus.RELEASED);
         assertThat(expired.ticketState()).isEqualTo(TicketStatus.EXPIRED);
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
         assertConserved(stock);
@@ -892,14 +879,14 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void buyerCannotStartAnotherPaymentWhileAnEarlierCampaignAttemptIsUnresolved() throws Exception {
-        CampaignResponse campaign = openCampaign(2, 2, Duration.ofMinutes(5));
-        QueueTicketResponse firstTicket = join(campaign, "same-buyer", "first-key");
-        QueueTicketResponse secondTicket = join(campaign, "same-buyer", "second-key");
-        OrderResponse first = orders.startCheckout(campaign.campaignId(), firstTicket.ticketId());
-        OrderResponse second = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
-        OrderResponse firstPending = objectMapper.readValue(mockMvc.perform(post("/api/orders/{orderId}/payment", first.orderId()))
+        AdmissionResponse.Campaign campaign = openCampaign(2, 2, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket firstTicket = join(campaign, "same-buyer", "first-key");
+        AdmissionResponse.QueueTicket secondTicket = join(campaign, "same-buyer", "second-key");
+        OrderViewResponse.Order first = orders.startCheckout(campaign.campaignId(), firstTicket.ticketId());
+        OrderViewResponse.Order second = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
+        OrderViewResponse.Order firstPending = objectMapper.readValue(mockMvc.perform(post("/api/orders/{orderId}/payment", first.orderId()))
                         .andExpect(status().isOk())
-                        .andReturn().getResponse().getContentAsString(), OrderResponse.class);
+                        .andReturn().getResponse().getContentAsString(), OrderViewResponse.Order.class);
         assertThat(firstPending.state()).isEqualTo(OrderState.PAYMENT_PENDING);
         assertThat(firstPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
 
@@ -909,19 +896,19 @@ assertUuidV7(paymentOrderId);
 
         String firstProviderOrderId = firstPending.paymentApprovalUrl()
                 .substring(firstPending.paymentApprovalUrl().lastIndexOf('/') + 1);
-        OrderResponse firstPaid = orders.completePaymentApproval(first.orderId(), firstProviderOrderId);
+        OrderViewResponse.Order firstPaid = orders.completePaymentApproval(first.orderId(), firstProviderOrderId);
         assertThat(firstPaid.state()).isEqualTo(OrderState.PAID);
         assertThat(firstPaid.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(orders.find(first.orderId()).state()).isEqualTo(OrderState.PAID);
 
-        OrderResponse secondPending = orders.submitPayment(second.orderId());
+        OrderViewResponse.Order secondPending = orders.submitPayment(second.orderId());
         String secondProviderOrderId = secondPending.paymentApprovalUrl()
                 .substring(secondPending.paymentApprovalUrl().lastIndexOf('/') + 1);
-        OrderResponse secondPaid = orders.completePaymentApproval(second.orderId(), secondProviderOrderId);
+        OrderViewResponse.Order secondPaid = orders.completePaymentApproval(second.orderId(), secondProviderOrderId);
         assertThat(secondPaid.state()).isEqualTo(OrderState.PAID);
         assertThat(secondPaid.paymentState()).isEqualTo(PaymentState.CAPTURED);
         assertThat(orders.find(second.orderId()).state()).isEqualTo(OrderState.PAID);
-        InventoryPoolResponse stock = inventory.find(campaign.sellerId(), campaign.skuId());
+        InventoryResponse.Pool stock = inventory.find(campaign.sellerId(), campaign.skuId());
         assertThat(stock.claimed()).isEqualTo(2);
         assertConserved(stock);
     }
@@ -930,7 +917,7 @@ assertUuidV7(paymentOrderId);
     void salePriceSnapshotFlowsThroughCheckoutCaptureAndRefundAfterWindowCloses() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "sale-" + UUID.randomUUID();
-        ProductResponse product = registerProductSku(sellerId, skuId, 1000, 1);
+        CatalogResponse.Product product = registerProductSku(sellerId, skuId, 1000, 1);
         Instant startsAt = clock.instant().plus(Duration.ofMinutes(5));
         Instant endsAt = startsAt.plus(Duration.ofMinutes(5));
         products.setSkuSalePrice(sellerId, product.productId(), skuId, 800, startsAt, endsAt);
@@ -943,7 +930,7 @@ assertUuidV7(paymentOrderId);
         assertThat(carts.find(buyerRef).items()).singleElement()
                 .satisfies(item -> assertThat(item.priceWon()).isEqualTo(800));
         CheckoutResponse checkout = cartCheckouts.checkout(buyerRef, "sale-checkout-" + UUID.randomUUID());
-        OrderResponse reserved = checkout.orders().getFirst();
+        OrderViewResponse.Order reserved = checkout.orders().getFirst();
         assertThat(checkout.totalWon()).isEqualTo(800);
         UUID orderItemId = jdbc.queryForObject(
                 "SELECT order_item_id FROM order_item WHERE order_id = ?", UUID.class, reserved.orderId());
@@ -952,7 +939,7 @@ assertUuidV7(paymentOrderId);
                 .isEqualTo(800L);
 
         CheckoutResponse paid = completePayPalCheckout(checkout.checkoutId());
-        OrderResponse paidOrder = paid.orders().getFirst();
+        OrderViewResponse.Order paidOrder = paid.orders().getFirst();
         assertThat(paidOrder.state()).isEqualTo(OrderState.PAID);
         assertThat(jdbc.queryForObject(
                 "SELECT gross_amount_won FROM settlement_journal WHERE checkout_id = ?",
@@ -975,11 +962,11 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.refundAmountWon").value(800))
                 .andReturn().getResponse().getContentAsString();
-        OrderRefundResponse refund = objectMapper.readValue(refundBody, OrderRefundResponse.class);
+        RefundResponse.Refund refund = objectMapper.readValue(refundBody, RefundResponse.Refund.class);
         assertThat(jdbc.queryForObject(
                 "SELECT gross_amount_won FROM settlement_journal WHERE source_refund_id = ?",
                 Long.class, refund.refundId())).isEqualTo(800L);
-        InventoryPoolResponse restored = inventory.find(sellerId, skuId);
+        InventoryResponse.Pool restored = inventory.find(sellerId, skuId);
         assertThat(restored.available()).isEqualTo(1);
         assertThat(restored.reserved()).isZero();
         assertThat(restored.claimed()).isZero();
@@ -1032,16 +1019,16 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isConflict());
         assertThat(checkout.totalWon()).isEqualTo(4349);
         assertThat(checkout.orders()).hasSize(2);
-        OrderResponse orderA = checkout.orders().stream()
+        OrderViewResponse.Order orderA = checkout.orders().stream()
                 .filter(order -> order.items().getFirst().sellerId().equals(sellerA)).findFirst().orElseThrow();
-        OrderResponse orderB = checkout.orders().stream()
+        OrderViewResponse.Order orderB = checkout.orders().stream()
                 .filter(order -> order.items().getFirst().sellerId().equals(sellerB)).findFirst().orElseThrow();
         assertThat(orderA.couponDiscountWon()).isEqualTo(101);
         assertThat(orderA.totalPriceWon()).isEqualTo(3899);
         assertThat(orderB.couponDiscountWon()).isEqualTo(50);
         assertThat(orderB.totalPriceWon()).isEqualTo(450);
-        assertThat(orderA.items()).extracting(OrderItemResponse::couponDiscountWon).containsExactly(51L, 50L);
-        assertThat(orderA.items()).extracting(OrderItemResponse::lineTotalWon).containsExactly(1949L, 1950L);
+        assertThat(orderA.items()).extracting(OrderViewResponse.Item::couponDiscountWon).containsExactly(51L, 50L);
+        assertThat(orderA.items()).extracting(OrderViewResponse.Item::lineTotalWon).containsExactly(1949L, 1950L);
 
         CheckoutResponse captured = completePayPalCheckout(checkout.checkoutId());
         assertThat(captured.totalWon()).isEqualTo(4349);
@@ -1077,7 +1064,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.refundAmountWon").value(974))
                 .andReturn().getResponse().getContentAsString();
-        OrderRefundResponse firstRefund = objectMapper.readValue(firstRefundJson, OrderRefundResponse.class);
+        RefundResponse.Refund firstRefund = objectMapper.readValue(firstRefundJson, RefundResponse.Refund.class);
         assertThat(jdbc.queryForObject(
                 "SELECT gross_amount_won FROM settlement_journal WHERE source_refund_id = ?",
                 Long.class, firstRefund.refundId())).isEqualTo(974L);
@@ -1091,7 +1078,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.refundAmountWon").value(975))
                 .andReturn().getResponse().getContentAsString();
-        OrderRefundResponse secondRefund = objectMapper.readValue(secondRefundJson, OrderRefundResponse.class);
+        RefundResponse.Refund secondRefund = objectMapper.readValue(secondRefundJson, RefundResponse.Refund.class);
         assertThat(jdbc.queryForObject(
                 "SELECT gross_amount_won FROM settlement_journal WHERE source_refund_id = ?",
                 Long.class, secondRefund.refundId())).isEqualTo(975L);
@@ -1135,7 +1122,7 @@ assertUuidV7(paymentOrderId);
         clock.set(Instant.parse("2026-01-01T00:00:00Z"));
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "coupon-sale-" + UUID.randomUUID();
-        ProductResponse product = registerProductSku(sellerId, skuId, 1000, 1);
+        CatalogResponse.Product product = registerProductSku(sellerId, skuId, 1000, 1);
         Instant startsAt = clock.instant().minusSeconds(1);
         Instant endsAt = clock.instant().plus(Duration.ofMinutes(10));
         products.setSkuSalePrice(sellerId, product.productId(), skuId, 800, startsAt, endsAt);
@@ -1165,10 +1152,10 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void ticketLookupDoesNotExpireTicketsOrPromoteWaitingBuyers() {
-        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(5));
-        QueueTicketResponse first = join(campaign, "buyer-read-a", "read-key-a");
+        AdmissionResponse.Campaign campaign = openCampaign(2, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket first = join(campaign, "buyer-read-a", "read-key-a");
         clock.advance(Duration.ofMinutes(4));
-        QueueTicketResponse second = join(campaign, "buyer-read-b", "read-key-b");
+        AdmissionResponse.QueueTicket second = join(campaign, "buyer-read-b", "read-key-b");
         clock.advance(Duration.ofMinutes(2));
 
         assertThat(admission.find(campaign.campaignId(), first.ticketId()).status())
@@ -1185,10 +1172,10 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void releasingAnExpiredTicketPreservesExpiryAndPromotesTheNextLiveTicket() {
-        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(2));
-        QueueTicketResponse expired = join(campaign, "buyer-expired-release", "expired-release-key");
+        AdmissionResponse.Campaign campaign = openCampaign(2, 1, Duration.ofMinutes(2));
+        AdmissionResponse.QueueTicket expired = join(campaign, "buyer-expired-release", "expired-release-key");
         clock.advance(Duration.ofMinutes(1));
-        QueueTicketResponse waiting = join(campaign, "buyer-waiting-release", "waiting-release-key");
+        AdmissionResponse.QueueTicket waiting = join(campaign, "buyer-waiting-release", "waiting-release-key");
         clock.advance(Duration.ofMinutes(1).plusSeconds(1));
 
         admission.releaseCheckoutSlot(campaign.campaignId(), expired.ticketId(), CheckoutSlotReleaseReason.BUYER_CANCELLED);
@@ -1200,10 +1187,10 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void expiredQueueTicketRemainsAnIdempotentTombstoneAndNewKeyRejoinsAtTail() {
-        CampaignResponse campaign = openCampaign(2, 1, Duration.ofMinutes(2));
-        QueueTicketResponse first = join(campaign, "buyer-reentry", "first-key");
+        AdmissionResponse.Campaign campaign = openCampaign(2, 1, Duration.ofMinutes(2));
+        AdmissionResponse.QueueTicket first = join(campaign, "buyer-reentry", "first-key");
         clock.advance(Duration.ofMinutes(1));
-        QueueTicketResponse second = join(campaign, "buyer-next", "second-key");
+        AdmissionResponse.QueueTicket second = join(campaign, "buyer-next", "second-key");
         clock.advance(Duration.ofMinutes(1).plusSeconds(1));
         admissionServiceImpl.expireDueTickets();
 
@@ -1211,7 +1198,7 @@ assertUuidV7(paymentOrderId);
         assertThat(admission.find(campaign.campaignId(), second.ticketId()).status())
                 .isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
         assertThat(join(campaign, "buyer-reentry", "first-key").ticketId()).isEqualTo(first.ticketId());
-        QueueTicketResponse reentry = join(campaign, "buyer-reentry", "new-key");
+        AdmissionResponse.QueueTicket reentry = join(campaign, "buyer-reentry", "new-key");
         assertThat(reentry.sequence()).isEqualTo(3);
         assertThat(reentry.status()).isEqualTo(TicketStatus.WAITING);
     }
@@ -1220,16 +1207,16 @@ assertUuidV7(paymentOrderId);
     void sellerCanRemoveAndClearCartItemsWithoutChangingOtherCartsOrInventory() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         UUID otherSellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("clear-cart", null));
-        ProductResponse otherProduct = products.createProduct(otherSellerId,
-                new CreateProductRequest("other-clear-cart", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("clear-cart", null));
+        CatalogResponse.Product otherProduct = products.createProduct(otherSellerId,
+                new ProductRequest.CreateProduct("other-clear-cart", null));
         String firstSku = "clear-a-" + UUID.randomUUID();
         String secondSku = "clear-b-" + UUID.randomUUID();
         String otherSellerSku = "other-clear-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(secondSku, 200, 3));
         products.registerSku(otherSellerId, otherProduct.productId(),
-                new RegisterSellerSkuRequest(otherSellerSku, 300, 5));
+                new ProductRequest.RegisterSellerSku(otherSellerSku, 300, 5));
         String buyerRef = "clear-buyer-" + UUID.randomUUID();
         String otherBuyerRef = "clear-other-buyer-" + UUID.randomUUID();
 
@@ -1294,13 +1281,13 @@ assertUuidV7(paymentOrderId);
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM purchase_order WHERE seller_id IN (?, ?)",
                 Integer.class, sellerId, otherSellerId)).isZero();
-        List<InventoryPoolResponse> stock = List.of(
+        List<InventoryResponse.Pool> stock = List.of(
                 inventory.find(sellerId, firstSku),
                 inventory.find(sellerId, secondSku),
                 inventory.find(otherSellerId, otherSellerSku));
-        assertThat(stock).extracting(InventoryPoolResponse::available).containsExactly(4L, 3L, 5L);
-        assertThat(stock).extracting(InventoryPoolResponse::reserved).containsExactly(0L, 0L, 0L);
-        assertThat(stock).extracting(InventoryPoolResponse::claimed).containsExactly(0L, 0L, 0L);
+        assertThat(stock).extracting(InventoryResponse.Pool::available).containsExactly(4L, 3L, 5L);
+        assertThat(stock).extracting(InventoryResponse.Pool::reserved).containsExactly(0L, 0L, 0L);
+        assertThat(stock).extracting(InventoryResponse.Pool::claimed).containsExactly(0L, 0L, 0L);
         stock.forEach(BuyerFlowIntegrationTest::assertConserved);
     }
 
@@ -1309,15 +1296,15 @@ assertUuidV7(paymentOrderId);
     void concurrentFirstCartUpdatesAcrossSellersCreateOneBuyerCart() throws Exception {
         UUID firstSeller = sellers.createSeller().sellerId();
         UUID secondSeller = sellers.createSeller().sellerId();
-        ProductResponse firstProduct = products.createProduct(firstSeller,
-                new CreateProductRequest("first-cart-race-a", null));
-        ProductResponse secondProduct = products.createProduct(secondSeller,
-                new CreateProductRequest("first-cart-race-b", null));
+        CatalogResponse.Product firstProduct = products.createProduct(firstSeller,
+                new ProductRequest.CreateProduct("first-cart-race-a", null));
+        CatalogResponse.Product secondProduct = products.createProduct(secondSeller,
+                new ProductRequest.CreateProduct("first-cart-race-b", null));
         String skuId = "first-cart-race-" + UUID.randomUUID();
         products.registerSku(firstSeller, firstProduct.productId(),
-                new RegisterSellerSkuRequest(skuId, 100, 2));
+                new ProductRequest.RegisterSellerSku(skuId, 100, 2));
         products.registerSku(secondSeller, secondProduct.productId(),
-                new RegisterSellerSkuRequest(skuId, 200, 2));
+                new ProductRequest.RegisterSellerSku(skuId, 200, 2));
         String buyerRef = "first-cart-race-buyer-" + UUID.randomUUID();
         CyclicBarrier start = new CyclicBarrier(3);
         var workers = Executors.newFixedThreadPool(2);
@@ -1354,11 +1341,11 @@ assertUuidV7(paymentOrderId);
     @Test
     void sellerCartCheckoutSnapshotsCurrentPriceAndReservesAllSkuLines() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("cart-product", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("cart-product", null));
         String firstSku = "cart-a-" + UUID.randomUUID();
         String secondSku = "cart-b-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(secondSku, 200, 3));
         String buyerRef = "cart-buyer-" + UUID.randomUUID();
 
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
@@ -1384,7 +1371,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
 
         assertThat(order.source().name()).isEqualTo("CART");
         assertThat(order.campaignId()).isNull();
@@ -1395,11 +1382,11 @@ assertUuidV7(paymentOrderId);
         assertThat(order.items()).extracting(item -> item.quantity()).containsExactly(2, 1);
         assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
 
-        InventoryPoolResponse firstStock = inventory.find(sellerId, firstSku);
+        InventoryResponse.Pool firstStock = inventory.find(sellerId, firstSku);
         assertThat(firstStock.available()).isEqualTo(2);
         assertThat(firstStock.reserved()).isEqualTo(2);
         assertConserved(firstStock);
-        InventoryPoolResponse secondStock = inventory.find(sellerId, secondSku);
+        InventoryResponse.Pool secondStock = inventory.find(sellerId, secondSku);
         assertThat(secondStock.available()).isEqualTo(2);
         assertThat(secondStock.reserved()).isEqualTo(1);
         assertConserved(secondStock);
@@ -1420,11 +1407,11 @@ assertUuidV7(paymentOrderId);
     @Test
     void cartCheckoutRollsBackEveryReservationWhenOneSkuIsUnavailable() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("limited-cart", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("limited-cart", null));
         String availableSku = "available-" + UUID.randomUUID();
         String scarceSku = "scarce-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(availableSku, 100, 1));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(scarceSku, 200, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(availableSku, 100, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(scarceSku, 200, 1));
         String buyerRef = "rollback-buyer-" + UUID.randomUUID();
 
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
@@ -1464,11 +1451,11 @@ assertUuidV7(paymentOrderId);
     void buyerWideCheckoutAllocatesSameSkuAcrossSellersAndClearsBuyerCart() throws Exception {
         UUID firstSeller = sellers.createSeller().sellerId();
         UUID secondSeller = sellers.createSeller().sellerId();
-        ProductResponse firstProduct = products.createProduct(firstSeller, new CreateProductRequest("same-sku-a", null));
-        ProductResponse secondProduct = products.createProduct(secondSeller, new CreateProductRequest("same-sku-b", null));
+        CatalogResponse.Product firstProduct = products.createProduct(firstSeller, new ProductRequest.CreateProduct("same-sku-a", null));
+        CatalogResponse.Product secondProduct = products.createProduct(secondSeller, new ProductRequest.CreateProduct("same-sku-b", null));
         String sku = "shared-" + UUID.randomUUID();
-        products.registerSku(firstSeller, firstProduct.productId(), new RegisterSellerSkuRequest(sku, 100, 2));
-        products.registerSku(secondSeller, secondProduct.productId(), new RegisterSellerSkuRequest(sku, 250, 3));
+        products.registerSku(firstSeller, firstProduct.productId(), new ProductRequest.RegisterSellerSku(sku, 100, 2));
+        products.registerSku(secondSeller, secondProduct.productId(), new ProductRequest.RegisterSellerSku(sku, 250, 3));
         String buyerRef = "multi-seller-" + UUID.randomUUID();
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
             mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, sku)
@@ -1480,7 +1467,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(json, CheckoutResponse.class);
         assertThat(checkout.orders()).hasSize(2);
-        assertThat(checkout.orders()).extracting(OrderResponse::items).hasSize(2);
+        assertThat(checkout.orders()).extracting(OrderViewResponse.Order::items).hasSize(2);
         assertThat(jdbc.queryForList("SELECT seller_id FROM purchase_order WHERE checkout_id = ?", UUID.class,
                 checkout.checkoutId())).containsExactlyInAnyOrder(firstSeller, secondSeller);
         assertThat(inventory.find(firstSeller, sku).reserved()).isEqualTo(1);
@@ -1533,35 +1520,35 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void buyerOrderHistoryPagesCampaignAndMultiSellerOrdersAndEnforcesOwnership() throws Exception {
-        AccountTokenResponse buyer = createBuyerAccount("order-history-" + UUID.randomUUID() + "@example.com");
+        AccountResponse.Token buyer = createBuyerAccount("order-history-" + UUID.randomUUID() + "@example.com");
         authenticateBuyer(buyer);
         UUID firstSeller = sellers.createSeller().sellerId();
         UUID secondSeller = sellers.createSeller().sellerId();
-        ProductResponse firstProduct = products.createProduct(firstSeller,
-                new CreateProductRequest("history-first-" + UUID.randomUUID(), null));
-        ProductResponse secondProduct = products.createProduct(secondSeller,
-                new CreateProductRequest("history-second-" + UUID.randomUUID(), null));
+        CatalogResponse.Product firstProduct = products.createProduct(firstSeller,
+                new ProductRequest.CreateProduct("history-first-" + UUID.randomUUID(), null));
+        CatalogResponse.Product secondProduct = products.createProduct(secondSeller,
+                new ProductRequest.CreateProduct("history-second-" + UUID.randomUUID(), null));
         String sku = "history-" + UUID.randomUUID();
-        products.registerSku(firstSeller, firstProduct.productId(), new RegisterSellerSkuRequest(sku, 100, 2));
-        products.registerSku(secondSeller, secondProduct.productId(), new RegisterSellerSkuRequest(sku, 250, 2));
+        products.registerSku(firstSeller, firstProduct.productId(), new ProductRequest.RegisterSellerSku(sku, 100, 2));
+        products.registerSku(secondSeller, secondProduct.productId(), new ProductRequest.RegisterSellerSku(sku, 250, 2));
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
             carts.setItemQuantity(sellerId, buyer.buyerRef(), sku, 1);
         }
         CheckoutResponse cartCheckout = cartCheckouts.checkout(
                 buyer.buyerRef(), "history-checkout-" + UUID.randomUUID());
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, buyer.buyerRef(),
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, buyer.buyerRef(),
                 "history-campaign-ticket-" + UUID.randomUUID());
-        OrderResponse campaignOrder = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderViewResponse.Order campaignOrder = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
 
-        List<OrderHistoryPageResponse.Entry> history = new ArrayList<>();
+        List<OrderViewResponse.HistoryPage.Entry> history = new ArrayList<>();
         String cursor = null;
         for (int pageNumber = 0; pageNumber < 3; pageNumber++) {
             var request = get("/api/buyers/{buyerRef}/orders", buyer.buyerRef()).param("limit", "1");
             if (cursor != null) request.param("cursor", cursor);
             String body = mockMvc.perform(request).andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
-            OrderHistoryPageResponse page = objectMapper.readValue(body, OrderHistoryPageResponse.class);
+            OrderViewResponse.HistoryPage page = objectMapper.readValue(body, OrderViewResponse.HistoryPage.class);
             assertThat(page.orders()).hasSize(1);
             history.add(page.orders().getFirst());
             cursor = page.nextCursor();
@@ -1569,23 +1556,23 @@ assertUuidV7(paymentOrderId);
             else assertThat(cursor).isNull();
         }
 
-        assertThat(history.stream().map(OrderHistoryPageResponse.Entry::orderId).toList())
+        assertThat(history.stream().map(OrderViewResponse.HistoryPage.Entry::orderId).toList())
                 .containsExactlyInAnyOrder(
                         cartCheckout.orders().get(0).orderId(), cartCheckout.orders().get(1).orderId(),
                         campaignOrder.orderId());
-        assertThat(history).extracting(OrderHistoryPageResponse.Entry::createdAt)
+        assertThat(history).extracting(OrderViewResponse.HistoryPage.Entry::createdAt)
                 .containsOnly(clock.instant());
         for (int index = 1; index < history.size(); index++) {
             assertThat(history.get(index - 1).orderId()).isGreaterThan(history.get(index).orderId());
         }
         assertThat(history.stream().filter(entry -> entry.source() == OrderSource.CART)
-                .map(OrderHistoryPageResponse.Entry::checkoutId).toList())
+                .map(OrderViewResponse.HistoryPage.Entry::checkoutId).toList())
                 .containsOnly(cartCheckout.checkoutId());
-        OrderHistoryPageResponse.Entry campaignHistory = history.stream()
+        OrderViewResponse.HistoryPage.Entry campaignHistory = history.stream()
                 .filter(entry -> entry.source() == OrderSource.CAMPAIGN).findFirst().orElseThrow();
         assertThat(campaignHistory.checkoutId()).isNull();
 
-        AccountTokenResponse otherBuyer = createBuyerAccount(
+        AccountResponse.Token otherBuyer = createBuyerAccount(
                 "order-history-other-" + UUID.randomUUID() + "@example.com");
         authenticateBuyer(otherBuyer);
         mockMvc.perform(get("/api/buyers/{buyerRef}/orders", buyer.buyerRef()).param("limit", "1"))
@@ -1598,15 +1585,15 @@ assertUuidV7(paymentOrderId);
     void unknownMultiSellerCheckoutHoldsEveryReservationAndReconcilesSameAttempt() throws Exception {
         UUID firstSeller = sellers.createSeller().sellerId();
         UUID secondSeller = sellers.createSeller().sellerId();
-        ProductResponse firstProduct = products.createProduct(firstSeller,
-                new CreateProductRequest("unknown-multi-a", null));
-        ProductResponse secondProduct = products.createProduct(secondSeller,
-                new CreateProductRequest("unknown-multi-b", null));
+        CatalogResponse.Product firstProduct = products.createProduct(firstSeller,
+                new ProductRequest.CreateProduct("unknown-multi-a", null));
+        CatalogResponse.Product secondProduct = products.createProduct(secondSeller,
+                new ProductRequest.CreateProduct("unknown-multi-b", null));
         String sku = "unknown-multi-" + UUID.randomUUID();
         products.registerSku(firstSeller, firstProduct.productId(),
-                new RegisterSellerSkuRequest(sku, 100, 2));
+                new ProductRequest.RegisterSellerSku(sku, 100, 2));
         products.registerSku(secondSeller, secondProduct.productId(),
-                new RegisterSellerSkuRequest(sku, 250, 3));
+                new ProductRequest.RegisterSellerSku(sku, 250, 3));
         String buyerRef = "unknown-multi-buyer-" + UUID.randomUUID();
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
             mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
@@ -1628,7 +1615,7 @@ assertUuidV7(paymentOrderId);
         assertThat(unknown.state().name()).isEqualTo("PAYMENT_PENDING");
         assertThat(unknown.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(unknown.paymentAttemptId()).isNotNull();
-        List<OrderResponse> unknownOrders = unknown.orders();
+        List<OrderViewResponse.Order> unknownOrders = unknown.orders();
         assertThat(unknownOrders).hasSize(2);
         assertThat(unknownOrders).allSatisfy(order -> {
             assertThat(order.state()).isEqualTo(OrderState.PAYMENT_PENDING);
@@ -1636,7 +1623,7 @@ assertUuidV7(paymentOrderId);
             assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         });
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
-            InventoryPoolResponse held = inventory.find(sellerId, sku);
+            InventoryResponse.Pool held = inventory.find(sellerId, sku);
             assertThat(held.reserved()).isEqualTo(1);
             assertThat(held.claimed()).isZero();
             assertConserved(held);
@@ -1663,7 +1650,7 @@ assertUuidV7(paymentOrderId);
             assertThat(order.inventoryState()).isEqualTo(ReservationStatus.CLAIMED);
         });
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
-            InventoryPoolResponse claimed = inventory.find(sellerId, sku);
+            InventoryResponse.Pool claimed = inventory.find(sellerId, sku);
             assertThat(claimed.available()).isEqualTo(sellerId.equals(firstSeller) ? 1 : 2);
             assertThat(claimed.reserved()).isZero();
             assertThat(claimed.claimed()).isEqualTo(1);
@@ -1672,7 +1659,7 @@ assertUuidV7(paymentOrderId);
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM settlement_journal WHERE checkout_id = ?",
                 Integer.class, checkout.checkoutId())).isEqualTo(1);
-        for (OrderResponse order : recovered.orders()) {
+        for (OrderViewResponse.Order order : recovered.orders()) {
             assertThat(jdbc.queryForObject(
                     "SELECT COUNT(*) FROM settlement_seller_allocation WHERE order_id = ?",
                     Integer.class, order.orderId())).isEqualTo(1);
@@ -1682,15 +1669,15 @@ assertUuidV7(paymentOrderId);
     void pendingCheckoutCancellationRetainsReservationsUntilAuthorizationIsVoided() throws Exception {
         UUID firstSeller = sellers.createSeller().sellerId();
         UUID secondSeller = sellers.createSeller().sellerId();
-        ProductResponse firstProduct = products.createProduct(firstSeller,
-                new CreateProductRequest("cancel-pending-a", null));
-        ProductResponse secondProduct = products.createProduct(secondSeller,
-                new CreateProductRequest("cancel-pending-b", null));
+        CatalogResponse.Product firstProduct = products.createProduct(firstSeller,
+                new ProductRequest.CreateProduct("cancel-pending-a", null));
+        CatalogResponse.Product secondProduct = products.createProduct(secondSeller,
+                new ProductRequest.CreateProduct("cancel-pending-b", null));
         String sku = "cancel-pending-" + UUID.randomUUID();
         products.registerSku(firstSeller, firstProduct.productId(),
-                new RegisterSellerSkuRequest(sku, 100, 2));
+                new ProductRequest.RegisterSellerSku(sku, 100, 2));
         products.registerSku(secondSeller, secondProduct.productId(),
-                new RegisterSellerSkuRequest(sku, 250, 3));
+                new ProductRequest.RegisterSellerSku(sku, 250, 3));
         String buyerRef = "cancel-pending-buyer-" + UUID.randomUUID();
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
             mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
@@ -1718,7 +1705,7 @@ assertUuidV7(paymentOrderId);
             assertThat(order.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
         });
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
-            InventoryPoolResponse held = inventory.find(sellerId, sku);
+            InventoryResponse.Pool held = inventory.find(sellerId, sku);
             assertThat(held.reserved()).isEqualTo(1);
             assertThat(held.claimed()).isZero();
             assertConserved(held);
@@ -1735,7 +1722,7 @@ assertUuidV7(paymentOrderId);
                 assertThat(order.state()).isEqualTo(OrderState.CANCELLED));
         assertThat(captureRequestCount()).isEqualTo(capturesBefore);
         for (UUID sellerId : List.of(firstSeller, secondSeller)) {
-            InventoryPoolResponse released = inventory.find(sellerId, sku);
+            InventoryResponse.Pool released = inventory.find(sellerId, sku);
             assertThat(released.available()).isEqualTo(sellerId.equals(firstSeller) ? 2 : 3);
             assertThat(released.reserved()).isZero();
             assertThat(released.claimed()).isZero();
@@ -1766,19 +1753,19 @@ assertUuidV7(paymentOrderId);
             CheckoutResponse first = firstAttempt.get(20, TimeUnit.SECONDS);
             CheckoutResponse second = secondAttempt.get(20, TimeUnit.SECONDS);
             assertThat(second.checkoutId()).isEqualTo(first.checkoutId());
-            assertThat(second.orders()).extracting(OrderResponse::orderId)
-                    .containsExactlyElementsOf(first.orders().stream().map(OrderResponse::orderId).toList());
+            assertThat(second.orders()).extracting(OrderViewResponse.Order::orderId)
+                    .containsExactlyElementsOf(first.orders().stream().map(OrderViewResponse.Order::orderId).toList());
             assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?",
                     Integer.class, buyerRef)).isEqualTo(1);
             assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE checkout_id = ?",
                     Integer.class, first.checkoutId())).isEqualTo(1);
-            OrderResponse order = first.orders().getFirst();
+            OrderViewResponse.Order order = first.orders().getFirst();
             assertThat(jdbc.queryForObject(
                     "SELECT count(*) FROM inventory_reservation WHERE order_id = ? AND status = 'RESERVED'",
                     Integer.class, order.orderId())).isEqualTo(1);
             assertThat(carts.find(buyerRef).items()).isEmpty();
 
-            InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+            InventoryResponse.Pool stock = inventory.find(sellerId, skuId);
             assertThat(stock.available()).isEqualTo(1);
             assertThat(stock.reserved()).isEqualTo(1);
             assertThat(stock.claimed()).isZero();
@@ -1789,9 +1776,9 @@ assertUuidV7(paymentOrderId);
     @Test
     void buyerCheckoutReplayRequiresUnchangedCartFacts() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("checkout-idempotency", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("checkout-idempotency", null));
         String skuId = "idempotent-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 150, 4));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 150, 4));
         String buyerRef = "checkout-idempotency-" + UUID.randomUUID();
         String idempotencyKey = "buyer-checkout-" + UUID.randomUUID();
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, skuId)
@@ -1808,8 +1795,8 @@ assertUuidV7(paymentOrderId);
                 post("/api/buyers/{buyerRef}/cart/checkout", buyerRef).header("Idempotency-Key", idempotencyKey))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
         assertThat(replay.checkoutId()).isEqualTo(first.checkoutId());
-        assertThat(replay.orders()).extracting(OrderResponse::orderId)
-                .containsExactlyElementsOf(first.orders().stream().map(OrderResponse::orderId).toList());
+        assertThat(replay.orders()).extracting(OrderViewResponse.Order::orderId)
+                .containsExactlyElementsOf(first.orders().stream().map(OrderViewResponse.Order::orderId).toList());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order WHERE checkout_id = ?",
                 Integer.class, first.checkoutId())).isEqualTo(1);
 
@@ -1834,12 +1821,12 @@ assertUuidV7(paymentOrderId);
     void buyerWideCheckoutRollsBackAllSellersWhenLaterSellerIsOutOfStock() throws Exception {
         UUID stockedSeller = sellers.createSeller().sellerId();
         UUID emptySeller = sellers.createSeller().sellerId();
-        ProductResponse stockedProduct = products.createProduct(stockedSeller, new CreateProductRequest("stocked", null));
-        ProductResponse emptyProduct = products.createProduct(emptySeller, new CreateProductRequest("empty", null));
+        CatalogResponse.Product stockedProduct = products.createProduct(stockedSeller, new ProductRequest.CreateProduct("stocked", null));
+        CatalogResponse.Product emptyProduct = products.createProduct(emptySeller, new ProductRequest.CreateProduct("empty", null));
         String firstSku = "rollback-shared-" + UUID.randomUUID();
         String secondSku = "rollback-scarce-" + UUID.randomUUID();
-        products.registerSku(stockedSeller, stockedProduct.productId(), new RegisterSellerSkuRequest(firstSku, 100, 1));
-        products.registerSku(emptySeller, emptyProduct.productId(), new RegisterSellerSkuRequest(secondSku, 200, 0));
+        products.registerSku(stockedSeller, stockedProduct.productId(), new ProductRequest.RegisterSellerSku(firstSku, 100, 1));
+        products.registerSku(emptySeller, emptyProduct.productId(), new ProductRequest.RegisterSellerSku(secondSku, 200, 0));
         String buyerRef = "multi-rollback-" + UUID.randomUUID();
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, stockedSeller, firstSku)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
@@ -1863,11 +1850,11 @@ assertUuidV7(paymentOrderId);
     @Test
     void cartCancellationIsIdempotentAndReleasesEverySkuOnce() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("cancel-cart", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("cancel-cart", null));
         String firstSku = "cancel-a-" + UUID.randomUUID();
         String secondSku = "cancel-b-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(secondSku, 200, 3));
         String buyerRef = "cancel-buyer-" + UUID.randomUUID();
 
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
@@ -1890,7 +1877,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
         CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
                 post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
@@ -1912,7 +1899,7 @@ assertUuidV7(paymentOrderId);
         assertThat(cancelled.paymentAttemptId()).isEqualTo(pending.paymentAttemptId());
         assertThat(cancelled.paymentState()).isEqualTo(PaymentState.VOIDED);
         assertThat(inventory.findReservations(order.orderId()))
-                .extracting(ReservationResponse::status)
+                .extracting(InventoryResponse.Reservation::status)
                 .containsExactly(ReservationStatus.RELEASED, ReservationStatus.RELEASED);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempt WHERE checkout_id = ?",
                 Integer.class, checkout.checkoutId())).isEqualTo(1);
@@ -1926,7 +1913,7 @@ assertUuidV7(paymentOrderId);
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "encoded-owner-" + UUID.randomUUID();
         registerProductSku(sellerId, skuId, 100, 1);
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, skuId, Duration.ofMinutes(5)));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, skuId, Duration.ofMinutes(5)));
         authenticateBuyer(createBuyerAccount("encoded-owner-" + UUID.randomUUID() + "@example.com"));
 
         mockMvc.perform(get("/api/sellers/{sellerId}/products", sellerId))
@@ -1941,9 +1928,9 @@ assertUuidV7(paymentOrderId);
     @Test
     void anonymousPayPalCancellationRequiresMatchingPersistedState() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("cancel-callback", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("cancel-callback", null));
         String sku = "cancel-callback-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 100, 2));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(sku, 100, 2));
         String buyerRef = "cancel-callback-buyer-" + UUID.randomUUID();
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, sku)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
@@ -1954,7 +1941,7 @@ assertUuidV7(paymentOrderId);
                         .header("Idempotency-Key", "cancel-callback-" + UUID.randomUUID()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
         assertThat(checkout.state()).isEqualTo(BuyerCheckoutState.RESERVED);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
         assertThat(inventory.find(sellerId, sku).reserved()).isEqualTo(1);
 
         CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
@@ -1985,7 +1972,7 @@ assertUuidV7(paymentOrderId);
         assertThat(cancelled.state()).isEqualTo(BuyerCheckoutState.CANCELLED);
         assertThat(cancelled.paymentAttemptId()).isEqualTo(pending.paymentAttemptId());
         assertThat(inventory.findReservations(order.orderId()))
-                .extracting(ReservationResponse::status).containsOnly(ReservationStatus.RELEASED);
+                .extracting(InventoryResponse.Reservation::status).containsOnly(ReservationStatus.RELEASED);
         assertThat(inventory.find(sellerId, sku).reserved()).isZero();
 
         CheckoutResponse replay = objectMapper.readValue(mockMvc.perform(
@@ -2016,16 +2003,16 @@ assertUuidV7(paymentOrderId);
     }
 
     private void assertCancellationCallbackDidNotChangeState(UUID checkoutId, CheckoutResponse pending,
-            OrderResponse order, UUID sellerId, String sku, PaymentResponse persistedPayment) {
+            OrderViewResponse.Order order, UUID sellerId, String sku, PaymentResponse persistedPayment) {
         CheckoutResponse unchanged = checkoutLifecycle.find(checkoutId);
         assertThat(unchanged.state()).isEqualTo(BuyerCheckoutState.PAYMENT_PENDING);
         assertThat(unchanged.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(unchanged.paymentAttemptId()).isEqualTo(pending.paymentAttemptId());
-        assertThat(unchanged.orders()).extracting(OrderResponse::state).containsOnly(OrderState.PAYMENT_PENDING);
-        assertThat(unchanged.orders()).extracting(OrderResponse::inventoryState)
+        assertThat(unchanged.orders()).extracting(OrderViewResponse.Order::state).containsOnly(OrderState.PAYMENT_PENDING);
+        assertThat(unchanged.orders()).extracting(OrderViewResponse.Order::inventoryState)
                 .containsOnly(ReservationStatus.RESERVED);
         assertThat(inventory.findReservations(order.orderId()))
-                .extracting(ReservationResponse::status).containsOnly(ReservationStatus.RESERVED);
+                .extracting(InventoryResponse.Reservation::status).containsOnly(ReservationStatus.RESERVED);
         assertThat(inventory.find(sellerId, sku).reserved()).isEqualTo(1);
         PaymentResponse currentPayment = payments.findCheckout(checkoutId);
         assertThat(currentPayment.state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
@@ -2036,11 +2023,11 @@ assertUuidV7(paymentOrderId);
     @Test
     void cartCheckoutExpiryReleasesEverySkuReservation() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("expiry-cart", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("expiry-cart", null));
         String firstSku = "expiry-a-" + UUID.randomUUID();
         String secondSku = "expiry-b-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 4));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 3));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(firstSku, 100, 4));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(secondSku, 200, 3));
         String buyerRef = "expiry-buyer-" + UUID.randomUUID();
 
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
@@ -2063,7 +2050,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
 
         clock.advance(Duration.ofMinutes(11));
         assertThat(checkoutLifecycle.expireDueCheckouts()).isGreaterThanOrEqualTo(1);
@@ -2072,11 +2059,11 @@ assertUuidV7(paymentOrderId);
         assertThat(expiredCheckout.state().name()).isEqualTo("EXPIRED");
         assertThat(expiredCheckout.paymentAttemptId()).isNull();
         assertThat(expiredCheckout.paymentState()).isEqualTo(PaymentState.NOT_STARTED);
-        OrderResponse expired = orders.find(order.orderId());
+        OrderViewResponse.Order expired = orders.find(order.orderId());
         assertThat(expired.state()).isEqualTo(OrderState.EXPIRED);
         assertThat(expired.inventoryState()).isEqualTo(ReservationStatus.RELEASED);
         assertThat(inventory.findReservations(order.orderId()))
-                .extracting(ReservationResponse::status)
+                .extracting(InventoryResponse.Reservation::status)
                 .containsExactly(ReservationStatus.RELEASED, ReservationStatus.RELEASED);
         assertInventoryRestored(sellerId, firstSku, 4);
         assertInventoryRestored(sellerId, secondSku, 3);
@@ -2085,13 +2072,13 @@ assertUuidV7(paymentOrderId);
     @Test
     void terminalCartOrderCanBeReorderedWithCurrentCatalogAndIdempotentCartMerge() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("reorder-product", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("reorder-product", null));
         String firstSku = "reorder-a-" + UUID.randomUUID();
         String secondSku = "reorder-b-" + UUID.randomUUID();
         String existingSku = "existing-cart-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(firstSku, 100, 8));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(secondSku, 200, 6));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(existingSku, 300, 4));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(firstSku, 100, 8));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(secondSku, 200, 6));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(existingSku, 300, 4));
         String buyerRef = "reorder-buyer-" + UUID.randomUUID();
 
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}",
@@ -2114,7 +2101,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
-        OrderResponse sourceOrder = checkout.orders().getFirst();
+        OrderViewResponse.Order sourceOrder = checkout.orders().getFirst();
         assertThat(checkoutLifecycle.cancel(checkout.checkoutId(), "reorder-cancel-" + checkout.checkoutId())
                 .state().name()).isEqualTo("CANCELLED");
         products.updateSkuPrice(sellerId, product.productId(), firstSku, 150);
@@ -2188,13 +2175,13 @@ assertUuidV7(paymentOrderId);
     @Test
     void reorderWithOneUnavailableSkuLeavesCartAndIdempotencyRecordUnchanged() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("reorder-rollback", null));
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("reorder-rollback", null));
         String availableSku = "reorder-available-" + UUID.randomUUID();
         String scarceSku = "reorder-scarce-" + UUID.randomUUID();
         String existingSku = "reorder-existing-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(availableSku, 100, 2));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(scarceSku, 200, 1));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(existingSku, 300, 2));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(availableSku, 100, 2));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(scarceSku, 200, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(existingSku, 300, 2));
         String buyerRef = "reorder-rollback-buyer-" + UUID.randomUUID();
 
         mockMvc.perform(put("/api/buyers/{buyerRef}/cart/items/{sellerId}/{skuId}", buyerRef, sellerId, availableSku)
@@ -2215,7 +2202,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse sourceCheckout = objectMapper.readValue(sourceJson, CheckoutResponse.class);
-        OrderResponse sourceOrder = sourceCheckout.orders().getFirst();
+        OrderViewResponse.Order sourceOrder = sourceCheckout.orders().getFirst();
         checkoutLifecycle.cancel(sourceCheckout.checkoutId(),
                 "rollback-reorder-cancel-" + sourceCheckout.checkoutId());
 
@@ -2233,7 +2220,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse competitorCheckout = objectMapper.readValue(competitorJson, CheckoutResponse.class);
-        OrderResponse competitorOrder = competitorCheckout.orders().getFirst();
+        OrderViewResponse.Order competitorOrder = competitorCheckout.orders().getFirst();
         CheckoutResponse paidCompetitor = completePayPalCheckout(competitorCheckout.checkoutId());
         assertThat(paidCompetitor.state().name()).isEqualTo("PAID");
 
@@ -2278,7 +2265,7 @@ assertUuidV7(paymentOrderId);
                         .header("Idempotency-Key", "fulfillment-checkout-" + UUID.randomUUID()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/fulfillment", sellerId, order.orderId())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"IN_PROGRESS\"}"))
                 .andExpect(status().isNotFound());
@@ -2292,9 +2279,9 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start",
                         UUID.randomUUID(), order.orderId())).andExpect(status().isConflict());
-        OrderFulfillmentResponse started = objectMapper.readValue(mockMvc.perform(
+        OrderViewResponse.Fulfillment started = objectMapper.readValue(mockMvc.perform(
                         post("/api/sellers/{sellerId}/orders/{orderId}/fulfillment/start", sellerId, order.orderId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderFulfillmentResponse.class);
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderViewResponse.Fulfillment.class);
         assertThat(started.status()).isEqualTo(FulfillmentStatus.IN_PROGRESS);
         UUID orderItemId = jdbc.queryForObject("SELECT order_item_id FROM order_item WHERE order_id=?", UUID.class, order.orderId());
         mockMvc.perform(post("/api/sellers/{sellerId}/orders/{orderId}/shipments", sellerId, order.orderId())
@@ -2305,15 +2292,15 @@ assertUuidV7(paymentOrderId);
         String shipmentsJson = mockMvc.perform(get("/api/buyers/{buyerRef}/orders/{orderId}/shipments",
                         buyerRef, order.orderId()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        OrderShipmentResponse[] shipments = objectMapper.readValue(shipmentsJson, OrderShipmentResponse[].class);
+        OrderViewResponse.Shipment[] shipments = objectMapper.readValue(shipmentsJson, OrderViewResponse.Shipment[].class);
         assertThat(shipments).hasSize(1);
         UUID shipmentId = shipments[0].shipmentId();
         mockMvc.perform(put("/api/sellers/{sellerId}/orders/{orderId}/shipments/{shipmentId}/delivery",
                         sellerId, order.orderId(), shipmentId)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DELIVERED"));
-        OrderFulfillmentResponse delivered = objectMapper.readValue(mockMvc.perform(
+        OrderViewResponse.Fulfillment delivered = objectMapper.readValue(mockMvc.perform(
                         get("/api/orders/{orderId}/fulfillment", order.orderId()))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderFulfillmentResponse.class);
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), OrderViewResponse.Fulfillment.class);
         assertThat(delivered.status()).isEqualTo(FulfillmentStatus.DELIVERED);
         assertThat(orders.find(order.orderId()).state()).isEqualTo(OrderState.PAID);
     }
@@ -2337,7 +2324,7 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         CheckoutResponse checkout = objectMapper.readValue(checkoutJson, CheckoutResponse.class);
-        OrderResponse order = checkout.orders().getFirst();
+        OrderViewResponse.Order order = checkout.orders().getFirst();
         CheckoutResponse pending = objectMapper.readValue(mockMvc.perform(
                         post("/api/checkouts/{checkoutId}/payment", checkout.checkoutId()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), CheckoutResponse.class);
@@ -2366,11 +2353,11 @@ assertUuidV7(paymentOrderId);
                         .param("token", token))
                 .andExpect(status().is5xxServerError());
         assertThat(captureRequestCount()).isEqualTo(captureRequestsBeforeReturn + 1);
-            OrderResponse unchanged = orders.find(order.orderId());
+            OrderViewResponse.Order unchanged = orders.find(order.orderId());
             assertThat(unchanged.state()).isEqualTo(OrderState.PAYMENT_PENDING);
             assertThat(unchanged.paymentState()).isEqualTo(PaymentState.CAPTURED);
             assertThat(unchanged.inventoryState()).isEqualTo(ReservationStatus.RESERVED);
-            InventoryPoolResponse unchangedStock = inventory.find(sellerId, skuId);
+            InventoryResponse.Pool unchangedStock = inventory.find(sellerId, skuId);
             assertThat(unchangedStock.available()).isEqualTo(1);
             assertThat(unchangedStock.reserved()).isEqualTo(1);
             assertThat(unchangedStock.claimed()).isZero();
@@ -2386,7 +2373,7 @@ assertUuidV7(paymentOrderId);
 
         CheckoutResponse recoveredCheckout = checkoutLifecycle.reconcile(checkout.checkoutId(),
                 "downstream-retry-" + order.orderId());
-        OrderResponse recovered = recoveredCheckout.orders().getFirst();
+        OrderViewResponse.Order recovered = recoveredCheckout.orders().getFirst();
         assertThat(captureRequestCount()).isEqualTo(captureRequestsBeforeReturn + 1);
         assertThat(recovered.state()).isEqualTo(OrderState.PAID);
         assertThat(recovered.paymentState()).isEqualTo(PaymentState.CAPTURED);
@@ -2406,7 +2393,7 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void sellerCanRegisterProductAndSkuThroughCatalogApi() throws Exception {
-        AccountTokenResponse account = createBuyerAccount("seller-api@example.com");
+        AccountResponse.Token account = createBuyerAccount("seller-api@example.com");
         Instant tokenTime = Instant.now();
         Jwt testJwt = Jwt.withTokenValue("test-token")
                 .header("alg", "none")
@@ -2419,7 +2406,7 @@ assertUuidV7(paymentOrderId);
         String sellerJson = mockMvc.perform(post("/api/sellers"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        SellerResponse seller = objectMapper.readValue(sellerJson, SellerResponse.class);
+        CatalogResponse.Seller seller = objectMapper.readValue(sellerJson, CatalogResponse.Seller.class);
         UUID sellerId = seller.sellerId();
 
         String productJson = mockMvc.perform(post("/api/sellers/{sellerId}/products", sellerId)
@@ -2429,7 +2416,7 @@ assertUuidV7(paymentOrderId);
                                 """))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        ProductResponse product = objectMapper.readValue(productJson, ProductResponse.class);
+        CatalogResponse.Product product = objectMapper.readValue(productJson, CatalogResponse.Product.class);
 
         mockMvc.perform(post("/api/sellers/{sellerId}/products/{productId}/skus",
                         sellerId, product.productId())
@@ -2465,13 +2452,13 @@ assertUuidV7(paymentOrderId);
                                 """))
                 .andExpect(status().isOk());
 
-        InventoryPoolResponse stock = inventory.find(sellerId, "seller-api-sku");
+        InventoryResponse.Pool stock = inventory.find(sellerId, "seller-api-sku");
         assertThat(stock.initialCapacity()).isEqualTo(5);
     }
 
     @Test
     void passwordResetRevokesExistingRefreshSession() throws Exception {
-        AccountTokenResponse account = createBuyerAccount("reset-api@example.com");
+        AccountResponse.Token account = createBuyerAccount("reset-api@example.com");
         String resetRequest = objectMapper.writeValueAsString(Map.of("email", "reset-api@example.com"));
         mockMvc.perform(post("/api/auth/password-reset/request")
                         .contentType(MediaType.APPLICATION_JSON).content(resetRequest))
@@ -2496,10 +2483,10 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void totpEnrollmentRequiresASecondFactorBeforeIssuingAccessTokens() throws Exception {
-        AccountTokenResponse account = createBuyerAccount("mfa-api@example.com");
-        MfaEnrollmentResponse enrollment = accountService.startMfaEnrollment(account.accountId());
+        AccountResponse.Token account = createBuyerAccount("mfa-api@example.com");
+        AccountResponse.MfaEnrollment enrollment = accountService.startMfaEnrollment(account.accountId());
         String enrollmentCode = new TOTPGenerator.Builder(enrollment.secret()).withClock(clock).build().now();
-        MfaRecoveryCodesResponse recovery = accountService.confirmMfaEnrollment(account.accountId(), enrollmentCode);
+        AccountResponse.MfaRecoveryCodes recovery = accountService.confirmMfaEnrollment(account.accountId(), enrollmentCode);
         assertThat(recovery.recoveryCodes()).hasSize(10);
         clock.advance(Duration.ofSeconds(30));
 
@@ -2508,7 +2495,7 @@ assertUuidV7(paymentOrderId);
                         .content("{\"email\":\"mfa-api@example.com\",\"password\":\"long-enough-password\"}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        AccountLoginResponse login = objectMapper.readValue(loginJson, AccountLoginResponse.class);
+        AccountResponse.Login login = objectMapper.readValue(loginJson, AccountResponse.Login.class);
         assertThat(login.mfaRequired()).isTrue();
         assertThat(login.tokens()).isNull();
         String challengeCode = new TOTPGenerator.Builder(enrollment.secret()).withClock(clock).build().now();
@@ -2520,26 +2507,26 @@ assertUuidV7(paymentOrderId);
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty());
     }
-    private CampaignResponse openCampaign(int initialStock, int maxActiveCheckouts, Duration ticketTtl) {
+    private AdmissionResponse.Campaign openCampaign(int initialStock, int maxActiveCheckouts, Duration ticketTtl) {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "sku-" + UUID.randomUUID();
         registerProductSku(sellerId, skuId, 100, initialStock);
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, maxActiveCheckouts));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, maxActiveCheckouts));
         return openCampaign(sellerId, skuId, ticketTtl);
     }
 
-    private CampaignResponse openCampaign(UUID sellerId, String skuId, Duration ticketTtl) {
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(sellerId, skuId, ticketTtl));
+    private AdmissionResponse.Campaign openCampaign(UUID sellerId, String skuId, Duration ticketTtl) {
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, skuId, ticketTtl));
         return campaigns.open(campaign.campaignId());
     }
-    private ProductResponse registerProductSku(UUID sellerId, String skuId, long priceWon, int initialStock) {
-        ProductResponse product = products.createProduct(sellerId, new CreateProductRequest("Product " + skuId, null));
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, priceWon, initialStock));
+    private CatalogResponse.Product registerProductSku(UUID sellerId, String skuId, long priceWon, int initialStock) {
+        CatalogResponse.Product product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Product " + skuId, null));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, priceWon, initialStock));
         return product;
     }
 
-    private QueueTicketResponse join(CampaignResponse campaign, String buyerRef, String key) {
-        return admission.join(new JoinQueueRequest(campaign.campaignId(), campaign.skuId(), buyerRef, key));
+    private AdmissionResponse.QueueTicket join(AdmissionResponse.Campaign campaign, String buyerRef, String key) {
+        return admission.join(new AdmissionRequest.JoinQueue(campaign.campaignId(), campaign.skuId(), buyerRef, key));
     }
 
     private static void assertUuidV7(UUID id) {
@@ -2547,11 +2534,11 @@ assertUuidV7(paymentOrderId);
         assertThat(id.version()).isEqualTo(7);
     }
 
-    private static void assertConserved(InventoryPoolResponse stock) {
+    private static void assertConserved(InventoryResponse.Pool stock) {
         assertThat(stock.available() + stock.reserved() + stock.claimed()).isEqualTo(stock.initialCapacity());
     }
     private void assertInventoryRestored(UUID sellerId, String skuId, int initialStock) {
-        InventoryPoolResponse stock = inventory.find(sellerId, skuId);
+        InventoryResponse.Pool stock = inventory.find(sellerId, skuId);
         assertThat(stock.available()).isEqualTo(initialStock);
         assertThat(stock.reserved()).isZero();
         assertThat(stock.claimed()).isZero();
@@ -2560,13 +2547,13 @@ assertUuidV7(paymentOrderId);
 
     @Test
     void duplicateVerifiedCaptureWebhookDoesNotDuplicateLedgerOrInventoryEffects() {
-        CampaignResponse campaign = openCampaign(1, 1, Duration.ofMinutes(5));
-        QueueTicketResponse ticket = join(campaign, "webhook-buyer", "webhook-key");
-        OrderResponse order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
-        OrderResponse awaitingApproval = orders.submitPayment(order.orderId());
+        AdmissionResponse.Campaign campaign = openCampaign(1, 1, Duration.ofMinutes(5));
+        AdmissionResponse.QueueTicket ticket = join(campaign, "webhook-buyer", "webhook-key");
+        OrderViewResponse.Order order = orders.startCheckout(campaign.campaignId(), ticket.ticketId());
+        OrderViewResponse.Order awaitingApproval = orders.submitPayment(order.orderId());
         String providerOrderId = awaitingApproval.paymentApprovalUrl()
                 .substring(awaitingApproval.paymentApprovalUrl().lastIndexOf('/') + 1);
-        OrderResponse paid = orders.completePaymentApproval(order.orderId(), providerOrderId);
+        OrderViewResponse.Order paid = orders.completePaymentApproval(order.orderId(), providerOrderId);
         PaymentResponse captured = payments.find(order.orderId());
 
         String eventId = "WH-" + UUID.randomUUID();

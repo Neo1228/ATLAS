@@ -1,7 +1,7 @@
 package com.atlas.application.controller.catalog;
 
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.application.service.SellerOnboardingService;
-import com.atlas.catalog.dto.response.SellerResponse;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -22,7 +22,7 @@ public class SellerController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public SellerResponse create(@AuthenticationPrincipal Jwt jwt) {
+    public CatalogResponse.Seller create(@AuthenticationPrincipal Jwt jwt) {
         return onboarding.createSeller(UUID.fromString(jwt.getSubject()));
     }
 }

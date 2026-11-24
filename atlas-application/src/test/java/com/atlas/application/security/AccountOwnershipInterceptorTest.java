@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.account.exception.AccountException;
 import com.atlas.account.service.AccountService;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderService;
@@ -99,7 +99,7 @@ class AccountOwnershipInterceptorTest {
         request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/campaigns/{campaignId}/open");
         request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
                 Map.of("campaignId", campaignId.toString()));
-        when(campaigns.find(campaignId)).thenReturn(new CampaignResponse(campaignId, sellerId, null, null, null));
+        when(campaigns.find(campaignId)).thenReturn(new AdmissionResponse.Campaign(campaignId, sellerId, null, null, null));
         when(accounts.ownsSeller(ACCOUNT_ID, sellerId)).thenReturn(false);
 
         AccountException error = assertThrows(AccountException.class,

@@ -1,7 +1,7 @@
 package com.atlas.application.controller.account;
 
-import com.atlas.account.dto.request.SuspendAccountRequest;
-import com.atlas.account.dto.response.AccountSuspensionActionResponse;
+import com.atlas.account.dto.response.AccountResponse;
+import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.service.AccountService;
 import java.security.Principal;
 import java.util.List;
@@ -43,7 +43,7 @@ public class AccountSuspensionOperatorController {
     public void suspend(Principal principal,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable UUID accountId,
-            @Valid @RequestBody SuspendAccountRequest request) {
+            @Valid @RequestBody AccountRequest.SuspendAccount request) {
         accounts.suspendAccount(accountId, request.reason(), actor(principal), idempotencyKey);
     }
 
@@ -52,12 +52,12 @@ public class AccountSuspensionOperatorController {
     public void release(Principal principal,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable UUID accountId,
-            @Valid @RequestBody SuspendAccountRequest request) {
+            @Valid @RequestBody AccountRequest.SuspendAccount request) {
         accounts.releaseAccount(accountId, request.reason(), actor(principal), idempotencyKey);
     }
 
     @GetMapping("/{accountId}/suspension/history")
-    public List<AccountSuspensionActionResponse> history(
+    public List<AccountResponse.SuspensionAction> history(
             @PathVariable UUID accountId,
             @RequestParam(defaultValue = "20") int limit) {
         return accounts.suspensionHistory(accountId, limit);

@@ -1,24 +1,22 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.order.dto.response.CartItemResponse;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.response.SellerCouponResponse;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.catalog.service.SellerSkuService;
-import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
-import com.atlas.inventory.dto.response.InventoryLocationResponse;
-import com.atlas.inventory.dto.response.ReservationResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
 import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.request.SellerCouponRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.LocationReservationResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.BuyerCheckout;
@@ -178,11 +176,11 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             List<CartItemResponse> items = seller.getValue().stream()
                     .sorted(Comparator.comparing(CartItemResponse::skuId)).toList();
             List<String> skuIds = items.stream().map(CartItemResponse::skuId).toList();
-            List<SellerSkuResponse> found = sellerSkus.findOrderableSellerSkus(
+            List<CatalogResponse.SellerSku> found = sellerSkus.findOrderableSellerSkus(
                     seller.getKey(), skuIds, ProductSalesChannel.ONLINE_STORE, now);
-            Map<String, SellerSkuResponse> bySku = new HashMap<>();
+            Map<String, CatalogResponse.SellerSku> bySku = new HashMap<>();
             if (found != null) {
-                for (SellerSkuResponse sku : found) {
+                for (CatalogResponse.SellerSku sku : found) {
                     if (sku == null || sku.skuId() == null
                             || bySku.putIfAbsent(sku.skuId(), sku) != null) {
                         throw new OrderException(OrderException.Code.CONFLICT,
@@ -194,7 +192,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                     .map(item -> snapshot(seller.getKey(), item, bySku.get(item.skuId())))
                     .toList();
             String couponCode = couponCodes.get(seller.getKey());
-            SellerCouponResponse coupon = couponCode == null ? null
+            CatalogResponse.SellerCoupon coupon = couponCode == null ? null
                     : sellerCoupons.findActive(seller.getKey(), couponCode, now);
             if (coupon != null) {
                 if (lines.stream().anyMatch(line -> line.sku().effectivePriceWon() < line.sku().priceWon())) {
@@ -231,14 +229,14 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                     line.cartItem().quantity(), line.sku().effectivePriceWon(), line.couponDiscountWon())).toList();
             orderItems.saveAll(snapshots);
 
-            List<ReserveInventoryBatchRequest.Item> reservations = seller.lines().stream()
-                    .map(line -> new ReserveInventoryBatchRequest.Item(seller.sellerId(),
+            List<InventoryRequest.ReserveInventoryBatch.Item> reservations = seller.lines().stream()
+                    .map(line -> new InventoryRequest.ReserveInventoryBatch.Item(seller.sellerId(),
                             line.sku().skuId(), line.cartItem().quantity()))
                     .toList();
             UUID locationId;
             if (locationReservationEnabled()) {
                 Map<String, Integer> required = new TreeMap<>();
-                for (ReserveInventoryBatchRequest.Item item : reservations) {
+                for (InventoryRequest.ReserveInventoryBatch.Item item : reservations) {
                     required.merge(item.skuId(), item.quantity(), Math::addExact);
                 }
                 List<LocationAllocationPolicy.Plan> plan = LocationAllocationPolicy.plan(required,
@@ -260,13 +258,13 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                                 .map(line -> new Item(seller.sellerId(), line.getKey(), line.getValue()))
                                 .toList())).toList());
                 String reservationKey = reservationKey(savedChild.orderId());
-                LocationReservationResponse staged = requireLocationReservations()
+                ReservationWorkflowResponse.LocationReservation staged = requireLocationReservations()
                         .stage(reservationKey, request);
                 savedChild.setReservationWorkflowId(staged.workflowId());
             } else {
-                List<ReservationResponse> savedReservations = inventory.reserveAll(
-                        new ReserveInventoryBatchRequest(savedChild.orderId(), null, reservations));
-                locationId = savedReservations.stream().map(ReservationResponse::locationId)
+                List<InventoryResponse.Reservation> savedReservations = inventory.reserveAll(
+                        new InventoryRequest.ReserveInventoryBatch(savedChild.orderId(), null, reservations));
+                locationId = savedReservations.stream().map(InventoryResponse.Reservation::locationId)
                         .filter(Objects::nonNull).findFirst()
                         .orElseThrow(() -> new OrderException(OrderException.Code.CONFLICT,
                                 "Inventory reservations did not include a fulfillment location"));
@@ -292,7 +290,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         BuyerCheckout checkout = checkouts.findById(checkoutId).orElseThrow(() -> new OrderException(
                 OrderException.Code.NOT_FOUND, "Buyer checkout not found"));
         List<PurchaseOrder> childOrders = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
-        List<OrderResponse> childResponses = childOrders.isEmpty() ? List.of()
+        List<OrderViewResponse.Order> childResponses = childOrders.isEmpty() ? List.of()
                 : orderService.findAll(childOrders.stream().map(PurchaseOrder::orderId).toList());
         return new CheckoutResponse(checkout.checkoutId(), checkout.buyerRef(), checkout.state(),
                 checkout.totalWon(), childResponses);
@@ -403,7 +401,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         return grouped;
     }
 
-    private static Line snapshot(UUID sellerId, CartItemResponse cartItem, SellerSkuResponse sku) {
+    private static Line snapshot(UUID sellerId, CartItemResponse cartItem, CatalogResponse.SellerSku sku) {
         if (sku == null || !sellerId.equals(sku.sellerId()) || sku.skuId() == null
                 || !cartItem.skuId().equals(sku.skuId()) || sku.productId() == null
                 || !Objects.equals(cartItem.productId(), sku.productId()) || sku.productName() == null
@@ -427,13 +425,13 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             .comparing(Fact::sellerId).thenComparing(Fact::skuId).thenComparingInt(Fact::quantity).thenComparingLong(Fact::priceWon);
 
     private record Fact(UUID sellerId, String skuId, int quantity, long priceWon) { }
-    private record Line(CartItemResponse cartItem, SellerSkuResponse sku, long couponDiscountWon) {
+    private record Line(CartItemResponse cartItem, CatalogResponse.SellerSku sku, long couponDiscountWon) {
         private long lineTotalWon() {
             return Math.subtractExact(Math.multiplyExact(sku.effectivePriceWon(), cartItem.quantity()),
                     couponDiscountWon);
         }
     }
-    private record SellerLines(UUID sellerId, List<Line> lines, SellerCouponResponse coupon) { }
+    private record SellerLines(UUID sellerId, List<Line> lines, CatalogResponse.SellerCoupon coupon) { }
     /**
      * 장바구니 Seller별로 활성 location의 원격 판매 가능 수량을 조회한다. 원격 예약만 재고를 차감하므로
      * 로컬 inventory_pool은 원격 모드에서 판매량을 반영하지 못한다. 조회 실패 location은 이번 계획에서 제외한다.
@@ -448,7 +446,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         Set<UUID> unreachable = new HashSet<>();
         skusBySeller.forEach((sellerId, skus) -> {
             List<LocationAllocationPolicy.Candidate> sellerCandidates = new ArrayList<>();
-            for (InventoryLocationResponse location : inventory.findLocations(sellerId)) {
+            for (InventoryResponse.Location location : inventory.findLocations(sellerId)) {
                 if (!location.active()) continue;
                 Map<String, Long> available = new TreeMap<>();
                 try {

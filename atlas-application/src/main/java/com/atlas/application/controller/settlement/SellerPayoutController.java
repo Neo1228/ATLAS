@@ -1,7 +1,6 @@
 package com.atlas.application.controller.settlement;
 
-import com.atlas.settlement.dto.response.PayoutSummaryResponse;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.time.Instant;
 import java.util.List;
@@ -33,18 +32,18 @@ public class SellerPayoutController {
     private final SettlementPayoutService payouts;
 
     @GetMapping
-    public List<SellerPayoutResponse> list(@PathVariable UUID sellerId,
+    public List<PayoutResponse.SellerPayout> list(@PathVariable UUID sellerId,
             @RequestParam(defaultValue = "20") int limit) {
         return payouts.findBySeller(sellerId, limit);
     }
 
     @GetMapping("/balance")
-    public PayoutSummaryResponse balance(@PathVariable UUID sellerId) {
+    public PayoutResponse.Summary balance(@PathVariable UUID sellerId) {
         return payouts.summary(sellerId);
     }
 
     @GetMapping("/{payoutId}")
-    public SellerPayoutResponse find(@PathVariable UUID sellerId, @PathVariable UUID payoutId) {
+    public PayoutResponse.SellerPayout find(@PathVariable UUID sellerId, @PathVariable UUID payoutId) {
         return payouts.findForSeller(sellerId, payoutId);
     }
 
@@ -56,7 +55,7 @@ public class SellerPayoutController {
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public SellerPayoutResponse request(@PathVariable UUID sellerId,
+    public PayoutResponse.SellerPayout request(@PathVariable UUID sellerId,
             @RequestParam Instant periodStart,
             @RequestParam Instant periodEnd,
             @RequestHeader("Idempotency-Key") String idempotencyKey) {

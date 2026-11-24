@@ -1,6 +1,6 @@
 package com.atlas.payment.provider.exchange;
 
-import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
+import com.atlas.payment.dto.response.FxResponse;
 import com.atlas.payment.exception.PaymentException;
 import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
@@ -43,7 +43,7 @@ public class BokEcosExchangeRateProvider implements ExchangeRateProvider {
     }
 
     @Override
-    public ExchangeRateQuoteResponse latestUsdKrwRate() {
+    public FxResponse.ExchangeRateQuote latestUsdKrwRate() {
         if (apiKey.isBlank()) throw unavailable();
         LocalDate today = LocalDate.now(KOREA_ZONE);
         String from = today.minusDays(13).format(ECOS_DATE);
@@ -56,11 +56,11 @@ public class BokEcosExchangeRateProvider implements ExchangeRateProvider {
                     .body(JsonNode.class);
             JsonNode rows = response == null ? null : response.path("StatisticSearch").path("row");
             if (rows == null || !rows.isArray()) throw unavailable();
-            ExchangeRateQuoteResponse latest = StreamSupport.stream(rows.spliterator(), false)
+            FxResponse.ExchangeRateQuote latest = StreamSupport.stream(rows.spliterator(), false)
                     .map(BokEcosExchangeRateProvider::quote)
                     .filter(Objects::nonNull)
                     .filter(rate -> !rate.asOfDate().isAfter(today))
-                    .max(Comparator.comparing(ExchangeRateQuoteResponse::asOfDate))
+                    .max(Comparator.comparing(FxResponse.ExchangeRateQuote::asOfDate))
                     .orElseThrow(BokEcosExchangeRateProvider::unavailable);
             if (ChronoUnit.DAYS.between(latest.asOfDate(), today) > MAX_RATE_AGE_DAYS) throw unavailable();
             return latest;
@@ -70,11 +70,11 @@ public class BokEcosExchangeRateProvider implements ExchangeRateProvider {
         }
     }
 
-    private static ExchangeRateQuoteResponse quote(JsonNode row) {
+    private static FxResponse.ExchangeRateQuote quote(JsonNode row) {
         try {
             LocalDate asOfDate = LocalDate.parse(row.path("TIME").asString(), ECOS_DATE);
             BigDecimal wonPerUsd = new BigDecimal(row.path("DATA_VALUE").asString());
-            return wonPerUsd.signum() <= 0 ? null : new ExchangeRateQuoteResponse(wonPerUsd, SOURCE, asOfDate);
+            return wonPerUsd.signum() <= 0 ? null : new FxResponse.ExchangeRateQuote(wonPerUsd, SOURCE, asOfDate);
         } catch (RuntimeException invalidRow) {
             return null;
         }

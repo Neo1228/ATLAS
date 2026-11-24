@@ -1,9 +1,7 @@
 package com.atlas.catalog.service.impl;
 
-import com.atlas.catalog.dto.request.CreateProductCategoryRequest;
-import com.atlas.catalog.dto.request.UpdateProductCategoryRequest;
-import com.atlas.catalog.dto.request.UpdateProductCategoryParentRequest;
-import com.atlas.catalog.dto.response.ProductCategoryResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductCategoryRequest;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.ProductCategory;
@@ -25,7 +23,7 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
 
     @Override
     @Transactional
-    public ProductCategoryResponse createCategory(UUID sellerId, CreateProductCategoryRequest request) {
+    public CatalogResponse.ProductCategory createCategory(UUID sellerId, ProductCategoryRequest.Create request) {
         if (sellerId == null || request == null || request.code() == null || request.code().isBlank()
                 || request.code().length() > 128 || request.name() == null || request.name().isBlank()) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product category configuration");
@@ -47,15 +45,15 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ProductCategoryResponse> listCategories(UUID sellerId) {
+    public List<CatalogResponse.ProductCategory> listCategories(UUID sellerId) {
         requireSeller(sellerId);
         return categories.findAllBySellerIdOrderByCode(sellerId).stream().map(ProductCategoryServiceImpl::toResponse).toList();
     }
 
     @Override
     @Transactional
-    public ProductCategoryResponse updateCategoryParent(UUID sellerId, UUID categoryId,
-            UpdateProductCategoryParentRequest request) {
+    public CatalogResponse.ProductCategory updateCategoryParent(UUID sellerId, UUID categoryId,
+            ProductCategoryRequest.UpdateParent request) {
         if (sellerId == null) throw new CatalogException(Code.INVALID_REQUEST, "Seller ID required");
         if (request != null && request.parentCategoryId() == null) {
             throw new CatalogException(Code.INVALID_REQUEST, "Parent category ID required");
@@ -83,8 +81,8 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
 
     @Override
     @Transactional
-    public ProductCategoryResponse updateCategoryName(UUID sellerId, UUID categoryId,
-            UpdateProductCategoryRequest request) {
+    public CatalogResponse.ProductCategory updateCategoryName(UUID sellerId, UUID categoryId,
+            ProductCategoryRequest.Update request) {
         if (request == null || request.name() == null || request.name().isBlank()) {
             throw new CatalogException(Code.INVALID_REQUEST, "Invalid product category name");
         }
@@ -103,8 +101,8 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
         if (!sellers.existsById(sellerId)) throw new CatalogException(Code.NOT_FOUND, "Unknown seller: " + sellerId);
     }
 
-    private static ProductCategoryResponse toResponse(ProductCategory category) {
-        return new ProductCategoryResponse(category.getCategoryId(), category.getSellerId(), category.getCode(),
+    private static CatalogResponse.ProductCategory toResponse(ProductCategory category) {
+        return new CatalogResponse.ProductCategory(category.getCategoryId(), category.getSellerId(), category.getCode(),
                 category.getName(), category.getParentCategoryId());
     }
 }

@@ -7,14 +7,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.order.dto.request.OrderShipmentRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderShipmentResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.service.CartCheckoutService;
@@ -142,8 +141,8 @@ class SplitAllocationCheckoutIntegrationTest extends PayPalIntegrationTestSuppor
                 .isInstanceOf(OrderException.class).hasMessageContaining("specify a fulfillment location");
         assertThatThrownBy(() -> shipments.create(shipment(orderId, itemA, W2)))
                 .isInstanceOf(OrderException.class).hasMessageContaining("allocated to the fulfillment location");
-        OrderShipmentResponse fromW1 = shipments.create(shipment(orderId, itemA, W1));
-        OrderShipmentResponse fromW2 = shipments.create(shipment(orderId, itemB, W2));
+        OrderViewResponse.Shipment fromW1 = shipments.create(shipment(orderId, itemA, W1));
+        OrderViewResponse.Shipment fromW2 = shipments.create(shipment(orderId, itemB, W2));
 
         assertThat(fromW1.fulfillmentLocationId()).isEqualTo(W1);
         assertThat(fromW2.fulfillmentLocationId()).isEqualTo(W2);
@@ -151,9 +150,9 @@ class SplitAllocationCheckoutIntegrationTest extends PayPalIntegrationTestSuppor
                 .isEqualTo("SHIPPED");
     }
 
-    private OrderShipmentRequest shipment(UUID orderId, UUID orderItemId, UUID location) {
-        return new OrderShipmentRequest(seller, orderId, "ship-" + UUID.randomUUID(), null, null,
-                List.of(new OrderShipmentRequest.Item(orderItemId, 1)), location);
+    private OrderRequest.Shipment shipment(UUID orderId, UUID orderItemId, UUID location) {
+        return new OrderRequest.Shipment(seller, orderId, "ship-" + UUID.randomUUID(), null, null,
+                List.of(new OrderRequest.Shipment.Item(orderItemId, 1)), location);
     }
 
     private static UUID seller;
@@ -204,10 +203,10 @@ class SplitAllocationCheckoutIntegrationTest extends PayPalIntegrationTestSuppor
     }
 
     private String sku(UUID seller, String label) {
-        ProductResponse product = products.createProduct(seller,
-                new CreateProductRequest("exp1-" + label + "-" + UUID.randomUUID(), null));
+        CatalogResponse.Product product = products.createProduct(seller,
+                new ProductRequest.CreateProduct("exp1-" + label + "-" + UUID.randomUUID(), null));
         String sku = "exp1-" + label + "-" + UUID.randomUUID();
-        products.registerSku(seller, product.productId(), new RegisterSellerSkuRequest(sku, 100, 0));
+        products.registerSku(seller, product.productId(), new ProductRequest.RegisterSellerSku(sku, 100, 0));
         return sku;
     }
 

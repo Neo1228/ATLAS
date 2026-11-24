@@ -7,11 +7,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
-import com.atlas.inventorylocation.dto.request.InventoryCancellationRequest;
-import com.atlas.inventorylocation.dto.request.InventoryReservationRequest;
-import com.atlas.inventorylocation.dto.request.InventoryReservationRequest.Item;
-import com.atlas.inventorylocation.dto.request.LocationStockRequest;
-import com.atlas.inventorylocation.dto.response.InventoryReservationResponse;
+import com.atlas.inventorylocation.dto.response.LocationResponse;
+import com.atlas.inventorylocation.dto.request.LocationRequest;
+import com.atlas.inventorylocation.dto.request.LocationRequest.Reservation.Item;
 import com.atlas.inventorylocation.service.InventoryReservationService;
 import com.atlas.inventorylocation.exception.InventoryLocationException;
 import java.sql.Timestamp;
@@ -184,7 +182,7 @@ class InventoryReservationIntegrationTest {
     @Test
     void claimAndReleaseRaceHasOneWinnerAndPreservesStock() throws Exception {
         seedStock("race-sku", 1);
-        InventoryReservationResponse reservation = inventory.reserve(FULFILLMENT_LOCATION_ID,
+        LocationResponse.Reservation reservation = inventory.reserve(FULFILLMENT_LOCATION_ID,
                 "claim-release-" + UUID.randomUUID(), request(UUID.randomUUID(), new Item(SELLER_ID, "race-sku", 1)));
         CountDownLatch start = new CountDownLatch(1);
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
@@ -216,7 +214,7 @@ class InventoryReservationIntegrationTest {
     @Test
     void expiryWorkerAndLateClaimRaceCannotBothReleaseAndClaim() throws Exception {
         seedStock("expiry-sku", 3);
-        InventoryReservationResponse reservation = inventory.reserve(FULFILLMENT_LOCATION_ID,
+        LocationResponse.Reservation reservation = inventory.reserve(FULFILLMENT_LOCATION_ID,
                 "expiry-race-" + UUID.randomUUID(), request(UUID.randomUUID(), new Item(SELLER_ID, "expiry-sku", 2)));
         jdbc.update("UPDATE inventory_reservation SET expires_at = ? WHERE reservation_id = ?",
                 Timestamp.from(Instant.now().minus(Duration.ofSeconds(1))), reservation.reservationId());
@@ -269,8 +267,8 @@ class InventoryReservationIntegrationTest {
         UUID orderId = UUID.randomUUID();
         String key = "cancel-before-reserve-" + UUID.randomUUID();
 
-        InventoryReservationResponse cancelled = inventory.cancel(FULFILLMENT_LOCATION_ID, key,
-                new InventoryCancellationRequest(orderId));
+        LocationResponse.Reservation cancelled = inventory.cancel(FULFILLMENT_LOCATION_ID, key,
+                new LocationRequest.Cancellation(orderId));
 
         assertThat(cancelled.status()).isEqualTo("CANCELLED");
         assertThat(cancelled.items()).isEmpty();
@@ -281,8 +279,8 @@ class InventoryReservationIntegrationTest {
                 .satisfies(exception -> assertThat(((InventoryLocationException) exception).code())
                         .isEqualTo(InventoryLocationException.Code.RESERVATION_CANCELLED));
 
-        InventoryReservationResponse replay = inventory.cancel(FULFILLMENT_LOCATION_ID, key,
-                new InventoryCancellationRequest(orderId));
+        LocationResponse.Reservation replay = inventory.cancel(FULFILLMENT_LOCATION_ID, key,
+                new LocationRequest.Cancellation(orderId));
         assertThat(replay.reservationId()).isEqualTo(cancelled.reservationId());
         assertThat(replay.replayed()).isTrue();
         assertStock("cancel-first-sku", 1, 1, 0);
@@ -306,10 +304,10 @@ class InventoryReservationIntegrationTest {
                     return "TOMBSTONED";
                 }
             });
-            Future<InventoryReservationResponse> cancel = executor.submit(() -> {
+            Future<LocationResponse.Reservation> cancel = executor.submit(() -> {
                 if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start gate timed out");
                 return inventory.cancel(FULFILLMENT_LOCATION_ID, key,
-                        new InventoryCancellationRequest(orderId));
+                        new LocationRequest.Cancellation(orderId));
             });
             start.countDown();
             assertThat(reserve.get(10, TimeUnit.SECONDS)).isIn("RESERVED", "TOMBSTONED");
@@ -330,11 +328,11 @@ class InventoryReservationIntegrationTest {
         seedStock(secondSeller, "shared-sku", 3);
         UUID orderA = UUID.randomUUID();
         UUID orderB = UUID.randomUUID();
-        InventoryReservationResponse a = inventory.reserve(FULFILLMENT_LOCATION_ID, "seller-a-" + UUID.randomUUID(),
+        LocationResponse.Reservation a = inventory.reserve(FULFILLMENT_LOCATION_ID, "seller-a-" + UUID.randomUUID(),
                 request(orderA, new Item(SELLER_ID, "shared-sku", 1)));
-        InventoryReservationResponse replayA = inventory.reserve(FULFILLMENT_LOCATION_ID, a.idempotencyKey(),
+        LocationResponse.Reservation replayA = inventory.reserve(FULFILLMENT_LOCATION_ID, a.idempotencyKey(),
                 request(orderA, new Item(SELLER_ID, "shared-sku", 1)));
-        InventoryReservationResponse b = inventory.reserve(FULFILLMENT_LOCATION_ID, "seller-b-" + UUID.randomUUID(),
+        LocationResponse.Reservation b = inventory.reserve(FULFILLMENT_LOCATION_ID, "seller-b-" + UUID.randomUUID(),
                 request(orderB, new Item(secondSeller, "shared-sku", 2)));
         assertThat(replayA.replayed()).isTrue();
         assertThat(a.items().getFirst().sellerId()).isEqualTo(SELLER_ID);
@@ -346,11 +344,11 @@ class InventoryReservationIntegrationTest {
 
         UUID cancelOrderId = UUID.randomUUID();
         String cancelKey = "cancel-seller-b-" + UUID.randomUUID();
-        InventoryReservationResponse cancel = inventory.reserve(FULFILLMENT_LOCATION_ID, cancelKey,
+        LocationResponse.Reservation cancel = inventory.reserve(FULFILLMENT_LOCATION_ID, cancelKey,
                 request(cancelOrderId, new Item(secondSeller, "shared-sku", 1)));
-        inventory.cancel(FULFILLMENT_LOCATION_ID, cancelKey, new InventoryCancellationRequest(cancelOrderId));
+        inventory.cancel(FULFILLMENT_LOCATION_ID, cancelKey, new LocationRequest.Cancellation(cancelOrderId));
         assertThat(inventory.findReservation(FULFILLMENT_LOCATION_ID, cancel.reservationId()).status()).isEqualTo("CANCELLED");
-        InventoryReservationResponse expiry = inventory.reserve(FULFILLMENT_LOCATION_ID, "expire-seller-a-" + UUID.randomUUID(),
+        LocationResponse.Reservation expiry = inventory.reserve(FULFILLMENT_LOCATION_ID, "expire-seller-a-" + UUID.randomUUID(),
                 request(UUID.randomUUID(), new Item(SELLER_ID, "shared-sku", 1)));
         jdbc.update("UPDATE inventory_reservation SET expires_at = ? WHERE reservation_id = ?",
                 Timestamp.from(Instant.now().minus(Duration.ofSeconds(1))), expiry.reservationId());
@@ -362,14 +360,14 @@ class InventoryReservationIntegrationTest {
     @Test
     void restoreReturnsOnlyClaimedStockAndIsIdempotent() {
         seedStock("restore-sku", 2);
-        InventoryReservationResponse claimed = inventory.reserve(FULFILLMENT_LOCATION_ID, "restore-" + UUID.randomUUID(),
+        LocationResponse.Reservation claimed = inventory.reserve(FULFILLMENT_LOCATION_ID, "restore-" + UUID.randomUUID(),
                 request(UUID.randomUUID(), new Item(SELLER_ID, "restore-sku", 1)));
-        InventoryReservationResponse reservedOnly = inventory.reserve(FULFILLMENT_LOCATION_ID,
+        LocationResponse.Reservation reservedOnly = inventory.reserve(FULFILLMENT_LOCATION_ID,
                 "restore-reserved-" + UUID.randomUUID(), request(UUID.randomUUID(), new Item(SELLER_ID, "restore-sku", 1)));
         inventory.claim(FULFILLMENT_LOCATION_ID, claimed.reservationId());
 
-        InventoryReservationResponse restored = inventory.restore(FULFILLMENT_LOCATION_ID, claimed.reservationId());
-        InventoryReservationResponse replay = inventory.restore(FULFILLMENT_LOCATION_ID, claimed.reservationId());
+        LocationResponse.Reservation restored = inventory.restore(FULFILLMENT_LOCATION_ID, claimed.reservationId());
+        LocationResponse.Reservation replay = inventory.restore(FULFILLMENT_LOCATION_ID, claimed.reservationId());
 
         assertThat(restored.status()).isEqualTo("RELEASED");
         assertThat(replay.replayed()).isTrue();
@@ -383,14 +381,14 @@ class InventoryReservationIntegrationTest {
     @Test
     void restockReturnsSoldUnitsOncePerKeyAndNeverExceedsTheSoldQuantity() {
         seedStock("restock-sku", 3);
-        InventoryReservationResponse sold = inventory.reserve(FULFILLMENT_LOCATION_ID, "restock-" + UUID.randomUUID(),
+        LocationResponse.Reservation sold = inventory.reserve(FULFILLMENT_LOCATION_ID, "restock-" + UUID.randomUUID(),
                 request(UUID.randomUUID(), new Item(SELLER_ID, "restock-sku", 2)));
         inventory.claim(FULFILLMENT_LOCATION_ID, sold.reservationId());
         String firstRefund = "refund-restock:" + UUID.randomUUID();
 
-        InventoryReservationResponse first = inventory.restock(FULFILLMENT_LOCATION_ID, sold.reservationId(),
+        LocationResponse.Reservation first = inventory.restock(FULFILLMENT_LOCATION_ID, sold.reservationId(),
                 firstRefund, List.of(new Item(SELLER_ID, "restock-sku", 1)));
-        InventoryReservationResponse replay = inventory.restock(FULFILLMENT_LOCATION_ID, sold.reservationId(),
+        LocationResponse.Reservation replay = inventory.restock(FULFILLMENT_LOCATION_ID, sold.reservationId(),
                 firstRefund, List.of(new Item(SELLER_ID, "restock-sku", 1)));
 
         assertThat(first.replayed()).isFalse();
@@ -429,8 +427,8 @@ class InventoryReservationIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
-    private InventoryReservationRequest request(UUID orderId, Item... items) {
-        return new InventoryReservationRequest(orderId, List.of(items));
+    private LocationRequest.Reservation request(UUID orderId, Item... items) {
+        return new LocationRequest.Reservation(orderId, List.of(items));
     }
 
     private void seedStock(String skuId, long capacity) {
@@ -439,7 +437,7 @@ class InventoryReservationIntegrationTest {
 
     private void seedStock(UUID sellerId, String skuId, long capacity) {
         inventory.setInitialCapacity(FULFILLMENT_LOCATION_ID, sellerId, skuId,
-                new LocationStockRequest(sellerId, capacity));
+                new LocationRequest.Stock(sellerId, capacity));
     }
 
     private void assertStock(String skuId, long initial, long available, long reserved) {

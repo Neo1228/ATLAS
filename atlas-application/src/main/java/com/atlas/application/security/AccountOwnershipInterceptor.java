@@ -1,14 +1,13 @@
 package com.atlas.application.security;
 
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.account.exception.AccountException;
 import com.atlas.account.exception.AccountException.Code;
 import com.atlas.account.service.AccountService;
-import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderService;
 import java.util.Map;
@@ -73,7 +72,7 @@ public class AccountOwnershipInterceptor implements HandlerInterceptor {
         if (orderValue != null) {
             UUID orderId = parseUuid(orderValue);
             if (sellerId != null) {
-                OrderResponse order = orders.find(orderId);
+                OrderViewResponse.Order order = orders.find(orderId);
                 if (order.items().isEmpty() || order.items().stream()
                         .anyMatch(item -> !sellerId.equals(item.sellerId()))) throw notOwned();
             } else {
@@ -85,10 +84,10 @@ public class AccountOwnershipInterceptor implements HandlerInterceptor {
         String ticketValue = variables.get("ticketId");
         String campaignValue = variables.get("campaignId");
         if (ticketValue != null && campaignValue != null) {
-            QueueTicketResponse ticket = admission.find(parseUuid(campaignValue), parseUuid(ticketValue));
+            AdmissionResponse.QueueTicket ticket = admission.find(parseUuid(campaignValue), parseUuid(ticketValue));
             if (!accounts.ownsBuyer(accountId, ticket.buyerRef())) throw notOwned();
         } else if (campaignValue != null && isCampaignManagement(request, routePattern)) {
-            CampaignResponse campaign = campaigns.find(parseUuid(campaignValue));
+            AdmissionResponse.Campaign campaign = campaigns.find(parseUuid(campaignValue));
             if (!accounts.ownsSeller(accountId, campaign.sellerId())) throw notOwned();
         }
         return true;

@@ -2,9 +2,8 @@ package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.payment.dto.response.PayPalReportMatchResponse;
 import com.atlas.payment.service.PayPalReportMatchQuery;
-import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
-import com.atlas.payment.dto.response.PayPalReportMatchKind;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -50,14 +49,14 @@ class PayPalReportMatchQueryIntegrationTest extends PayPalIntegrationTestSupport
         insertRefund(attemptId, captureId, refundId, 1_000L, "COMPLETED");
         insertRefund(pendingAttemptId, pendingCaptureId, pendingRefundId, 500L, "PENDING");
 
-        List<PayPalReportMatchCandidateResponse> result = matchQuery.findByRecordIds(
+        List<PayPalReportMatchResponse.Candidate> result = matchQuery.findByRecordIds(
                 Set.of(captureId, pendingCaptureId, refundId, pendingRefundId, "not-found"));
 
         assertThat(result).containsExactlyInAnyOrder(
-                new PayPalReportMatchCandidateResponse(captureId, PayPalReportMatchKind.CAPTURE, true, captureId, 10_000L, "USD"),
-                new PayPalReportMatchCandidateResponse(pendingCaptureId, PayPalReportMatchKind.CAPTURE, false, pendingCaptureId, 2_000L, "USD"),
-                new PayPalReportMatchCandidateResponse(refundId, PayPalReportMatchKind.REFUND, true, captureId, 1_000L, "USD"),
-                new PayPalReportMatchCandidateResponse(pendingRefundId, PayPalReportMatchKind.REFUND, false, pendingCaptureId, 500L, "USD"));
+                new PayPalReportMatchResponse.Candidate(captureId, PayPalReportMatchResponse.Kind.CAPTURE, true, captureId, 10_000L, "USD"),
+                new PayPalReportMatchResponse.Candidate(pendingCaptureId, PayPalReportMatchResponse.Kind.CAPTURE, false, pendingCaptureId, 2_000L, "USD"),
+                new PayPalReportMatchResponse.Candidate(refundId, PayPalReportMatchResponse.Kind.REFUND, true, captureId, 1_000L, "USD"),
+                new PayPalReportMatchResponse.Candidate(pendingRefundId, PayPalReportMatchResponse.Kind.REFUND, false, pendingCaptureId, 500L, "USD"));
     }
 
     private UUID insertAttempt(String captureId, String state, long providerAmountMinor) {

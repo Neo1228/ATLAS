@@ -9,10 +9,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.application.service.PayPalWebhookRetryWorker;
 import com.atlas.application.service.PayPalWebhookService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.model.ReservationStatus;
@@ -509,9 +508,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     void sameCaptureWebhookRedeliveryRetriesCheckoutReconciliationAfterEventCommit() {
         long amountWon = 17200L;
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Webhook retry product", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Webhook retry product", null));
         String skuId = "webhook-retry-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, amountWon, 2));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, amountWon, 2));
         String buyerRef = "buyer-webhook-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse created = cartCheckouts.checkout(buyerRef, "checkout-webhook-" + UUID.randomUUID());
@@ -591,9 +590,9 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     void expiredWebhookRetryOwnerCannotCompleteAfterReclaimedCaptureIsApplied() throws Exception {
         long amountWon = 17200L;
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Webhook lease race product", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Webhook lease race product", null));
         String skuId = "webhook-lease-race-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, amountWon, 2));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, amountWon, 2));
         String buyerRef = "buyer-webhook-lease-race-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse created = cartCheckouts.checkout(buyerRef, "checkout-webhook-lease-race-" + UUID.randomUUID());

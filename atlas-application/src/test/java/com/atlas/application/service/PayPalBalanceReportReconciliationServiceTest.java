@@ -3,10 +3,9 @@ package com.atlas.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse.Status;
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
-import com.atlas.payment.dto.response.PayPalReportMatchCandidateResponse;
-import com.atlas.payment.dto.response.PayPalReportMatchKind;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.payment.dto.response.PayPalReportMatchResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse.PayPalBalanceReportReconciliation.Status;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
 import com.atlas.settlement.service.impl.CsvPayPalBalanceReportParser;
@@ -34,7 +33,7 @@ class PayPalBalanceReportReconciliationServiceTest {
             RF,1,,7,1,,,,,7
             """;
 
-    private final Map<String, List<PayPalReportMatchCandidateResponse>> candidatesByRecordId = new HashMap<>();
+    private final Map<String, List<PayPalReportMatchResponse.Candidate>> candidatesByRecordId = new HashMap<>();
     private final PayPalBalanceReportReconciliationService service = new PayPalBalanceReportReconciliationService(
             recordIds -> recordIds.stream().flatMap(id -> candidatesByRecordId
                     .getOrDefault(id, List.of()).stream()).toList(),
@@ -42,22 +41,22 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void matchesCaptureAndRefundByExactProviderIdsAndTransactionFacts() {
-        addCandidate("capture-1", PayPalReportMatchKind.CAPTURE, true, "capture-1", 10_000L, "USD");
-        addCandidate("refund-1", PayPalReportMatchKind.REFUND, true, "capture-1", 1_000L, "USD");
-        addCandidate("capture-mismatch", PayPalReportMatchKind.CAPTURE, true, "capture-mismatch", 5_000L, "USD");
+        addCandidate("capture-1", PayPalReportMatchResponse.Kind.CAPTURE, true, "capture-1", 10_000L, "USD");
+        addCandidate("refund-1", PayPalReportMatchResponse.Kind.REFUND, true, "capture-1", 1_000L, "USD");
+        addCandidate("capture-mismatch", PayPalReportMatchResponse.Kind.CAPTURE, true, "capture-mismatch", 5_000L, "USD");
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(REPORT.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(REPORT.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.reportName()).isEqualTo("BALANCE_TRANSACTIONAL_REPORT");
         assertThat(response.reportSha256()).hasSize(64);
         assertThat(response.bankReceiptEvidence()).isEqualTo("NOT_VERIFIED_FROM_PAYPAL_REPORT_ALONE");
         assertThat(response.providerIdMappingStatus()).isEqualTo("EXACT_PROVIDER_ID_WITH_AMOUNT_CURRENCY_VALIDATION");
         assertThat(response.summary()).usingRecursiveComparison().isEqualTo(
-                new PayPalBalanceReportReconciliationResponse.Summary(7, 2, 2, 2, 1));
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::status)
+                new SettlementHttpResponse.PayPalBalanceReportReconciliation.Summary(7, 2, 2, 2, 1));
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
                 .containsExactly(Status.MATCHED, Status.MATCHED, Status.MISMATCH, Status.DUPLICATE,
                         Status.DUPLICATE, Status.UNMATCHED, Status.UNMATCHED);
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::reasonCode)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsExactly("EXACT_CAPTURE_ID_AND_AMOUNT_CURRENCY_MATCH", "EXACT_REFUND_AND_CAPTURE_LINK_MATCH",
                         "PROVIDER_AMOUNT_OR_CURRENCY_CONFLICT", "DUPLICATE_REPORT_RECORD_ID",
                         "DUPLICATE_REPORT_RECORD_ID", "PROVIDER_CAPTURE_ID_NOT_FOUND",
@@ -71,13 +70,13 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void doesNotMatchOrderIdInPlaceOfCaptureId() {
-        addCandidate("order-1", PayPalReportMatchKind.CAPTURE, true, "capture-1", 10_000L, "USD");
+        addCandidate("order-1", PayPalReportMatchResponse.Kind.CAPTURE, true, "capture-1", 10_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Record type,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,capture-1,Sale,USD,100.00\n"
                 + "RF,File number,Total records,Total files\nRF,1,1,1\n";
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).singleElement().satisfies(row -> {
             assertThat(row.status()).isEqualTo(Status.UNMATCHED);
@@ -87,14 +86,14 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void requiresRefundRecordAndRelatedCaptureIdsToMatchPersistedFacts() {
-        addCandidate("refund-2", PayPalReportMatchKind.REFUND, true, "capture-2", 1_000L, "USD");
-        addCandidate("capture-2", PayPalReportMatchKind.CAPTURE, true, "capture-2", 10_000L, "USD");
+        addCandidate("refund-2", PayPalReportMatchResponse.Kind.REFUND, true, "capture-2", 1_000L, "USD");
+        addCandidate("capture-2", PayPalReportMatchResponse.Kind.CAPTURE, true, "capture-2", 10_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Related Record ID,Record type,Record subtype,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,refund-2,another-capture,Refund,Referenced,USD,-10.00\n"
                 + "RF,File number,Total records,Total files\nRF,1,1,1\n";
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).singleElement().satisfies(row -> {
             assertThat(row.status()).isEqualTo(Status.MISMATCH);
@@ -104,38 +103,38 @@ class PayPalBalanceReportReconciliationServiceTest {
 
     @Test
     void rejectsCurrencyMismatchAndRefundRowsWithoutRelatedCaptureId() {
-        addCandidate("capture-currency", PayPalReportMatchKind.CAPTURE, true, "capture-currency", 10_000L, "USD");
-        addCandidate("refund-no-link", PayPalReportMatchKind.REFUND, true, "capture-no-link", 1_000L, "USD");
+        addCandidate("capture-currency", PayPalReportMatchResponse.Kind.CAPTURE, true, "capture-currency", 10_000L, "USD");
+        addCandidate("refund-no-link", PayPalReportMatchResponse.Kind.REFUND, true, "capture-no-link", 1_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Record type,Record subtype,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,capture-currency,Sale,,EUR,100.00\n"
                 + "RD,refund-no-link,Refund,Referenced,USD,-10.00\n"
                 + "RF,File number,Total records,Total files\nRF,1,2,1\n";
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::status)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
                 .containsExactly(Status.MISMATCH, Status.UNMATCHED);
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::reasonCode)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsExactly("PROVIDER_AMOUNT_OR_CURRENCY_CONFLICT", "REFUND_CAPTURE_LINK_REQUIRED");
     }
 
     @Test
     void leavesUnconfirmedAndAmbiguousProviderIdentifiersUnmatchedOrMismatched() {
-        addCandidate("pending-capture", PayPalReportMatchKind.CAPTURE, false, "pending-capture", 1_000L, "USD");
-        addCandidate("ambiguous-capture", PayPalReportMatchKind.CAPTURE, true, "ambiguous-capture", 1_000L, "USD");
-        addCandidate("ambiguous-capture", PayPalReportMatchKind.REFUND, true, "another-capture", 1_000L, "USD");
+        addCandidate("pending-capture", PayPalReportMatchResponse.Kind.CAPTURE, false, "pending-capture", 1_000L, "USD");
+        addCandidate("ambiguous-capture", PayPalReportMatchResponse.Kind.CAPTURE, true, "ambiguous-capture", 1_000L, "USD");
+        addCandidate("ambiguous-capture", PayPalReportMatchResponse.Kind.REFUND, true, "another-capture", 1_000L, "USD");
         String report = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
                 + "RD,Record ID,Record type,Transaction Currency,Gross Transaction Amount\n"
                 + "RD,pending-capture,Sale,USD,10.00\n"
                 + "RD,ambiguous-capture,Sale,USD,10.00\n"
                 + "RF,File number,Total records,Total files\nRF,1,2,1\n";
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::status)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
                 .containsExactly(Status.UNMATCHED, Status.MISMATCH);
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::reasonCode)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsExactly("PROVIDER_CAPTURE_NOT_CONFIRMED", "AMBIGUOUS_PROVIDER_RECORD_ID");
     }
 
@@ -149,7 +148,7 @@ class PayPalBalanceReportReconciliationServiceTest {
                 RF,File number,Total records,Total files
                 RF,1,1,1
                 """;
-        PayPalBalanceReportReconciliationResponse result = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation result = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(result.rows()).singleElement().satisfies(row -> {
             assertThat(row.recordId()).isEqualTo("withdraw-2");
@@ -174,11 +173,11 @@ class PayPalBalanceReportReconciliationServiceTest {
                 RF,1,2,1
                 """;
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::status)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
                 .containsExactly(Status.MISMATCH, Status.MISMATCH);
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::reasonCode)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsOnly("DUPLICATE_REPORT_RECORD_FACTS_CONFLICT");
     }
 
@@ -194,11 +193,11 @@ class PayPalBalanceReportReconciliationServiceTest {
                 RF,1,2,1
                 """;
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::status)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
                 .containsExactly(Status.MISMATCH, Status.MISMATCH);
-        assertThat(response.rows()).extracting(PayPalBalanceReportReconciliationResponse.RowResult::reasonCode)
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
                 .containsOnly("DUPLICATE_REPORT_RECORD_FACTS_CONFLICT");
     }
 
@@ -213,7 +212,7 @@ class PayPalBalanceReportReconciliationServiceTest {
                 RF,1,1,1
                 """;
 
-        PayPalBalanceReportReconciliationResponse response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.rows()).singleElement().satisfies(row -> {
             assertThat(row.status()).isEqualTo(Status.UNMATCHED);
@@ -261,9 +260,9 @@ class PayPalBalanceReportReconciliationServiceTest {
                 exception -> assertThat(exception.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
     }
 
-    private void addCandidate(String recordId, PayPalReportMatchKind kind, boolean confirmed, String captureId,
+    private void addCandidate(String recordId, PayPalReportMatchResponse.Kind kind, boolean confirmed, String captureId,
             Long amountMinor, String currency) {
         candidatesByRecordId.computeIfAbsent(recordId, ignored -> new ArrayList<>())
-                .add(new PayPalReportMatchCandidateResponse(recordId, kind, confirmed, captureId, amountMinor, currency));
+                .add(new PayPalReportMatchResponse.Candidate(recordId, kind, confirmed, captureId, amountMinor, currency));
     }
 }

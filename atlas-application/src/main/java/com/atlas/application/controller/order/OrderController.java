@@ -1,27 +1,17 @@
 package com.atlas.application.controller.order;
 
-import com.atlas.application.controller.dto.OrderRefundHttpRequest;
-import com.atlas.application.controller.dto.OrderReturnHttpRequest;
-import com.atlas.application.controller.dto.OrderReturnInspectionHttpRequest;
-import com.atlas.application.controller.dto.PaymentRecoveryStatusResponse;
-import com.atlas.application.controller.dto.ReorderRequest;
+import com.atlas.application.dto.response.PaymentHttpResponse;
+import com.atlas.application.dto.request.OrderHttpRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.response.ReturnResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.dto.response.CartResponse;
-import com.atlas.order.dto.request.OrderReorderRequest;
-import com.atlas.order.dto.response.OrderHistoryPageResponse;
-import com.atlas.order.dto.response.SellerOrderDetailResponse;
-import com.atlas.order.dto.response.OrderResponse;
-import com.atlas.order.dto.request.OrderRefundRequest;
-import com.atlas.order.dto.response.OrderRefundResponse;
-import com.atlas.order.dto.response.OrderRefundSummaryResponse;
-import com.atlas.order.dto.request.OrderReturnInspectionRequest;
-import com.atlas.order.dto.request.OrderReturnRequest;
-import com.atlas.order.dto.response.OrderReturnResponse;
-import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
 import com.atlas.order.model.OrderReturnStatus;
-import com.atlas.order.service.OrderReorderService;
-import com.atlas.order.service.OrderService;
 import com.atlas.order.service.OrderRefundService;
+import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderReturnService;
+import com.atlas.order.service.OrderService;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.util.List;
@@ -49,42 +39,42 @@ public class OrderController {
     private final Clock clock;
 
     @PostMapping("/campaigns/{campaignId}/tickets/{ticketId}/checkout")
-    public OrderResponse startCheckout(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
+    public OrderViewResponse.Order startCheckout(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
         return orders.startCheckout(campaignId, ticketId);
     }
 
     @PostMapping("/orders/{orderId}/payment")
-    public OrderResponse submitPayment(@PathVariable UUID orderId) {
+    public OrderViewResponse.Order submitPayment(@PathVariable UUID orderId) {
         return orders.submitPayment(orderId);
     }
 
     @GetMapping("/orders/{orderId}/payment/status")
-    public PaymentRecoveryStatusResponse paymentStatus(@PathVariable UUID orderId) {
-        OrderResponse order = orders.find(orderId);
-        return PaymentRecoveryStatusResponse.from(
+    public PaymentHttpResponse.RecoveryStatus paymentStatus(@PathVariable UUID orderId) {
+        OrderViewResponse.Order order = orders.find(orderId);
+        return PaymentHttpResponse.RecoveryStatus.from(
                 orderId, order.state(), order.paymentState(), order.checkoutExpiresAt(), clock.instant());
     }
 
     @PostMapping("/orders/{orderId}/reconcile")
-    public OrderResponse reconcile(@PathVariable UUID orderId,
+    public OrderViewResponse.Order reconcile(@PathVariable UUID orderId,
                                    @RequestHeader("Idempotency-Key") String idempotencyKey) {
         return orders.reconcilePayment(orderId, idempotencyKey);
     }
 
     @PostMapping("/orders/{orderId}/cancel")
-    public OrderResponse cancel(@PathVariable UUID orderId,
+    public OrderViewResponse.Order cancel(@PathVariable UUID orderId,
                                 @RequestHeader("Idempotency-Key") String idempotencyKey) {
         return orders.cancel(orderId, idempotencyKey);
     }
 
     @GetMapping("/orders/{orderId}/payment/return")
-    public OrderResponse paymentReturn(@PathVariable UUID orderId,
+    public OrderViewResponse.Order paymentReturn(@PathVariable UUID orderId,
             @RequestParam("token") String providerOrderId) {
         return orders.completePaymentApproval(orderId, providerOrderId);
     }
 
     @GetMapping("/orders/{orderId}/payment/cancel")
-    public OrderResponse paymentCancel(@PathVariable UUID orderId,
+    public OrderViewResponse.Order paymentCancel(@PathVariable UUID orderId,
             @RequestParam(value = "token", required = false) String providerOrderId) {
         return orders.cancel(orderId, "paypal-cancel:" + orderId
                 + (providerOrderId == null ? "" : ":" + providerOrderId));
@@ -94,29 +84,29 @@ public class OrderController {
     @PostMapping("/orders/{orderId}/reorder")
     public CartResponse reorder(@PathVariable UUID orderId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody ReorderRequest request) {
-        return reorders.reorder(new OrderReorderRequest(orderId, idempotencyKey,
+            @Valid @RequestBody OrderHttpRequest.Reorder request) {
+        return reorders.reorder(new OrderRequest.Reorder(orderId, idempotencyKey,
                 request.confirmExistingCartMerge()));
     }
 
     @PostMapping("/sellers/{sellerId}/orders/{orderId}/refund-records")
-    public OrderRefundResponse refund(@PathVariable UUID sellerId, @PathVariable UUID orderId,
+    public RefundResponse.Refund refund(@PathVariable UUID sellerId, @PathVariable UUID orderId,
                                       @RequestHeader("Idempotency-Key") String idempotencyKey,
-                                      @Valid @RequestBody OrderRefundHttpRequest request) {
-        OrderRefundRequest refundRequest = new OrderRefundRequest(sellerId, orderId, idempotencyKey,
+                                      @Valid @RequestBody OrderHttpRequest.Refund request) {
+        OrderRequest.Refund refundRequest = new OrderRequest.Refund(sellerId, orderId, idempotencyKey,
                 request.items().stream()
-                        .map(item -> new OrderRefundRequest.Item(item.orderItemId(), item.quantity()))
+                        .map(item -> new OrderRequest.Refund.Item(item.orderItemId(), item.quantity()))
                         .toList());
         return refunds.refund(refundRequest);
     }
 
     @GetMapping("/sellers/{sellerId}/orders/{orderId}/refund-record")
-    public OrderRefundSummaryResponse refundSummary(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
+    public RefundResponse.RefundSummary refundSummary(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
         return refunds.find(sellerId, orderId);
     }
 
     @GetMapping("/buyers/{buyerRef}/orders")
-    public OrderHistoryPageResponse buyerOrderHistory(@PathVariable String buyerRef,
+    public OrderViewResponse.HistoryPage buyerOrderHistory(@PathVariable String buyerRef,
             @RequestParam(value = "limit", required = false) Integer limit,
             @RequestParam(value = "cursor", required = false) String cursor) {
         return orders.findBuyerOrderHistory(buyerRef, limit, cursor);
@@ -130,26 +120,26 @@ public class OrderController {
      * 목록 없이는 첫 호출부터 도달 불가능했다. 구매자 이력과 같은 keyset 페이지네이션을 쓴다.
      */
     @GetMapping("/sellers/{sellerId}/orders")
-    public OrderHistoryPageResponse sellerOrderHistory(@PathVariable UUID sellerId,
+    public OrderViewResponse.HistoryPage sellerOrderHistory(@PathVariable UUID sellerId,
             @RequestParam(value = "limit", required = false) Integer limit,
             @RequestParam(value = "cursor", required = false) String cursor) {
         return orders.findSellerOrderHistory(sellerId, limit, cursor);
     }
 
     @GetMapping("/sellers/{sellerId}/orders/{orderId}")
-    public SellerOrderDetailResponse sellerOrderDetail(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
+    public OrderViewResponse.SellerOrderDetail sellerOrderDetail(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
         return orders.findSellerOrder(sellerId, orderId);
     }
 
     @GetMapping("/orders/{orderId}")
-    public OrderResponse find(@PathVariable UUID orderId) {
+    public OrderViewResponse.Order find(@PathVariable UUID orderId) {
         return orders.find(orderId);
     }
     @PostMapping("/buyers/{buyerRef}/orders/{orderId}/returns")
-    public OrderReturnResponse requestReturn(@PathVariable String buyerRef, @PathVariable UUID orderId,
-            @RequestHeader("Idempotency-Key") String idempotencyKey, @Valid @RequestBody OrderReturnHttpRequest request) {
-        OrderReturnRequest command = new OrderReturnRequest(buyerRef, orderId, idempotencyKey,
-                request.items().stream().map(item -> new OrderReturnRequest.Item(
+    public ReturnResponse.OrderReturn requestReturn(@PathVariable String buyerRef, @PathVariable UUID orderId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey, @Valid @RequestBody OrderHttpRequest.Return request) {
+        OrderRequest.Return command = new OrderRequest.Return(buyerRef, orderId, idempotencyKey,
+                request.items().stream().map(item -> new OrderRequest.Return.Item(
                         item.orderItemId(), item.quantity(), item.shipmentId())).toList());
         return returns.request(command);
     }
@@ -161,11 +151,11 @@ public class OrderController {
      * 있지만, 앱을 다시 열거나 기록을 잃으면 조회 수단이 없었다.
      */
     @GetMapping("/buyers/{buyerRef}/orders/{orderId}/returns")
-    public List<OrderReturnResponse> findReturns(@PathVariable String buyerRef, @PathVariable UUID orderId) {
+    public List<ReturnResponse.OrderReturn> findReturns(@PathVariable String buyerRef, @PathVariable UUID orderId) {
         return returns.findForBuyer(buyerRef, orderId);
     }
     @GetMapping("/sellers/{sellerId}/returns")
-    public SellerOrderReturnPageResponse sellerReturns(@PathVariable UUID sellerId,
+    public ReturnResponse.SellerOrderReturnPage sellerReturns(@PathVariable UUID sellerId,
             @RequestParam(value = "status", required = false) OrderReturnStatus status,
             @RequestParam(value = "limit", required = false) Integer limit,
             @RequestParam(value = "cursor", required = false) String cursor) {
@@ -173,19 +163,19 @@ public class OrderController {
     }
 
     @GetMapping("/buyers/{buyerRef}/orders/{orderId}/returns/{returnId}")
-    public OrderReturnResponse findReturn(@PathVariable String buyerRef, @PathVariable UUID orderId, @PathVariable UUID returnId) {
+    public ReturnResponse.OrderReturn findReturn(@PathVariable String buyerRef, @PathVariable UUID orderId, @PathVariable UUID returnId) {
         return returns.find(buyerRef, orderId, returnId);
     }
 
     @PutMapping("/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt")
-    public OrderReturnResponse receiveReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId, @PathVariable UUID returnId) {
+    public ReturnResponse.OrderReturn receiveReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId, @PathVariable UUID returnId) {
         return returns.receive(sellerId, orderId, returnId);
     }
 
     @PutMapping("/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/inspection")
-    public OrderReturnResponse inspectReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId, @PathVariable UUID returnId,
-            @Valid @RequestBody OrderReturnInspectionHttpRequest request) {
-        return returns.inspect(sellerId, orderId, returnId, new OrderReturnInspectionRequest(
-                request.items().stream().map(item -> new OrderReturnInspectionRequest.Item(item.orderItemId(), item.result())).toList()));
+    public ReturnResponse.OrderReturn inspectReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId, @PathVariable UUID returnId,
+            @Valid @RequestBody OrderHttpRequest.ReturnInspection request) {
+        return returns.inspect(sellerId, orderId, returnId, new OrderRequest.ReturnInspection(
+                request.items().stream().map(item -> new OrderRequest.ReturnInspection.Item(item.orderItemId(), item.result())).toList()));
     }
 }

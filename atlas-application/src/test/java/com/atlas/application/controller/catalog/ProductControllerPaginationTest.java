@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.application.exception.GlobalExceptionHandler;
-import com.atlas.catalog.dto.response.ProductListingPageResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
 import java.util.List;
@@ -64,7 +64,7 @@ class ProductControllerPaginationTest {
     @Test
     void passesInclusivePriceBoundsToCatalogService() throws Exception {
         when(service.listProductsPage(null, null, null, 10_000L, 50_000L, 20, null))
-                .thenReturn(new ProductListingPageResponse(List.of(), null));
+                .thenReturn(new CatalogResponse.ProductListingPage(List.of(), null));
 
         mockMvc.perform(get("/api/products")
                         .param("minPriceWon", "10000")

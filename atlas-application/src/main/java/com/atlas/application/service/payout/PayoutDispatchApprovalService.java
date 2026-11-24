@@ -1,12 +1,11 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.application.controller.dto.PayoutDispatchReviewPage;
-import com.atlas.application.controller.dto.PayoutDispatchStatusResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.settlement.dto.response.PayoutResponse;
+import com.atlas.payment.dto.response.FxResponse;
 import com.atlas.application.security.PayoutRecipientCipher;
-import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
@@ -49,12 +48,12 @@ public class PayoutDispatchApprovalService {
         this.committer = Objects.requireNonNull(committer);
     }
 
-    public SellerPayoutResponse approve(UUID payoutId, String idempotencyKey, String actor, String reason) {
+    public PayoutResponse.SellerPayout approve(UUID payoutId, String idempotencyKey, String actor, String reason) {
         validateOperatorFacts(payoutId, idempotencyKey, actor, reason);
         if (dispatches.find(payoutId).isPresent()) {
             return committer.replay(payoutId, idempotencyKey, actor, reason.trim());
         }
-        SellerPayoutResponse payout = payouts.find(payoutId);
+        PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         if (payout.state() != SettlementPayoutStatus.REQUESTED
                 && payout.state() != SettlementPayoutStatus.APPROVED) {
             throw conflict("Only a requested payout can be approved for provider dispatch");
@@ -64,7 +63,7 @@ public class PayoutDispatchApprovalService {
         }
         SellerPayoutProfileService.ActiveRecipient recipient = profiles.requireActiveRecipient(payout.sellerId());
         if (!"USD".equals(recipient.currency())) throw conflict("Only USD payout profiles can be dispatched");
-        ExchangeRateQuoteResponse quote = exchangeRates.latestUsdKrwRate();
+        FxResponse.ExchangeRateQuote quote = exchangeRates.latestUsdKrwRate();
         if (quote == null) {
             throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE,
                     "Payout FX quote is unavailable");
@@ -95,33 +94,33 @@ public class PayoutDispatchApprovalService {
         return committer.approve(payoutId, plan, recipient, idempotencyKey, actor, reason.trim());
     }
 
-    public SellerPayoutResponse cancelBeforeDispatch(UUID payoutId, String idempotencyKey,
+    public PayoutResponse.SellerPayout cancelBeforeDispatch(UUID payoutId, String idempotencyKey,
             String actor, String reason) {
         validateOperatorFacts(payoutId, idempotencyKey, actor, reason);
         return committer.cancel(payoutId, idempotencyKey, actor, reason.trim());
     }
 
-    public SellerPayoutResponse requeueNeedsReview(UUID payoutId, String idempotencyKey,
+    public PayoutResponse.SellerPayout requeueNeedsReview(UUID payoutId, String idempotencyKey,
             String actor, String reason) {
         validateOperatorFacts(payoutId, idempotencyKey, actor, reason);
         return committer.requeueNeedsReview(payoutId, idempotencyKey, actor, reason.trim());
     }
 
-    public PayoutDispatchStatusResponse dispatchStatus(UUID payoutId) {
-        SellerPayoutResponse payout = payouts.find(payoutId);
+    public SettlementHttpResponse.PayoutDispatchStatus dispatchStatus(UUID payoutId) {
+        PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         return dispatches.find(payoutId)
-                .map(record -> new PayoutDispatchStatusResponse(record.payoutId(), payout.state().name(),
+                .map(record -> new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payout.state().name(),
                         record.status(), record.senderBatchId(), record.providerBatchId(), record.providerItemId(),
                         record.providerBatchStatus(), record.providerItemStatus(), record.requestedAmountWon(),
                         record.providerAmountMinor(), record.payoutCurrency(), record.fxRateWonPerUsd(),
                         record.fxSource(), record.fxAsOfDate(), record.attemptCount(), record.firstEnqueuedAt(),
                         record.lastAttemptAt(), record.availableAt(), record.lastErrorCode()))
-                .orElseGet(() -> new PayoutDispatchStatusResponse(payout.payoutId(), payout.state().name(),
+                .orElseGet(() -> new SettlementHttpResponse.PayoutDispatchStatus(payout.payoutId(), payout.state().name(),
                         "MANUAL_NO_PROVIDER_OUTBOX", null, null, null, null, null, payout.amountWon(),
                         0, "KRW", null, null, null, 0, payout.requestedAt(), null, null, null));
     }
 
-    public PayoutDispatchReviewPage needsReview(int limit, int offset) {
+    public SettlementHttpResponse.PayoutDispatchReviewPage needsReview(int limit, int offset) {
         if (offset < 0 || offset > 100_000) {
             throw new SettlementException(SettlementException.Code.INVALID_REQUEST, "Invalid payout review offset");
         }
@@ -129,13 +128,13 @@ public class PayoutDispatchApprovalService {
         List<PayoutDispatchRecord> records = dispatches.findNeedsReview(boundedLimit + 1, offset);
         boolean hasMore = records.size() > boundedLimit;
         if (hasMore) records = records.subList(0, boundedLimit);
-        List<PayoutDispatchStatusResponse> items = records.stream().map(record ->
+        List<SettlementHttpResponse.PayoutDispatchStatus> items = records.stream().map(record ->
                 toStatus(record, payouts.find(record.payoutId()).state().name())).toList();
-        return new PayoutDispatchReviewPage(boundedLimit, offset, hasMore, items);
+        return new SettlementHttpResponse.PayoutDispatchReviewPage(boundedLimit, offset, hasMore, items);
     }
 
-    private PayoutDispatchStatusResponse toStatus(PayoutDispatchRecord record, String payoutState) {
-        return new PayoutDispatchStatusResponse(record.payoutId(), payoutState, record.status(),
+    private SettlementHttpResponse.PayoutDispatchStatus toStatus(PayoutDispatchRecord record, String payoutState) {
+        return new SettlementHttpResponse.PayoutDispatchStatus(record.payoutId(), payoutState, record.status(),
                 record.senderBatchId(), record.providerBatchId(), record.providerItemId(),
                 record.providerBatchStatus(), record.providerItemStatus(), record.requestedAmountWon(),
                 record.providerAmountMinor(), record.payoutCurrency(), record.fxRateWonPerUsd(),
@@ -158,7 +157,7 @@ public class PayoutDispatchApprovalService {
                 .getBytes(StandardCharsets.UTF_8)).toString();
     }
 
-    private String payloadHash(SellerPayoutResponse payout, SellerPayoutProfileService.ActiveRecipient recipient,
+    private String payloadHash(PayoutResponse.SellerPayout payout, SellerPayoutProfileService.ActiveRecipient recipient,
             PayoutFxConversionService.Conversion conversion, String recipientFingerprint,
             String batchId, String itemId, String requestId) {
         String facts = String.join("|", "v2", payout.payoutId().toString(),

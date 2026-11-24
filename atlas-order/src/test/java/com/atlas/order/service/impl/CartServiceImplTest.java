@@ -9,11 +9,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.exception.CartException;
 import com.atlas.order.persistence.entity.Cart;
 import com.atlas.order.repository.CartRepository;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.service.SellerSkuService;
 import java.util.List;
 import java.util.Optional;
@@ -42,8 +42,8 @@ class CartServiceImplTest {
         UUID sellerB = UUID.randomUUID();
         Cart cart = new Cart(buyer);
         when(carts.findWithLockByBuyerRef(buyer)).thenReturn(Optional.of(cart));
-        SellerSkuResponse skuA = sku(sellerA, "same");
-        SellerSkuResponse skuB = sku(sellerB, "same");
+        CatalogResponse.SellerSku skuA = sku(sellerA, "same");
+        CatalogResponse.SellerSku skuB = sku(sellerB, "same");
         when(skus.find(sellerA, "same")).thenReturn(skuA);
         when(skus.find(sellerB, "same")).thenReturn(skuB);
         when(skus.findAll(sellerA, List.of("same"))).thenReturn(List.of(skuA));
@@ -137,7 +137,7 @@ class CartServiceImplTest {
         assertEquals(CartException.Code.SKU_NOT_FOUND, exception.code());
     }
 
-    private static SellerSkuResponse sku(UUID seller, String id) {
-        return new SellerSkuResponse(seller, UUID.randomUUID(), id, "item", 100L, null, null, null, 100L);
+    private static CatalogResponse.SellerSku sku(UUID seller, String id) {
+        return new CatalogResponse.SellerSku(seller, UUID.randomUUID(), id, "item", 100L, null, null, null, 100L);
     }
 }

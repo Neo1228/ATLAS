@@ -1,6 +1,6 @@
 package com.atlas.application.service.impl;
 
-import com.atlas.order.dto.response.ReservationEventResponse;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.service.ReservationEventPublisher;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -45,9 +45,9 @@ public class KafkaReservationEventPublisher implements ReservationEventPublisher
     }
 
     @Override
-    public void publish(List<ReservationEventResponse> batch) {
+    public void publish(List<ReservationWorkflowResponse.ReservationEvent> batch) {
         List<CompletableFuture<?>> sends = new ArrayList<>(batch.size());
-        for (ReservationEventResponse event : batch) {
+        for (ReservationWorkflowResponse.ReservationEvent event : batch) {
             ProducerRecord<String, String> record =
                     new ProducerRecord<>(topic, event.workflowId().toString(), payload(event));
             record.headers().add(EVENT_ID_HEADER, event.eventId().getBytes(StandardCharsets.UTF_8));
@@ -64,7 +64,7 @@ public class KafkaReservationEventPublisher implements ReservationEventPublisher
         }
     }
 
-    private String payload(ReservationEventResponse event) {
+    private String payload(ReservationWorkflowResponse.ReservationEvent event) {
         return mapper.writeValueAsString(new Payload(event.eventId(), event.eventSeq(), event.workflowId().toString(),
                 event.orderId().toString(), event.aggregateVersion(), event.eventType(), event.lastErrorCode(),
                 event.occurredAt().toString()));

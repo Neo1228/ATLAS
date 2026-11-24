@@ -6,19 +6,18 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.catalog.exception.CatalogException;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.request.SellerCouponRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderRefundResponse;
 import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.OrderRefundService;
@@ -171,8 +170,8 @@ class SellerCouponRedemptionIntegrationTest extends PayPalIntegrationTestSupport
 
             var order = paid.getFirst().orders().getFirst();
             UUID orderItemId = orderItemId(order.orderId(), sku.skuId());
-            OrderRefundResponse refund = refunds.refund(new OrderRefundRequest(sku.sellerId(), order.orderId(),
-                    "cap-refund-" + UUID.randomUUID(), List.of(new OrderRefundRequest.Item(orderItemId, 1))));
+            RefundResponse.Refund refund = refunds.refund(new OrderRequest.Refund(sku.sellerId(), order.orderId(),
+                    "cap-refund-" + UUID.randomUUID(), List.of(new OrderRequest.Refund.Item(orderItemId, 1))));
             assertThat(refund.refundAmountWon()).isEqualTo(900);
             assertThat(counts(sku.sellerId(), code)).isEqualTo(new CouponCounts(0, cap, 0, cap, 0));
 
@@ -282,7 +281,7 @@ class SellerCouponRedemptionIntegrationTest extends PayPalIntegrationTestSupport
         assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_checkout WHERE buyer_ref = ?",
                 Integer.class, buyer)).isZero();
         assertThat(carts.find(buyer).items()).hasSize(1);
-        InventoryPoolResponse stock = inventory.find(sku.sellerId(), sku.skuId());
+        InventoryResponse.Pool stock = inventory.find(sku.sellerId(), sku.skuId());
         assertThat(stock.available()).isEqualTo(1);
         assertThat(stock.reserved()).isZero();
     }
@@ -426,9 +425,9 @@ class SellerCouponRedemptionIntegrationTest extends PayPalIntegrationTestSupport
     private SkuFixture createSku(UUID sellerId, long priceWon, int initialStock) {
         String skuId = "redemption-" + UUID.randomUUID();
         var product = products.createProduct(sellerId,
-                new CreateProductRequest("Coupon redemption " + skuId, "local integration fixture"));
+                new ProductRequest.CreateProduct("Coupon redemption " + skuId, "local integration fixture"));
         products.registerSku(sellerId, product.productId(),
-                new RegisterSellerSkuRequest(skuId, priceWon, initialStock));
+                new ProductRequest.RegisterSellerSku(skuId, priceWon, initialStock));
         return new SkuFixture(sellerId, skuId);
     }
 

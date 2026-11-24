@@ -8,17 +8,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.request.CreateFulfillmentLocationRequest;
-import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
-import com.atlas.inventory.dto.request.TransferInventoryRequest;
-import com.atlas.inventory.dto.request.UpdateFulfillmentLocationRequest;
-import com.atlas.inventory.dto.response.InventoryLocationResponse;
-import com.atlas.inventory.dto.response.InventoryTransferResponse;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryCapacityAdjustmentService;
 import com.atlas.inventory.service.InventoryService;
@@ -126,16 +121,16 @@ class InventoryLocationIntegrationTest {
     void transferReplayConservesCapacityAndRejectsInactiveDestinations() {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, 8);
-        InventoryLocationResponse north = inventory.createLocation(
-                new CreateFulfillmentLocationRequest(sellerId, "NORTH-" + UUID.randomUUID(), "North", 1));
+        InventoryResponse.Location north = inventory.createLocation(
+                new InventoryRequest.CreateFulfillmentLocation(sellerId, "NORTH-" + UUID.randomUUID(), "North", 1));
         String transferKey = "transfer-" + UUID.randomUUID();
         UUID defaultId = defaultLocation(sellerId);
-        TransferInventoryRequest request = new TransferInventoryRequest(sellerId, sku,
+        InventoryRequest.TransferInventory request = new InventoryRequest.TransferInventory(sellerId, sku,
                 defaultId, north.locationId(), 3, transferKey, "rebalance");
 
-        InventoryTransferResponse first = inventory.transfer(request);
+        InventoryResponse.Transfer first = inventory.transfer(request);
         assertThat(inventory.transfer(request)).isEqualTo(first);
-        assertThatThrownBy(() -> inventory.transfer(new TransferInventoryRequest(sellerId, sku,
+        assertThatThrownBy(() -> inventory.transfer(new InventoryRequest.TransferInventory(sellerId, sku,
                 request.sourceLocationId(), request.destinationLocationId(), 2, transferKey, "changed")))
                 .isInstanceOf(RuntimeException.class);
 
@@ -162,9 +157,9 @@ class InventoryLocationIntegrationTest {
                 Integer.class, sellerId, sku)).isEqualTo(8);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM inventory_transfer WHERE seller_id=? AND sku_id=?",
                 Integer.class, sellerId, sku)).isEqualTo(1);
-        inventory.updateLocation(new UpdateFulfillmentLocationRequest(sellerId, north.locationId(),
+        inventory.updateLocation(new InventoryRequest.UpdateFulfillmentLocation(sellerId, north.locationId(),
                 north.name(), north.priority(), false));
-        assertThatThrownBy(() -> inventory.transfer(new TransferInventoryRequest(sellerId, sku,
+        assertThatThrownBy(() -> inventory.transfer(new InventoryRequest.TransferInventory(sellerId, sku,
                 defaultId, north.locationId(), 1, "inactive-transfer-" + UUID.randomUUID(), "inactive destination")))
                 .isInstanceOf(InventoryException.class)
                 .satisfies(error -> assertThat(((InventoryException) error).code())
@@ -179,10 +174,10 @@ class InventoryLocationIntegrationTest {
     void concurrentTransferReplayMovesStockOnlyOnce() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, 8);
-        InventoryLocationResponse north = inventory.createLocation(
-                new CreateFulfillmentLocationRequest(sellerId, "CONCURRENT-" + UUID.randomUUID(), "North", 1));
+        InventoryResponse.Location north = inventory.createLocation(
+                new InventoryRequest.CreateFulfillmentLocation(sellerId, "CONCURRENT-" + UUID.randomUUID(), "North", 1));
         String transferKey = "concurrent-transfer-" + UUID.randomUUID();
-        TransferInventoryRequest request = new TransferInventoryRequest(sellerId, sku,
+        InventoryRequest.TransferInventory request = new InventoryRequest.TransferInventory(sellerId, sku,
                 defaultLocation(sellerId), north.locationId(), 3, transferKey, "concurrent replay");
         CyclicBarrier start = new CyclicBarrier(2);
 
@@ -212,13 +207,13 @@ class InventoryLocationIntegrationTest {
     void concurrentDifferentTransferFactsWithSameKeyCommitOnlyOneMovement() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, 8);
-        InventoryLocationResponse north = inventory.createLocation(
-                new CreateFulfillmentLocationRequest(sellerId, "CONFLICT-" + UUID.randomUUID(), "North", 1));
+        InventoryResponse.Location north = inventory.createLocation(
+                new InventoryRequest.CreateFulfillmentLocation(sellerId, "CONFLICT-" + UUID.randomUUID(), "North", 1));
         String transferKey = "conflicting-transfer-" + UUID.randomUUID();
         UUID sourceLocationId = defaultLocation(sellerId);
-        TransferInventoryRequest firstRequest = new TransferInventoryRequest(sellerId, sku,
+        InventoryRequest.TransferInventory firstRequest = new InventoryRequest.TransferInventory(sellerId, sku,
                 sourceLocationId, north.locationId(), 3, transferKey, "first payload");
-        TransferInventoryRequest secondRequest = new TransferInventoryRequest(sellerId, sku,
+        InventoryRequest.TransferInventory secondRequest = new InventoryRequest.TransferInventory(sellerId, sku,
                 sourceLocationId, north.locationId(), 2, transferKey, "different payload");
         CyclicBarrier start = new CyclicBarrier(2);
 
@@ -260,15 +255,15 @@ class InventoryLocationIntegrationTest {
     void inactiveLocationIsExcludedFromFulfillmentRouting() {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, 5);
-        InventoryLocationResponse location = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location location = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerId, "INACTIVE-" + UUID.randomUUID(), "Inactive", 0));
         adjustments.adjust(sellerId, sku, location.locationId(), "stock-location-" + UUID.randomUUID(), 5,
                 "stock location");
-        inventory.updateLocation(new UpdateFulfillmentLocationRequest(sellerId, location.locationId(),
+        inventory.updateLocation(new InventoryRequest.UpdateFulfillmentLocation(sellerId, location.locationId(),
                 location.name(), location.priority(), false));
 
         assertThat(inventory.findFulfillmentLocation(sellerId, List.of(
-                new ReserveInventoryBatchRequest.Item(sellerId, sku, 1))))
+                new InventoryRequest.ReserveInventoryBatch.Item(sellerId, sku, 1))))
                 .contains(defaultLocation(sellerId));
     }
 
@@ -276,7 +271,7 @@ class InventoryLocationIntegrationTest {
     void transferHttpRouteUsesIdempotencyKeyAndRejectsChangedReplayFacts() throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         String sku = createSku(sellerId, 6);
-        InventoryLocationResponse destination = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location destination = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerId, "HTTP-TRANSFER-" + UUID.randomUUID(), "HTTP destination", 0));
         String key = "http-transfer-" + UUID.randomUUID();
         String url = "/api/sellers/" + sellerId + "/inventory/transfers";
@@ -304,7 +299,7 @@ class InventoryLocationIntegrationTest {
         UUID sellerId = sellers.createSeller().sellerId();
         int perLocationCapacity = 1_500_000_000;
         String sku = createSku(sellerId, perLocationCapacity);
-        InventoryLocationResponse secondLocation = inventory.createLocation(new CreateFulfillmentLocationRequest(
+        InventoryResponse.Location secondLocation = inventory.createLocation(new InventoryRequest.CreateFulfillmentLocation(
                 sellerId, "SECOND-" + UUID.randomUUID(), "Second", 1));
 
         adjustments.adjust(sellerId, sku, secondLocation.locationId(),
@@ -317,10 +312,10 @@ class InventoryLocationIntegrationTest {
     }
 
     private String createSku(UUID sellerId, int capacity) {
-        ProductResponse product = products.createProduct(sellerId,
-                new CreateProductRequest("location-test-" + UUID.randomUUID(), null));
+        CatalogResponse.Product product = products.createProduct(sellerId,
+                new ProductRequest.CreateProduct("location-test-" + UUID.randomUUID(), null));
         String sku = "location-sku-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 100, capacity));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(sku, 100, capacity));
         return sku;
     }
 

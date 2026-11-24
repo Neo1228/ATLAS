@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.account.dto.request.LoginRequest;
-import com.atlas.account.dto.response.AccountLoginResponse;
+import com.atlas.account.dto.response.AccountResponse;
+import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountService;
 import java.time.Instant;
@@ -78,7 +78,7 @@ class AccountSuspensionOperatorIntegrationTest {
     void suspensionCutsSessionsImmediatelyAndIsAudited() throws Exception {
         String password = "long-enough-password-123";
         UUID accountId = newVerifiedAccount(password);
-        AccountLoginResponse session = accountService.login(new LoginRequest(
+        AccountResponse.Login session = accountService.login(new AccountRequest.Login(
                 jdbc.queryForObject("SELECT email FROM user_account WHERE account_id = ?", String.class, accountId),
                 password), "198.51.100.7");
 

@@ -1,8 +1,7 @@
 package com.atlas.application.service;
 
-import com.atlas.payment.dto.response.ClaimedWebhookRetryResponse;
+import com.atlas.payment.dto.response.WebhookRetryResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
-import com.atlas.payment.dto.response.WebhookRetryPollResponse;
 import com.atlas.payment.model.WebhookRetryFailure;
 import com.atlas.payment.service.PayPalWebhookRetryService;
 import io.micrometer.core.instrument.Counter;
@@ -51,15 +50,15 @@ public class PayPalWebhookRetryWorker {
         Timer.Sample sample = Timer.start(meters);
         String outcome = "success";
         try {
-            WebhookRetryPollResponse poll = retries.pollDue();
-            List<ClaimedWebhookRetryResponse> claimed = poll.claimed();
+            WebhookRetryResponse.RetryPoll poll = retries.pollDue();
+            List<WebhookRetryResponse.ClaimedWebhookRetry> claimed = poll.claimed();
             if (poll.reapedCount() > 0) {
                 Counter.builder(REAPED_METRIC).register(meters).increment(poll.reapedCount());
             }
             Counter claimedCounter = Counter.builder(CLAIMED_METRIC).register(meters);
             if (!claimed.isEmpty()) claimedCounter.increment(claimed.size());
             recordOldestPendingAge();
-            for (ClaimedWebhookRetryResponse retry : claimed) {
+            for (WebhookRetryResponse.ClaimedWebhookRetry retry : claimed) {
                 Timer.Sample attemptSample = Timer.start(meters);
                 try {
                     PaymentWebhookResponse result;
@@ -110,7 +109,7 @@ public class PayPalWebhookRetryWorker {
         }
     }
 
-    private void recordTransientFailure(ClaimedWebhookRetryResponse retry, RuntimeException failure) {
+    private void recordTransientFailure(WebhookRetryResponse.ClaimedWebhookRetry retry, RuntimeException failure) {
         log.warn("PayPal webhook processing failed for event {} (attempt {}, failure type {})",
                 retry.event().eventId(), retry.attempt(), failure.getClass().getSimpleName());
         try {
@@ -155,7 +154,7 @@ public class PayPalWebhookRetryWorker {
             log.warn("PayPal webhook retry poll failed (failure type {})", failure.getClass().getSimpleName());
         }
     }
-    private void logStaleClaim(ClaimedWebhookRetryResponse retry) {
+    private void logStaleClaim(WebhookRetryResponse.ClaimedWebhookRetry retry) {
         log.warn("PayPal webhook retry claim is no longer current for event {} (attempt {})",
                 retry.event().eventId(), retry.attempt());
     }

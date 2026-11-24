@@ -1,6 +1,6 @@
 package com.atlas.catalog.service.impl;
 
-import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
@@ -30,7 +30,7 @@ public class SellerSkuServiceImpl implements SellerSkuService {
 
     @Override
     @Transactional(readOnly = true)
-    public SellerSkuResponse find(UUID sellerId, String skuId) {
+    public CatalogResponse.SellerSku find(UUID sellerId, String skuId) {
         if (sellerId == null || skuId == null) return null;
         SellerSku sku = sellerSkus.findBySellerIdAndSkuId(sellerId, skuId).orElse(null);
         if (sku == null) return null;
@@ -40,35 +40,35 @@ public class SellerSkuServiceImpl implements SellerSkuService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<SellerSkuResponse> findAll(UUID sellerId, List<String> skuIds) {
+    public List<CatalogResponse.SellerSku> findAll(UUID sellerId, List<String> skuIds) {
         return findAllResponses(sellerId, skuIds, clock.instant());
     }
 
     @Override
     @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
-    public SellerSkuResponse findOrderableSellerSku(UUID sellerId, String skuId, ProductSalesChannel channel) {
+    public CatalogResponse.SellerSku findOrderableSellerSku(UUID sellerId, String skuId, ProductSalesChannel channel) {
         return findOrderableSellerSku(sellerId, skuId, channel, clock.instant());
     }
 
     @Override
     @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
-    public SellerSkuResponse findOrderableSellerSku(UUID sellerId, String skuId, ProductSalesChannel channel,
+    public CatalogResponse.SellerSku findOrderableSellerSku(UUID sellerId, String skuId, ProductSalesChannel channel,
             Instant asOf) {
         if (sellerId == null || skuId == null || channel == null || asOf == null) return null;
-        List<SellerSkuResponse> matches = findOrderableSellerSkus(sellerId, List.of(skuId), channel, asOf);
+        List<CatalogResponse.SellerSku> matches = findOrderableSellerSkus(sellerId, List.of(skuId), channel, asOf);
         return matches.isEmpty() ? null : matches.getFirst();
     }
 
     @Override
     @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
-    public List<SellerSkuResponse> findOrderableSellerSkus(UUID sellerId, List<String> skuIds,
+    public List<CatalogResponse.SellerSku> findOrderableSellerSkus(UUID sellerId, List<String> skuIds,
             ProductSalesChannel channel) {
         return findOrderableSellerSkus(sellerId, skuIds, channel, clock.instant());
     }
 
     @Override
     @Transactional(readOnly = true, noRollbackFor = CatalogException.class)
-    public List<SellerSkuResponse> findOrderableSellerSkus(UUID sellerId, List<String> skuIds,
+    public List<CatalogResponse.SellerSku> findOrderableSellerSkus(UUID sellerId, List<String> skuIds,
             ProductSalesChannel channel, Instant asOf) {
         if (sellerId == null || skuIds == null || skuIds.isEmpty() || channel == null || asOf == null) return List.of();
         List<String> ids = normalize(skuIds);
@@ -92,7 +92,7 @@ public class SellerSkuServiceImpl implements SellerSkuService {
         }).filter(Objects::nonNull).toList();
     }
 
-    private List<SellerSkuResponse> findAllResponses(UUID sellerId, List<String> skuIds, Instant asOf) {
+    private List<CatalogResponse.SellerSku> findAllResponses(UUID sellerId, List<String> skuIds, Instant asOf) {
         if (sellerId == null || skuIds == null || skuIds.isEmpty()) return List.of();
         List<String> ids = normalize(skuIds);
         if (ids.isEmpty()) return List.of();
@@ -124,8 +124,8 @@ public class SellerSkuServiceImpl implements SellerSkuService {
     private record SellerSkuProducts(
             List<SellerSku> skus, List<UUID> productIds, Map<UUID, Product> productById) {
     }
-    private static SellerSkuResponse toResponse(Product product, SellerSku sku, Instant asOf) {
-        return new SellerSkuResponse(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
+    private static CatalogResponse.SellerSku toResponse(Product product, SellerSku sku, Instant asOf) {
+        return new CatalogResponse.SellerSku(sku.getSellerId(), sku.getProductId(), sku.getSkuId(),
                 product.getName(), sku.getPriceWon(), sku.getSalePriceWon(), sku.getSaleStartsAt(),
                 sku.getSaleEndsAt(), sku.effectivePriceAt(asOf));
     }

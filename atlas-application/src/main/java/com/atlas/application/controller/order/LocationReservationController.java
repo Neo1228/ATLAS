@@ -1,7 +1,7 @@
 package com.atlas.application.controller.order;
 
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.request.LocationReservationRequest;
-import com.atlas.order.dto.response.LocationReservationResponse;
 import com.atlas.order.service.LocationReservationService;
 import com.atlas.order.model.LocationReservationWorkflowState;
 import jakarta.validation.Valid;
@@ -30,10 +30,10 @@ public class LocationReservationController {
     }
 
     @PostMapping
-    public ResponseEntity<LocationReservationResponse> reserve(
+    public ResponseEntity<ReservationWorkflowResponse.LocationReservation> reserve(
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody LocationReservationRequest request) {
-        LocationReservationResponse response = coordinator.submit(idempotencyKey, request);
+        ReservationWorkflowResponse.LocationReservation response = coordinator.submit(idempotencyKey, request);
         if (response.status().equals(LocationReservationWorkflowState.RESERVED.name())) {
             return ResponseEntity.status(response.replayed() ? HttpStatus.OK : HttpStatus.CREATED).body(response);
         }
@@ -45,32 +45,32 @@ public class LocationReservationController {
     }
 
     @GetMapping("/needs-review")
-    public List<LocationReservationResponse> needsReview(
+    public List<ReservationWorkflowResponse.LocationReservation> needsReview(
             @RequestParam(defaultValue = "50") int limit) {
         return coordinator.needsReview(limit);
     }
 
     /** 운영자가 NEEDS_REVIEW workflow의 원격 재고를 해제(CLAIMED는 복원)하도록 보상을 다시 실행한다. */
     @PostMapping("/{workflowId}/release")
-    public LocationReservationResponse release(@PathVariable UUID workflowId) {
+    public ReservationWorkflowResponse.LocationReservation release(@PathVariable UUID workflowId) {
         return coordinator.releaseNeedsReview(workflowId);
     }
 
     @GetMapping("/{workflowId}")
-    public LocationReservationResponse find(@PathVariable UUID workflowId) {
+    public ReservationWorkflowResponse.LocationReservation find(@PathVariable UUID workflowId) {
         return coordinator.find(workflowId);
     }
 
     @PostMapping("/{workflowId}/reconcile")
-    public ResponseEntity<LocationReservationResponse> reconcile(@PathVariable UUID workflowId) {
-        LocationReservationResponse response = coordinator.retry(workflowId);
+    public ResponseEntity<ReservationWorkflowResponse.LocationReservation> reconcile(@PathVariable UUID workflowId) {
+        ReservationWorkflowResponse.LocationReservation response = coordinator.retry(workflowId);
         return ResponseEntity.status(response.status().equals(LocationReservationWorkflowState.RESERVED.name())
                 ? HttpStatus.OK : HttpStatus.ACCEPTED).body(response);
     }
 
     @PostMapping("/{workflowId}/cancel")
-    public ResponseEntity<LocationReservationResponse> cancel(@PathVariable UUID workflowId) {
-        LocationReservationResponse response = coordinator.cancel(workflowId);
+    public ResponseEntity<ReservationWorkflowResponse.LocationReservation> cancel(@PathVariable UUID workflowId) {
+        ReservationWorkflowResponse.LocationReservation response = coordinator.cancel(workflowId);
         if (response.status().equals(LocationReservationWorkflowState.CANCELLED.name())
                 || response.status().equals(LocationReservationWorkflowState.FAILED.name())) {
             return ResponseEntity.ok(response);

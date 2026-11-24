@@ -10,10 +10,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.atlas.settlement.dto.response.PayoutResponse;
+import com.atlas.payment.dto.response.FxResponse;
 import com.atlas.application.security.PayoutRecipientCipher;
-import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import com.atlas.payment.provider.exchange.ExchangeRateProvider;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
@@ -45,7 +45,7 @@ class PayoutDispatchApprovalServiceTest {
         UUID payoutId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
         Instant requestedAt = Instant.parse("2026-11-22T00:00:00Z");
-        SellerPayoutResponse requested = new SellerPayoutResponse(payoutId, sellerId, requestedAt,
+        PayoutResponse.SellerPayout requested = new PayoutResponse.SellerPayout(payoutId, sellerId, requestedAt,
                 requestedAt.plusSeconds(60), 10_000, 0, SettlementPayoutStatus.REQUESTED,
                 requestedAt, null, null, null);
         var recipient = new SellerPayoutProfileService.ActiveRecipient(
@@ -53,15 +53,15 @@ class PayoutDispatchApprovalServiceTest {
         when(dispatches.find(payoutId)).thenReturn(Optional.empty());
         when(payouts.find(payoutId)).thenReturn(requested);
         when(profiles.requireActiveRecipient(sellerId)).thenReturn(recipient);
-        when(exchangeRates.latestUsdKrwRate()).thenReturn(new ExchangeRateQuoteResponse(
+        when(exchangeRates.latestUsdKrwRate()).thenReturn(new FxResponse.ExchangeRateQuote(
                 new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-11-21")));
-        SellerPayoutResponse approved = new SellerPayoutResponse(payoutId, sellerId, requestedAt,
+        PayoutResponse.SellerPayout approved = new PayoutResponse.SellerPayout(payoutId, sellerId, requestedAt,
                 requestedAt.plusSeconds(60), 10_000, 0, SettlementPayoutStatus.APPROVED,
                 requestedAt, null, null, null);
         when(committer.approve(eq(payoutId), any(PayoutDispatchPlan.class), eq(recipient),
                 eq("approval-1"), eq("operator-1"), eq("verified recipient and country"))).thenReturn(approved);
 
-        SellerPayoutResponse result = service.approve(
+        PayoutResponse.SellerPayout result = service.approve(
                 payoutId, "approval-1", "operator-1", "verified recipient and country");
 
         ArgumentCaptor<PayoutDispatchPlan> plan = ArgumentCaptor.forClass(PayoutDispatchPlan.class);
@@ -85,11 +85,11 @@ class PayoutDispatchApprovalServiceTest {
         UUID sellerId = UUID.randomUUID();
         Instant now = Instant.parse("2026-11-22T00:00:00Z");
         when(dispatches.find(payoutId)).thenReturn(Optional.empty());
-        when(payouts.find(payoutId)).thenReturn(new SellerPayoutResponse(payoutId, sellerId, now,
+        when(payouts.find(payoutId)).thenReturn(new PayoutResponse.SellerPayout(payoutId, sellerId, now,
                 now.plusSeconds(60), 1, 0, SettlementPayoutStatus.REQUESTED, now, null, null, null));
         when(profiles.requireActiveRecipient(sellerId)).thenReturn(new SellerPayoutProfileService.ActiveRecipient(
                 sellerId, UUID.randomUUID(), 1, "US", "USD", "seller@example.test"));
-        when(exchangeRates.latestUsdKrwRate()).thenReturn(new ExchangeRateQuoteResponse(
+        when(exchangeRates.latestUsdKrwRate()).thenReturn(new FxResponse.ExchangeRateQuote(
                 new BigDecimal("1371.25"), "BOK_ECOS", LocalDate.parse("2026-11-21")));
 
         assertThatThrownBy(() -> service.approve(payoutId, "approval-2", "operator-1", "manual small amount"))

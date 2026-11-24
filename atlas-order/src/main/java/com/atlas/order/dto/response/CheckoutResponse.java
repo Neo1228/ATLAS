@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record CheckoutResponse(UUID checkoutId, String buyerRef, BuyerCheckoutState state,
-                               long totalWon, List<OrderResponse> orders,
+                               long totalWon, List<OrderViewResponse.Order> orders,
                                UUID paymentAttemptId, PaymentState paymentState, String paymentApprovalUrl) {
     public CheckoutResponse {
         orders = List.copyOf(orders);
@@ -14,12 +14,12 @@ public record CheckoutResponse(UUID checkoutId, String buyerRef, BuyerCheckoutSt
 
 
     public CheckoutResponse(UUID checkoutId, String buyerRef, BuyerCheckoutState state,
-                            long totalWon, List<OrderResponse> orders,
+                            long totalWon, List<OrderViewResponse.Order> orders,
                             UUID paymentAttemptId, PaymentState paymentState) {
         this(checkoutId, buyerRef, state, totalWon, orders, paymentAttemptId, paymentState, null);
     }
     public CheckoutResponse(UUID checkoutId, String buyerRef, BuyerCheckoutState state,
-                            long totalWon, List<OrderResponse> orders) {
+                            long totalWon, List<OrderViewResponse.Order> orders) {
         this(checkoutId, buyerRef, state, totalWon, orders, null, PaymentState.NOT_STARTED, null);
     }
 }

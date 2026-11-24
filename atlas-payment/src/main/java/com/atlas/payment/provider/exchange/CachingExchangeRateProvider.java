@@ -1,6 +1,6 @@
 package com.atlas.payment.provider.exchange;
 
-import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
+import com.atlas.payment.dto.response.FxResponse;
 import com.atlas.payment.exception.PaymentException;
 import java.time.Clock;
 import java.time.Duration;
@@ -51,7 +51,7 @@ public class CachingExchangeRateProvider implements ExchangeRateProvider {
 
     private final Duration failureBackoff;
 
-    private volatile ExchangeRateQuoteResponse cached;
+    private volatile FxResponse.ExchangeRateQuote cached;
     private volatile Instant cachedAt;
     /** 이 시각 전에는 외부를 다시 부르지 않는다. 마지막 조회가 실패했을 때만 설정된다. */
     private volatile Instant retryNotBefore;
@@ -88,8 +88,8 @@ public class CachingExchangeRateProvider implements ExchangeRateProvider {
     }
 
     @Override
-    public ExchangeRateQuoteResponse latestUsdKrwRate() {
-        ExchangeRateQuoteResponse snapshot = cached;
+    public FxResponse.ExchangeRateQuote latestUsdKrwRate() {
+        FxResponse.ExchangeRateQuote snapshot = cached;
         Instant fetchedAt = cachedAt;
         if (snapshot != null && fetchedAt != null && isFresh(fetchedAt)) {
             return snapshot;
@@ -111,7 +111,7 @@ public class CachingExchangeRateProvider implements ExchangeRateProvider {
                 return snapshot;
             }
             try {
-                ExchangeRateQuoteResponse refreshed = delegate.latestUsdKrwRate();
+                FxResponse.ExchangeRateQuote refreshed = delegate.latestUsdKrwRate();
                 // null 을 캐시하면 TTL 동안 모든 결제가 환율 없이 실패한다. 조회 실패로 취급해
                 // 허용 범위 안의 직전 값으로 버티거나, 없으면 결제 대행사 일시 장애로 알린다.
                 if (refreshed == null) {
@@ -144,7 +144,7 @@ public class CachingExchangeRateProvider implements ExchangeRateProvider {
     }
 
     /** 허용 범위 안의 마지막 성공값이 있어 외부를 부르지 않고도 응답할 수 있는지. */
-    private boolean usable(ExchangeRateQuoteResponse snapshot, Instant fetchedAt) {
+    private boolean usable(FxResponse.ExchangeRateQuote snapshot, Instant fetchedAt) {
         return snapshot != null && fetchedAt != null && withinMaxStale(fetchedAt);
     }
 

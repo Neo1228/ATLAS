@@ -1,7 +1,7 @@
 package com.atlas.admission.service.impl;
 
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.persistence.entity.Campaign;
 import com.atlas.admission.repository.CampaignRepository;
@@ -34,7 +34,7 @@ class CampaignServiceTest {
         CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignsRepository, sellerSkus, Clock.systemUTC());
 
         assertThrows(CampaignException.class, () -> campaigns.create(
-                new CreateCampaignRequest(null, "sku-1", Duration.ofMinutes(5))));
+                new AdmissionRequest.CreateCampaign(null, "sku-1", Duration.ofMinutes(5))));
 
         verifyNoInteractions(campaignsRepository, sellerSkus);
     }
@@ -47,7 +47,7 @@ class CampaignServiceTest {
         UUID campaignId = UUID.randomUUID();
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
         when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN)).thenReturn(
-                new SellerSkuResponse(sellerId, UUID.randomUUID(), "sku-1", "Product",
+                new CatalogResponse.SellerSku(sellerId, UUID.randomUUID(), "sku-1", "Product",
                         1, null, null, null, 1));
         when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> {
             Campaign saved = invocation.getArgument(0);
@@ -59,7 +59,7 @@ class CampaignServiceTest {
 
         CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus,
                 Clock.fixed(now, ZoneOffset.UTC));
-        var response = campaigns.create(new CreateCampaignRequest(sellerId, "sku-1", Duration.ofMinutes(5)));
+        var response = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, "sku-1", Duration.ofMinutes(5)));
 
         assertEquals(campaignId, response.campaignId());
         assertEquals(sellerId, response.sellerId());
@@ -78,7 +78,7 @@ class CampaignServiceTest {
         CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus, Clock.systemUTC());
 
         assertThrows(CampaignException.class, () -> campaigns.create(
-                new CreateCampaignRequest(sellerId, "unknown", Duration.ofMinutes(5))));
+                new AdmissionRequest.CreateCampaign(sellerId, "unknown", Duration.ofMinutes(5))));
 
         verify(campaignRepository, never()).save(any(Campaign.class));
     }
@@ -93,7 +93,7 @@ class CampaignServiceTest {
         CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC());
 
         assertThrows(CatalogException.class, () -> service.create(
-                new CreateCampaignRequest(sellerId, "sku-1", Duration.ofMinutes(5))));
+                new AdmissionRequest.CreateCampaign(sellerId, "sku-1", Duration.ofMinutes(5))));
 
         verify(repository, never()).save(any(Campaign.class));
     }

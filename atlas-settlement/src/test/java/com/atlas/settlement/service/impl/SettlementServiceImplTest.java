@@ -16,10 +16,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.settlement.dto.request.CapturePostingRequest;
-import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
-import com.atlas.settlement.dto.request.RefundPostingRequest;
-import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.request.SellerSettlementStatementRequest;
 import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.exception.SettlementException;
@@ -58,7 +55,7 @@ class SettlementServiceImplTest {
     private final UUID orderId = UUID.randomUUID();
     private final UUID attemptId = UUID.randomUUID();
     private final UUID sellerId = UUID.randomUUID();
-    private final CapturePostingRequest request = new CapturePostingRequest(orderId, attemptId, sellerId, 2_500);
+    private final SettlementPostingRequest.Capture request = new SettlementPostingRequest.Capture(orderId, attemptId, sellerId, 2_500);
     private final CaptureJournalRecord captureFacts =
             new CaptureJournalRecord(orderId, attemptId, sellerId, 2_500);
 
@@ -98,7 +95,7 @@ class SettlementServiceImplTest {
     @Test
     void rejectsInvalidCaptureFactsBeforePersistence() {
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
-                () -> service.recordCapture(new CapturePostingRequest(orderId, null, sellerId, 2_500)));
+                () -> service.recordCapture(new SettlementPostingRequest.Capture(orderId, null, sellerId, 2_500)));
 
         verify(journals, never()).insertIfAbsent(any(CaptureJournalRecord.class), anyLong(), anyLong(),
                 anyInt(), anyInt(), any(Instant.class));
@@ -107,14 +104,14 @@ class SettlementServiceImplTest {
     @Test
     void rejectsInvalidRefundFactsBeforePersistence() {
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
-                () -> service.recordRefund(new RefundPostingRequest(orderId, null, sellerId, 2_500)));
+                () -> service.recordRefund(new SettlementPostingRequest.Refund(orderId, null, sellerId, 2_500)));
         verify(journals, never()).insertRefundIfAbsent(any(RefundJournalRecord.class), any(Instant.class));
     }
 
     @Test
     void rejectsRefundReplayWithChangedFacts() {
         UUID refundId = UUID.randomUUID();
-        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        SettlementPostingRequest.Refund request = new SettlementPostingRequest.Refund(orderId, refundId, sellerId, 2_500);
         RefundJournalRecord original = new RefundJournalRecord(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
                 new RefundReservation(
@@ -129,7 +126,7 @@ class SettlementServiceImplTest {
     @Test
     void rejectsRefundPostingWithoutAReservation() {
         UUID refundId = UUID.randomUUID();
-        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        SettlementPostingRequest.Refund request = new SettlementPostingRequest.Refund(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.empty());
 
         assertSettlementCode(SettlementException.Code.CONFLICT, () -> service.recordRefund(request));
@@ -139,7 +136,7 @@ class SettlementServiceImplTest {
     @Test
     void rejectsRefundPostingWhenReservationFactsDiffer() {
         UUID refundId = UUID.randomUUID();
-        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        SettlementPostingRequest.Refund request = new SettlementPostingRequest.Refund(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
                 new RefundReservation(
                         refundId, orderId, sellerId, 2_400, "RESERVED", now, now)));
@@ -151,7 +148,7 @@ class SettlementServiceImplTest {
     @Test
     void postingAnAlreadyReservedRefundDoesNotCancelAPayoutAgain() {
         UUID refundId = UUID.randomUUID();
-        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        SettlementPostingRequest.Refund request = new SettlementPostingRequest.Refund(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
                 new RefundReservation(
                         refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
@@ -168,7 +165,7 @@ class SettlementServiceImplTest {
     @Test
     void replayingRefundReservationDoesNotCancelPayoutCreatedFromHeldBalance() {
         UUID refundId = UUID.randomUUID();
-        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        SettlementPostingRequest.Refund request = new SettlementPostingRequest.Refund(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
                 new RefundReservation(
                         refundId, orderId, sellerId, 2_500, "RESERVED", now, now)));
@@ -183,7 +180,7 @@ class SettlementServiceImplTest {
     @Test
     void replayingDefinitiveRefundReleaseIsIdempotent() {
         UUID refundId = UUID.randomUUID();
-        RefundPostingRequest request = new RefundPostingRequest(orderId, refundId, sellerId, 2_500);
+        SettlementPostingRequest.Refund request = new SettlementPostingRequest.Refund(orderId, refundId, sellerId, 2_500);
         when(refundReservations.find(refundId)).thenReturn(Optional.of(
                 new RefundReservation(
                         refundId, orderId, sellerId, 2_500, "RELEASED", now, now)));
@@ -199,11 +196,11 @@ class SettlementServiceImplTest {
         UUID attemptId = UUID.randomUUID();
         UUID firstOrder = UUID.randomUUID();
         UUID secondOrder = UUID.randomUUID();
-        SellerOrderAllocationRequest first = new SellerOrderAllocationRequest(firstOrder, UUID.randomUUID(), 60);
-        SellerOrderAllocationRequest second = new SellerOrderAllocationRequest(secondOrder, UUID.randomUUID(), 40);
+        SettlementPostingRequest.SellerOrderAllocation first = new SettlementPostingRequest.SellerOrderAllocation(firstOrder, UUID.randomUUID(), 60);
+        SettlementPostingRequest.SellerOrderAllocation second = new SettlementPostingRequest.SellerOrderAllocation(secondOrder, UUID.randomUUID(), 40);
 
         CheckoutSettlementRecord normalized = SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 100, List.of(second, first)));
+                new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 100, List.of(second, first)));
 
         List<CheckoutSettlementAllocation> expected = (firstOrder.compareTo(secondOrder) < 0
                 ? List.of(first, second) : List.of(second, first)).stream()
@@ -221,30 +218,30 @@ class SettlementServiceImplTest {
         UUID sellerId = UUID.randomUUID();
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
                 () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                        new CheckoutSettlementPostingRequest(checkoutId, null, 1,
-                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
+                        new SettlementPostingRequest.CheckoutSettlement(checkoutId, null, 1,
+                                List.of(new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, 1)))));
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
                 () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 0,
-                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
+                        new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 0,
+                                List.of(new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, 1)))));
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
                 () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 2,
-                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 1)))));
+                        new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 2,
+                                List.of(new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, 1)))));
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
                 () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 1,
-                                List.of(new SellerOrderAllocationRequest(orderId, sellerId, 0)))));
+                        new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 1,
+                                List.of(new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, 0)))));
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
                 () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, 2, List.of(
-                                new SellerOrderAllocationRequest(orderId, sellerId, 1),
-                                new SellerOrderAllocationRequest(orderId, UUID.randomUUID(), 1)))));
+                        new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 2, List.of(
+                                new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, 1),
+                                new SettlementPostingRequest.SellerOrderAllocation(orderId, UUID.randomUUID(), 1)))));
         assertSettlementCode(SettlementException.Code.INVALID_REQUEST,
                 () -> SettlementServiceImpl.validateAndNormalizeCheckoutCapture(
-                        new CheckoutSettlementPostingRequest(checkoutId, attemptId, Long.MAX_VALUE, List.of(
-                                new SellerOrderAllocationRequest(orderId, sellerId, Long.MAX_VALUE),
-                                new SellerOrderAllocationRequest(UUID.randomUUID(), sellerId, 1)))));
+                        new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, Long.MAX_VALUE, List.of(
+                                new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, Long.MAX_VALUE),
+                                new SettlementPostingRequest.SellerOrderAllocation(UUID.randomUUID(), sellerId, 1)))));
     }
 
     @Test
@@ -257,12 +254,12 @@ class SettlementServiceImplTest {
         Instant recordedAt = Instant.parse("2025-01-02T03:04:05Z");
         SettlementServiceImpl checkoutService = new SettlementServiceImpl(
                 journals, payouts, refundReservations, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
-        SellerOrderAllocationRequest allocation = new SellerOrderAllocationRequest(orderId, sellerId, 125);
+        SettlementPostingRequest.SellerOrderAllocation allocation = new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, 125);
         CheckoutSettlementRecord facts = new CheckoutSettlementRecord(checkoutId, attemptId, 125,
                 List.of(stored(allocation)));
         when(journals.insertCheckoutIfAbsent(facts, recordedAt)).thenReturn(Optional.of(journalId));
 
-        checkoutService.recordCheckoutCapture(new CheckoutSettlementPostingRequest(
+        checkoutService.recordCheckoutCapture(new SettlementPostingRequest.CheckoutSettlement(
                 checkoutId, attemptId, 125, List.of(allocation)));
 
         verify(journals).insertCheckoutIfAbsent(facts, recordedAt);
@@ -281,14 +278,14 @@ class SettlementServiceImplTest {
         Instant recordedAt = Instant.parse("2025-01-02T03:04:05Z");
         SettlementServiceImpl checkoutService = new SettlementServiceImpl(
                 journals, payouts, refundReservations, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
-        SellerOrderAllocationRequest allocation = new SellerOrderAllocationRequest(orderId, sellerId, 125);
+        SettlementPostingRequest.SellerOrderAllocation allocation = new SettlementPostingRequest.SellerOrderAllocation(orderId, sellerId, 125);
         CheckoutSettlementRecord facts = new CheckoutSettlementRecord(checkoutId, attemptId, 125,
                 List.of(stored(allocation)));
         when(journals.insertCheckoutIfAbsent(facts, recordedAt)).thenReturn(Optional.empty());
         when(journals.findCheckoutById(checkoutId)).thenReturn(Optional.of(facts));
 
         assertDoesNotThrow(() -> checkoutService.recordCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 125, List.of(allocation))));
+                new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 125, List.of(allocation))));
 
         verify(journals).insertCheckoutIfAbsent(facts, recordedAt);
         verify(journals).findCheckoutById(checkoutId);
@@ -308,7 +305,7 @@ class SettlementServiceImplTest {
         Instant recordedAt = Instant.parse("2025-01-02T03:04:05Z");
         SettlementServiceImpl checkoutService = new SettlementServiceImpl(
                 journals, payouts, refundReservations, policy, Clock.fixed(recordedAt, ZoneOffset.UTC));
-        SellerOrderAllocationRequest originalAllocation = new SellerOrderAllocationRequest(orderId, originalSellerId, 125);
+        SettlementPostingRequest.SellerOrderAllocation originalAllocation = new SettlementPostingRequest.SellerOrderAllocation(orderId, originalSellerId, 125);
         CheckoutSettlementRecord originalFacts = new CheckoutSettlementRecord(checkoutId, attemptId, 125,
                 List.of(stored(originalAllocation)));
         when(journals.insertCheckoutIfAbsent(any(CheckoutSettlementRecord.class), eq(recordedAt)))
@@ -316,14 +313,14 @@ class SettlementServiceImplTest {
         when(journals.findCheckoutById(checkoutId)).thenReturn(Optional.of(originalFacts));
 
         assertSettlementCode(SettlementException.Code.CONFLICT, () -> checkoutService.recordCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, UUID.randomUUID(), 125,
+                new SettlementPostingRequest.CheckoutSettlement(checkoutId, UUID.randomUUID(), 125,
                         List.of(originalAllocation))));
         assertSettlementCode(SettlementException.Code.CONFLICT, () -> checkoutService.recordCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 125,
-                        List.of(new SellerOrderAllocationRequest(orderId, changedSellerId, 125)))));
+                new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 125,
+                        List.of(new SettlementPostingRequest.SellerOrderAllocation(orderId, changedSellerId, 125)))));
         assertSettlementCode(SettlementException.Code.CONFLICT, () -> checkoutService.recordCheckoutCapture(
-                new CheckoutSettlementPostingRequest(checkoutId, attemptId, 126,
-                        List.of(new SellerOrderAllocationRequest(orderId, originalSellerId, 126)))));
+                new SettlementPostingRequest.CheckoutSettlement(checkoutId, attemptId, 126,
+                        List.of(new SettlementPostingRequest.SellerOrderAllocation(orderId, originalSellerId, 126)))));
 
         verify(journals, times(3)).insertCheckoutIfAbsent(any(CheckoutSettlementRecord.class), eq(recordedAt));
         verify(journals, times(3)).findCheckoutById(checkoutId);
@@ -332,7 +329,7 @@ class SettlementServiceImplTest {
         verify(journals, never()).insertCheckoutAllocations(any(UUID.class), anyList());
     }
 
-    private static CheckoutSettlementAllocation stored(SellerOrderAllocationRequest allocation) {
+    private static CheckoutSettlementAllocation stored(SettlementPostingRequest.SellerOrderAllocation allocation) {
         return new CheckoutSettlementAllocation(allocation.orderId(), allocation.sellerId(), allocation.amountWon());
     }
 

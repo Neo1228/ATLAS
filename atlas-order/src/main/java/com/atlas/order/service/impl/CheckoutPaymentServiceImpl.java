@@ -1,12 +1,12 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.inventory.dto.response.ReservationResponse;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
 import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderItemResponse;
 import com.atlas.catalog.service.SellerCouponService;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.persistence.entity.OrderItem;
@@ -26,8 +26,6 @@ import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentService;
-import com.atlas.settlement.dto.request.CheckoutSettlementPostingRequest;
-import com.atlas.settlement.dto.request.SellerOrderAllocationRequest;
 import com.atlas.settlement.service.SettlementService;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -393,7 +391,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             remoteReservationForCleanup[0] = children.stream().anyMatch(order -> order.reservationWorkflowId() != null);
             var now = clock.instant();
             if (payment.state() == PaymentState.CAPTURED) {
-                List<SellerOrderAllocationRequest> allocations = new ArrayList<>();
+                List<SettlementPostingRequest.SellerOrderAllocation> allocations = new ArrayList<>();
                 long total = 0;
                 for (PurchaseOrder order : children) {
                     List<OrderItem> orderItems = items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId());
@@ -404,11 +402,11 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                         amount = Math.addExact(amount, item.lineTotalWon());
                     }
                     total = Math.addExact(total, amount);
-                    allocations.add(new SellerOrderAllocationRequest(order.orderId(), order.sellerId(), amount));
+                    allocations.add(new SettlementPostingRequest.SellerOrderAllocation(order.orderId(), order.sellerId(), amount));
                 }
                 if (total != checkout.totalWon()) throw new OrderException(OrderException.Code.CONFLICT, "Checkout item total mismatch");
                 settlement.recordCheckoutCapture(
-                        new CheckoutSettlementPostingRequest(checkoutId, payment.attemptId(), total, allocations));
+                        new SettlementPostingRequest.CheckoutSettlement(checkoutId, payment.attemptId(), total, allocations));
                 boolean remoteCheckout = children.stream().anyMatch(order -> order.reservationWorkflowId() != null);
                 if (remoteCheckout && !remoteInventoryClaimed(children)) {
                     // 매입은 확정됐지만 원격 claim이 기록되지 않았다. 판매 확정 전까지 PAID로 올리지 않는다.
@@ -642,12 +640,12 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         PaymentResponse payment = payments.findCheckout(checkout.checkoutId());
         List<PurchaseOrder> childOrders = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkout.checkoutId());
         List<UUID> childOrderIds = childOrders.stream().map(PurchaseOrder::orderId).toList();
-        Map<UUID, List<ReservationResponse>> reservationsByOrder = childOrderIds.isEmpty()
+        Map<UUID, List<InventoryResponse.Reservation>> reservationsByOrder = childOrderIds.isEmpty()
                 ? Map.of() : inventory.findReservationsByOrderIds(childOrderIds);
         Map<UUID, List<OrderItem>> itemsByOrder = childOrderIds.isEmpty()
                 ? Map.of() : items.findAllByOrderIds(childOrderIds).stream()
                         .collect(Collectors.groupingBy(item -> item.order().orderId()));
-        List<OrderResponse> childResponses = childOrders.stream()
+        List<OrderViewResponse.Order> childResponses = childOrders.stream()
                 .map(order -> toResponse(order, payment,
                         reservationsByOrder.getOrDefault(order.orderId(), List.of()),
                         itemsByOrder.getOrDefault(order.orderId(), List.of())))
@@ -657,11 +655,11 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 payment == null ? PaymentState.NOT_STARTED : payment.state(),
                 payment == null ? null : payment.approvalUrl());
     }
-    private OrderResponse toResponse(PurchaseOrder order, PaymentResponse payment,
-            List<ReservationResponse> reservations, List<OrderItem> orderItems) {
+    private OrderViewResponse.Order toResponse(PurchaseOrder order, PaymentResponse payment,
+            List<InventoryResponse.Reservation> reservations, List<OrderItem> orderItems) {
         PaymentState paymentState = payment == null ? PaymentState.NOT_STARTED : payment.state();
-        List<OrderItemResponse> itemResponses = orderItems.stream()
-                .map(item -> new OrderItemResponse(item.orderItemId(), item.productId(), item.sellerId(),
+        List<OrderViewResponse.Item> itemResponses = orderItems.stream()
+                .map(item -> new OrderViewResponse.Item(item.orderItemId(), item.productId(), item.sellerId(),
                         item.skuId(), item.productName(), item.quantity(), item.unitPriceWon(),
                         item.couponDiscountWon(), item.lineTotalWon()))
                 .toList();
@@ -670,7 +668,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             total = Math.addExact(total, item.lineTotalWon());
         }
         ReservationStatus inventoryState = reservations.isEmpty() ? null : reservations.get(0).status();
-        return new OrderResponse(order.orderId(), order.campaignId(), order.ticketId(), order.paymentAttemptId(),
+        return new OrderViewResponse.Order(order.orderId(), order.campaignId(), order.ticketId(), order.paymentAttemptId(),
                 order.state(), order.checkoutExpiresAt(), inventoryState, paymentState, null, order.source(),
                 order.fulfillmentLocationId(), itemResponses, total, order.sellerCouponCode(),
                 order.couponDiscountWon());

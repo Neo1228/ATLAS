@@ -1,23 +1,10 @@
 package com.atlas.application.controller.account;
 
+import com.atlas.account.dto.response.AccountResponse;
+import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.application.security.ClientOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 
-import com.atlas.account.dto.request.LoginRequest;
-import com.atlas.account.dto.request.AccountActionTokenRequest;
-import com.atlas.account.dto.request.PasswordResetConfirmRequest;
-import com.atlas.account.dto.request.PasswordResetRequest;
-import com.atlas.account.dto.request.MfaChallengeRequest;
-import com.atlas.account.dto.request.CloseAccountRequest;
-import com.atlas.account.dto.request.MfaCodeRequest;
-import com.atlas.account.dto.request.RefreshTokenRequest;
-import com.atlas.account.dto.request.RegisterBuyerRequest;
-import com.atlas.account.dto.response.AccountTokenResponse;
-import com.atlas.account.dto.response.AccountActionResponse;
-import com.atlas.account.dto.response.AccountLoginResponse;
-import com.atlas.account.dto.response.MfaEnrollmentResponse;
-import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
-import com.atlas.account.dto.response.AccountSessionPage;
 import com.atlas.account.service.AccountService;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -45,70 +32,70 @@ public class AccountController {
 
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public AccountActionResponse registerBuyer(@Valid @RequestBody RegisterBuyerRequest request,
+    public AccountResponse.Action registerBuyer(@Valid @RequestBody AccountRequest.RegisterBuyer request,
             HttpServletRequest httpRequest) {
         return accounts.registerBuyer(request, ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/verify-email")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void verifyEmail(@Valid @RequestBody AccountActionTokenRequest request) {
+    public void verifyEmail(@Valid @RequestBody AccountRequest.AccountActionToken request) {
         accounts.verifyEmail(request.token());
     }
 
     @PostMapping("/email-verification/request")
-    public AccountActionResponse requestEmailVerification(
-            @Valid @RequestBody PasswordResetRequest request, HttpServletRequest httpRequest) {
+    public AccountResponse.Action requestEmailVerification(
+            @Valid @RequestBody AccountRequest.PasswordReset request, HttpServletRequest httpRequest) {
         return accounts.requestEmailVerification(request.email(), ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/password-reset/request")
-    public AccountActionResponse requestPasswordReset(
-            @Valid @RequestBody PasswordResetRequest request, HttpServletRequest httpRequest) {
+    public AccountResponse.Action requestPasswordReset(
+            @Valid @RequestBody AccountRequest.PasswordReset request, HttpServletRequest httpRequest) {
         return accounts.requestPasswordReset(request.email(), ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/password-reset/confirm")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void resetPassword(@Valid @RequestBody PasswordResetConfirmRequest request) {
+    public void resetPassword(@Valid @RequestBody AccountRequest.PasswordResetConfirm request) {
         accounts.resetPassword(request.token(), request.newPassword());
     }
 
     @PostMapping("/login")
-    public AccountLoginResponse login(@Valid @RequestBody LoginRequest request,
+    public AccountResponse.Login login(@Valid @RequestBody AccountRequest.Login request,
             HttpServletRequest httpRequest) {
         return accounts.login(request, ClientOrigin.of(httpRequest));
     }
 
     @PostMapping("/mfa/challenge")
-    public AccountTokenResponse completeMfaLogin(@Valid @RequestBody MfaChallengeRequest request) {
+    public AccountResponse.Token completeMfaLogin(@Valid @RequestBody AccountRequest.MfaChallenge request) {
         return accounts.completeMfaLogin(request);
     }
 
     @PostMapping("/mfa/enroll")
-    public MfaEnrollmentResponse startMfaEnrollment(@AuthenticationPrincipal Jwt jwt) {
+    public AccountResponse.MfaEnrollment startMfaEnrollment(@AuthenticationPrincipal Jwt jwt) {
         return accounts.startMfaEnrollment(UUID.fromString(jwt.getSubject()));
     }
 
     @PostMapping("/mfa/enable")
-    public MfaRecoveryCodesResponse confirmMfaEnrollment(@AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody MfaCodeRequest request) {
+    public AccountResponse.MfaRecoveryCodes confirmMfaEnrollment(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AccountRequest.MfaCode request) {
         return accounts.confirmMfaEnrollment(UUID.fromString(jwt.getSubject()), request.code());
     }
 
     @PostMapping("/mfa/disable")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void disableMfa(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody MfaCodeRequest request) {
+    public void disableMfa(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AccountRequest.MfaCode request) {
         accounts.disableMfa(UUID.fromString(jwt.getSubject()), request.code());
     }
 
     @PostMapping("/refresh")
-    public AccountTokenResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
+    public AccountResponse.Token refresh(@Valid @RequestBody AccountRequest.RefreshToken request) {
         return accounts.refresh(request);
     }
 
     @GetMapping("/sessions")
-    public AccountSessionPage sessions(@AuthenticationPrincipal Jwt jwt,
+    public AccountResponse.SessionPage sessions(@AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         return accounts.listSessions(UUID.fromString(jwt.getSubject()),
@@ -133,13 +120,13 @@ public class AccountController {
     @DeleteMapping("/account")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void closeAccount(@AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody CloseAccountRequest request) {
+            @Valid @RequestBody AccountRequest.CloseAccount request) {
         accounts.closeAccount(UUID.fromString(jwt.getSubject()), request.password());
     }
 
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void logout(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody RefreshTokenRequest request) {
+    public void logout(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AccountRequest.RefreshToken request) {
         accounts.logout(UUID.fromString(jwt.getSubject()),
                 UUID.fromString(jwt.getClaimAsString("sid")), request.refreshToken());
     }

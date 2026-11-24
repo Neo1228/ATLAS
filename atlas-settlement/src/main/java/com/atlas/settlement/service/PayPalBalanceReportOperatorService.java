@@ -1,10 +1,6 @@
 package com.atlas.settlement.service;
 
-import com.atlas.settlement.dto.response.PayPalBalanceReportDispositionResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary;
-import com.atlas.settlement.dto.response.PayPalBalanceReportPage;
-import com.atlas.settlement.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportRunResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -15,17 +11,17 @@ public interface PayPalBalanceReportOperatorService {
     int MAX_PAGE_SIZE = 100;
     int MAX_PAGE_OFFSET = 10_000;
 
-    PayPalBalanceReportOperatorSummary summary();
+    PayPalBalanceReportResponse.OperatorSummary summary();
 
-    PayPalBalanceReportPage<PayPalBalanceReportRunResponse> listRuns(int requestedLimit, int offset);
+    PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Run> listRuns(int requestedLimit, int offset);
 
-    PayPalBalanceReportRunResponse search(String reportSha256);
+    PayPalBalanceReportResponse.Run search(String reportSha256);
 
-    PayPalBalanceReportPage<PayPalBalanceReportRowResponse> listExceptions(String status, LocalDate from, LocalDate to, String recordId, int requestedLimit, int offset);
+    PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listExceptions(String status, LocalDate from, LocalDate to, String recordId, int requestedLimit, int offset);
 
-    PayPalBalanceReportPage<PayPalBalanceReportRowResponse> listRunRows(UUID runId, String status, String recordId, int requestedLimit, int offset);
+    PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listRunRows(UUID runId, String status, String recordId, int requestedLimit, int offset);
 
-    List<PayPalBalanceReportDispositionResponse> dispositionHistory(UUID runId, int rowNumber);
+    List<PayPalBalanceReportResponse.Disposition> dispositionHistory(UUID runId, int rowNumber);
 
-    PayPalBalanceReportDispositionResponse recordDisposition(UUID runId, int rowNumber, String disposition, String actor, String reason, String idempotencyKey);
+    PayPalBalanceReportResponse.Disposition recordDisposition(UUID runId, int rowNumber, String disposition, String actor, String reason, String idempotencyKey);
 }

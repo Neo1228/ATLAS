@@ -1,13 +1,10 @@
 package com.atlas.inventorylocation.service;
 
+import com.atlas.inventorylocation.dto.response.LocationResponse;
+import com.atlas.inventorylocation.dto.request.LocationRequest;
 import com.atlas.inventorylocation.exception.InventoryLocationException;
 
-import com.atlas.inventorylocation.dto.request.InventoryReservationRequest;
-import com.atlas.inventorylocation.dto.request.InventoryCancellationRequest;
-import com.atlas.inventorylocation.dto.request.InventoryReservationRequest.Item;
-import com.atlas.inventorylocation.dto.request.LocationStockRequest;
-import com.atlas.inventorylocation.dto.response.InventoryReservationResponse;
-import com.atlas.inventorylocation.dto.response.InventoryStockResponse;
+import com.atlas.inventorylocation.dto.request.LocationRequest.Reservation.Item;
 import com.atlas.inventorylocation.repository.InventoryReservationRepository;
 import com.atlas.inventorylocation.persistence.projection.LocationReservationItemRecord;
 import com.atlas.inventorylocation.persistence.projection.LocationReservationRecord;
@@ -46,8 +43,8 @@ public class InventoryReservationService {
     }
 
     @Transactional
-    public InventoryStockResponse setInitialCapacity(UUID fulfillmentLocationId, UUID sellerId, String skuId,
-            LocationStockRequest request) {
+    public LocationResponse.Stock setInitialCapacity(UUID fulfillmentLocationId, UUID sellerId, String skuId,
+            LocationRequest.Stock request) {
         validateLocation(fulfillmentLocationId);
         validateSku(skuId);
         if (sellerId == null || request == null || request.sellerId() == null || !sellerId.equals(request.sellerId())) {
@@ -62,7 +59,7 @@ public class InventoryReservationService {
     }
 
     @Transactional(readOnly = true)
-    public InventoryStockResponse findStock(UUID fulfillmentLocationId, UUID sellerId, String skuId) {
+    public LocationResponse.Stock findStock(UUID fulfillmentLocationId, UUID sellerId, String skuId) {
         validateLocation(fulfillmentLocationId);
         if (sellerId == null) throw invalid("Seller id is required");
         validateSku(skuId);
@@ -81,8 +78,8 @@ public class InventoryReservationService {
     }
 
     @Transactional
-    public InventoryReservationResponse reserve(UUID fulfillmentLocationId, String idempotencyKey,
-            InventoryReservationRequest request) {
+    public LocationResponse.Reservation reserve(UUID fulfillmentLocationId, String idempotencyKey,
+            LocationRequest.Reservation request) {
         validateLocation(fulfillmentLocationId);
         validateIdempotencyKey(idempotencyKey);
         if (request == null || request.orderId() == null) throw invalid("Order id is required");
@@ -125,8 +122,8 @@ public class InventoryReservationService {
     }
 
     @Transactional
-    public InventoryReservationResponse cancel(UUID fulfillmentLocationId, String idempotencyKey,
-            InventoryCancellationRequest request) {
+    public LocationResponse.Reservation cancel(UUID fulfillmentLocationId, String idempotencyKey,
+            LocationRequest.Cancellation request) {
         validateLocation(fulfillmentLocationId);
         validateIdempotencyKey(idempotencyKey);
         if (request == null || request.orderId() == null) throw invalid("Order id is required");
@@ -168,7 +165,7 @@ public class InventoryReservationService {
 
 
     @Transactional(readOnly = true)
-    public InventoryReservationResponse findReservation(UUID fulfillmentLocationId, UUID reservationId) {
+    public LocationResponse.Reservation findReservation(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
         LocationReservationRecord reservation = repository.find(fulfillmentLocationId, reservationId);
         if (reservation == null) throw notFound("Reservation not found");
@@ -176,7 +173,7 @@ public class InventoryReservationService {
     }
 
     @Transactional
-    public InventoryReservationResponse claim(UUID fulfillmentLocationId, UUID reservationId) {
+    public LocationResponse.Reservation claim(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
         LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
         if ("CLAIMED".equals(reservation.status())) return response(reservation, true);
@@ -201,7 +198,7 @@ public class InventoryReservationService {
      * 재고를 다시 판매 가능 수량으로 돌려야 하므로 CLAIMED만 RELEASED로 전이한다. 반복 호출은 멱등이다.
      */
     @Transactional
-    public InventoryReservationResponse restore(UUID fulfillmentLocationId, UUID reservationId) {
+    public LocationResponse.Reservation restore(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
         LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
         if ("RELEASED".equals(reservation.status())) return response(reservation, true);
@@ -230,7 +227,7 @@ public class InventoryReservationService {
      * reservation item 수량을 넘지 못한다. reservation row lock으로 같은 reservation의 동시 restock을 직렬화한다.
      */
     @Transactional
-    public InventoryReservationResponse restock(UUID fulfillmentLocationId, UUID reservationId, String restockKey,
+    public LocationResponse.Reservation restock(UUID fulfillmentLocationId, UUID reservationId, String restockKey,
                                                 List<Item> requestedItems) {
         validateLocation(fulfillmentLocationId);
         validateIdempotencyKey(restockKey);
@@ -273,7 +270,7 @@ public class InventoryReservationService {
     }
 
     @Transactional
-    public InventoryReservationResponse release(UUID fulfillmentLocationId, UUID reservationId) {
+    public LocationResponse.Reservation release(UUID fulfillmentLocationId, UUID reservationId) {
         validateLocation(fulfillmentLocationId);
         LocationReservationRecord reservation = requireForUpdate(fulfillmentLocationId, reservationId);
         if ("RELEASED".equals(reservation.status()) || "EXPIRED".equals(reservation.status())
@@ -335,16 +332,16 @@ public class InventoryReservationService {
  return List.copyOf(sorted.values());
  }
 
- private InventoryReservationResponse response(LocationReservationRecord reservation, boolean replayed) {
-        List<InventoryReservationResponse.Item> items = reservation.items().stream()
-                .map(item -> new InventoryReservationResponse.Item(item.sellerId(), item.skuId(), item.quantity())).toList();
-        return new InventoryReservationResponse(reservation.reservationId(), reservation.fulfillmentLocationId(),
+ private LocationResponse.Reservation response(LocationReservationRecord reservation, boolean replayed) {
+        List<LocationResponse.Reservation.Item> items = reservation.items().stream()
+                .map(item -> new LocationResponse.Reservation.Item(item.sellerId(), item.skuId(), item.quantity())).toList();
+        return new LocationResponse.Reservation(reservation.reservationId(), reservation.fulfillmentLocationId(),
                 reservation.orderId(), reservation.idempotencyKey(), reservation.status(), items,
                 reservation.createdAt(), reservation.expiresAt(), replayed);
     }
 
-    private InventoryStockResponse stockResponse(LocationStockRecord stock) {
-        return new InventoryStockResponse(stock.fulfillmentLocationId(), stock.sellerId(), stock.skuId(), stock.initialCapacity(),
+    private LocationResponse.Stock stockResponse(LocationStockRecord stock) {
+        return new LocationResponse.Stock(stock.fulfillmentLocationId(), stock.sellerId(), stock.skuId(), stock.initialCapacity(),
                 stock.availableQuantity(), stock.reservedQuantity(), stock.claimedQuantity());
     }
 

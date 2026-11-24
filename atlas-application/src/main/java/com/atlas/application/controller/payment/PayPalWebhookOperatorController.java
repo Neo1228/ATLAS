@@ -1,11 +1,9 @@
 package com.atlas.application.controller.payment;
 
-import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage;
-import com.atlas.payment.dto.response.PayPalWebhookRequeueResponse;
+import com.atlas.application.dto.request.PaymentHttpRequest;
+import com.atlas.payment.dto.response.WebhookRetryResponse;
 import com.atlas.payment.service.PayPalWebhookOperatorService;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.security.Principal;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -31,7 +29,7 @@ public class PayPalWebhookOperatorController {
     }
 
     @GetMapping("/exhausted")
-    public PayPalWebhookExhaustedRetryPage exhausted(
+    public WebhookRetryResponse.ExhaustedRetryPage exhausted(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int boundedSize = size <= 0
@@ -44,15 +42,14 @@ public class PayPalWebhookOperatorController {
     }
 
     @PostMapping("/{eventId}/requeue")
-    public ResponseEntity<PayPalWebhookRequeueResponse> requeue(
+    public ResponseEntity<WebhookRetryResponse.Requeue> requeue(
             @PathVariable String eventId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody RequeueRequest request,
+            @Valid @RequestBody PaymentHttpRequest.WebhookRetryRequeue request,
             Principal principal) {
-        PayPalWebhookRequeueResponse response = service.requeue(
+        WebhookRetryResponse.Requeue response = service.requeue(
                 eventId, idempotencyKey, principal == null ? null : principal.getName(), request.reason());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
-    public record RequeueRequest(@NotBlank @Size(max = 500) String reason) { }
 }

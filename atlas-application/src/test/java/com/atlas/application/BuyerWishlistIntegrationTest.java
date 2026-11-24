@@ -8,7 +8,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.catalog.dto.response.BuyerWishlistItemResponse;
+import com.atlas.catalog.dto.response.BuyerWishlistResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.repository.BuyerWishlistRepository;
 import com.atlas.catalog.service.BuyerWishlistService;
@@ -68,8 +68,8 @@ class BuyerWishlistIntegrationTest {
         UUID productId = UUID.randomUUID();
         jdbc.update("INSERT INTO product (product_id) VALUES (?)", productId);
 
-        BuyerWishlistItemResponse first = wishlist.save(buyerRef, productId);
-        BuyerWishlistItemResponse replay = wishlist.save(buyerRef, productId);
+        BuyerWishlistResponse.Item first = wishlist.save(buyerRef, productId);
+        BuyerWishlistResponse.Item replay = wishlist.save(buyerRef, productId);
 
         assertThat(replay).isEqualTo(first);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM buyer_wishlist_item", Integer.class)).isEqualTo(1);
@@ -97,10 +97,10 @@ class BuyerWishlistIntegrationTest {
 
         var page = wishlist.list(buyerRef, 2, 0);
 
-        assertThat(page.items()).extracting(BuyerWishlistItemResponse::productId).containsExactly(thirdId, secondId);
+        assertThat(page.items()).extracting(BuyerWishlistResponse.Item::productId).containsExactly(thirdId, secondId);
         assertThat(page.hasMore()).isTrue();
         assertThat(wishlist.list(buyerRef, 2, 2).items())
-                .extracting(BuyerWishlistItemResponse::productId).containsExactly(firstId);
+                .extracting(BuyerWishlistResponse.Item::productId).containsExactly(firstId);
         assertThat(wishlist.list(buyerRef, 2, 2).hasMore()).isFalse();
     }
 

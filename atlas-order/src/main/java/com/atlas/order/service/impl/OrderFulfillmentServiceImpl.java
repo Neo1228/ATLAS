@@ -1,6 +1,6 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.response.OrderFulfillmentResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.OrderFulfillment;
 import com.atlas.order.persistence.entity.PurchaseOrder;
@@ -34,7 +34,7 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
 
     @Override
     @Transactional(readOnly = true)
-    public OrderFulfillmentResponse find(UUID orderId) {
+    public OrderViewResponse.Fulfillment find(UUID orderId) {
         PurchaseOrder order = orders.findById(orderId).orElseThrow(() -> notFound("Order not found"));
         requirePaid(order);
         return fulfillments.findById(orderId).map(OrderFulfillmentServiceImpl::response)
@@ -43,7 +43,7 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
 
     @Override
     @Transactional
-    public OrderFulfillmentResponse start(UUID sellerId, UUID orderId) {
+    public OrderViewResponse.Fulfillment start(UUID sellerId, UUID orderId) {
         PurchaseOrder order = lockOrder(orderId);
         requirePaid(order);
         requireSeller(order, sellerId);
@@ -82,8 +82,8 @@ public class OrderFulfillmentServiceImpl implements OrderFulfillmentService {
         if (sellerId == null || !order.sellerId().equals(sellerId)) throw conflict("Seller does not own order");
     }
 
-    private static OrderFulfillmentResponse response(OrderFulfillment fulfillment) {
-        return new OrderFulfillmentResponse(fulfillment.orderId(), fulfillment.status(), fulfillment.createdAt(),
+    private static OrderViewResponse.Fulfillment response(OrderFulfillment fulfillment) {
+        return new OrderViewResponse.Fulfillment(fulfillment.orderId(), fulfillment.status(), fulfillment.createdAt(),
                 fulfillment.updatedAt(), fulfillment.inProgressAt(), fulfillment.shippedAt(), fulfillment.deliveredAt());
     }
 

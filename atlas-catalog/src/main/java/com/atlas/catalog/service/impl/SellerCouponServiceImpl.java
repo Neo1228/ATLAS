@@ -1,6 +1,6 @@
 package com.atlas.catalog.service.impl;
 
-import com.atlas.catalog.dto.response.SellerCouponResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.SellerCoupon;
@@ -28,7 +28,7 @@ public class SellerCouponServiceImpl implements SellerCouponService {
 
     @Override
     @Transactional
-    public SellerCouponResponse create(UUID sellerId, String code, long discountAmountWon,
+    public CatalogResponse.SellerCoupon create(UUID sellerId, String code, long discountAmountWon,
                                        Instant startsAt, Instant endsAt, Long maxRedemptions) {
         if (sellerId == null || discountAmountWon <= 0 || startsAt == null || endsAt == null
                 || !startsAt.isBefore(endsAt) || maxRedemptions != null && maxRedemptions <= 0) {
@@ -51,7 +51,7 @@ public class SellerCouponServiceImpl implements SellerCouponService {
 
     @Override
     @Transactional(readOnly = true)
-    public SellerCouponResponse findActive(UUID sellerId, String code, Instant at) {
+    public CatalogResponse.SellerCoupon findActive(UUID sellerId, String code, Instant at) {
         if (sellerId == null || at == null) throw invalidRequest("Seller and checkout time are required");
         SellerCoupon coupon = coupons.findBySellerIdAndCode(sellerId, normalizeCode(code))
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Seller coupon not found"));
@@ -61,7 +61,7 @@ public class SellerCouponServiceImpl implements SellerCouponService {
 
     @Override
     @Transactional(readOnly = true)
-    public SellerCouponResponse find(UUID sellerId, String code) {
+    public CatalogResponse.SellerCoupon find(UUID sellerId, String code) {
         if (sellerId == null) throw invalidRequest("Seller is required");
         SellerCoupon coupon = coupons.findBySellerIdAndCode(sellerId, normalizeCode(code))
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Seller coupon not found"));
@@ -70,7 +70,7 @@ public class SellerCouponServiceImpl implements SellerCouponService {
 
     @Override
     @Transactional
-    public SellerCouponResponse deactivate(UUID sellerId, String code) {
+    public CatalogResponse.SellerCoupon deactivate(UUID sellerId, String code) {
         if (sellerId == null) throw invalidRequest("Seller is required");
         SellerCoupon coupon = coupons.findBySellerIdAndCode(sellerId, normalizeCode(code))
                 .orElseThrow(() -> new CatalogException(Code.NOT_FOUND, "Seller coupon not found"));
@@ -150,13 +150,13 @@ public class SellerCouponServiceImpl implements SellerCouponService {
         return normalized;
     }
 
-    private static SellerCouponResponse response(SellerCoupon coupon) {
+    private static CatalogResponse.SellerCoupon response(SellerCoupon coupon) {
         Long maxRedemptions = coupon.getMaxRedemptions();
         Long reserved = maxRedemptions == null ? null : coupon.getReservedCount();
         Long redeemed = maxRedemptions == null ? null : coupon.getRedeemedCount();
         Long remaining = maxRedemptions == null ? null : Math.subtractExact(maxRedemptions,
                 Math.addExact(reserved, redeemed));
-        return new SellerCouponResponse(coupon.getCouponId(), coupon.getSellerId(), coupon.getCode(),
+        return new CatalogResponse.SellerCoupon(coupon.getCouponId(), coupon.getSellerId(), coupon.getCode(),
                 coupon.getDiscountAmountWon(), coupon.getStartsAt(), coupon.getEndsAt(), coupon.isActive(),
                 maxRedemptions, reserved, redeemed, remaining);
     }

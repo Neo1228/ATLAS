@@ -104,6 +104,30 @@ class ModuleBoundaryTest {
     }
 
     @Test
+    void applicationServicesDoNotDependOnControllers() {
+        // 서비스가 controller 패키지의 타입을 쓰면 계층이 거꾸로 의존한다. 서비스와 controller가 함께 쓰는 값은 application.dto에 둔다.
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideInAPackage("com.atlas.application.service..")
+                .should().dependOnClassesThat().resideInAPackage("com.atlas.application.controller..")
+                .allowEmptyShould(true)
+                .check(source);
+    }
+
+    @Test
+    void controllersDeclareNoDataTypes() {
+        // controller는 HTTP 매핑만 한다. 요청·응답 본문은 application.dto의 묶음 클래스(중첩 record)에 둔다.
+        JavaClasses source = productionClasses();
+        noClasses()
+                .that().resideInAPackage("com.atlas.application.controller..")
+                .should().beRecords()
+                .orShould().beEnums()
+                .orShould().beNestedClasses()
+                .allowEmptyShould(true)
+                .check(source);
+    }
+
+    @Test
     void repositoriesDoNotDependOnPublicDtosOrBusinessExceptions() {
         JavaClasses source = productionClasses();
         noClasses()

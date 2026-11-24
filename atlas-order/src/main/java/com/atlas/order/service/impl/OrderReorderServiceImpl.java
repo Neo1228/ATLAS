@@ -1,16 +1,15 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.request.ReorderCartRequest;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.inventory.dto.request.InventoryRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.order.dto.response.CartResponse;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.response.SellerSkuResponse;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
-import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.exception.OrderException;
-import com.atlas.order.dto.request.OrderReorderRequest;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.persistence.projection.ExistingReorder;
@@ -53,7 +52,7 @@ public class OrderReorderServiceImpl implements OrderReorderService {
 
     @Override
     @Transactional
-    public CartResponse reorder(OrderReorderRequest request) {
+    public CartResponse reorder(OrderRequest.Reorder request) {
         if (request == null) throw new OrderException(OrderException.Code.INVALID_REQUEST, "Reorder request required");
         UUID orderId = request.orderId();
         String idempotencyKey = request.idempotencyKey();
@@ -76,9 +75,9 @@ public class OrderReorderServiceImpl implements OrderReorderService {
         if (sourceItems.isEmpty()) throw conflict("Order has no items to reorder");
         if (sourceItems.stream().anyMatch(item -> !sourceOrder.sellerId().equals(item.sellerId())))
             throw conflict("Cart orders must contain items from one Seller");
-        List<SellerSkuResponse> orderable = sellerSkus.findOrderableSellerSkus(sourceOrder.sellerId(),
+        List<CatalogResponse.SellerSku> orderable = sellerSkus.findOrderableSellerSkus(sourceOrder.sellerId(),
                 sourceItems.stream().map(OrderItem::skuId).distinct().toList(), ProductSalesChannel.ONLINE_STORE);
-        Set<String> orderableSkuIds = orderable.stream().map(SellerSkuResponse::skuId)
+        Set<String> orderableSkuIds = orderable.stream().map(CatalogResponse.SellerSku::skuId)
                 .collect(Collectors.toSet());
         if (sourceItems.stream().anyMatch(item -> !orderableSkuIds.contains(item.skuId()))) {
             throw new OrderException(OrderException.Code.CONFLICT, "An order SKU no longer exists");
@@ -89,11 +88,11 @@ public class OrderReorderServiceImpl implements OrderReorderService {
                 idempotencyKey, orderId, confirmMerge, clock.instant());
         if (!recorded) return replayOrConflict(sourceOrder, orderId, idempotencyKey, confirmMerge);
 
-        List<ReorderCartRequest.Item> cartItems = sourceItems.stream()
-                .map(item -> new ReorderCartRequest.Item(sourceOrder.sellerId(),
+        List<OrderRequest.ReorderCart.Item> cartItems = sourceItems.stream()
+                .map(item -> new OrderRequest.ReorderCart.Item(sourceOrder.sellerId(),
                         item.productId(), item.skuId(), item.quantity()))
                 .toList();
-        return carts.mergeItems(new ReorderCartRequest(sourceOrder.buyerRef(), confirmMerge, cartItems));
+        return carts.mergeItems(new OrderRequest.ReorderCart(sourceOrder.buyerRef(), confirmMerge, cartItems));
     }
 
     private CartResponse replayOrConflict(PurchaseOrder sourceOrder, UUID orderId,
@@ -107,8 +106,8 @@ public class OrderReorderServiceImpl implements OrderReorderService {
     }
 
     private void assertInventoryAvailable(PurchaseOrder sourceOrder, List<OrderItem> items) {
-        List<ReserveInventoryBatchRequest.Item> lines = items.stream()
-                .map(item -> new ReserveInventoryBatchRequest.Item(
+        List<InventoryRequest.ReserveInventoryBatch.Item> lines = items.stream()
+                .map(item -> new InventoryRequest.ReserveInventoryBatch.Item(
                         sourceOrder.sellerId(), item.skuId(), item.quantity()))
                 .toList();
         if (inventory.findFulfillmentLocation(sourceOrder.sellerId(), lines).isEmpty()) {

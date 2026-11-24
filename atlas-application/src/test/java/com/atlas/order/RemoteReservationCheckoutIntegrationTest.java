@@ -7,9 +7,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
+import com.atlas.order.dto.request.OrderRequest;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.catalog.service.SellerCouponService;
@@ -24,12 +24,8 @@ import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.LocationReservationService;
 import com.atlas.order.service.CheckoutFinalizationService;
-import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.service.LocationRestockService;
 import com.atlas.order.service.OrderRefundService;
-import com.atlas.order.dto.request.OrderReturnInspectionRequest;
-import com.atlas.order.dto.request.OrderReturnRequest;
-import com.atlas.order.dto.request.OrderShipmentRequest;
 import com.atlas.order.service.OrderFulfillmentService;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderShipmentService;
@@ -408,8 +404,8 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
     void staleRestockClaimantCannotOverwriteTheNewerClaimsOutcome() throws Exception {
         PaidRemoteOrder paid = paidRemoteOrder("remote-refund-stale");
         INVENTORY.enqueue(new MockResponse().setResponseCode(503));
-        var refund = refunds.refund(new OrderRefundRequest(paid.sellerId(), paid.orderId(),
-                "remote-refund-stale-" + UUID.randomUUID(), List.of(new OrderRefundRequest.Item(paid.orderItemId(), 1))));
+        var refund = refunds.refund(new OrderRequest.Refund(paid.sellerId(), paid.orderId(),
+                "remote-refund-stale-" + UUID.randomUUID(), List.of(new OrderRequest.Refund.Item(paid.orderItemId(), 1))));
         String restockKey = jdbc.queryForObject(
                 "SELECT restock_key FROM order_inventory_restock WHERE refund_id = ?", String.class, refund.refundId());
         UUID locationId = jdbc.queryForObject(
@@ -442,8 +438,8 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
         PaidRemoteOrder paid = paidRemoteOrder("remote-refund-retry");
         INVENTORY.enqueue(new MockResponse().setResponseCode(503));
 
-        var refund = refunds.refund(new OrderRefundRequest(paid.sellerId(), paid.orderId(),
-                "remote-refund-retry-" + UUID.randomUUID(), List.of(new OrderRefundRequest.Item(paid.orderItemId(), 1))));
+        var refund = refunds.refund(new OrderRequest.Refund(paid.sellerId(), paid.orderId(),
+                "remote-refund-retry-" + UUID.randomUUID(), List.of(new OrderRequest.Refund.Item(paid.orderItemId(), 1))));
 
         assertThat(restockStates(refund.refundId())).isEqualTo("PENDING");
         INVENTORY.enqueue(transitioned(paid.reservationId(), "CLAIMED"));
@@ -460,19 +456,19 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
     void inspectedReturnRestocksAtItsSourceShipmentReservation() throws Exception {
         PaidRemoteOrder paid = paidRemoteOrder("remote-return-restock");
         fulfillments.start(paid.sellerId(), paid.orderId());
-        var shipment = shipments.create(new OrderShipmentRequest(paid.sellerId(), paid.orderId(),
+        var shipment = shipments.create(new OrderRequest.Shipment(paid.sellerId(), paid.orderId(),
                 "return-shipment-" + UUID.randomUUID(), null, null,
-                List.of(new OrderShipmentRequest.Item(paid.orderItemId(), 1))));
+                List.of(new OrderRequest.Shipment.Item(paid.orderItemId(), 1))));
         shipments.deliver(paid.sellerId(), paid.orderId(), shipment.shipmentId());
 
-        var requested = returns.request(new OrderReturnRequest(paid.buyerRef(), paid.orderId(),
+        var requested = returns.request(new OrderRequest.Return(paid.buyerRef(), paid.orderId(),
                 "return-request-" + UUID.randomUUID(),
-                List.of(new OrderReturnRequest.Item(paid.orderItemId(), 1, shipment.shipmentId()))));
+                List.of(new OrderRequest.Return.Item(paid.orderItemId(), 1, shipment.shipmentId()))));
         returns.receive(paid.sellerId(), paid.orderId(), requested.returnId());
         INVENTORY.enqueue(transitioned(paid.reservationId(), "CLAIMED"));
         var inspected = returns.inspect(paid.sellerId(), paid.orderId(), requested.returnId(),
-                new OrderReturnInspectionRequest(List.of(new OrderReturnInspectionRequest.Item(
-                        paid.orderItemId(), OrderReturnInspectionRequest.Result.PASSED))));
+                new OrderRequest.ReturnInspection(List.of(new OrderRequest.ReturnInspection.Item(
+                        paid.orderItemId(), OrderRequest.ReturnInspection.Result.PASSED))));
 
         assertThat(inspected.status().name()).isEqualTo("REFUND_RECORDED");
         RecordedRequest restock = takeCommand(5, TimeUnit.SECONDS);
@@ -525,10 +521,10 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
     private Fixture fixture(String label) throws Exception {
         UUID sellerId = sellers.createSeller().sellerId();
         UUID locationId = LOCATIONS[nextLocation++];
-        ProductResponse product = products.createProduct(sellerId,
-                new CreateProductRequest(label + "-" + UUID.randomUUID(), null));
+        CatalogResponse.Product product = products.createProduct(sellerId,
+                new ProductRequest.CreateProduct(label + "-" + UUID.randomUUID(), null));
         String sku = label + "-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(sku, 100, 0));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(sku, 100, 0));
         jdbc.update("INSERT INTO inventory_location(location_id,seller_id,location_code,name,priority,active)"
                 + " VALUES (?,?,?,?,0,TRUE)", locationId, sellerId, "REMOTE-" + UUID.randomUUID(), label);
         // 로컬 재고는 location 선택 근거로만 쓰이며, 원격 예약 경로에서는 차감되지 않아야 한다.

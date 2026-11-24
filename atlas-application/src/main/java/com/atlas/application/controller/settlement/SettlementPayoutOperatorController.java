@@ -1,9 +1,8 @@
 package com.atlas.application.controller.settlement;
 
-import com.atlas.application.controller.dto.PayoutManualEvidenceRequest;
-import com.atlas.application.controller.dto.PayoutOperatorActionRequest;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.application.service.payout.PayoutManualOperatorService;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.util.UUID;
@@ -32,33 +31,33 @@ public class SettlementPayoutOperatorController {
     }
 
     @PostMapping("/{payoutId}/approve")
-    public SellerPayoutResponse approve(@PathVariable UUID payoutId,
+    public PayoutResponse.SellerPayout approve(@PathVariable UUID payoutId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody PayoutOperatorActionRequest request, Principal principal) {
+            @Valid @RequestBody SettlementHttpRequest.PayoutOperatorAction request, Principal principal) {
         return payouts.approve(payoutId, idempotencyKey,
                 principal == null ? null : principal.getName(), request.reason());
     }
 
     @PostMapping("/{payoutId}/sent")
-    public SellerPayoutResponse markSent(@PathVariable UUID payoutId,
+    public PayoutResponse.SellerPayout markSent(@PathVariable UUID payoutId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody PayoutManualEvidenceRequest request, Principal principal) {
+            @Valid @RequestBody SettlementHttpRequest.PayoutManualEvidence request, Principal principal) {
         return payouts.markSent(payoutId, idempotencyKey,
                 principal == null ? null : principal.getName(), request.evidenceReference());
     }
 
     @PostMapping("/{payoutId}/confirm")
-    public SellerPayoutResponse confirm(@PathVariable UUID payoutId,
+    public PayoutResponse.SellerPayout confirm(@PathVariable UUID payoutId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody PayoutManualEvidenceRequest request, Principal principal) {
+            @Valid @RequestBody SettlementHttpRequest.PayoutManualEvidence request, Principal principal) {
         return payouts.confirm(payoutId, idempotencyKey,
                 principal == null ? null : principal.getName(), request.evidenceReference());
     }
 
     @PostMapping("/{payoutId}/fail")
-    public SellerPayoutResponse fail(@PathVariable UUID payoutId,
+    public PayoutResponse.SellerPayout fail(@PathVariable UUID payoutId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody PayoutOperatorActionRequest request, Principal principal) {
+            @Valid @RequestBody SettlementHttpRequest.PayoutOperatorAction request, Principal principal) {
         return payouts.failBeforeDispatch(payoutId, idempotencyKey,
                 principal == null ? null : principal.getName(), request.reason());
     }

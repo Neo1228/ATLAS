@@ -1,9 +1,8 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.order.dto.response.ReviewResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.service.ProductService;
-import com.atlas.order.dto.response.ProductReviewPage;
-import com.atlas.order.dto.response.ProductReviewResponse;
 import com.atlas.order.exception.OrderException.Code;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.projection.ProductReview;
@@ -36,7 +35,7 @@ public class ProductReviewServiceImpl implements ProductReviewService {
     }
 
     @Override
-    public ProductReviewResponse create(String buyerRef, UUID productId, int rating, String body) {
+    public ReviewResponse.ProductReview create(String buyerRef, UUID productId, int rating, String body) {
         requireBuyerRef(buyerRef);
         Objects.requireNonNull(productId, "productId");
         if (rating < 1 || rating > 5) {
@@ -56,7 +55,7 @@ public class ProductReviewServiceImpl implements ProductReviewService {
     }
 
     @Override
-    public ProductReviewPage list(UUID productId, int requestedLimit, int offset) {
+    public ReviewResponse.Page list(UUID productId, int requestedLimit, int offset) {
         Objects.requireNonNull(productId, "productId");
         if (!products.isPublicOrderable(productId)) {
             throw new CatalogException(CatalogException.Code.NOT_FOUND, "Unknown product: " + productId);
@@ -71,14 +70,14 @@ public class ProductReviewServiceImpl implements ProductReviewService {
         ProductReviewSummary summary = reviews.summary(productId);
         List<ProductReview> fetched = reviews.list(productId, limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
-        List<ProductReviewResponse> items = fetched.stream().limit(limit)
+        List<ReviewResponse.ProductReview> items = fetched.stream().limit(limit)
                 .map(ProductReviewServiceImpl::toResponse).toList();
-        return new ProductReviewPage(productId, summary.averageRating(), summary.reviewCount(), items, limit, offset,
+        return new ReviewResponse.Page(productId, summary.averageRating(), summary.reviewCount(), items, limit, offset,
                 hasMore);
     }
 
-    private static ProductReviewResponse toResponse(ProductReview review) {
-        return new ProductReviewResponse(review.reviewId(), review.rating(), review.body(), review.createdAt());
+    private static ReviewResponse.ProductReview toResponse(ProductReview review) {
+        return new ReviewResponse.ProductReview(review.reviewId(), review.rating(), review.body(), review.createdAt());
     }
 
     private static void requireBuyerRef(String buyerRef) {

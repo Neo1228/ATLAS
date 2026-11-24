@@ -1,14 +1,14 @@
 package com.atlas.application.controller.settlement;
 
-import com.atlas.application.controller.dto.SellerPayoutProfileRequest;
-import com.atlas.application.controller.dto.SellerPayoutProfileResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.application.dto.request.SettlementHttpRequest;
 import com.atlas.application.service.payout.SellerPayoutProfileService;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -30,15 +30,15 @@ public class SellerPayoutProfileController {
     }
 
     @GetMapping
-    public SellerPayoutProfileResponse find(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sellerId) {
+    public SettlementHttpResponse.SellerPayoutProfile find(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sellerId) {
         return profiles.find(UUID.fromString(jwt.getSubject()), sellerId);
     }
 
     @PutMapping
     @ResponseStatus(HttpStatus.OK)
-    public SellerPayoutProfileResponse configure(@AuthenticationPrincipal Jwt jwt,
+    public SettlementHttpResponse.SellerPayoutProfile configure(@AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID sellerId, @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody SellerPayoutProfileRequest request) {
+            @Valid @RequestBody SettlementHttpRequest.SellerPayoutProfile request) {
         return profiles.configure(UUID.fromString(jwt.getSubject()), sellerId, idempotencyKey, request);
     }
 }

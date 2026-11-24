@@ -7,10 +7,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.account.config.AccountSecurityConfiguration;
 import com.atlas.application.config.PayPalReportOperatorSecurityConfiguration;
 import com.atlas.application.controller.settlement.PayPalBalanceReportController;
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
 import java.util.List;
@@ -65,10 +65,10 @@ class PayPalReportOperatorSecurityTest {
 
     @Test
     void configuredOperatorCanUploadReportAndReceiveReadOnlyResults() throws Exception {
-        PayPalBalanceReportReconciliationResponse response = new PayPalBalanceReportReconciliationResponse(
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = new SettlementHttpResponse.PayPalBalanceReportReconciliation(
                 "BALANCE_RECONCILIATION_REPORT", "a".repeat(64), "NOT_VERIFIED_FROM_PAYPAL_REPORT_ALONE",
                 "EXACT_PROVIDER_ID_WITH_AMOUNT_CURRENCY_VALIDATION",
-                new PayPalBalanceReportReconciliationResponse.Summary(0, 0, 0, 0, 0), List.of());
+                new SettlementHttpResponse.PayPalBalanceReportReconciliation.Summary(0, 0, 0, 0, 0), List.of());
         when(reconciliation.reconcile(any(byte[].class))).thenReturn(response);
 
         mockMvc.perform(request().with(httpBasic("settlement-operator", OPERATOR_PASSWORD)))

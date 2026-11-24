@@ -1,6 +1,6 @@
 package com.atlas.application.controller.settlement;
 
-import com.atlas.application.dto.response.PayPalBalanceReportReconciliationResponse;
+import com.atlas.application.dto.response.SettlementHttpResponse;
 import com.atlas.application.service.PayPalBalanceReportRunIngestionService;
 import java.io.IOException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -22,7 +22,7 @@ public class PayPalBalanceReportController {
     }
 
     @PostMapping(path = "/reconciliation", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public PayPalBalanceReportReconciliationResponse reconcile(@RequestPart("report") MultipartFile report)
+    public SettlementHttpResponse.PayPalBalanceReportReconciliation reconcile(@RequestPart("report") MultipartFile report)
             throws IOException {
         return reconciliation.reconcile(report.getBytes());
     }

@@ -1,8 +1,7 @@
 package com.atlas.payment.service.impl;
 
-import com.atlas.payment.dto.response.ClaimedWebhookRetryResponse;
+import com.atlas.payment.dto.response.WebhookRetryResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
-import com.atlas.payment.dto.response.WebhookRetryPollResponse;
 import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
 import com.atlas.payment.persistence.projection.WebhookRetryPollResult;
 import com.atlas.payment.persistence.projection.WebhookRetryEvent;
@@ -28,9 +27,9 @@ public class PayPalWebhookRetryServiceImpl implements PayPalWebhookRetryService 
     }
 
     @Override
-    public WebhookRetryPollResponse pollDue() {
+    public WebhookRetryResponse.RetryPoll pollDue() {
         WebhookRetryPollResult poll = retries.pollDue();
-        return new WebhookRetryPollResponse(poll.claimed().stream().map(PayPalWebhookRetryServiceImpl::toResponse).toList(),
+        return new WebhookRetryResponse.RetryPoll(poll.claimed().stream().map(PayPalWebhookRetryServiceImpl::toResponse).toList(),
                 poll.reapedCount());
     }
 
@@ -55,9 +54,9 @@ public class PayPalWebhookRetryServiceImpl implements PayPalWebhookRetryService 
         return retries.oldestPendingAgeSeconds();
     }
 
-    private static ClaimedWebhookRetryResponse toResponse(ClaimedWebhookRetry claimed) {
+    private static WebhookRetryResponse.ClaimedWebhookRetry toResponse(ClaimedWebhookRetry claimed) {
         WebhookRetryEvent e = claimed.event();
-        return new ClaimedWebhookRetryResponse(new PaymentWebhookEventResponse(e.eventId(), e.eventType(),
+        return new WebhookRetryResponse.ClaimedWebhookRetry(new PaymentWebhookEventResponse(e.eventId(), e.eventType(),
                 e.resourceId(), e.resourceStatus(), e.providerOrderId(), e.relatedCaptureId(), e.resourceAmount(),
                 e.resourceCurrency()), claimed.attempt(), claimed.leaseOwner());
     }

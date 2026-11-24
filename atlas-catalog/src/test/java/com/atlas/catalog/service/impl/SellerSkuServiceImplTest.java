@@ -1,6 +1,6 @@
 package com.atlas.catalog.service.impl;
 
-import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.persistence.entity.Product;
 import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
@@ -76,13 +76,13 @@ class SellerSkuServiceImplTest {
         when(products.findOrderableProductIds(List.of(productId), ProductSalesChannel.ONLINE_STORE.name()))
                 .thenReturn(List.of(productId));
 
-        List<SellerSkuResponse> responses = service.findOrderableSellerSkus(
+        List<CatalogResponse.SellerSku> responses = service.findOrderableSellerSkus(
                 sellerId, skuIds, ProductSalesChannel.ONLINE_STORE, Instant.EPOCH);
 
         assertEquals(List.of("TEA-1", "TEA-2"),
-                responses.stream().map(SellerSkuResponse::skuId).toList());
+                responses.stream().map(CatalogResponse.SellerSku::skuId).toList());
         assertEquals(List.of("Green tea", "Green tea"),
-                responses.stream().map(SellerSkuResponse::productName).toList());
+                responses.stream().map(CatalogResponse.SellerSku::productName).toList());
         verify(products).findAllByProductIdIn(List.of(productId));
         verify(products).findOrderableProductIds(List.of(productId), ProductSalesChannel.ONLINE_STORE.name());
     }
@@ -111,7 +111,7 @@ class SellerSkuServiceImplTest {
                 sellerId, skuId, ProductSalesChannel.ONLINE_STORE, startsAt);
         var atEnd = service.findOrderableSellerSku(
                 sellerId, skuId, ProductSalesChannel.ONLINE_STORE, endsAt);
-        SellerSkuResponse campaignPrice = service.findOrderableSellerSku(
+        CatalogResponse.SellerSku campaignPrice = service.findOrderableSellerSku(
                 sellerId, skuId, ProductSalesChannel.CAMPAIGN, startsAt);
 
         assertEquals(1500, beforeStart.effectivePriceWon());

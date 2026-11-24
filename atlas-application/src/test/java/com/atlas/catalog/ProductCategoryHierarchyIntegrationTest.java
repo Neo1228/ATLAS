@@ -6,10 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.atlas.catalog.dto.request.CreateProductCategoryRequest;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.UpdateProductCategoryParentRequest;
-import com.atlas.catalog.dto.response.ProductListingPageResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductCategoryRequest;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.service.ProductCategoryService;
@@ -65,13 +64,13 @@ class ProductCategoryHierarchyIntegrationTest {
     void sameSellerTreeFilteringVisibilityOrderAndCursorSemantics() throws Exception {
         UUID seller = sellers.createSeller().sellerId();
         UUID otherSeller = sellers.createSeller().sellerId();
-        var parent = categories.createCategory(seller, new CreateProductCategoryRequest("PARENT", "Parent"));
-        var child = categories.createCategory(seller, new CreateProductCategoryRequest("CHILD", "Child"));
-        var grandchild = categories.createCategory(seller, new CreateProductCategoryRequest("GRAND", "Grand"));
-        var outside = categories.createCategory(seller, new CreateProductCategoryRequest("OUTSIDE", "Outside"));
-        var foreign = categories.createCategory(otherSeller, new CreateProductCategoryRequest("FOREIGN", "Foreign"));
-        categories.updateCategoryParent(seller, child.categoryId(), new UpdateProductCategoryParentRequest(parent.categoryId()));
-        categories.updateCategoryParent(seller, grandchild.categoryId(), new UpdateProductCategoryParentRequest(child.categoryId()));
+        var parent = categories.createCategory(seller, new ProductCategoryRequest.Create("PARENT", "Parent"));
+        var child = categories.createCategory(seller, new ProductCategoryRequest.Create("CHILD", "Child"));
+        var grandchild = categories.createCategory(seller, new ProductCategoryRequest.Create("GRAND", "Grand"));
+        var outside = categories.createCategory(seller, new ProductCategoryRequest.Create("OUTSIDE", "Outside"));
+        var foreign = categories.createCategory(otherSeller, new ProductCategoryRequest.Create("FOREIGN", "Foreign"));
+        categories.updateCategoryParent(seller, child.categoryId(), new ProductCategoryRequest.UpdateParent(parent.categoryId()));
+        categories.updateCategoryParent(seller, grandchild.categoryId(), new ProductCategoryRequest.UpdateParent(child.categoryId()));
 
         String categoryUrl = "/api/sellers/" + seller + "/product-categories/" + child.categoryId() + "/parent";
         String parentUrl = "/api/sellers/" + seller + "/product-categories/" + parent.categoryId() + "/parent";
@@ -87,11 +86,11 @@ class ProductCategoryHierarchyIntegrationTest {
                 .andExpect(status().isOk());
 
         assertCatalogFailure(() -> categories.updateCategoryParent(seller, parent.categoryId(),
-                new UpdateProductCategoryParentRequest(foreign.categoryId())), Code.NOT_FOUND);
+                new ProductCategoryRequest.UpdateParent(foreign.categoryId())), Code.NOT_FOUND);
         assertCatalogFailure(() -> categories.updateCategoryParent(seller, parent.categoryId(),
-                new UpdateProductCategoryParentRequest(parent.categoryId())), Code.CONFLICT);
+                new ProductCategoryRequest.UpdateParent(parent.categoryId())), Code.CONFLICT);
         assertCatalogFailure(() -> categories.updateCategoryParent(seller, parent.categoryId(),
-                new UpdateProductCategoryParentRequest(grandchild.categoryId())), Code.CONFLICT);
+                new ProductCategoryRequest.UpdateParent(grandchild.categoryId())), Code.CONFLICT);
         UUID uncategorized = jdbc.queryForObject(
                 "SELECT category_id FROM product_category WHERE seller_id = ? AND code = 'UNCATEGORIZED'",
                 UUID.class, seller);
@@ -102,19 +101,19 @@ class ProductCategoryHierarchyIntegrationTest {
                         .content(parentRequest(grandchild.categoryId())))
                 .andExpect(status().isConflict());
         assertCatalogFailure(() -> categories.updateCategoryParent(seller, uncategorized,
-                new UpdateProductCategoryParentRequest(parent.categoryId())), Code.CONFLICT);
+                new ProductCategoryRequest.UpdateParent(parent.categoryId())), Code.CONFLICT);
 
         var expected = new ArrayList<UUID>();
         expected.add(createProduct(seller, parent.categoryId()));
         expected.add(createProduct(seller, child.categoryId()));
         expected.add(createProduct(seller, grandchild.categoryId()));
         createProduct(seller, outside.categoryId());
-        List<ProductListingPageResponse> pages = new ArrayList<>();
-        ProductListingPageResponse page = products.listSellerProductsPage(seller, parent.categoryId(), null, 2, null);
+        List<CatalogResponse.ProductListingPage> pages = new ArrayList<>();
+        CatalogResponse.ProductListingPage page = products.listSellerProductsPage(seller, parent.categoryId(), null, 2, null);
         pages.add(page);
         assertThat(page.items()).hasSize(2);
         assertThat(page.nextCursor()).isNotBlank();
-        ProductListingPageResponse second = products.listSellerProductsPage(seller, parent.categoryId(), null, 2, page.nextCursor());
+        CatalogResponse.ProductListingPage second = products.listSellerProductsPage(seller, parent.categoryId(), null, 2, page.nextCursor());
         pages.add(second);
         assertThat(second.items()).hasSize(1);
         var actual = new ArrayList<UUID>();
@@ -139,8 +138,8 @@ class ProductCategoryHierarchyIntegrationTest {
     @Test
     void concurrentOpposingMovesSerializeOnSellerAndCannotCommitCycle() throws Exception {
         UUID seller = sellers.createSeller().sellerId();
-        var a = categories.createCategory(seller, new CreateProductCategoryRequest("A", "A"));
-        var b = categories.createCategory(seller, new CreateProductCategoryRequest("B", "B"));
+        var a = categories.createCategory(seller, new ProductCategoryRequest.Create("A", "A"));
+        var b = categories.createCategory(seller, new ProductCategoryRequest.Create("B", "B"));
         CountDownLatch start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {
             var first = pool.submit(() -> moveWhenReady(start, seller, a.categoryId(), b.categoryId()));
@@ -164,7 +163,7 @@ class ProductCategoryHierarchyIntegrationTest {
         try {
             start.await();
             transactions.executeWithoutResult(status -> categories.updateCategoryParent(seller, category,
-                    new UpdateProductCategoryParentRequest(parent)));
+                    new ProductCategoryRequest.UpdateParent(parent)));
             return new MoveResult(true, null);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -187,7 +186,7 @@ class ProductCategoryHierarchyIntegrationTest {
     }
 
     private UUID createProduct(UUID seller, UUID category) {
-        var response = products.createProduct(seller, new CreateProductRequest("tree-" + UUID.randomUUID(), ""));
+        var response = products.createProduct(seller, new ProductRequest.CreateProduct("tree-" + UUID.randomUUID(), ""));
         products.updateProductCategories(seller, response.productId(), List.of(category));
         return response.productId();
     }

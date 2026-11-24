@@ -1,7 +1,7 @@
 package com.atlas.application.controller.settlement;
 
-import com.atlas.application.controller.dto.SellerPayoutProfileResponse;
-import com.atlas.application.controller.dto.VerifySellerPayoutProfileRequest;
+import com.atlas.application.dto.response.SettlementHttpResponse;
+import com.atlas.application.dto.request.SettlementHttpRequest;
 import com.atlas.application.service.payout.SellerPayoutProfileService;
 import jakarta.validation.Valid;
 import java.security.Principal;
@@ -27,9 +27,9 @@ public class SettlementPayoutProfileOperatorController {
     }
 
     @PostMapping("/{sellerId}/verify")
-    public SellerPayoutProfileResponse verify(@PathVariable UUID sellerId,
+    public SettlementHttpResponse.SellerPayoutProfile verify(@PathVariable UUID sellerId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody VerifySellerPayoutProfileRequest request,
+            @Valid @RequestBody SettlementHttpRequest.VerifySellerPayoutProfile request,
             Principal principal) {
         return profiles.verify(sellerId, principal == null ? null : principal.getName(), idempotencyKey, request);
     }

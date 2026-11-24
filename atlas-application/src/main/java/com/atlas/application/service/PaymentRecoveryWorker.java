@@ -1,13 +1,13 @@
 package com.atlas.application.service;
 
+import com.atlas.payment.dto.response.PaymentRecoveryResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
-import com.atlas.payment.dto.response.PaymentRecoveryJobResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.exception.PaymentException;
@@ -149,7 +149,7 @@ public class PaymentRecoveryWorker {
             return;
         }
         for (int index = 0; index < batchSize; index++) {
-            List<PaymentRecoveryJobResponse> claimed;
+            List<PaymentRecoveryResponse.Job> claimed;
             try {
                 claimed = recovery.claimNextDue(1, UUID.randomUUID(), leaseDuration, maxAttempts, maxAge);
             } catch (RuntimeException exception) {
@@ -157,13 +157,13 @@ public class PaymentRecoveryWorker {
                 return;
             }
             if (claimed.isEmpty()) return;
-            PaymentRecoveryJobResponse job = claimed.getFirst();
+            PaymentRecoveryResponse.Job job = claimed.getFirst();
             counter("claimed", job.operationType()).increment();
             process(job);
         }
     }
 
-    private void process(PaymentRecoveryJobResponse job) {
+    private void process(PaymentRecoveryResponse.Job job) {
         Timer.Sample sample = Timer.start(meters);
         try {
             if (job.operationType() == PaymentRecoveryOperationType.PAYMENT_ATTEMPT) {
@@ -191,7 +191,7 @@ public class PaymentRecoveryWorker {
         }
     }
 
-    private void recoverPayment(PaymentRecoveryJobResponse job) {
+    private void recoverPayment(PaymentRecoveryResponse.Job job) {
         PaymentResponse current = payments.findByAttemptId(job.operationId());
         if (current == null) {
             recovery.markNeedsReview(job, "PAYMENT_ATTEMPT_MISSING");
@@ -235,7 +235,7 @@ public class PaymentRecoveryWorker {
                     || !Instant.now().isBefore(payment.approvalExpiresAt()));
     }
 
-    private void reconcilePaymentOwner(PaymentRecoveryJobResponse job, PaymentResponse payment) {
+    private void reconcilePaymentOwner(PaymentRecoveryResponse.Job job, PaymentResponse payment) {
         String idempotencyKey = "payment-recovery-" + job.operationId();
         if (payment.orderId() != null) {
             orders.reconcilePayment(payment.orderId(), idempotencyKey);
@@ -247,7 +247,7 @@ public class PaymentRecoveryWorker {
         }
     }
 
-    private void recoverRefund(PaymentRecoveryJobResponse job) {
+    private void recoverRefund(PaymentRecoveryResponse.Job job) {
         PaymentRefundResponse current = payments.findRefundOperation(job.operationId());
         if (current == null) {
             recovery.markNeedsReview(job, "REFUND_OPERATION_MISSING");
@@ -262,7 +262,7 @@ public class PaymentRecoveryWorker {
         settle(job, terminal(result.status()), false);
     }
 
-    private void settle(PaymentRecoveryJobResponse job, boolean terminal, boolean awaitingBuyer) {
+    private void settle(PaymentRecoveryResponse.Job job, boolean terminal, boolean awaitingBuyer) {
         if (terminal) {
             recordCompletion(job);
         } else if (awaitingBuyer) {
@@ -278,7 +278,7 @@ public class PaymentRecoveryWorker {
      * false를 반환한다(provider 호출 중에는 60초 lease가 갱신되지 않는다).
      * 무조건 집계하면 실제 job 수보다 많은 완료를 보고하게 된다.
      */
-    private void recordCompletion(PaymentRecoveryJobResponse job) {
+    private void recordCompletion(PaymentRecoveryResponse.Job job) {
         if (recovery.complete(job)) {
             counter("completed", job.operationType()).increment();
         } else {
@@ -325,7 +325,7 @@ public class PaymentRecoveryWorker {
             return false;
         }
         if (payment.orderId() != null) {
-            OrderResponse order = orders.find(payment.orderId());
+            OrderViewResponse.Order order = orders.find(payment.orderId());
             return order != null && (order.state() == OrderState.PAYMENT_SUBMITTED
                     || order.state() == OrderState.PAYMENT_PENDING
                     || order.state() == OrderState.PAYMENT_UNKNOWN);

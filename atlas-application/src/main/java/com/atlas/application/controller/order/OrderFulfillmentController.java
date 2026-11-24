@@ -1,6 +1,6 @@
 package com.atlas.application.controller.order;
 
-import com.atlas.order.dto.response.OrderFulfillmentResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.service.OrderFulfillmentService;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +17,12 @@ public class OrderFulfillmentController {
     private final OrderFulfillmentService fulfillments;
 
     @GetMapping("/orders/{orderId}/fulfillment")
-    public OrderFulfillmentResponse find(@PathVariable UUID orderId) {
+    public OrderViewResponse.Fulfillment find(@PathVariable UUID orderId) {
         return fulfillments.find(orderId);
     }
 
     @PostMapping("/sellers/{sellerId}/orders/{orderId}/fulfillment/start")
-    public OrderFulfillmentResponse start(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
+    public OrderViewResponse.Fulfillment start(@PathVariable UUID sellerId, @PathVariable UUID orderId) {
         return fulfillments.start(sellerId, orderId);
     }
 }

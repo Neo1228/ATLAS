@@ -2,19 +2,15 @@ package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.provider.exchange.CachingExchangeRateProvider;
 import com.atlas.payment.service.impl.FxConversionService;
@@ -79,7 +75,7 @@ class FxRateCallCostIntegrationTest extends PayPalIntegrationTestSupport {
         long before = exchangeRateCallCount();
 
         for (int index = 0; index < payments; index++) {
-            OrderResponse pending = orders.submitPayment(createOrder());
+            OrderViewResponse.Order pending = orders.submitPayment(createOrder());
             assertThat(pending.paymentApprovalUrl()).isNotBlank();
         }
 
@@ -112,14 +108,14 @@ class FxRateCallCostIntegrationTest extends PayPalIntegrationTestSupport {
     private UUID createOrder() {
         UUID sellerId = sellers.createSeller().sellerId();
         String skuId = "fx-cost-" + UUID.randomUUID();
-        ProductResponse product = products.createProduct(sellerId,
-                new CreateProductRequest("FX cost probe", null));
+        CatalogResponse.Product product = products.createProduct(sellerId,
+                new ProductRequest.CreateProduct("FX cost probe", null));
         products.registerSku(sellerId, product.productId(),
-                new RegisterSellerSkuRequest(skuId, 17_200, 10));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(sellerId, skuId, 5));
-        CampaignResponse campaign = campaigns.open(
-                campaigns.create(new CreateCampaignRequest(sellerId, skuId, Duration.ofMinutes(5))).campaignId());
-        QueueTicketResponse ticket = admission.join(new JoinQueueRequest(campaign.campaignId(), campaign.skuId(),
+                new ProductRequest.RegisterSellerSku(skuId, 17_200, 10));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 5));
+        AdmissionResponse.Campaign campaign = campaigns.open(
+                campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, skuId, Duration.ofMinutes(5))).campaignId());
+        AdmissionResponse.QueueTicket ticket = admission.join(new AdmissionRequest.JoinQueue(campaign.campaignId(), campaign.skuId(),
                 "fx-buyer-" + UUID.randomUUID(), "fx-key-" + UUID.randomUUID()));
         return orders.startCheckout(campaign.campaignId(), ticket.ticketId()).orderId();
     }

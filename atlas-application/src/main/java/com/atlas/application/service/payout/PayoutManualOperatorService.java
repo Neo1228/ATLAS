@@ -1,7 +1,7 @@
 package com.atlas.application.service.payout;
 
-import com.atlas.application.controller.dto.PayoutProviderResolutionRequest;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchRecord;
@@ -34,64 +34,64 @@ public class PayoutManualOperatorService {
     }
 
     @Transactional
-    public SellerPayoutResponse approve(UUID payoutId, String idempotencyKey, String actor, String reason) {
+    public PayoutResponse.SellerPayout approve(UUID payoutId, String idempotencyKey, String actor, String reason) {
         validate(payoutId, idempotencyKey, actor, reason);
         requireNoProviderOutbox(payoutId);
         if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_APPROVED", actor, reason.trim())) {
             return payouts.find(payoutId);
         }
-        SellerPayoutResponse approved = payouts.approve(payoutId);
+        PayoutResponse.SellerPayout approved = payouts.approve(payoutId);
         requireNoProviderOutbox(payoutId);
         recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_APPROVED", actor, reason.trim());
         return approved;
     }
 
     @Transactional
-    public SellerPayoutResponse markSent(UUID payoutId, String idempotencyKey, String actor, String evidenceReference) {
+    public PayoutResponse.SellerPayout markSent(UUID payoutId, String idempotencyKey, String actor, String evidenceReference) {
         validate(payoutId, idempotencyKey, actor, evidenceReference);
         requireNoProviderOutbox(payoutId);
         if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_SENT", actor, evidenceReference.trim())) {
             return payouts.find(payoutId);
         }
-        SellerPayoutResponse sent = payouts.markSent(payoutId);
+        PayoutResponse.SellerPayout sent = payouts.markSent(payoutId);
         requireNoProviderOutbox(payoutId);
         recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_SENT", actor, evidenceReference.trim());
         return sent;
     }
 
     @Transactional
-    public SellerPayoutResponse confirm(UUID payoutId, String idempotencyKey, String actor, String evidenceReference) {
+    public PayoutResponse.SellerPayout confirm(UUID payoutId, String idempotencyKey, String actor, String evidenceReference) {
         validate(payoutId, idempotencyKey, actor, evidenceReference);
         requireNoProviderOutbox(payoutId);
         if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_CONFIRMED", actor, evidenceReference.trim())) {
             return payouts.find(payoutId);
         }
-        SellerPayoutResponse confirmed = payouts.confirm(payoutId);
+        PayoutResponse.SellerPayout confirmed = payouts.confirm(payoutId);
         requireNoProviderOutbox(payoutId);
         recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_CONFIRMED", actor, evidenceReference.trim());
         return confirmed;
     }
 
     @Transactional
-    public SellerPayoutResponse failBeforeDispatch(UUID payoutId, String idempotencyKey,
+    public PayoutResponse.SellerPayout failBeforeDispatch(UUID payoutId, String idempotencyKey,
             String actor, String reason) {
         validate(payoutId, idempotencyKey, actor, reason);
         requireNoProviderOutbox(payoutId);
         if (actions.matches(payoutId, idempotencyKey, "MANUAL_PAYOUT_FAILED", actor, reason.trim())) {
             return payouts.find(payoutId);
         }
-        SellerPayoutResponse failed = payouts.fail(payoutId, "MANUAL_NO_TRANSFER");
+        PayoutResponse.SellerPayout failed = payouts.fail(payoutId, "MANUAL_NO_TRANSFER");
         requireNoProviderOutbox(payoutId);
         recordAction(payoutId, idempotencyKey, "MANUAL_PAYOUT_FAILED", actor, reason.trim());
         return failed;
     }
 
     @Transactional
-    public SellerPayoutResponse reconcileNoTransfer(UUID payoutId, String idempotencyKey,
+    public PayoutResponse.SellerPayout reconcileNoTransfer(UUID payoutId, String idempotencyKey,
             String actor, String evidenceReference) {
         validate(payoutId, idempotencyKey, actor, evidenceReference);
         requireNoProviderOutbox(payoutId);
-        SellerPayoutResponse payout = payouts.find(payoutId);
+        PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         if (payout.state() == SettlementPayoutStatus.FAILED
                 && actions.matches(payoutId, idempotencyKey, "MANUAL_NO_TRANSFER_CONFIRMED",
                         actor, evidenceReference.trim())) {
@@ -101,15 +101,15 @@ public class PayoutManualOperatorService {
                 && payout.state() != SettlementPayoutStatus.NEEDS_REVIEW) {
             throw conflict("Only a legacy attempted payout can be manually reconciled");
         }
-        SellerPayoutResponse failed = payouts.failWithProviderEvidence(payoutId, "MANUAL_NO_TRANSFER_CONFIRMED");
+        PayoutResponse.SellerPayout failed = payouts.failWithProviderEvidence(payoutId, "MANUAL_NO_TRANSFER_CONFIRMED");
         requireNoProviderOutbox(payoutId);
         recordAction(payoutId, idempotencyKey, "MANUAL_NO_TRANSFER_CONFIRMED", actor, evidenceReference.trim());
         return failed;
     }
 
     @Transactional
-    public SellerPayoutResponse resolveProviderReview(UUID payoutId, String idempotencyKey,
-            String actor, PayoutProviderResolutionRequest request) {
+    public PayoutResponse.SellerPayout resolveProviderReview(UUID payoutId, String idempotencyKey,
+            String actor, SettlementHttpRequest.PayoutProviderResolution request) {
         if (request == null) throw invalid("Provider resolution evidence is required");
         validate(payoutId, idempotencyKey, actor, request.evidenceReference());
         PayoutDispatchRecord record = dispatches.find(payoutId)
@@ -129,7 +129,7 @@ public class PayoutManualOperatorService {
             throw invalid("No-transfer resolution requires explicit zero-fee USD evidence");
         }
         String action = "PAID".equals(request.outcome()) ? "PROVIDER_REVIEW_PAID" : "PROVIDER_REVIEW_NOT_PAID";
-        SellerPayoutResponse payout = payouts.find(payoutId);
+        PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         if ("COMPLETED".equals(record.status())) {
             if (!"PROVIDER_REVIEW_PAID".equals(action)
                     || !actions.matches(payoutId, idempotencyKey, action, actor, request.evidenceReference().trim())) {
@@ -164,7 +164,7 @@ public class PayoutManualOperatorService {
             validatePaidProviderFacts(record, request);
             long feeWon = conversions.usdCentsToWonCeiling(
                     request.providerFeeMinor(), record.fxRateWonPerUsd());
-            SellerPayoutResponse confirmed = payouts.confirmProviderSuccess(payoutId,
+            PayoutResponse.SellerPayout confirmed = payouts.confirmProviderSuccess(payoutId,
                     record.providerDebitBookValueWon(), record.payoutFxRoundingExpenseWon(), feeWon);
             if (!dispatches.resolveNeedsReview(payoutId, "COMPLETED", request.providerBatchId(),
                     request.providerItemId(), request.providerFeeMinor(), feeWon, "OPERATOR_PROVIDER_PAID")) {
@@ -181,7 +181,7 @@ public class PayoutManualOperatorService {
                 && !record.providerItemId().equals(request.providerItemId())) {
             throw conflict("Provider item evidence does not match the payout");
         }
-        SellerPayoutResponse failed = payouts.failWithProviderEvidence(
+        PayoutResponse.SellerPayout failed = payouts.failWithProviderEvidence(
                 payoutId, "OPERATOR_CONFIRMED_NO_TRANSFER");
         if (!dispatches.resolveNeedsReview(payoutId, "FAILED", request.providerBatchId(),
                 request.providerItemId(), 0L, 0L, "OPERATOR_NO_TRANSFER")) {
@@ -192,7 +192,7 @@ public class PayoutManualOperatorService {
     }
 
     private static void validatePaidProviderFacts(PayoutDispatchRecord record,
-            PayoutProviderResolutionRequest request) {
+            SettlementHttpRequest.PayoutProviderResolution request) {
         if (request.providerAmountMinor() == null || request.providerFeeMinor() == null
                 || request.providerBatchId() == null || request.providerItemId() == null
                 || request.providerFeeMinor() < 0

@@ -1,19 +1,19 @@
 package com.atlas.admission.service;
 
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface CampaignService {
 
-    CampaignResponse create(CreateCampaignRequest request);
+    AdmissionResponse.Campaign create(AdmissionRequest.CreateCampaign request);
 
-    CampaignResponse open(UUID campaignId);
+    AdmissionResponse.Campaign open(UUID campaignId);
 
-    CampaignResponse close(UUID sellerId, UUID campaignId);
+    AdmissionResponse.Campaign close(UUID sellerId, UUID campaignId);
 
-    Optional<CampaignResponse> findOpenForAdmission(UUID campaignId, String skuId);
+    Optional<AdmissionResponse.Campaign> findOpenForAdmission(UUID campaignId, String skuId);
 
-    CampaignResponse find(UUID campaignId);
+    AdmissionResponse.Campaign find(UUID campaignId);
 }

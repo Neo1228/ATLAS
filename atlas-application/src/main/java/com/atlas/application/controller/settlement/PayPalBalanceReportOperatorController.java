@@ -1,11 +1,7 @@
 package com.atlas.application.controller.settlement;
 
-import com.atlas.application.dto.request.PayPalBalanceReportDispositionRequest;
-import com.atlas.settlement.dto.response.PayPalBalanceReportDispositionResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary;
-import com.atlas.settlement.dto.response.PayPalBalanceReportPage;
-import com.atlas.settlement.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportRunResponse;
+import com.atlas.application.dto.request.SettlementHttpRequest;
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import jakarta.validation.Valid;
 import java.security.Principal;
@@ -35,24 +31,24 @@ public class PayPalBalanceReportOperatorController {
     }
 
     @GetMapping("/summary")
-    public PayPalBalanceReportOperatorSummary summary() {
+    public PayPalBalanceReportResponse.OperatorSummary summary() {
         return operator.summary();
     }
 
     @GetMapping("/runs")
-    public PayPalBalanceReportPage<PayPalBalanceReportRunResponse> runs(
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Run> runs(
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         return operator.listRuns(limit, offset);
     }
 
     @GetMapping("/runs/search")
-    public PayPalBalanceReportRunResponse search(@RequestParam String reportSha256) {
+    public PayPalBalanceReportResponse.Run search(@RequestParam String reportSha256) {
         return operator.search(reportSha256);
     }
 
     @GetMapping("/exceptions")
-    public PayPalBalanceReportPage<PayPalBalanceReportRowResponse> exceptions(
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> exceptions(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to,
@@ -63,7 +59,7 @@ public class PayPalBalanceReportOperatorController {
     }
 
     @GetMapping("/runs/{runId}/rows")
-    public PayPalBalanceReportPage<PayPalBalanceReportRowResponse> rows(@PathVariable UUID runId,
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> rows(@PathVariable UUID runId,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String recordId,
             @RequestParam(defaultValue = "20") int limit,
@@ -72,17 +68,17 @@ public class PayPalBalanceReportOperatorController {
     }
 
     @GetMapping({"/runs/{runId}/rows/{rowNumber}/history", "/runs/{runId}/rows/{rowNumber}/dispositions"})
-    public List<PayPalBalanceReportDispositionResponse> dispositionHistory(@PathVariable UUID runId,
+    public List<PayPalBalanceReportResponse.Disposition> dispositionHistory(@PathVariable UUID runId,
             @PathVariable int rowNumber) {
         return operator.dispositionHistory(runId, rowNumber);
     }
 
     @PostMapping("/runs/{runId}/rows/{rowNumber}/dispositions")
     @ResponseStatus(HttpStatus.CREATED)
-    public PayPalBalanceReportDispositionResponse recordDisposition(@PathVariable UUID runId,
+    public PayPalBalanceReportResponse.Disposition recordDisposition(@PathVariable UUID runId,
             @PathVariable int rowNumber,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody PayPalBalanceReportDispositionRequest request,
+            @Valid @RequestBody SettlementHttpRequest.PayPalBalanceReportDisposition request,
             Principal principal) {
         return operator.recordDisposition(runId, rowNumber, request.disposition(), principal.getName(),
                 request.reason(), idempotencyKey);

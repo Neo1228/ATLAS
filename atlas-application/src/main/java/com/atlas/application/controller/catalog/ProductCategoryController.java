@@ -1,9 +1,7 @@
 package com.atlas.application.controller.catalog;
 
-import com.atlas.catalog.dto.request.CreateProductCategoryRequest;
-import com.atlas.catalog.dto.request.UpdateProductCategoryRequest;
-import com.atlas.catalog.dto.request.UpdateProductCategoryParentRequest;
-import com.atlas.catalog.dto.response.ProductCategoryResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductCategoryRequest;
 import com.atlas.catalog.service.ProductCategoryService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -29,30 +27,30 @@ public class ProductCategoryController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ProductCategoryResponse create(@PathVariable UUID sellerId,
-            @Valid @RequestBody CreateProductCategoryRequest request) {
+    public CatalogResponse.ProductCategory create(@PathVariable UUID sellerId,
+            @Valid @RequestBody ProductCategoryRequest.Create request) {
         return categories.createCategory(sellerId, request);
     }
 
     @GetMapping
-    public List<ProductCategoryResponse> list(@PathVariable UUID sellerId) {
+    public List<CatalogResponse.ProductCategory> list(@PathVariable UUID sellerId) {
         return categories.listCategories(sellerId);
     }
 
     @PutMapping("/{categoryId}/parent")
-    public ProductCategoryResponse updateParent(@PathVariable UUID sellerId, @PathVariable UUID categoryId,
-            @RequestBody UpdateProductCategoryParentRequest request) {
+    public CatalogResponse.ProductCategory updateParent(@PathVariable UUID sellerId, @PathVariable UUID categoryId,
+            @RequestBody ProductCategoryRequest.UpdateParent request) {
         return categories.updateCategoryParent(sellerId, categoryId, request);
     }
 
     @DeleteMapping("/{categoryId}/parent")
-    public ProductCategoryResponse resetParent(@PathVariable UUID sellerId, @PathVariable UUID categoryId) {
+    public CatalogResponse.ProductCategory resetParent(@PathVariable UUID sellerId, @PathVariable UUID categoryId) {
         return categories.updateCategoryParent(sellerId, categoryId, null);
     }
 
     @PutMapping("/{categoryId}")
-    public ProductCategoryResponse updateName(@PathVariable UUID sellerId, @PathVariable UUID categoryId,
-            @Valid @RequestBody UpdateProductCategoryRequest request) {
+    public CatalogResponse.ProductCategory updateName(@PathVariable UUID sellerId, @PathVariable UUID categoryId,
+            @Valid @RequestBody ProductCategoryRequest.Update request) {
         return categories.updateCategoryName(sellerId, categoryId, request);
     }
 }

@@ -7,9 +7,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.inventory.service.InventoryService;
-import com.atlas.order.dto.request.OrderRefundRequest;
-import com.atlas.order.dto.response.OrderRefundResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.projection.RefundItem;
 import com.atlas.order.persistence.projection.RefundRecord;
@@ -75,8 +75,8 @@ class OrderRefundServiceImplTest {
                 mock(OrderReturnRepository.class), mock(InventoryService.class), mock(SettlementService.class),
                 mock(PaymentService.class), Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC), Optional.empty());
 
-        OrderRefundResponse response = service.refund(new OrderRefundRequest(sellerId, orderId, idempotencyKey,
-                List.of(new OrderRefundRequest.Item(javaSecond, 1), new OrderRefundRequest.Item(javaFirst, 1))));
+        RefundResponse.Refund response = service.refund(new OrderRequest.Refund(sellerId, orderId, idempotencyKey,
+                List.of(new OrderRequest.Refund.Item(javaSecond, 1), new OrderRequest.Refund.Item(javaFirst, 1))));
 
         assertEquals(refundId, response.refundId());
     }
@@ -138,8 +138,8 @@ class OrderRefundServiceImplTest {
                 refunds, returns, mock(InventoryService.class), mock(SettlementService.class),
                 mock(PaymentService.class), Clock.systemUTC(), Optional.empty());
             OrderException exception = assertThrows(OrderException.class, () -> service.refund(
-                    new OrderRefundRequest(sellerId, orderId, "direct-refund-" + returnStatus,
-                            List.of(new OrderRefundRequest.Item(orderItemId, 2)))));
+                    new OrderRequest.Refund(sellerId, orderId, "direct-refund-" + returnStatus,
+                            List.of(new OrderRequest.Refund.Item(orderItemId, 2)))));
 
             assertEquals(OrderException.Code.CONFLICT, exception.code());
         }

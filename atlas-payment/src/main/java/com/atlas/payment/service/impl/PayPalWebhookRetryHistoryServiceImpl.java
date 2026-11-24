@@ -1,8 +1,6 @@
 package com.atlas.payment.service.impl;
 
-import com.atlas.payment.dto.response.PayPalWebhookPendingRetryPage;
-import com.atlas.payment.dto.response.PayPalWebhookRetryAttemptHistoryResponse;
-import com.atlas.payment.dto.response.PayPalWebhookRetrySummary;
+import com.atlas.payment.dto.response.WebhookRetryResponse;
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.projection.WebhookRetrySummary;
@@ -22,35 +20,35 @@ public class PayPalWebhookRetryHistoryServiceImpl implements PayPalWebhookRetryH
 
     /** 최근 24시간 재시도 outcome 요약. */
     @Override
-    public PayPalWebhookRetrySummary summary() {
+    public WebhookRetryResponse.RetrySummary summary() {
         WebhookRetrySummary summary = retries.summary();
-        return new PayPalWebhookRetrySummary(summary.pending(), summary.exhausted(), summary.oldestPendingSince(),
+        return new WebhookRetryResponse.RetrySummary(summary.pending(), summary.exhausted(), summary.oldestPendingSince(),
                 summary.oldestExhaustedSince(), summary.expiredLeaseCount(), summary.last24HoursOutcomeCounts());
     }
 
     @Override
-    public PayPalWebhookPendingRetryPage pending(int page, int size) {
+    public WebhookRetryResponse.PendingRetryPage pending(int page, int size) {
         long offset = offset(page, size);
         long total = retries.countPending();
-        List<PayPalWebhookPendingRetryPage.Item> items = retries.listPending(size, offset).stream()
-                .map(item -> new PayPalWebhookPendingRetryPage.Item(item.eventId(), item.eventType(),
+        List<WebhookRetryResponse.PendingRetryPage.Item> items = retries.listPending(size, offset).stream()
+                .map(item -> new WebhookRetryResponse.PendingRetryPage.Item(item.eventId(), item.eventType(),
                         item.attemptCount(), item.nextAttemptAt(), item.leaseState()))
                 .toList();
-        return new PayPalWebhookPendingRetryPage(total, page, size, items);
+        return new WebhookRetryResponse.PendingRetryPage(total, page, size, items);
     }
 
     @Override
-    public PayPalWebhookRetryAttemptHistoryResponse history(String eventId, int page, int size) {
+    public WebhookRetryResponse.RetryAttemptHistory history(String eventId, int page, int size) {
         long offset = offset(page, size);
         if (!retries.eventKnown(eventId)) {
             throw new PaymentException(Code.NOT_FOUND, "Retry event not found");
         }
         long total = retries.countTimeline(eventId);
-        List<PayPalWebhookRetryAttemptHistoryResponse.Entry> entries = retries.timeline(eventId, size, offset).stream()
-                .map(entry -> new PayPalWebhookRetryAttemptHistoryResponse.Entry(entry.category(), entry.recordedAt(),
+        List<WebhookRetryResponse.RetryAttemptHistory.Entry> entries = retries.timeline(eventId, size, offset).stream()
+                .map(entry -> new WebhookRetryResponse.RetryAttemptHistory.Entry(entry.category(), entry.recordedAt(),
                         entry.attemptNumber()))
                 .toList();
-        return new PayPalWebhookRetryAttemptHistoryResponse(eventId, total, page, size, entries);
+        return new WebhookRetryResponse.RetryAttemptHistory(eventId, total, page, size, entries);
     }
 
     private static long offset(int page, int size) {

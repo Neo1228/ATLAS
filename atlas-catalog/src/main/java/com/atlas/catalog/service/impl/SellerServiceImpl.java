@@ -1,6 +1,6 @@
 package com.atlas.catalog.service.impl;
 
-import com.atlas.catalog.dto.response.SellerResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.persistence.entity.ProductCategory;
 import com.atlas.catalog.persistence.entity.Seller;
 import com.atlas.catalog.repository.ProductCategoryRepository;
@@ -18,11 +18,11 @@ public class SellerServiceImpl implements SellerService {
 
     @Override
     @Transactional
-    public SellerResponse createSeller() {
+    public CatalogResponse.Seller createSeller() {
         // Account 모듈의 JDBC seller-account 연결 전에 같은 트랜잭션에서 Seller FK를 확정.
         Seller seller = sellers.saveAndFlush(new Seller());
         categories.save(new ProductCategory(seller.getSellerId(), ProductCategory.UNCATEGORIZED_CODE,
                 ProductCategory.UNCATEGORIZED_NAME));
-        return new SellerResponse(seller.getSellerId());
+        return new CatalogResponse.Seller(seller.getSellerId());
     }
 }

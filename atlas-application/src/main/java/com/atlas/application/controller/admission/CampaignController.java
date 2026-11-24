@@ -1,9 +1,9 @@
 package com.atlas.application.controller.admission;
 
+import com.atlas.application.dto.request.AdmissionHttpRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.account.service.AccountService;
-import com.atlas.application.controller.dto.CreateCampaignHttpRequest;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
 import jakarta.validation.Valid;
 import java.time.Duration;
@@ -32,21 +32,21 @@ public class CampaignController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public CampaignResponse create(@AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody CreateCampaignHttpRequest request) {
+    public AdmissionResponse.Campaign create(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AdmissionHttpRequest.CreateCampaign request) {
         UUID accountId = UUID.fromString(jwt.getSubject());
         accounts.requireSellerOwnership(accountId, request.sellerId());
-        return campaigns.create(new CreateCampaignRequest(request.sellerId(), request.skuId(),
+        return campaigns.create(new AdmissionRequest.CreateCampaign(request.sellerId(), request.skuId(),
                 Duration.ofSeconds(request.queueTicketTtlSeconds())));
     }
 
     @PostMapping("/{campaignId}/open")
-    public CampaignResponse open(@PathVariable UUID campaignId) {
+    public AdmissionResponse.Campaign open(@PathVariable UUID campaignId) {
         return campaigns.open(campaignId);
     }
 
     @GetMapping("/{campaignId}")
-    public CampaignResponse find(@PathVariable UUID campaignId) {
+    public AdmissionResponse.Campaign find(@PathVariable UUID campaignId) {
         return campaigns.find(campaignId);
     }
 }

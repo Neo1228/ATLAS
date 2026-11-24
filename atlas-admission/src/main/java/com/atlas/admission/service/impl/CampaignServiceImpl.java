@@ -1,7 +1,7 @@
 package com.atlas.admission.service.impl;
 
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.persistence.entity.Campaign;
 import com.atlas.admission.repository.CampaignRepository;
@@ -28,7 +28,7 @@ public class CampaignServiceImpl implements CampaignService {
 
     @Override
     @Transactional
-    public CampaignResponse create(CreateCampaignRequest request) {
+    public AdmissionResponse.Campaign create(AdmissionRequest.CreateCampaign request) {
         if (request == null || request.sellerId() == null || request.skuId() == null
                 || request.skuId().isBlank() || request.skuId().length() > 128
                 || request.queueTicketTtl() == null || request.queueTicketTtl().isZero()
@@ -49,7 +49,7 @@ public class CampaignServiceImpl implements CampaignService {
 
     @Override
     @Transactional
-    public CampaignResponse open(UUID campaignId) {
+    public AdmissionResponse.Campaign open(UUID campaignId) {
         Campaign entity = campaigns.findWithWriteLockByCampaignId(campaignId).orElseThrow(() ->
                 new CampaignException(CampaignException.Code.NOT_FOUND, "Unknown campaign: " + campaignId));
         if (sellerSkus.findOrderableSellerSku(entity.getSellerId(), entity.getSkuId(),
@@ -63,7 +63,7 @@ public class CampaignServiceImpl implements CampaignService {
 
     @Override
     @Transactional
-    public CampaignResponse close(UUID sellerId, UUID campaignId) {
+    public AdmissionResponse.Campaign close(UUID sellerId, UUID campaignId) {
         if (sellerId == null || campaignId == null) {
             throw new CampaignException(CampaignException.Code.INVALID_CONFIGURATION,
                     "Seller and campaign are required");
@@ -83,7 +83,7 @@ public class CampaignServiceImpl implements CampaignService {
     /** Admission join transaction이 끝날 때까지 campaign row의 read lock을 유지합니다. */
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public Optional<CampaignResponse> findOpenForAdmission(UUID campaignId, String skuId) {
+    public Optional<AdmissionResponse.Campaign> findOpenForAdmission(UUID campaignId, String skuId) {
         Campaign campaign = campaigns.findForAdmission(campaignId).orElseThrow(() ->
                 new CampaignException(CampaignException.Code.NOT_FOUND, "Unknown campaign: " + campaignId));
         if (campaign.getStatus() != CampaignStatus.OPEN || !campaign.getSkuId().equals(skuId)) {
@@ -94,14 +94,14 @@ public class CampaignServiceImpl implements CampaignService {
 
     @Override
     @Transactional(readOnly = true)
-    public CampaignResponse find(UUID campaignId) {
+    public AdmissionResponse.Campaign find(UUID campaignId) {
         return campaigns.findById(campaignId).map(CampaignServiceImpl::toResponse)
                 .orElseThrow(() -> new CampaignException(CampaignException.Code.NOT_FOUND,
                         "Unknown campaign: " + campaignId));
     }
 
-    private static CampaignResponse toResponse(Campaign entity) {
-        return new CampaignResponse(entity.getCampaignId(), entity.getSellerId(), entity.getSkuId(),
+    private static AdmissionResponse.Campaign toResponse(Campaign entity) {
+        return new AdmissionResponse.Campaign(entity.getCampaignId(), entity.getSellerId(), entity.getSkuId(),
                 entity.getStatus(), Duration.ofSeconds(entity.getQueueTicketTtlSeconds()));
     }
 }

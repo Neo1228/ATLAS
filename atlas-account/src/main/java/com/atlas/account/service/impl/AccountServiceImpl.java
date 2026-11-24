@@ -1,18 +1,7 @@
 package com.atlas.account.service.impl;
 
-import com.atlas.account.dto.request.LoginRequest;
-import com.atlas.account.dto.request.MfaChallengeRequest;
-import com.atlas.account.dto.request.RefreshTokenRequest;
-import com.atlas.account.dto.request.RegisterBuyerRequest;
-import com.atlas.account.dto.response.AccountActionResponse;
-import com.atlas.account.dto.response.AccountLoginResponse;
-import com.atlas.account.dto.response.AccountSessionPage;
-import com.atlas.account.dto.response.AccountSessionResponse;
-import com.atlas.account.dto.response.AccountSuspensionActionResponse;
-import com.atlas.account.dto.response.AccountTokenResponse;
-import com.atlas.account.dto.response.MfaEnrollmentResponse;
-import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
-import com.atlas.account.dto.response.VerifiedSellerAccountResponse;
+import com.atlas.account.dto.response.AccountResponse;
+import com.atlas.account.dto.request.AccountRequest;
 import com.atlas.account.exception.AccountException.Code;
 import com.atlas.account.exception.AccountException;
 import com.atlas.account.persistence.projection.AccountActionToken;
@@ -93,7 +82,7 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public AccountActionResponse registerBuyer(RegisterBuyerRequest request, String origin) {
+    public AccountResponse.Action registerBuyer(AccountRequest.RegisterBuyer request, String origin) {
         if (request == null || request.password() == null || request.password().length() < 12
                 || request.password().length() > 128) {
             throw invalidRequest();
@@ -106,40 +95,40 @@ public class AccountServiceImpl implements AccountService {
         String passwordHash = passwords.encode(request.password());
         return transactions.execute(status -> {
             Optional<UUID> createdAccount = accounts.createAccount(email, passwordHash);
-            if (createdAccount.isEmpty()) return new AccountActionResponse(true);
+            if (createdAccount.isEmpty()) return new AccountResponse.Action(true);
             UUID accountId = createdAccount.get();
             accounts.createBuyer(accountId);
             String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
             sendAfterCommit(() -> emailSender.sendVerification(email, token));
-            return new AccountActionResponse(true);
+            return new AccountResponse.Action(true);
         });
     }
 
     @Override
-    public AccountActionResponse requestPasswordReset(String requestedEmail, String origin) {
+    public AccountResponse.Action requestPasswordReset(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
-        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountActionResponse(true);
+        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountResponse.Action(true);
         return transactions.execute(status -> {
             accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId -> {
                 String token = newActionToken(accountId, "PASSWORD_RESET", PASSWORD_RESET_LIFETIME);
                 sendAfterCommit(() -> emailSender.sendPasswordReset(email, token));
             });
-            return new AccountActionResponse(true);
+            return new AccountResponse.Action(true);
         });
     }
 
     @Override
-    public AccountActionResponse requestEmailVerification(String requestedEmail, String origin) {
+    public AccountResponse.Action requestEmailVerification(String requestedEmail, String origin) {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
-        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountActionResponse(true);
+        if (!limiter.tryAcquire("EMAIL", email, origin, now)) return new AccountResponse.Action(true);
         return transactions.execute(status -> {
             accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId -> {
                 String token = newActionToken(accountId, "EMAIL_VERIFICATION", EMAIL_VERIFICATION_LIFETIME);
                 sendAfterCommit(() -> emailSender.sendVerification(email, token));
             });
-            return new AccountActionResponse(true);
+            return new AccountResponse.Action(true);
         });
     }
 
@@ -182,7 +171,7 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public AccountLoginResponse login(LoginRequest request, String origin) {
+    public AccountResponse.Login login(AccountRequest.Login request, String origin) {
         if (request == null || request.password() == null || request.password().length() > 128) {
             throw invalidCredentials();
         }
@@ -205,7 +194,7 @@ public class AccountServiceImpl implements AccountService {
             limiter.recordSubjectFailure("LOGIN", email, now);
             throw invalidCredentials();
         }
-        AccountLoginResponse response = transactions.execute(status ->
+        AccountResponse.Login response = transactions.execute(status ->
                 completeLogin(email, request.password(), passwordHash, account.get()));
         if (response == null) {
             limiter.recordSubjectFailure("LOGIN", email, now);
@@ -220,7 +209,7 @@ public class AccountServiceImpl implements AccountService {
      * 바뀌었을 때만 다시 계산한다. 같은 해시와 같은 비밀번호의 검증 결과는 같으므로 평소에는 PBKDF2를
      * 반복하지 않는다. 인증에 실패하면 {@code null}을 돌려주고 실패 기록은 호출자가 transaction 밖에서 한다.
      */
-    private AccountLoginResponse completeLogin(String email, String password, String verifiedHash,
+    private AccountResponse.Login completeLogin(String email, String password, String verifiedHash,
             AccountPrincipal account) {
         Optional<String> currentPasswordHash = accounts.lockPasswordHashForLogin(email);
         if (currentPasswordHash.isEmpty()) return null;
@@ -232,14 +221,14 @@ public class AccountServiceImpl implements AccountService {
             Instant challengeNow = clock.instant();
             accounts.createMfaChallenge(hashRefreshToken(challenge), account.accountId(),
                     challengeNow, challengeNow.plus(MFA_CHALLENGE_LIFETIME));
-            return new AccountLoginResponse(true, null, challenge);
+            return new AccountResponse.Login(true, null, challenge);
         }
-        return new AccountLoginResponse(false, issueTokens(account), null);
+        return new AccountResponse.Login(false, issueTokens(account), null);
     }
 
     @Transactional
     @Override
-    public MfaEnrollmentResponse startMfaEnrollment(UUID accountId) {
+    public AccountResponse.MfaEnrollment startMfaEnrollment(UUID accountId) {
         AccountPrincipal account = accounts.findActiveById(accountId).orElseThrow(AccountServiceImpl::invalidCredentials);
         if (accounts.mfaEnabled(accountId)) throw mfaConflict();
         String secret = new String(SecretGenerator.generate(), StandardCharsets.US_ASCII);
@@ -249,7 +238,7 @@ public class AccountServiceImpl implements AccountService {
         try {
             String uri = new TOTPGenerator.Builder(secret).withClock(clock).build()
                     .getURI("ATLAS", account.email()).toString();
-            return new MfaEnrollmentResponse(secret, uri);
+            return new AccountResponse.MfaEnrollment(secret, uri);
         } catch (URISyntaxException exception) {
             throw new IllegalStateException("MFA enrollment URI could not be created", exception);
         }
@@ -257,7 +246,7 @@ public class AccountServiceImpl implements AccountService {
 
     @Transactional
     @Override
-    public MfaRecoveryCodesResponse confirmMfaEnrollment(UUID accountId, String code) {
+    public AccountResponse.MfaRecoveryCodes confirmMfaEnrollment(UUID accountId, String code) {
         AccountMfaSecret secret = accounts.findMfaSecretForUpdate(accountId).orElseThrow(AccountServiceImpl::invalidActionToken);
         if (secret.enabledAt() != null || !validTotp(accountId, secret.encryptedSecret(), code)) {
             throw invalidCredentials();
@@ -272,7 +261,7 @@ public class AccountServiceImpl implements AccountService {
             hashes.add(hashRefreshToken(recoveryCode));
         }
         accounts.replaceMfaRecoveryCodes(accountId, hashes, now);
-        return new MfaRecoveryCodesResponse(List.copyOf(codes));
+        return new AccountResponse.MfaRecoveryCodes(List.copyOf(codes));
     }
 
     @Transactional
@@ -286,7 +275,7 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public AccountTokenResponse completeMfaLogin(MfaChallengeRequest request) {
+    public AccountResponse.Token completeMfaLogin(AccountRequest.MfaChallenge request) {
         if (request == null || !StringUtils.hasText(request.challengeToken())
                 || (StringUtils.hasText(request.code()) == StringUtils.hasText(request.recoveryCode()))) {
             throw invalidCredentials();
@@ -304,7 +293,7 @@ public class AccountServiceImpl implements AccountService {
             transactions.executeWithoutResult(status -> accounts.consumeMfaChallenge(challengeHash, now));
             throw invalidCredentials();
         }
-        AccountTokenResponse tokens = transactions.execute(status ->
+        AccountResponse.Token tokens = transactions.execute(status ->
                 verifyMfaAndIssue(accountId, challengeHash, request, now));
         if (tokens == null) {
             limiter.recordSubjectFailure("MFA", mfaSubject, now);
@@ -319,8 +308,8 @@ public class AccountServiceImpl implements AccountService {
      * 호출자가 transaction 밖에서 한다. 챌린지는 코드가 맞을 때만 소모하므로 틀린 코드는 같은 챌린지로 다시 시도할
      * 수 있고, 시도 횟수는 한도가 제한한다.
      */
-    private AccountTokenResponse verifyMfaAndIssue(UUID accountId, String challengeHash,
-            MfaChallengeRequest request, Instant now) {
+    private AccountResponse.Token verifyMfaAndIssue(UUID accountId, String challengeHash,
+            AccountRequest.MfaChallenge request, Instant now) {
         Optional<UUID> locked = accounts.findMfaChallengeForUpdate(challengeHash, now);
         if (locked.isEmpty() || !locked.get().equals(accountId)) {
             throw invalidCredentials();
@@ -343,7 +332,7 @@ public class AccountServiceImpl implements AccountService {
 
     @Transactional(noRollbackFor = AccountException.class)
     @Override
-    public AccountTokenResponse refresh(RefreshTokenRequest request) {
+    public AccountResponse.Token refresh(AccountRequest.RefreshToken request) {
         if (request == null || !StringUtils.hasText(request.refreshToken())) throw invalidRefreshToken();
         Instant now = clock.instant();
         RefreshTokenSession previous = accounts.findRefreshSessionForUpdate(hashRefreshToken(request.refreshToken()))
@@ -431,10 +420,10 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public List<AccountSuspensionActionResponse> suspensionHistory(UUID accountId, int limit) {
+    public List<AccountResponse.SuspensionAction> suspensionHistory(UUID accountId, int limit) {
         if (accountId == null) throw invalidRequest();
         return suspensions.history(accountId, limit <= 0 ? 20 : Math.min(limit, 100)).stream()
-                .map(action -> new AccountSuspensionActionResponse(action.action(), action.idempotencyKey(),
+                .map(action -> new AccountResponse.SuspensionAction(action.action(), action.idempotencyKey(),
                         action.actor(), action.reason(), action.createdAt()))
                 .toList();
     }
@@ -466,12 +455,12 @@ public class AccountServiceImpl implements AccountService {
 
     @Transactional(readOnly = true)
     @Override
-    public Optional<VerifiedSellerAccountResponse> findVerifiedSellerAccount(UUID accountId, UUID sellerId) {
+    public Optional<AccountResponse.VerifiedSellerAccount> findVerifiedSellerAccount(UUID accountId, UUID sellerId) {
         if (accountId == null || sellerId == null || !accounts.ownsSeller(accountId, sellerId)) {
             throw new AccountException(Code.RESOURCE_NOT_OWNED, "Seller identity is not available");
         }
         return accounts.findVerifiedSellerAccount(accountId, sellerId)
-                .map(account -> new VerifiedSellerAccountResponse(account.accountId(), account.email()));
+                .map(account -> new AccountResponse.VerifiedSellerAccount(account.accountId(), account.email()));
     }
 
     @Transactional(readOnly = true)
@@ -506,7 +495,7 @@ public class AccountServiceImpl implements AccountService {
     }
     @Transactional(readOnly = true)
     @Override
-    public AccountSessionPage listSessions(
+    public AccountResponse.SessionPage listSessions(
             UUID accountId, UUID currentFamilyId, int requestedLimit, int offset) {
         if (accountId == null || currentFamilyId == null) throw invalidRequest();
         int limit = requestedLimit == 0 ? 20 : requestedLimit;
@@ -514,11 +503,11 @@ public class AccountServiceImpl implements AccountService {
         List<ActiveRefreshFamily> fetched = accounts.findActiveRefreshFamilies(
                 accountId, clock.instant(), limit + 1, offset);
         boolean hasMore = fetched.size() > limit;
-        List<AccountSessionResponse> items = fetched.stream().limit(limit)
-                .map(family -> new AccountSessionResponse(family.familyId(), family.createdAt(),
+        List<AccountResponse.Session> items = fetched.stream().limit(limit)
+                .map(family -> new AccountResponse.Session(family.familyId(), family.createdAt(),
                         family.expiresAt(), family.familyId().equals(currentFamilyId)))
                 .toList();
-        return new AccountSessionPage(items, limit, offset, hasMore);
+        return new AccountResponse.SessionPage(items, limit, offset, hasMore);
     }
 
     @Transactional
@@ -528,7 +517,7 @@ public class AccountServiceImpl implements AccountService {
         accounts.revokeRefreshFamily(accountId, familyId, clock.instant());
     }
 
-    private AccountTokenResponse issueTokens(AccountPrincipal account) {
+    private AccountResponse.Token issueTokens(AccountPrincipal account) {
         Instant now = clock.instant();
         UUID familyId = UUID.randomUUID();
         Instant familyExpiresAt = now.plus(REFRESH_FAMILY_LIFETIME);
@@ -596,8 +585,8 @@ public class AccountServiceImpl implements AccountService {
         }
     }
 
-    private AccountTokenResponse tokenResponse(AccountPrincipal account, String refreshToken, UUID familyId) {
-        return new AccountTokenResponse(accessTokens.issue(account.accountId(), familyId), refreshToken, "Bearer",
+    private AccountResponse.Token tokenResponse(AccountPrincipal account, String refreshToken, UUID familyId) {
+        return new AccountResponse.Token(accessTokens.issue(account.accountId(), familyId), refreshToken, "Bearer",
                 AccessTokenService.ACCESS_TOKEN_LIFETIME_SECONDS, account.accountId(), account.buyerRef(),
                 account.sellerIds());
     }

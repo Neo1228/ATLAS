@@ -2,16 +2,15 @@ package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.atlas.order.dto.response.OrderViewResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.application.service.PaymentRecoveryWorker;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.dto.response.CheckoutResponse;
-import com.atlas.order.dto.response.OrderResponse;
 import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.service.CartCheckoutService;
@@ -111,7 +110,7 @@ class PaymentApprovalAbandonmentIntegrationTest extends PayPalIntegrationTestSup
         assertThat(jdbc.queryForObject(
                 "SELECT state FROM purchase_order WHERE order_id = ?",
                 String.class, fixture.orderId())).isEqualTo(OrderState.FAILED.name());
-        InventoryPoolResponse pool = inventory.find(fixture.sellerId(), fixture.skuId());
+        InventoryResponse.Pool pool = inventory.find(fixture.sellerId(), fixture.skuId());
         assertThat(pool.available()).isEqualTo(1);
         assertThat(pool.reserved()).isZero();
         assertThat(pool.claimed()).isZero();
@@ -137,7 +136,7 @@ class PaymentApprovalAbandonmentIntegrationTest extends PayPalIntegrationTestSup
         assertThat(jdbc.queryForObject(
                 "SELECT state FROM purchase_order WHERE order_id = ?",
                 String.class, fixture.orderId())).isEqualTo(OrderState.PAID.name());
-        InventoryPoolResponse pool = inventory.find(fixture.sellerId(), fixture.skuId());
+        InventoryResponse.Pool pool = inventory.find(fixture.sellerId(), fixture.skuId());
         assertThat(pool.claimed()).isEqualTo(1);
         assertThat(pool.reserved()).isZero();
         assertThat(settlementJournalCount(fixture.checkoutId())).isEqualTo(1);
@@ -195,9 +194,9 @@ class PaymentApprovalAbandonmentIntegrationTest extends PayPalIntegrationTestSup
 
     private Fixture awaitingApproval() {
         UUID sellerId = sellers.createSeller().sellerId();
-        var product = products.createProduct(sellerId, new CreateProductRequest("Approval abandonment", null));
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Approval abandonment", null));
         String skuId = "approval-abandon-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new RegisterSellerSkuRequest(skuId, 17_200, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 17_200, 1));
         String buyerRef = "approval-abandon-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         CheckoutResponse reserved = cartCheckouts.checkout(buyerRef, "approval-abandon-" + UUID.randomUUID());

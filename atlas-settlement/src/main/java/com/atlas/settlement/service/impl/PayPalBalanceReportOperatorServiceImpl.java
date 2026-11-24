@@ -1,11 +1,7 @@
 package com.atlas.settlement.service.impl;
 
-import com.atlas.settlement.dto.response.PayPalBalanceReportDispositionResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary.DailyTrend;
-import com.atlas.settlement.dto.response.PayPalBalanceReportOperatorSummary;
-import com.atlas.settlement.dto.response.PayPalBalanceReportPage;
-import com.atlas.settlement.dto.response.PayPalBalanceReportRowResponse;
-import com.atlas.settlement.dto.response.PayPalBalanceReportRunResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse;
+import com.atlas.settlement.dto.response.PayPalBalanceReportResponse.OperatorSummary.DailyTrend;
 import com.atlas.settlement.exception.SettlementException.Code;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayPalBalanceReportDisposition;
@@ -38,16 +34,16 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportOperatorSummary summary() {
+    public PayPalBalanceReportResponse.OperatorSummary summary() {
         List<DailyTrend> trend = store.dailyTrend().stream()
                 .map(day -> new DailyTrend(day.date(), day.unmatched(), day.mismatch())).toList();
         long unmatched = trend.stream().mapToLong(DailyTrend::unmatched).sum();
         long mismatch = trend.stream().mapToLong(DailyTrend::mismatch).sum();
-        return new PayPalBalanceReportOperatorSummary(trend, unmatched, mismatch, store.countPendingExceptions());
+        return new PayPalBalanceReportResponse.OperatorSummary(trend, unmatched, mismatch, store.countPendingExceptions());
     }
 
     @Override
-    public PayPalBalanceReportPage<PayPalBalanceReportRunResponse> listRuns(int requestedLimit, int offset) {
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Run> listRuns(int requestedLimit, int offset) {
         int limit = boundedLimit(requestedLimit);
         boundedOffset(offset);
         return page(store.listRuns(limit + 1, offset).stream()
@@ -55,7 +51,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportRunResponse search(String reportSha256) {
+    public PayPalBalanceReportResponse.Run search(String reportSha256) {
         if (reportSha256 == null || !reportSha256.matches("[0-9a-f]{64}")) {
             throw badRequest("reportSha256 must be a lowercase SHA-256 digest");
         }
@@ -65,7 +61,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportPage<PayPalBalanceReportRowResponse> listExceptions(String status, LocalDate from,
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listExceptions(String status, LocalDate from,
             LocalDate to, String recordId, int requestedLimit, int offset) {
         int limit = boundedLimit(requestedLimit);
         boundedOffset(offset);
@@ -78,7 +74,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportPage<PayPalBalanceReportRowResponse> listRunRows(UUID runId, String status,
+    public PayPalBalanceReportResponse.Page<PayPalBalanceReportResponse.Row> listRunRows(UUID runId, String status,
             String recordId, int requestedLimit, int offset) {
         requireRun(runId);
         int limit = boundedLimit(requestedLimit);
@@ -91,7 +87,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public List<PayPalBalanceReportDispositionResponse> dispositionHistory(UUID runId, int rowNumber) {
+    public List<PayPalBalanceReportResponse.Disposition> dispositionHistory(UUID runId, int rowNumber) {
         requireRun(runId);
         requireRow(runId, rowNumber);
         return store.findDispositionHistory(runId, rowNumber, MAX_PAGE_SIZE).stream()
@@ -99,7 +95,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
     }
 
     @Override
-    public PayPalBalanceReportDispositionResponse recordDisposition(UUID runId, int rowNumber, String disposition,
+    public PayPalBalanceReportResponse.Disposition recordDisposition(UUID runId, int rowNumber, String disposition,
             String actor, String reason, String idempotencyKey) {
         requireRun(runId);
         String cleanReason = validateDispositionInput(rowNumber, disposition, actor, reason, idempotencyKey);
@@ -116,7 +112,7 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
         if (store.insertDispositionIfAbsent(candidate).isPresent()) {
             return toResponse(candidate);
         }
-        PayPalBalanceReportDispositionResponse existing = store.findDispositionByIdempotencyKey(idempotencyKey)
+        PayPalBalanceReportResponse.Disposition existing = store.findDispositionByIdempotencyKey(idempotencyKey)
                 .map(PayPalBalanceReportOperatorServiceImpl::toResponse)
                 .orElseThrow(() -> new SettlementException(Code.CONFLICT, "Idempotency key conflict"));
         if (existing.runId().equals(runId) && existing.rowNumber() == rowNumber
@@ -187,25 +183,25 @@ public class PayPalBalanceReportOperatorServiceImpl implements PayPalBalanceRepo
         }
     }
 
-    private static <T> PayPalBalanceReportPage<T> page(List<T> fetched, int limit, int offset) {
+    private static <T> PayPalBalanceReportResponse.Page<T> page(List<T> fetched, int limit, int offset) {
         boolean hasMore = fetched.size() > limit;
         List<T> items = hasMore ? fetched.subList(0, limit) : fetched;
-        return new PayPalBalanceReportPage<>(items, limit, offset, hasMore);
+        return new PayPalBalanceReportResponse.Page<>(items, limit, offset, hasMore);
     }
 
-    private static PayPalBalanceReportDispositionResponse toResponse(PayPalBalanceReportDisposition value) {
-        return new PayPalBalanceReportDispositionResponse(value.dispositionId(), value.runId(), value.rowNumber(),
+    private static PayPalBalanceReportResponse.Disposition toResponse(PayPalBalanceReportDisposition value) {
+        return new PayPalBalanceReportResponse.Disposition(value.dispositionId(), value.runId(), value.rowNumber(),
                 value.disposition(), value.actor(), value.reason(), value.createdAt());
     }
 
-    private static PayPalBalanceReportRunResponse runResponse(PayPalBalanceReportRun run) {
-        return new PayPalBalanceReportRunResponse(run.runId(), run.reportSha256(), run.uploadedAt(),
+    private static PayPalBalanceReportResponse.Run runResponse(PayPalBalanceReportRun run) {
+        return new PayPalBalanceReportResponse.Run(run.runId(), run.reportSha256(), run.uploadedAt(),
                 run.reportFormat(), run.rowCount(), run.matchedCount(), run.unmatchedCount(), run.mismatchCount(),
                 run.duplicateCount());
     }
 
-    private static PayPalBalanceReportRowResponse rowResponse(PayPalBalanceReportExceptionRow row) {
-        return new PayPalBalanceReportRowResponse(row.runId(), row.rowNumber(), row.recordId(),
+    private static PayPalBalanceReportResponse.Row rowResponse(PayPalBalanceReportExceptionRow row) {
+        return new PayPalBalanceReportResponse.Row(row.runId(), row.rowNumber(), row.recordId(),
                 row.relatedRecordId(), row.recordType(), row.status(), row.reasonCode());
     }
 

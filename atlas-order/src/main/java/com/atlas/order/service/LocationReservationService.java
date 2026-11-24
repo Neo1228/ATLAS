@@ -1,7 +1,7 @@
 package com.atlas.order.service;
 
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.request.LocationReservationRequest;
-import com.atlas.order.dto.response.LocationReservationResponse;
 import java.util.List;
 import java.util.UUID;
 
@@ -10,26 +10,26 @@ public interface LocationReservationService {
      * 원격 호출 없이 workflow intent만 저장한다. 호출자는 자신의 transaction 안에서 호출해
      * intent를 소유 주문과 함께 원자적으로 commit할 수 있다.
      */
-    LocationReservationResponse stage(String idempotencyKey,
+    ReservationWorkflowResponse.LocationReservation stage(String idempotencyKey,
             LocationReservationRequest request);
 
-    LocationReservationResponse submit(String idempotencyKey,
+    ReservationWorkflowResponse.LocationReservation submit(String idempotencyKey,
             LocationReservationRequest request);
 
-    LocationReservationResponse find(UUID workflowId);
+    ReservationWorkflowResponse.LocationReservation find(UUID workflowId);
 
-    LocationReservationResponse retry(UUID workflowId);
+    ReservationWorkflowResponse.LocationReservation retry(UUID workflowId);
 
     /** 운영자가 봐야 하는 workflow를 오래된 순으로 돌려준다. */
-    List<LocationReservationResponse> needsReview(int limit);
+    List<ReservationWorkflowResponse.LocationReservation> needsReview(int limit);
 
     /**
      * NEEDS_REVIEW를 보상 재실행으로 되돌려 원격 예약을 해제한다(CLAIMED는 restore). 원격 재고를 풀기 때문에 주문을
      * 계속 진행하려는 경우에는 쓰지 않는다. 다른 상태에서 호출하면 현재 상태를 그대로 돌려준다.
      */
-    LocationReservationResponse releaseNeedsReview(UUID workflowId);
+    ReservationWorkflowResponse.LocationReservation releaseNeedsReview(UUID workflowId);
 
-    LocationReservationResponse cancel(UUID workflowId);
+    ReservationWorkflowResponse.LocationReservation cancel(UUID workflowId);
 
     /**
      * 결제 승인 뒤 매입 전에 모든 location의 원격 예약을 claim한다. 원격 호출은 DB transaction 밖에서

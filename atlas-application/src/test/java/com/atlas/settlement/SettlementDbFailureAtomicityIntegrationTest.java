@@ -3,9 +3,9 @@ package com.atlas.settlement;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.atlas.settlement.dto.response.PayoutResponse;
+import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.settlement.dto.request.CapturePostingRequest;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.service.SettlementPayoutService;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -166,7 +166,7 @@ class SettlementDbFailureAtomicityIntegrationTest extends PayPalIntegrationTestS
         UUID orderId = createPurchaseOrder(sellerId);
         postCapture(sellerId, orderId, 10_000);
 
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.now().minus(1, ChronoUnit.DAYS), Instant.now(), "kill-confirm-key");
         payouts.approve(payout.payoutId());
         payouts.markSent(payout.payoutId());
@@ -216,7 +216,7 @@ class SettlementDbFailureAtomicityIntegrationTest extends PayPalIntegrationTestS
         UUID orderId = createPurchaseOrder(sellerId);
         postCapture(sellerId, orderId, 10_000);
 
-        SellerPayoutResponse payout = payouts.request(sellerId,
+        PayoutResponse.SellerPayout payout = payouts.request(sellerId,
                 Instant.now().minus(1, ChronoUnit.DAYS), Instant.now(), "repeat-confirm-key");
         payouts.approve(payout.payoutId());
         payouts.markSent(payout.payoutId());

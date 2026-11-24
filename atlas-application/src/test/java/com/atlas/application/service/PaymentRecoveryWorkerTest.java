@@ -9,14 +9,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.order.dto.response.OrderResponse;
+import com.atlas.payment.dto.response.PaymentRecoveryResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.dto.response.PaymentResponse;
-import com.atlas.payment.dto.response.PaymentRecoveryJobResponse;
 import com.atlas.payment.model.PaymentRecoveryOperationType;
 import com.atlas.payment.model.PaymentRecoveryWorkStage;
 import com.atlas.payment.model.PaymentState;
@@ -46,7 +46,7 @@ class PaymentRecoveryWorkerTest {
     void unresolvedPaymentReconcilesThroughItsOwningOrderAndStableRecoveryKey() {
         UUID attemptId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
-        PaymentRecoveryJobResponse job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        PaymentRecoveryResponse.Job job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
         PaymentResponse unknown = new PaymentResponse(
                 orderId, null, attemptId, PaymentState.UNKNOWN, false, null, null, null);
         PaymentResponse captured = new PaymentResponse(
@@ -67,7 +67,7 @@ class PaymentRecoveryWorkerTest {
     void checkoutPaymentReconcilesThroughParentCheckoutService() {
         UUID attemptId = UUID.randomUUID();
         UUID checkoutId = UUID.randomUUID();
-        PaymentRecoveryJobResponse job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        PaymentRecoveryResponse.Job job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
         PaymentResponse unknown = new PaymentResponse(
                 null, checkoutId, attemptId, PaymentState.UNKNOWN, false, null, null, null);
         PaymentResponse captured = new PaymentResponse(
@@ -86,10 +86,10 @@ class PaymentRecoveryWorkerTest {
     void authorizationWaitingForBuyerIsNotAutomaticallyRetried() {
         UUID attemptId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
-        OrderResponse order = mock(OrderResponse.class);
+        OrderViewResponse.Order order = mock(OrderViewResponse.Order.class);
         when(order.state()).thenReturn(OrderState.PAYMENT_PENDING);
         when(orders.find(orderId)).thenReturn(order);
-        PaymentRecoveryJobResponse job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        PaymentRecoveryResponse.Job job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
         // 정상 대기 상태는 진입 시 deadline을 남긴다. deadline이 없으면 "확정 대상"이므로
         // 이 테스트는 미래 deadline을 가진 정상 대기를 표현한다.
         PaymentResponse awaitingApproval = new PaymentResponse(
@@ -113,12 +113,12 @@ class PaymentRecoveryWorkerTest {
     void cancellationReconciliationTakesPrecedenceOverBuyerApprovalWait() {
         UUID attemptId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
-        PaymentRecoveryJobResponse job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        PaymentRecoveryResponse.Job job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
         PaymentResponse awaitingApproval = new PaymentResponse(
                 orderId, null, attemptId, PaymentState.AUTHORIZATION_PENDING, false,
                 "provider-order-1", null, "https://provider.test/approve",
                 Instant.now().plus(Duration.ofMinutes(30)));
-        OrderResponse cancellingOrder = mock(OrderResponse.class);
+        OrderViewResponse.Order cancellingOrder = mock(OrderViewResponse.Order.class);
         when(cancellingOrder.state()).thenReturn(OrderState.CANCEL_PENDING);
         when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),
                 eq(Duration.ofHours(24)))).thenReturn(List.of(job)).thenReturn(List.of());
@@ -135,7 +135,7 @@ class PaymentRecoveryWorkerTest {
     void unresolvedRefundUsesTheOrderRefundRecoveryContract() {
         UUID refundId = UUID.randomUUID();
         UUID attemptId = UUID.randomUUID();
-        PaymentRecoveryJobResponse job = job(PaymentRecoveryOperationType.PAYMENT_REFUND, refundId);
+        PaymentRecoveryResponse.Job job = job(PaymentRecoveryOperationType.PAYMENT_REFUND, refundId);
         PaymentRefundResponse pending = refund(refundId, attemptId, PaymentRefundState.UNKNOWN);
         PaymentRefundResponse completed = refund(refundId, attemptId, PaymentRefundState.COMPLETED);
         when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),
@@ -179,7 +179,7 @@ class PaymentRecoveryWorkerTest {
     void completedCounterIgnoresCompletionFencedByAnotherReplica() {
         UUID attemptId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
-        PaymentRecoveryJobResponse job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        PaymentRecoveryResponse.Job job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
         // provider 호출이 60초 lease를 넘겨 다른 replica가 이미 lease를 보유한 상태다.
         PaymentResponse captured = new PaymentResponse(
                 orderId, null, attemptId, PaymentState.CAPTURED, false, null, "capture-1", null);
@@ -196,8 +196,8 @@ class PaymentRecoveryWorkerTest {
                 "operation_type", "PAYMENT_ATTEMPT").count()).isEqualTo(1);
     }
 
-    private static PaymentRecoveryJobResponse job(PaymentRecoveryOperationType type, UUID operationId) {
-        return new PaymentRecoveryJobResponse(
+    private static PaymentRecoveryResponse.Job job(PaymentRecoveryOperationType type, UUID operationId) {
+        return new PaymentRecoveryResponse.Job(
                 UUID.randomUUID(), type, PaymentRecoveryWorkStage.PROVIDER,
                 operationId, 1, Instant.now(), UUID.randomUUID());
     }

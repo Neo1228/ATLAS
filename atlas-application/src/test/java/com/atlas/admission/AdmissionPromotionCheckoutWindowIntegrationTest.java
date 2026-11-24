@@ -2,20 +2,15 @@ package com.atlas.admission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.admission.dto.request.ConfigureSellerSkuPolicyRequest;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.model.CheckoutSlotReleaseReason;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.admission.dto.request.CreateCampaignRequest;
-import com.atlas.admission.dto.response.CampaignResponse;
 import com.atlas.admission.service.CampaignService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
-import com.atlas.catalog.dto.response.ProductResponse;
-import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
@@ -69,12 +64,12 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
     @Test
     void promotedTicketAfterSlotReleaseGetsFullCheckoutWindowFromAcquisition() {
         Queue queue = openQueueWithSingleSlot("release");
-        QueueTicketResponse holder = join(queue, "holder");
-        QueueTicketResponse waiter = join(queue, "waiter");
+        AdmissionResponse.QueueTicket holder = join(queue, "holder");
+        AdmissionResponse.QueueTicket waiter = join(queue, "waiter");
         assertThat(holder.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
         assertThat(waiter.status()).isEqualTo(TicketStatus.WAITING);
         // join 즉시 slot을 얻은 ticket의 창은 획득 시점부터 TTL입니다. 승격 ticket도 같은 기준이어야 합니다.
-        QueueTicketResponse storedHolder = admission.find(queue.campaignId(), holder.ticketId());
+        AdmissionResponse.QueueTicket storedHolder = admission.find(queue.campaignId(), holder.ticketId());
         assertThat(Duration.between(acquiredAt(storedHolder), storedHolder.expiresAt())).isEqualTo(TICKET_TTL);
         Instant joinExpiry = simulateWaitedMostOfTicketTtl(waiter);
 
@@ -87,8 +82,8 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
     @Test
     void promotedTicketAfterHolderExpirySweepGetsFullCheckoutWindowFromAcquisition() {
         Queue queue = openQueueWithSingleSlot("sweep");
-        QueueTicketResponse holder = join(queue, "holder");
-        QueueTicketResponse waiter = join(queue, "waiter");
+        AdmissionResponse.QueueTicket holder = join(queue, "holder");
+        AdmissionResponse.QueueTicket waiter = join(queue, "waiter");
         assertThat(waiter.status()).isEqualTo(TicketStatus.WAITING);
         Instant joinExpiry = simulateWaitedMostOfTicketTtl(waiter);
         jdbc.update("UPDATE admission_ticket SET expires_at = ? WHERE ticket_id = ?",
@@ -100,8 +95,8 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
         assertPromotedWithFullCheckoutWindow(queue, waiter, joinExpiry);
     }
 
-    private void assertPromotedWithFullCheckoutWindow(Queue queue, QueueTicketResponse waiter, Instant joinExpiry) {
-        QueueTicketResponse promoted = admission.find(queue.campaignId(), waiter.ticketId());
+    private void assertPromotedWithFullCheckoutWindow(Queue queue, AdmissionResponse.QueueTicket waiter, Instant joinExpiry) {
+        AdmissionResponse.QueueTicket promoted = admission.find(queue.campaignId(), waiter.ticketId());
         assertThat(promoted.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
         assertThat(promoted.checkoutSlotHeld()).isTrue();
         Instant acquiredAt = acquiredAt(promoted);
@@ -114,13 +109,13 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
         assertThat(expireAtWithoutCommit(queue, acquiredAt.plus(TICKET_TTL).minusSeconds(1))).isZero();
         assertThat(expireAtWithoutCommit(queue, acquiredAt.plus(TICKET_TTL))).isEqualTo(1);
 
-        QueueTicketResponse checkout = admission.requireCheckoutSlot(queue.campaignId(), waiter.ticketId());
+        AdmissionResponse.QueueTicket checkout = admission.requireCheckoutSlot(queue.campaignId(), waiter.ticketId());
         assertThat(checkout.status()).isEqualTo(TicketStatus.CHECKOUT_ACTIVE);
         assertThat(checkout.checkoutSlotHeld()).isTrue();
     }
 
     /** TTL 대부분을 대기한 상태를 만들기 위해 join 시각과 join 기준 만료 시각을 과거로 옮깁니다. */
-    private Instant simulateWaitedMostOfTicketTtl(QueueTicketResponse waiter) {
+    private Instant simulateWaitedMostOfTicketTtl(AdmissionResponse.QueueTicket waiter) {
         Instant now = Instant.now();
         Instant joinExpiry = now.plus(REMAINING_JOIN_TTL);
         assertThat(jdbc.update(
@@ -138,7 +133,7 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
         return Objects.requireNonNull(changed);
     }
 
-    private Instant acquiredAt(QueueTicketResponse ticket) {
+    private Instant acquiredAt(AdmissionResponse.QueueTicket ticket) {
         Timestamp acquiredAt = jdbc.queryForObject(
                 "SELECT checkout_slot_acquired_at FROM admission_ticket WHERE ticket_id = ?",
                 Timestamp.class, ticket.ticketId());
@@ -146,19 +141,19 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
     }
 
     private Queue openQueueWithSingleSlot(String label) {
-        SellerResponse seller = sellers.createSeller();
-        ProductResponse product = products.createProduct(seller.sellerId(),
-                new CreateProductRequest("admission promotion " + label + " " + UUID.randomUUID(), "description"));
+        CatalogResponse.Seller seller = sellers.createSeller();
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("admission promotion " + label + " " + UUID.randomUUID(), "description"));
         String skuId = "admission-promotion-" + label + "-" + UUID.randomUUID();
-        products.registerSku(seller.sellerId(), product.productId(), new RegisterSellerSkuRequest(skuId, 100, 5));
-        admission.configureSellerSkuPolicy(new ConfigureSellerSkuPolicyRequest(seller.sellerId(), skuId, 1));
-        CampaignResponse campaign = campaigns.create(new CreateCampaignRequest(seller.sellerId(), skuId, TICKET_TTL));
+        products.registerSku(seller.sellerId(), product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 1));
+        AdmissionResponse.Campaign campaign = campaigns.create(new AdmissionRequest.CreateCampaign(seller.sellerId(), skuId, TICKET_TTL));
         campaigns.open(campaign.campaignId());
         return new Queue(seller.sellerId(), skuId, campaign.campaignId());
     }
 
-    private QueueTicketResponse join(Queue queue, String buyer) {
-        return admission.join(new JoinQueueRequest(queue.campaignId(), queue.skuId(),
+    private AdmissionResponse.QueueTicket join(Queue queue, String buyer) {
+        return admission.join(new AdmissionRequest.JoinQueue(queue.campaignId(), queue.skuId(),
                 buyer + "-" + UUID.randomUUID(), "promotion-" + UUID.randomUUID()));
     }
 

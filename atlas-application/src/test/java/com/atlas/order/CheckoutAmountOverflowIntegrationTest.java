@@ -3,9 +3,8 @@ package com.atlas.order;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.order.service.CartService;
-import com.atlas.catalog.dto.request.CreateProductRequest;
-import com.atlas.catalog.dto.request.RegisterSellerSkuRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.order.service.CartCheckoutService;
@@ -68,10 +67,10 @@ class CheckoutAmountOverflowIntegrationTest {
 
         UUID sellerId = sellers.createSeller().sellerId();
         var product = products.createProduct(sellerId,
-                new CreateProductRequest("overflow-checkout-" + UUID.randomUUID(), null));
+                new ProductRequest.CreateProduct("overflow-checkout-" + UUID.randomUUID(), null));
         String skuId = "overflow-" + UUID.randomUUID();
         products.registerSku(sellerId, product.productId(),
-                new RegisterSellerSkuRequest(skuId, PRICE_WON, QUANTITY));
+                new ProductRequest.RegisterSellerSku(skuId, PRICE_WON, QUANTITY));
 
         String buyerRef = "overflow-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, QUANTITY);

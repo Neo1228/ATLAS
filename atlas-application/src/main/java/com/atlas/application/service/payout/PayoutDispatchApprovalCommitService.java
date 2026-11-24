@@ -1,7 +1,7 @@
 package com.atlas.application.service.payout;
 
+import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.application.security.PayoutRecipientCipher;
-import com.atlas.settlement.dto.response.SellerPayoutResponse;
 import com.atlas.settlement.dto.response.SettlementPayoutStatus;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.PayoutDispatchPlan;
@@ -41,11 +41,11 @@ public class PayoutDispatchApprovalCommitService {
     }
 
     @Transactional
-    public SellerPayoutResponse approve(UUID payoutId, PayoutDispatchPlan plan,
+    public PayoutResponse.SellerPayout approve(UUID payoutId, PayoutDispatchPlan plan,
             SellerPayoutProfileService.ActiveRecipient expectedRecipient,
             String idempotencyKey, String actor, String reason) {
         if (!payoutId.equals(plan.payoutId())) throw invalid("Payout dispatch plan does not match payout");
-        SellerPayoutResponse current = payouts.find(payoutId);
+        PayoutResponse.SellerPayout current = payouts.find(payoutId);
         if (current.state() != SettlementPayoutStatus.REQUESTED
                 && current.state() != SettlementPayoutStatus.APPROVED) {
             throw conflict("Only a requested payout can be approved for provider dispatch");
@@ -59,7 +59,7 @@ public class PayoutDispatchApprovalCommitService {
         if (!sameRecipient(expectedRecipient, currentRecipient)) {
             throw conflict("Seller payout profile changed while approval was prepared");
         }
-        SellerPayoutResponse approved = current.state() == SettlementPayoutStatus.APPROVED
+        PayoutResponse.SellerPayout approved = current.state() == SettlementPayoutStatus.APPROVED
                 ? current : payouts.approve(payoutId);
         if (approved.state() != SettlementPayoutStatus.APPROVED) {
             throw conflict("Payout approval did not reach the approved state");
@@ -78,8 +78,8 @@ public class PayoutDispatchApprovalCommitService {
     }
 
     @Transactional
-    public SellerPayoutResponse replay(UUID payoutId, String idempotencyKey, String actor, String reason) {
-        SellerPayoutResponse payout = payouts.find(payoutId);
+    public PayoutResponse.SellerPayout replay(UUID payoutId, String idempotencyKey, String actor, String reason) {
+        PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         if (actions.matches(payoutId, idempotencyKey, "PAYOUT_APPROVED", actor, reason)) return payout;
         if (payout.state() != SettlementPayoutStatus.APPROVED) {
             throw conflict("Payout approval is already terminal or in provider reconciliation");
@@ -89,17 +89,17 @@ public class PayoutDispatchApprovalCommitService {
     }
 
     @Transactional
-    public SellerPayoutResponse cancel(UUID payoutId, String idempotencyKey, String actor, String reason) {
-        SellerPayoutResponse cancelled = payouts.cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED");
+    public PayoutResponse.SellerPayout cancel(UUID payoutId, String idempotencyKey, String actor, String reason) {
+        PayoutResponse.SellerPayout cancelled = payouts.cancelBeforeDispatch(payoutId, "OPERATOR_CANCELLED");
         dispatches.cancelPending(payoutId);
         recordAction(payoutId, idempotencyKey, "PAYOUT_CANCELLED", actor, reason);
         return cancelled;
     }
 
     @Transactional
-    public SellerPayoutResponse requeueNeedsReview(UUID payoutId, String idempotencyKey,
+    public PayoutResponse.SellerPayout requeueNeedsReview(UUID payoutId, String idempotencyKey,
             String actor, String reason) {
-        SellerPayoutResponse payout = payouts.find(payoutId);
+        PayoutResponse.SellerPayout payout = payouts.find(payoutId);
         PayoutDispatchRecord record = dispatches.find(payoutId)
                 .orElseThrow(() -> conflict("Payout has no provider dispatch record"));
         if (actions.matches(payoutId, idempotencyKey, "PAYOUT_REQUEUED", actor, reason)) return payout;

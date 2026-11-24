@@ -1,10 +1,10 @@
 package com.atlas.application.controller.admission;
 
+import com.atlas.application.dto.request.AdmissionHttpRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.account.service.AccountService;
-import com.atlas.admission.dto.request.JoinQueueRequest;
-import com.atlas.admission.dto.response.QueueTicketResponse;
 import com.atlas.admission.service.AdmissionService;
-import com.atlas.application.controller.dto.JoinQueueHttpRequest;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -32,16 +32,16 @@ public class AdmissionController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public QueueTicketResponse join(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID campaignId,
+    public AdmissionResponse.QueueTicket join(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID campaignId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody JoinQueueHttpRequest request) {
+            @Valid @RequestBody AdmissionHttpRequest.JoinQueue request) {
         UUID accountId = UUID.fromString(jwt.getSubject());
         String buyerRef = accounts.requireOwnBuyerRef(accountId, request.buyerRef());
-        return admission.join(new JoinQueueRequest(campaignId, request.skuId(), buyerRef, idempotencyKey));
+        return admission.join(new AdmissionRequest.JoinQueue(campaignId, request.skuId(), buyerRef, idempotencyKey));
     }
 
     @GetMapping("/{ticketId}")
-    public QueueTicketResponse find(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
+    public AdmissionResponse.QueueTicket find(@PathVariable UUID campaignId, @PathVariable UUID ticketId) {
         return admission.find(campaignId, ticketId);
     }
 }

@@ -12,9 +12,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.order.dto.request.OrderReturnInspectionRequest;
-import com.atlas.order.dto.response.OrderRefundResponse;
-import com.atlas.order.dto.response.OrderReturnResponse;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.dto.response.ReturnResponse;
+import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.order.persistence.entity.OrderItem;
 import com.atlas.order.persistence.entity.OrderReturn;
 import com.atlas.order.persistence.entity.OrderReturnItem;
@@ -97,7 +97,7 @@ class OrderReturnServiceImplTest {
                 assertEquals(refundId, row.items().get(0).refundId());
                 assertEquals(100L, row.items().get(0).refundAmountWon());
             }
-            return new OrderRefundResponse(refundId, orderId, 100, OrderRefundStatus.FULLY_RECORDED,
+            return new RefundResponse.Refund(refundId, orderId, 100, OrderRefundStatus.FULLY_RECORDED,
                     OrderRefundPaymentStatus.PENDING, null, now);
         });
         when(refunds.processInspectedReturnRefund(returnId)).thenAnswer(invocation -> {
@@ -105,15 +105,15 @@ class OrderReturnServiceImplTest {
             if (processingAttempts.getAndIncrement() == 0) {
                 throw new IllegalStateException("transient provider failure");
             }
-            return new OrderRefundResponse(refundId, orderId, 100, OrderRefundStatus.FULLY_RECORDED,
+            return new RefundResponse.Refund(refundId, orderId, 100, OrderRefundStatus.FULLY_RECORDED,
                     OrderRefundPaymentStatus.COMPLETED, "provider-refund", now);
         });
 
         OrderReturnServiceImpl service = new OrderReturnServiceImpl(transactionManager, orders, items,
                 mock(OrderFulfillmentRepository.class), refundRecords, returns, mock(OrderShipmentRepository.class),
                 refunds, Clock.fixed(now, ZoneOffset.UTC));
-        OrderReturnInspectionRequest request = new OrderReturnInspectionRequest(List.of(
-                new OrderReturnInspectionRequest.Item(orderItemId, OrderReturnInspectionRequest.Result.PASSED)));
+        OrderRequest.ReturnInspection request = new OrderRequest.ReturnInspection(List.of(
+                new OrderRequest.ReturnInspection.Item(orderItemId, OrderRequest.ReturnInspection.Result.PASSED)));
 
         assertThrows(IllegalStateException.class, () -> service.inspect(sellerId, orderId, returnId, request));
         assertFalse(active.get());
@@ -121,7 +121,7 @@ class OrderReturnServiceImplTest {
         assertEquals(refundId, row.items().get(0).refundId());
         assertEquals(100L, row.items().get(0).refundAmountWon());
 
-        OrderReturnResponse response = service.inspect(sellerId, orderId, returnId, request);
+        ReturnResponse.OrderReturn response = service.inspect(sellerId, orderId, returnId, request);
 
         assertEquals(OrderReturnStatus.REFUND_RECORDED, response.status());
         assertEquals(OrderRefundPaymentStatus.COMPLETED, response.paymentStatus());

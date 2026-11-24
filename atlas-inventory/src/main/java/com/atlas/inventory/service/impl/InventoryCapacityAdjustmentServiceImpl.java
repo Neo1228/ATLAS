@@ -1,8 +1,7 @@
 package com.atlas.inventory.service.impl;
 
-import com.atlas.inventory.dto.request.AdjustInventoryCapacityRequest;
-import com.atlas.inventory.dto.response.InventoryAdjustmentResponse;
-import com.atlas.inventory.dto.response.InventoryPoolResponse;
+import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.inventory.dto.request.InventoryRequest;
 import com.atlas.inventory.exception.InventoryException;
 import com.atlas.inventory.persistence.projection.CapacityAdjustmentRecord;
 import com.atlas.inventory.persistence.projection.InventoryPoolState;
@@ -26,7 +25,7 @@ public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacity
 
     // 기존 재고 조정 API는 DEFAULT 위치를 대상으로 한다. 출고 위치 선택에만 활성 여부를 적용한다.
     @Override
-    public InventoryAdjustmentResponse adjust(AdjustInventoryCapacityRequest request) {
+    public InventoryResponse.Adjustment adjust(InventoryRequest.AdjustInventoryCapacity request) {
         Objects.requireNonNull(request);
         return adjustInternal(
                 request.sellerId(), request.skuId(), null, request.idempotencyKey(),
@@ -34,12 +33,12 @@ public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacity
     }
 
     @Override
-    public InventoryAdjustmentResponse adjust(
+    public InventoryResponse.Adjustment adjust(
             UUID sellerId, String skuId, UUID locationId, String key, int delta, String reason) {
         return adjustInternal(sellerId, skuId, Objects.requireNonNull(locationId), key, delta, reason);
     }
 
-    private InventoryAdjustmentResponse adjustInternal(
+    private InventoryResponse.Adjustment adjustInternal(
             UUID seller, String sku, UUID location, String key, int delta, String reason) {
         if (seller == null || sku == null || sku.isBlank() || sku.length() > 128
                 || key == null || key.isBlank() || key.length() > 256
@@ -93,11 +92,11 @@ public class InventoryCapacityAdjustmentServiceImpl implements InventoryCapacity
         }));
     }
 
-    private static InventoryAdjustmentResponse response(CapacityAdjustmentRecord record) {
+    private static InventoryResponse.Adjustment response(CapacityAdjustmentRecord record) {
         InventoryPoolState pool = record.pool();
-        return new InventoryAdjustmentResponse(
+        return new InventoryResponse.Adjustment(
                 record.sellerId(), record.skuId(), record.idempotencyKey(), record.delta(), record.reason(),
-                new InventoryPoolResponse(
+                new InventoryResponse.Pool(
                         record.sellerId(), record.skuId(), pool.initialCapacity(), pool.available(),
                         pool.reserved(), pool.claimed()),
                 record.createdAt());

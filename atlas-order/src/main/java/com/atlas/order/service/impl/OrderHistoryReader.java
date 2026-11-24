@@ -1,6 +1,6 @@
 package com.atlas.order.service.impl;
 
-import com.atlas.order.dto.response.OrderHistoryPageResponse;
+import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.exception.OrderException;
 import com.atlas.order.persistence.entity.PurchaseOrder;
 import com.atlas.order.repository.OrderRepository;
@@ -30,7 +30,7 @@ final class OrderHistoryReader {
         this.transactions = Objects.requireNonNull(transactions);
     }
 
-    OrderHistoryPageResponse buyerHistory(String buyerRef, Integer requestedLimit, String cursor) {
+    OrderViewResponse.HistoryPage buyerHistory(String buyerRef, Integer requestedLimit, String cursor) {
         if (buyerRef == null || buyerRef.isBlank()) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "Buyer reference is required");
         }
@@ -40,7 +40,7 @@ final class OrderHistoryReader {
                         buyerRef, position.createdAt(), position.orderId(), PageRequest.of(0, fetch)));
     }
 
-    OrderHistoryPageResponse sellerHistory(UUID sellerId, Integer requestedLimit, String cursor) {
+    OrderViewResponse.HistoryPage sellerHistory(UUID sellerId, Integer requestedLimit, String cursor) {
         if (sellerId == null) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "Seller is required");
         }
@@ -50,7 +50,7 @@ final class OrderHistoryReader {
                         sellerId, position.createdAt(), position.orderId(), PageRequest.of(0, fetch)));
     }
 
-    private OrderHistoryPageResponse page(Integer requestedLimit, String cursor,
+    private OrderViewResponse.HistoryPage page(Integer requestedLimit, String cursor,
             IntFunction<List<PurchaseOrder>> firstPage, AfterCursor nextPage) {
         int limit = requestedLimit == null ? DEFAULT_PAGE_SIZE : requestedLimit;
         if (limit < 1 || limit > MAX_PAGE_SIZE) {
@@ -63,11 +63,11 @@ final class OrderHistoryReader {
                 : nextPage.fetch(position, fetch)));
         boolean hasNext = fetched.size() > limit;
         List<PurchaseOrder> page = hasNext ? fetched.subList(0, limit) : fetched;
-        List<OrderHistoryPageResponse.Entry> orders = page.stream()
-                .map(order -> new OrderHistoryPageResponse.Entry(order.orderId(), order.checkoutId(),
+        List<OrderViewResponse.HistoryPage.Entry> orders = page.stream()
+                .map(order -> new OrderViewResponse.HistoryPage.Entry(order.orderId(), order.checkoutId(),
                         order.sellerId(), order.source(), order.state(), order.createdAt()))
                 .toList();
-        return new OrderHistoryPageResponse(orders, hasNext ? encode(page.get(page.size() - 1)) : null);
+        return new OrderViewResponse.HistoryPage(orders, hasNext ? encode(page.get(page.size() - 1)) : null);
     }
 
     private static Cursor decode(String cursor) {

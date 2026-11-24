@@ -6,7 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.atlas.catalog.dto.response.SellerSkuResponse;
+import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.Product;
@@ -42,10 +42,10 @@ class SellerSkuOrderabilityTest {
         when(products.findOrderableProductIds(List.of(productId), ProductSalesChannel.ONLINE_STORE.name()))
                 .thenReturn(List.of(productId));
 
-        List<SellerSkuResponse> result = service.findOrderableSellerSkus(sellerId,
+        List<CatalogResponse.SellerSku> result = service.findOrderableSellerSkus(sellerId,
                 List.of("SKU-1", "MISSING"), ProductSalesChannel.ONLINE_STORE);
 
-        assertEquals(List.of("SKU-1"), result.stream().map(SellerSkuResponse::skuId).toList());
+        assertEquals(List.of("SKU-1"), result.stream().map(CatalogResponse.SellerSku::skuId).toList());
         verify(products).findAllByProductIdIn(List.of(productId));
     }
 

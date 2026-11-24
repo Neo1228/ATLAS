@@ -1,6 +1,6 @@
 package com.atlas.order.service;
 
-import com.atlas.order.dto.response.ReservationEventResponse;
+import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import java.time.Duration;
 import java.util.List;
 
@@ -8,9 +8,9 @@ public interface ReservationEventService {
     /** Kafka relay가 cursor를 소유하는 consumer group 이름. */
     String RELAY_GROUP = "kafka-relay";
 
-    List<ReservationEventResponse> readEvents(String consumerGroup, int limit);
+    List<ReservationWorkflowResponse.ReservationEvent> readEvents(String consumerGroup, int limit);
 
-    void advance(String consumerGroup, ReservationEventResponse last);
+    void advance(String consumerGroup, ReservationWorkflowResponse.ReservationEvent last);
 
     /**
      * 안전하게 읽은 한 묶음을 publisher로 내보낸 뒤에만 cursor를 옮긴다(읽기, 전송, 전진 순서 = at-least-once).
