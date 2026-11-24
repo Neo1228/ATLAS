@@ -64,7 +64,7 @@
 | --- | --- |
 | 1. 응답을 잃은 뒤 재시도가 같은 `sender_batch_id`만 쓰고 provider 항목이 한 번만 만들어진다 | provider 쪽만 확인했다. 같은 `sender_batch_id`는 거부되고 배치는 새로 만들어지지 않는다. 앱이 응답을 잃고 재시도하는 시나리오와 30일 보호 기간 이후의 `NEEDS_REVIEW` 격상은 실행하지 않았다 |
 | 2. 배치 `SUCCESS`만으로 journal을 확정하지 않고 항목 상태를 구분한다 | 실제 Sandbox에서 `배치 SUCCESS / 항목 UNCLAIMED`와 `항목 SUCCESS / 배치 PROCESSING`을 모두 관측했다. 워커가 항목 상태로만 판단하는 것은 단위 테스트(`batchSuccessDoesNotOverrideUnclaimedItemStatus`)와 코드로 확인했다. `BLOCKED`, `RETURNED`, `FAILED`, 같은 항목의 webhook·poll 재전달은 만들지 못했다 |
-| 3. 기능 플래그가 꺼졌을 때 provider 호출 0건, 자격 증명이 git과 CI 로그에 남지 않음 | 호출은 `@ConditionalOnProperty`(`atlas.payment.paypal.payouts.enabled`, 기본 꺼짐)로 막혀 있다는 것을 코드로 읽었다. 꺼진 상태에서 실제로 호출이 0건인지는 실행하지 않았다. 이 실험의 하네스는 자격 증명을 출력하지 않았다 |
+| 3. 기능 플래그가 꺼졌을 때 provider 호출 0건, 자격 증명이 git과 CI 로그에 남지 않음 | `PayoutsDisabledByDefaultTest`가 기본 상태에서 지급 빈 7개(REST client, worker, 승인 서비스 2개, 수취인 암호화, 프로필·운영자 컨트롤러)가 등록되지 않음을 컨텍스트 러너로 확인한다. `@ConditionalOnProperty`를 빼면 이 테스트가 실패함을 변이로 확인했다(2건 중 1건 실패). 빈이 없어 provider 호출 경로 자체가 없다는 것을 보인 것이며, 앱 전체를 올려 네트워크 호출 0건을 센 것은 아니다. 이 실험의 하네스는 자격 증명을 출력하지 않았다 |
 | 4. 실행 환경과 결과를 문서에 기록 | 이 문서 |
 
 ## 한계
