@@ -206,7 +206,7 @@ public class PaymentRecoveryRepository {
 
     public boolean complete(ClaimedPaymentRecoveryJob job) {
         Objects.requireNonNull(job);
-        if (updateClaimed(job, "COMPLETED", null)) return true;
+        if (updateClaimed(job, PaymentRecoveryJobStatus.COMPLETED, null)) return true;
         return Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (
                     SELECT 1 FROM payment_recovery_job
@@ -268,7 +268,7 @@ public class PaymentRecoveryRepository {
     }
 
     public boolean markNeedsReview(ClaimedPaymentRecoveryJob job, String errorCode) {
-        return updateClaimed(job, "NEEDS_REVIEW", safeErrorCode(errorCode));
+        return updateClaimed(job, PaymentRecoveryJobStatus.NEEDS_REVIEW, safeErrorCode(errorCode));
     }
 
     public List<PaymentRecoveryReviewRow> listNeedsReview(int limit, int offset) {
@@ -356,13 +356,13 @@ public class PaymentRecoveryRepository {
      * 별도 최소값 집계를 함께 돌린다(총 2 쿼리, 상태/stage 조합 수와 무관).
      */
     public RecoveryMetricsSnapshot metricsSnapshot() {
-        Map<String, Long> statusCounts = new HashMap<>();
+        Map<PaymentRecoveryJobStatus, Long> statusCounts = new HashMap<>();
         jdbc.query("""
                 SELECT status, COUNT(*) AS total
                 FROM payment_recovery_job
                 GROUP BY status
                 """, result -> {
-            statusCounts.put(result.getString("status"), result.getLong("total"));
+            statusCounts.put(PaymentRecoveryJobStatus.valueOf(result.getString("status")), result.getLong("total"));
         });
 
         Map<RecoveryMetricsSnapshot.StageKey, RecoveryMetricsSnapshot.StageMetrics> stages = new HashMap<>();
@@ -378,7 +378,8 @@ public class PaymentRecoveryRepository {
                 GROUP BY work_stage, status
                 """, result -> {
             RecoveryMetricsSnapshot.StageKey key = new RecoveryMetricsSnapshot.StageKey(
-                    result.getString("work_stage"), result.getString("status"));
+                    PaymentRecoveryWorkStage.valueOf(result.getString("work_stage")),
+                    PaymentRecoveryJobStatus.valueOf(result.getString("status")));
             stages.put(key, new RecoveryMetricsSnapshot.StageMetrics(result.getLong("total"),
                     Math.max(0, result.getDouble("oldest_due"))));
         });
@@ -441,7 +442,8 @@ public class PaymentRecoveryRepository {
                 """, (result, rowNumber) -> {
                     Timestamp acceptedAt = result.getTimestamp("created_at");
                     return new PaymentRecoveryRequeueRow(
-                            recoveryJobId, result.getString("status"), result.getInt("manual_requeue_count"),
+                            recoveryJobId, PaymentRecoveryJobStatus.valueOf(result.getString("status")),
+                            result.getInt("manual_requeue_count"),
                             acceptedAt == null ? null : acceptedAt.toInstant(), duplicate);
                 }, recoveryJobId, idempotencyKey).stream().findFirst();
     }
@@ -504,7 +506,8 @@ public class PaymentRecoveryRepository {
                 """, maxAttempts, maxAttempts, maxAgeMillis);
     }
 
-    private boolean updateClaimed(ClaimedPaymentRecoveryJob job, String status, String errorCode) {
+    private boolean updateClaimed(
+            ClaimedPaymentRecoveryJob job, PaymentRecoveryJobStatus status, String errorCode) {
         Objects.requireNonNull(job);
         int updated = jdbc.update("""
                 UPDATE payment_recovery_job
@@ -512,7 +515,7 @@ public class PaymentRecoveryRepository {
                     last_error_code = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE recovery_job_id = ? AND lease_token = ? AND status = 'PENDING'
                   AND (? <> 'COMPLETED' OR work_stage = 'APPLY')
-                """, status, errorCode, job.recoveryJobId(), job.leaseToken(), status);
+                """, status.name(), errorCode, job.recoveryJobId(), job.leaseToken(), status.name());
         return updated > 0;
     }
 

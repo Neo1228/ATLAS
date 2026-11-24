@@ -41,17 +41,17 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     }
 
     @Override
-    public long statusCount(String status) {
+    public long statusCount(PaymentRecoveryJobStatus status) {
         return metricsSnapshot().statusCount(status);
     }
 
     @Override
-    public long stageCount(String stage, String status) {
+    public long stageCount(PaymentRecoveryWorkStage stage, PaymentRecoveryJobStatus status) {
         return metricsSnapshot().stageCount(stage, status);
     }
 
     @Override
-    public double stageOldestDueAgeSeconds(String stage) {
+    public double stageOldestDueAgeSeconds(PaymentRecoveryWorkStage stage) {
         return metricsSnapshot().stageOldestDueAgeSeconds(stage);
     }
 

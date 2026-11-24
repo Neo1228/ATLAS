@@ -210,7 +210,7 @@ class PaymentRecoveryIntegrationTest {
         PaymentRecoveryResponse.Requeue duplicate = operator.requeue(
                 exhausted.recoveryJobId(), idempotencyKey, "ops-user", "Provider state reviewed");
 
-        assertThat(accepted.status()).isEqualTo("PENDING");
+        assertThat(accepted.status()).isEqualTo(PaymentRecoveryJobStatus.PENDING);
         assertThat(accepted.manualRequeueCount()).isEqualTo(1);
         assertThat(accepted.duplicate()).isFalse();
         assertThat(duplicate.duplicate()).isTrue();

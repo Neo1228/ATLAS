@@ -4,6 +4,7 @@ import com.atlas.payment.dto.response.WebhookRetryResponse;
 import com.atlas.payment.dto.response.WebhookRetryResponse.ExhaustedRetryPage.Item;
 import com.atlas.payment.exception.PaymentException.Code;
 import com.atlas.payment.exception.PaymentException;
+import com.atlas.payment.model.WebhookRequeueOutcome;
 import com.atlas.payment.persistence.projection.WebhookRequeueRecord;
 import com.atlas.payment.repository.PayPalWebhookOperatorRepository;
 import com.atlas.payment.service.PayPalWebhookOperatorService;
@@ -78,7 +79,7 @@ public class PayPalWebhookOperatorServiceImpl implements PayPalWebhookOperatorSe
             throw new PaymentException(Code.CONFLICT, "retry event is no longer EXHAUSTED");
         }
         events.recordRequeue(key, eventId, actor, reason);
-        return new WebhookRetryResponse.Requeue(eventId, "REQUEUED");
+        return new WebhookRetryResponse.Requeue(eventId, WebhookRequeueOutcome.REQUEUED);
     }
 
     private WebhookRetryResponse.Requeue replayOrConflict(String eventId, String key, String actor, String reason) {

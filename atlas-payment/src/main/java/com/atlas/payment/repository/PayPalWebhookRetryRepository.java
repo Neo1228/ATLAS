@@ -1,5 +1,6 @@
 package com.atlas.payment.repository;
 
+import com.atlas.payment.model.WebhookRetryAttemptOutcome;
 import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
 import com.atlas.payment.persistence.projection.WebhookRetryPollResult;
 import com.atlas.payment.persistence.projection.WebhookRetryEvent;
@@ -172,7 +173,7 @@ public class PayPalWebhookRetryRepository {
     public boolean reschedule(String eventId, int attempt, String leaseOwner, WebhookRetryFailure failure, String reason) {
         Objects.requireNonNull(failure, "failure");
         int delaySeconds = jitteredDelaySeconds(baseDelaySeconds(attempt), ThreadLocalRandom.current()::nextInt);
-        return finishFailure(eventId, attempt, leaseOwner, failure.name(), reason, false, delaySeconds);
+        return finishFailure(eventId, attempt, leaseOwner, failure.attemptOutcome(), reason, false, delaySeconds);
     }
 
     /** 시도 횟수에 따라 두 배씩 늘어나는 기본 지연(초)이다. 상한은 300초다. */
@@ -193,11 +194,11 @@ public class PayPalWebhookRetryRepository {
 
     /** 영구 거부 결과를 기록하며 다음 시도를 예약하지 않습니다. */
     public boolean reject(String eventId, int attempt, String leaseOwner, String reason) {
-        return finishFailure(eventId, attempt, leaseOwner, "PERMANENT_REJECT", reason, true, 0);
+        return finishFailure(eventId, attempt, leaseOwner, WebhookRetryAttemptOutcome.PERMANENT_REJECT, reason, true, 0);
     }
 
-    private boolean finishFailure(String eventId, int attempt, String leaseOwner, String outcome, String reason,
-                                  boolean rejected, int delaySeconds) {
+    private boolean finishFailure(String eventId, int attempt, String leaseOwner,
+                                  WebhookRetryAttemptOutcome outcome, String reason, boolean rejected, int delaySeconds) {
         String error = reason == null ? "Unknown retry failure" : reason.substring(0, Math.min(1000, reason.length()));
         Integer changed = jdbc.queryForObject("""
                 WITH locked AS MATERIALIZED (
@@ -231,7 +232,7 @@ public class PayPalWebhookRetryRepository {
                     RETURNING r.event_id
                 )
                 SELECT COUNT(*) FROM failed
-                """, Integer.class, eventId, attempt, leaseOwner, rejected, MAX_ATTEMPTS, outcome,
+                """, Integer.class, eventId, attempt, leaseOwner, rejected, MAX_ATTEMPTS, outcome.name(),
                 rejected, MAX_ATTEMPTS, rejected, MAX_ATTEMPTS, delaySeconds,
                 rejected, MAX_ATTEMPTS, error);
         return changed != null && changed == 1;

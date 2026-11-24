@@ -3,6 +3,7 @@ package com.atlas.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.payment.dto.response.WebhookRetryResponse;
+import com.atlas.payment.model.WebhookRetryLeaseState;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +15,7 @@ class PayPalWebhookRetryHistoryRedactionTest {
     @Test
     void operatorResponsesExposeOnlySafeQueueMetadata() throws Exception {
         String pending = mapper.writeValueAsString(new WebhookRetryResponse.PendingRetryPage(1, 0, 20,
-                List.of(new WebhookRetryResponse.PendingRetryPage.Item("event-1", "type", 3, null, "AVAILABLE"))));
+                List.of(new WebhookRetryResponse.PendingRetryPage.Item("event-1", "type", 3, null, WebhookRetryLeaseState.UNLEASED))));
         String summary = mapper.writeValueAsString(new WebhookRetryResponse.RetrySummary(
                 1, 0, null, null, 0, Map.of()));
 

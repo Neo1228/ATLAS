@@ -18,6 +18,7 @@ import com.atlas.application.config.PayPalWebhookOperatorSecurityConfiguration;
 import com.atlas.application.controller.payment.PayPalWebhookOperatorController;
 import com.atlas.payment.dto.response.WebhookRetryResponse.ExhaustedRetryPage.Item;
 import com.atlas.application.security.AccountOwnershipInterceptor;
+import com.atlas.payment.model.WebhookRequeueOutcome;
 import com.atlas.payment.service.PayPalWebhookOperatorService;
 import java.time.Instant;
 import java.util.List;
@@ -100,7 +101,7 @@ class PayPalWebhookOperatorSecurityTest {
     @Test
     void authenticatedRequeueReturnsAcceptedAndUsesOperatorPrincipal() throws Exception {
         when(service.requeue("event-1", "key-1", "webhook-operator", "manual review"))
-                .thenReturn(new WebhookRetryResponse.Requeue("event-1", "REQUEUED"));
+                .thenReturn(new WebhookRetryResponse.Requeue("event-1", WebhookRequeueOutcome.REQUEUED));
 
         mvc.perform(post(PATH + "/event-1/requeue").with(httpBasic("webhook-operator", PASSWORD))
                         .header("Idempotency-Key", "key-1").contentType("application/json")

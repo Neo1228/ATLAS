@@ -42,11 +42,11 @@ public interface PaymentRecoveryService {
      * 메트릭용 스냅샷. 내부에서 짧은 TTL 로 캐시하므로 스크레이프마다 호출해도 DB 부하가
      * 스크레이프 빈도에 비례하지 않는다.
      */
-    long statusCount(String status);
+    long statusCount(PaymentRecoveryJobStatus status);
 
-    long stageCount(String stage, String status);
+    long stageCount(PaymentRecoveryWorkStage stage, PaymentRecoveryJobStatus status);
 
-    double stageOldestDueAgeSeconds(String stage);
+    double stageOldestDueAgeSeconds(PaymentRecoveryWorkStage stage);
 
     double oldestDueAgeAnyStage();
 
