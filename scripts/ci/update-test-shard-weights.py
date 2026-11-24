@@ -227,6 +227,8 @@ def report(runs, shards, current):
         print("| %s | %.0f | %.3f | %.0f |" % (name, maximum, ratio, sd))
     print("\n`(검증)`은 가장 새 %d회를 그보다 오래된 실행으로 만든 가중치로 잰 값이다(미래 실행을 훈련에 쓰지 않는다). 직전 1회가 지금 방식이다. 실행끼리 완전히 독립이 아니다(같은 PR의 재실행)." % max(1, len(classes) // 3))
     print("이상적 균형(합/shard 수) 평균 %.0f초. 최대 shard가 이보다 높은 만큼이 배정으로 줄일 수 있는 상한이다." % (statistics.fmean(totals) / shards))
+    print("주의: 클래스 시간은 같은 shard에서 함께 도는 클래스에 따라 달라진다(EXP-076 사실 6). 위 검증은 지난 실행의 배정이 그대로라는 전제라서,"
+          " 새 가중치로 배정이 바뀐 뒤의 실제 균형은 더 나쁠 수 있다. 반영한 뒤 같은 커밋의 CI를 여러 번 돌려 shard별 시간을 확인한다.")
     return new_weights
 
 
