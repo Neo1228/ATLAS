@@ -6,6 +6,7 @@ import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
+import com.atlas.order.model.LocationReservationWorkflowState;
 import com.atlas.order.service.LocationReservationService.ClaimOutcome;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import com.atlas.payment.PayPalIntegrationTestSupport;
@@ -264,17 +265,23 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
         Collections.shuffle(attempts, new Random(7));
         AtomicInteger thrown = new AtomicInteger();
         Map<UUID, AtomicInteger> claimedOutcome = new ConcurrentHashMap<>();
+        // 종결하지 못한 호출은 실제 호출자(CheckoutPaymentServiceImpl, CheckoutFinalizationServiceImpl)처럼 다시 보낸다.
+        Set<UUID> pendingClaims = ConcurrentHashMap.newKeySet();
+        Set<UUID> pendingCancels = ConcurrentHashMap.newKeySet();
         runConcurrently(attempts, call -> {
             try {
                 // 같은 workflow에 claim 1건과 cancel 2건이 섞여 동시에 들어간다.
                 if (call.claim()) {
                     ClaimOutcome outcome = coordinator.claim(call.workflowId());
+                    CLAIM_OUTCOMES.put(call.workflowId(), outcome.toString());
                     if (outcome == ClaimOutcome.CLAIMED) {
                         claimedOutcome.computeIfAbsent(call.workflowId(), id -> new AtomicInteger())
                                 .incrementAndGet();
+                    } else {
+                        pendingClaims.add(call.workflowId());
                     }
-                } else {
-                    coordinator.cancel(call.workflowId());
+                } else if (!cancelTerminal(coordinator.cancel(call.workflowId()))) {
+                    pendingCancels.add(call.workflowId());
                 }
             } catch (RuntimeException exception) {
                 thrown.incrementAndGet();
@@ -283,6 +290,15 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
         MODEL_A.faults.stop();
         MODEL_B.faults.stop();
 
+        // claim 호출 중인 lease는 cancel이 빼앗지 않는다(LocationReservationRepository.requestCancellation). 그때의 cancel은
+        // 기록되지 않고 현재 상태를 돌려주며, 두 호출자는 종결 상태가 아니면 다시 호출한다. 재호출 없이 장애가 멈추면
+        // claim이 한 location만 적용한 RESERVED가 남는 것이 정상 동작인데도 감사가 dangling으로 센다(EXP-074).
+        for (int round = 0; round < 20 && !(pendingClaims.isEmpty() && pendingCancels.isEmpty()); round++) {
+            pendingClaims.removeIf(id -> coordinator.claim(id) != ClaimOutcome.PENDING);
+            pendingCancels.removeIf(id -> cancelTerminal(coordinator.cancel(id)));
+            coordinator.recoverDue(200);
+            Thread.sleep(25);
+        }
         for (int round = 0; round < 400 && countInFlight() > 0; round++) {
             coordinator.recoverDue(200);
             Thread.sleep(25);
@@ -450,6 +466,20 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
         return pending;
     }
 
+    /** 감사가 dangling을 찾으면 그 workflow의 DB 상태와 두 location의 요청 이력을 남겨 실패 원인을 로그만으로 가른다. */
+    private void printDangling(UUID orderId, UUID workflowId, String state, String a, String b) {
+        String commands = String.join(",", jdbc.queryForList(
+                "SELECT fulfillment_location_id || ':' || command_state FROM order_inventory_location_command"
+                        + " WHERE workflow_id = ? ORDER BY fulfillment_location_id", String.class, workflowId));
+        String detail = jdbc.queryForObject(
+                "SELECT workflow_state || ' attempts=' || attempt_count || ' error=' || coalesce(last_error_code, '-')"
+                        + " FROM order_inventory_reservation_workflow WHERE workflow_id = ?", String.class, workflowId);
+        System.out.println("DANGLING claimOutcome=" + CLAIM_OUTCOMES.get(workflowId) + " order=" + state + " a=" + a
+                + " b=" + b + " workflow=" + detail + " commands=" + commands);
+        System.out.println("HISTORY A " + MODEL_A.historyOf(orderId));
+        System.out.println("HISTORY B " + MODEL_B.historyOf(orderId));
+    }
+
     private Audit audit(Map<String, UUID> orderByKey, Map<String, UUID> workflowByKey) {
         Map<String, Integer> states = new HashMap<>();
         int dangling = 0;
@@ -466,10 +496,16 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
                 ordersOwningHolds.add(orderId);
             } else if ("RESERVED".equals(state)) {
                 ordersOwningHolds.add(orderId);
-                if (!"RESERVED".equals(a) || !"RESERVED".equals(b)) dangling++;
+                if (!"RESERVED".equals(a) || !"RESERVED".equals(b)) {
+                    dangling++;
+                    printDangling(orderId, entry.getValue(), state, a, b);
+                }
             } else if ("CLAIMED".equals(state)) {
                 ordersOwningHolds.add(orderId);
-                if (!"CLAIMED".equals(a) || !"CLAIMED".equals(b)) dangling++;
+                if (!"CLAIMED".equals(a) || !"CLAIMED".equals(b)) {
+                    dangling++;
+                    printDangling(orderId, entry.getValue(), state, a, b);
+                }
             }
         }
         int orphan = MODEL_A.holdsNotOwnedBy(ordersOwningHolds) + MODEL_B.holdsNotOwnedBy(ordersOwningHolds);
@@ -567,6 +603,13 @@ class LocationFaultConvergenceIntegrationTest extends PayPalIntegrationTestSuppo
     }
 
     /** 실패 주입 확률. 요청 유실은 적용하지 않고, 응답 유실은 적용한 뒤 둘 다 응답 없이 연결을 끊는다. */
+    private static boolean cancelTerminal(ReservationWorkflowResponse.LocationReservation response) {
+        return response.status() == LocationReservationWorkflowState.CANCELLED
+                || response.status() == LocationReservationWorkflowState.FAILED;
+    }
+
+    private static final Map<UUID, String> CLAIM_OUTCOMES = new ConcurrentHashMap<>();
+
     private static final class Faults {
         private final AtomicBoolean enabled = new AtomicBoolean();
         private final AtomicBoolean down = new AtomicBoolean();

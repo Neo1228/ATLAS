@@ -17,8 +17,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest
 @Testcontainers
+@SpringBootTest
 class PayPalReportMatchQueryIntegrationTest extends PayPalIntegrationTestSupport {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");

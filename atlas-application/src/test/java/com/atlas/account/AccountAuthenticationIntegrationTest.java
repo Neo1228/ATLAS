@@ -49,10 +49,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+@Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest
 @Import(AccountAuthenticationIntegrationTest.TestEmailConfiguration.class)
-@Testcontainers
 class AccountAuthenticationIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
