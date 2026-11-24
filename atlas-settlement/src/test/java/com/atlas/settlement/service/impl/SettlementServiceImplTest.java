@@ -22,6 +22,7 @@ import com.atlas.settlement.dto.response.SellerSettlementStatementResponse;
 import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.model.RefundReservationState;
 import com.atlas.settlement.model.SellerBalance;
+import com.atlas.settlement.model.SettlementStatementEntryType;
 import com.atlas.settlement.persistence.projection.CaptureJournalRecord;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementAllocation;
 import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
@@ -386,8 +387,8 @@ class SettlementServiceImplTest {
         when(journals.sellerStatementRows(statementSellerId, from, to, null, null, 11))
                 .thenReturn(List.of(
                         new SellerStatementRow(captureJournalId, captureOrderId, UUID.randomUUID(),
-                                "ORDER_CAPTURE", from, 10_000),
-                        new SellerStatementRow(payoutJournalId, null, payoutId, "PAYOUT",
+                                SettlementStatementEntryType.ORDER_CAPTURE, from, 10_000),
+                        new SellerStatementRow(payoutJournalId, null, payoutId, SettlementStatementEntryType.PAYOUT,
                                 payoutRecordedAt, -8_000)));
 
         SellerSettlementStatementResponse statement = statementService.getSellerStatement(
@@ -395,9 +396,9 @@ class SettlementServiceImplTest {
 
         assertThat(statement.items()).hasSize(2);
         assertThat(statement.items().get(0).type())
-                .isEqualTo(SellerSettlementStatementResponse.EntryType.ORDER_CAPTURE);
+                .isEqualTo(SettlementStatementEntryType.ORDER_CAPTURE);
         // 지급은 gross 를 늘리지 않고 지급 가능 잔액만 줄인다. source 는 payout 이다.
-        assertThat(statement.items().get(1).type()).isEqualTo(SellerSettlementStatementResponse.EntryType.PAYOUT);
+        assertThat(statement.items().get(1).type()).isEqualTo(SettlementStatementEntryType.PAYOUT);
         assertThat(statement.items().get(1).sourceId()).isEqualTo(payoutId);
         assertThat(statement.items().get(1).orderId()).isNull();
         assertThat(statement.items().get(1).signedAmountWon()).isEqualTo(-8_000L);
@@ -440,17 +441,17 @@ class SettlementServiceImplTest {
                 .thenReturn(new SellerBalance(BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO));
         when(journals.sellerStatementRows(statementSellerId, from, to, null, null, 2))
                 .thenReturn(List.of(
-                        new SellerStatementRow(payoutJournalId, null, UUID.randomUUID(), "PAYOUT",
+                        new SellerStatementRow(payoutJournalId, null, UUID.randomUUID(), SettlementStatementEntryType.PAYOUT,
                                 payoutRecordedAt, -8_000),
                         // limit+1 번째 row 는 다음 page 존재만 알려주고 응답에는 남지 않는다.
-                        new SellerStatementRow(UUID.randomUUID(), null, UUID.randomUUID(), "PAYOUT",
+                        new SellerStatementRow(UUID.randomUUID(), null, UUID.randomUUID(), SettlementStatementEntryType.PAYOUT,
                                 payoutRecordedAt.plusSeconds(1), -1_000)));
 
         SellerSettlementStatementResponse firstPage = statementService.getSellerStatement(
                 new SellerSettlementStatementRequest(statementSellerId, from, to, 1, null));
 
         assertThat(firstPage.items()).singleElement().satisfies(entry -> {
-            assertThat(entry.type()).isEqualTo(SellerSettlementStatementResponse.EntryType.PAYOUT);
+            assertThat(entry.type()).isEqualTo(SettlementStatementEntryType.PAYOUT);
             assertThat(entry.journalId()).isEqualTo(payoutJournalId);
         });
         assertThat(firstPage.nextCursor()).isNotBlank();

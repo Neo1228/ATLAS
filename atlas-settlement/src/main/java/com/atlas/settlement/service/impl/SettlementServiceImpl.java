@@ -255,7 +255,7 @@ public class SettlementServiceImpl implements SettlementService {
         if (hasMore) rows = rows.subList(0, pageSize);
         List<SellerSettlementStatementResponse.Entry> items = rows.stream().map(row ->
                 new SellerSettlementStatementResponse.Entry(row.journalId(), row.orderId(), row.sourceId(),
-                        SellerSettlementStatementResponse.EntryType.valueOf(row.type()), row.recordedAt(),
+                        row.type(), row.recordedAt(),
                         row.signedAmountWon())).toList();
         String next = null;
         if (hasMore) {
