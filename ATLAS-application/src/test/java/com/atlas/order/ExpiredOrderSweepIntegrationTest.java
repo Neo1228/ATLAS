@@ -2,7 +2,7 @@ package com.atlas.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.model.OrderState;
 import com.atlas.order.repository.OrderRepository;
 import java.sql.Timestamp;
 import java.time.Duration;

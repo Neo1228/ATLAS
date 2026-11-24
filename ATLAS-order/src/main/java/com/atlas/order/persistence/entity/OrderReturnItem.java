@@ -1,6 +1,6 @@
 package com.atlas.order.persistence.entity;
 
-import com.atlas.order.persistence.state.OrderReturnInspectionResult;
+import com.atlas.order.model.OrderReturnInspectionResult;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

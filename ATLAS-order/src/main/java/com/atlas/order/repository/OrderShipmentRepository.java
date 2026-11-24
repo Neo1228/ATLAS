@@ -2,7 +2,7 @@ package com.atlas.order.repository;
 
 import com.atlas.order.persistence.entity.OrderShipment;
 import com.atlas.order.persistence.projection.ShipmentProgress;
-import com.atlas.order.persistence.state.OrderShipmentStatus;
+import com.atlas.order.model.OrderShipmentStatus;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

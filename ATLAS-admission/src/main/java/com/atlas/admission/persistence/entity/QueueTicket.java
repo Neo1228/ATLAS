@@ -1,6 +1,6 @@
 package com.atlas.admission.persistence.entity;
 
-import com.atlas.admission.persistence.state.TicketStatus;
+import com.atlas.admission.model.TicketStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

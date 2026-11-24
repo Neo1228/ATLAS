@@ -51,8 +51,8 @@ Java package 구조는 D-047/ADR-0003을 유지합니다. 검토 결과 중복·
 ### 계층과 데이터 접근
 
 - **공개 API:** `.service`, `.dto.request`, `.dto.response`, `.exception`. 업무 오류는 모듈별 typed exception 하나와 `Code` enum으로 표현.
-- **공유 상태:** lifecycle enum은 `.persistence.state`에 두고 필요한 cross-module contract에서만 공유.
-- DB에 저장하는 상태·단계 enum은 service 계약에서 사용되더라도 `.persistence.state`에 둡니다.
+- **공유 상태:** lifecycle enum은 `.model`에 두고 필요한 cross-module contract에서만 공유.
+- DB에 저장하는 상태·단계 enum은 service 계약에서 사용되더라도 `.model`에 둡니다.
   Request/response record는 `.dto.request`/`.dto.response`에 두며,
   service가 소비한다는 이유만으로 workflow enum을 `.service`에 두지 않습니다.
 - **저장소 계층:** JPA entity는 `.persistence.entity`, repository는 모듈 내부 `.repository`. 다른 모듈의 entity/repository 직접 접근 금지; 연관 관계에는 scalar ID 사용.

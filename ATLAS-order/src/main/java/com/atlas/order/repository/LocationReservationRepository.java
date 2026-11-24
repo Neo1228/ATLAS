@@ -1,12 +1,12 @@
 package com.atlas.order.repository;
 
+import com.atlas.order.model.LocationReservationState;
+import com.atlas.order.model.LocationReservationWorkflowState;
 import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
 import com.atlas.order.persistence.projection.ReservationWorkflowLease;
 import com.atlas.order.persistence.projection.ReservationWorkflowLocationPlan;
 import com.atlas.order.persistence.projection.ReservationWorkflowLocationSnapshot;
 import com.atlas.order.persistence.projection.ReservationWorkflowSnapshot;
-import com.atlas.order.persistence.state.LocationReservationState;
-import com.atlas.order.persistence.state.LocationReservationWorkflowState;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;

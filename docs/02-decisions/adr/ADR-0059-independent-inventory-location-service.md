@@ -20,7 +20,7 @@
 
 ## 결정
 
-1. 새 runtime은 root Gradle project `:inventory-location-module`, 디렉터리 `ATLAS-inventory-location`, package `com.atlas.inventory.location`로 구성한다. 이는 기존 `ATLAS-inventory` 재고 책임을 별도 process로 호스팅하고 새 도메인 이름을 만들지 않는다.
+1. 새 runtime은 root Gradle project `:inventory-location-module`, 디렉터리 `ATLAS-inventory-location`, package `com.atlas.inventorylocation`로 구성한다. 이는 기존 `ATLAS-inventory` 재고 책임을 별도 process로 호스팅하고 새 도메인 이름을 만들지 않는다.
 2. 각 service instance는 하나의 `FULFILLMENT_LOCATION_ID`만 소유하고, 해당 location의 PostgreSQL만 읽고 쓴다. Compose 구성은 location A/B와 각자의 database를 분리해 장애·정합성 경계를 재현한다.
 3. `inventory_location_stock`의 불변식은 `initial_capacity = available + reserved + claimed`; guarded SQL update와 DB CHECK constraint 양쪽에서 음수 및 초과 예약을 막는다.
 4. Reserve는 `(fulfillment_location_id, idempotency_key)`로 멱등 처리한다. 동일 key·동일 order/items는 기존 reservation을 반환하고 facts 변경 재사용은 conflict다. 여러 SKU 중 하나라도 부족하면 header·item·모든 stock update가 같은 local transaction에서 rollback된다.

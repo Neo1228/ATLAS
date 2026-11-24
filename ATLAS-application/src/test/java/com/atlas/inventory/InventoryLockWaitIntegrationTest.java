@@ -10,7 +10,7 @@ import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.dto.request.ReserveInventoryBatchRequest;
 import com.atlas.inventory.dto.response.InventoryPoolResponse;
 import com.atlas.inventory.dto.response.ReservationResponse;
-import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

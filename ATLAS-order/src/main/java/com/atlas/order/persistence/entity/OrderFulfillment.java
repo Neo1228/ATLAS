@@ -1,7 +1,7 @@
 package com.atlas.order.persistence.entity;
 
 import com.atlas.order.exception.OrderException;
-import com.atlas.order.persistence.state.FulfillmentStatus;
+import com.atlas.order.model.FulfillmentStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

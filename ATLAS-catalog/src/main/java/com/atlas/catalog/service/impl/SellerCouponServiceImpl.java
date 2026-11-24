@@ -5,7 +5,7 @@ import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.exception.CatalogException.Code;
 import com.atlas.catalog.persistence.entity.SellerCoupon;
 import com.atlas.catalog.persistence.entity.SellerCouponRedemption;
-import com.atlas.catalog.persistence.state.SellerCouponRedemptionState;
+import com.atlas.catalog.model.SellerCouponRedemptionState;
 import com.atlas.catalog.repository.SellerCouponRedemptionRepository;
 import com.atlas.catalog.repository.SellerCouponRepository;
 import com.atlas.catalog.repository.SellerRepository;

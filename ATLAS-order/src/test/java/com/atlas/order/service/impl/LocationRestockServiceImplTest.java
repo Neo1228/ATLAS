@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.atlas.order.exception.OrderException;
-import com.atlas.order.persistence.state.LocationReservationWorkflowState;
+import com.atlas.order.model.LocationReservationWorkflowState;
 import com.atlas.order.repository.LocationReservationRepository;
 import com.atlas.order.persistence.projection.ReservationWorkflowItemRecord;
 import com.atlas.order.persistence.projection.ReservationWorkflowLocationSnapshot;

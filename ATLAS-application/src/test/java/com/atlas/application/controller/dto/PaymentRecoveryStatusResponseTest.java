@@ -2,8 +2,8 @@ package com.atlas.application.controller.dto;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.atlas.order.persistence.state.OrderState;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.order.model.OrderState;
+import com.atlas.payment.model.PaymentState;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;

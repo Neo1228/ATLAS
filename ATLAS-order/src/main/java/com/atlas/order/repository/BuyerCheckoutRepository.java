@@ -1,7 +1,7 @@
 package com.atlas.order.repository;
 
 import com.atlas.order.persistence.entity.BuyerCheckout;
-import com.atlas.order.persistence.state.BuyerCheckoutState;
+import com.atlas.order.model.BuyerCheckoutState;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;

@@ -3,7 +3,7 @@ package com.atlas.payment.repository;
 import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
 import com.atlas.payment.persistence.projection.WebhookRetryPollResult;
 import com.atlas.payment.persistence.projection.WebhookRetryEvent;
-import com.atlas.payment.persistence.state.WebhookRetryFailure;
+import com.atlas.payment.model.WebhookRetryFailure;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;

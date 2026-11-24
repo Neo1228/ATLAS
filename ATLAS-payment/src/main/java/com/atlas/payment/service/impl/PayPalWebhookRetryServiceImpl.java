@@ -6,7 +6,7 @@ import com.atlas.payment.dto.response.WebhookRetryPollResponse;
 import com.atlas.payment.persistence.projection.ClaimedWebhookRetry;
 import com.atlas.payment.persistence.projection.WebhookRetryPollResult;
 import com.atlas.payment.persistence.projection.WebhookRetryEvent;
-import com.atlas.payment.persistence.state.WebhookRetryFailure;
+import com.atlas.payment.model.WebhookRetryFailure;
 import com.atlas.payment.repository.PayPalWebhookRetryRepository;
 import com.atlas.payment.service.PayPalWebhookRetryService;
 import java.util.Objects;

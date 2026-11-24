@@ -17,7 +17,7 @@ import com.atlas.catalog.dto.response.SellerResponse;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
 import com.atlas.inventory.dto.request.ReserveInventoryRequest;
-import com.atlas.inventory.persistence.state.ReservationStatus;
+import com.atlas.inventory.model.ReservationStatus;
 import com.atlas.inventory.service.InventoryService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.payment.PayPalIntegrationTestSupport;

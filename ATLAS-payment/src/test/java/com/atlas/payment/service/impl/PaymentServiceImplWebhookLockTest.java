@@ -7,8 +7,8 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
-import com.atlas.payment.persistence.state.PaymentPhase;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.model.PaymentPhase;
+import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.repository.PaymentAttemptRepository;

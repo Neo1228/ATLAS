@@ -1,10 +1,10 @@
 package com.atlas.order.dto.response;
 
-import com.atlas.admission.persistence.state.TicketStatus;
-import com.atlas.inventory.persistence.state.ReservationStatus;
-import com.atlas.order.persistence.state.OrderSource;
-import com.atlas.order.persistence.state.OrderState;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.admission.model.TicketStatus;
+import com.atlas.inventory.model.ReservationStatus;
+import com.atlas.order.model.OrderSource;
+import com.atlas.order.model.OrderState;
+import com.atlas.payment.model.PaymentState;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;

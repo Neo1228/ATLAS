@@ -1,6 +1,6 @@
 package com.atlas.catalog.persistence.entity;
 
-import com.atlas.catalog.persistence.state.SellerCouponRedemptionState;
+import com.atlas.catalog.model.SellerCouponRedemptionState;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

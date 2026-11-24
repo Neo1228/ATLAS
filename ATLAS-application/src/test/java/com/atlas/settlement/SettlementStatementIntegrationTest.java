@@ -20,7 +20,7 @@ import com.atlas.catalog.service.SellerService;
 import com.atlas.order.dto.request.OrderRefundRequest;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderResponse;
-import com.atlas.order.persistence.state.OrderState;
+import com.atlas.order.model.OrderState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;

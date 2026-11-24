@@ -1,7 +1,7 @@
 package com.atlas.order.dto.response;
 
-import com.atlas.order.persistence.state.BuyerCheckoutState;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.order.model.BuyerCheckoutState;
+import com.atlas.payment.model.PaymentState;
 import java.util.List;
 import java.util.UUID;
 

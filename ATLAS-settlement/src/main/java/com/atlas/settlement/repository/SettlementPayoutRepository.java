@@ -2,7 +2,7 @@ package com.atlas.settlement.repository;
 
 import com.atlas.settlement.persistence.projection.NegativePayableExposure;
 import com.atlas.settlement.persistence.projection.SettlementPayoutRow;
-import com.atlas.settlement.persistence.state.SettlementPayoutState;
+import com.atlas.settlement.model.SettlementPayoutState;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;

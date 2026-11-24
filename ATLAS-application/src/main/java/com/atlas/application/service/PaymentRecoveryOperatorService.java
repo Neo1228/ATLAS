@@ -4,7 +4,7 @@ import com.atlas.application.dto.response.PaymentRecoveryReviewPage;
 import com.atlas.application.exception.ApplicationException.Code;
 import com.atlas.application.exception.ApplicationException;
 import com.atlas.payment.dto.response.PaymentRecoveryRequeueResponse;
-import com.atlas.payment.persistence.state.PaymentRecoveryJobStatus;
+import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.service.PaymentRecoveryService;
 import java.util.Objects;
 import java.util.UUID;

@@ -1,6 +1,6 @@
 package com.atlas.admission.repository;
 
-import com.atlas.admission.persistence.state.TicketStatus;
+import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.persistence.entity.QueueTicket;
 import java.time.Instant;
 import java.util.List;

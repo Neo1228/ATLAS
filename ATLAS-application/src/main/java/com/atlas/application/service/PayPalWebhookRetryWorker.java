@@ -3,7 +3,7 @@ package com.atlas.application.service;
 import com.atlas.payment.dto.response.ClaimedWebhookRetryResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.WebhookRetryPollResponse;
-import com.atlas.payment.persistence.state.WebhookRetryFailure;
+import com.atlas.payment.model.WebhookRetryFailure;
 import com.atlas.payment.service.PayPalWebhookRetryService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;

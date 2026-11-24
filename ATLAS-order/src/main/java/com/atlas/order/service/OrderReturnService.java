@@ -4,7 +4,7 @@ import com.atlas.order.dto.request.OrderReturnInspectionRequest;
 import com.atlas.order.dto.request.OrderReturnRequest;
 import com.atlas.order.dto.response.OrderReturnResponse;
 import com.atlas.order.dto.response.SellerOrderReturnPageResponse;
-import com.atlas.order.persistence.state.OrderReturnStatus;
+import com.atlas.order.model.OrderReturnStatus;
 import java.util.List;
 import java.util.UUID;
 

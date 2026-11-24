@@ -1,7 +1,7 @@
 package com.atlas.payment.repository;
 
 import com.atlas.payment.persistence.entity.PaymentRefundOperation;
-import com.atlas.payment.persistence.state.PaymentRefundState;
+import com.atlas.payment.model.PaymentRefundState;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;

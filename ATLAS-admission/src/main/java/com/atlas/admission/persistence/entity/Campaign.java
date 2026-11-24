@@ -1,6 +1,6 @@
 package com.atlas.admission.persistence.entity;
 
-import com.atlas.admission.persistence.state.CampaignStatus;
+import com.atlas.admission.model.CampaignStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

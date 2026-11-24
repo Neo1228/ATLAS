@@ -14,7 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.atlas.account.config.AccountSecurityConfiguration;
 import com.atlas.application.config.PayPalReportOperatorSecurityConfiguration;
 import com.atlas.application.config.PayPalWebhookOperatorSecurityConfiguration;
-import com.atlas.application.controller.PayPalWebhookOperatorController;
+import com.atlas.application.controller.payment.PayPalWebhookOperatorController;
 import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage;
 import com.atlas.payment.dto.response.PayPalWebhookExhaustedRetryPage.Item;
 import com.atlas.payment.dto.response.PayPalWebhookRequeueResponse;

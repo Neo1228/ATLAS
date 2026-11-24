@@ -5,9 +5,9 @@ import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.persistence.entity.PaymentRefundOperation;
-import com.atlas.payment.persistence.state.PaymentPhase;
-import com.atlas.payment.persistence.state.PaymentRefundState;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.model.PaymentPhase;
+import com.atlas.payment.model.PaymentRefundState;
+import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;

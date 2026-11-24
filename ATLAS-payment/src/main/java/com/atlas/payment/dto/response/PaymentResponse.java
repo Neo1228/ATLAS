@@ -1,6 +1,6 @@
 package com.atlas.payment.dto.response;
 
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.model.PaymentState;
 import java.time.Instant;
 import java.util.UUID;
 

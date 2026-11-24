@@ -26,10 +26,11 @@ class PackageLayoutRulesTest {
 
     @Test
     void moduleRootPackagesContainOnlyApplicationEntryPoints() {
-        // 모듈 루트에 설정, 보안, 헬스 같은 클래스가 혼자 놓이면 어느 계층인지 알 수 없다.
+        // 모듈 루트에 설정, 보안, 헬스 같은 클래스가 혼자 놓이면 어느 계층인지 알 수 없다. 모듈의 루트 패키지는 서로
+        // 겹치지 않아야 하므로(com.atlas.inventory 아래에 다른 모듈이 들어가면 안 된다) 모듈마다 com.atlas.<모듈> 한 단계다.
         JavaClasses source = productionClasses();
         classes()
-                .that().resideInAnyPackage("com.atlas", "com.atlas.*", "com.atlas.inventory.location")
+                .that().resideInAnyPackage("com.atlas", "com.atlas.*")
                 .should().haveSimpleNameEndingWith("Application")
                 .allowEmptyShould(true)
                 .check(source);
@@ -124,6 +125,23 @@ class PackageLayoutRulesTest {
                 .that().resideInAPackage("..repository..")
                 .and().arePublic()
                 .should().beRecords()
+                .allowEmptyShould(true)
+                .check(source);
+    }
+
+    @Test
+    void applicationControllersResideInTheirOwningModulePackage() {
+        // controller 하위 패키지는 엔드포인트가 속한 도메인 모듈 이름이다. 호출자(seller, buyer)나 옛 모듈 이름으로 나누면
+        // 같은 도메인의 controller가 흩어지고, 합쳐져 사라진 모듈 이름(campaign)이 남는다.
+        JavaClasses source = productionClasses();
+        classes()
+                .that().resideInAPackage("com.atlas.application.controller..")
+                .and().haveSimpleNameEndingWith("Controller")
+                .should().resideInAnyPackage(
+                        "com.atlas.application.controller.account", "com.atlas.application.controller.admission",
+                        "com.atlas.application.controller.catalog", "com.atlas.application.controller.inventory",
+                        "com.atlas.application.controller.order", "com.atlas.application.controller.payment",
+                        "com.atlas.application.controller.settlement")
                 .allowEmptyShould(true)
                 .check(source);
     }

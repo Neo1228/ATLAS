@@ -6,7 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.atlas.payment.PayPalIntegrationTestSupport;
-import com.atlas.payment.persistence.state.PaymentState;
+import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.service.PaymentService;
 import java.math.BigDecimal;
