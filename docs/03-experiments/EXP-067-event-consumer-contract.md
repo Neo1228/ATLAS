@@ -44,5 +44,5 @@
 ## 재현
 
 ```sh
-./gradlew :application-module:test --tests com.atlas.order.ReservationEventConsumerContractIntegrationTest
+./gradlew :atlas-application:test --tests com.atlas.order.ReservationEventConsumerContractIntegrationTest
 ```
