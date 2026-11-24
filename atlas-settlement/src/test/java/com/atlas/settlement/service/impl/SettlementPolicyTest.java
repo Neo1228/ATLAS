@@ -1,4 +1,4 @@
-package com.atlas.settlement.service;
+package com.atlas.settlement.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

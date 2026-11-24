@@ -19,6 +19,7 @@ import com.atlas.settlement.exception.SettlementException;
 import com.atlas.settlement.repository.JdbcPayPalBalanceReportStore;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
+import com.atlas.settlement.service.impl.CsvPayPalBalanceReportParser;
 import com.atlas.settlement.service.impl.PayPalBalanceReportOperatorServiceImpl;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -79,7 +80,7 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                         true, "capture-mismatch", 5_000L, "USD")));
         JdbcPayPalBalanceReportStore store = new JdbcPayPalBalanceReportStore(jdbc);
         PayPalBalanceReportReconciliationService reconciliation =
-                new PayPalBalanceReportReconciliationService(matchQuery, new PayPalBalanceReportParser());
+                new PayPalBalanceReportReconciliationService(matchQuery, new CsvPayPalBalanceReportParser());
         ingestion = new PayPalBalanceReportRunIngestionService(reconciliation, store);
         operator = new PayPalBalanceReportOperatorServiceImpl(store);
     }

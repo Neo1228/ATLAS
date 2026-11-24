@@ -1,9 +1,9 @@
-package com.atlas.order.service;
+package com.atlas.order.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.order.service.LocationAllocationPolicy.Candidate;
-import com.atlas.order.service.LocationAllocationPolicy.Plan;
+import com.atlas.order.service.impl.LocationAllocationPolicy.Candidate;
+import com.atlas.order.service.impl.LocationAllocationPolicy.Plan;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

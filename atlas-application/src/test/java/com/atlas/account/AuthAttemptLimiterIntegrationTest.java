@@ -9,6 +9,7 @@ import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.repository.AuthThrottleRepository;
 import com.atlas.account.service.AccountService;
 import com.atlas.account.service.AuthAttemptLimiter;
+import com.atlas.account.service.impl.AuthAttemptLimiterImpl;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -18,8 +19,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -137,7 +138,7 @@ class AuthAttemptLimiterIntegrationTest {
 
     @Test
     void originLimitIsSharedAcrossSubjectsSoOneSourceCannotSprayManyAccounts() {
-        AuthAttemptLimiter strict = new AuthAttemptLimiter(new AuthThrottleRepository(jdbc), transactionManager, Duration.ofMinutes(15), 100, 2);
+        AuthAttemptLimiter strict = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager, Duration.ofMinutes(15), 100, 2);
         Instant now = Instant.now();
         String origin = "203.0.113." + UUID.randomUUID().toString().substring(0, 8);
 
@@ -150,7 +151,7 @@ class AuthAttemptLimiterIntegrationTest {
 
     @Test
     void mailRequestsStopSendingOnceTheOriginBudgetIsSpent() {
-        AuthAttemptLimiter strict = new AuthAttemptLimiter(new AuthThrottleRepository(jdbc), transactionManager, Duration.ofMinutes(15), 100, 1);
+        AuthAttemptLimiter strict = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager, Duration.ofMinutes(15), 100, 1);
         Instant now = Instant.now();
         String origin = "192.0.2." + UUID.randomUUID().toString().substring(0, 8);
 
@@ -175,7 +176,7 @@ class AuthAttemptLimiterIntegrationTest {
         return jdbc.query("""
                 SELECT failures FROM auth_subject_bucket WHERE subject_key = ? AND scope = ?
                 """, (row, number) -> row.getInt(1),
-                AuthAttemptLimiter.key(email.toLowerCase()), scope).stream().findFirst().orElse(0);
+                AuthAttemptLimiterImpl.key(email.toLowerCase()), scope).stream().findFirst().orElse(0);
     }
 
     private String verifiedAccount() {

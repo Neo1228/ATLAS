@@ -2,7 +2,7 @@ package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.payment.service.FxConversionService;
+import com.atlas.payment.service.impl.FxConversionService;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;

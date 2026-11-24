@@ -18,12 +18,12 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 
 import com.atlas.account.dto.request.LoginRequest;
+import com.atlas.account.dto.request.MfaChallengeRequest;
 import com.atlas.account.dto.request.RefreshTokenRequest;
 import com.atlas.account.dto.request.RegisterBuyerRequest;
-import com.atlas.account.dto.request.MfaChallengeRequest;
-import com.atlas.account.dto.response.AccountTokenResponse;
 import com.atlas.account.dto.response.AccountActionResponse;
 import com.atlas.account.dto.response.AccountLoginResponse;
+import com.atlas.account.dto.response.AccountTokenResponse;
 import com.atlas.account.dto.response.MfaEnrollmentResponse;
 import com.atlas.account.dto.response.MfaRecoveryCodesResponse;
 import com.atlas.account.exception.AccountException;
@@ -33,6 +33,10 @@ import com.atlas.account.persistence.projection.AccountPrincipal;
 import com.atlas.account.persistence.projection.RefreshTokenSession;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.repository.AccountSuspensionRepository;
+import com.atlas.account.service.impl.AccessTokenService;
+import com.atlas.account.service.impl.AccountMfaSecretProtector;
+import com.atlas.account.service.impl.AccountServiceImpl;
+import com.bastiaanjansen.otp.TOTPGenerator;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,7 +45,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
-import com.bastiaanjansen.otp.TOTPGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -74,7 +77,7 @@ class AccountServiceTest {
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
-        service = new AccountService(accounts, passwords, accessTokens, emailSender, mfaSecrets,
+        service = new AccountServiceImpl(accounts, passwords, accessTokens, emailSender, mfaSecrets,
                 Clock.fixed(NOW, ZoneOffset.UTC), suspensions, limiter, transactionManager);
     }
 

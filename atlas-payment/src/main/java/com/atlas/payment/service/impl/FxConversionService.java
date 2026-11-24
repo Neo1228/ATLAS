@@ -1,4 +1,4 @@
-package com.atlas.payment.service;
+package com.atlas.payment.service.impl;
 
 import com.atlas.payment.dto.response.FxConversionResponse;
 import com.atlas.payment.exception.PaymentException;
@@ -7,9 +7,9 @@ import com.atlas.payment.dto.response.ExchangeRateQuoteResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
-@Service
+@Component
 public class FxConversionService {
     private final ExchangeRateProvider exchangeRates;
 

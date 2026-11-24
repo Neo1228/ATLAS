@@ -31,8 +31,6 @@ import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CheckoutFinalizationService;
-import com.atlas.order.service.CheckoutIdempotencyKeys;
-import com.atlas.order.service.LocationAllocationPolicy;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.LocationReservationService;
 import com.atlas.order.service.OrderService;

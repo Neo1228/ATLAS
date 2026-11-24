@@ -1,4 +1,4 @@
-package com.atlas.account.service;
+package com.atlas.account.service.impl;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -11,9 +11,9 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwsHeader;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
-@Service
+@Component
 public class AccessTokenService {
     public static final Duration ACCESS_TOKEN_LIFETIME = Duration.ofMinutes(10);
     public static final long ACCESS_TOKEN_LIFETIME_SECONDS = ACCESS_TOKEN_LIFETIME.toSeconds();
