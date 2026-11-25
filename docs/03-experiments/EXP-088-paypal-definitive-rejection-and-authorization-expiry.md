@@ -98,7 +98,7 @@
 
 ```bash
 export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home
-export DOCKER_HOST=unix:///Users/mz01-juwannam/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true
+export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true
 ./gradlew :atlas-application:test --tests '*PayPalDefinitiveRejectionIntegrationTest'
 ./gradlew :atlas-payment:test --tests '*PayPalSandboxResponseReplayTest'
 ```

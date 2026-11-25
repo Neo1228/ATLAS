@@ -1,5 +1,7 @@
 # EXP-086: Admission K·ticket TTL 민감도와 PayPal AUTHORIZE 유효 기간 대비 repo 창
 
+> 정리 안내: 이 실험의 실행 파일(`load-tests/admission-sweep/`, `load-tests/paypal-real-fault/authorization-window.mjs`)은 저장소 오염을 막으려고 삭제했다. 숫자의 정본은 이 문서의 표이고, 삭제한 파일은 커밋 `3c2f7f11`의 같은 경로에서 복원할 수 있다.
+
 **상태:** 로컬 합성 구매자 모형 · 실제 서비스와 PostgreSQL 위에서 가상 시계로 실행 · 건수 기준 결과(시간은 가상 시간) · 운영 K/TTL 값과 운영 SLO의 근거 아님 · 연결: [Q-003, Q-004](../01-requirements/requirements-index.md#assumptions-and-open-questions), [D-025~D-030](../00-governance/decision-log.md), [D-145](../00-governance/decision-log.md), [Issue #633](https://github.com/Neo1228/ATLAS/issues/633)
 
 ## 질문과 가설 (측정 전에 적음)

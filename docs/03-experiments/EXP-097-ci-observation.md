@@ -1,5 +1,7 @@
 # EXP-097: 최근 CI 변경 네 건은 실제 GitHub Actions에서 무엇을 했는가
 
+> 정리 안내: 이 실험의 수집·분석 스크립트와 원자료(`EXP-097-ci-observation/` 폴더의 CSV, `results.md`, `results.json`)는 저장소 오염을 막으려고 삭제했다. 숫자의 정본은 이 문서의 표이고, 삭제한 파일은 커밋 `3c2f7f11`의 같은 경로에서 복원할 수 있다.
+
 - 질문: [EXP-074](EXP-074-slow-test-forensics.md)·[EXP-075](EXP-075-ci-pipeline-reliability.md)·[EXP-076](EXP-076-shard-balance.md)가 로컬 측정이나 작은 표본으로만 말한 네 가지를 병합 뒤 실제 CI 데이터로 확인한다. (1) `LocationFaultConvergenceIntegrationTest` 간헐 실패(#609 전 4건)가 이후 재발하는가. (2) 끝난 클래스의 Spring 컨텍스트를 닫는 리스너(#609)가 실제 CI의 앱 테스트 시간을 줄였는가(로컬 390초 → 225초). (3) `DOWNLOADED_JARS`가 0으로 유지되고 Maven 429가 재발하지 않는가(#604). (4) main push의 앱 테스트 생략(#613)의 전제(보호 규칙 strict + squash만 허용)가 지금도 성립하고 push와 PR의 job 분 비용이 실제로 어떻게 달라졌는가.
 - 상태: 분석 완료(CI 데이터, 로컬 재현 없음). **가설·포함 규칙·지표는 데이터를 수집하기 전에 커밋했고**(커밋 `docs(ci): CI 변경 네 건 관측의 가설·포함 규칙·지표를 수집 전에 기록 (EXP-097)`, git 이력이 증거) 사전 등록 이후에 바꾼 규칙은 "결과"의 "사전 등록에서 달라진 점"에 모두 적었다. 새 실험은 하지 않고 `Neo1228/ATLAS`의 GitHub Actions 실행 데이터를 읽기 전용으로 분석했다.
 - 날짜: 2026-11-25
