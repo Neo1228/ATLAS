@@ -142,6 +142,7 @@
 | D-137 | ✓ shard 의존성 캐시 소유자 복원 | 앱 테스트 shard가 매 실행 같은 jar 5개를 Maven Central에서 받아(실행당 요청 20건, 12/12 shard-job) 샤딩 이후 전체 검사 3/118이 429로 실패했다(샤딩 전 0/124). `verify`가 `testRuntimeClasspath`를 함께 해석해 캐시에 넣어 shard의 다운로드를 0으로 줄였다(변경 후 12/12가 0개). 429 자체의 원인(어느 VM이 왜 차단됐나)과 "3번 shard"의 이유는 설명하지 못했다(표본 3건, 우연과 구별 안 됨). 시간 단축은 주장하지 않는다. push 실행 정책은 바꾸지 않고 strict 유지/해제 두 경우의 설계만 적었다. | [ADR-0073](../02-decisions/adr/ADR-0073-ci-dependency-cache-warming.md), [EXP-075](../03-experiments/EXP-075-ci-pipeline-reliability.md), [Issue #600](https://github.com/Neo1228/ATLAS/issues/600) |
 | D-138 | ✓ main push는 verify만 | main push 실행은 `app-tests`를 건너뛰고 `verify`(캐시 갱신)만 돌린다. 전제는 보호 규칙 `strict` + squash만 허용이라 병합 결과 트리가 PR에서 테스트한 트리와 같다는 것이다. 최근 300개 실행에서 main push 103회 중 8회가 실패했고 그 원인은 같은 트리의 재실행 잡음(429, 간헐 테스트)이었다. 판정 job은 push에서만 `app-tests`의 `skipped`를 허용한다. `strict`나 squash 제한을 바꾸면 되살려야 한다. | [ADR-0073](../02-decisions/adr/ADR-0073-ci-dependency-cache-warming.md), [EXP-075](../03-experiments/EXP-075-ci-pipeline-reliability.md) |
 | D-141 | ✓ Reorder idempotency record 영구 보존 | `order_reorder_request`는 정리하지 않고 보존한다. PostgreSQL 18.6 로컬 합성 측정에서 행당 저장은 100만 행 기준 typical key(36자) 약 310 B, 상한 근처 key(252자) 약 1.58 KB, 요청당 증가는 316 B(5,000건)이고 운영 쿼리는 PK 조회와 `ON CONFLICT DO NOTHING` 두 문장뿐이다. record를 지운 뒤 같은 key로 재요청하면 Cart 수량이 5에서 7로 다시 합산되어(통합 테스트 1회) TTL 정리는 별도 만료 규칙 없이는 정확하지 않다. 코드는 바꾸지 않는다. 테이블이 1 GiB에 도달하거나, Order 삭제 기능이 생기거나, key 유효 기간 계약이 정해지거나, Reorder 효과가 재시도에 멱등해지면 다시 판단한다. 100만 행 초과 구간, 운영 key 분포, 재시도 창은 확인하지 못했다. | [ADR-0077](../02-decisions/adr/ADR-0077-keep-reorder-idempotency-records.md), [EXP-083](../03-experiments/EXP-083-reorder-idempotency-retention.md), Q-012, [Issue #620](https://github.com/Neo1228/ATLAS/issues/620) |
+| D-142 | △ 운영자 통제는 V1 Sandbox 한계, Live gate 11개 | 지급 승인·프로필 검증의 운영자 인증은 단일 설정 자격 증명이다. Seller 대 운영자 분리(만드는 쪽과 승인하는 쪽)는 구조로 있고, 사람별 신원·MFA·운영자 간 maker-checker는 코드에 없다. 검증자와 승인자를 비교하는 코드는 신원이 하나라 현재 설정에서는 모든 승인을 거절하므로 구현하지 않고, MFA는 앱이 아니라 IdP나 gateway 책임으로 정한다. 코드는 운영자 인증 경계의 회귀 테스트 1개(변이 2건 확인)와 전제 Javadoc만 더한다. PayPal 문서에서 Payouts 활성화 요청, 송금 통화 잔액으로 금액과 수수료 차감, 건당 한도(USD 60,000/20,000)를 확인했다. 지원 국가 표에 South Korea 행이 없어 보내는 국가 적격성은 not confirmed다. Live는 gate 11개를 닫은 뒤 별도 결정한다. | [ADR-0078](../02-decisions/adr/ADR-0078-payout-operator-controls-production-gate.md), [Q-013](../01-requirements/requirements-index.md), [Issue #621](https://github.com/Neo1228/ATLAS/issues/621) |
 
 <!-- markdownlint-disable MD033 -->
 
@@ -192,6 +193,7 @@
 <a id="d-133"></a>
 <a id="d-134"></a>
 <a id="d-135"></a>
+<a id="d-142"></a>
 
 <a id="detailed-decision-records"></a>
 
