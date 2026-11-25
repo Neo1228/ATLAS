@@ -1,6 +1,7 @@
 package com.atlas.admission.service.impl;
 
 import com.atlas.catalog.dto.response.CatalogResponse;
+import com.atlas.admission.service.AdmissionLimits;
 import com.atlas.admission.dto.request.AdmissionRequest;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.persistence.entity.Campaign;
@@ -26,17 +27,48 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class CampaignServiceTest {
+    private static final AdmissionLimits LIMITS =
+            new AdmissionLimits(20, 100, Duration.ofMinutes(7), Duration.ofHours(2));
+
 
     @Test
     void rejectsInvalidConfigurationBeforeLookingUpSellerSkuOrPersisting() {
         CampaignRepository campaignsRepository = mock(CampaignRepository.class);
         SellerSkuService sellerSkus = mock(SellerSkuService.class);
-        CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignsRepository, sellerSkus, Clock.systemUTC());
+        CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignsRepository, sellerSkus, Clock.systemUTC(), LIMITS);
 
         assertThrows(CampaignException.class, () -> campaigns.create(
                 new AdmissionRequest.CreateCampaign(null, "sku-1", Duration.ofMinutes(5))));
 
         verifyNoInteractions(campaignsRepository, sellerSkus);
+    }
+
+    @Test
+    void rejectsTicketTtlAboveLimitBeforeLookingUpSellerSkuOrPersisting() {
+        CampaignRepository campaignsRepository = mock(CampaignRepository.class);
+        SellerSkuService sellerSkus = mock(SellerSkuService.class);
+        CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignsRepository, sellerSkus, Clock.systemUTC(), LIMITS);
+
+        assertThrows(CampaignException.class, () -> campaigns.create(
+                new AdmissionRequest.CreateCampaign(UUID.randomUUID(), "sku-1", Duration.ofHours(2).plusSeconds(1))));
+
+        verifyNoInteractions(campaignsRepository, sellerSkus);
+    }
+
+    @Test
+    void omittedTicketTtlUsesConfiguredDefault() {
+        CampaignRepository campaignRepository = mock(CampaignRepository.class);
+        SellerSkuService sellerSkus = mock(SellerSkuService.class);
+        UUID sellerId = UUID.randomUUID();
+        when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN)).thenReturn(
+                new CatalogResponse.SellerSku(sellerId, UUID.randomUUID(), "sku-1", "Product",
+                        1, null, null, null, 1));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus, Clock.systemUTC(), LIMITS);
+
+        var response = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, "sku-1", null));
+
+        assertEquals(Duration.ofMinutes(7), response.queueTicketTtl());
     }
 
     @Test
@@ -58,7 +90,7 @@ class CampaignServiceTest {
         });
 
         CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus,
-                Clock.fixed(now, ZoneOffset.UTC));
+                Clock.fixed(now, ZoneOffset.UTC), LIMITS);
         var response = campaigns.create(new AdmissionRequest.CreateCampaign(sellerId, "sku-1", Duration.ofMinutes(5)));
 
         assertEquals(campaignId, response.campaignId());
@@ -75,7 +107,7 @@ class CampaignServiceTest {
         SellerSkuService sellerSkus = mock(SellerSkuService.class);
         UUID sellerId = UUID.randomUUID();
         when(sellerSkus.findOrderableSellerSku(sellerId, "unknown", ProductSalesChannel.CAMPAIGN)).thenReturn(null);
-        CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus, Clock.systemUTC());
+        CampaignServiceImpl campaigns = new CampaignServiceImpl(campaignRepository, sellerSkus, Clock.systemUTC(), LIMITS);
 
         assertThrows(CampaignException.class, () -> campaigns.create(
                 new AdmissionRequest.CreateCampaign(sellerId, "unknown", Duration.ofMinutes(5))));
@@ -90,7 +122,7 @@ class CampaignServiceTest {
         UUID sellerId = UUID.randomUUID();
         when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN))
                 .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "Unavailable"));
-        CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC());
+        CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC(), LIMITS);
 
         assertThrows(CatalogException.class, () -> service.create(
                 new AdmissionRequest.CreateCampaign(sellerId, "sku-1", Duration.ofMinutes(5))));
@@ -108,7 +140,7 @@ class CampaignServiceTest {
         when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
         when(sellerSkus.findOrderableSellerSku(sellerId, "sku-1", ProductSalesChannel.CAMPAIGN))
                 .thenThrow(new CatalogException(CatalogException.Code.PRODUCT_NOT_ORDERABLE, "Unavailable"));
-        CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC());
+        CampaignServiceImpl service = new CampaignServiceImpl(repository, sellerSkus, Clock.systemUTC(), LIMITS);
 
         assertThrows(CatalogException.class, () -> service.open(campaignId));
 
@@ -124,7 +156,7 @@ class CampaignServiceTest {
         when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
         when(repository.save(entity)).thenReturn(entity);
         CampaignServiceImpl service = new CampaignServiceImpl(
-                repository, mock(SellerSkuService.class), Clock.systemUTC());
+                repository, mock(SellerSkuService.class), Clock.systemUTC(), LIMITS);
 
         var response = service.close(sellerId, campaignId);
 
@@ -140,7 +172,7 @@ class CampaignServiceTest {
         Campaign entity = new Campaign(sellerId, "sku-1", CampaignStatus.CLOSED, 300, Instant.now());
         when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
         CampaignServiceImpl service = new CampaignServiceImpl(
-                repository, mock(SellerSkuService.class), Clock.systemUTC());
+                repository, mock(SellerSkuService.class), Clock.systemUTC(), LIMITS);
 
         var response = service.close(sellerId, campaignId);
 
@@ -156,7 +188,7 @@ class CampaignServiceTest {
         Campaign entity = new Campaign(ownerId, "sku-1", CampaignStatus.OPEN, 300, Instant.now());
         when(repository.findWithWriteLockByCampaignId(campaignId)).thenReturn(Optional.of(entity));
         CampaignServiceImpl service = new CampaignServiceImpl(
-                repository, mock(SellerSkuService.class), Clock.systemUTC());
+                repository, mock(SellerSkuService.class), Clock.systemUTC(), LIMITS);
 
         CampaignException exception = assertThrows(CampaignException.class,
                 () -> service.close(UUID.randomUUID(), campaignId));
@@ -173,7 +205,7 @@ class CampaignServiceTest {
         Campaign entity = new Campaign(sellerId, "sku-1", CampaignStatus.CLOSED, 300, Instant.now());
         when(repository.findForAdmission(campaignId)).thenReturn(Optional.of(entity));
         CampaignServiceImpl service = new CampaignServiceImpl(
-                repository, mock(SellerSkuService.class), Clock.systemUTC());
+                repository, mock(SellerSkuService.class), Clock.systemUTC(), LIMITS);
 
         assertEquals(Optional.empty(), service.findOpenForAdmission(campaignId, "sku-1"));
     }
@@ -183,7 +215,7 @@ class CampaignServiceTest {
         CampaignRepository campaignRepository = mock(CampaignRepository.class);
         UUID campaignId = UUID.randomUUID();
         when(campaignRepository.findById(campaignId)).thenReturn(Optional.empty());
-        CampaignServiceImpl service = new CampaignServiceImpl(campaignRepository, mock(SellerSkuService.class), Clock.systemUTC());
+        CampaignServiceImpl service = new CampaignServiceImpl(campaignRepository, mock(SellerSkuService.class), Clock.systemUTC(), LIMITS);
 
         CampaignException exception = assertThrows(CampaignException.class, () -> service.find(campaignId));
 

@@ -10,7 +10,7 @@ public final class AdmissionRequest {
     public record ConfigureSellerSkuPolicy(
             UUID sellerId,
             String skuId,
-            int maxActiveCheckouts) {
+            Integer maxActiveCheckouts) {
     }
 
     public record CreateCampaign(UUID sellerId, String skuId, Duration queueTicketTtl) {

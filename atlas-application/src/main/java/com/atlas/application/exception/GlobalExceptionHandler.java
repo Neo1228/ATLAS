@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -161,7 +163,8 @@ public class GlobalExceptionHandler {
             CannotCreateTransactionException.class,
             CannotGetJdbcConnectionException.class,
             QueryTimeoutException.class,
-            DataAccessResourceFailureException.class
+            DataAccessResourceFailureException.class,
+            PessimisticLockingFailureException.class
     })
     ResponseEntity<ProblemDetail> capacityUnavailable(Exception exception) {
         capacityFailures.warn(MDC.get("requestId"), exception);
@@ -170,6 +173,21 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfter))
                 .body(base.getBody());
+    }
+
+    /**
+     * PostgreSQL 잠금 대기 초과(55P03, {@code lock_timeout})와 교착(40P01)은 JdbcTemplate 경로에서
+     * {@link UncategorizedSQLException}으로 올라와 위 목록에 걸리지 않는다(JPA 경로는
+     * {@link PessimisticLockingFailureException}). 둘 다 트랜잭션이 롤백돼 같은 Idempotency-Key로
+     * 재시도해도 안전하므로 같은 503으로 알리고, 다른 SQL 오류는 500으로 둔다(ADR-0083).
+     */
+    @ExceptionHandler(UncategorizedSQLException.class)
+    ResponseEntity<ProblemDetail> uncategorizedSql(UncategorizedSQLException exception) {
+        String sqlState = exception.getSQLException() == null ? null : exception.getSQLException().getSQLState();
+        if ("55P03".equals(sqlState) || "40P01".equals(sqlState)) {
+            return capacityUnavailable(exception);
+        }
+        return internalError(exception);
     }
 
     /**

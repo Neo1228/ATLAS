@@ -38,7 +38,11 @@ spring:
     # 덮고 JPA/Hibernate 쿼리(@Query, 파생 쿼리, findWithLock 등)는 덮지 못한다.
     # statement_timeout 은 서버가 직접 끊으므로 두 경로 모두에 적용된다.
     # idle-in-transaction 상한은 커넥션을 쥔 채 멈춘 요청을 자동으로 회수한다.
-    url: ${ATLAS_DB_URL:jdbc:postgresql://localhost:5432/atlas?options=-c%20statement_timeout%3D30000%20-c%20idle_in_transaction_session_timeout%3D60000}
+    # lock_timeout 5초는 행 잠금(Seller-SKU admission counter, 재고 행 등) 대기를 statement_timeout 30초
+    # 전에 끊어, 잠금을 쥔 쪽이 멈췄을 때 커넥션 풀(10개)이 30초 동안 대기자로 차는 것을 막는다.
+    # 값 근거: 한 Seller-SKU에 join 30 스레드를 몰았을 때 지연 최대 1.9초(EXP-090, 공유 호스트)의 약 2.6배.
+    # 끊기면 트랜잭션이 롤백되고 503 + Retry-After로 알리며, 클라이언트가 같은 Idempotency-Key로 재시도한다(ADR-0083).
+    url: ${ATLAS_DB_URL:jdbc:postgresql://localhost:5432/atlas?options=-c%20statement_timeout%3D30000%20-c%20idle_in_transaction_session_timeout%3D60000%20-c%20lock_timeout%3D5000}
     username: ${ATLAS_DB_USER:atlas}
     password: ${ATLAS_DB_PASSWORD:atlas-local-only}
     hikari:
@@ -117,6 +121,16 @@ atlas:
     expiry-poll-interval: PT1S
     expiry-sweep-batch-size: ${ATLAS_ADMISSION_EXPIRY_SWEEP_BATCH_SIZE:100}
     expiry-sweep-time-budget: ${ATLAS_ADMISSION_EXPIRY_SWEEP_TIME_BUDGET:PT2S}
+    # Seller가 K(Seller-SKU별 동시 checkout slot 수)와 ticket TTL을 주지 않을 때의 기본값과 요청 값의 상한.
+    # 기본값은 구매자 행동을 가정한 합성 모형(EXP-086: 구매자 300명, 재고 60)에서 대기 p95 60초 이하,
+    # 대기 만료 손실 10% 이하, 시작 전 포기 slot 시간 25% 이하를 지키는 칸 중 접수가 같은 가장 작은 K와
+    # 그 K에서 가장 짧은 TTL인 K 50 x TTL 120초다(ADR-0083). 실제 구매자 분포가 아니므로 가정이며,
+    # 바꾸는 조건과 되돌리는 방법은 ADR-0083에 있다. 상한은 튜닝 값이 아니라 오입력과 남용으로 slot이 무제한이 되는 것을
+    # 막는 값이다(부하 스크립트 gate4.js의 K 1667, TTL 7200초를 허용하는 크기).
+    default-max-active-checkouts: ${ATLAS_ADMISSION_DEFAULT_MAX_ACTIVE_CHECKOUTS:50}
+    max-active-checkouts-limit: ${ATLAS_ADMISSION_MAX_ACTIVE_CHECKOUTS_LIMIT:10000}
+    default-ticket-ttl: ${ATLAS_ADMISSION_DEFAULT_TICKET_TTL:PT2M}
+    ticket-ttl-limit: ${ATLAS_ADMISSION_TICKET_TTL_LIMIT:PT2H}
   orders:
     expiry-poll-interval: PT1S
     expiry-sweep-batch-size: ${ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE:100}

@@ -29,6 +29,7 @@ import com.atlas.admission.repository.QueueRepository;
 import com.atlas.admission.repository.TicketRepository;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.model.CampaignStatus;
+import com.atlas.admission.service.AdmissionLimits;
 import com.atlas.admission.service.CampaignService;
 import com.atlas.catalog.exception.CatalogException;
 import com.atlas.catalog.model.ProductSalesChannel;
@@ -51,6 +52,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 
 class AdmissionServiceTest {
+    private static final AdmissionLimits LIMITS =
+            new AdmissionLimits(20, 100, Duration.ofMinutes(7), Duration.ofHours(2));
+
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final QueueRepository queueRepository = mock(QueueRepository.class);
     private final CampaignService campaigns = mock(CampaignService.class);
@@ -58,7 +62,7 @@ class AdmissionServiceTest {
     private final AdmissionPolicyRepository policies = mock(AdmissionPolicyRepository.class);
     private final AdmissionServiceImpl admission = new AdmissionServiceImpl(
             tickets, queueRepository, campaigns, policies, sellerSkus, Clock.systemUTC(),
-            mock(PlatformTransactionManager.class), 100, Duration.ofSeconds(2));
+            mock(PlatformTransactionManager.class), LIMITS, 100, Duration.ofSeconds(2));
     private final UUID sellerId = UUID.randomUUID();
     private final String skuId = "sku-1";
 
@@ -125,6 +129,25 @@ class AdmissionServiceTest {
 
         assertEquals(5, existing.getMaxActiveCheckouts());
         verify(policies).save(existing);
+    }
+
+    @Test
+    void configureWithoutKUsesConfiguredDefault() {
+        AdmissionPolicy existing = new AdmissionPolicy(sellerId, skuId, 2);
+        when(policies.findBySellerIdAndSkuId(sellerId, skuId)).thenReturn(Optional.of(existing));
+        when(queueRepository.lockCounter(sellerId, skuId)).thenReturn(true);
+
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, null));
+
+        assertEquals(20, existing.getMaxActiveCheckouts());
+    }
+
+    @Test
+    void configureRejectsKAboveLimitBeforeTouchingPolicy() {
+        assertThrows(AdmissionException.class, () -> admission.configureSellerSkuPolicy(
+                new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 101)));
+
+        verify(policies, never()).save(any());
     }
 
     @Test

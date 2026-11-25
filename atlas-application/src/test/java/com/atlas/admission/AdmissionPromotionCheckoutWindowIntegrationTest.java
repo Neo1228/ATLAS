@@ -1,11 +1,14 @@
 package com.atlas.admission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.catalog.dto.response.CatalogResponse;
 import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.admission.dto.response.AdmissionResponse;
 import com.atlas.admission.dto.request.AdmissionRequest;
+import com.atlas.admission.exception.AdmissionException;
+import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.model.CheckoutSlotReleaseReason;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.admission.repository.QueueRepository;
@@ -93,6 +96,32 @@ class AdmissionPromotionCheckoutWindowIntegrationTest extends PayPalIntegrationT
 
         assertThat(admission.find(queue.campaignId(), holder.ticketId()).status()).isEqualTo(TicketStatus.EXPIRED);
         assertPromotedWithFullCheckoutWindow(queue, waiter, joinExpiry);
+    }
+
+    /** 설정이 없을 때의 기본값(K 50, TTL 2분)과 상한(K 10,000, TTL 2시간)이 실제 DB 행에 적용되는지 확인한다(ADR-0083). */
+    @Test
+    void omittedKAndTicketTtlUseConfiguredDefaultsAndLimitsAreEnforced() {
+        CatalogResponse.Seller seller = sellers.createSeller();
+        CatalogResponse.Product product = products.createProduct(seller.sellerId(),
+                new ProductRequest.CreateProduct("admission defaults " + UUID.randomUUID(), "description"));
+        String skuId = "admission-defaults-" + UUID.randomUUID();
+        products.registerSku(seller.sellerId(), product.productId(), new ProductRequest.RegisterSellerSku(skuId, 100, 5));
+
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, null));
+        AdmissionResponse.Campaign campaign = campaigns.create(
+                new AdmissionRequest.CreateCampaign(seller.sellerId(), skuId, null));
+
+        Integer storedK = jdbc.queryForObject(
+                "SELECT max_active_checkouts FROM seller_sku_admission_policy WHERE seller_id = ? AND sku_id = ?",
+                Integer.class, seller.sellerId(), skuId);
+        assertThat(storedK).isEqualTo(50);
+        assertThat(campaigns.find(campaign.campaignId()).queueTicketTtl()).isEqualTo(Duration.ofMinutes(2));
+        assertThatThrownBy(() -> admission.configureSellerSkuPolicy(
+                new AdmissionRequest.ConfigureSellerSkuPolicy(seller.sellerId(), skuId, 10_001)))
+                .isInstanceOf(AdmissionException.class);
+        assertThatThrownBy(() -> campaigns.create(new AdmissionRequest.CreateCampaign(
+                seller.sellerId(), skuId, Duration.ofHours(2).plusSeconds(1))))
+                .isInstanceOf(CampaignException.class);
     }
 
     private void assertPromotedWithFullCheckoutWindow(Queue queue, AdmissionResponse.QueueTicket waiter, Instant joinExpiry) {

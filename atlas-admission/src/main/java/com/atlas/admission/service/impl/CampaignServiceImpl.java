@@ -6,6 +6,7 @@ import com.atlas.admission.exception.CampaignException;
 import com.atlas.admission.persistence.entity.Campaign;
 import com.atlas.admission.repository.CampaignRepository;
 import com.atlas.admission.model.CampaignStatus;
+import com.atlas.admission.service.AdmissionLimits;
 import com.atlas.admission.service.CampaignService;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.service.SellerSkuService;
@@ -25,14 +26,14 @@ public class CampaignServiceImpl implements CampaignService {
     private final CampaignRepository campaigns;
     private final SellerSkuService sellerSkus;
     private final Clock clock;
+    private final AdmissionLimits limits;
 
     @Override
     @Transactional
     public AdmissionResponse.Campaign create(AdmissionRequest.CreateCampaign request) {
         if (request == null || request.sellerId() == null || request.skuId() == null
                 || request.skuId().isBlank() || request.skuId().length() > 128
-                || request.queueTicketTtl() == null || request.queueTicketTtl().isZero()
-                || request.queueTicketTtl().isNegative() || request.queueTicketTtl().toSeconds() <= 0) {
+                || !limits.allowsTicketTtl(limits.resolveTicketTtl(request.queueTicketTtl()))) {
             throw new CampaignException(CampaignException.Code.INVALID_CONFIGURATION,
                     "Invalid campaign configuration");
         }
@@ -43,7 +44,7 @@ public class CampaignServiceImpl implements CampaignService {
         }
 
         Campaign entity = campaigns.save(new Campaign(request.sellerId(), request.skuId(),
-                CampaignStatus.CLOSED, request.queueTicketTtl().toSeconds(), clock.instant()));
+                CampaignStatus.CLOSED, limits.resolveTicketTtl(request.queueTicketTtl()).toSeconds(), clock.instant()));
         return toResponse(entity);
     }
 
