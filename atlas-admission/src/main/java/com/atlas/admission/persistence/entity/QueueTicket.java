@@ -70,6 +70,10 @@ public class QueueTicket {
     @Getter
     private boolean checkoutSlotHeld;
 
+    /** checkout이 시작돼 주문이 만들어진 시각. 값이 있는 ticket은 주문 조회가 읽으므로 정리 대상이 아니다(ADR-0088). */
+    @Column(name = "checkout_started_at")
+    private Instant checkoutStartedAt;
+
     protected QueueTicket() { }
 
     public QueueTicket(UUID campaignId, UUID sellerId, String skuId, String buyerRef, String idempotencyKey,

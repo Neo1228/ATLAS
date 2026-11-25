@@ -31,5 +31,7 @@ class AdmissionLimitsDefaultsTest {
                 .isEqualTo(Duration.parse(AdmissionLimits.DEFAULT_TICKET_TTL));
         assertThat(Duration.parse(environment.getProperty("atlas.admission.ticket-ttl-limit")))
                 .isEqualTo(Duration.parse(AdmissionLimits.TICKET_TTL_LIMIT));
+        assertThat(environment.getProperty("atlas.admission.max-live-tickets-per-buyer", Integer.class))
+                .isEqualTo(AdmissionLimits.MAX_LIVE_TICKETS_PER_BUYER);
     }
 }

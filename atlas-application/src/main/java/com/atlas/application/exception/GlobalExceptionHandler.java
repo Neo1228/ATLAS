@@ -91,7 +91,7 @@ public class GlobalExceptionHandler {
         if (exception instanceof AdmissionException admission) {
             return switch (admission.code()) {
                 case TICKET_NOT_FOUND -> response(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND", admission.getMessage());
-                case CHECKOUT_SLOT_UNAVAILABLE, IDEMPOTENCY_PAYLOAD_MISMATCH ->
+                case CHECKOUT_SLOT_UNAVAILABLE, IDEMPOTENCY_PAYLOAD_MISMATCH, LIVE_TICKET_LIMIT_REACHED ->
                         response(HttpStatus.CONFLICT, "CONFLICT", admission.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", admission.getMessage());
             };

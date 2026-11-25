@@ -9,18 +9,18 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 class AdmissionLimitsTest {
-    private final AdmissionLimits limits = new AdmissionLimits(20, 100, Duration.ofMinutes(5), Duration.ofHours(2));
+    private final AdmissionLimits limits = new AdmissionLimits(20, 100, Duration.ofMinutes(5), Duration.ofHours(2), 1);
 
     @Test
     void rejectsDefaultsOutsideTheirLimits() {
         assertThrows(IllegalArgumentException.class,
-                () -> new AdmissionLimits(0, 100, Duration.ofMinutes(5), Duration.ofHours(2)));
+                () -> new AdmissionLimits(0, 100, Duration.ofMinutes(5), Duration.ofHours(2), 1));
         assertThrows(IllegalArgumentException.class,
-                () -> new AdmissionLimits(101, 100, Duration.ofMinutes(5), Duration.ofHours(2)));
+                () -> new AdmissionLimits(101, 100, Duration.ofMinutes(5), Duration.ofHours(2), 1));
         assertThrows(IllegalArgumentException.class,
-                () -> new AdmissionLimits(20, 100, Duration.ZERO, Duration.ofHours(2)));
+                () -> new AdmissionLimits(20, 100, Duration.ZERO, Duration.ofHours(2), 1));
         assertThrows(IllegalArgumentException.class,
-                () -> new AdmissionLimits(20, 100, Duration.ofHours(3), Duration.ofHours(2)));
+                () -> new AdmissionLimits(20, 100, Duration.ofHours(3), Duration.ofHours(2), 1));
     }
 
     @Test

@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 
 class CampaignServiceTest {
     private static final AdmissionLimits LIMITS =
-            new AdmissionLimits(20, 100, Duration.ofMinutes(7), Duration.ofHours(2));
+            new AdmissionLimits(20, 100, Duration.ofMinutes(7), Duration.ofHours(2), 1);
 
 
     @Test

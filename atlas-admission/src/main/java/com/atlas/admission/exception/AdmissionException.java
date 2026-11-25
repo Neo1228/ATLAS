@@ -9,6 +9,7 @@ public final class AdmissionException extends RuntimeException {
         TICKET_NOT_FOUND,
         CHECKOUT_SLOT_UNAVAILABLE,
         IDEMPOTENCY_PAYLOAD_MISMATCH,
+        LIVE_TICKET_LIMIT_REACHED,
         INVALID_REQUEST
     }
 

@@ -102,6 +102,44 @@ public class QueueRepository {
         return sequence;
     }
 
+    /**
+     * 한 구매자가 같은 Seller-SKU에서 가진 live ticket 수. 상태 목록을 리터럴로 쓰는 이유는 바인드 파라미터로는
+     * planner가 부분 인덱스({@code admission_ticket_live_buyer_idx})의 조건을 증명하지 못하기 때문이다.
+     * counter 잠금을 쥔 transaction 안에서만 호출해야 검사와 삽입 사이에 같은 Seller-SKU의 다른 join이 끼어들지 못한다.
+     */
+    public long countLiveTickets(UUID sellerId, String skuId, String buyerRef) {
+        entityManager.flush();
+        Long count = jdbc.queryForObject("SELECT count(*) FROM admission_ticket WHERE seller_id = ? AND sku_id = ? "
+                + "AND buyer_ref = ? AND status IN ('WAITING', 'CHECKOUT_ACTIVE', 'CHECKOUT_STARTED')",
+                Long.class, sellerId, skuId, buyerRef);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * 주문이 가리키지 않는 오래된 종료 ticket을 지운다. 후보는 {@code admission_ticket_tombstone_idx} 순서(created_at)로
+     * 최대 limit개를 읽고(checkout이 시작된 ticket은 인덱스에 없어 건너뛴다. 영영 못 지우는 행이 앞쪽에 쌓여도 읽기가 늘지 않는다), {@code FOR UPDATE SKIP LOCKED}라 다른 인스턴스의 같은 작업을 기다리지 않는다.
+     * {@code NOT EXISTS (purchase_order)}는 마이그레이션 전에 시작된
+     * checkout까지 지키는 안전망이며 다른 모듈 소유 테이블을 SQL에서만 참조한다(Java 의존 없음, ADR-0088).
+     */
+    public int purgeTombstones(Instant createdBefore, int limit) {
+        if (limit < 1 || limit > 5_000) {
+            throw new IllegalArgumentException("purge limit must be between 1 and 5000");
+        }
+        entityManager.flush();
+        int deleted = jdbc.update("""
+                DELETE FROM admission_ticket
+                WHERE ticket_id IN (
+                    SELECT t.ticket_id FROM admission_ticket t
+                    WHERE t.status IN ('EXPIRED', 'CHECKOUT_FAILED') AND t.checkout_started_at IS NULL AND t.created_at < ?
+                      AND NOT EXISTS (SELECT 1 FROM purchase_order o WHERE o.ticket_id = t.ticket_id)
+                    ORDER BY t.created_at, t.ticket_id
+                    LIMIT ?
+                    FOR UPDATE OF t SKIP LOCKED)
+                """, Timestamp.from(createdBefore), limit);
+        entityManager.clear();
+        return deleted;
+    }
+
     public int expireDueTicketsForSellerSku(UUID sellerId, String skuId, Instant now) {
         entityManager.flush();
         int changed = jdbc.update("UPDATE admission_ticket SET status = 'EXPIRED', checkout_slot_held = false WHERE seller_id = ? AND sku_id = ? AND status IN ('WAITING', 'CHECKOUT_ACTIVE') AND expires_at <= ?", sellerId, skuId, Timestamp.from(now));

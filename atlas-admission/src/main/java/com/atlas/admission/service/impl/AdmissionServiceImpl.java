@@ -130,6 +130,12 @@ public class AdmissionServiceImpl implements AdmissionService {
             requireSamePayload(concurrentPrior, request);
             return requireTicket(request.campaignId(), concurrentPrior.ticketId());
         }
+        // 같은 구매자의 live ticket 수는 counter 잠금 안에서 센다: 이 Seller-SKU의 다른 join이 검사와 삽입 사이에 끼어들 수 없다.
+        if (limits.maxLiveTicketsPerBuyer() > 0 && queueRepository.countLiveTickets(
+                campaign.sellerId(), campaign.skuId(), request.buyerRef()) >= limits.maxLiveTicketsPerBuyer()) {
+            throw new AdmissionException(AdmissionException.Code.LIVE_TICKET_LIMIT_REACHED,
+                    "Buyer already holds a live ticket for this Seller-SKU: " + request.skuId());
+        }
         long sequence = queueRepository.incrementSequence(campaign.sellerId(), campaign.skuId());
         long active = tickets.countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(campaign.sellerId(), campaign.skuId());
         boolean slot = active < policy.getMaxActiveCheckouts();
@@ -175,6 +181,12 @@ public class AdmissionServiceImpl implements AdmissionService {
 
     @Override
     @Transactional
+    public int purgeTombstones(Duration retention, int batchSize) {
+        return queueRepository.purgeTombstones(clock.instant().minus(retention), batchSize);
+    }
+
+    @Override
+    @Transactional
     public AdmissionResponse.QueueTicket requireCheckoutSlot(UUID campaignId, UUID ticketId) {
         requireTicketKey(campaignId, ticketId);
         AdmissionResponse.QueueTicket ticket = requireTicket(campaignId, ticketId);
@@ -196,7 +208,7 @@ public class AdmissionServiceImpl implements AdmissionService {
         expireDueTicketsForSellerSku(ticket.sellerId(), ticket.skuId(), clock.instant());
         ticket = requireTicket(campaignId, ticketId);
         if (ticket.status() == TicketStatus.CHECKOUT_ACTIVE && ticket.checkoutSlotHeld()) {
-            tickets.updateStatus(campaignId, ticketId, TicketStatus.CHECKOUT_STARTED);
+            tickets.markCheckoutStarted(campaignId, ticketId, TicketStatus.CHECKOUT_STARTED, clock.instant());
         } else if (!(ticket.status() == TicketStatus.CHECKOUT_STARTED && ticket.checkoutSlotHeld())) {
             throw new AdmissionException(AdmissionException.Code.CHECKOUT_SLOT_UNAVAILABLE, "Ticket does not hold an available checkout slot: " + campaignId + "/" + ticketId);
         }
