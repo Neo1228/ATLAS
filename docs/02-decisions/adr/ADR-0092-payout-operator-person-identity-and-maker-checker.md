@@ -24,7 +24,7 @@
    위반은 SQLSTATE 23514와 `..._separation_of_duties` 이름으로 올라오고 `GlobalExceptionHandler`가 **403 `SEPARATION_OF_DUTIES`**로 응답한다. 트랜잭션은 롤백돼 상태 전이·outbox·감사 행이 하나도 남지 않는다.
 3. **동시 승인은 새 잠금 없이 기존 Seller 지급 잠금으로 직렬화된다**(`SettlementPayoutServiceImpl.approve`의 `lockSellerPayouts`). 다만 진 쪽이 `PAYOUT_APPROVED` 행을 한 번 더 남기는 기존 결함을 재현해(기준 커밋 100라운드 중 100라운드가 승인 행 2건) 고쳤다: 승인 직전 outbox가 이미 있으면 `PAYOUT_APPROVAL_REPLAYED`를 남긴다. 지급당 `PAYOUT_APPROVED`는 부분 unique 인덱스로 DB가 한 건으로 제한한다.
 4. **actor 모양 규칙.** trigger는 actor가 UUID 모양(= account id)일 때만 규칙을 적용한다. rollback 모드의 단일 자격 증명 username은 UUID가 아니라 규칙이 적용되지 않는다. 이는 의도이고, "사람이 아닌 actor에는 이 규칙이 없다"는 한계다.
-5. **rollback flag:** `atlas.settlement.payout.operator.identity=account`(기본) | `shared-credential`. 후자는 기존 HTTP Basic 단일 자격 증명 chain을 그대로 쓴다(WARN 로그). migration은 새 표·trigger·인덱스만 더하고 기존 행·열을 바꾸지 않으며, 되돌림 SQL이 `load-tests/operator-separation/undo.sql`에 있다.
+5. **rollback flag:** `atlas.settlement.payout.operator.identity=account`(기본) | `shared-credential`. 후자는 기존 HTTP Basic 단일 자격 증명 chain을 그대로 쓴다(WARN 로그). migration은 새 표·trigger·인덱스만 더하고 기존 행·열을 바꾸지 않으며, 되돌림 SQL(EXP-096 "삭제한 파일의 내용"의 `undo.sql`)이 있다.
 6. **첫 운영자 부여(bootstrap)는 DB 권한자의 INSERT다**(`docs/operations-guide.md`). 앱에 부여 API를 두지 않는다. 표에 행이 없으면 운영자 경로는 모두 403이라 단일 공유 자격 증명이 영구 backdoor로 남지 않는다. 공유 자격 증명은 flag를 명시했을 때만 켜진다.
 
 ## 쌍별 4-eyes 판단 (상태를 바꾸는 운영자 조치를 모두 나열)
@@ -69,8 +69,8 @@
 ## 되돌리기
 
 1. flag: `ATLAS_SETTLEMENT_PAYOUT_OPERATOR_IDENTITY=shared-credential`로 재기동하면 기존 동작이다(통합 테스트로 확인).
-2. migration: V5는 추가만 한다. 되돌림은 `undo.sql`(DROP INDEX, TRIGGER 2, FUNCTION 2, TABLE). 실행해 기존 행 해시가 V5 전·되돌림 후 같음을 확인했다(EXP-096).
-3. 코드만 되돌리고 migration은 두면: 기준 커밋의 코드는 동시 승인에서 진 쪽이 `PAYOUT_APPROVED`를 한 번 더 쓰려다 부분 unique 인덱스에 걸려 오류가 난다(중복 행 대신 실패). 안전한 방향이지만 시끄러우므로 코드를 되돌릴 때는 `undo.sql`도 함께 실행한다. 기준 커밋의 Java 코드를 V5 스키마에서 실행해 보지는 않았다. SQL 수준에서 기존 actor 문자열의 감사 행 INSERT가 V5 이후에도 통과함만 확인했다.
+2. migration: V5는 추가만 한다. 되돌림은 EXP-096의 `undo.sql`(DROP INDEX, TRIGGER 2, FUNCTION 2, TABLE). 실행해 기존 행 해시가 V5 전·되돌림 후 같음을 확인했다(EXP-096).
+3. 코드만 되돌리고 migration은 두면: 기준 커밋의 코드는 동시 승인에서 진 쪽이 `PAYOUT_APPROVED`를 한 번 더 쓰려다 부분 unique 인덱스에 걸려 오류가 난다(중복 행 대신 실패). 안전한 방향이지만 시끄러우므로 코드를 되돌릴 때는 `undo.sql`(EXP-096)도 함께 실행한다. 기준 커밋의 Java 코드를 V5 스키마에서 실행해 보지는 않았다. SQL 수준에서 기존 actor 문자열의 감사 행 INSERT가 V5 이후에도 통과함만 확인했다.
 
 ## 배포 전 점검 (사전 부검에서 나온 항목)
 

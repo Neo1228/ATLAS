@@ -110,7 +110,7 @@ Seller 지급 경로의 운영자 인증이 설정값 하나(username, password)
 
 ## 계획한 실험
 
-- E1 SQL 수준 비교(H1~H3, H10): `load-tests/operator-separation/run.sh` 한 줄. 라벨 `atlasexp=h7` 컨테이너 1개.
+- E1 SQL 수준 비교(H1~H3, H10): SQL 하네스(이 PR에는 넣지 않았다. 내용은 "삭제한 파일의 내용" 절에 전부 있다) 한 줄 실행. 라벨 `atlasexp=h7` 컨테이너 1개.
 - E2 앱 수준 통합 테스트(H1, H4~H9): PostgreSQL Testcontainers. 같은 사람 거절, 다른 사람 성공, 동시 두 사람, 재전송, 본문 actor 무시, 음성 대조, 변이 검증.
 - E3 기준 커밋 대조(통제 a): 기준 커밋 worktree에서 같은 자격 증명으로 검증·승인이 모두 성공하고 actor가 같음을 기록.
 
@@ -258,7 +258,7 @@ M7 생존은 유용했다. 앱 수준 테스트에는 "프로필이 다음 버�
 | service 검사와 조건부 SQL은 규칙을 모르는 경로를 막지 못한다 | E1 x3, 200/200 | 확인(로컬, SQL 모형) |
 | 감사 actor는 항상 인증된 principal(account id)이다 | E2 H6, 본문 actor 무시 | 확인(로컬, n=1 결정적 테스트) |
 | 운영자 권한 해제와 계정 정지가 같은 토큰에 바로 적용된다 | E2 H8 | 확인(로컬) |
-| V5는 additive이고 `undo.sql`로 되돌릴 수 있다 | 되돌리기 훈련, 행 해시 동일 | 확인(로컬, SQL 수준) |
+| V5는 additive이고 아래 "삭제한 파일의 내용"의 되돌림 SQL로 되돌릴 수 있다 | 되돌리기 훈련, 행 해시 동일 | 확인(로컬, SQL 수준) |
 | rollback flag가 단일 자격 증명 모드를 되살린다 | 보안 슬라이스 테스트 2건 + actor 규칙 테스트 | 로컬만(앱 전체 기동은 하지 않음) |
 | 이 신원 모델이 MFA를 **강제**한다 | TOTP 등록만 요구, 로그인 시 사용은 검사하지 않음 | 확인하지 못함(부분만) |
 | Live 지급에 충분하다 | ADR-0078의 다른 gate가 미결 | 확인하지 못함 |
@@ -268,9 +268,11 @@ M7 생존은 유용했다. 앱 수준 테스트에는 "프로필이 다음 버�
 
 ## 재현
 
+SQL 하네스(E1, 되돌리기 훈련, 비용·계획)는 저장소에 넣지 않았다. 아래 "삭제한 파일의 내용" 절의 파일 5개를 한 폴더(예: `/tmp/exp096`)에 같은 이름으로 만들고 실행한다. 선행 조건은 Docker, `psql`이 든 `postgres:18.6` 이미지, 이 저장소의 `atlas-application/src/main/resources/db/migration/V*.sql`이다. `run.sh`는 저장소 루트를 `$HERE/../..`로 찾으므로 저장소 안의 `load-tests/operator-separation/`에 두거나 `ROOT`를 고쳐 쓴다.
+
 ```sh
-# E1 SQL 수준(컨테이너 1개, 약 1~2분). 원본 출력은 /tmp/exp096-out 에 쓰고 저장소에는 넣지 않는다.
-N=200 TAG=h7 load-tests/operator-separation/run.sh
+# E1 SQL 수준(컨테이너 1개, 약 1~2분). 원본 출력은 $OUT(기본 /tmp/exp096-out)에 쓴다.
+N=200 TAG=h7 OUT=/tmp/exp096-out ./run.sh
 
 # E2 앱 수준(Testcontainers). H7_ROUNDS로 동시 승인 라운드 수를 올린다(기본 3).
 H7_ROUNDS=100 ./gradlew --no-build-cache :atlas-application:cleanTest :atlas-application:test \
@@ -290,6 +292,364 @@ E3(기준 커밋 대조)의 탐침과 변이 검증 스크립트는 저장소에
 - 명령: `H7_ROUNDS=100 ./gradlew --no-daemon --no-build-cache :atlas-application:cleanTest :atlas-application:test --tests <탐침 클래스>`. 처음 두 번은 Gradle 빌드 캐시(`FROM-CACHE`)가 이전 결과를 재사용해 라운드 수가 반영되지 않았다. 위 결과는 `--no-build-cache`로 다시 돌린 것이다.
 - 출력 한 줄(n=100): `rounds=100 sameCredentialVerifyAndApproveAccepted=100 verifierEqualsApproverActorRounds=100 approvedRowsTotal=200 roundsWithDuplicateApprovalRows=100 outboxRows=100`. 앞선 n=3 실행은 `approvedRowsTotal=6 roundsWithDuplicateApprovalRows=3 outboxRows=3`.
 
+### SQL 하네스 파일 5개의 내용과 무엇을 확인하는가 (`load-tests/operator-separation/`, 이 PR에서 제외)
+
+실행 흐름(`run.sh`): (1) 컨테이너 `postgres:18.6`을 라벨 `atlasexp=$TAG`로 띄운다(종료 시 `trap`으로 삭제). (2) **A. 되돌리기 훈련**: V1~V4만 적용한 DB `pre`에 `fixtures.sql`과 지급 50건·기존 actor `legacy-operator`의 승인 감사 50행을 넣고 관련 표 행 해시를 잡는다 → V5 적용 → 해시 비교 → 기존 actor로 승인 감사 INSERT가 통과하는지 → `undo.sql` 실행 → 남은 객체 수와 해시 비교 → V5 재적용 시 trigger 수. (3) **B. 강제 수단 비교**: V1~V5를 적용한 DB `exp`에 `fixtures.sql`+`scenarios.sql`을 넣고 `CALL exp_run('x0'..'x3', $N)`을 실행해 `exp_result`를 TSV로 낸다. (4) **C. 비용과 계획**: 같은 DB에서 `timing.sql`을 실행한다. 환경 변수는 `N`(반복, 기본 200), `TAG`(기본 `h7`), `OUT`(출력 폴더).
+
+| 파일 | 목적 | 입력 | 기대 결과(실제 결과는 위 결과 절) |
+|---|---|---|---|
+| `fixtures.sql` | `exp_seed(bound_verifier, current_verifier)`: 프로필 v3(ACTIVE, 현재 행 `verified_by` = `current_verifier`), v3의 `PROFILE_VERIFIED` 감사 행(actor = `bound_verifier`), 그 v3에 묶인 outbox가 있는 지급을 실제 V1 표에 만든다 | 두 actor 문자열 | seller, payout id를 돌려준다 |
+| `scenarios.sql` | 변형 5종(D0, S, C, T, N)을 같은 시나리오 4종에서 비교한다. 변형은 각각 `exp_action_<변형>` 표(실제 감사 표의 `LIKE` 복사)에 쓴다. `exp_try`가 시도 하나를 실행하고 `accepted`·`rejected`·`error`를 돌려주며 `exp_run`이 n회 반복·집계한다. 변형 실행 순서는 반복마다 무작위, 시도마다 새 데이터, 승인 트랜잭션은 dblink 연결 `a`, 프로필 이동은 연결 `b`로 순서를 결정적으로 고정한다 | `exp_run(시나리오, n)` | x0: 전 변형 통과(과하게 거절하지 않음). x1: D0만 통과. x2: D0, N만 통과. x3: D0, S, C만 통과 |
+| `timing.sql` | 다른 Seller 20,000명의 프로필 감사 행 200,000개를 `session_replication_role = replica`로 FK 없이 채운 뒤 trigger 조회의 `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)`와, D0·T 각 3,000건 INSERT 시간(순서 무작위)의 최소·p50·p95·최대를 낸다 | 없음 | 계획에 전체 스캔 없음, INSERT 시간은 같은 자릿수 |
+| `undo.sql` | V5가 만든 것만 지운다: 부분 unique 인덱스, 지급 운영자 감사 trigger와 함수, 프로필 감사 trigger와 함수, `payout_operator_account` 표. 기존 표·행·열은 건드리지 않으므로 되돌림 뒤 관련 표 행 해시가 V5 전과 같아야 한다 | 없음 | trigger, 함수, 표, 인덱스 0개 |
+| `run.sh` | 위 흐름 전체와 집계 출력(`migration-drill.tsv`, `enforcement-comparison.tsv`, `trigger-cost-and-plan.txt`, `environment.txt`) | `N`, `TAG`, `OUT` | |
+
+시나리오별 입력과 기대 결과(n=200, 변형별):
+
+| 시나리오 | 입력(검증자 / 승인자) | 의미 | D0 | S | C | T | N |
+|---|---|---|---|---|---|---|---|
+| x0 | 묶인 버전의 검증자 A, 현재 행 A / 승인자 C(다른 사람) | 정당한 승인이 과하게 거절되지 않는가 | 통과 | 통과 | 통과 | 통과 | 통과 |
+| x1 | 묶인 검증자 A, 현재 행 A / 승인자 A | 같은 사람 | 통과(위반) | 거절 | 거절 | 거절 | 거절 |
+| x2 | v3 검증자 B, 현재 행 B / 승인자 B. 승인 트랜잭션이 프로필을 읽은 뒤 다른 연결이 프로필을 v4(`PENDING_REVIEW`)→v5(`ACTIVE`, 검증자 A)로 넘긴다. outbox는 v3 그대로 | 승인 도중 프로필 변경(TOCTOU). 승인자 B는 v3의 검증자다 | 통과(위반) | 거절 | 거절 | 거절 | 통과(위반, 현재 행의 검증자 A만 봄) |
+| x3 | 묶인 검증자 B / 승인자 B, **규칙을 모르는 경로**(S, C의 클라이언트 검사를 거치지 않는 직접 INSERT) | 우회 경로 | 통과(위반) | 통과(위반) | 통과(위반) | 거절 | 거절 |
+
+변형 정의: D0 규칙 없음. S 버전에 묶인 검증자를 별도 문장으로 조회해 같으면 INSERT를 하지 않음(dblink 연결 `a`). C `INSERT ... SELECT ... WHERE NOT (EXISTS 묶인 검증자 = actor)`. T V5의 `enforce_payout_operator_separation()` trigger를 그대로 `exp_action_t`에 붙임. N "그 지급 Seller의 현재 `seller_payout_profile.verified_by` = actor"만 보는 trigger(`exp_enforce_current_row`).
+
+아래는 파일 내용 그대로다(주석 포함).
+
+`fixtures.sql`
+
+```sql
+-- EXP-096 고정 데이터. 실제 V1 표에 프로필·지급·outbox를 한 벌 만든다(시나리오와 되돌림 훈련이 함께 쓴다).
+-- 고정 데이터: 프로필 v3(ACTIVE, 현재 행 verified_by = current_verifier), v3의 PROFILE_VERIFIED 행(actor = bound_verifier),
+-- 그 버전에 묶인 outbox가 있는 지급.
+CREATE OR REPLACE FUNCTION exp_seed(bound_verifier text, current_verifier text, OUT seller uuid, OUT payout uuid)
+LANGUAGE plpgsql AS $$
+DECLARE
+    account uuid := gen_random_uuid();
+BEGIN
+    seller := gen_random_uuid();
+    payout := gen_random_uuid();
+    INSERT INTO seller(seller_id) VALUES (seller);
+    INSERT INTO user_account(account_id, email, password_hash, email_verified_at)
+        VALUES (account, account || '@exp.test', 'h', now());
+    INSERT INTO seller_account(account_id, seller_id) VALUES (account, seller);
+    INSERT INTO seller_payout_profile(seller_id, recipient_account_id, country_code, payout_currency, status,
+        profile_version, created_at, updated_at, verified_at, verified_by)
+        VALUES (seller, account, 'US', 'USD', 'ACTIVE', 3, now(), now(), now(), current_verifier);
+    INSERT INTO seller_payout_profile_action(seller_id, profile_version, action, idempotency_key,
+        request_facts_sha256, actor, reason, created_at)
+        VALUES (seller, 3, 'PROFILE_VERIFIED', 'v3-' || seller, repeat('0', 64), bound_verifier, 'case', now());
+    INSERT INTO settlement_payout(payout_id, seller_id, period_start, period_end, amount_won, state,
+        idempotency_key, requested_at, updated_at)
+        VALUES (payout, seller, now() - interval '1 day', now() + interval '1 day', 1000, 'APPROVED',
+        'exp-' || payout, now(), now());
+    INSERT INTO settlement_payout_dispatch_outbox(payout_id, profile_version, recipient_email_ciphertext,
+        recipient_country_code, requested_amount_won, provider_amount_minor, fx_rate_won_per_usd, fx_source,
+        fx_as_of_date, provider_debit_book_value_won, payout_fx_rounding_expense_won, sender_batch_id,
+        sender_item_id, paypal_request_id, request_payload_sha256, status, available_at, first_enqueued_at,
+        created_at, updated_at)
+        VALUES (payout, 3, 'x', 'US', 1000, 100, 1000, 'exp', current_date, 1000, 0, 'b-' || payout,
+        'i-' || payout, 'r-' || payout, repeat('a', 64), 'PENDING', now(), now(), now(), now());
+END $$;
+```
+
+`scenarios.sql`
+
+```sql
+-- EXP-096 E1: 승인자 ≠ 검증자 규칙의 강제 수단 비교(SQL 수준).
+-- 실행: load-tests/operator-separation/run.sh (컨테이너를 만들고 migration을 적용한 뒤 이 파일을 실행한다).
+--
+-- 변형(variant)별로 감사 행 표를 따로 만들어 같은 고정 데이터(실제 V1 표)를 읽게 한다.
+--   d0 규칙 없음(음성 대조)
+--   s  service 검사: 버전에 묶인 검증자를 읽고(별도 문장), 다르면 INSERT
+--   c  조건부 SQL: INSERT ... SELECT ... WHERE NOT EXISTS (버전에 묶인 검증자 = actor)
+--   t  DB trigger: V5가 만든 enforce_payout_operator_separation() 그대로
+--   n  "현재 profile 행의 verified_by" 를 읽는 trigger(음성 대조: 규칙이 읽을 값을 잘못 고른 경우)
+--
+-- 시나리오(scenario)
+--   x0 정당한 승인(검증자와 다른 사람)         기대: 전 변형 통과(규칙이 과하게 거절하지 않음)
+--   x1 같은 사람(검증자 = 승인자)              기대: d0만 통과
+--   x2 승인 트랜잭션 도중 프로필이 다음 버전으로 넘어감. 승인자는 outbox에 묶인 버전의 검증자  기대: d0, n 통과(위반)
+--   x3 규칙을 모르는 경로의 직접 INSERT(검증자 = 승인자)  기대: d0, s, c 통과(위반), t, n 거절
+-- 승인 트랜잭션은 dblink 연결 a, 프로필 이동은 연결 b이고 한 세션 안에서 순서를 결정적으로 고정한다.
+\set ON_ERROR_STOP on
+\timing off
+CREATE EXTENSION IF NOT EXISTS dblink;
+SELECT dblink_connect('a', format('dbname=%s user=%s', current_database(), current_user));
+SELECT dblink_connect('b', format('dbname=%s user=%s', current_database(), current_user));
+
+DROP TABLE IF EXISTS exp_result;
+CREATE TABLE exp_result (
+    scenario text NOT NULL, variant text NOT NULL, accepted int NOT NULL DEFAULT 0,
+    rejected_by_rule int NOT NULL DEFAULT 0, other_error int NOT NULL DEFAULT 0, n int NOT NULL DEFAULT 0,
+    PRIMARY KEY (scenario, variant));
+
+DO $$
+DECLARE v text;
+BEGIN
+    FOREACH v IN ARRAY ARRAY['d0', 's', 'c', 't', 'n'] LOOP
+        EXECUTE format('DROP TABLE IF EXISTS exp_action_%s', v);
+        EXECUTE format('CREATE TABLE exp_action_%s (LIKE settlement_payout_operator_action INCLUDING DEFAULTS)', v);
+    END LOOP;
+END $$;
+
+CREATE TRIGGER exp_t BEFORE INSERT ON exp_action_t
+    FOR EACH ROW EXECUTE FUNCTION enforce_payout_operator_separation();
+
+CREATE OR REPLACE FUNCTION exp_enforce_current_row() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.actor !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN NEW; END IF;
+    IF NEW.action IN ('PAYOUT_APPROVED', 'PAYOUT_APPROVAL_REPLAYED') AND EXISTS (
+        SELECT 1 FROM settlement_payout payout
+        JOIN seller_payout_profile profile ON profile.seller_id = payout.seller_id
+        WHERE payout.payout_id = NEW.payout_id AND profile.verified_by = NEW.actor) THEN
+        RAISE EXCEPTION 'exp_n_separation_of_duties' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER exp_n BEFORE INSERT ON exp_action_n
+    FOR EACH ROW EXECUTE FUNCTION exp_enforce_current_row();
+
+-- 한 시도를 한 변형에서 실행하고 'accepted' / 'rejected' / 'error' 중 하나를 돌려준다.
+-- client_path=true 이면 s, c 변형은 자기 검사를 거치고, false 이면 규칙을 모르는 경로의 직접 INSERT 다.
+CREATE OR REPLACE FUNCTION exp_try(variant text, payout uuid, actor text, client_path boolean) RETURNS text
+LANGUAGE plpgsql AS $$
+DECLARE
+    bound_match text := format($q$SELECT EXISTS (SELECT 1 FROM settlement_payout p
+        JOIN settlement_payout_dispatch_outbox o ON o.payout_id = p.payout_id
+        JOIN seller_payout_profile_action v ON v.seller_id = p.seller_id AND v.profile_version = o.profile_version
+            AND v.action = 'PROFILE_VERIFIED'
+        WHERE p.payout_id = %L AND v.actor = %L)$q$, payout, actor);
+    plain text := format($q$INSERT INTO exp_action_%s(payout_id, idempotency_key, action, actor, reason, created_at)
+        VALUES (%L, %L, 'PAYOUT_APPROVED', %L, 'exp', now())$q$, variant, payout, gen_random_uuid()::text, actor);
+    conditional text := format($q$INSERT INTO exp_action_c(payout_id, idempotency_key, action, actor, reason, created_at)
+        SELECT %L, %L, 'PAYOUT_APPROVED', %L, 'exp', now() WHERE NOT (%s)$q$, payout, gen_random_uuid()::text, actor,
+        regexp_replace(bound_match, '^SELECT ', ''));
+    matched boolean;
+    status text;
+BEGIN
+    IF client_path AND variant = 's' THEN
+        SELECT m INTO matched FROM dblink('a', bound_match) AS t(m boolean);
+        IF matched THEN RETURN 'rejected'; END IF;
+        PERFORM dblink_exec('a', plain);
+    ELSIF client_path AND variant = 'c' THEN
+        status := dblink_exec('a', conditional);
+        IF status = 'INSERT 0 0' THEN RETURN 'rejected'; END IF;
+    ELSE
+        PERFORM dblink_exec('a', plain);
+    END IF;
+    RETURN 'accepted';
+EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%separation_of_duties%' THEN RETURN 'rejected'; END IF;
+    RAISE NOTICE 'exp_try other error (%): %', variant, SQLERRM;
+    RETURN 'error';
+END $$;
+
+-- n회 반복. 시도마다 새 데이터를 쓰고 변형 실행 순서를 무작위로 섞는다.
+CREATE OR REPLACE PROCEDURE exp_run(which text, n int) LANGUAGE plpgsql AS $$
+DECLARE
+    a_id text := gen_random_uuid()::text;
+    b_id text := gen_random_uuid()::text;
+    c_id text := gen_random_uuid()::text;
+    v text;
+    s record;
+    outcome text;
+    i int;
+BEGIN
+    FOR i IN 1..n LOOP
+        FOR v IN SELECT x FROM unnest(ARRAY['d0', 's', 'c', 't', 'n']) AS x ORDER BY random() LOOP
+            IF which = 'x0' THEN
+                SELECT * INTO s FROM exp_seed(a_id, a_id);
+            ELSIF which = 'x1' THEN
+                SELECT * INTO s FROM exp_seed(a_id, a_id);
+            ELSIF which = 'x2' THEN
+                SELECT * INTO s FROM exp_seed(b_id, b_id);
+            ELSE
+                SELECT * INTO s FROM exp_seed(b_id, b_id);
+            END IF;
+            COMMIT;
+            PERFORM dblink_exec('a', 'BEGIN');
+            IF which = 'x2' THEN
+                -- 승인 트랜잭션이 프로필을 읽은 뒤, 다른 연결이 프로필을 v4(PENDING_REVIEW) → v5(ACTIVE, 검증자 a)로 넘긴다.
+                PERFORM * FROM dblink('a', format('SELECT verified_by FROM seller_payout_profile WHERE seller_id = %L', s.seller))
+                    AS t(verified_by text);
+                PERFORM dblink_exec('b', format($q$UPDATE seller_payout_profile SET status = 'PENDING_REVIEW',
+                    profile_version = 4, verified_at = NULL, verified_by = NULL WHERE seller_id = %L$q$, s.seller));
+                PERFORM dblink_exec('b', format($q$UPDATE seller_payout_profile SET status = 'ACTIVE', profile_version = 5,
+                    verified_at = now(), verified_by = %L WHERE seller_id = %L$q$, a_id, s.seller));
+                PERFORM dblink_exec('b', format($q$INSERT INTO seller_payout_profile_action(seller_id, profile_version, action,
+                    idempotency_key, request_facts_sha256, actor, reason, created_at)
+                    VALUES (%L, 5, 'PROFILE_VERIFIED', 'v5-' || %L, repeat('0', 64), %L, 'case', now())$q$,
+                    s.seller, s.seller, a_id));
+            END IF;
+            outcome := exp_try(v, s.payout,
+                CASE which WHEN 'x0' THEN c_id WHEN 'x1' THEN a_id ELSE b_id END,
+                which <> 'x3');
+            PERFORM dblink_exec('a', CASE outcome WHEN 'accepted' THEN 'COMMIT' ELSE 'ROLLBACK' END);
+            INSERT INTO exp_result(scenario, variant, n, accepted, rejected_by_rule, other_error)
+                VALUES (which, v, 1, (outcome = 'accepted')::int, (outcome = 'rejected')::int, (outcome = 'error')::int)
+                ON CONFLICT (scenario, variant) DO UPDATE SET n = exp_result.n + 1,
+                    accepted = exp_result.accepted + EXCLUDED.accepted,
+                    rejected_by_rule = exp_result.rejected_by_rule + EXCLUDED.rejected_by_rule,
+                    other_error = exp_result.other_error + EXCLUDED.other_error;
+            COMMIT;
+        END LOOP;
+    END LOOP;
+END $$;
+```
+
+`timing.sql`
+
+```sql
+-- EXP-096 H10: trigger가 INSERT 한 건에 더하는 비용(맥락)과 trigger 조회의 실행 계획.
+-- 시간은 공유 호스트의 값이라 판정에 쓰지 않는다. 판정은 실행 계획의 노드 종류(Index Scan 여부)로 한다.
+\set ON_ERROR_STOP on
+\timing off
+-- 계획 확인용으로 다른 Seller 20,000명의 프로필 감사 행 200,000개를 FK 검사 없이 채운다.
+SET session_replication_role = replica;
+INSERT INTO seller_payout_profile_action(seller_id, profile_version, action, idempotency_key,
+    request_facts_sha256, actor, reason, created_at)
+SELECT s.id, 1 + (g % 10), 'PROFILE_SUBMITTED', 'bulk-' || g, repeat('0', 64), 'bulk', 'bulk', now()
+FROM generate_series(1, 200000) g CROSS JOIN LATERAL (SELECT (md5((g % 20000)::text))::uuid AS id) s;
+SET session_replication_role = origin;
+ANALYZE seller_payout_profile_action;
+
+SELECT seller AS seller, payout AS payout FROM exp_seed(gen_random_uuid()::text, gen_random_uuid()::text) \gset
+COMMIT;
+
+\echo '--- trigger 조회의 실행 계획 (seller_payout_profile_action 200,000행)'
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
+SELECT EXISTS (
+    SELECT 1 FROM settlement_payout payout
+    JOIN settlement_payout_dispatch_outbox outbox ON outbox.payout_id = payout.payout_id
+    JOIN seller_payout_profile_action verification ON verification.seller_id = payout.seller_id
+        AND verification.profile_version = outbox.profile_version AND verification.action = 'PROFILE_VERIFIED'
+    WHERE payout.payout_id = :'payout' AND verification.actor = 'x');
+
+CREATE TABLE IF NOT EXISTS exp_timing(variant text, micros double precision);
+TRUNCATE exp_timing;
+DO $$
+DECLARE
+    payout uuid := (SELECT payout_id FROM settlement_payout ORDER BY requested_at DESC LIMIT 1);
+    actor text := gen_random_uuid()::text;
+    started timestamptz;
+    v text;
+    i int;
+BEGIN
+    FOR i IN 1..3000 LOOP
+        FOR v IN SELECT x FROM unnest(ARRAY['d0', 't']) AS x ORDER BY random() LOOP
+            started := clock_timestamp();
+            EXECUTE format($q$INSERT INTO exp_action_%s(payout_id, idempotency_key, action, actor, reason, created_at)
+                VALUES (%L, %L, 'PAYOUT_APPROVED', %L, 'exp', now())$q$, v, payout, gen_random_uuid()::text, actor);
+            INSERT INTO exp_timing VALUES (v, extract(epoch FROM clock_timestamp() - started) * 1e6);
+        END LOOP;
+    END LOOP;
+END $$;
+\echo '--- INSERT 한 건 시간(마이크로초), 변형별. 3,000건씩, 순서 무작위'
+SELECT variant, count(*) AS n, round(min(micros)::numeric) AS min_us,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY micros)::numeric) AS p50_us,
+       round(percentile_cont(0.95) WITHIN GROUP (ORDER BY micros)::numeric) AS p95_us,
+       round(max(micros)::numeric) AS max_us
+FROM exp_timing GROUP BY variant ORDER BY variant;
+```
+
+`undo.sql`
+
+```sql
+-- V5의 되돌림 SQL(EXP-096 "되돌리기 훈련"). 새로 만든 것만 지우므로 기존 표·행은 그대로다.
+DROP INDEX uq_settlement_payout_operator_action_approved;
+DROP TRIGGER settlement_payout_operator_action_separation ON settlement_payout_operator_action;
+DROP FUNCTION enforce_payout_operator_separation();
+DROP TRIGGER seller_payout_profile_action_separation ON seller_payout_profile_action;
+DROP FUNCTION enforce_profile_verifier_is_not_recipient();
+DROP TABLE payout_operator_account;
+```
+
+`run.sh`
+
+```bash
+#!/usr/bin/env bash
+# EXP-096 E1 한 줄 실행: load-tests/operator-separation/run.sh
+# 환경 변수: N(시나리오·변형당 반복, 기본 200), TAG(컨테이너 label atlasexp=<TAG>, 기본 h7), OUT(원본 결과 출력 폴더, 기본 /tmp/exp096-out. 저장소에 넣지 않는다)
+# 컨테이너 1개(postgres:18.6)를 만들고 끝나면 지운다. 이미지 기본 설정이며 값은 맥락이다.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+N="${N:-200}"
+TAG="${TAG:-h7}"
+OUT="${OUT:-/tmp/exp096-out}"
+MIGRATIONS="$ROOT/atlas-application/src/main/resources/db/migration"
+NAME="${TAG}-pg-opsep"
+mkdir -p "$OUT"
+cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+psql_db() { local db="$1"; shift; docker exec -i "$NAME" psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -X -q "$@"; }
+apply() { local db="$1"; shift; for f in "$@"; do psql_db "$db" -o /dev/null < "$f"; done; }
+
+echo "uptime(before): $(uptime)" | tee "$OUT/environment.txt"
+docker run -d --label "atlasexp=$TAG" --name "$NAME" -e POSTGRES_PASSWORD=x postgres:18.6 >/dev/null
+for _ in $(seq 1 60); do
+  if docker exec "$NAME" psql -U postgres -c 'select 1' >/dev/null 2>&1; then sleep 2; \
+     docker exec "$NAME" psql -U postgres -c 'select 1' >/dev/null 2>&1 && break; fi
+  sleep 1
+done
+docker exec "$NAME" psql -U postgres -tAc 'select version()' | tee -a "$OUT/environment.txt"
+docker stats --no-stream --format 'docker stats {{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' "$NAME" | tee -a "$OUT/environment.txt"
+
+PRE=()
+while IFS= read -r f; do PRE+=("$f"); done < <(ls "$MIGRATIONS"/V*.sql | grep -v 'V5__payout_operator_identity' | sort -V)
+V5="$(ls "$MIGRATIONS"/V5__payout_operator_identity*.sql)"
+
+echo "== A. migration additive drill (V5 전후 기존 행 해시, 기존 흐름, 되돌림, 재적용)"
+psql_db postgres -c 'create database pre' >/dev/null
+apply pre "${PRE[@]}" "$HERE/fixtures.sql"
+SNAPSHOT="select md5(coalesce(string_agg(t.x, '|' order by t.x), '')) from (
+  select p::text x from settlement_payout p union all select o::text from settlement_payout_dispatch_outbox o
+  union all select a::text from seller_payout_profile_action a union all select s::text from seller_payout_profile s
+  union all select u::text from user_account u union all select oa::text from settlement_payout_operator_action oa) t"
+psql_db pre -c "do \$\$ declare i int; s record; begin for i in 1..50 loop select * into s from exp_seed('legacy-operator','legacy-operator');
+  insert into settlement_payout_operator_action(payout_id, idempotency_key, action, actor, reason, created_at)
+  values (s.payout, 'legacy-'||i, 'PAYOUT_APPROVED', 'legacy-operator', 'legacy', now()); end loop; end \$\$"
+BEFORE="$(psql_db pre -tA -c "$SNAPSHOT")"
+ROWS_BEFORE="$(psql_db pre -tA -c "select (select count(*) from settlement_payout)||','||(select count(*) from settlement_payout_operator_action)")"
+apply pre "$V5"
+AFTER="$(psql_db pre -tA -c "$SNAPSHOT")"
+apply pre "$HERE/undo.sql"
+GONE="$(psql_db pre -tA -c "select (select count(*) from pg_trigger where tgname='settlement_payout_operator_action_separation')||','||(select count(*) from pg_proc where proname='enforce_payout_operator_separation')||','||(select count(*) from pg_class where relname='payout_operator_account')||','||(select count(*) from pg_class where relname='uq_settlement_payout_operator_action_approved')")"
+AFTER_UNDO="$(psql_db pre -tA -c "$SNAPSHOT")"
+apply pre "$V5"
+REAPPLIED="$(psql_db pre -tA -c "select count(*) from pg_trigger where tgname='settlement_payout_operator_action_separation'")"
+LEGACY_FLOW="$(psql_db pre -tA -c "do \$\$ declare s record; begin select * into s from exp_seed('legacy-operator','legacy-operator');
+  insert into settlement_payout_operator_action(payout_id, idempotency_key, action, actor, reason, created_at)
+  values (s.payout, 'legacy-after-v5', 'PAYOUT_APPROVED', 'legacy-operator', 'legacy', now()); end \$\$; select 'ok'" | tail -1)"
+
+{
+  echo -e "check\tvalue"
+  echo -e "rows_before(payout,action)\t$ROWS_BEFORE"
+  echo -e "snapshot_equal_after_V5\t$([ "$BEFORE" = "$AFTER" ] && echo yes || echo NO)"
+  echo -e "legacy_actor_flow_after_V5\t$LEGACY_FLOW"
+  echo -e "objects_after_undo(trigger,function,table,index)\t$GONE"
+  echo -e "snapshot_equal_after_undo\t$([ "$BEFORE" = "$AFTER_UNDO" ] && echo yes || echo NO)"
+  echo -e "trigger_count_after_reapply\t$REAPPLIED"
+} | tee "$OUT/migration-drill.tsv"
+
+echo "== B. 강제 수단 비교 (N=$N)"
+psql_db postgres -c 'create database exp' >/dev/null
+apply exp "${PRE[@]}" "$V5"
+{
+  cat "$HERE/fixtures.sql" "$HERE/scenarios.sql"
+  for s in x0 x1 x2 x3; do echo "CALL exp_run('$s', $N);"; done
+} | psql_db exp -o /dev/null
+psql_db exp -A -F $'\t' -c "select scenario, variant, n, accepted, rejected_by_rule, other_error from exp_result order by scenario, variant" \
+  | tee "$OUT/enforcement-comparison.tsv"
+
+echo "== C. trigger 비용과 실행 계획"
+psql_db exp < "$HERE/timing.sql" | tee "$OUT/trigger-cost-and-plan.txt"
+echo "uptime(after): $(uptime)" | tee -a "$OUT/environment.txt"
+docker ps -a --filter "label=atlasexp=$TAG" --format '{{.Names}}' | sed 's/^/remaining container: /'
+```
+
 ### E2 동시 승인 출력(변경 후, `H7_ROUNDS=100`)
 
 `rounds=100 approvedRows=100 outboxRows=100 verifierRejected=100 approverConflict409=0 approverAccepted202=200`. 승인자 두 명의 응답은 모두 202였고 진 쪽의 감사 행은 `PAYOUT_APPROVAL_REPLAYED`다. 첫 실행(n=3, 수정 전)은 `승인 행은 정확히 한 건` 단정에서 2건으로 실패했고 그 실패가 기준 코드의 중복 승인 행 발견으로 이어졌다.
@@ -304,7 +664,7 @@ E3(기준 커밋 대조)의 탐침과 변이 검증 스크립트는 저장소에
 | V5 전 행 수(지급, 운영자 조치) | 50, 50 |
 | V5 적용 뒤 관련 표 행 해시가 처음과 같은가 | 예 |
 | V5 적용 뒤 기존 actor 문자열(`legacy-operator`)로 승인 감사 행 INSERT | 통과 |
-| `undo.sql` 뒤 남은 (trigger, function, table, index) 수 | 0, 0, 0, 0 |
+| 되돌림 SQL(`undo.sql`) 뒤 남은 (trigger, function, table, index) 수 | 0, 0, 0, 0 |
 | 되돌림 뒤 행 해시가 처음과 같은가 | 예 |
 | V5 재적용 뒤 trigger 수 | 1 |
 
