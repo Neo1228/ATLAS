@@ -42,7 +42,7 @@ const shuffle = (xs) => { const a = [...xs]; for (let i = a.length - 1; i > 0; i
 const idMap = new Map();
 const short = (s) => { if (!idMap.has(s)) idMap.set(s, createHash('sha1').update(RUN + s).digest('hex').slice(0, 4)); return idMap.get(s); };
 const ID_RE = /\b[0-9A-Z]{17}\b/g;
-function redactString(s) { return s.replace(ID_RE, (m) => `ID-${short(m)}`).replace(/[^\s"']+@[^\s"']+/g, 'buyer@example.invalid'); }
+function redactString(s) { return s.replace(ID_RE, (m) => `ID-${short(m)}`).replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, 'buyer@example.invalid'); }
 function redact(v, key = '') {
   if (v == null) return v;
   if (typeof v === 'string') {

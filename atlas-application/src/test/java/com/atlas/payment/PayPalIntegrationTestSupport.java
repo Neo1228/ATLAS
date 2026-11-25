@@ -51,6 +51,7 @@ public abstract class PayPalIntegrationTestSupport {
     private static final Queue<String> ORDER_CREATE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> ORDER_APPROVAL_LINK_RELATIONS = new ConcurrentLinkedQueue<>();
     private static final Queue<String> ORDER_AUTHORIZATION_STATUSES = new ConcurrentLinkedQueue<>();
+    private static final Queue<String> ORDER_AUTHORIZATION_EXPIRATIONS = new ConcurrentLinkedQueue<>();
     private static final Queue<String> ORDER_CAPTURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> CAPTURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> VOID_STATUSES = new ConcurrentLinkedQueue<>();
@@ -75,6 +76,9 @@ public abstract class PayPalIntegrationTestSupport {
         ORDER_APPROVAL_LINK_RELATIONS.add(relation);
     }
     protected static void queueOrderAuthorizationStatus(String status) { ORDER_AUTHORIZATION_STATUSES.add(status); }
+    protected static void queueOrderAuthorizationExpiration(String expirationTime) {
+        ORDER_AUTHORIZATION_EXPIRATIONS.add(expirationTime);
+    }
     protected static void queueOrderCaptureStatus(String status) { ORDER_CAPTURE_STATUSES.add(status); }
     protected static void queueCaptureStatus(String status) { CAPTURE_STATUSES.add(status); }
     protected static void queueVoidStatus(String status) { VOID_STATUSES.add(status); }
@@ -138,6 +142,7 @@ public abstract class PayPalIntegrationTestSupport {
         ORDER_CREATE_STATUSES.clear();
         ORDER_APPROVAL_LINK_RELATIONS.clear();
         ORDER_AUTHORIZATION_STATUSES.clear();
+        ORDER_AUTHORIZATION_EXPIRATIONS.clear();
         ORDER_CAPTURE_STATUSES.clear();
         CAPTURE_STATUSES.clear();
         VOID_STATUSES.clear();
@@ -262,7 +267,7 @@ public abstract class PayPalIntegrationTestSupport {
                     if (authorizationStatus != null && !"NONE".equals(authorizationStatus)) {
                         resources = "\"authorizations\":[{\"id\":\"" + authorizationIdOf(orderId)
                                 + "\",\"status\":\"" + authorizationStatus + "\",\"expiration_time\":\""
-                                + AUTHORIZATION_EXPIRATION + "\"}]";
+                                + nextStatus(ORDER_AUTHORIZATION_EXPIRATIONS, AUTHORIZATION_EXPIRATION) + "\"}]";
                     }
                     if (captureStatus != null && !"NONE".equals(captureStatus)) {
                         String capture = "\"captures\":[{\"id\":\"CAPTURE-" + orderId
