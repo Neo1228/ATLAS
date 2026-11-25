@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.ProducerListener;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
@@ -22,7 +23,6 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "atlas.order-inventory-reservation.event-relay.enabled", havingValue = "true")
 public class ReservationEventConfiguration {
-
     @Bean
     public DefaultKafkaProducerFactory<String, String> reservationEventProducerFactory(
             @Value("${atlas.order-inventory-reservation.event-relay.bootstrap-servers:localhost:9092}")
@@ -50,7 +50,13 @@ public class ReservationEventConfiguration {
     @Bean
     public KafkaTemplate<String, String> reservationEventKafkaTemplate(
             DefaultKafkaProducerFactory<String, String> reservationEventProducerFactory) {
-        return new KafkaTemplate<>(reservationEventProducerFactory);
+        KafkaTemplate<String, String> template = new KafkaTemplate<>(reservationEventProducerFactory);
+        // 기본 LoggingProducerListener는 전송에 실패한 레코드마다 payload를 ERROR로 남긴다. broker가 멈추면 한 묶음이
+        // 수백 줄이 되어 relay가 1분에 한 번만 남기는 실패 로그(ReservationEventWorker) 설계를 우회하므로 끈다.
+        // 실패는 publisher가 던지는 예외와 relay의 실패 counter·throttle된 WARN으로 드러난다.
+        template.setProducerListener(new ProducerListener<>() {
+        });
+        return template;
     }
 
     /** Kafka 전송 대기가 다른 복구 worker의 scheduler 자리를 차지하지 않도록 전용 thread 하나를 둔다. */

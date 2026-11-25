@@ -1,0 +1,112 @@
+# Isolated stack for Kafka-outage runs (run-kafka-outage.sh).
+# order PostgreSQL + one Kafka broker (KRaft, single node) + two application JVMs with the
+# reservation event relay enabled. The runner passes a unique project name, throwaway
+# secrets and the label tag. Every container, network and volume carries atlasexp=<tag> so a
+# leftover can be found and removed by label. The application jar is bind-mounted from
+# APP_JAR (default: the Gradle bootJar output); the Docker VM must be able to see that path.
+# The relay uses the application's own defaults unless the runner exports a relay setting
+# (RELAY_BATCH_SIZE, RELAY_POLL_INTERVAL, RELAY_SEND_TIMEOUT, RELAY_LEASE_DURATION). The kafka
+# service has no restart policy: the runner decides when a stopped or killed broker starts again.
+
+x-labels: &labels
+  atlasexp: ${EXP_TAG:-kafka-outage}
+
+x-app: &app
+  image: eclipse-temurin:25-jre
+  labels: *labels
+  command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/atlas-application.jar"]
+  depends_on:
+    order-postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+  # Key=value entries are fixed; a bare KEY is passed through only when it is set in the runner's
+  # environment, so an unset RELAY_* keeps the application's own default (no second copy of it here).
+  environment:
+    - ATLAS_SERVER_ADDRESS=0.0.0.0
+    - ATLAS_SERVER_PORT=8080
+    - ATLAS_DB_URL=jdbc:postgresql://order-postgres:5432/atlas_order
+    - ATLAS_DB_USER=atlas
+    - ATLAS_DB_PASSWORD=${DB_PASSWORD:?Set DB_PASSWORD}
+    - ATLAS_JWT_SIGNING_SECRET=${ATLAS_JWT_SIGNING_SECRET:?Set ATLAS_JWT_SIGNING_SECRET}
+    - ATLAS_PAYMENT_PROVIDER=disabled
+    # The account module needs a mail sender bean to start; nothing here sends mail.
+    - SPRING_MAIL_HOST=localhost
+    - MANAGEMENT_HEALTH_MAIL_ENABLED=false
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_ENABLED=true
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BOOTSTRAP_SERVERS=kafka:9092
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_TOPIC=${TOPIC:-atlas.order-inventory.events}
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BATCH_SIZE
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_POLL_INTERVAL
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_SEND_TIMEOUT
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_LEASE_DURATION
+  volumes:
+    - ${APP_JAR:-../../atlas-application/build/libs/atlas-application.jar}:/app/atlas-application.jar:ro
+  healthcheck:
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+    interval: 2s
+    timeout: 3s
+    retries: 120
+    start_period: 20s
+  cpus: 1
+  mem_limit: 768m
+
+services:
+  order-postgres:
+    image: postgres:18.6
+    labels: *labels
+    environment:
+      POSTGRES_DB: atlas_order
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - order-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_order"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    cpus: 1
+    mem_limit: 512m
+
+  kafka:
+    image: apache/kafka:3.9.1
+    labels: *labels
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 10s
+      retries: 40
+    cpus: 1
+    mem_limit: 768m
+
+  app1:
+    <<: *app
+
+  app2:
+    <<: *app
+
+volumes:
+  order-data:
+    labels: *labels
+  kafka-data:
+    labels: *labels
+
+networks:
+  default:
+    labels: *labels

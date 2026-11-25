@@ -38,7 +38,7 @@ public class ReservationEventWorker {
 
     public ReservationEventWorker(ReservationEventService eventLog,
             ReservationEventPublisher publisher, MeterRegistry meters,
-            @Value("${atlas.order-inventory-reservation.event-relay.batch-size:500}") int batchSize,
+            @Value("${atlas.order-inventory-reservation.event-relay.batch-size:100}") int batchSize,
             @Value("${atlas.order-inventory-reservation.event-relay.lease-duration:PT30S}") Duration leaseDuration,
             @Value("${atlas.order-inventory-reservation.event-relay.send-timeout:PT10S}") Duration sendTimeout) {
         if (batchSize < 1 || batchSize > 5000) throw new IllegalArgumentException("Invalid event relay batch size");
