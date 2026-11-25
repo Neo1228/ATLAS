@@ -159,7 +159,6 @@
 | D-154 | ✓ 운영자 role은 V1 단일 계정, constant-time은 범위를 나눠 진술 | 사람별 role은 ADR-0078 gate 7. 같은 응답과 더미 hash는 보장, SMTP 시간 평준화·로그인 전체 동일 시간은 보장하지 않음. | [ADR-0085](../02-decisions/adr/ADR-0085-v1-scope-channel-operator-and-payout-decisions.md), [Q-007](../01-requirements/requirements-index.md#assumptions-and-open-questions), [ADR-0078](../02-decisions/adr/ADR-0078-payout-operator-controls-production-gate.md) |
 | D-155 | △ V1 잔여 범위 cut-line: taxonomy·ranking·write-off·재검수 제외, 반품 7일·검수 5영업일(가정) | 값은 feature-config이고 코드에는 아직 없다. 순서: 반품 기한 → Live 지급 gate → ranking → taxonomy. | [ADR-0085](../02-decisions/adr/ADR-0085-v1-scope-channel-operator-and-payout-decisions.md), [Q-010](../01-requirements/requirements-index.md#assumptions-and-open-questions) |
 | D-156 | △ 지급은 V1에 Seller 요청만, Live 초안 최소 USD 10·주 1회·건당 USD 5,000(가정), maker-checker는 사람별 신원 선행 | 값은 정책 근거를 확인하지 못한 가정이다. | [ADR-0085](../02-decisions/adr/ADR-0085-v1-scope-channel-operator-and-payout-decisions.md), [Q-013](../01-requirements/requirements-index.md#assumptions-and-open-questions), [ADR-0078](../02-decisions/adr/ADR-0078-payout-operator-controls-production-gate.md) |
-||||||| parent of be7ed845 (feat(relay): relay 묶음 기본값을 100으로 낮추고 producer 레코드별 실패 로그를 끈다 (EXP-089, ADR-0082))
 
 <!-- markdownlint-disable MD033 -->
 
