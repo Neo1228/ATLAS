@@ -769,7 +769,7 @@ def main():
     emit()
     emit('main push 실패(S2·S3, 취소 제외): ' + (', '.join(f'run {a["run_id"]}/{a["attempt"]} {a["started"]} {a["period"]} verify={a["verify"]} app_ran={a["app_jobs_ran"]}' for a in att if a['event'] == 'push' and a['period'] in ('S2', 'S3') and a['conclusion'] == 'failure') or '없음'))
     emit()
-    (data.parent / 'results.md').write_text('\n'.join(OUT), encoding='utf-8')
+    (data.parent / 'results.md').write_text('\n'.join(line.rstrip() for line in OUT).rstrip('\n') + '\n', encoding='utf-8')
     (data.parent / 'results.json').write_text(json.dumps(res, indent=2, ensure_ascii=False, default=str), encoding='utf-8')
     print('\n'.join(OUT))
 

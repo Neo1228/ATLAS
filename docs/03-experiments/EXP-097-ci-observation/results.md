@@ -54,7 +54,7 @@ S2·S3의 429·LocationFault 이외 실패 job: 없음
 - 사후 보정(변경을 담은 PR 자신의 실행을 변경 뒤로 셈): 전 5/153 = 3.27% [1.07, 7.46], 후 0/23 = 0.00% [0.00, 14.82] → 구간이 겹침
 - 후 기간 클래스 실행 23개 중 서로 다른 head SHA 23개, 전 기간 153개 중 123개.
 
-LocationFault 실패 job: run 45400550902/5 shard3 2026-11-24T13:26:38Z S1 pull_request PR#607, run 45398897791/1 shard3 2026-11-24T12:59:48Z S1 push , run 45342680146/1 shard3 2026-11-24T06:44:21Z S0 pull_request PR#578, run 45231697943/1 shard3 2026-11-23T17:48:57Z S0 push , run 45181797918/1 shard3 2026-11-23T13:13:33Z S0 push 
+LocationFault 실패 job: run 45400550902/5 shard3 2026-11-24T13:26:38Z S1 pull_request PR#607, run 45398897791/1 shard3 2026-11-24T12:59:48Z S1 push , run 45342680146/1 shard3 2026-11-24T06:44:21Z S0 pull_request PR#578, run 45231697943/1 shard3 2026-11-23T17:48:57Z S0 push , run 45181797918/1 shard3 2026-11-23T13:13:33Z S0 push
 
 ## E. Q2: shard job 시간(PR 이벤트, 결론 success), 초
 
