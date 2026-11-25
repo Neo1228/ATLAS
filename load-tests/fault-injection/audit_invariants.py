@@ -231,6 +231,25 @@ def summarize(args):
         print(f"| {condition} | " + " | ".join(cells) + " | "
               f"{spread([run['unknown_outcome_but_reserved'] for run in runs])} | "
               f"{spread([run['converge_seconds'] for run in runs])} |")
+    print()
+    print("what the fault did (runs where it was observed / n), and recovery timing in seconds, min / median / max")
+    print()
+    print("| condition | order DB log: not properly shut down | order DB log: redo starts | "
+          "app restarted | kernel OOM events | requests started inside fault window | converge after fault end s |")
+    print("| --- | --- | --- | --- | --- | --- | --- |")
+    for condition, runs in by_condition.items():
+        n = len(runs)
+
+        def observed(test):
+            return f"{sum(1 for run in runs if test(run))}/{n}"
+
+        print(f"| {condition} | "
+              f"{observed(lambda r: r['meta'].get('order_postgres_log', {}).get('not_properly_shut_down', 0) > 0)} | "
+              f"{observed(lambda r: r['meta'].get('order_postgres_log', {}).get('redo_starts', 0) > 0)} | "
+              f"{observed(lambda r: r['meta'].get('containers', {}).get('app', {}).get('restart_count', 0) > 0)} | "
+              f"{observed(lambda r: r['meta'].get('oom_events', 0) > 0)} | "
+              f"{spread([r['fault_window'].get('requests_started_inside') for r in runs])} | "
+              f"{spread([r['fault_window'].get('converge_after_fault_end_s') for r in runs])} |")
     return 0
 
 

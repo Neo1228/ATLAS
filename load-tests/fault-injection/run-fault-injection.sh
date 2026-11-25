@@ -70,7 +70,7 @@ teardown() {
 trap 'teardown' EXIT INT TERM
 
 now() { python3 -c 'import time; print(f"{time.time():.3f}")'; }
-cid() { dc ps -q "$1"; }
+cid() { dc ps -aq "$1"; }
 
 stack_snapshot() {
   { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime; docker stats --no-stream \
@@ -100,7 +100,7 @@ inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epo
     order-db-crash)
       docker exec "$order" sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in "postgres: walwriter"*) kill -9 "${d#/proc/}"; break;; esac; done' ;;
     app-cpu)
-      docker exec "$app" sh -c "for i in 1 2 3 4 5 6; do timeout $fault_for sh -c 'while :; do :; done' & done; wait" || true ;;
+      docker exec "$app" sh -c "for i in 1 2 3 4 5 6; do timeout $fault_for sh -c 'while :; do :; done' & done; wait" 2>/dev/null || true ;;
     app-memory|app-oom)
       local limit used mb margin=-64
       [[ "$fault" == "app-oom" ]] && margin=128
@@ -108,7 +108,7 @@ inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epo
       used="$(docker exec "$app" awk '/^(anon|shmem|kernel) /{s+=$2} END{print s}' /sys/fs/cgroup/memory.stat)"
       mb=$(( (limit - used) / 1048576 + margin ))
       printf '{"limit_bytes":%s,"unreclaimable_bytes":%s,"stress_mb":%s}\n' "$limit" "$used" "$mb" > "$run_dir/memory-stress.json"
-      docker exec "$app" sh -c "head -c ${mb}M /dev/zero > /dev/shm/stress; sleep $fault_for; rm -f /dev/shm/stress" || true ;;
+      docker exec "$app" sh -c "head -c ${mb}M /dev/zero > /dev/shm/stress; sleep $fault_for; rm -f /dev/shm/stress" 2>/dev/null || true ;;
     location-b-kill)
       docker kill "$(cid location-b)" >/dev/null; sleep "$fault_for"; docker start "$(cid location-b)" >/dev/null ;;
   esac
@@ -146,6 +146,10 @@ run_one() {  # run_one <fault> <n>
   python3 "$here/reservation_load.py" seed --run-id "$run_id" --capacity $(( rate * duration * 2 )) \
     --location-a-url "$loc_a_url" --location-b-url "$loc_b_url"
   stack_snapshot "$run_dir/env-before.txt"
+  # State.OOMKilled is reset when the restart policy restarts the container, so count kernel OOM events instead.
+  docker events --since "$(date +%s)" --filter event=oom --filter "label=com.docker.compose.project=$project" \
+    >"$run_dir/oom-events.txt" 2>/dev/null &
+  local events_pid=$!
   start_at="$(python3 -c 'import time; print(f"{time.time()+1.5:.3f}")')"
   ( sleep "$(python3 -c "import time; print(max(0, $start_at + $fault_at - time.time()))")"; inject "$fault" "$run_dir" ) &
   local fault_pid=$!
@@ -163,6 +167,7 @@ run_one() {  # run_one <fault> <n>
   cat "$run_dir/audit.log"
   stack_snapshot "$run_dir/env-after.txt"
 
+  kill "$events_pid" 2>/dev/null || true
   dc logs --no-color order-postgres >"$run_dir/order-postgres.log" 2>&1 || true
   dc logs --no-color app >"$run_dir/app.log" 2>&1 || true
   dc logs --no-color location-b >"$run_dir/location-b.log" 2>&1 || true
@@ -173,9 +178,9 @@ run_one() {  # run_one <fault> <n>
   done
   jq -n --arg fault "$fault" --argjson n "$n" --arg run_id "$run_id" --argjson rate "$rate" \
     --argjson duration "$duration" --argjson fault_at "$fault_at" --argjson fault_for "$fault_for" \
-    --argjson containers "$containers" --argjson pg "$(pg_markers "$run_dir/order-postgres.log")" \
+    --argjson containers "$containers" --argjson oom_events "$(wc -l <"$run_dir/oom-events.txt" | tr -d ' ')" --argjson pg "$(pg_markers "$run_dir/order-postgres.log")" \
     '{fault:$fault, run:$n, run_id:$run_id, rate:$rate, duration:$duration, fault_at:$fault_at,
-      fault_for:$fault_for, containers:$containers, order_postgres_log:$pg}' > "$run_dir/meta.json"
+      fault_for:$fault_for, containers:$containers, oom_events:$oom_events, order_postgres_log:$pg}' > "$run_dir/meta.json"
   dc down -v --remove-orphans >/dev/null 2>&1 || true
   project=""
   return 0
