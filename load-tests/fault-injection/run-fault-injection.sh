@@ -17,6 +17,7 @@
 #   order-db-kill      docker kill of the postmaster, start after FAULT_FOR seconds (crash recovery)
 #   order-db-crash     SIGKILL the WAL writer; the postmaster restarts all backends in place
 #   app-cpu            CPU-bound processes inside the application cgroup for FAULT_FOR seconds
+#   app-cpu-throttle   docker update --cpus 0.2 on the application (hard CFS quota) for FAULT_FOR seconds
 #   app-memory         allocate tmpfs inside the application cgroup up to ~64 MiB below its limit
 #   app-oom            same, but 128 MiB over the limit: the kernel OOM-kills the JVM
 #   location-b-kill    docker kill of location B, start after FAULT_FOR seconds
@@ -50,7 +51,7 @@ done
 export APP_JAR LOCATION_JAR
 for fault in $faults; do
   case "$fault" in
-    none|order-db-restart|order-db-kill|order-db-crash|app-cpu|app-memory|app-oom|location-b-kill) ;;
+    none|order-db-restart|order-db-kill|order-db-crash|app-cpu|app-cpu-throttle|app-memory|app-oom|location-b-kill) ;;
     *) echo "unknown fault: $fault" >&2; exit 2 ;;
   esac
 done
@@ -101,6 +102,8 @@ inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epo
       docker exec "$order" sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in "postgres: walwriter"*) kill -9 "${d#/proc/}"; break;; esac; done' ;;
     app-cpu)
       docker exec "$app" sh -c "for i in 1 2 3 4 5 6; do timeout $fault_for sh -c 'while :; do :; done' & done; wait" 2>/dev/null || true ;;
+    app-cpu-throttle)
+      docker update --cpus 0.2 "$app" >/dev/null; sleep "$fault_for"; docker update --cpus 2 "$app" >/dev/null ;;
     app-memory|app-oom)
       local limit used mb margin=-64
       [[ "$fault" == "app-oom" ]] && margin=128
