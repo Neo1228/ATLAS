@@ -1,5 +1,6 @@
 package com.atlas.application.config;
 
+import com.atlas.application.service.impl.KafkaReservationEventPublisher;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -19,6 +20,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
  *
  * <p>relay를 켠 경우에만 만들어지고, Boot의 Kafka 자동구성에 기대지 않는다(전역 consumer/admin 설정을 끌어오지 않는다).
  * producer는 acks=all, idempotence=true라서 retry가 있어도 같은 파티션 안의 순서와 중복 방지가 유지된다.
+ * 다만 전송 시한으로 만료된 batch 뒤의 batch는 살아남아 먼저 기록될 수 있으므로(EXP-091), publisher가 묶음을
+ * batch 하나 크기의 덩어리로 나눠 하나씩 끝내도록 batch 크기를 덩어리의 두 배로 맞추고 덩어리를 flush로 내보낸다.
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "atlas.order-inventory-reservation.event-relay.enabled", havingValue = "true")
@@ -43,7 +46,10 @@ public class ReservationEventConfiguration {
         config.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, timeoutMillis);
         config.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, timeoutMillis / 2);
         config.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, timeoutMillis);
-        config.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+        // 덩어리 하나가 파티션마다 batch 하나에 담기도록 batch는 덩어리의 두 배, linger는 덩어리를 다 쌓을 만큼 길게 둔다.
+        // 덩어리는 publisher가 flush로 바로 내보내므로 linger만큼 기다리지 않는다.
+        config.put(ProducerConfig.BATCH_SIZE_CONFIG, KafkaReservationEventPublisher.CHUNK_BYTES * 2);
+        config.put(ProducerConfig.LINGER_MS_CONFIG, 1000);
         return new DefaultKafkaProducerFactory<>(config);
     }
 

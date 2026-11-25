@@ -9,7 +9,9 @@ import com.atlas.order.repository.ReservationEventRepository;
 import com.atlas.order.service.ReservationEventService;
 import com.atlas.order.service.impl.ReservationEventServiceImpl;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -22,7 +24,11 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
@@ -38,7 +44,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * relay가 보낸 토픽을 소비자가 읽을 때의 불변식(EXP-082): 유실 없음, 중복 전달은 한 번만 적용, 같은 그룹의 두 인스턴스가
- * 겹쳐 적용하지 않음, 재시작은 commit한 offset부터 이어 읽음, broker 중단 뒤 복구. 소비자는 테스트 전용
+ * 겹쳐 적용하지 않음, 재시작은 commit한 offset부터 이어 읽음, broker 중단 뒤 복구, 리밸런스와 첫 전달 순서 역행(EXP-091)
+ * 아래에서도 상태가 거꾸로 가지 않음. 소비자는 테스트 전용
  * {@link ReservationEventReferenceConsumer}다. 적용 횟수는 부수 효과 테이블의 행으로 센다.
  */
 @Testcontainers
@@ -136,6 +143,41 @@ class ReservationEventConsumerKafkaIntegrationTest {
             assertThat(third.duplicatesSkipped()).as("commit 못 한 구간은 이미 적용돼 건너뜀").isEqualTo(crashed);
             assertThat(scenario.effectsPerEvent()).isEqualTo(scenario.expectedOnce());
             assertThat(scenario.committedRecords()).isEqualTo(topicOrder.size());
+        }
+    }
+
+    @Test
+    void rebalanceWithACrashedInstanceAndInvertedFirstDeliveryKeepsStateMonotonicAndEffectsOnce() throws Exception {
+        InvertedTopic input = new InvertedTopic(3, 30);
+        // A가 먼저 일부를 적용한다(commit 없음). B가 합류하면 파티션이 나뉘고, 그 뒤 A가 그룹을 떠나지 않은 채 죽는다.
+        // 세션이 만료되면 B가 모든 파티션을 commit된 위치(없음)부터 이어받아 처음부터 다시 읽는다.
+        try (ReservationEventReferenceConsumer a = input.consumer(7);
+                ReservationEventReferenceConsumer b = input.consumer(7)) {
+            input.until(() -> a.pollAndApply(POLL) > 0);
+            int appliedByA = a.receivedEventIds().size();
+            input.until(() -> {
+                a.pollAndApply(POLL);
+                b.pollAndApply(POLL);
+                return !a.assignment().isEmpty() && !b.assignment().isEmpty()
+                        && a.assignment().size() + b.assignment().size() == 3;
+            });
+            a.crash();
+
+            // A의 파티션까지 B에 넘어온 뒤(세션 만료)에도 끝까지 읽어야 한다. 넘어오기 전에 상태가 이미 맞아 보일 수 있다.
+            input.until(() -> {
+                b.pollAndApply(POLL);
+                b.commit(DEADLINE);
+                return b.assignment().size() == 3 && b.lag() == 0 && input.statePerWorkflow().equals(input.expectedState());
+            });
+
+            assertThat(appliedByA).as("A가 죽기 전에 이미 일부를 적용").isPositive();
+            assertThat(b.assignment()).as("A의 세션이 만료돼 B가 모든 파티션을 이어받음").hasSize(3);
+            assertThat(input.statePerWorkflow()).as("높은 버전이 먼저 도착해도 상태는 최종 버전").isEqualTo(input.expectedState());
+            assertThat(input.effectsPerEvent()).as("각 전달은 한 번만 효과를 내고 이미 지나간 낮은 버전은 효과가 없음")
+                    .isEqualTo(input.expectedEffects());
+            assertThat(a.staleSkipped() + b.staleSkipped()).as("역행해 도착한 낮은 버전은 인스턴스와 관계없이 정확히 한 번씩 건너뜀")
+                    .isEqualTo(input.invertedWorkflows());
+            assertThat(input.committedRecords()).isEqualTo(input.records);
         }
     }
 
@@ -239,6 +281,124 @@ class ReservationEventConsumerKafkaIntegrationTest {
                 }
                 return caughtUp && effectsPerEvent().size() == expected.size();
             });
+        }
+
+        void until(BooleanSupplier condition) {
+            long deadline = System.nanoTime() + DEADLINE.toNanos();
+            while (!condition.getAsBoolean()) {
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError("조건이 " + DEADLINE + " 안에 충족되지 않았다");
+                }
+            }
+        }
+    }
+
+    /**
+     * relay를 거치지 않고 만든 합성 토픽. 홀수 번째 workflow는 v2를 v1보다 먼저 싣고(첫 전달 순서 역행), 앞쪽 workflow
+     * 일부는 통째로 한 번 더 싣는다(중복). 같은 키는 같은 파티션이라 파티션 안 순서는 쓴 순서와 같다.
+     */
+    private static final class InvertedTopic {
+        final DataSource dataSource = ReservationEventTestSupport.migratedDataSource(POSTGRES);
+        final JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        final String topic = "atlas.order-inventory.events.rebalance-" + UUID.randomUUID();
+        final String group = "group-" + topic;
+        final List<UUID> workflows = new ArrayList<>();
+        final int records;
+
+        InvertedTopic(int partitions, int workflowCount) throws Exception {
+            try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
+                    KAFKA.getBootstrapServers()))) {
+                admin.createTopics(List.of(new NewTopic(topic, partitions, (short) 1))).all().get();
+            }
+            ReservationEventReferenceConsumer.createSink(jdbc);
+            int sent = 0;
+            try (KafkaProducer<String, String> producer = new KafkaProducer<>(Map.of(
+                    ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                    ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true,
+                    ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+                    ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class))) {
+                for (int pass = 0; pass < 2; pass++) {
+                    for (int i = 0; i < workflowCount; i++) {
+                        if (pass == 1 && i >= workflowCount / 3) {
+                            break;
+                        }
+                        UUID workflowId = pass == 0 ? UUID.randomUUID() : workflows.get(i);
+                        if (pass == 0) {
+                            workflows.add(workflowId);
+                        }
+                        int[] versions = i % 2 == 1 ? new int[] {2, 1} : new int[] {1, 2};
+                        for (int version : versions) {
+                            send(producer, workflowId, version);
+                            sent++;
+                        }
+                    }
+                }
+                producer.flush();
+            }
+            records = sent;
+        }
+
+        private void send(KafkaProducer<String, String> producer, UUID workflowId, int version) {
+            ProducerRecord<String, String> record = new ProducerRecord<>(topic, workflowId.toString(),
+                    "{\"workflowId\":\"" + workflowId + "\",\"aggregateVersion\":" + version + "}");
+            record.headers().add(KafkaReservationEventPublisher.EVENT_ID_HEADER,
+                    (workflowId + ":" + version).getBytes(StandardCharsets.UTF_8));
+            producer.send(record);
+        }
+
+        ReservationEventReferenceConsumer consumer(int maxPollRecords) {
+            return new ReservationEventReferenceConsumer(KAFKA.getBootstrapServers(), topic, group, jdbc,
+                    maxPollRecords, Duration.ofSeconds(6));
+        }
+
+        Map<String, Long> statePerWorkflow() {
+            Map<String, Long> state = new HashMap<>();
+            jdbc.query("SELECT workflow_id::text AS id, aggregate_version AS version FROM reservation_event_state",
+                    rs -> {
+                        state.put(rs.getString("id"), rs.getLong("version"));
+                    });
+            return state;
+        }
+
+        /** v2가 v1보다 먼저 실린 workflow 수. 소비자 전체가 그만큼의 낮은 버전을 이미 지난 것으로 건너뛴다. */
+        long invertedWorkflows() {
+            return workflows.size() / 2;
+        }
+
+        Map<String, Long> expectedState() {
+            Map<String, Long> state = new HashMap<>();
+            workflows.forEach(id -> state.put(id.toString(), 2L));
+            return state;
+        }
+
+        Map<String, Integer> effectsPerEvent() {
+            Map<String, Integer> effects = new HashMap<>();
+            jdbc.query("""
+                    SELECT workflow_id::text || ':' || aggregate_version AS event_id, count(*) AS applied
+                    FROM reservation_event_effect GROUP BY 1""", rs -> {
+                effects.put(rs.getString("event_id"), rs.getInt("applied"));
+            });
+            return effects;
+        }
+
+        /** v1이 v2보다 먼저 도착한 workflow는 v1·v2 모두 한 번, v2가 먼저 도착한 workflow는 v2만 한 번이다. */
+        Map<String, Integer> expectedEffects() {
+            Map<String, Integer> effects = new HashMap<>();
+            for (int i = 0; i < workflows.size(); i++) {
+                effects.put(workflows.get(i) + ":2", 1);
+                if (i % 2 == 0) {
+                    effects.put(workflows.get(i) + ":1", 1);
+                }
+            }
+            return effects;
+        }
+
+        long committedRecords() throws Exception {
+            try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
+                    KAFKA.getBootstrapServers()))) {
+                return admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get().values().stream()
+                        .mapToLong(OffsetAndMetadata::offset).sum();
+            }
         }
 
         void until(BooleanSupplier condition) {

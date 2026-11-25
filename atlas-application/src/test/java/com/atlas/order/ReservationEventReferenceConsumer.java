@@ -25,9 +25,10 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * ADR-0067이 소비자 책임으로 둔 중복 제거를 구현한 테스트 전용 참조 소비자. 운영 코드가 아니다.
  *
- * <p>규칙은 둘이다. 적용은 {@code (workflowId, aggregateVersion)}마다 한 번이고, offset commit은 적용이 끝난 뒤에
+ * <p>규칙은 셋이다. 적용은 {@code (workflowId, aggregateVersion)}마다 한 번이고, offset commit은 적용이 끝난 뒤에
  * 따로 한다(at-least-once). 적용 여부는 PostgreSQL에 남기므로 소비자가 죽어도, 다른 인스턴스가 이어받아도 유지된다.
- * 적용 표시와 부수 효과는 한 트랜잭션이다.
+ * 적용 표시, 상태 갱신, 부수 효과는 한 트랜잭션이다. 셋째로 상태는 더 높은 aggregateVersion으로만 바뀐다. 높은 버전이
+ * 낮은 버전보다 먼저 첫 전달돼도(EXP-091) 상태가 거꾸로 가지 않고, 이미 지나간 낮은 버전의 부수 효과는 내지 않는다.
  */
 final class ReservationEventReferenceConsumer implements AutoCloseable {
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
@@ -39,15 +40,24 @@ final class ReservationEventReferenceConsumer implements AutoCloseable {
     private final TransactionTemplate transaction;
     private final List<String> receivedEventIds = new ArrayList<>();
     private int duplicatesSkipped;
+    private int staleSkipped;
 
     ReservationEventReferenceConsumer(String bootstrapServers, String topic, String group, JdbcTemplate jdbc,
             int maxPollRecords) {
+        this(bootstrapServers, topic, group, jdbc, maxPollRecords, Duration.ofSeconds(45));
+    }
+
+    /** sessionTimeout은 {@link #crash()}한 인스턴스를 그룹이 내보내는 데 걸리는 시간이다(broker 최소값 6초). */
+    ReservationEventReferenceConsumer(String bootstrapServers, String topic, String group, JdbcTemplate jdbc,
+            int maxPollRecords, Duration sessionTimeout) {
         this.consumer = new KafkaConsumer<>(Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers,
                 ConsumerConfig.GROUP_ID_CONFIG, group,
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
                 ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecords,
+                ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, Math.toIntExact(sessionTimeout.toMillis()),
+                ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, Math.toIntExact(sessionTimeout.toMillis() / 3),
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class));
         this.topic = topic;
@@ -63,6 +73,9 @@ final class ReservationEventReferenceConsumer implements AutoCloseable {
                     workflow_id uuid NOT NULL, aggregate_version bigint NOT NULL,
                     PRIMARY KEY (workflow_id, aggregate_version))""");
         jdbc.execute("CREATE TABLE reservation_event_effect (workflow_id uuid NOT NULL, aggregate_version bigint NOT NULL)");
+        jdbc.execute("""
+                CREATE TABLE reservation_event_state (
+                    workflow_id uuid PRIMARY KEY, aggregate_version bigint NOT NULL)""");
     }
 
     /** 한 묶음을 읽어 적용한다. offset은 commit하지 않는다. 받은 레코드 수를 돌려준다. */
@@ -99,6 +112,17 @@ final class ReservationEventReferenceConsumer implements AutoCloseable {
         return consumer.assignment();
     }
 
+    /** 높은 버전이 이미 반영돼 부수 효과를 내지 않고 넘긴 전달 수(첫 전달 순서 역행). */
+    int staleSkipped() {
+        return staleSkipped;
+    }
+
+    /** 그룹에서 나가지 않고 연결만 끊어 죽은 인스턴스를 흉내 낸다. broker는 세션 만료 뒤에야 파티션을 다른 인스턴스에 넘긴다. */
+    void crash() {
+        consumer.close(CloseOptions.timeout(CLOSE_TIMEOUT)
+                .withGroupMembershipOperation(CloseOptions.GroupMembershipOperation.REMAIN_IN_GROUP));
+    }
+
     /** 이 인스턴스가 받은 event-id를 받은 순서대로. 중복 전달도 그대로 들어 있다. */
     List<String> receivedEventIds() {
         return List.copyOf(receivedEventIds);
@@ -131,6 +155,15 @@ final class ReservationEventReferenceConsumer implements AutoCloseable {
                     ON CONFLICT DO NOTHING""", workflowId, version);
             if (first == 0) {
                 return false;
+            }
+            // 상태는 더 높은 버전으로만 바뀐다. 이미 높은 버전이 반영됐다면 이 전달은 상태를 되돌리지 못한다.
+            int advanced = jdbc.update("""
+                    INSERT INTO reservation_event_state (workflow_id, aggregate_version) VALUES (?, ?)
+                    ON CONFLICT (workflow_id) DO UPDATE SET aggregate_version = EXCLUDED.aggregate_version
+                    WHERE reservation_event_state.aggregate_version < EXCLUDED.aggregate_version""", workflowId, version);
+            if (advanced == 0) {
+                staleSkipped++;
+                return true;
             }
             jdbc.update("INSERT INTO reservation_event_effect (workflow_id, aggregate_version) VALUES (?, ?)",
                     workflowId, version);

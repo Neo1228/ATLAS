@@ -42,9 +42,10 @@ public class ReservationEventWorker {
             @Value("${atlas.order-inventory-reservation.event-relay.lease-duration:PT30S}") Duration leaseDuration,
             @Value("${atlas.order-inventory-reservation.event-relay.send-timeout:PT10S}") Duration sendTimeout) {
         if (batchSize < 1 || batchSize > 5000) throw new IllegalArgumentException("Invalid event relay batch size");
-        // lease가 전송 한도보다 짧으면 전송 중에 lease가 만료되어 다른 replica가 같은 묶음을 중복 전송한다.
-        if (leaseDuration.compareTo(sendTimeout.plusSeconds(5)) < 0) {
-            throw new IllegalArgumentException("Event relay lease must exceed send timeout by at least 5 seconds");
+        // lease가 전송 소요보다 짧으면 전송 중에 lease가 만료되어 다른 replica가 같은 묶음을 겹쳐 전송한다. publisher는 묶음을
+        // 덩어리로 나눠 순서대로 보내므로 한도 안에 시작한 마지막 덩어리가 끝나기까지 최악 send-timeout의 두 배가 걸린다.
+        if (leaseDuration.compareTo(sendTimeout.multipliedBy(2).plusSeconds(5)) < 0) {
+            throw new IllegalArgumentException("Event relay lease must exceed twice the send timeout by at least 5 seconds");
         }
         this.eventLog = eventLog;
         this.publisher = publisher;
