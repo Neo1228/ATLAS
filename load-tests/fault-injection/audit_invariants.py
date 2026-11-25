@@ -12,6 +12,11 @@ Invariants (each is a boolean per run; one false is a finding, not noise):
                        and every reservation item has quantity 1
   converged            no workflow is left in PENDING, RETRY_PENDING, COMPENSATING,
                        COMPENSATION_REQUIRED or CANCEL_PENDING within the timeout
+Extra evidence recorded per run (not invariants): the non-terminal workflows seen right after the load
+(lease_until and next_attempt_at relative to the database clock, so a convergence tail can be compared
+with the lease), the time to the first 201 after the fault ended, per-target statuses, latencies, and
+for runs with --replay (same-key retries) whether every retried request was answered and whether the
+replay of every key created nothing new.
 Only rows created by this run are counted (idempotency key prefix on the order side, order id
 prefix on the location side), so earlier runs in the same database cannot leak in.
 """
@@ -24,6 +29,7 @@ import sys
 import time
 from pathlib import Path
 
+BASE_INVARIANTS = ("lost_accepted_zero", "counts_equal", "no_duplicates", "converged")
 NONTERMINAL = ("PENDING", "RETRY_PENDING", "COMPENSATING", "COMPENSATION_REQUIRED", "CANCEL_PENDING")
 ACCEPTED = (200, 201, 202)
 
@@ -59,18 +65,44 @@ def location_query(container, sql):
     return psql(container, "atlas_inventory", "atlas_inventory", sql)
 
 
-def wait_for_convergence(args):
-    """Epoch at which the run first has no non-terminal workflow, or None on timeout."""
-    states = ",".join(f"'{state}'" for state in NONTERMINAL)
-    sql = (f"SELECT count(*) FROM order_inventory_reservation_workflow "
+def nonterminal_snapshot(args, states):
+    """Non-terminal workflows right now, with lease_until / next_attempt_at as seconds from the DB clock."""
+    sql = (f"SELECT count(*), count(*) FILTER (WHERE next_attempt_at <= now()), "
+           f"count(*) FILTER (WHERE lease_until IS NOT NULL AND lease_until > now()), "
+           f"coalesce(round(EXTRACT(EPOCH FROM (max(lease_until) - now()))::numeric, 2)::text, ''), "
+           f"coalesce(round(EXTRACT(EPOCH FROM (max(next_attempt_at) - now()))::numeric, 2)::text, ''), "
+           f"coalesce(max(attempt_count), 0), coalesce(string_agg(DISTINCT workflow_state, ','), '') "
+           f"FROM order_inventory_reservation_workflow "
            f"WHERE idempotency_key LIKE '{args.run_id}-%' AND workflow_state IN ({states})")
+    rows = order_query(args, sql)
+    if rows is None or not rows:
+        return None
+    row = rows[0]
+    return {"non_terminal": int(row[0]), "due": int(row[1]), "leased": int(row[2]),
+            "lease_remaining_max_s": float(row[3]) if row[3] else None,
+            "next_attempt_remaining_max_s": float(row[4]) if row[4] else None,
+            "max_attempt_count": int(row[5]), "states": row[6]}
+
+
+def wait_for_convergence(args):
+    """(epoch at which the run first has no non-terminal workflow or None on timeout, tail probe).
+
+    The probe is the first snapshot that still saw non-terminal workflows. It predicts when the run
+    converges if the only thing holding it back is the lease (max lease_until) or the retry backoff
+    (max next_attempt_at); the audit then compares the prediction with the observed time."""
+    states = ",".join(f"'{state}'" for state in NONTERMINAL)
     deadline = time.time() + args.converge_timeout
+    probe = None
     while time.time() < deadline:
-        rows = order_query(args, sql)
-        if rows is not None and rows[0][0] == "0":
-            return time.time()
+        taken = time.time()
+        snapshot = nonterminal_snapshot(args, states)
+        if snapshot is not None and snapshot["non_terminal"] == 0:
+            return time.time(), probe
+        if snapshot is not None and probe is None:
+            probe = {**snapshot, "taken_after_since_s": round(taken - args.since, 2),
+                     "taken_epoch": taken}
         time.sleep(0.5)
-    return None
+    return None, probe
 
 
 def location_view(container, run_id):
@@ -98,11 +130,73 @@ def location_view(container, run_id):
     }
 
 
+def percentile(values, fraction):
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(fraction * len(ordered)))] if ordered else None
+
+
+def latency_summary(requests):
+    values = [r["ended"] - r["sent"] for r in requests]
+    lags = [r["sent"] - r["scheduled"] for r in requests]
+    return {"max": round(max(values), 2), "p50": round(percentile(values, 0.5), 3),
+            "p95": round(percentile(values, 0.95), 3),
+            "send_lag_max": round(max(lags), 2)} if values else {}
+
+
+def retry_summary(requests, replay, state_by_key, created_by_key):
+    """What happened when requests were resent with the same idempotency key (--replay runs)."""
+    failed = [r for r in requests if r["http"] not in ACCEPTED]
+    retries = [a for a in replay if a["phase"] == "retry"]
+    everything = [a for a in replay if a["phase"] == "all"]
+    by_key = collections.defaultdict(list)
+    for attempt in retries:
+        by_key[attempt["key"]].append(attempt)
+    resolved, existed_201, ones, twos, attempts_to_resolve = 0, 0, 0, 0, []
+    for request in failed:
+        tries = by_key.get(request["key"], [])
+        final = next((a for a in tries if a["http"] in (200, 201)), None)
+        if final is None:
+            continue
+        resolved += 1
+        attempts_to_resolve.append(final["attempt"])
+        if final["http"] == 201:
+            ones += 1
+            # a 201 means "created by this request". The row is older than the answering attempt by far
+            # (1 s margin for the database-to-host clock difference) -> it existed, and 200 was expected.
+            if created_by_key.get(request["key"], final["sent"] + 1) < final["sent"] - 1.0:
+                existed_201 += 1
+        else:
+            twos += 1
+    return {"retry_set": len(failed), "resolved": resolved, "unresolved": len(failed) - resolved,
+            "resolved_with_201": ones, "resolved_with_200": twos,
+            "retry_201_but_existed": existed_201,
+            "attempts_to_resolve_max": max(attempts_to_resolve, default=0),
+            "retry_attempts": len(retries),
+            "all_total": len(everything),
+            "all_http": dict(collections.Counter(str(a["http"]) for a in everything)),
+            "all_201": sum(1 for a in everything if a["http"] == 201),
+            "all_body_status": dict(collections.Counter(str(a["body_status"]) for a in everything)),
+            "all_not_reserved_body": sum(1 for a in everything
+                                         if a["http"] in (200, 201) and a["body_status"] != "RESERVED")}
+
+
 def audit(args):
     requests = [json.loads(line) for line in Path(args.requests).read_text(encoding="utf-8").splitlines()]
-    converge_epoch = wait_for_convergence(args)
+    converge_epoch, probe = wait_for_convergence(args)
     converge_seconds = None if converge_epoch is None else round(max(0.0, converge_epoch - args.since), 2)
+    if probe is not None and converge_epoch is not None:
+        taken = probe.pop("taken_epoch")
+        for name, key in (("lease", "lease_remaining_max_s"), ("backoff", "next_attempt_remaining_max_s")):
+            if probe[key] is not None:
+                probe[f"predicted_converge_by_{name}_s"] = round(taken + max(probe[key], 0) - args.since, 2)
+        probe["observed_converge_s"] = converge_seconds
+        if "predicted_converge_by_lease_s" in probe:
+            probe["observed_minus_lease_prediction_s"] = round(
+                converge_seconds - probe["predicted_converge_by_lease_s"], 2)
+    elif probe is not None:
+        probe.pop("taken_epoch")
     window = {}
+    recovery = {}
     if args.fault_file and Path(args.fault_file).exists():
         fault = json.loads(Path(args.fault_file).read_text(encoding="utf-8"))
         inside = [r for r in requests if fault["begin"] <= r["sent"] <= fault["end"]]
@@ -111,16 +205,33 @@ def audit(args):
                   "http_status_inside": dict(collections.Counter(str(r["http"]) for r in inside))}
         if converge_epoch is not None:
             window["converge_after_fault_end_s"] = round(converge_epoch - fault["end"], 2)
+        after = [r for r in requests if r["http"] == 201 and r["ended"] > fault["end"]]
+        late_failures = [r for r in requests if r["http"] not in ACCEPTED and r["ended"] > fault["end"]]
+        recovery = {"first_201_after_fault_end_s": round(min(r["ended"] for r in after) - fault["end"], 2)
+                    if after else None,
+                    "last_failure_after_fault_end_s": round(max(r["ended"] for r in late_failures) - fault["end"], 2)
+                    if late_failures else None}
 
+    local_before = time.time()
+    clock = retry(lambda: order_query(args, "SELECT EXTRACT(EPOCH FROM now())"))
+    clock_skew = round(time.time() - float(clock[0][0]), 3) - round((time.time() - local_before) / 2, 3)
     workflow_rows = retry(lambda: order_query(
-        args, f"SELECT idempotency_key, workflow_state, order_id FROM order_inventory_reservation_workflow "
-              f"WHERE idempotency_key LIKE '{args.run_id}-%'"))
+        args, f"SELECT idempotency_key, workflow_state, order_id, EXTRACT(EPOCH FROM created_at) "
+              f"FROM order_inventory_reservation_workflow WHERE idempotency_key LIKE '{args.run_id}-%'"))
     state_by_key = {row[0]: row[1] for row in workflow_rows}
+    created_by_key = {row[0]: float(row[3]) + clock_skew for row in workflow_rows}  # host clock
     order_ids = [row[2] for row in workflow_rows]
     states = collections.Counter(state_by_key.values())
 
     http_counts = collections.Counter(str(r["http"]) for r in requests)
-    accepted = [r for r in requests if r["http"] in ACCEPTED]
+    replay = ([json.loads(line) for line in Path(args.replay).read_text(encoding="utf-8").splitlines()]
+              if args.replay and Path(args.replay).exists() else None)
+    answered_by_retry = {}
+    if replay:
+        for attempt in replay:
+            if attempt["http"] in ACCEPTED:
+                answered_by_retry.setdefault(attempt["key"], attempt)
+    accepted = [r for r in requests if r["http"] in ACCEPTED or r["key"] in answered_by_retry]
     lost = [r["key"] for r in accepted if state_by_key.get(r["key"]) != "RESERVED"]
     lost_201 = [r["key"] for r in accepted
                 if r["http"] in (200, 201) and state_by_key.get(r["key"]) != "RESERVED"]
@@ -177,6 +288,13 @@ def audit(args):
         "unknown_outcome_requests": len(unknown_total),
         "unknown_outcome_but_reserved": len(unknown_but_reserved),
         "converge_seconds": converge_seconds,
+        "tail_probe": probe,
+        "recovery": recovery,
+        "http_status_by_target": {str(t): dict(collections.Counter(
+            str(r["http"]) for r in requests if r.get("target", 0) == t))
+            for t in sorted({r.get("target", 0) for r in requests})},
+        "latency_s": latency_summary(requests),
+        "clock_skew_s": clock_skew,
         "fault_window": window,
         "invariants": {
             "lost_accepted_zero": len(lost) == 0,
@@ -186,6 +304,12 @@ def audit(args):
         },
         "evidence": {"lost_keys": lost[:20]},
     }
+    if replay is not None:
+        result["retry"] = retry_summary(requests, replay, state_by_key, created_by_key)
+        result["invariants"]["retry_resolved"] = result["retry"]["unresolved"] == 0
+        result["invariants"]["replay_idempotent"] = (result["retry"]["all_201"] == 0
+                                                     and result["retry"]["retry_201_but_existed"] == 0
+                                                     and result["retry"]["all_not_reserved_body"] == 0)
     result["pass_all"] = all(result["invariants"].values())
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"run_id": args.run_id, "pass_all": result["pass_all"], **result["invariants"],
@@ -200,6 +324,13 @@ def spread(values):
     return f"{min(values):g} / {statistics.median(values):g} / {max(values):g}"
 
 
+def retry_pass(runs):
+    retried = [r for r in runs if "retry_resolved" in r["invariants"]]
+    if not retried:
+        return "-"
+    return f"{sum(1 for r in retried if r['invariants']['retry_resolved'] and r['invariants']['replay_idempotent'])}/{len(retried)}"
+
+
 def summarize(args):
     by_condition = collections.defaultdict(list)
     for result_file in sorted(Path(args.results).glob("*/run-*/result.json")):
@@ -210,8 +341,9 @@ def summarize(args):
         by_condition[condition].append(run)
     statuses = sorted({s for runs in by_condition.values() for run in runs for s in run["http_status"]},
                       key=int)
-    print("| condition | n | lost=0 | counts equal | no duplicates | converged | all four |")
-    print("| --- | --- | --- | --- | --- | --- | --- |")
+    print("| condition | n | lost=0 | counts equal | no duplicates | converged | all four | "
+          "retry invariants (only retry runs) |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
     for condition, runs in by_condition.items():
         n = len(runs)
 
@@ -219,7 +351,9 @@ def summarize(args):
             return sum(1 for run in runs if run["invariants"][name])
 
         print(f"| {condition} | {n} | {count('lost_accepted_zero')} | {count('counts_equal')} | "
-              f"{count('no_duplicates')} | {count('converged')} | {sum(1 for r in runs if r['pass_all'])} |")
+              f"{count('no_duplicates')} | {count('converged')} | "
+              f"{sum(1 for r in runs if all(r['invariants'][k] for k in BASE_INVARIANTS))} | "
+              f"{retry_pass(runs)} |")
     print()
     print("client-visible status per run, min / median / max over runs (requests per run: "
           f"{next(iter(by_condition.values()))[0]['requests_sent'] if by_condition else '-'})")
@@ -250,6 +384,75 @@ def summarize(args):
               f"{observed(lambda r: r['meta'].get('oom_events', 0) > 0)} | "
               f"{spread([r['fault_window'].get('requests_started_inside') for r in runs])} | "
               f"{spread([r['fault_window'].get('converge_after_fault_end_s') for r in runs])} |")
+    print()
+    print("recovery and latency (seconds; min / median / max over runs; '-' = not applicable)")
+    print()
+    print("| condition | first 201 after fault end | last failure after fault end | max request latency | "
+          "p95 request latency | request sent later than scheduled (max) |")
+    print("| --- | --- | --- | --- | --- | --- |")
+    for condition, runs in by_condition.items():
+        print(f"| {condition} | "
+              f"{spread([r.get('recovery', {}).get('first_201_after_fault_end_s') for r in runs])} | "
+              f"{spread([r.get('recovery', {}).get('last_failure_after_fault_end_s') for r in runs])} | "
+              f"{spread([r.get('latency_s', {}).get('max') for r in runs])} | "
+              f"{spread([r.get('latency_s', {}).get('p95') for r in runs])} | "
+              f"{spread([r.get('latency_s', {}).get('send_lag_max') for r in runs])} |")
+    probes = {c: [r for r in runs if r.get("tail_probe")] for c, runs in by_condition.items()}
+    if any(probes.values()):
+        print()
+        print("convergence tail: the first look after the load that still saw non-terminal workflows. A row "
+              "is 'stuck on a lease' when leased more than 3 s earlier (lease length minus remaining time); "
+              "only then is 'converged when the longest lease expired' a prediction (a lease the recovery "
+              "worker took a moment ago belongs to live work, not to a dead holder)")
+        print()
+        print("| condition | n | non-terminal at first look | stuck on a lease | converge s, all runs | "
+              "max lease remaining s (stuck runs) | observed minus lease prediction s (stuck runs) | "
+              "converge s of tail runs that are not lease-stuck |")
+        print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+        for condition, runs in by_condition.items():
+            found = probes[condition]
+            if not found:
+                continue
+
+            def stuck(run):
+                probe = run["tail_probe"]
+                lease = float(run["meta"].get("recovery_lease", "PT30S")[2:-1])
+                return (probe.get("leased", 0) >= 1 and probe.get("lease_remaining_max_s") is not None
+                        and lease - probe["lease_remaining_max_s"] > 3)
+
+            stuck_runs = [r for r in found if stuck(r)]
+            others = [r for r in found if not stuck(r)]
+            print(f"| {condition} | {len(runs)} | {len(found)}/{len(runs)} | {len(stuck_runs)}/{len(runs)} | "
+                  f"{spread([r['converge_seconds'] for r in runs])} | "
+                  f"{spread([r['tail_probe'].get('lease_remaining_max_s') for r in stuck_runs])} | "
+                  f"{spread([r['tail_probe'].get('observed_minus_lease_prediction_s') for r in stuck_runs])} | "
+                  f"{spread([r['converge_seconds'] for r in others])} |")
+    retried = {c: [r for r in runs if "retry" in r] for c, runs in by_condition.items()}
+    if any(retried.values()):
+        print()
+        print("same-key retry: requests without 200/201/202 are resent with the same key every second "
+              "(up to 60 s), then every key is sent once more (min / median / max over runs)")
+        print()
+        print("| condition | retried requests | resolved with 200 (replay) | resolved with 201 (created) | "
+              "unresolved | 201 although the row existed | replay-all 200 | replay-all 201 | replay-all 202 | "
+              "replay-all other | replay-all body not RESERVED |")
+        print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        for condition, runs in by_condition.items():
+            found = retried[condition]
+            if not found:
+                continue
+
+            def column(name):
+                return spread([r["retry"][name] for r in found])
+
+            def all_http(code):
+                return spread([r["retry"]["all_http"].get(code, 0) for r in found])
+
+            other = [sum(v for k, v in r["retry"]["all_http"].items() if k not in ("200", "201", "202")) for r in found]
+            print(f"| {condition} | {column('retry_set')} | {column('resolved_with_200')} | "
+                  f"{column('resolved_with_201')} | {column('unresolved')} | {column('retry_201_but_existed')} | "
+                  f"{all_http('200')} | {all_http('201')} | {all_http('202')} | {spread(other)} | "
+                  f"{column('all_not_reserved_body')} |")
     return 0
 
 
@@ -266,6 +469,7 @@ def main():
                               help="epoch seconds; convergence time is measured from here")
     audit_parser.add_argument("--converge-timeout", type=float, default=90.0)
     audit_parser.add_argument("--fault-file", default="")
+    audit_parser.add_argument("--replay", default="", help="replay.jsonl of a same-key retry run")
     audit_parser.add_argument("--out", required=True)
     audit_parser.set_defaults(handler=audit)
     summarize_parser = sub.add_parser("summarize")

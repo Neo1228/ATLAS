@@ -1,0 +1,6 @@
+{
+  "name": "location-b",
+  "listen": "0.0.0.0:8091",
+  "upstream": "location-b:8090",
+  "enabled": true
+}
