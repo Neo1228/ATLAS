@@ -7,7 +7,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 
 ![ATLAS 실행 구조](docs/images/architecture.png)
 
-로컬 compose 기준 실행 구조다. 파란 영역은 항상 실행되는 Spring Boot application과 그 안의 도메인 모듈이다. 청록(재고 예약), 주황(결제), 보라(Redis, Kafka) 영역은 설정을 켜야 동작하고 기본은 꺼져 있다. 카탈로그 캐시는 `edge-cache`, 초록 영역은 `observability` compose profile에서만 뜬다. 아이콘은 [excalidraw-libraries](https://github.com/excalidraw/excalidraw-libraries)(MIT, Copyright (c) 2020 Excalidraw)의 것이다.
+로컬 compose 기준 실행 구조다. 파란 영역은 ATLAS 본체(application, 주 PostgreSQL, 개발용 메일 서버)이고, 모듈 7개가 한 프로세스에서 실행된다. 회색 영역(재고 예약, 결제, Redis와 Kafka)은 설정을 켜야 동작하며 기본은 꺼져 있다. compose에서 기본으로 뜨는 것은 PostgreSQL뿐이고, application과 메일 서버는 `observability`, `loadtest`, `edge-cache` 프로파일에서 뜬다. 카탈로그 캐시는 `edge-cache`, 초록 영역은 `observability` 프로파일이다. Spring, Redis 아이콘은 [Technology Logos](https://github.com/excalidraw/excalidraw-libraries/blob/297a349eaff859e678f78d4dbc8e68df5fce42e5/libraries/maeddes/technology-logos.excalidrawlib)(maeddes), Prometheus, Grafana 아이콘은 [Redis Grafana](https://github.com/excalidraw/excalidraw-libraries/blob/297a349eaff859e678f78d4dbc8e68df5fce42e5/libraries/mikhailredis/redis-grafana.excalidrawlib)(mikhailredis) Excalidraw 라이브러리의 것이다([excalidraw-libraries](https://github.com/excalidraw/excalidraw-libraries), MIT, Copyright (c) 2020 Excalidraw). 각 제품의 상표는 소유자에게 있다.
 
 ## 현재 기능과 모듈
 
