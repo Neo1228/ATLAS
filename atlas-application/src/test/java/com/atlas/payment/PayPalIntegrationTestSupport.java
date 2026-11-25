@@ -30,6 +30,8 @@ import org.springframework.test.context.DynamicPropertySource;
 /** 통합 테스트가 샌드박스나 실제 자격 증명에 접근하지 않도록 로컬 PayPal API를 대체한다. */
 public abstract class PayPalIntegrationTestSupport {
     protected static final MockWebServer PAYPAL = new MockWebServer();
+    /** 실제 Sandbox authorize 응답 값(EXP-086: 생성 2026-11-25T01:19:22Z + 29일). */
+    protected static final String AUTHORIZATION_EXPIRATION = "2026-12-24T01:19:22Z";
     protected static final MockWebServer ECOS = new MockWebServer();
     private static final Map<String, Amount> ORDERS = new ConcurrentHashMap<>();
     /** 실제 PayPal 처럼 같은 PayPal-Request-Id 로 생성·승인 요청을 다시 보내면 같은 리소스를 돌려준다. */
@@ -52,6 +54,8 @@ public abstract class PayPalIntegrationTestSupport {
     private static final Queue<String> ORDER_CAPTURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> CAPTURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> VOID_STATUSES = new ConcurrentLinkedQueue<>();
+    /** 호출 종류별로 다음 요청에 줄 4xx·5xx 거절 큐. 값은 "상태코드:issue" 형식이다. */
+    private static final Map<String, Queue<String>> REJECTIONS = new ConcurrentHashMap<>();
     private static final Queue<String> REFUND_STATUSES = new ConcurrentLinkedQueue<>();
     private static final Queue<String> WEBHOOK_SIGNATURE_STATUSES = new ConcurrentLinkedQueue<>();
     private static final AtomicBoolean DISCONNECT_NEXT_CAPTURE = new AtomicBoolean();
@@ -74,6 +78,15 @@ public abstract class PayPalIntegrationTestSupport {
     protected static void queueOrderCaptureStatus(String status) { ORDER_CAPTURE_STATUSES.add(status); }
     protected static void queueCaptureStatus(String status) { CAPTURE_STATUSES.add(status); }
     protected static void queueVoidStatus(String status) { VOID_STATUSES.add(status); }
+
+    /**
+     * 다음 {@code operation} 요청 하나에 실제 PayPal 오류 본문(EXP-081 모양)을 준다.
+     * operation: create-order, authorize, capture, void.
+     */
+    protected static void queueRejection(String operation, int status, String issue) {
+        REJECTIONS.computeIfAbsent(operation, ignored -> new ConcurrentLinkedQueue<>())
+                .add(status + ":" + issue);
+    }
     protected static void queueRefundStatus(String status) { REFUND_STATUSES.add(status); }
     protected static void queueWebhookVerificationStatus(String status) { WEBHOOK_SIGNATURE_STATUSES.add(status); }
     protected static void disconnectNextCaptureResponse() { DISCONNECT_NEXT_CAPTURE.set(true); }
@@ -128,6 +141,7 @@ public abstract class PayPalIntegrationTestSupport {
         ORDER_CAPTURE_STATUSES.clear();
         CAPTURE_STATUSES.clear();
         VOID_STATUSES.clear();
+        REJECTIONS.clear();
         REFUND_STATUSES.clear();
         WEBHOOK_SIGNATURE_STATUSES.clear();
         DISCONNECT_NEXT_CAPTURE.set(false);
@@ -180,6 +194,8 @@ public abstract class PayPalIntegrationTestSupport {
                     return json("{\"access_token\":\"local-access-token\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
                 }
                 if (path.equals("/v2/checkout/orders") && "POST".equals(method)) {
+                    MockResponse rejected = pollRejection("create-order");
+                    if (rejected != null) return rejected;
                     String requestId = request.getHeader("PayPal-Request-Id");
                     // 실제 Sandbox: 같은 Request-Id 는 본문이 달라도 처음 만든 주문을 돌려준다(EXP-081).
                     String id = requestId == null ? newOrderId()
@@ -196,6 +212,8 @@ public abstract class PayPalIntegrationTestSupport {
                     String orderId = lastSegment(path.substring(0, path.lastIndexOf('/')));
                     Amount amount = ORDERS.get(orderId);
                     if (amount == null) return resourceNotFound();
+                    MockResponse rejected = pollRejection("authorize");
+                    if (rejected != null) return rejected;
                     String requestId = request.getHeader("PayPal-Request-Id");
                     String authId;
                     synchronized (STUB_LOCK) {
@@ -243,7 +261,8 @@ public abstract class PayPalIntegrationTestSupport {
                     String resources = "";
                     if (authorizationStatus != null && !"NONE".equals(authorizationStatus)) {
                         resources = "\"authorizations\":[{\"id\":\"" + authorizationIdOf(orderId)
-                                + "\",\"status\":\"" + authorizationStatus + "\"}]";
+                                + "\",\"status\":\"" + authorizationStatus + "\",\"expiration_time\":\""
+                                + AUTHORIZATION_EXPIRATION + "\"}]";
                     }
                     if (captureStatus != null && !"NONE".equals(captureStatus)) {
                         String capture = "\"captures\":[{\"id\":\"CAPTURE-" + orderId
@@ -262,6 +281,8 @@ public abstract class PayPalIntegrationTestSupport {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));
                     Amount amount = AUTHORIZATIONS.get(authId);
                     if (amount == null) return resourceNotFound();
+                    MockResponse rejected = pollRejection("capture");
+                    if (rejected != null) return rejected;
                     String captureId = captureId(request);
                     synchronized (STUB_LOCK) {
                         // 실제 Sandbox: 이미 캡처한 승인을 다른 Request-Id 로 다시 캡처하면 422 다(EXP-081).
@@ -285,6 +306,8 @@ public abstract class PayPalIntegrationTestSupport {
                 if (path.matches("/v2/payments/authorizations/[^/]+/void") && "POST".equals(method)) {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));
                     if (!AUTHORIZATIONS.containsKey(authId)) return resourceNotFound();
+                    MockResponse rejected = pollRejection("void");
+                    if (rejected != null) return rejected;
                     return json("{\"id\":\"" + authId + "\",\"status\":\"" + nextStatus(VOID_STATUSES, "VOIDED") + "\"}");
                 }
                 if (path.matches("/v2/payments/captures/[^/]+/refund") && "POST".equals(method)) {
@@ -421,6 +444,23 @@ public abstract class PayPalIntegrationTestSupport {
                 "INVALID_RESOURCE_ID", "Specified resource ID does not exist. Please check the resource ID and try again.");
     }
 
+    /** 큐에 넣은 거절이 있으면 PayPal 오류 본문으로 만들어 돌려주고, 없으면 null 이다. */
+    private static MockResponse pollRejection(String operation) {
+        Queue<String> queue = REJECTIONS.get(operation);
+        String next = queue == null ? null : queue.poll();
+        if (next == null) return null;
+        int status = Integer.parseInt(next.substring(0, next.indexOf(':')));
+        String issue = next.substring(next.indexOf(':') + 1);
+        String name = switch (status) {
+            case 401 -> "AUTHENTICATION_FAILURE";
+            case 429 -> "RATE_LIMIT_REACHED";
+            case 500, 503 -> "INTERNAL_SERVER_ERROR";
+            case 422 -> "UNPROCESSABLE_ENTITY";
+            default -> "INVALID_REQUEST";
+        };
+        return paypalError(status, name, "local rejection " + status, issue, "local rejection " + issue);
+    }
+
     private static MockResponse unprocessable(String issue, String description) {
         return paypalError(422, "UNPROCESSABLE_ENTITY",
                 "The requested action could not be performed, semantically incorrect, or failed business validation.",
@@ -433,7 +473,7 @@ public abstract class PayPalIntegrationTestSupport {
     }
 
     private static MockResponse authorized(String order, String auth, Amount amount, String status) {
-        return json("{\"id\":\"" + order + "\",\"status\":\"COMPLETED\",\"purchase_units\":[{\"payments\":{\"authorizations\":[{\"id\":\"" + auth + "\",\"status\":\"" + status + "\",\"amount\":{\"currency_code\":\"" + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]}}]}");
+        return json("{\"id\":\"" + order + "\",\"status\":\"COMPLETED\",\"purchase_units\":[{\"payments\":{\"authorizations\":[{\"id\":\"" + auth + "\",\"status\":\"" + status + "\",\"expiration_time\":\"" + AUTHORIZATION_EXPIRATION + "\",\"amount\":{\"currency_code\":\"" + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]}}]}");
     }
 
     private static MockResponse captured(String order, String capture, Amount amount, String status) {

@@ -17,5 +17,6 @@ public record PaymentRecoveryReviewRow(
         int manualRequeueCount,
         Instant firstEnqueuedAt,
         Instant lastAttemptAt,
-        String lastErrorCode) {
+        String lastErrorCode,
+        Instant authorizationExpiresAt) {
 }

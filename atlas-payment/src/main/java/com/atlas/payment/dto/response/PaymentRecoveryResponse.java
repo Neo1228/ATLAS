@@ -31,6 +31,7 @@ public final class PaymentRecoveryResponse {
             boolean duplicate) {
     }
 
+    /** {@code authorizationExpiresAt}: 결제 시도 job 의 PayPal authorization 만료 시각. 모르거나 환불 job 이면 null. */
     public record ReviewItem(
             UUID recoveryJobId,
             PaymentRecoveryOperationType operationType,
@@ -43,6 +44,7 @@ public final class PaymentRecoveryResponse {
             int manualRequeueCount,
             Instant firstEnqueuedAt,
             Instant lastAttemptAt,
-            String lastErrorCode) {
+            String lastErrorCode,
+            Instant authorizationExpiresAt) {
     }
 }

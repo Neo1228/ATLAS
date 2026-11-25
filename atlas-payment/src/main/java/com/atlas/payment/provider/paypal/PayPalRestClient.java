@@ -13,6 +13,9 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Objects;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -24,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
     /** PayPal Orders v2/Payments v2 API 요청과 응답 매핑. 요청은 자동 재시도하지 않음. */
 @Component
@@ -87,14 +91,17 @@ public class PayPalRestClient {
                 PayPalAuthorizationStatus.from(authorization == null ? null : text(authorization, "status")),
                 capture == null ? null : text(capture, "id"),
                 PayPalCaptureStatus.from(capture == null ? null : text(capture, "status")),
-                resourceAmount(response, "capture"), resourceCurrency(response, "capture"));
+                resourceAmount(response, "capture"), resourceCurrency(response, "capture"),
+                authorization == null ? null : instant(authorization, "expiration_time"));
     }
 
     public AuthorizationResult authorizeOrder(String orderId, String requestId) {
         Map<String, Object> response = post("/v2/checkout/orders/{id}/authorize".replace("{id}", orderId),
                 Map.of(), requestId);
+        Map<String, Object> authorization = firstResource(response, "authorization");
         return new AuthorizationResult(resourceId(response, "authorization"),
-                PayPalAuthorizationStatus.from(resourceStatus(response, "authorization")));
+                PayPalAuthorizationStatus.from(resourceStatus(response, "authorization")),
+                authorization == null ? null : instant(authorization, "expiration_time"));
     }
 
     public CaptureResult captureAuthorization(String authorizationId, BigDecimal amount,
@@ -113,6 +120,8 @@ public class PayPalRestClient {
             api().post().uri("/v2/payments/authorizations/{id}/void", authorizationId)
                     .header(REQUEST_ID, requestId).contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of()).retrieve().toBodilessEntity();
+        } catch (RestClientResponseException exception) {
+            throw failure("PayPal authorization void failed", exception);
         } catch (RestClientException exception) {
             throw new PayPalUnavailableException("PayPal authorization void failed", exception);
         }
@@ -232,9 +241,39 @@ public class PayPalRestClient {
             // 금액 검증에 실패해 UNKNOWN 된다(실제 Sandbox 확인). 전체 표현을 명시적으로 요청한다.
             return api(baseUrl).post().uri(uri).header(REQUEST_ID, requestId).header(PREFER, "return=representation")
                     .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(mapType());
+        } catch (RestClientResponseException exception) {
+            throw failure("PayPal API request failed", exception);
         } catch (RestClientException exception) {
             throw new PayPalUnavailableException("PayPal API request failed", exception);
         }
+    }
+
+    /**
+     * HTTP 오류 응답을 예외로 바꾼다. 4xx 는 PayPal 오류 본문의 이슈를 담은 {@link PayPalRejectedException} 으로
+     * 던지고, 그 밖(5xx, 3xx)은 이전처럼 장애 예외로 던진다. 거절 예외도 장애 예외의 하위 형식이라
+     * 분류하지 않는 호출부는 지금처럼 결과 불명(UNKNOWN)으로 처리한다.
+     */
+    private PayPalUnavailableException failure(String message, RestClientResponseException exception) {
+        int status = exception.getStatusCode().value();
+        if (status < 400 || status >= 500) {
+            return new PayPalUnavailableException(message, exception);
+        }
+        String issue = null;
+        try {
+            Map<String, Object> body = objectMapper.readValue(exception.getResponseBodyAsString(), mapType());
+            issue = firstIssue(body);
+        } catch (RuntimeException unparsable) {
+            // PayPal 오류 본문이 아니면(프록시 HTML 등) 이슈 없이 둔다. 이슈가 없는 거절은 확정으로 보지 않는다.
+        }
+        return new PayPalRejectedException(message, exception, status, issue);
+    }
+
+    private static String firstIssue(Map<String, Object> body) {
+        Object details = body == null ? null : body.get("details");
+        if (!(details instanceof List<?> items) || items.isEmpty() || !(items.get(0) instanceof Map<?, ?> first)) {
+            return null;
+        }
+        return text(castMap(first), "issue");
     }
 
     private RestClient api() { return api(properties.getBaseUrl()); }
@@ -355,6 +394,17 @@ public class PayPalRestClient {
         return castMap(item);
     }
 
+    /** RFC 3339 시각. 형식이 다르면 null 이다(만료 시각은 표시용이라 못 읽어도 결제를 막지 않는다). */
+    private static Instant instant(Map<String, Object> response, String key) {
+        String value = text(response, key);
+        if (value == null) return null;
+        try {
+            return OffsetDateTime.parse(value).toInstant();
+        } catch (DateTimeParseException invalid) {
+            return null;
+        }
+    }
+
     private static String text(Map<String, Object> response, String key) {
         Object value = response == null ? null : response.get(key);
         return value instanceof String text ? text : null;
@@ -389,8 +439,8 @@ public class PayPalRestClient {
     public record OrderStatus(String id, PayPalOrderStatus status, BigDecimal amount, String currency,
                               String authorizationId, PayPalAuthorizationStatus authorizationStatus,
                               String captureId, PayPalCaptureStatus captureStatus, BigDecimal captureAmount,
-                              String captureCurrency) { }
-    public record AuthorizationResult(String id, PayPalAuthorizationStatus status) { }
+                              String captureCurrency, Instant authorizationExpiresAt) { }
+    public record AuthorizationResult(String id, PayPalAuthorizationStatus status, Instant expiresAt) { }
     public record CaptureResult(String id, PayPalCaptureStatus status, BigDecimal amount, String currency) { }
 
     /** {@code providerStatus}는 환불 이력에 증거로 저장하는 PayPal 원문이다. */
@@ -403,5 +453,30 @@ public class PayPalRestClient {
         private static final long serialVersionUID = 1L;
         public PayPalUnavailableException(String message) { super(message); }
         public PayPalUnavailableException(String message, Throwable cause) { super(message, cause); }
+    }
+
+    /**
+     * PayPal 이 4xx 로 거절한 응답. 이 형식만으로는 결과를 확정하지 않는다. 어떤 (상태, 이슈) 쌍이
+     * "작업이 일어나지 않았음"을 증명하는지는 호출 종류마다 달라 provider 가 정한다(ADR-0079).
+     */
+    public static class PayPalRejectedException extends PayPalUnavailableException {
+        private static final long serialVersionUID = 1L;
+        private final int status;
+        private final String issue;
+
+        public PayPalRejectedException(String message, Throwable cause, int status, String issue) {
+            super(message, cause);
+            this.status = status;
+            this.issue = issue;
+        }
+
+        public int status() { return status; }
+
+        /** PayPal 오류 본문 {@code details[0].issue}. 본문이 PayPal 형식이 아니면 null. */
+        public String issue() { return issue; }
+
+        public boolean is(int expectedStatus, String expectedIssue) {
+            return status == expectedStatus && expectedIssue.equals(issue);
+        }
     }
 }
