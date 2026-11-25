@@ -21,4 +21,7 @@ public interface OrderReturnService {
     ReturnResponse.SellerOrderReturnPage findForSeller(UUID sellerId, OrderReturnStatus status, Integer limit, String cursor);
     ReturnResponse.OrderReturn receive(UUID sellerId, UUID orderId, UUID returnId);
     ReturnResponse.OrderReturn inspect(UUID sellerId, UUID orderId, UUID returnId, OrderRequest.ReturnInspection request);
+
+    /** 수령됐지만 검수 마감이 지난 반품 수. 운영자 알림용 집계이며 상태나 환불을 바꾸지 않는다(ADR-0089). */
+    long countInspectionOverdue();
 }

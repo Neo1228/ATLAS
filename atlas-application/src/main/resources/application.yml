@@ -147,6 +147,15 @@ atlas:
     expiry-poll-interval: PT1S
     expiry-sweep-batch-size: ${ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE:100}
     expiry-sweep-time-budget: ${ATLAS_ORDERS_EXPIRY_SWEEP_TIME_BUDGET:PT2S}
+  order:
+    return:
+      # 반품 요청 기간과 검수 마감(ADR-0085, ADR-0089). 7일·5영업일은 근거 있는 정책이 아니라 가정이며,
+      # 코드를 바꾸지 않고 이 값으로 조정한다. 기간은 반품 줄이 속한 출고의 delivered_at부터 센다(경계 포함).
+      # window-enforced=false는 롤백 스위치: 기간 검사를 끈다(이전 동작). 영업일은 월~금이고 공휴일은 지원하지 않는다.
+      window: ${ATLAS_ORDER_RETURN_WINDOW:P7D}
+      window-enforced: ${ATLAS_ORDER_RETURN_WINDOW_ENFORCED:true}
+      inspection-business-days: ${ATLAS_ORDER_RETURN_INSPECTION_BUSINESS_DAYS:5}
+      business-zone: ${ATLAS_ORDER_RETURN_BUSINESS_ZONE:Asia/Seoul}
   payment:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
     # 원화→USD 환율 공급자. bok-ecos(기본, BOK_ECOS_API_KEY 필요) 또는 frankfurter(가입·key 없는 ECB 기준환율).

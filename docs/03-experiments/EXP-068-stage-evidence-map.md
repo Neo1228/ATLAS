@@ -54,6 +54,9 @@
 | 환불 결과 불명 | `unknownRefundRetainsQuantityUntilProviderGetConfirmsCompletion` |
 | 정산 실패 시 환불 상태 롤백 | `settlementFailureRollsBackRefundStateInventoryAndReversalBeforeRetry` |
 | 반품 재입고를 원 출고 위치로 | `RemoteReservationCheckoutIntegrationTest.inspectedReturnRestocksAtItsSourceShipmentReservation` |
+| 반품 기간(출고별 delivered_at 기준 7일, 경계 포함, 409 `RETURN_WINDOW_EXPIRED`) | `OrderReturnWindowIntegrationTest.windowBoundaryIsInclusiveAndRejectionIsStableWithoutSideEffects`, `splitShipmentsAreJudgedPerShipmentAndAMixedRequestIsAllOrNothing`, `sameKeyReplayAfterExpiryReturnsTheOriginalButANewKeyIsRejected`, `requestWaitingForTheOrderLockIsJudgedAtTheClockAfterTheLockIsAcquired`, `ReturnPolicyTest`([EXP-093](EXP-093-return-window-and-inspection-deadline.md)) |
+| 검수 마감(5영업일, 표시·gauge만, 늦은 검수 허용) | `OrderReturnWindowIntegrationTest.overdueInspectionIsOnlyFlaggedAndALateInspectionStillRefundsTheSameAmount`, `ReturnPolicyTest`([EXP-093](EXP-093-return-window-and-inspection-deadline.md)) |
+| 반품 기간 롤백(`window-enforced=false`) | `OrderReturnWindowIntegrationTest.disablingWindowEnforcementRestoresUnboundedReturnsAndEnablingRestoresTheRejection` |
 
 ## 8단계: 장애 주입
 

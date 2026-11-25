@@ -10,6 +10,7 @@ public final class OrderException extends RuntimeException {
         SHIPMENT_NOT_FOUND,
         CONFLICT,
         INVALID_REQUEST,
+        RETURN_WINDOW_EXPIRED,
         INVENTORY_UNAVAILABLE
     }
 

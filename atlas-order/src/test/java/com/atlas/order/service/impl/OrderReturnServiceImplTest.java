@@ -29,8 +29,11 @@ import com.atlas.order.repository.OrderRepository;
 import com.atlas.order.repository.OrderReturnRepository;
 import com.atlas.order.repository.OrderShipmentRepository;
 import com.atlas.order.service.OrderRefundService;
+import com.atlas.order.service.ReturnPolicy;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
@@ -111,7 +114,8 @@ class OrderReturnServiceImplTest {
 
         OrderReturnServiceImpl service = new OrderReturnServiceImpl(transactionManager, orders, items,
                 mock(OrderFulfillmentRepository.class), refundRecords, returns, mock(OrderShipmentRepository.class),
-                refunds, Clock.fixed(now, ZoneOffset.UTC));
+                refunds, Clock.fixed(now, ZoneOffset.UTC),
+                new ReturnPolicy(Duration.ofDays(7), true, 5, ZoneId.of("Asia/Seoul")));
         OrderRequest.ReturnInspection request = new OrderRequest.ReturnInspection(List.of(
                 new OrderRequest.ReturnInspection.Item(orderItemId, OrderRequest.ReturnInspection.Result.PASSED)));
 

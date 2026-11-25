@@ -24,6 +24,14 @@ public interface OrderReturnRepository extends JpaRepository<OrderReturn, UUID> 
     @EntityGraph(attributePaths = "items")
     List<OrderReturn> findAllByOrderId(UUID orderId);
 
+    /** 검수 마감 초과 후보의 수령 시각. 정확한 초과 판정은 영업일 규칙이라 호출하는 쪽이 한다. */
+    @Query("""
+            select r.receivedAt from OrderReturn r
+            where r.status = :status and r.receivedAt <= :receivedAtOrBefore
+            """)
+    List<Instant> findReceivedAtByStatusAndReceivedAtOnOrBefore(@Param("status") OrderReturnStatus status,
+            @Param("receivedAtOrBefore") Instant receivedAtOrBefore);
+
     @Query("""
             select r from OrderReturn r
             where r.sellerId = :sellerId
