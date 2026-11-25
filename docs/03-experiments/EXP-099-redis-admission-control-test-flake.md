@@ -165,6 +165,10 @@ H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2�
 | CI 환경(shard당 2 fork, GitHub runner)에서의 실패율 | 측정하지 않았다 | 확인하지 못함 |
 | `ModuleBoundaryTest`가 실험용 실행기에서 실패한 이유 | 조사하지 않았다 | 확인하지 못함 |
 
+## 전체 검증
+
+수정 뒤 `./gradlew clean check` 전체(리베이스 직전 헤드): 성공, 테스트 1,104건 실패 0(XML 186개). 수정 전 같은 헤드의 전체 실행은 하지 않았다(원래 실패는 `7655f063`의 24분 전체 빌드에서 났고 그 로그에 예외 클래스는 남아 있지 않다).
+
 ## 되돌리기
 
 코드 변경은 테스트 파일 한 줄과 주석이다. 별도 worktree에서 이 PR의 테스트 커밋을 `git revert`한 뒤 `cmp`로 `origin/main`의 같은 파일과 바이트 단위로 같음을 확인했다(결과: 같음, `cmp` 출력 없음). 확인 뒤 임시 worktree는 지웠다.
@@ -177,6 +181,6 @@ H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2�
 - 탐침 복사본: 실제 테스트 소스에서 (1) 클래스 이름 변경, (2) `Duration.ofMillis(200)`을 `Duration.ofMillis(Long.getLong("p3.timeoutMs", 200L))`로, (3) 컨테이너에 라벨 `atlasexp=p3`, (4) `gate.admit(`을 호출 시간을 재는 정적 메서드로, (5) `RedisClient.addListener(CommandListener)`로 명령 지연 기록, (6) `SimpleMeterRegistry`를 모아 `@AfterEach`에서 `fail_open` 카운터 출력. 로직(단정, 시나리오)은 바꾸지 않았다.
 - 지연 주입 프록시: 서버→클라이언트 방향 연결의 첫 바이트를 300ms 늦추는 `ServerSocket` 기반 TCP 프록시(약 40줄). 테스트의 `"redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort()`만 프록시 주소로 바꾼 복사본.
 - pause 주입: 테스트가 띄운 컨테이너(라벨 `org.testcontainers=true`, 이미지 `redis:7.4-alpine`)에 `docker exec redis-cli info clients`의 `connected_clients`가 2 이상(테스트 연결 생김)일 때만 `docker pause`, 0.4초 뒤 `docker unpause`, 0.15초 쉼을 반복. 연결 전에 pause하면 컨테이너 시작 대기가 실패해(`ContainerLaunchException`) 첫 시도(변이 15건 실패)는 버렸다.
-- 집계: run마다 한 줄 JSON(팔, 라운드, load1, 테스트별 상태·메시지, WARN 예외 클래스 건수)을 `/tmp`에 쌓고 팔별로 센 값이 위 표다. 팔별 n은 표에 적었다. 루프 소요: 본 루프 1,000 run 약 55분, 연결 단계 1,200 run 약 13분, CPU 기아 연결 단계 약 20분, CPU 기아 클래스 단독 90 run 약 35분, 수정 비교 120 run 약 40분, shard 12 run 약 29분.
+- 집계: run마다 한 줄 JSON(팔, 라운드, load1, 테스트별 상태·메시지, WARN 예외 클래스 건수)을 저장소 밖 임시 폴더에 쌓고 팔별로 센 값이 위 표다. 팔별 n은 표에 적었다. 루프 소요: 본 루프 1,000 run 약 55분, 연결 단계 1,200 run 약 13분, CPU 기아 연결 단계 약 20분, CPU 기아 클래스 단독 90 run 약 35분, 수정 비교 120 run 약 40분, shard 12 run 약 29분.
 - 컨테이너: 루프는 순차 실행이라 한 번에 Testcontainers 컨테이너 1개(측정 대조용으로 직접 띄운 `atlasexp=p3` 라벨 Redis 1개)만 썼고, 종료 뒤 라벨 `atlasexp=p3` 컨테이너 0개, `redis:7.4-alpine` 이미지 컨테이너 0개를 확인했다. Testcontainers가 띄운 컨테이너는 라벨을 못 붙이므로(위 탐침 복사본 제외) 이미지로 확인했다.
 - 교란 요인: 같은 호스트에서 다른 에이전트의 부하 실험(load1 5~16, CPU 기아 구간은 최대 약 240)이 돌았다. 호스트 스왑 사용량이 8GB 중 약 6.9GB였다(측정 시작 시점 1회). 본 루프 1,000 run은 연속 55분이라 라운드마다 팔을 번갈아 실행해 시간대 영향이 한 팔에 몰리지 않게 했다.
