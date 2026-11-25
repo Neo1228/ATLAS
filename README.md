@@ -7,7 +7,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 
 ![ATLAS 실행 구조](docs/images/architecture.png)
 
-로컬 compose 기준 실행 구조다. "켬" 영역(재고 예약, 결제, Redis와 Kafka)은 기본으로 꺼져 있고 설정을 켜야 동작한다. 로고는 사용 조건을 원문에서 확인하고 지킬 수 있는 Mailpit 아이콘만 넣었고([제3자 고지](docs/images/NOTICE.md)), 나머지 제품은 이름만 적었다. 사실 근거와 제품별 로고 판단, 다시 만드는 법은 [architecture.yaml](docs/images/architecture.yaml) 상단 주석에 있다.
+로컬 compose 기준 실행 구조다. 파란 영역은 항상 실행되는 Spring Boot application과 그 안의 도메인 모듈이다. 청록(재고 예약), 주황(결제), 보라(Redis, Kafka) 영역은 설정을 켜야 동작하고 기본은 꺼져 있다. 카탈로그 캐시는 `edge-cache`, 초록 영역은 `observability` compose profile에서만 뜬다. 아이콘은 [excalidraw-libraries](https://github.com/excalidraw/excalidraw-libraries)(MIT, Copyright (c) 2020 Excalidraw)의 것이다.
 
 ## 현재 기능과 모듈
 
