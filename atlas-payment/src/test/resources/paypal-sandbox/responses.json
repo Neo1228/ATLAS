@@ -1,0 +1,1034 @@
+{
+ "createOrderPayerAction": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "status": "PAYER_ACTION_REQUIRED",
+   "payment_source": {
+    "paypal": {}
+   },
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "payer-action",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getOrderApproved": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "APPROVED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "default",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00",
+      "breakdown": {}
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T00:43:03Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "update",
+     "method": "PATCH"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "authorize",
+     "method": "POST"
+    }
+   ]
+  }
+ },
+ "authorizeOrder": {
+  "status": 201,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "COMPLETED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "default",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00"
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     },
+     "payments": {
+      "authorizations": [
+       {
+        "status": "CREATED",
+        "id": "3C679366HH908993F",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "expiration_time": "2026-12-24T00:43:14Z",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "capture",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "void",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "reauthorize",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T00:43:14Z",
+        "update_time": "2026-11-25T00:43:14Z"
+       }
+      ]
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T00:43:03Z",
+   "update_time": "2026-11-25T00:43:14Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getOrderAuthorized": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "COMPLETED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "default",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00",
+      "breakdown": {}
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     },
+     "payments": {
+      "authorizations": [
+       {
+        "status": "CREATED",
+        "id": "3C679366HH908993F",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "expiration_time": "2026-12-24T00:43:14Z",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "capture",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "void",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "reauthorize",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T00:43:14Z",
+        "update_time": "2026-11-25T00:43:14Z"
+       }
+      ]
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T00:43:14Z",
+   "update_time": "2026-11-25T00:43:14Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "captureRepresentation": {
+  "status": 201,
+  "body": {
+   "id": "2GG279541U471931P",
+   "amount": {
+    "currency_code": "USD",
+    "value": "1.00"
+   },
+   "final_capture": true,
+   "seller_protection": {
+    "status": "ELIGIBLE",
+    "dispute_categories": [
+     "ITEM_NOT_RECEIVED",
+     "UNAUTHORIZED_TRANSACTION"
+    ]
+   },
+   "seller_receivable_breakdown": {
+    "gross_amount": {
+     "currency_code": "USD",
+     "value": "1.00"
+    },
+    "paypal_fee": {
+     "currency_code": "USD",
+     "value": "0.33"
+    },
+    "net_amount": {
+     "currency_code": "USD",
+     "value": "0.67"
+    },
+    "exchange_rate": {}
+   },
+   "status": "COMPLETED",
+   "create_time": "2026-11-25T00:43:21Z",
+   "update_time": "2026-11-25T00:43:21Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "refund",
+     "method": "POST"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "up",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "captureMinimal": {
+  "status": 201,
+  "body": {
+   "id": "2GG279541U471931P",
+   "status": "COMPLETED",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "refund",
+     "method": "POST"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "up",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getOrderCaptured": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "COMPLETED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "default",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00",
+      "breakdown": {}
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     },
+     "payments": {
+      "authorizations": [
+       {
+        "status": "CAPTURED",
+        "id": "3C679366HH908993F",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "expiration_time": "2026-12-24T00:43:14Z",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "capture",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "void",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "reauthorize",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T00:43:14Z",
+        "update_time": "2026-11-25T00:43:21Z"
+       }
+      ],
+      "captures": [
+       {
+        "id": "2GG279541U471931P",
+        "status": "COMPLETED",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "final_capture": true,
+        "disbursement_mode": "INSTANT",
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "seller_receivable_breakdown": {
+         "gross_amount": {
+          "currency_code": "USD",
+          "value": "1.00"
+         },
+         "paypal_fee": {
+          "currency_code": "USD",
+          "value": "0.33"
+         },
+         "net_amount": {
+          "currency_code": "USD",
+          "value": "0.67"
+         }
+        },
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "refund",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T00:43:21Z",
+        "update_time": "2026-11-25T00:43:21Z"
+       }
+      ]
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T00:43:14Z",
+   "update_time": "2026-11-25T00:43:21Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getOrderPartiallyRefunded": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "COMPLETED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "default",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00",
+      "breakdown": {}
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     },
+     "payments": {
+      "authorizations": [
+       {
+        "status": "CAPTURED",
+        "id": "3C679366HH908993F",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "expiration_time": "2026-12-24T00:43:14Z",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "capture",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "void",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "reauthorize",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T00:43:14Z",
+        "update_time": "2026-11-25T00:43:21Z"
+       }
+      ],
+      "captures": [
+       {
+        "id": "2GG279541U471931P",
+        "status": "PARTIALLY_REFUNDED",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "final_capture": true,
+        "disbursement_mode": "INSTANT",
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "seller_receivable_breakdown": {
+         "gross_amount": {
+          "currency_code": "USD",
+          "value": "1.00"
+         },
+         "paypal_fee": {
+          "currency_code": "USD",
+          "value": "0.33"
+         },
+         "net_amount": {
+          "currency_code": "USD",
+          "value": "0.67"
+         }
+        },
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "refund",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T00:43:21Z",
+        "update_time": "2026-11-25T00:43:29Z"
+       }
+      ],
+      "refunds": [
+       {
+        "id": "1JU08902781691411",
+        "amount": {
+         "currency_code": "USD",
+         "value": "0.40"
+        },
+        "seller_payable_breakdown": {
+         "gross_amount": {
+          "currency_code": "USD",
+          "value": "0.40"
+         },
+         "paypal_fee": {
+          "currency_code": "USD",
+          "value": "0.00"
+         },
+         "platform_fees": [
+          {
+           "amount": {
+            "currency_code": "USD",
+            "value": "0.00"
+           }
+          }
+         ],
+         "net_amount": {
+          "currency_code": "USD",
+          "value": "0.40"
+         },
+         "total_refunded_amount": {
+          "currency_code": "USD",
+          "value": "0.40"
+         }
+        },
+        "status": "COMPLETED",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/REDACTED",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-24T16:43:29-08:00",
+        "update_time": "2026-11-24T16:43:29-08:00"
+       }
+      ]
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T00:43:14Z",
+   "update_time": "2026-11-25T00:43:21Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "refundRepresentation": {
+  "status": 201,
+  "body": {
+   "id": "1JU08902781691411",
+   "amount": {
+    "currency_code": "USD",
+    "value": "0.40"
+   },
+   "seller_payable_breakdown": {
+    "gross_amount": {
+     "currency_code": "USD",
+     "value": "0.40"
+    },
+    "paypal_fee": {
+     "currency_code": "USD",
+     "value": "0.00"
+    },
+    "net_amount": {
+     "currency_code": "USD",
+     "value": "0.40"
+    },
+    "total_refunded_amount": {
+     "currency_code": "USD",
+     "value": "0.40"
+    }
+   },
+   "status": "COMPLETED",
+   "create_time": "2026-11-24T16:43:29-08:00",
+   "update_time": "2026-11-24T16:43:29-08:00",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "up",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "refundMinimal": {
+  "status": 201,
+  "body": {
+   "id": "1JU08902781691411",
+   "status": "COMPLETED",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "up",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getRefund": {
+  "status": 200,
+  "body": {
+   "id": "1JU08902781691411",
+   "amount": {
+    "currency_code": "USD",
+    "value": "0.40"
+   },
+   "seller_payable_breakdown": {
+    "gross_amount": {
+     "currency_code": "USD",
+     "value": "0.40"
+    },
+    "paypal_fee": {
+     "currency_code": "USD",
+     "value": "0.00"
+    },
+    "net_amount": {
+     "currency_code": "USD",
+     "value": "0.40"
+    },
+    "total_refunded_amount": {
+     "currency_code": "USD",
+     "value": "0.40"
+    }
+   },
+   "status": "COMPLETED",
+   "create_time": "2026-11-24T16:43:29-08:00",
+   "update_time": "2026-11-24T16:43:29-08:00",
+   "payer": {
+    "email_address": "REDACTED",
+    "merchant_id": "REDACTED"
+   },
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/REDACTED",
+     "rel": "up",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "verifyWebhookFailure": {
+  "status": 200,
+  "body": {
+   "verification_status": "FAILURE"
+  }
+ },
+ "error404UnknownResource": {
+  "status": 404,
+  "body": {
+   "name": "RESOURCE_NOT_FOUND",
+   "details": [
+    {
+     "issue": "INVALID_RESOURCE_ID",
+     "description": "Specified resource ID does not exist. Please check the resource ID and try again."
+    }
+   ],
+   "message": "The specified resource does not exist.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#INVALID_RESOURCE_ID",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "error422OrderNotApproved": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "issue": "ORDER_NOT_APPROVED",
+     "description": "Payer has not yet approved the Order for payment. Please redirect the payer to the 'rel':'approve' url returned as part of the HATEOAS links within the Create Order call or provide a valid payment_source in the request."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#ORDER_NOT_APPROVED",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "error422AuthorizationAlreadyCaptured": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "issue": "AUTHORIZATION_ALREADY_CAPTURED",
+     "description": "Authorization has already been captured."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/payments/v2/#error-AUTHORIZATION_ALREADY_CAPTURED",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "error422CaptureFullyRefunded": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "issue": "CAPTURE_FULLY_REFUNDED",
+     "field": "capture_id",
+     "value": "REDACTED",
+     "description": "The capture has already been fully refunded",
+     "location": "path"
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/payments/v2/#error-CAPTURE_FULLY_REFUNDED",
+     "rel": "information_link"
+    }
+   ]
+  }
+ },
+ "error400WebhookBlankSignature": {
+  "status": 400,
+  "body": {
+   "name": "INVALID_REQUEST",
+   "message": "Request is not well-formed, syntactically incorrect, or violates schema.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "field": "/transmission_sig",
+     "value": "REDACTED",
+     "location": "body",
+     "issue": "must match \"^(?!\\d+$)\\w+\\S+\""
+    }
+   ],
+   "links": []
+  }
+ },
+ "error400WebhookNullSignature": {
+  "status": 400,
+  "body": {
+   "name": "VALIDATION_ERROR",
+   "message": "Invalid data provided",
+   "debug_id": "REDACTED",
+   "information_link": "https://developer.paypal.com/docs/api/webhooks/#errors",
+   "details": [
+    {
+     "field": "transmission_sig",
+     "location": "body",
+     "issue": "Required field cannot be blank"
+    }
+   ],
+   "links": []
+  }
+ }
+}
