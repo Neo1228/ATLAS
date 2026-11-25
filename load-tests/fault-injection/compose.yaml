@@ -46,6 +46,7 @@ x-app: &app
       condition: service_healthy
     mailpit:
       condition: service_started
+      required: false
   environment:
     ATLAS_SERVER_ADDRESS: 0.0.0.0
     ATLAS_SERVER_PORT: 8080
@@ -56,6 +57,7 @@ x-app: &app
     ATLAS_PAYMENT_PROVIDER: disabled
     SPRING_MAIL_HOST: mailpit
     SPRING_MAIL_PORT: 1025
+    MANAGEMENT_HEALTH_MAIL_ENABLED: ${MAIL_HEALTH:-true}
     ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED: "true"
     ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN: ${ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN:?Set ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN}
     INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
@@ -65,7 +67,7 @@ x-app: &app
     JAVA_TOOL_OPTIONS: ${APP_JAVA_TOOL_OPTIONS:-}
   volumes:
     - ${APP_JAR:-../../atlas-application/build/libs/atlas-application.jar}:/app/atlas-application.jar:ro
-    - ./jvm-negative-dns-ttl0.security:/app/jvm-negative-dns-ttl0.security:ro
+    - ${FI_DIR:-.}/jvm-negative-dns-ttl0.security:/app/jvm-negative-dns-ttl0.security:ro
   ports:
     - "127.0.0.1::8080"
   healthcheck:
@@ -131,6 +133,13 @@ services:
         condition: service_healthy
     environment:
       INVENTORY_LOCATION_PORT: 8090
+      SERVER_TOMCAT_ACCESSLOG_ENABLED: ${LOCATION_ACCESSLOG:-false}
+      SERVER_TOMCAT_ACCESSLOG_DIRECTORY: /dev
+      SERVER_TOMCAT_ACCESSLOG_PREFIX: stdout
+      SERVER_TOMCAT_ACCESSLOG_SUFFIX: ""
+      SERVER_TOMCAT_ACCESSLOG_FILE_DATE_FORMAT: ""
+      SERVER_TOMCAT_ACCESSLOG_ROTATE: "false"
+      SERVER_TOMCAT_ACCESSLOG_PATTERN: "ALOG %h %{begin:msec}t %{end:msec}t %m %U %s %{Idempotency-Key}i"
       INVENTORY_LOCATION_DB_URL: jdbc:postgresql://location-a-postgres:5432/atlas_inventory
       INVENTORY_LOCATION_DB_USER: atlas_inventory
       INVENTORY_LOCATION_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
@@ -146,6 +155,13 @@ services:
         condition: service_healthy
     environment:
       INVENTORY_LOCATION_PORT: 8090
+      SERVER_TOMCAT_ACCESSLOG_ENABLED: ${LOCATION_ACCESSLOG:-false}
+      SERVER_TOMCAT_ACCESSLOG_DIRECTORY: /dev
+      SERVER_TOMCAT_ACCESSLOG_PREFIX: stdout
+      SERVER_TOMCAT_ACCESSLOG_SUFFIX: ""
+      SERVER_TOMCAT_ACCESSLOG_FILE_DATE_FORMAT: ""
+      SERVER_TOMCAT_ACCESSLOG_ROTATE: "false"
+      SERVER_TOMCAT_ACCESSLOG_PATTERN: "ALOG %h %{begin:msec}t %{end:msec}t %m %U %s %{Idempotency-Key}i"
       INVENTORY_LOCATION_DB_URL: jdbc:postgresql://location-b-postgres:5432/atlas_inventory
       INVENTORY_LOCATION_DB_USER: atlas_inventory
       INVENTORY_LOCATION_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
@@ -156,6 +172,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.34.0
+    profiles: ["mail"]
     labels: *labels
     cpus: 0.25
     mem_limit: 128m
