@@ -195,6 +195,14 @@ def audit(args):
             per_key[workflow].append(version)
             key_partitions[workflow].add(partition)
 
+    # evidence for a finding: this run's messages in partition/offset order
+    with open(Path(args.out).with_name("topic-run.tsv"), "w") as handle:
+        handle.write("partition\toffset\teventSeq\tworkflowId\taggregateVersion\n")
+        for partition, offset, payload in sorted(messages, key=lambda m: (m[0], m[1])):
+            if (payload["workflowId"], payload["aggregateVersion"]) in expected:
+                handle.write(f"{partition}\t{offset}\t{payload['eventSeq']}\t"
+                             f"{payload['workflowId']}\t{payload['aggregateVersion']}\n")
+
     lost = sorted(point for point in expected if point not in copies)
     extra = sum(len(c) - 1 for c in copies.values())
     keys_with_dups = len({point[0] for point, c in copies.items() if len(c) > 1})

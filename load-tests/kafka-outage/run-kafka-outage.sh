@@ -133,12 +133,13 @@ inject() {
 }
 
 run_one() {  # run_one <condition> <n>
-  local condition="$1" n="$2" run_dir run_id duration length producer_pid
+  local condition="$1" n="$2" run_dir run_id duration length producer_pid run_started
   run_dir="$out/$condition/run-$n"; mkdir -p "$run_dir"
   run_id="$(openssl rand -hex 4)"
   length="$(fault_length "$condition")"
   duration=$((fault_at + length + tail_seconds)); (( duration < 40 )) && duration=40
   echo "--- condition=$condition run=$n run_id=$run_id duration=${duration}s"
+  run_started="$(now)"
   { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime; } >"$run_dir/host-before.txt"
   python3 "$here/outage_audit.py" sample --pg "$(cid order-postgres)" --out "$run_dir/samples.csv" &
   sampler_pid=$!
@@ -155,6 +156,10 @@ run_one() {  # run_one <condition> <n>
   { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime
     docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' \
       $(docker ps -q --filter "label=atlasexp=$tag") 2>/dev/null || true; } >"$run_dir/host-after.txt"
+  for app in app1 app2; do  # relay and producer log lines of this run, for tracing a finding
+    docker logs --since "${run_started%.*}" "$(cid "$app")" 2>&1 \
+      | grep -i -E 'relay|kafka|producer' | head -100 >"$run_dir/$app-relay.log" || true
+  done
   docker inspect -f 'kafka restarts={{.RestartCount}} started={{.State.StartedAt}} oom={{.State.OOMKilled}}' \
     "$(cid kafka)" >"$run_dir/kafka-state-after.txt" || true
 }
