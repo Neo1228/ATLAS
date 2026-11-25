@@ -280,6 +280,20 @@ def summarize(args):
             spread([r["redelivered_after_higher"] for r in runs]),
             max((r["cursor_advanced_while_down"] or 0) for r in runs),
             spread([r["drain_seconds_after_recovery"] for r in runs])))
+    volumes = collections.OrderedDict()
+    for path in sorted(Path(args.results).glob("*/run-*/log-volume.json")):
+        volumes.setdefault(path.parent.parent.name, []).append(json.loads(path.read_text()))
+    if volumes:
+        print()
+        print("| condition | n | application log lines min / median / max "
+              "| per-record producer error lines min / median / max "
+              "| relay failed WARN lines min / median / max |")
+        print("|" + " --- |" * 5)
+        for condition, runs in volumes.items():
+            print("| {} | {} | {} | {} | {} |".format(
+                condition, len(runs), spread([r["app_log_lines"] for r in runs]),
+                spread([r["producer_record_error_lines"] for r in runs]),
+                spread([r["relay_failed_warn_lines"] for r in runs])))
     return 0
 
 

@@ -156,10 +156,23 @@ run_one() {  # run_one <condition> <n>
   { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime
     docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' \
       $(docker ps -q --filter "label=atlasexp=$tag") 2>/dev/null || true; } >"$run_dir/host-after.txt"
-  for app in app1 app2; do  # relay and producer log lines of this run, for tracing a finding
-    docker logs --since "${run_started%.*}" "$(cid "$app")" 2>&1 \
-      | grep -i -E 'relay|kafka|producer' | head -100 >"$run_dir/$app-relay.log" || true
+  # application log volume of this run: how many lines, bytes and per-record producer errors
+  # (LoggingProducerListener) the two applications wrote, plus a sample of relay/Kafka lines
+  local log_file lines=0 bytes=0 record_errors=0 relay_warns=0
+  for app in app1 app2; do
+    log_file="$run_dir/$app-all.log"
+    docker logs --since "${run_started%.*}" "$(cid "$app")" >"$log_file" 2>&1 || true
+    lines=$((lines + $(wc -l <"$log_file")))
+    bytes=$((bytes + $(wc -c <"$log_file")))
+    record_errors=$((record_errors + $(grep -c 'Exception thrown when sending a message' "$log_file" || true)))
+    relay_warns=$((relay_warns + $(grep -c 'event relay failed' "$log_file" || true)))
+    grep -i -E 'relay|kafka|producer' "$log_file" | head -100 >"$run_dir/$app-relay.log" || true
+    rm -f "$log_file"
   done
+  jq -n --argjson lines "$lines" --argjson bytes "$bytes" --argjson record_errors "$record_errors" \
+    --argjson relay_warns "$relay_warns" \
+    '{app_log_lines:$lines, app_log_bytes:$bytes, producer_record_error_lines:$record_errors, relay_failed_warn_lines:$relay_warns}' \
+    >"$run_dir/log-volume.json"
   docker inspect -f 'kafka restarts={{.RestartCount}} started={{.State.StartedAt}} oom={{.State.OOMKilled}}' \
     "$(cid kafka)" >"$run_dir/kafka-state-after.txt" || true
 }
