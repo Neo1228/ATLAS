@@ -5,6 +5,9 @@
 # can be found and removed by label. The jars are bind-mounted from APP_JAR and LOCATION_JAR
 # (default: the Gradle bootJar outputs); the Docker VM must be able to see those paths. Limits are fixed so CPU and memory faults have a
 # defined target: the application is capped at 2 CPUs and 1 GiB.
+# Optional parts (profiles, switched on by the runner through COMPOSE_PROFILES): toxiproxy (a proxy in
+# front of location B), second-app (a second application instance on the same order database).
+# compose.disk-full.yaml turns the order data volume into a size-limited tmpfs.
 
 x-labels: &labels
   atlasexp: ${EXP_TAG:-fault-injection}
@@ -29,6 +32,54 @@ x-location: &location
   # No restart policy: the runner decides when a killed location starts again.
   cpus: 1
   mem_limit: 768m
+
+x-app: &app
+  image: eclipse-temurin:25-jre
+  labels: *labels
+  command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/atlas-application.jar"]
+  depends_on:
+    order-postgres:
+      condition: service_healthy
+    location-a:
+      condition: service_healthy
+    location-b:
+      condition: service_healthy
+    mailpit:
+      condition: service_started
+  environment:
+    ATLAS_SERVER_ADDRESS: 0.0.0.0
+    ATLAS_SERVER_PORT: 8080
+    ATLAS_DB_URL: jdbc:postgresql://${ORDER_DB_HOST:-order-postgres}:5432/atlas_order
+    ATLAS_DB_USER: atlas
+    ATLAS_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:?Set ATLAS_JWT_SIGNING_SECRET}
+    ATLAS_PAYMENT_PROVIDER: disabled
+    SPRING_MAIL_HOST: mailpit
+    SPRING_MAIL_PORT: 1025
+    ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED: "true"
+    ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN: ${ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN:?Set ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN}
+    INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
+    ATLAS_ORDER_INVENTORY_RESERVATION_LOCATION_ENDPOINTS: "00000000-0000-0000-0000-000000000001=http://location-a:8090;00000000-0000-0000-0000-000000000002=${LOCATION_B_URL:-http://location-b:8090}"
+    ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_WORKER_ENABLED: "true"
+    ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_LEASE_DURATION: ${RECOVERY_LEASE:-PT30S}
+    JAVA_TOOL_OPTIONS: ${APP_JAVA_TOOL_OPTIONS:-}
+  volumes:
+    - ${APP_JAR:-../../atlas-application/build/libs/atlas-application.jar}:/app/atlas-application.jar:ro
+    - ./jvm-negative-dns-ttl0.security:/app/jvm-negative-dns-ttl0.security:ro
+  ports:
+    - "127.0.0.1::8080"
+  healthcheck:
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+    interval: 2s
+    timeout: 3s
+    retries: 120
+    start_period: 20s
+  # The memory fault writes into /dev/shm so the bytes are charged to the application cgroup.
+  shm_size: 1g
+  restart: unless-stopped
+  cpus: 2
+  mem_limit: 1g
+
 
 services:
   order-postgres:
@@ -110,48 +161,28 @@ services:
     mem_limit: 128m
 
   app:
-    image: eclipse-temurin:25-jre
-    labels: *labels
-    command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/atlas-application.jar"]
+    <<: *app
+
+  # Second application instance on the same order database (profile second-app). It starts after the
+  # first one is healthy so the two do not race on the Flyway migration.
+  app2:
+    <<: *app
+    profiles: ["second-app"]
     depends_on:
-      order-postgres:
+      app:
         condition: service_healthy
-      location-a:
-        condition: service_healthy
-      location-b:
-        condition: service_healthy
-      mailpit:
-        condition: service_started
-    environment:
-      ATLAS_SERVER_ADDRESS: 0.0.0.0
-      ATLAS_SERVER_PORT: 8080
-      ATLAS_DB_URL: jdbc:postgresql://order-postgres:5432/atlas_order
-      ATLAS_DB_USER: atlas
-      ATLAS_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
-      ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:?Set ATLAS_JWT_SIGNING_SECRET}
-      ATLAS_PAYMENT_PROVIDER: disabled
-      SPRING_MAIL_HOST: mailpit
-      SPRING_MAIL_PORT: 1025
-      ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED: "true"
-      ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN: ${ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN:?Set ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN}
-      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
-      ATLAS_ORDER_INVENTORY_RESERVATION_LOCATION_ENDPOINTS: "00000000-0000-0000-0000-000000000001=http://location-a:8090;00000000-0000-0000-0000-000000000002=http://location-b:8090"
-      ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_WORKER_ENABLED: "true"
-    volumes:
-      - ${APP_JAR:-../../atlas-application/build/libs/atlas-application.jar}:/app/atlas-application.jar:ro
+
+  # Proxy in front of location B (profile toxiproxy). The application reaches location B through
+  # toxiproxy:8091 (LOCATION_B_URL); location B's own database path is not behind the proxy. The runner
+  # creates the proxy (toxiproxy-location-b.json) and its toxics through the REST API on 8474.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    profiles: ["toxiproxy"]
+    labels: *labels
     ports:
-      - "127.0.0.1::8080"
-    healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
-      interval: 2s
-      timeout: 3s
-      retries: 120
-      start_period: 20s
-    # The memory fault writes into /dev/shm so the bytes are charged to the application cgroup.
-    shm_size: 1g
-    restart: unless-stopped
-    cpus: 2
-    mem_limit: 1g
+      - "127.0.0.1::8474"
+    cpus: 0.5
+    mem_limit: 128m
 
 volumes:
   order-data:

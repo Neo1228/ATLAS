@@ -1,0 +1,11 @@
+# Overlay for the order-db-disk-full fault: the order PostgreSQL data volume becomes a size-limited
+# tmpfs so the "disk" fills without touching the host disk. A tmpfs volume is discarded when the
+# container stops, so a PostgreSQL exit during the fault loses the data (recorded as a finding, not
+# hidden). The size leaves room for initdb (about 40 MiB) plus the run's writes.
+volumes:
+  order-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=${ORDER_DATA_SIZE:-128m}

@@ -4,6 +4,11 @@
 Subcommands:
   seed  create the run's three SKUs (two at location A, one at location B)
   load  send RATE requests per second for DURATION seconds and write one JSON line per request
+        (--url takes one URL or a comma-separated list; request i goes to url i % len, so two
+        application instances get a client-side round robin)
+  replay  after a run, resend requests with the SAME idempotency key: phase "retry" repeats every
+        request that did not get 200/201/202 until it gets 200/201 (or the deadline), phase "all"
+        then sends every key once more. One JSON line per attempt.
 
 Every request is one order with one SKU at location A (two items) and one at location B,
 the same shape EXP-070 used. The client does not retry: a request that gets no answer is
@@ -21,6 +26,7 @@ import threading
 import time
 import urllib.parse
 
+ACCEPTED = (200, 201, 202)
 LOCATION_A = "00000000-0000-0000-0000-000000000001"
 LOCATION_B = "00000000-0000-0000-0000-000000000002"
 SELLER_A = "00000000-0000-0000-0000-000000000011"
@@ -110,13 +116,16 @@ def load(args):
     counter_lock = threading.Lock()
     records = [None] * total
 
+    urls = args.url.split(",")
+
     def worker():
-        sender = Sender(args.url, headers, args.timeout)
+        senders = [Sender(url, headers, args.timeout) for url in urls]
         while True:
             with counter_lock:
                 index = next(counter)
             if index >= total:
-                sender.close()
+                for sender in senders:
+                    sender.close()
                 return
             scheduled = start_at + index / args.rate
             delay = scheduled - time.time()
@@ -124,7 +133,8 @@ def load(args):
                 time.sleep(delay)
             key = f"{args.run_id}-{index}"
             sent = time.time()
-            status, raw, error = sender.post(json.dumps(request_body(args.run_id, index)), key)
+            target = index % len(urls)
+            status, raw, error = senders[target].post(json.dumps(request_body(args.run_id, index)), key)
             ended = time.time()
             body_status = None
             if raw:
@@ -134,7 +144,7 @@ def load(args):
                     body_status = None
             records[index] = {"i": index, "key": key, "scheduled": scheduled, "sent": sent,
                               "ended": ended, "http": status, "body_status": body_status,
-                              "error": error}
+                              "error": error, "target": target}
 
     threads = [threading.Thread(target=worker, daemon=True) for _ in range(args.threads)]
     for thread in threads:
@@ -145,6 +155,67 @@ def load(args):
         for record in records:
             handle.write(json.dumps(record) + "\n")
     print(json.dumps({"total": total, "start_at": start_at, "end_at": max(r["ended"] for r in records)}))
+
+
+def replay(args):
+    originals = [json.loads(line) for line in open(args.requests, encoding="utf-8").read().splitlines()]
+    headers = {"X-Atlas-Service-Token": os.environ["ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN"], "Content-Type": "application/json"}
+    urls = args.url.split(",")
+    attempts = []
+    attempts_lock = threading.Lock()
+
+    def send(sender, record, phase, attempt):
+        sent = time.time()
+        status, raw, error = sender.post(json.dumps(request_body(args.run_id, record["i"])), record["key"])
+        ended = time.time()
+        body_status, replayed = None, None
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                body_status, replayed = parsed.get("status"), parsed.get("replayed")
+            except ValueError:
+                pass
+        with attempts_lock:
+            attempts.append({"phase": phase, "i": record["i"], "key": record["key"], "attempt": attempt,
+                             "sent": sent, "ended": ended, "http": status, "body_status": body_status,
+                             "replayed": replayed, "error": error, "original_http": record["http"]})
+        return status
+
+    def run_phase(phase, selected, final_statuses, deadline):
+        queue = list(selected)
+        queue_lock = threading.Lock()
+
+        def worker(worker_index):
+            senders = [Sender(url, headers, args.timeout) for url in urls]
+            while True:
+                with queue_lock:
+                    if not queue:
+                        break
+                    record = queue.pop()
+                attempt = 0
+                while True:
+                    attempt += 1
+                    target = (record["i"] + 1 + attempt) % len(urls)
+                    if send(senders[target], record, phase, attempt) in final_statuses or time.time() >= deadline:
+                        break
+                    time.sleep(args.interval)
+            for sender in senders:
+                sender.close()
+
+        threads = [threading.Thread(target=worker, args=(n,), daemon=True) for n in range(args.threads)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+    failed = [r for r in originals if r["http"] not in ACCEPTED]
+    run_phase("retry", failed, (200, 201), time.time() + args.deadline)
+    run_phase("all", originals, ACCEPTED, 0)  # deadline 0: exactly one attempt per key
+    with open(args.out, "w", encoding="utf-8") as handle:
+        for attempt in attempts:
+            handle.write(json.dumps(attempt) + "\n")
+    print(json.dumps({"retry_set": len(failed), "attempts": len(attempts),
+                      "end_at": max((a["ended"] for a in attempts), default=time.time())}))
 
 
 def main():
@@ -166,6 +237,16 @@ def main():
     load_parser.add_argument("--start-at", type=float, default=0.0)
     load_parser.add_argument("--out", required=True)
     load_parser.set_defaults(handler=load)
+    replay_parser = sub.add_parser("replay")
+    replay_parser.add_argument("--run-id", required=True)
+    replay_parser.add_argument("--url", required=True)
+    replay_parser.add_argument("--requests", required=True)
+    replay_parser.add_argument("--threads", type=int, default=32)
+    replay_parser.add_argument("--timeout", type=float, default=15.0)
+    replay_parser.add_argument("--interval", type=float, default=1.0)
+    replay_parser.add_argument("--deadline", type=float, default=60.0)
+    replay_parser.add_argument("--out", required=True)
+    replay_parser.set_defaults(handler=replay)
     args = parser.parse_args()
     args.handler(args)
 
