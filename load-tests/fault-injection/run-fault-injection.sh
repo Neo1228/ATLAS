@@ -47,7 +47,7 @@
 #   the runner then writes calls.json = duplicate remote calls per key), PLANT_DUP=1 (after the load the host sends one extra
 #   reserve call with an existing key: the negative control of the duplicate-call detector), APP1_DELAY="delay 400ms" (netem on the
 #   first application's path to both locations, from before the load until the end), MAILPIT=0 (no mailpit container, mail health off),
-#   FI_DIR (directory the Docker VM can read that holds jvm-negative-dns-ttl0.security), WAL_SIZE_MB (default 128), WAL_BURN_MB_S,
+#   FI_DIR (directory the Docker VM can read that holds jvm-negative-dns-ttl0.security), WAL_SIZE_MB (default 128), WAL_BURN_MB_S, WAL_RESTART=1 (restart policy unless-stopped on the order DB, no manual start after the space is freed),
 #   DNS_TRACE=1 / DNS_OFFSET=<s> (tcpdump sidecar on the application's DNS traffic; the load starts so the fault lands DNS_OFFSET seconds
 #   after the last observed successful lookup of order-postgres), DNS_REFRESH=1 (force a fresh lookup first), APP_IMAGE (default eclipse-temurin:25-jre).
 # Variables: APP_JAR / LOCATION_JAR (jars the Docker VM can read; default: the bootJar outputs), RUNS=5 RATE=40 DURATION=14 FAULT_AT=3 FAULT_FOR=6 CONVERGE_TIMEOUT=90 TAG=fault-injection OUT=...
@@ -84,6 +84,7 @@ dns_refresh="${DNS_REFRESH:-0}"
 wal_size_mb="${WAL_SIZE_MB:-128}"
 wal_burn_mb_s="${WAL_BURN_MB_S:-0}"
 wal_fill="${WAL_FILL:-1}"
+wal_restart="${WAL_RESTART:-0}"
 sniffer_image="${SNIFFER_IMAGE:-atlasexp-h5-sniffer:1}"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 out="${OUT:-$repo_root/.local/fault-injection/$timestamp}"
@@ -328,6 +329,7 @@ inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epo
       fw "$locb" "iptables -D $rule_in -j DROP" >/dev/null ;;
     order-db-wal-full)
       local lsn_before lsn_after running burned=0 failed=0 rows end_s
+      [[ "$wal_restart" == 1 ]] && docker update --restart unless-stopped "$order" >/dev/null
       lsn_before="$(order_psql "SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')::bigint")"
       docker exec "$order" sh -c 'df -k /wal | tail -1' > "$run_dir/disk-before.txt" 2>&1 || true
       if [[ "$wal_fill" == 1 ]]; then
@@ -344,12 +346,17 @@ inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epo
       done
       running="$(docker inspect -f '{{.State.Running}}' "$order" 2>/dev/null || echo false)"
       printf '{"running_at_window_end":%s,"burn_ok":%s,"burn_failed":%s,"burn_rows":%s}\n' "$running" "$burned" "$failed" "$rows" > "$run_dir/wal-burner.json"
+      local restarts_window freed
+      restarts_window="$(docker inspect -f '{{.RestartCount}}' "$order" 2>/dev/null || echo null)"
+      freed="$(now)"
       vm "sudo rm -f $wal_mount/filler" >/dev/null 2>&1 || true
-      [[ "$running" == true ]] || { docker start "$order" >/dev/null 2>&1 || true; }
+      # WAL_RESTART=1: no manual start; the restart policy has to bring the database back by itself.
+      [[ "$running" == true || "$wal_restart" == 1 ]] || { docker start "$order" >/dev/null 2>&1 || true; }
       local ready_at; ready_at="$(pg_ready_wait "$order")"
       lsn_after="$(order_psql "SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')::bigint" || true)"
       printf '{"lsn_before":%s,"lsn_after":%s}\n' "${lsn_before:-null}" "${lsn_after:-null}" > "$run_dir/wal-lsn.json"
-      printf '{"ready":%s,"container_running_at_window_end":%s}\n' "$ready_at" "$running" > "$run_dir/fault-extra.json" ;;
+      printf '{"ready":%s,"freed":%s,"container_running_at_window_end":%s,"restarts_in_window":%s,"restarts_total":%s}\n' \
+        "$ready_at" "$freed" "$running" "${restarts_window:-null}" "$(docker inspect -f '{{.RestartCount}}' "$order" 2>/dev/null || echo null)" > "$run_dir/fault-extra.json" ;;
     dns-kill)
       docker kill "$order" >/dev/null; sleep "$fault_for"; docker start "$order" >/dev/null
       printf '{"ready":%s}\n' "$(pg_ready_wait "$order")" > "$run_dir/fault-extra.json" ;;
