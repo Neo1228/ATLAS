@@ -3,6 +3,7 @@
 - 상태: 채택(제안 PR, 병합은 통합 담당). 값은 구매자 행동 **가정**에 기대며 아래 "바꿀 조건"이 생기면 다시 정한다.
 - 날짜: 2026-11-25
 - 관련: [ADR-0005](ADR-0005-seller-sku-inventory-global-admission.md), [ADR-0066](ADR-0066-redis-admission-gate.md), [ADR-0069](ADR-0069-layered-naming-and-runtime-configuration.md), [EXP-079](../../03-experiments/EXP-079-expiry-sweep-bound.md), [EXP-086](../../03-experiments/EXP-086-admission-k-ttl-and-authorize-window.md), [EXP-090](../../03-experiments/EXP-090-admission-lock-failure-and-tombstone-size.md), [D-141](../../00-governance/decision-log.md)
+- 후속: 12번(live ticket)·13번(tombstone)은 [ADR-0088](ADR-0088-admission-tombstone-purge-and-live-ticket-limit.md)에서 구현했고 보존·batch 값은 그대로다.
 - 추적: [Q-003](../../01-requirements/requirements-index.md#assumptions-and-open-questions), [D-149](../../00-governance/decision-log.md), [D-150](../../00-governance/decision-log.md), [Issue #641](https://github.com/Neo1228/ATLAS/issues/641)
 
 ## 문제

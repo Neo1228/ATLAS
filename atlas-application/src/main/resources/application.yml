@@ -131,6 +131,18 @@ atlas:
     max-active-checkouts-limit: ${ATLAS_ADMISSION_MAX_ACTIVE_CHECKOUTS_LIMIT:10000}
     default-ticket-ttl: ${ATLAS_ADMISSION_DEFAULT_TICKET_TTL:PT2M}
     ticket-ttl-limit: ${ATLAS_ADMISSION_TICKET_TTL_LIMIT:PT2H}
+    # 같은 Seller-SKU에서 한 구매자가 동시에 가질 수 있는 live ticket(WAITING·CHECKOUT_ACTIVE·CHECKOUT_STARTED) 수.
+    # 0이면 검사하지 않는다(규칙 끄기). 검사는 counter 잠금 안에서 하고 부분 인덱스를 쓴다(ADR-0088, EXP-092).
+    max-live-tickets-per-buyer: ${ATLAS_ADMISSION_MAX_LIVE_TICKETS_PER_BUYER:1}
+    # 종료된 ticket(EXPIRED·CHECKOUT_FAILED) 정리. 주문이 가리키는 ticket은 지우지 않는다. 지운 뒤에는 되살릴 수 없으므로
+    # purge-enabled=false로 끌 수 있다. 값은 구매자 행동·운영 규모를 모르는 상태의 가정이다(ADR-0088 "바꿀 조건").
+    # retention은 ticket 생성 시각 기준이고 같은 Idempotency-Key 재요청이 기존 ticket을 돌려받는 기간이기도 하다(하한 1일).
+    tombstone:
+      purge-enabled: ${ATLAS_ADMISSION_TOMBSTONE_PURGE_ENABLED:true}
+      retention: ${ATLAS_ADMISSION_TOMBSTONE_RETENTION:P30D}
+      purge-batch-size: ${ATLAS_ADMISSION_TOMBSTONE_PURGE_BATCH_SIZE:500}
+      purge-initial-delay: ${ATLAS_ADMISSION_TOMBSTONE_PURGE_INITIAL_DELAY:PT5M}
+      purge-interval: ${ATLAS_ADMISSION_TOMBSTONE_PURGE_INTERVAL:PT10M}
   orders:
     expiry-poll-interval: PT1S
     expiry-sweep-batch-size: ${ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE:100}

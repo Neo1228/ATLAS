@@ -23,8 +23,9 @@ public interface TicketRepository extends JpaRepository<QueueTicket, UUID> {
             @Param("status") TicketStatus status, @Param("now") Instant now, Pageable pageable);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update QueueTicket t set t.status = :status, t.expiresAt = null where t.campaignId = :campaignId and t.ticketId = :ticketId")
-    int updateStatus(@Param("campaignId") UUID campaignId, @Param("ticketId") UUID ticketId, @Param("status") TicketStatus status);
+    @Query("update QueueTicket t set t.status = :status, t.expiresAt = null, t.checkoutStartedAt = :startedAt where t.campaignId = :campaignId and t.ticketId = :ticketId")
+    int markCheckoutStarted(@Param("campaignId") UUID campaignId, @Param("ticketId") UUID ticketId,
+            @Param("status") TicketStatus status, @Param("startedAt") Instant startedAt);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update QueueTicket t set t.status = :status, t.checkoutSlotHeld = false, t.expiresAt = null where t.campaignId = :campaignId and t.ticketId = :ticketId")

@@ -881,14 +881,17 @@ assertUuidV7(paymentOrderId);
     void buyerCannotStartAnotherPaymentWhileAnEarlierCampaignAttemptIsUnresolved() throws Exception {
         AdmissionResponse.Campaign campaign = openCampaign(2, 2, Duration.ofMinutes(5));
         AdmissionResponse.QueueTicket firstTicket = join(campaign, "same-buyer", "first-key");
-        AdmissionResponse.QueueTicket secondTicket = join(campaign, "same-buyer", "second-key");
         OrderViewResponse.Order first = orders.startCheckout(campaign.campaignId(), firstTicket.ticketId());
-        OrderViewResponse.Order second = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
         OrderViewResponse.Order firstPending = objectMapper.readValue(mockMvc.perform(post("/api/orders/{orderId}/payment", first.orderId()))
                         .andExpect(status().isOk())
                         .andReturn().getResponse().getContentAsString(), OrderViewResponse.Order.class);
         assertThat(firstPending.state()).isEqualTo(OrderState.PAYMENT_PENDING);
         assertThat(firstPending.paymentState()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
+
+        // 한 구매자는 같은 Seller-SKU에 live ticket을 하나만 가질 수 있다(ADR-0088). 첫 ticket은 결제를 제출하면
+        // CHECKOUT_SUBMITTED로 live가 아니게 되므로 그 뒤에 두 번째 ticket을 받아 "앞선 시도가 미해결인 동안의 두 번째 결제"를 만든다.
+        AdmissionResponse.QueueTicket secondTicket = join(campaign, "same-buyer", "second-key");
+        OrderViewResponse.Order second = orders.startCheckout(campaign.campaignId(), secondTicket.ticketId());
 
         mockMvc.perform(post("/api/orders/{orderId}/payment", second.orderId()))
                 .andExpect(status().isConflict())

@@ -53,7 +53,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 class AdmissionServiceTest {
     private static final AdmissionLimits LIMITS =
-            new AdmissionLimits(20, 100, Duration.ofMinutes(7), Duration.ofHours(2));
+            new AdmissionLimits(20, 100, Duration.ofMinutes(7), Duration.ofHours(2), 1);
 
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final QueueRepository queueRepository = mock(QueueRepository.class);
