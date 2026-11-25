@@ -60,6 +60,12 @@ done
   echo "RUNS and RATE must be positive integers" >&2; exit 2; }
 
 export EXP_TAG="$tag" TOPIC="$topic"
+# relay settings are passed to the applications only when set here; otherwise the application default applies
+relay_prefix=ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY
+[[ -z "${RELAY_BATCH_SIZE:-}" ]] || export "${relay_prefix}_BATCH_SIZE=$RELAY_BATCH_SIZE"
+[[ -z "${RELAY_POLL_INTERVAL:-}" ]] || export "${relay_prefix}_POLL_INTERVAL=$RELAY_POLL_INTERVAL"
+[[ -z "${RELAY_SEND_TIMEOUT:-}" ]] || export "${relay_prefix}_SEND_TIMEOUT=$RELAY_SEND_TIMEOUT"
+[[ -z "${RELAY_LEASE_DURATION:-}" ]] || export "${relay_prefix}_LEASE_DURATION=$RELAY_LEASE_DURATION"
 export DB_PASSWORD ATLAS_JWT_SIGNING_SECRET
 project=""
 dc() { docker compose -p "$project" -f "$compose_file" "$@"; }
@@ -191,6 +197,8 @@ for condition in $conditions; do
     --describe --topic "$topic" >>"$out/$condition/topic.txt" 2>&1
   dc up -d --wait --wait-timeout 240 app1 app2 >>"$out/$condition/compose-up.log" 2>&1 \
     || { echo "applications failed to start; see $out/$condition/compose-up.log" >&2; teardown; project=""; continue; }
+  # the relay settings the applications really run with (unset keys mean the application default)
+  docker exec "$(cid app1)" printenv | grep '^ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_' | sort >"$out/$condition/relay-env.txt" || true
   sleep 5  # let the relay of both applications claim its first lease
   for ((n = 1; n <= runs; n++)); do
     run_one "$condition" "$n" || echo "run $n of $condition failed" >&2

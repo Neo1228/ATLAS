@@ -4,9 +4,9 @@
 # secrets and the label tag. Every container, network and volume carries atlasexp=<tag> so a
 # leftover can be found and removed by label. The application jar is bind-mounted from
 # APP_JAR (default: the Gradle bootJar output); the Docker VM must be able to see that path.
-# The relay uses its default settings (batch 500, poll 0.2 s, send-timeout PT10S, lease
-# PT30S) unless RELAY_* variables are set. The kafka service has no restart policy: the
-# runner decides when a stopped or killed broker starts again.
+# The relay uses the application's own defaults unless the runner exports a relay setting
+# (RELAY_BATCH_SIZE, RELAY_POLL_INTERVAL, RELAY_SEND_TIMEOUT, RELAY_LEASE_DURATION). The kafka
+# service has no restart policy: the runner decides when a stopped or killed broker starts again.
 
 x-labels: &labels
   atlasexp: ${EXP_TAG:-kafka-outage}
@@ -20,24 +20,26 @@ x-app: &app
       condition: service_healthy
     kafka:
       condition: service_healthy
-  environment: &app-env
-    ATLAS_SERVER_ADDRESS: 0.0.0.0
-    ATLAS_SERVER_PORT: 8080
-    ATLAS_DB_URL: jdbc:postgresql://order-postgres:5432/atlas_order
-    ATLAS_DB_USER: atlas
-    ATLAS_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
-    ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:?Set ATLAS_JWT_SIGNING_SECRET}
-    ATLAS_PAYMENT_PROVIDER: disabled
+  # Key=value entries are fixed; a bare KEY is passed through only when it is set in the runner's
+  # environment, so an unset RELAY_* keeps the application's own default (no second copy of it here).
+  environment:
+    - ATLAS_SERVER_ADDRESS=0.0.0.0
+    - ATLAS_SERVER_PORT=8080
+    - ATLAS_DB_URL=jdbc:postgresql://order-postgres:5432/atlas_order
+    - ATLAS_DB_USER=atlas
+    - ATLAS_DB_PASSWORD=${DB_PASSWORD:?Set DB_PASSWORD}
+    - ATLAS_JWT_SIGNING_SECRET=${ATLAS_JWT_SIGNING_SECRET:?Set ATLAS_JWT_SIGNING_SECRET}
+    - ATLAS_PAYMENT_PROVIDER=disabled
     # The account module needs a mail sender bean to start; nothing here sends mail.
-    SPRING_MAIL_HOST: localhost
-    MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
-    ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_ENABLED: "true"
-    ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BOOTSTRAP_SERVERS: kafka:9092
-    ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_TOPIC: ${TOPIC:-atlas.order-inventory.events}
-    ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BATCH_SIZE: ${RELAY_BATCH_SIZE:-500}
-    ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_POLL_INTERVAL: ${RELAY_POLL_INTERVAL:-PT0.2S}
-    ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_SEND_TIMEOUT: ${RELAY_SEND_TIMEOUT:-PT10S}
-    ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_LEASE_DURATION: ${RELAY_LEASE_DURATION:-PT30S}
+    - SPRING_MAIL_HOST=localhost
+    - MANAGEMENT_HEALTH_MAIL_ENABLED=false
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_ENABLED=true
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BOOTSTRAP_SERVERS=kafka:9092
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_TOPIC=${TOPIC:-atlas.order-inventory.events}
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BATCH_SIZE
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_POLL_INTERVAL
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_SEND_TIMEOUT
+    - ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_LEASE_DURATION
   volumes:
     - ${APP_JAR:-../../atlas-application/build/libs/atlas-application.jar}:/app/atlas-application.jar:ro
   healthcheck:
