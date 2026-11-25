@@ -37,7 +37,7 @@
 | 상태 변화마다 정확히 한 건, 연속 version | `ReservationEventTriggerIntegrationTest` |
 | 전송 실패 뒤 cursor 보존과 재전달 | `ReservationEventKafkaIntegrationTest` |
 | 읽기 순서, 재읽기, 단조 cursor, 그룹 독립 | `ReservationEventConsumerContractIntegrationTest`(EXP-067, PR #518에서 병합 대기) |
-| 중복 제거, 다중 프로세스 소비자, 브로커 중단 | **없음**. 저장소에 소비자 구현이 없다([ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md)가 소비자 책임으로 둠) |
+| 중복 제거, 같은 그룹 두 인스턴스(리밸런스), 재시작·재전달, 브로커 중단 뒤 복구 | `ReservationEventConsumerKafkaIntegrationTest`([EXP-082](EXP-082-event-consumer-contract.md), [ADR-0076](../02-decisions/adr/ADR-0076-reference-consumer-in-tests-only.md)). 소비자는 테스트 전용 참조 구현이고 운영 소비자는 없다. 파티션 2개, 소비자 2개, 이벤트 18~36건 규모 |
 
 ## 7단계: 분할 출고·부분 취소·환불
 
@@ -70,7 +70,7 @@
 
 ## 비어 있는 것(후속 후보)
 
-1. 소비자 중복 제거와 다중 프로세스 읽기: 소비자 구현이 생기기 전에는 검증할 대상이 없다.
+1. 운영 소비자: 제품 요구가 없어 만들지 않았다. 테스트 전용 참조 소비자가 중복 제거, 같은 그룹 두 인스턴스, 재시작, 브로커 중단을 확인한다([EXP-082](EXP-082-event-consumer-contract.md)). 실제 소비자의 부수 효과가 DB 밖이면 적용 표시와 효과를 한 트랜잭션에 묶을 수 없어 이 근거가 그대로 성립하지 않는다.
 2. PayPal 대역의 응답 규칙이 실제 Sandbox와 같은지 비교(비교했다: [EXP-081](EXP-081-paypal-double-vs-sandbox.md)). 어긋나면 5단계 근거 중 대역에 기대는 단위·통합 테스트가 흔들린다. 실제 Sandbox 근거는 EXP-050의 capture 응답 유실 3건과 worker 활성 조건 매트릭스다.
 3. 계획 3.3의 창고 선택 정책(출고 용량, 배송 기한, 배송 비용, 창고별 실패율): `LocationAllocationPolicy`는 위 표의 재고 기반 테스트만 있고, 용량·기한·비용·실패율 입력은 이 조사에서 확인하지 못했다.
 4. 컨테이너 수준 장애(Pumba), PostgreSQL 컨테이너 kill·내부 프로세스 크래시, Kafka 중단은 EXP-070·071·072(PR #548)에서 조건별 n=1로 실행했다. Kafka 중단에서는 relay가 이벤트를 잃지 않았고 중복은 `pause`에서만 나왔다. 파티션이 여러 개인 경우와 relay를 가진 application의 kill은 아직 실행하지 않았다.
