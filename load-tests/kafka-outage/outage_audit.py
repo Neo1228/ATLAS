@@ -3,6 +3,7 @@
 
 sample     once per interval: highest event_seq in the log and the relay cursor (until SIGTERM)
 audit      wait for the relay to drain, read the whole topic, compare it with the event log table
+segments   classify the run's first-delivery violations by broker batch (producer id, epoch, sequence) from kafka-dump-log
 summarize  read every run's result.json under a results directory and print per-condition tables
 
 Invariants (one violation is a finding, not noise):
@@ -252,6 +253,94 @@ def audit(args):
     return 0
 
 
+BATCH_LINE = re.compile(r"baseOffset: (\d+) lastOffset: \d+ count: (\d+) baseSequence: (-?\d+) lastSequence: -?\d+ "
+                        r"producerId: (\d+) producerEpoch: (\d+)")
+RECORD_LINE = re.compile(r"\| offset: (\d+) .*? sequence: (-?\d+) ")
+
+
+def segment_records(kafka, topic):
+    """(partition, offset) -> (batch base offset, producer id, producer epoch, record sequence), read from the broker's
+    segment files with kafka-dump-log.sh, independent of what a consumer returns."""
+    shell = lambda command: subprocess.run(["docker", "exec", kafka, "bash", "-c", command],
+                                           capture_output=True, text=True, timeout=300, check=False).stdout
+    meta = {}
+    for path in shell(f"find /tmp/kafka-logs /var/lib/kafka/data -path '*{topic}-*' -name '*.log' | sort").split():
+        found = re.search(rf"/{re.escape(topic)}-(\d+)/[^/]*$", path)
+        if not found:  # e.g. a topic directory marked for deletion
+            continue
+        partition = int(found.group(1))
+        batch = None
+        for line in shell(f"/opt/kafka/bin/kafka-dump-log.sh --files {path} --print-data-log 2>/dev/null").splitlines():
+            match = BATCH_LINE.search(line)
+            if match:
+                batch = (int(match.group(1)), int(match.group(4)), int(match.group(5)))
+                continue
+            match = RECORD_LINE.search(line)
+            if match and batch:
+                meta[(partition, int(match.group(1)))] = batch + (int(match.group(2)),)
+    return meta
+
+
+def segments(args):
+    """Classify the first-delivery violations of one run by where the records sit in the broker's batches: the lower
+    version in the same batch as the higher one, in a batch of another producer, in a later batch of the same producer
+    epoch, or in a later epoch of the same producer (it resent the record after bumping the epoch). Also counts records that sit below an earlier higher version of the
+    same key inside one batch, and the event_seq decreases between neighbouring records of one batch."""
+    meta = segment_records(args.kafka, args.topic)
+    per_key = collections.defaultdict(list)
+    per_batch = collections.defaultdict(list)
+    detail = []
+    for line in Path(args.run_tsv).read_text().splitlines()[1:]:
+        partition, offset, event_seq, workflow, version = line.split("\t")
+        batch = meta.get((int(partition), int(offset)))
+        per_key[workflow].append((int(offset), int(version), batch))
+        if batch is not None:
+            per_batch[(int(partition), batch[0])].append((int(offset), int(event_seq)))
+        if args.records_out and batch is not None:
+            detail.append(f"{partition}\t{offset}\t{batch[0]}\t{batch[1]}\t{batch[2]}\t{batch[3]}\t{event_seq}\t{workflow}\t{version}")
+    missing = sum(1 for records in per_key.values() for record in records if record[2] is None)
+    first = same_batch = later_batch_same_epoch = later_epoch = other_producer = intra_batch = 0
+    for records in per_key.values():
+        records.sort()
+        seen, last_first, blocker, highest_in_batch = set(), 0, None, {}
+        for offset, version, batch in records:
+            if batch is not None:
+                if version < highest_in_batch.get(batch[0], 0):
+                    intra_batch += 1
+                highest_in_batch[batch[0]] = max(highest_in_batch.get(batch[0], 0), version)
+            if version in seen:
+                continue
+            seen.add(version)
+            if version <= last_first:
+                first += 1
+                if batch is not None and blocker is not None:
+                    if batch[0] == blocker[0]:
+                        same_batch += 1
+                    elif batch[1] != blocker[1]:
+                        other_producer += 1
+                    elif batch[2] == blocker[2]:
+                        later_batch_same_epoch += 1
+                    else:
+                        later_epoch += 1
+            else:
+                last_first, blocker = version, batch
+    # A batch that holds the tail of one relay attempt followed by the head of the next shows up as an event_seq decrease
+    # between neighbouring records of the batch, whichever keys they belong to.
+    seq_decreases = sum(1 for rows in per_batch.values() for a, b in zip(sorted(rows), sorted(rows)[1:]) if b[1] < a[1])
+    if args.records_out:  # forensic detail: one row per record with the broker batch it sits in
+        Path(args.records_out).write_text("partition\toffset\tbatch_base\tproducer_id\tproducer_epoch\tsequence\t"
+                                          "event_seq\tworkflow\tversion\n" + "\n".join(detail) + "\n")
+    result = {"records": sum(len(records) for records in per_key.values()), "no_batch_found": missing,
+              "batch_event_seq_decreases": seq_decreases,
+              "first_delivery_violations": first, "violations_lower_in_same_batch": same_batch,
+              "violations_lower_in_other_producer": other_producer,
+              "violations_lower_in_later_batch_same_epoch": later_batch_same_epoch,
+              "violations_lower_in_later_epoch": later_epoch, "intra_batch_inversions": intra_batch}
+    Path(args.out).write_text(json.dumps(result, indent=1))
+    print(json.dumps(result))
+    return 0
+
+
 def spread(values):
     values = [v for v in values if v is not None]
     if not values:
@@ -318,10 +407,16 @@ def main():
     a.add_argument("--drain-timeout", type=int, default=90)
     a.add_argument("--settle", type=float, default=2.0,
                    help="seconds after the broker became unreachable before cursor movement counts")
+    g = sub.add_parser("segments")
+    g.add_argument("--kafka", required=True)
+    g.add_argument("--topic", required=True)
+    g.add_argument("--run-tsv", required=True, help="topic-run.tsv written by audit")
+    g.add_argument("--out", required=True)
+    g.add_argument("--records-out", help="also write one row per record with its broker batch (producer id, epoch, sequence)")
     m = sub.add_parser("summarize")
     m.add_argument("results")
     args = parser.parse_args()
-    return {"sample": sample, "audit": audit, "summarize": summarize}[args.command](args)
+    return {"sample": sample, "audit": audit, "segments": segments, "summarize": summarize}[args.command](args)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@
 | 이벤트 유실 없음(커밋 순서 역전) | `ReservationEventReadIntegrationTest`, [EXP-061](EXP-061-event-log-fanout-and-replay.md) |
 | 상태 변화마다 정확히 한 건, 연속 version | `ReservationEventTriggerIntegrationTest` |
 | 전송 실패 뒤 cursor 보존과 재전달 | `ReservationEventKafkaIntegrationTest` |
-| relay의 broker 중단 중 누락 0·cursor 정지·복구 수렴, 중복 크기 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`, 조건 10종 × n=5, 로컬 단일 broker)와 [EXP-091](EXP-091-kafka-first-delivery-order.md)(첫 전달 순서 역행의 원인 규명과 덩어리 전송 수정: 운영 클래스 수정 전 11/144 → 수정 후 0/144 시행-단계, 리밸런스+역행 입력 시험 7회, 재현기는 DB 없는 메모리 로그라 실제 스택 반복 안 함) |
+| relay의 broker 중단 중 누락 0·cursor 정지·복구 수렴, 중복 크기 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`, 조건 10종 × n=5, 로컬 단일 broker)와 [EXP-091](EXP-091-kafka-first-delivery-order.md)(첫 전달 순서 역행의 원인 규명과 덩어리 전송 수정: 운영 클래스 수정 전 11/144 → 수정 후 0/144 시행-단계, 리밸런스+역행 입력 시험 7회, 재현기는 DB 없는 메모리 로그. 실제 스택 반복은 [EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md): 앱 2대·PostgreSQL·lease에서 `pause20` 팔당 35회, 수정 전 2/35 대 수정 후 0/35(차이 단독으로는 p = 0.49), 정상 부하 처리량 동일, 포화 처리량은 미측정) |
 | 읽기 순서, 재읽기, 단조 cursor, 그룹 독립 | `ReservationEventConsumerContractIntegrationTest`(EXP-067, PR #518에서 병합 대기) |
 | 중복 제거, 같은 그룹 두 인스턴스(리밸런스), 재시작·재전달, 브로커 중단 뒤 복구 | `ReservationEventConsumerKafkaIntegrationTest`([EXP-082](EXP-082-event-consumer-contract.md), [ADR-0076](../02-decisions/adr/ADR-0076-reference-consumer-in-tests-only.md)). 소비자는 테스트 전용 참조 구현이고 운영 소비자는 없다. 파티션 2개, 소비자 2개, 이벤트 18~36건 규모 |
 
