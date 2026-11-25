@@ -354,7 +354,7 @@ GATE=redis REDIS_KILL_AFTER=<초> load-tests/run-hot-sku-coordinator.sh
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BATCH_SIZE` | `100` | 한 번에 보내는 이벤트 수. 전송이 실패하면 같은 묶음을 다시 보내므로 broker가 멈춘 구간의 중복 상한이다([ADR-0082](02-decisions/adr/ADR-0082-relay-batch-size-and-producer-log.md)) |
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_POLL_INTERVAL` | `PT0.2S` | relay poll 간격 |
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_SEND_TIMEOUT` | `PT10S` | 한 묶음 전송의 한도(1초 이상 5분 이하). 넘기면 cursor를 옮기지 않고 같은 묶음을 다시 보낸다 |
-| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_LEASE_DURATION` | `PT30S` | relay 단일 실행 lease. `SEND_TIMEOUT`보다 5초 이상 길어야 한다 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_LEASE_DURATION` | `PT30S` | relay 단일 실행 lease. `SEND_TIMEOUT`의 두 배보다 5초 이상 길어야 한다(묶음이 덩어리로 나뉘어 순서대로 전송되므로 최악 소요가 `SEND_TIMEOUT`의 두 배다, [ADR-0086](02-decisions/adr/ADR-0086-relay-chunked-send-for-first-delivery-order.md)) |
 
 DB 안 consumer는 `tx_id < pg_snapshot_xmin(pg_current_snapshot())` 아래만 읽는 cursor를 쓴다. 장기 트랜잭션이 consumer를 멈추게 하는지는 `atlas.order.inventory.event.relay.stalled_seconds`로 보고, relay 진행은 `atlas.order.inventory.event.relay.lag_events`·`published`·`failed`로 본다. 정확성은 `load-tests/event-log-gap-check.sh`로 확인한다. 쓰기 8개가 400건씩 총 3,200건을 쓴 1회 실행에서 현행 방식(`event_seq > cursor`)은 1,013건을 놓쳤고 xmin 안전 방식은 0건을 놓쳤다([EXP-061](03-experiments/EXP-061-event-log-fanout-and-replay.md)).
 

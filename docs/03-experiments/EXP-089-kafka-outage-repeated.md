@@ -81,7 +81,7 @@
 
 ## 결과 2: 발견 — 첫 전달의 순서 역행 3건
 
-`first_delivery_violations`가 0이 아닌 실행이 3건 있다(모두 `pause20`, 누락 0). 증거는 [`EXP-089-evidence/`](EXP-089-evidence/)에 있다. 같은 workflow의 v2가 v1의 첫 전달보다 앞선 offset에 있다(중복 재전달이 아니다). 같은 파티션 0의 offset 133~157에서 seq 387~415 다음에 seq 764~798이 오고(416~763을 건너뜀), offset 158에서 seq 387부터 다시 시작해 끝까지 전달됐다.
+`first_delivery_violations`가 0이 아닌 실행이 3건 있다(모두 `pause20`, 누락 0). 증거(수치)는 아래 "삭제한 파일의 내용" 절에 옮겨 적었다. 같은 workflow의 v2가 v1의 첫 전달보다 앞선 offset에 있다(중복 재전달이 아니다). 같은 파티션 0의 offset 133~157에서 seq 387~415 다음에 seq 764~798이 오고(416~763을 건너뜀), offset 158에서 seq 387부터 다시 시작해 끝까지 전달됐다.
 
 - 3건은 모두 새 스택에서 `pause20`의 **첫 실행(run-1)**이다. 중복이 생긴 실행 90건 중 첫 실행 19건에서 3건, 나머지 71건에서 0건이다(Fisher 정확 검정 양쪽 p≈0.008, 사후에 찾은 패턴이라 탐색 수준). 조건 10종 × n=5 표(50회)와 전후 비교·최종 실행 50회에서는 위반이 0이었고, 위반은 개발 중 실행과 보조 실행 39회 중 3건이다.
 - 가설: 한 relay 묶음(500건)이 파티션마다 producer batch 여러 개로 나뉘어 일부 batch만 만료·기록된다. 시험: `batch.size`를 키워 한 묶음이 파티션마다 batch 하나에 담기게 하고 relay batch를 2,000으로 올려 증폭한 A/B(`pause20`, 원래 코드 8회 대 batch.size 증가 4회에서 중단)에서 **위반이 사라지지 않았다**(원래 코드 0/8, 변경 1/4 — 첫 실행의 14건). 가설은 지지되지 않아 변경하지 않았다. 원인은 확정하지 못했고 [#644](https://github.com/Neo1228/ATLAS/issues/644)에 증거와 함께 남겼다.
@@ -155,3 +155,23 @@ CONDITIONS="pause20" RUNS=5 load-tests/kafka-outage/run-kafka-outage.sh
 
 - [#644](https://github.com/Neo1228/ATLAS/issues/644)의 원인을 가린다: 위반이 난 실행에서 producer 로그 수준을 올리고 idempotent producer의 epoch 증가(`ProducerId set to 0 with epoch`)와 offset 순서를 맞춰 본다. 새 스택 첫 실행에서만 나오는 이유(콜드 producer?)를 `acks`·`max.in.flight.requests.per.connection=1`로 가려 본다.
 - 장기 중단과 broker 재시작 중 application 재시작을 같은 하네스에 조건으로 더한다.
+
+## 삭제한 파일의 내용
+
+[EXP-091](EXP-091-kafka-first-delivery-order.md)의 PR이 `EXP-089-evidence/`의 파일 4개(JSON 3, txt 1, 합 약 2.6KB)를 저장소에서 지웠다. 결과 파일을 저장소에 두지 않는 방침 때문이고, 증거가 되는 값은 아래 표에 옮겼다. 위반 3건은 모두 `pause20`(부하 10초 뒤 broker `docker pause` 20초), relay 묶음 기본값(batch 500 이상, send-timeout PT10S, lease PT30S), workflow 1,000개(이벤트 2,000건)다. 열 의미: 토픽 사본 = 토픽에 실린 메시지 수, 고유 = `(workflowId, aggregateVersion)` 종류 수, 중복 = 사본 − 고유, 위반 = 키별 첫 전달 순서 위반 수(`outage_audit.py`의 `first_delivery_violations`), 높은 버전 뒤 재전달 = 이미 높은 버전을 받은 키에 낮은 버전이 다시 실린 수. 모든 실행에서 누락 0, 예상 밖 메시지 0, 파티션 변경 0, 최종 lag 0, 판정 `passed=false`(위반 때문).
+
+| 증거 | run_id | 조건 | 토픽 사본 / 고유 | 중복 | 중복 키 / 최대 사본 | 위반 | 높은 버전 뒤 재전달 | 최대 lag | 장애 길이(s) | 소진(s) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 위반 1 | `48a03f73` | batch 500 | 2,358 / 2,000 | 358 | 206 / 2 | 20 | 172 | 1,256 | 20.2 | 0.8 |
+| 위반 2 | `8d5c714f` | batch 500, producer 로그 끔 | 2,070 / 2,000 | 70 | 62 / 3 | 15 | 15 | 802 | 20.1 | 0.8 |
+| 위반 3 | `92ebe50d` | batch 2,000, producer `batch.size` 상향 | 2,262 / 2,000 | 262 | 163 / 3 | 14 | 111 | 808 | 20.1 | 0.5 |
+
+위반 2(`8d5c714f`)의 파티션 0을 offset 순서로 읽었을 때 `eventSeq`가 오름차순으로 이어지는 구간(총 695건, 구간 3개):
+
+| 구간 | offset | eventSeq 범위 | 건수 |
+| --- | --- | --- | --- |
+| 1 | 0~132 | 10~392 | 133 |
+| 2 | 133~157 | 387~798 | 25 |
+| 3 | 158~694 | 387~2000 | 537 |
+
+구간 2에는 387~415와 764~798만 있고 416~763은 없다. 구간 3은 387부터 다시 시작해 끝까지 있다. 이 구간 경계는 이슈 #644의 설명과 같고 원인은 [EXP-091](EXP-091-kafka-first-delivery-order.md)에서 규명했다.
