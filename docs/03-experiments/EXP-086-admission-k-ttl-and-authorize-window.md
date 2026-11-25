@@ -1,6 +1,6 @@
 # EXP-086: Admission K·ticket TTL 민감도와 PayPal AUTHORIZE 유효 기간 대비 repo 창
 
-> 정리 안내: 이 실험의 실행 파일(`load-tests/admission-sweep/`, `load-tests/paypal-real-fault/authorization-window.mjs`)은 저장소 오염을 막으려고 삭제했다. 숫자의 정본은 이 문서의 표이고, 삭제한 파일은 커밋 `3c2f7f11`의 같은 경로에서 복원할 수 있다.
+> 정리 안내: 이 실험의 실행 파일(`load-tests/admission-sweep/`, `load-tests/paypal-real-fault/authorization-window.mjs`)은 저장소 오염을 막으려고 삭제했다. 하네스의 동작과 실행 방법은 이 문서 끝 "삭제한 파일의 내용" 절에 적었다. 파일은 커밋 `546d8002` 이후 이력에서 복원할 수 있다.
 
 **상태:** 로컬 합성 구매자 모형 · 실제 서비스와 PostgreSQL 위에서 가상 시계로 실행 · 건수 기준 결과(시간은 가상 시간) · 운영 K/TTL 값과 운영 SLO의 근거 아님 · 연결: [Q-003, Q-004](../01-requirements/requirements-index.md#assumptions-and-open-questions), [D-025~D-030](../00-governance/decision-log.md), [D-145](../00-governance/decision-log.md), [Issue #633](https://github.com/Neo1228/ATLAS/issues/633)
 
@@ -42,9 +42,9 @@ Q-003과 Q-004가 열려 있는 이유는 값이 가정이기 때문이다. 이 
 - 하드웨어: macOS arm64 개발 머신(Colima 8 CPU, 약 12.6 GiB를 다른 작업과 **공유**). 주 격자 시작 때와 민감도 실행 끝에 잰 `uptime`의 1분 load average는 4.95 → 9.14, 다른 에이전트의 Gradle·Testcontainers가 동시에 돌고 있었다. 그래서 `wallSeconds`는 맥락으로만 적고(주 격자 100칸의 합 15.2분, 칸당 최대 18.6초, 가상 시간으로는 칸당 최대 25.9분) 결론은 **건수와 불변식**에만 둔다.
 - 소프트웨어: JDK 25, Spring Boot 앱의 실제 `AdmissionService`, `OrderService`(재고 예약, `submitPayment`), `PostgreSQL 18.6`(Testcontainers, 칸마다 새 Seller·SKU·Campaign). PayPal만 로컬 MockWebServer 대역(`PayPalIntegrationTestSupport`)이다. 이 모형은 PayPal 응답 지연을 모사하지 않는다.
 - 시계: 앱의 `Clock` 빈을 가상 시계로 바꾸고 1초 tick마다 `expireDueTickets()`와 `expireDueOrders()`를 호출한다(운영 `expiry-poll-interval` PT1S와 같은 주기). 단일 스레드 이산 사건 시뮬레이션이라 같은 시드면 구매자 난수열이 모든 칸에서 같다(짝 비교).
-- 실행: `load-tests/admission-sweep/run.sh`(harness를 test 소스에 임시 복사해 Gradle로 실행하고 지움). 일반 `check`에 들어가지 않는다(저장소 테스트 정리 기준 4번: 실험·부하는 `check` 밖).
+- 실행: 삭제한 `load-tests/admission-sweep/run.sh`(harness를 test 소스에 임시 복사해 Gradle로 실행하고 지움, 아래 절). 일반 `check`에 들어가지 않는다(저장소 테스트 정리 기준 4번: 실험·부하는 `check` 밖).
 - 격자: K ∈ {5, 10, 20, 50, 100} × TTL ∈ {30, 60, 120, 300}초 × 시드 5개 = **100회**(칸당 n=5). 민감도: 시작 후 포기율 0%와 5%, K ∈ {5, 20, 50} × TTL ∈ {30, 120, 300} × 시드 3개 = 27회와 27회.
-- 산출물: 칸당 JSON 1줄(`load-tests/admission-sweep/aggregate.py`가 표로 묶음). 원자료(jsonl)는 저장소에 커밋하지 않고 이 문서의 표가 정본이다(EXP-033과 같은 정책).
+- 산출물: 칸당 JSON 1줄(삭제한 `aggregate.py`가 표로 묶음). 원자료(jsonl)는 저장소에 커밋하지 않고 이 문서의 표가 정본이다(EXP-033과 같은 정책).
 
 ### 구매자 모형 (모두 가정, 값의 출처는 실측이 아님)
 
@@ -425,6 +425,8 @@ PayPal authorization은 구매자 승인 **뒤에** repo가 `/authorize`를 호�
 
 ## 재현
 
+아래 명령의 `load-tests/admission-sweep/`와 `authorization-window.mjs`는 삭제했다. 실행하려면 먼저 커밋 `546d8002` 이후 이력에서 복원한다(동작은 이 문서 끝 "삭제한 파일의 내용" 절).
+
 ```sh
 export JAVA_HOME=<JDK 25> DOCKER_HOST=<docker socket> TESTCONTAINERS_RYUK_DISABLED=true
 # Q-003 주 격자(약 16분, 공유 머신 기준)
@@ -438,3 +440,19 @@ python3 load-tests/admission-sweep/aggregate.py /tmp/atlas-c2-results/main.jsonl
 cd load-tests/paypal-real-fault && npm ci
 REAL_SANDBOX_OPT_IN=YES REPEAT=3 node authorization-window.mjs
 ```
+
+## 삭제한 파일의 내용
+
+이 절은 저장소에서 지운 하네스의 동작을 문서에 직접 옮긴 것이다. 위 본문과 구분하려고 따로 둔다.
+
+### admission-sweep(`AdmissionKTtlSweepExperiment.java`, `run.sh`, `aggregate.py`)
+
+- 구성: 실제 `AdmissionService`, `OrderService`(재고 예약과 결제 제출), PostgreSQL 18.6(Testcontainers, 라벨 `atlasexp=c2`)을 쓰고 시간만 가상 시계로 돌린다. 시드가 같으면 모든 (K, TTL) 칸이 같은 난수열을 써서 칸끼리 짝 비교가 된다.
+- 실행: `run.sh`가 하네스를 `atlas-application/src/test/java/com/atlas/experiment/`에 임시 복사하고 `./gradlew --no-daemon --no-build-cache :atlas-application:cleanTest :atlas-application:test --tests 'com.atlas.experiment.AdmissionKTtlSweepExperiment'`를 실행한 뒤 반드시 복사본을 지운다(일반 `check`에 들어가지 않는다). 출력은 칸당 JSON 한 줄(jsonl).
+- 환경 변수: `SWEEP_KS`, `SWEEP_TTLS`, `SWEEP_SEEDS`, `SWEEP_BUYERS`, `SWEEP_STOCK`, `SWEEP_ARRIVAL_SECONDS`, `SWEEP_ABANDON_BEFORE`(기본 0.10), `SWEEP_ABANDON_AFTER`(기본 0.20), `SWEEP_OUT`.
+- 구매자 모형 상수: 재참여 확률 0.70, 최대 재참여 2회, 시작 전 사고 시간 중앙값 10초, 결제 전 사고 시간 중앙값 30초(로그정규 σ=0.6), 대기열 확인 주기 2초, 틱 1초, 주문 창 600초, 관측 한계 45분. 시작하려던 구매자가 START 이벤트에서 실제 서비스 오류를 만나면 `LOST_SLOW_START`로 센다.
+- 만료 스케줄러는 끈다: `atlas.admission.expiry-poll-interval`, `atlas.orders.expiry-poll-interval`을 `PT24H`로, 결제 복구 worker와 웹훅 재시도 worker는 `false`로 둔다.
+
+### authorization-window(`load-tests/paypal-real-fault/authorization-window.mjs`)
+
+- Sandbox 전용(`api-m.sandbox.paypal.com`만 호출), 자격 증명은 `.env.local`에서 읽고 출력하지 않는다. 실행: `REAL_SANDBOX_OPT_IN=YES REPEAT=3 node authorization-window.mjs`. 흐름은 본문 "Sandbox에서 관찰한 것" 절의 설명과 같다. 결과 파일은 저장하지 않고 본문 표가 정본이다.
