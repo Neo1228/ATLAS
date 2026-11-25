@@ -66,4 +66,115 @@
 
 ## 재현
 
-실행 방법과 매개변수는 결과 절에 추가할 때 같이 적는다(이 커밋에는 실행 결과가 없다).
+재현 명령(프로젝트 JDK 25·Testcontainers PostgreSQL 18.6; `DOCKER_HOST`는 Colima): `./gradlew --no-daemon --console=plain :atlas-application:test --tests 'com.atlas.order.OrderReturnWindowIntegrationTest'`; `./gradlew --no-daemon --console=plain :atlas-order:test --tests '*ReturnPolicyTest'`; `./gradlew --no-daemon --console=plain :atlas-application:test --tests '*ReturnPolicyDefaultsTest'`. 경계 행렬은 임시 `ReturnWindowProbeIntegrationTest`를 동일 테스트 source set에 놓고 `EXP093_OUT=<결과 파일> ./gradlew --no-daemon --console=plain :atlas-application:test --tests 'com.atlas.order.ReturnWindowProbeIntegrationTest'`로 실행했다. 기준선 코드는 `82345acd`, 변경 후 코드는 이 PR의 구현이다. race 탐침은 `EXP093_ROUNDS=30 EXP093_THREADS=8 EXP093_OUT=<결과 파일> ./gradlew --no-daemon --console=plain :atlas-application:test --rerun --tests 'com.atlas.order.BoundaryRaceRoundsIntegrationTest'`로 실행했다(라운드별 신규 주문/재고 3, 경계 8개·+1초 4개). 임시 탐침/원시 TSV는 Git에 넣지 않았고, 실행한 집계와 매개변수는 이 문서에 보존한다.
+
+## 삭제한 파일의 내용 (집계된 결과)
+
+### 문제와 전후 경계 행렬
+
+**문제 한 문장:** 반품 7일·검수 5영업일 규칙이 코드에 없어 Seller와 플랫폼이 7일 뒤에도 반품·환불 요청을 받아야 하고 수령 뒤 검수 지연을 알 수 없으며, 운영 데이터가 없어 현재 영향 건수는 확인하지 못했다(가정).
+
+기준선은 사전 등록 커밋 다음, 구현 커밋 이전의 `82345acd` 코드에서 실행했다. 같은 탐침·Testcontainers PostgreSQL 18.6·조정 가능 Clock으로 배송 후 나이별 7개 요청을 시도했다. 경과 시간은 배송 완료 시각 기준이다.
+
+| 조건 | 기준선 수락/거절 (n=1/점) | 변경 후 수락/거절 (n=1/점) | 결과 |
+| --- | ---: | ---: | --- |
+| 1일(변경 없음 통제) | 1/0 | 1/0 | 정상 경로 유지 |
+| 6일 23:59:59 | 1/0 | 1/0 | 경계 -1초 수락 |
+| 7일 정각 | 1/0 | 1/0 | 경계 포함 |
+| 7일+1초 | 1/0 | 0/1 | 409 `RETURN_WINDOW_EXPIRED`, 잔존 행 0 |
+| 8일 | 1/0 | 0/1 | 같은 오류, 잔존 행 0 |
+| 30일 | 1/0 | 0/1 | 같은 오류, 잔존 행 0 |
+| 400일 | 1/0 | 0/1 | 같은 오류, 잔존 행 0 |
+
+기준선 7/7 수락(비통제 지점 6/6)으로 문제 재현. 변경 후 정상·경계 지점 3/3 수락, 기간 밖 4/4 거절, 거절 뒤 `order_return` 행 0 및 환불 요청 행 0. 재고 불변량은 이 행렬에서 직접 세지 않았다. HTTP 통합 시험은 409와 body의 `RETURN_WINDOW_EXPIRED`를 확인했다.
+
+### 분할 출고·멱등성·잠금
+
+PostgreSQL 시험에서 출고 A만 완료된 동안은 기존의 주문 전체 배송 게이트가 요청을 막았다. A와 B 배송 완료 뒤 A의 `delivered_at + 7일 + 1초`에 A 줄은 409, B 줄은 수락, A+B 혼합은 전체 거절·행 0이었다. 같은 key 재전송은 만료 뒤에도 원래 응답, 새 key는 거절. 잠금 대기 중 시계를 경계 정각에서 +1초로 이동한 요청도 거절됐다. `pg_stat_activity`/`pg_blocking_pids`로 실제 Postgres 잠금 대기를 관측했다.
+
+### 검수 마감·표시·환불
+
+단위 시험 14개 전부 통과: 금요일+2영업일은 화요일 마감, 주말 수령+5영업일은 다음 금요일 마감, KST UTC 자정 전후, 마감 -1초/-1ns·정각·+1초, 설정 범위. 후보 조회 하한은 서울·뉴욕의 시각/영업일 21,600개 조합에서 실제 마감 전 수령 건을 빼지 않았다. PostgreSQL 시나리오의 RECEIVED 3건 중 2건 초과 시 목록 flag와 gauge=2, 상태 3건 유지·환불 0건. 늦은 검수와 기간 내 검수 모두 같은 환불 금액; 완료된 늦은 건은 초과 gauge에서 빠져 gauge=1. 재수령 재호출은 `receivedAt`/dueAt을 바꾸지 않았다.
+
+### 동시성(n=30)·음성 통제
+
+공유 Mac load average는 경합 전 27.52/27.89/21.52, 후 24.09/26.75/21.83(1/5/15분). 경계 8스레드/라운드 결과 매번 수락 3, 수량 충돌 5, 기간 오류 0, 기타 오류 0, 행 3. +1초 4스레드/라운드는 매번 수락 0, 기대한 기간 거절 4, 행 0. 수락 건수 min/median/max=3/3/3, 위반 0/30, rule-of-three 95% 상한 10%. 이는 공유 호스트의 국소 동시성 확인이지 성능/SLA 주장이 아니다.
+
+**음성 통제:** 기간 검사를 제거한 M1 변이로 같은 경합 탐침을 n=5 실행. +1초 라운드 5/5에서 잘못된 수락 3건·행 3개(총 수락 15·행 15)를 잡았다. 코드 원본은 `cmp`로 복구했다.
+
+### 새 테스트별 mutation verification
+
+M0는 변경 없는 통제(22개 관련 테스트, 실패 0). 나머지 12개는 규칙을 하나씩 고의로 깨뜨렸고 12/12가 해당 시험에 실패했다. 매 실행 뒤 원본 파일을 `cmp` 및 Git diff로 복원했다.
+
+| 변이 | 깨뜨린 규칙 | 실패 테스트 / 22 | 감지한 시험 |
+| --- | --- | ---: | --- |
+| M1 | 기간 검사 제거 | 5 | 경계, 잠금 대기, split, replay, rollback |
+| M2 | 경계 배타화 | 2 | 경계 단위·통합 |
+| M3 | 잠금 전에 Clock 읽기 | 1 | 잠금 대기 |
+| M4 | 주문/최신 출고 기준 | 1 | split |
+| M5 | 만료 뒤 같은 key도 거절 | 1 | 멱등 replay |
+| M6 | rollback flag 무시 | 2 | rollback 단위·통합 |
+| M7 | 토요일을 영업일로 처리 | 7 | 영업일 표·마감 통합 |
+| M8 | 마감 정각은 미초과 | 2 | 마감 단위·통합 |
+| M9 | 완료 상태도 overdue | 1 | 늦은 검수 통합 |
+| M10 | 후보 조회 하한을 너무 엄격하게 | 2 | 후보 하한·gauge 통합 |
+| M11 | HTTP 409 대신 400 | 1 | HTTP 경계 통합 |
+| M12 | overdue 때 자동 상태 변경 | 1 | no-auto-action 통합 |
+| M0 | 코드 변경 없음 통제 | 0 | 전체 통과 |
+
+M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 여러 단위/통합 assertion이 같이 깨졌기 때문이다. Mutation은 실행 분기 검증이며 운영 분포의 표본이 아니다.
+
+### 설정 조정·실제 rollback drill
+
+- `ATLAS_ORDER_RETURN_WINDOW=P30D`로 같은 행렬 실행: 1일·6일 23:59:59·7일·7일+1초·8일·30일 정각 수락(6/7), 400일 거절(1/7). 환경변수는 테스트 프로세스에 주입했고, 서비스 재시작이 적용 조건이다.
+- **실제 rollback:** `ATLAS_ORDER_RETURN_WINDOW_ENFORCED=false`로 같은 행렬 실행, Gradle exit 0 및 7/7 수락(400일 포함). 뒤이어 기본값 true로 7일+1초 이후 4/4 거절을 재확인. 영구 통합 시험에서도 동일 fixture에 flag off 수락 → on 거절. 스키마 변경이 없어 down migration은 없다.
+
+### 혼란 요인·사전 등록과 달랐던 점·조사 경계
+
+- 같은 코드의 변경 전/후 및 통제/음성 통제, 각 테스트의 신규 주문, DB에 저장된 `delivered_at`, 조정 가능 Clock으로 첫 실행·잔여 fixture·실제 시계를 배제했다. 시간을 성능 주장에 쓰지 않았다. Testcontainers 이미지와 PostgreSQL은 동일했다.
+- 공유 호스트 load average는 위에 기록. 잠금 반복 5회의 실행 전 17.61/76.23/85.92, 후 25.44/57.58/76.84(1/5/15분)로 부하가 높고 흔들렸다. 이 때문에 지연은 비교하지 않고 잠금/결과 개수만 사용했다. host uptime은 작업 전체 전후 모두 약 9일이었다.
+- H6의 최초 통합 실행은 1회였고, 사후 `--rerun` 반복 5회에서 5/5 통과. 같은 host 반복이며 독립 환경 표본이 아니다. 실패 0/5의 95% rule-of-three 상한은 60%.
+- **절차 이탈:** 사전등록에서 “pre-mortem before implementation”을 약속했지만 실제로는 구현 후 위험·감지 표를 ADR-0089에 적었다. 이를 사전 분석이었다고 주장하지 않는다.
+- ADR-0085의 `inspection-deadline: P7D` 대신 `inspection-business-days` 정수로 의미를 명확히 했다. 5영업일은 평일 수령이면 7 calendar days, 토요일이면 6, 일요일이면 5다. ADR-0089에 대안과 근거를 남겼다.
+- 기준선은 service API 경계 행렬이며 HTTP 응답 코드는 변경 후 통합 시험만 확인했다. 정상 데이터 재고 불변량은 경계 행렬에서 직접 확인하지 않았다.
+- **조사 중단 층:** 앱 서비스·응답·PostgreSQL 행 잠금·금전 상태까지 확인했다. proxy/network, JVM GC/thread dump, OS/container/cgroup은 조사하지 않았다. 문제와 경계가 앱/DB 계층에서 재현·수정돼 하위 층으로 갈 근거가 없었다.
+- 저장소의 `observability/`에는 scrape 설정만 있고 실제 alert rule/receiver가 없다. gauge가 값을 내는 것은 확인했으나 운영자가 경보를 수신하는 것은 확인하지 않았다.
+- Testcontainers 컨테이너는 종료 시 정리됐고, 실행 뒤 `atlasexp=h3` label 컨테이너·볼륨·네트워크 0개를 확인했다. 원시 TSV/log/임시 탐침은 커밋하지 않고 이 문서에 집계 결과와 실행 매개변수를 보존했다.
+
+## 대안 비교 요약
+
+세부 비용·위험·steel-man은 [ADR-0089](../02-decisions/adr/ADR-0089-return-window-and-inspection-deadline.md)에 있다. 선택은 출고별 168시간 경계 포함, 5영업일 초과 시 표시·gauge만, 자동 승인·환불 없음, 설정 flag로 기간 검사 rollback이다. 비용 0인 “do nothing”은 기준선 7/7 수락으로 재현된 무기한 요청을 남기므로 기각했다.
+
+## Claims (claim | evidence | confidence)
+
+| Claim | Evidence | Confidence |
+| --- | --- | --- |
+| 신규 반품의 기본 7일 이후 요청은 HTTP 409 `RETURN_WINDOW_EXPIRED`이고 행을 만들지 않는다 | 경계 HTTP 통합, 기준선 7/7 vs 변경 후 4/4 만료 거절·잔존 행 0 | local-only |
+| 경계는 포함이며 기준 시각은 반품 줄의 출고 `delivered_at`이다 | PostgreSQL 경계·분할 테스트, M2/M4 | confirmed |
+| 주문 행 잠금 뒤 Clock을 읽어 대기 중 만료된 요청이 거절된다 | PostgreSQL lock waiter 관측, 5/5 반복, M3 | local-only |
+| 경계 동시 요청은 n=30 모두 수량 3을 지키고 +1초 요청은 모두 거절됐다 | 0/30 위반, 95% 상한 10%, M1 음성 통제 5/5가 위반 15건 검출 | local-only |
+| 마감 계산은 월~금·Asia/Seoul이며 공휴일 미지원이다 | 표 기반 단위 테스트와 KST/UTC 경계, M7 | confirmed (구현 의미만) |
+| 검수 초과는 상태·돈을 바꾸지 않고 목록/gauge로 표시하며 늦은 검수도 된다 | PostgreSQL 통합, gauge 2→1, late/on-time 환불 비교, M8/M9/M12 | local-only |
+| 운영자가 실제로 알림을 받는다 | alert rule/receiver 확인 못 함 | not confirmed |
+| 7일·5영업일이 법 또는 Seller 정책에 맞다 | 외부 정책 근거를 조사하지 않음 | assumed |
+| 공휴일이 낀 5영업일 마감이 실제 법·정책상 맞다 | 휴일 달력 미지원 | not confirmed |
+| provider 실패 뒤 재검수에도 dueAt이 유지된다 | receive replay에서 시각 불변, provider 실패 재시도는 실행 안 함 | inconclusive |
+| 추가 설정 값 및 공휴일/DST 생산 날짜가 모두 정확하다 | P30D 단일 설정 행렬 및 단위 시간대 sweep만 수행 | not confirmed |
+
+## 최종 가설 판정
+
+| 가설 | 판정 | 요약 |
+| --- | --- | --- |
+| H1 | confirmed | 기준선 7/7 수락, 비통제 지점 6/6 |
+| H2 | confirmed | 변경 후 만료 4/4 거절, 행·환불 요청 0, HTTP 코드 고정 |
+| H3 | confirmed | -1초·경계 수락, +1초 거절; M2 탐지 |
+| H4 | confirmed | 분할 출고별 기준, 혼합 요청 원자적 거절; M4 탐지 |
+| H5 | confirmed | 만료 뒤 같은 key replay는 원응답, 새 key는 거절; M5 탐지 |
+| H6 | local-only | 잠금 대기 5/5, M3 탐지; 0/5 상한 60% |
+| H7 | local-only | 경계 경합 n=30 위반 0, 상한 10%; M1 음성 통제 n=5 위반 15건 탐지 |
+| H8 | confirmed | 주말 skip, 금요일→화요일, timezone edge; M7 탐지 |
+| H9 | confirmed | 마감 -1초/-1ns 정상, 정각부터 overdue; M8 탐지 |
+| H10 | local-only | flag·gauge 및 no-auto-money와 늦은 환불 확인; receiver는 미확인 |
+| H11 | inconclusive | receive replay 불변; provider 실패 뒤 재검수는 실행 안 함 |
+| H12 | local-only | 값 범위와 운영 yml 기본값 확인; 잘못된 ZoneId 문자열의 context startup은 직접 시험 안 함 |
+| H13 | confirmed | 실제 env flag=false에서 7/7, 기본 flag=true에서 만료 4/4 거절; 서비스 fixture off→on 시험 |
