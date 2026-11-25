@@ -61,6 +61,6 @@
 ## 재현
 
 ```sh
-export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home DOCKER_HOST=unix:///Users/mz01-juwannam/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true
+export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home DOCKER_HOST=unix://$HOME/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true
 ./gradlew --no-build-cache :atlas-application:cleanTest :atlas-application:test --tests 'com.atlas.order.ReservationEventConsumerKafkaIntegrationTest'
 ```

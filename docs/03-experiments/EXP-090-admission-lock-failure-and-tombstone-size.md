@@ -1,5 +1,7 @@
 # EXP-090: 잠금 실패가 어떤 예외로 올라오는가, 한 Seller-SKU join이 얼마나 느린가, admission ticket 행이 얼마나 자라는가
 
+> 정리 안내: Part A 실행 파일(`load-tests/admission-lock-probe/`)은 저장소 오염을 막으려고 삭제했다. 동작과 실행 방법은 이 문서 끝 "삭제한 파일의 내용" 절에 적었다. 파일은 커밋 `546d8002` 이후 이력에서 복원할 수 있다.
+
 **상태:** 로컬 합성 측정 · 운영 부하/SLA 근거 아님 · 값은 맥락으로만 사용
 
 ## 질문
@@ -16,7 +18,7 @@
 
 - 호스트: macOS 27.2.1 arm64, Colima Docker VM(8 CPU). 다른 에이전트의 Gradle·Testcontainers가 같은 VM에서 동시에 돌았다. 이 문서를 쓰던 시점의 1분·5분·15분 load average는 14.2·15.4·13.5였다(측정 순간의 값이 아니다). 그래서 시간 값은 맥락이고, 결론은 종류와 개수에 둔다.
 - PostgreSQL 18.6(Testcontainers·docker, image 기본 설정), 앱은 실제 `AdmissionServiceImpl`·`CampaignServiceImpl`·JPA·JdbcTemplate. Hikari는 `application.yml` 기본(풀 10, connection-timeout 500 ms)이다.
-- Part A: `load-tests/admission-lock-probe/run.sh`가 harness(`AdmissionLockProbeExperiment.java`)를 test 소스에 임시로 복사해 실행하고 지운다. 한 번 실행(예외 종류는 n=1, 지연은 아래 표본 수). 일반 `check`에 들어가지 않는다.
+- Part A: 삭제한 `load-tests/admission-lock-probe/run.sh`가 harness(`AdmissionLockProbeExperiment.java`)를 test 소스에 임시로 복사해 실행하고 지웠다(아래 절). 한 번 실행(예외 종류는 n=1, 지연은 아래 표본 수). 일반 `check`에 들어가지 않는다.
 - Part B: `EXP-090-admission-lock-failure-and-tombstone-size.sql`을 `postgres:18.6` 컨테이너(image 기본 설정)에서 3회 실행. 매번 테이블을 새로 만든다.
 
 ## 결과 A: 잠금 실패는 어떤 예외인가 (n=1)
@@ -70,6 +72,8 @@
 
 ## 재현
 
+Part A의 `load-tests/admission-lock-probe/`는 삭제했다. 실행하려면 먼저 커밋 `546d8002` 이후 이력에서 복원한다(동작은 이 문서 끝 "삭제한 파일의 내용" 절). Part B는 이 저장소의 `.sql`로 그대로 실행된다.
+
 ```sh
 # Part A (Testcontainers, 약 1~2분)
 load-tests/admission-lock-probe/run.sh /tmp/atlas-admission-lock-probe.txt
@@ -78,3 +82,12 @@ docker run --rm -d --label atlasexp=g1 -e POSTGRES_PASSWORD=x --name g1-pg postg
 docker exec -i g1-pg psql -U postgres -v ON_ERROR_STOP=1 < docs/03-experiments/EXP-090-admission-lock-failure-and-tombstone-size.sql
 docker rm -f g1-pg
 ```
+
+## 삭제한 파일의 내용
+
+이 절은 저장소에서 지운 Part A 하네스의 동작을 문서에 직접 옮긴 것이다. 위 본문과 구분하려고 따로 둔다.
+
+- 목적: 잠금 실패 예외 종류와 한 Seller-SKU join 지연 측정(EXP-090 Part A).
+- 구성: PostgreSQL 18.6 컨테이너를 Testcontainers가 띄운다. 하네스(`AdmissionLockProbeExperiment.java`)는 `check`에 들어가지 않도록 `run.sh`가 `atlas-application/src/test/java/com/atlas/experiment/`에 임시 복사해 실행하고 지웠다.
+- 실행: `./gradlew --no-daemon --no-build-cache :atlas-application:cleanTest :atlas-application:test --tests 'com.atlas.experiment.AdmissionLockProbeExperiment'`(JDK 25, `DOCKER_HOST` 필요). 출력 파일은 환경 변수 `PROBE_OUT`, 기본 `/tmp/atlas-admission-lock-probe.txt`.
+- 결과 수치와 표본 수는 위 본문 표가 정본이다.
