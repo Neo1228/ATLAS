@@ -1,0 +1,166 @@
+# Isolated stack for fault-injection runs (run-fault-injection.sh).
+# order Postgres + application JVM + two inventory-location JVMs, each with its own Postgres,
+# and mailpit. The runner passes a unique project name, throwaway secrets and free loopback
+# ports. Every container, network and volume carries the label atlasexp=<tag> so a leftover
+# can be found and removed by label. The jars are bind-mounted from APP_JAR and LOCATION_JAR
+# (default: the Gradle bootJar outputs); the Docker VM must be able to see those paths. Limits are fixed so CPU and memory faults have a
+# defined target: the application is capped at 2 CPUs and 1 GiB.
+
+x-labels: &labels
+  atlasexp: ${EXP_TAG:-fault-injection}
+
+x-postgres: &postgres
+  image: postgres:18.6
+  labels: *labels
+  cpus: 1
+  mem_limit: 512m
+
+x-location: &location
+  image: eclipse-temurin:25-jre
+  labels: *labels
+  command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/atlas-inventory-location.jar"]
+  volumes:
+    - ${LOCATION_JAR:-../../atlas-inventory-location/build/libs/atlas-inventory-location.jar}:/app/atlas-inventory-location.jar:ro
+  healthcheck:
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8090 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+    interval: 2s
+    timeout: 3s
+    retries: 60
+  # No restart policy: the runner decides when a killed location starts again.
+  cpus: 1
+  mem_limit: 768m
+
+services:
+  order-postgres:
+    <<: *postgres
+    environment:
+      POSTGRES_DB: atlas_order
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - order-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_order"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  location-a-postgres:
+    <<: *postgres
+    environment:
+      POSTGRES_DB: atlas_inventory
+      POSTGRES_USER: atlas_inventory
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - location-a-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas_inventory -d atlas_inventory"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  location-b-postgres:
+    <<: *postgres
+    environment:
+      POSTGRES_DB: atlas_inventory
+      POSTGRES_USER: atlas_inventory
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - location-b-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas_inventory -d atlas_inventory"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  location-a:
+    <<: *location
+    depends_on:
+      location-a-postgres:
+        condition: service_healthy
+    environment:
+      INVENTORY_LOCATION_PORT: 8090
+      INVENTORY_LOCATION_DB_URL: jdbc:postgresql://location-a-postgres:5432/atlas_inventory
+      INVENTORY_LOCATION_DB_USER: atlas_inventory
+      INVENTORY_LOCATION_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
+      FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000001
+    ports:
+      - "127.0.0.1::8090"
+
+  location-b:
+    <<: *location
+    depends_on:
+      location-b-postgres:
+        condition: service_healthy
+    environment:
+      INVENTORY_LOCATION_PORT: 8090
+      INVENTORY_LOCATION_DB_URL: jdbc:postgresql://location-b-postgres:5432/atlas_inventory
+      INVENTORY_LOCATION_DB_USER: atlas_inventory
+      INVENTORY_LOCATION_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
+      FULFILLMENT_LOCATION_ID: 00000000-0000-0000-0000-000000000002
+    ports:
+      - "127.0.0.1::8090"
+
+  mailpit:
+    image: axllent/mailpit:v1.34.0
+    labels: *labels
+    cpus: 0.25
+    mem_limit: 128m
+
+  app:
+    image: eclipse-temurin:25-jre
+    labels: *labels
+    command: ["java", "-XX:MaxRAMPercentage=60", "-jar", "/app/atlas-application.jar"]
+    depends_on:
+      order-postgres:
+        condition: service_healthy
+      location-a:
+        condition: service_healthy
+      location-b:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      ATLAS_SERVER_ADDRESS: 0.0.0.0
+      ATLAS_SERVER_PORT: 8080
+      ATLAS_DB_URL: jdbc:postgresql://order-postgres:5432/atlas_order
+      ATLAS_DB_USER: atlas
+      ATLAS_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      ATLAS_JWT_SIGNING_SECRET: ${ATLAS_JWT_SIGNING_SECRET:?Set ATLAS_JWT_SIGNING_SECRET}
+      ATLAS_PAYMENT_PROVIDER: disabled
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED: "true"
+      ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN: ${ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN:?Set ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN}
+      INVENTORY_LOCATION_SERVICE_TOKEN: ${INVENTORY_LOCATION_SERVICE_TOKEN:?Set INVENTORY_LOCATION_SERVICE_TOKEN}
+      ATLAS_ORDER_INVENTORY_RESERVATION_LOCATION_ENDPOINTS: "00000000-0000-0000-0000-000000000001=http://location-a:8090;00000000-0000-0000-0000-000000000002=http://location-b:8090"
+      ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_WORKER_ENABLED: "true"
+    volumes:
+      - ${APP_JAR:-../../atlas-application/build/libs/atlas-application.jar}:/app/atlas-application.jar:ro
+    ports:
+      - "127.0.0.1::8080"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 2s
+      timeout: 3s
+      retries: 120
+      start_period: 20s
+    # The memory fault writes into /dev/shm so the bytes are charged to the application cgroup.
+    shm_size: 1g
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 1g
+
+volumes:
+  order-data:
+    labels: *labels
+  location-a-data:
+    labels: *labels
+  location-b-data:
+    labels: *labels
+
+networks:
+  default:
+    labels: *labels
