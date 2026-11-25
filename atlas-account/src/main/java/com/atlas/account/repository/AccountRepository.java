@@ -198,6 +198,21 @@ public class AccountRepository {
         return Boolean.TRUE.equals(enabled);
     }
 
+    /** 지급 운영자 권한이 해제되지 않았고, 계정이 활성·이메일 검증·TOTP MFA 등록 상태인지 본다. 요청마다 읽으므로 해제가 바로 적용된다. */
+    public boolean isActivePayoutOperator(UUID accountId) {
+        Boolean operator = jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM payout_operator_account operator
+                    JOIN user_account account ON account.account_id = operator.account_id
+                    JOIN account_mfa_secret mfa ON mfa.account_id = operator.account_id
+                    WHERE operator.account_id = ? AND operator.revoked_at IS NULL
+                      AND account.status = 'ACTIVE' AND account.email_verified_at IS NOT NULL
+                      AND mfa.enabled_at IS NOT NULL)
+                """, Boolean.class, accountId);
+        return Boolean.TRUE.equals(operator);
+    }
+
     public boolean savePendingMfaSecret(UUID accountId, String encryptedSecret, Instant createdAt) {
         return jdbc.update("""
                 INSERT INTO account_mfa_secret(account_id, encrypted_secret, created_at)

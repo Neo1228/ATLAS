@@ -200,6 +200,9 @@ atlas:
     payout:
       operator:
         enabled: ${ATLAS_SETTLEMENT_PAYOUT_OPERATOR_ENABLED:false}
+        # account: 사람별 operator account(JWT, 승인자 ≠ 검증자 규칙 적용). shared-credential: 단일 Basic 자격 증명(rollback용, 규칙 미적용). ADR-0092.
+        identity: ${ATLAS_SETTLEMENT_PAYOUT_OPERATOR_IDENTITY:account}
+        # username, password는 identity=shared-credential 일 때만 읽는다.
         username: ${ATLAS_SETTLEMENT_PAYOUT_OPERATOR_USERNAME:}
         password: ${ATLAS_SETTLEMENT_PAYOUT_OPERATOR_PASSWORD:}
     # capture 금액을 수수료·보류·판매자 몫으로 분해한다. 10,000 bps = 100%.
