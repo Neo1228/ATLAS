@@ -31,6 +31,8 @@
 #   same order DB, load round robin), PROXY=1 (Toxiproxy in front of location B, implied by
 #   location-b-partition), RETRY=1 (resend failed requests with the same key, then every key once),
 #   RECOVERY_LEASE (e.g. PT10S), IDLE_BEFORE_LOAD (seconds between warm-up and load),
+#   LOAD_THREADS (client threads, default 64: with 40 requests/s a response slower than 1.6 s makes the
+#   client thread-bound and requests leave late, see "sent later than scheduled" in the summary),
 #   DB_BY_IP=1 (application connects to the order DB by container IP), APP_NEGATIVE_DNS_TTL0=1
 #   (JVM networkaddress.cache.negative.ttl=0).
 # Variables: APP_JAR / LOCATION_JAR (jars the Docker VM can read; default: the bootJar outputs), RUNS=5 RATE=40 DURATION=14 FAULT_AT=3 FAULT_FOR=6 CONVERGE_TIMEOUT=90 TAG=fault-injection OUT=...
@@ -53,6 +55,7 @@ apps="${APPS:-1}"
 retry_mode="${RETRY:-0}"
 proxy="${PROXY:-0}"
 idle_before_load="${IDLE_BEFORE_LOAD:-0}"
+load_threads="${LOAD_THREADS:-64}"
 db_by_ip="${DB_BY_IP:-0}"
 netem_delay="${NETEM_DELAY:-delay 300ms 50ms}"
 netem_loss="${NETEM_LOSS:-loss 30% delay 20ms}"
@@ -104,6 +107,17 @@ teardown() {
   fi
 }
 trap 'teardown' EXIT INT TERM
+
+# The published host port of a restarted container can change (127.0.0.1::8080 is assigned again), so
+# this is asked again before the retries, like a client behind a load balancer or service discovery.
+resolve_app_url() {
+  local path="/api/internal/order-inventory/reservations" urls
+  urls="http://127.0.0.1:$(dc port app 8080 | awk -F: '{print $NF}')$path"
+  if [[ "$apps" == 2 ]]; then
+    urls="$urls,http://127.0.0.1:$(dc port app2 8080 | awk -F: '{print $NF}')$path"
+  fi
+  echo "$urls"
+}
 
 now() { python3 -c 'import time; print(f"{time.time():.3f}")'; }
 cid() { dc ps -aq "$1"; }
@@ -224,10 +238,7 @@ run_one() {  # run_one <fault> <n>
     teardown; project=""
     return 1; }
   local app_url loc_a_url loc_b_url
-  app_url="http://127.0.0.1:$(dc port app 8080 | awk -F: '{print $NF}')/api/internal/order-inventory/reservations"
-  if [[ "$apps" == 2 ]]; then
-    app_url="$app_url,http://127.0.0.1:$(dc port app2 8080 | awk -F: '{print $NF}')/api/internal/order-inventory/reservations"
-  fi
+  app_url="$(resolve_app_url)"
   loc_a_url="http://127.0.0.1:$(dc port location-a 8090 | awk -F: '{print $NF}')"
   loc_b_url="http://127.0.0.1:$(dc port location-b 8090 | awk -F: '{print $NF}')"
 
@@ -254,11 +265,16 @@ run_one() {  # run_one <fault> <n>
   ( sleep "$(python3 -c "import time; print(max(0, $start_at + $fault_at - time.time()))")"; inject "$fault" "$run_dir" ) &
   local fault_pid=$!
   load_end="$(python3 "$here/reservation_load.py" load --run-id "$run_id" --url "$app_url" \
-    --rate "$rate" --duration "$duration" --start-at "$start_at" --out "$run_dir/requests.jsonl" \
+    --rate "$rate" --duration "$duration" --threads "$load_threads" --start-at "$start_at" --out "$run_dir/requests.jsonl" \
     | jq -r '.end_at')"
   wait "$fault_pid" || true
   since="$load_end"
   if [[ "$retry_mode" == 1 ]]; then  # same-key retries after the fault, then every key once more
+    for _ in $(seq 1 180); do  # a restarted application needs ~20 s; the retries start when it is healthy
+      [[ "$(docker inspect -f '{{.State.Health.Status}}' "$(cid app)" 2>/dev/null)" == healthy ]] && break
+      sleep 1
+    done
+    app_url="$(resolve_app_url)"
     since="$(python3 "$here/reservation_load.py" replay --run-id "$run_id" --url "$app_url" \
       --requests "$run_dir/requests.jsonl" --out "$run_dir/replay.jsonl" | jq -r '.end_at')"
     replay_args=(--replay "$run_dir/replay.jsonl")
@@ -285,11 +301,11 @@ run_one() {  # run_one <fault> <n>
   jq -n --arg fault "$fault" --arg label "${LABEL:-$fault}" --argjson n "$n" --arg run_id "$run_id" --argjson rate "$rate" \
     --argjson duration "$duration" --argjson fault_at "$fault_at" --argjson fault_for "$fault_for" \
     --argjson apps "$apps" --argjson retry "$retry_mode" --argjson proxy "$proxy" --arg lease "$RECOVERY_LEASE" \
-    --argjson idle "$idle_before_load" --argjson db_by_ip "$db_by_ip" --arg negative_ttl0 "${APP_NEGATIVE_DNS_TTL0:-0}" \
+    --argjson idle "$idle_before_load" --argjson load_threads "$load_threads" --argjson db_by_ip "$db_by_ip" --arg negative_ttl0 "${APP_NEGATIVE_DNS_TTL0:-0}" \
     --argjson containers "$containers" --argjson oom_events "$(wc -l <"$run_dir/oom-events.txt" | tr -d ' ')" --argjson pg "$(pg_markers "$run_dir/order-postgres.log")" \
     '{fault:$fault, label:$label, run:$n, run_id:$run_id, rate:$rate, duration:$duration, fault_at:$fault_at,
       fault_for:$fault_for, apps:$apps, retry:$retry, proxy:$proxy, recovery_lease:$lease,
-      idle_before_load:$idle, db_by_ip:$db_by_ip, negative_dns_ttl0:$negative_ttl0, containers:$containers, oom_events:$oom_events, order_postgres_log:$pg}' > "$run_dir/meta.json"
+      idle_before_load:$idle, load_threads:$load_threads, db_by_ip:$db_by_ip, negative_dns_ttl0:$negative_ttl0, containers:$containers, oom_events:$oom_events, order_postgres_log:$pg}' > "$run_dir/meta.json"
   dc down -v --remove-orphans >/dev/null 2>&1 || true
   project=""
   return 0

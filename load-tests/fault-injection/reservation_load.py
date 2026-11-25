@@ -241,7 +241,7 @@ def main():
     replay_parser.add_argument("--run-id", required=True)
     replay_parser.add_argument("--url", required=True)
     replay_parser.add_argument("--requests", required=True)
-    replay_parser.add_argument("--threads", type=int, default=32)
+    replay_parser.add_argument("--threads", type=int, default=64)
     replay_parser.add_argument("--timeout", type=float, default=15.0)
     replay_parser.add_argument("--interval", type=float, default=1.0)
     replay_parser.add_argument("--deadline", type=float, default=60.0)

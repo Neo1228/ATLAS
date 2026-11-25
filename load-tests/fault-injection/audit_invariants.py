@@ -137,8 +137,10 @@ def percentile(values, fraction):
 
 def latency_summary(requests):
     values = [r["ended"] - r["sent"] for r in requests]
+    lags = [r["sent"] - r["scheduled"] for r in requests]
     return {"max": round(max(values), 2), "p50": round(percentile(values, 0.5), 3),
-            "p95": round(percentile(values, 0.95), 3)} if values else {}
+            "p95": round(percentile(values, 0.95), 3),
+            "send_lag_max": round(max(lags), 2)} if values else {}
 
 
 def retry_summary(requests, replay, state_by_key, created_by_key):
@@ -159,9 +161,9 @@ def retry_summary(requests, replay, state_by_key, created_by_key):
         attempts_to_resolve.append(final["attempt"])
         if final["http"] == 201:
             ones += 1
-            first = tries[0]["sent"]
-            # the workflow existed before the first retry if its row is older than that retry
-            if created_by_key.get(request["key"], first + 1) < first - 0.05 and state_by_key.get(request["key"]):
+            # a 201 means "created by this request". The row is older than the answering attempt by far
+            # (1 s margin for the database-to-host clock difference) -> it existed, and 200 was expected.
+            if created_by_key.get(request["key"], final["sent"] + 1) < final["sent"] - 1.0:
                 existed_201 += 1
         else:
             twos += 1
@@ -386,37 +388,45 @@ def summarize(args):
     print("recovery and latency (seconds; min / median / max over runs; '-' = not applicable)")
     print()
     print("| condition | first 201 after fault end | last failure after fault end | max request latency | "
-          "p95 request latency |")
-    print("| --- | --- | --- | --- | --- |")
+          "p95 request latency | request sent later than scheduled (max) |")
+    print("| --- | --- | --- | --- | --- | --- |")
     for condition, runs in by_condition.items():
         print(f"| {condition} | "
               f"{spread([r.get('recovery', {}).get('first_201_after_fault_end_s') for r in runs])} | "
               f"{spread([r.get('recovery', {}).get('last_failure_after_fault_end_s') for r in runs])} | "
               f"{spread([r.get('latency_s', {}).get('max') for r in runs])} | "
-              f"{spread([r.get('latency_s', {}).get('p95') for r in runs])} |")
+              f"{spread([r.get('latency_s', {}).get('p95') for r in runs])} | "
+              f"{spread([r.get('latency_s', {}).get('send_lag_max') for r in runs])} |")
     probes = {c: [r for r in runs if r.get("tail_probe")] for c, runs in by_condition.items()}
     if any(probes.values()):
         print()
-        print("convergence tail: the first look after the load that still saw non-terminal workflows "
-              "(lease_until and next_attempt_at as seconds from the database clock), and how well "
-              "'converged when the longest lease expired' predicts the observed time")
+        print("convergence tail: the first look after the load that still saw non-terminal workflows. A row "
+              "is 'stuck on a lease' when leased more than 3 s earlier (lease length minus remaining time); "
+              "only then is 'converged when the longest lease expired' a prediction (a lease the recovery "
+              "worker took a moment ago belongs to live work, not to a dead holder)")
         print()
-        print("| condition | runs with a tail probe / n | non-terminal at first look | due (next_attempt_at<=now) | "
-              "leased | max lease remaining s | max next_attempt remaining s | observed converge s | "
-              "observed minus lease prediction s |")
-        print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        print("| condition | n | non-terminal at first look | stuck on a lease | converge s, all runs | "
+              "max lease remaining s (stuck runs) | observed minus lease prediction s (stuck runs) | "
+              "converge s of tail runs that are not lease-stuck |")
+        print("| --- | --- | --- | --- | --- | --- | --- | --- |")
         for condition, runs in by_condition.items():
             found = probes[condition]
             if not found:
                 continue
-            print(f"| {condition} | {len(found)}/{len(runs)} | "
-                  f"{spread([r['tail_probe']['non_terminal'] for r in found])} | "
-                  f"{spread([r['tail_probe']['due'] for r in found])} | "
-                  f"{spread([r['tail_probe']['leased'] for r in found])} | "
-                  f"{spread([r['tail_probe'].get('lease_remaining_max_s') for r in found])} | "
-                  f"{spread([r['tail_probe'].get('next_attempt_remaining_max_s') for r in found])} | "
-                  f"{spread([r['tail_probe'].get('observed_converge_s') for r in found])} | "
-                  f"{spread([r['tail_probe'].get('observed_minus_lease_prediction_s') for r in found])} |")
+
+            def stuck(run):
+                probe = run["tail_probe"]
+                lease = float(run["meta"].get("recovery_lease", "PT30S")[2:-1])
+                return (probe.get("leased", 0) >= 1 and probe.get("lease_remaining_max_s") is not None
+                        and lease - probe["lease_remaining_max_s"] > 3)
+
+            stuck_runs = [r for r in found if stuck(r)]
+            others = [r for r in found if not stuck(r)]
+            print(f"| {condition} | {len(runs)} | {len(found)}/{len(runs)} | {len(stuck_runs)}/{len(runs)} | "
+                  f"{spread([r['converge_seconds'] for r in runs])} | "
+                  f"{spread([r['tail_probe'].get('lease_remaining_max_s') for r in stuck_runs])} | "
+                  f"{spread([r['tail_probe'].get('observed_minus_lease_prediction_s') for r in stuck_runs])} | "
+                  f"{spread([r['converge_seconds'] for r in others])} |")
     retried = {c: [r for r in runs if "retry" in r] for c, runs in by_condition.items()}
     if any(retried.values()):
         print()
