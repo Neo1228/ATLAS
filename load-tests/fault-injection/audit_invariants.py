@@ -753,6 +753,10 @@ def _deep_record(label, run_dir):
         record["wal_mb"] = round((lsn["lsn_after"] - lsn["lsn_before"]) / 1048576, 1)
         record["segments"] = lsn["lsn_after"] // 16777216 - lsn["lsn_before"] // 16777216
     record["wal_container_running"] = fault.get("container_running_at_window_end")
+    record["restarts_in_window"] = fault.get("restarts_in_window")
+    record["restarts_total"] = fault.get("restarts_total")
+    if fault.get("freed") is not None and fault.get("ready") is not None:
+        record["ready_after_freed"] = round(fault["ready"] - fault["freed"], 1)
     tcpdump = run_dir / "dns.tcpdump.txt"
     if tcpdump.exists() and fault:
         probe = run_dir / "dns-probe.txt"
@@ -806,15 +810,17 @@ def deep_command(args):
               f"{c('a', 'dup_calls')} | {c('a', 'xdup_keys')} | {c('a', 'overlap_keys')} | {c('a', 'double_201')} | {c('b', 'dup_calls')} | {c('b', 'xdup_keys')} | "
               f"{c('b', 'double_201')} | {c('a', 'foreign_keys')} | {_spread([r['result'].get('converge_seconds') for r in runs])} |")
     print("\n(b) pg_wal only\n")
-    print("| condition | n | PANIC lines | No-space lines | crash restarts | order DB container exited | WAL MB in window | segments crossed | first 201 after ready s |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| condition | n | PANIC lines | No-space lines | crash restarts | order DB container exited | WAL MB in window | segments crossed | restarts in window | restarts total | ready after space freed s | first 201 after ready s |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for label in sorted(g for g in groups if g.startswith("b-")):
         runs = groups[label]
         def p(field):
             return _spread([r["pg"].get(field) for r in runs])
         print(f"| {label} | {len(runs)} | {p('panic')} | {p('no_space_left')} | {p('crash_restart')} | "
               f"{sum(1 for r in runs if r.get('wal_container_running') is False)}/{len(runs)} | {_spread([r.get('wal_mb') for r in runs])} | "
-              f"{_spread([r.get('segments') for r in runs])} | {_spread([r.get('first_201_after_ready') for r in runs])} |")
+              f"{_spread([r.get('segments') for r in runs])} | {_spread([r.get('restarts_in_window') for r in runs])} | "
+              f"{_spread([r.get('restarts_total') for r in runs])} | {_spread([r.get('ready_after_freed') for r in runs])} | "
+              f"{_spread([r.get('first_201_after_ready') for r in runs])} |")
     print("\n(c) same-key pairs\n")
     print("| variant | stacks | pairs | exactly one 201 and 200/202 | two 201 | overlapping pairs | order / A / B reserved | A xdup keys | A double_201 | all four |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
