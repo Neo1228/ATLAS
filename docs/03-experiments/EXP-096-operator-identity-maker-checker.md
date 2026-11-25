@@ -277,4 +277,58 @@ H7_ROUNDS=100 ./gradlew --no-build-cache :atlas-application:cleanTest :atlas-app
   --tests com.atlas.settlement.PayoutOperatorMakerCheckerIntegrationTest
 ```
 
-E3(기준 커밋 대조)는 기준 커밋 worktree에서만 돌린 일회용 탐침이라 저장소에 없다. 같은 동작은 이 PR의 테스트에서 trigger를 끈 음성 대조(`withTheRuleDisabledTheSameOperatorFlowSucceeds`)로 다시 볼 수 있다.
+E3(기준 커밋 대조)의 탐침과 변이 검증 스크립트는 저장소에 넣지 않았다. 그 내용은 아래 "삭제한 파일의 내용"에 적었다. 같은 동작은 이 PR의 테스트에서 trigger를 끈 음성 대조(`withTheRuleDisabledTheSameOperatorFlowSucceeds`)로도 다시 볼 수 있다.
+
+## 삭제한 파일의 내용 (저장소에 넣지 않은 실험 산출물)
+
+원본 파일은 로컬 `/tmp` 아래에만 있고 커밋하지 않았다. 이 문서가 결과를 다시 읽는 데 필요한 내용 전부다.
+
+### E3 기준 커밋 탐침(`BaselineSharedCredentialProbeIntegrationTest`, 기준 커밋 worktree에서만 실행)
+
+- 위치와 환경: `origin/main` `82345acd`의 별도 worktree에 테스트 파일 1개만 추가했다. `postgres:18.6` Testcontainers, `atlas.settlement.payout.operator.enabled=true`, username `payout-operator`, 32자 비밀번호(테스트용 상수), `atlas.payment.paypal.payouts.enabled=true`, PayPal은 `PayPalIntegrationTestSupport`의 로컬 MockWebServer.
+- 라운드마다 하는 일: (1) Seller·수취 account·`PENDING_REVIEW` 프로필 v1·원장 capture 10,000원·지급 요청을 시드한다. (2) 운영자 Basic 자격 증명으로 `POST /api/internal/settlement/payout-profiles/{sellerId}/verify`(`profileVersion=1`)를 보낸다. (3) `CyclicBarrier(2)`로 두 스레드가 같은 자격 증명으로 `POST /api/internal/settlement/payouts/{payoutId}/approve`를 서로 다른 Idempotency-Key로 동시에 보낸다. (4) 검증 상태 코드, 승인 응답, `settlement_payout_operator_action`의 `PAYOUT_APPROVED` 행 수, `settlement_payout_dispatch_outbox` 행 수, 검증·승인 행의 actor를 읽는다.
+- 명령: `H7_ROUNDS=100 ./gradlew --no-daemon --no-build-cache :atlas-application:cleanTest :atlas-application:test --tests <탐침 클래스>`. 처음 두 번은 Gradle 빌드 캐시(`FROM-CACHE`)가 이전 결과를 재사용해 라운드 수가 반영되지 않았다. 위 결과는 `--no-build-cache`로 다시 돌린 것이다.
+- 출력 한 줄(n=100): `rounds=100 sameCredentialVerifyAndApproveAccepted=100 verifierEqualsApproverActorRounds=100 approvedRowsTotal=200 roundsWithDuplicateApprovalRows=100 outboxRows=100`. 앞선 n=3 실행은 `approvedRowsTotal=6 roundsWithDuplicateApprovalRows=3 outboxRows=3`.
+
+### E2 동시 승인 출력(변경 후, `H7_ROUNDS=100`)
+
+`rounds=100 approvedRows=100 outboxRows=100 verifierRejected=100 approverConflict409=0 approverAccepted202=200`. 승인자 두 명의 응답은 모두 202였고 진 쪽의 감사 행은 `PAYOUT_APPROVAL_REPLAYED`다. 첫 실행(n=3, 수정 전)은 `승인 행은 정확히 한 건` 단정에서 2건으로 실패했고 그 실패가 기준 코드의 중복 승인 행 발견으로 이어졌다.
+
+### E1 환경과 되돌리기 훈련 원본
+
+- 환경 기록: 실행 전 `uptime` load average 21.36 25.10 22.08, 실행 후 20.48 24.47 21.97(N=200 실행 전후). PostgreSQL 18.6(Debian 18.6-1.pgdg13+2, aarch64), 컨테이너 CPU 0.06%, 메모리 25.9 MiB / 12.64 GiB(유휴 상태에서 측정).
+- 되돌리기 훈련 표(`migration-drill`):
+
+| 점검 | 값 |
+|---|---|
+| V5 전 행 수(지급, 운영자 조치) | 50, 50 |
+| V5 적용 뒤 관련 표 행 해시가 처음과 같은가 | 예 |
+| V5 적용 뒤 기존 actor 문자열(`legacy-operator`)로 승인 감사 행 INSERT | 통과 |
+| `undo.sql` 뒤 남은 (trigger, function, table, index) 수 | 0, 0, 0, 0 |
+| 되돌림 뒤 행 해시가 처음과 같은가 | 예 |
+| V5 재적용 뒤 trigger 수 | 1 |
+
+  해시는 `settlement_payout`, `settlement_payout_dispatch_outbox`, `seller_payout_profile_action`, `seller_payout_profile`, `user_account`, `settlement_payout_operator_action`의 모든 행 문자열을 정렬해 이어 붙인 MD5다. 위 표는 최종 V5(trigger 2개, 함수 2개, 인덱스 1개, 표 1개)로 `N=200` 전체 실행에서 얻었다.
+
+- 하네스 버그 한 건: N=20 확인 실행의 첫 결과에서 `snapshot_equal_after_undo`가 `NO`였다. 원인은 점검 순서였다(되돌림 전에 새 행을 넣는 "기존 actor 흐름" 점검을 하고 해시를 잡아 행이 늘었다). 그 점검을 되돌림 뒤로 옮기자 `yes`가 나왔다. 하네스 버그였고 V5 문제가 아니었다.
+- 실행 계획과 INSERT 시간은 위 H10 절의 값이 원본 그대로다(`ANALYZE` 뒤 계획, 3,000건 × 2, 순서 무작위).
+
+### 변이 검증 절차
+
+각 변이는 파일 하나에 문자열 치환 하나를 적용하고(`str.replace`로 첫 일치만, 일치가 없으면 중단), `H7_ROUNDS=20`으로 `PayoutOperatorMakerCheckerIntegrationTest`를 `--no-build-cache`로 실행하고, 원본 복사본으로 되돌린 뒤 `cmp`로 같음을 확인했다.
+
+| 변이 | 치환 |
+|---|---|
+| M1 | V5의 `IF NEW.action IN ('PAYOUT_APPROVED', 'PAYOUT_APPROVAL_REPLAYED') THEN` → `IF NEW.action IN ('NEVER_MATCHES') THEN` |
+| M2 | `boolean firstApproval = dispatches.find(payoutId).isEmpty();` → `boolean firstApproval = true;` |
+| M3 | `CREATE UNIQUE INDEX uq_settlement_payout_operator_action_approved` → `CREATE INDEX ...` |
+| M4 | converter의 `accounts.isPayoutOperator(accountId)` 조건을 `true`로 |
+| M5 | V5의 `IF NEW.action = 'PROFILE_VERIFIED' AND EXISTS (` → `IF NEW.action = 'NEVER' AND EXISTS (` |
+| M6 | V5의 `ELSIF NEW.action = 'MANUAL_PAYOUT_SENT' THEN` → `ELSIF NEW.action = 'NEVER_SENT' THEN` |
+| M7 | V5의 `AND verification.profile_version = outbox.profile_version` → `AND verification.profile_version >= 0 AND outbox.profile_version >= 0` |
+
+결과는 위 변이 검증 표와 같다. M7은 "묶인 버전" 테스트를 추가하기 전(7건 중 실패 0)과 후(8건 중 실패 1, 변이 없는 코드는 8건 모두 통과)를 모두 실행했다.
+
+### 한 번 실패한 전체 실행
+
+테스트 하나만이 아니라 `schema` 묶음을 함께 돌린 한 번의 실행에서 23건이 `Connection refused`로 실패했다(`PayoutOperatorMakerCheckerIntegrationTest` 7건 포함, 호스트 load average 152 구간). 코드 변경 없이 같은 명령을 다시 실행해 전부 통과했다. 원인은 확정하지 않았다. 마지막 `./gradlew clean check`(기준 `origin/main` 위, Docker 공유 상태)는 178개 XML 보고서, 1,048건 테스트, 실패 0, 14분 8초였다.
