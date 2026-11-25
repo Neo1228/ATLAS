@@ -23,6 +23,7 @@ prefix on the location side), so earlier runs in the same database cannot leak i
 import argparse
 import collections
 import json
+import re
 import statistics
 import subprocess
 import sys
@@ -456,6 +457,404 @@ def summarize(args):
     return 0
 
 
+CALL_LINE = re.compile(r"ALOG (\S+) (\d+) (\d+) POST (\S+/reservations) (\d+) (\S+)\s*$")
+
+
+def parse_calls(text):
+    calls = []
+    for line in text.splitlines():
+        match = CALL_LINE.search(line)
+        if match:
+            ip, begin, end, _, status, key = match.groups()
+            calls.append({"ip": ip, "begin": int(begin) / 1000, "end": int(end) / 1000,
+                          "status": int(status), "key": key})
+    return calls
+
+
+def analyse_calls(calls, app_ips, since, window, until=None):
+    calls = [c for c in calls if c["begin"] >= since - 0.3 and (until is None or c["begin"] <= until + 2.0)]
+    by_key = collections.defaultdict(list)
+    for call in calls:
+        by_key[call["key"]].append(call)
+    xdup = foreign = double_201 = overlap = 0
+    sources = collections.Counter(c["ip"] for c in calls)
+    max_calls = 0
+    for key_calls in by_key.values():
+        max_calls = max(max_calls, len(key_calls))
+        instances = {c["ip"] for c in key_calls if c["ip"] in app_ips}
+        if len(instances) >= 2:
+            xdup += 1
+        if any(c["ip"] not in app_ips for c in key_calls) and app_ips:
+            foreign += 1
+        if sum(1 for c in key_calls if c["status"] == 201) >= 2:
+            double_201 += 1
+        ordered = sorted(key_calls, key=lambda c: c["begin"])
+        if any(ordered[i + 1]["begin"] < ordered[i]["end"] for i in range(len(ordered) - 1)):
+            overlap += 1
+    summary = {
+        "calls": len(calls), "keys": len(by_key),
+        "dup_calls": len(calls) - len(by_key), "max_calls_per_key": max_calls,
+        "xdup_keys": xdup, "foreign_keys": foreign, "double_201": double_201, "overlap_keys": overlap,
+        "status": dict(collections.Counter(str(c["status"]) for c in calls)),
+        "by_source": dict(sources),
+    }
+    if window:
+        begin, end = window
+        inside = [c for c in calls if begin <= c["begin"] <= end]
+        summary["in_window_calls"] = len(inside)
+        summary["in_window_status"] = dict(collections.Counter(str(c["status"]) for c in inside))
+    return summary
+
+
+CALL_SELFTEST_LINES = """\
+location-a-1  | ALOG 10.0.0.2 1000000 1000100 POST /internal/v1/fulfillment-locations/L/reservations 201 k1
+location-a-1  | ALOG 10.0.0.3 1000050 1000300 POST /internal/v1/fulfillment-locations/L/reservations 200 k1
+location-a-1  | ALOG 10.0.0.2 2000000 2000100 POST /internal/v1/fulfillment-locations/L/reservations 201 k2
+location-a-1  | ALOG 10.0.0.2 3000000 3000100 POST /internal/v1/fulfillment-locations/L/reservations 201 k3
+location-a-1  | ALOG 10.0.0.2 4000000 4000100 POST /internal/v1/fulfillment-locations/L/reservations 201 k3
+location-a-1  | ALOG 10.0.0.9 5000000 5000100 POST /internal/v1/fulfillment-locations/L/reservations 409 k2
+location-a-1  | ALOG 10.0.0.2 6000000 6000100 POST /internal/v1/fulfillment-locations/L/reservations/cancel 200 k4
+location-a-1  | ALOG 10.0.0.2 7000000 7000100 GET /actuator/health 200 -
+"""
+
+
+def selftest_calls():
+    """Synthetic log with a known answer: k1 cross-instance and overlapping, k2 planted from a foreign source,
+    k3 created twice (double 201). If a rule above is broken this fails, so a zero from the real logs means something."""
+    got = analyse_calls(parse_calls(CALL_SELFTEST_LINES), {"10.0.0.2", "10.0.0.3"}, 0.0, None)
+    want = {"calls": 6, "keys": 3, "dup_calls": 3, "xdup_keys": 1, "foreign_keys": 1, "double_201": 1, "overlap_keys": 1}
+    bad = {k: (got[k], v) for k, v in want.items() if got[k] != v}
+    if bad:
+        raise SystemExit(f"self-test FAILED (got, want): {bad}")
+    print("self-test ok")
+
+
+DNS_HEADER = re.compile(r"^(\d+\.\d+) ")
+DNS_HEXLINE = re.compile(r"^\s+0x[0-9a-f]+:\s+((?:[0-9a-f]{2,4}\s?)+)")
+
+
+def tcpdump_packets(text):
+    """Yield (epoch, bytes) for every packet in tcpdump -tt -xx text."""
+    stamp, data = None, bytearray()
+    for line in text.splitlines():
+        header = DNS_HEADER.match(line)
+        if header:
+            if stamp is not None and data:
+                yield stamp, bytes(data)
+            stamp, data = float(header.group(1)), bytearray()
+            continue
+        hexline = DNS_HEXLINE.match(line)
+        if hexline and stamp is not None:
+            data += bytes.fromhex(hexline.group(1).replace(" ", ""))
+    if stamp is not None and data:
+        yield stamp, bytes(data)
+
+
+def read_dns_name(message, offset):
+    labels = []
+    jumped = False
+    end = offset
+    hops = 0
+    while True:
+        if offset >= len(message) or hops > 20:
+            return None, end
+        length = message[offset]
+        if length == 0:
+            offset += 1
+            if not jumped:
+                end = offset
+            break
+        if length & 0xC0 == 0xC0:
+            pointer = ((length & 0x3F) << 8) | message[offset + 1]
+            if not jumped:
+                end = offset + 2
+            offset, jumped, hops = pointer, True, hops + 1
+            continue
+        labels.append(message[offset + 1:offset + 1 + length].decode("ascii", "replace").lower())
+        offset += 1 + length
+        if not jumped:
+            end = offset
+    return ".".join(labels), end
+
+
+def decode_dns(stamp, packet):
+    """Return a dict for a DNS message inside an Ethernet/IPv4/UDP frame, or None."""
+    if len(packet) < 14 + 20 + 8 + 12 or packet[12:14] != b"\x08\x00":
+        return None
+    ihl = (packet[14] & 0x0F) * 4
+    if packet[14 + 9] != 17:
+        return None
+    dns = packet[14 + ihl + 8:]
+    flags = (dns[2] << 8) | dns[3]
+    questions = (dns[4] << 8) | dns[5]
+    answers = (dns[6] << 8) | dns[7]
+    if questions < 1 or questions > 4:
+        return None
+    name, position = read_dns_name(dns, 12)
+    if name is None or position + 4 > len(dns):
+        return None
+    qtype = (dns[position] << 8) | dns[position + 1]
+    return {"t": stamp, "qr": flags >> 15, "rcode": flags & 0x0F, "name": name, "qtype": qtype, "answers": answers}
+
+
+def dns_messages(text, name):
+    for stamp, packet in tcpdump_packets(text):
+        message = decode_dns(stamp, packet)
+        if message and message["name"].startswith(name):
+            yield message
+
+
+def last_dns_success(events, before=None):
+    times = [e["t"] for e in events if e["qr"] == 1 and e["rcode"] == 0 and e["answers"] > 0 and e["qtype"] == 1
+             and (before is None or e["t"] <= before)]
+    return max(times) if times else None
+
+
+def resolver_truth(probe_text, begin):
+    """From the separate-container probe lines "<epoch> ok|fail": when the resolver stopped answering after `begin` and when it answered again."""
+    rows = [(float(parts[0]), parts[1]) for parts in (line.split() for line in probe_text.splitlines()) if len(parts) == 2 and parts[1] in ("ok", "fail")]
+    failed = next((t for t, state in rows if t >= begin and state == "fail"), None)
+    back = next((t for t, state in rows if failed is not None and t > failed and state == "ok"), None)
+    return failed, back
+
+
+def summarize_dns(events, fault, probe_text=""):
+    """Lookups of order-postgres around a database outage, and the delay the JVM's name cache should cause.
+
+    model_delay_s: the JVM queries only when its cache is empty. The first A query at or after the moment the resolver answers
+    again (`resolver_back`) succeeds; the database accepts connections at `ready`; so the cache costs max(0, query - ready)."""
+    begin, ready = fault["begin"], fault.get("ready") or fault["end"]
+    before = last_dns_success(events, begin)
+    answers = [e for e in events if e["qr"] == 1 and e["qtype"] == 1 and e["t"] > begin]
+    nxdomain = [e["t"] for e in answers if e["rcode"] == 3]
+    queries = [e["t"] for e in events if e["qr"] == 0 and e["qtype"] == 1]
+    failed, back = resolver_truth(probe_text, begin)
+    after_back = [t for t in queries if back is not None and t >= back - 0.05]
+    return {
+        "last_success_before_fault": before, "fault_offset_s": round(begin - before, 2) if before else None,
+        "queries_after_fault": sum(1 for t in queries if t > begin), "nxdomain_count": len(nxdomain),
+        "nxdomain_times_after_begin_s": [round(t - begin, 2) for t in nxdomain][:12],
+        "resolver_failed_after_begin_s": round(failed - begin, 2) if failed else None,
+        "resolver_back_after_begin_s": round(back - begin, 2) if back else None,
+        "ready_after_begin_s": round(ready - begin, 2),
+        "first_query_after_resolver_back_s": round(after_back[0] - begin, 2) if after_back else None,
+        "model_delay_s": round(max(0.0, after_back[0] - ready), 2) if after_back else None,
+    }
+
+
+def sample_text(name="order-postgres"):
+    """tcpdump -tt -xx text for one A query and one NXDOMAIN answer, built here so the decoder is checked against known bytes."""
+    labels = b"".join(bytes([len(part)]) + part.encode() for part in name.split(".")) + b"\x00"
+
+    def frame(flags):
+        dns = b"\x12\x34" + flags.to_bytes(2, "big") + b"\x00\x01\x00\x00\x00\x00\x00\x00" + labels + b"\x00\x01\x00\x01"
+        udp = (40000).to_bytes(2, "big") + (35000).to_bytes(2, "big") + (8 + len(dns)).to_bytes(2, "big") + b"\x00\x00" + dns
+        ip = b"\x45\x00" + (20 + len(udp)).to_bytes(2, "big") + b"\x00\x00\x40\x00\x40\x11\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x0b" + udp
+        return b"\x00" * 12 + b"\x08\x00" + ip
+
+    out = []
+    for stamp, flags in ((1795590000.123456, 0x0100), (1795590000.125, 0x8183)):
+        out.append(f"{stamp:.6f} IP 127.0.0.1.40000 > 127.0.0.11.35000: UDP, length 40")
+        data = frame(flags)
+        for offset in range(0, len(data), 16):
+            chunk = data[offset:offset + 16]
+            out.append(f"\t0x{offset:04x}:  " + " ".join(chunk[i:i + 2].hex() for i in range(0, len(chunk), 2)))
+    return "\n".join(out) + "\n"
+
+
+def selftest_dns():
+    """A query and an NXDOMAIN answer for order-postgres: decoding must find both and the rcode 3."""
+    events = list(dns_messages(sample_text(), "order-postgres"))
+    ok = (len(events) == 2 and events[0]["qr"] == 0 and events[1]["qr"] == 1 and events[1]["rcode"] == 3
+          and events[1]["qtype"] == 1 and events[1]["answers"] == 0)
+    if not ok:
+        raise SystemExit(f"self-test FAILED: {events}")
+    print("self-test ok")
+
+
+def calls_command(args):
+    ips = json.loads(Path(args.ips).read_text(encoding="utf-8")) if args.ips else {}
+    app_ips = {ips[name] for name in ("app", "app2") if name in ips}
+    window = None
+    if args.fault and Path(args.fault).exists():
+        fault = json.loads(Path(args.fault).read_text(encoding="utf-8"))
+        window = (fault["begin"], fault["end"])
+    result = {}
+    for spec in args.log:  # name=path
+        name, path = spec.split("=", 1)
+        result[name] = analyse_calls(parse_calls(Path(path).read_text(encoding="utf-8", errors="replace")), app_ips,
+                                     args.since, window, args.until)
+    result["app_ips"] = sorted(app_ips)
+    Path(args.out).write_text(json.dumps(result, indent=1), encoding="utf-8")
+    return 0
+
+
+def dns_command(args):
+    text = Path(args.log).read_text(encoding="utf-8", errors="replace")
+    events = list(dns_messages(text, args.name))
+    if args.last_success:  # epoch of the last answered A lookup (used to align the fault with the JVM's cache)
+        value = last_dns_success(events, args.before)
+        print("" if value is None else f"{value:.6f}")
+        return 0
+    fault = json.loads(Path(args.fault).read_text(encoding="utf-8"))
+    probe = Path(args.probe).read_text(encoding="utf-8") if args.probe and Path(args.probe).exists() else ""
+    Path(args.out).write_text(json.dumps(summarize_dns(events, fault, probe), indent=1), encoding="utf-8")
+    return 0
+
+
+def selftest(args):
+    selftest_calls()
+    selftest_dns()
+    return 0
+
+
+def _json(path, default=None):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def _lines(path):
+    try:
+        return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (OSError, ValueError):
+        return []
+
+
+def _first_201(requests, moment):
+    ended = [r["ended"] for r in requests if r.get("http") == 201 and r["ended"] >= moment]
+    return round(min(ended) - moment, 2) if ended else None
+
+
+def _load(run_dir):
+    try:
+        found = re.search(r"load averages?:\s*([\d.]+)", (run_dir / "env-before.txt").read_text(encoding="utf-8"))
+        return float(found.group(1)) if found else None
+    except OSError:
+        return None
+
+
+def _deep_record(label, run_dir):
+    result = _json(run_dir / "result.json", {})
+    meta = _json(run_dir / "meta.json", {})
+    fault = _json(run_dir / "fault.json", {})
+    requests = _lines(run_dir / "requests.jsonl")
+    record = {"label": label, "result": result, "pg": meta.get("order_postgres_log") or {}, "load": _load(run_dir),
+              "calls": _json(run_dir / "calls.json", {}), "lease": _json(run_dir / "lease-claims.json", {}),
+              "containers": meta.get("containers") or {}}
+    exposure = run_dir / "exposure-leased.txt"
+    record["exposure"] = int(exposure.read_text().split()[0]) if exposure.exists() and exposure.read_text().split() else None
+    ready = fault.get("ready")
+    if ready:
+        record["first_201_after_ready"] = _first_201(requests, ready)
+    lsn = _json(run_dir / "wal-lsn.json", {})
+    if lsn.get("lsn_before") is not None and lsn.get("lsn_after") is not None:
+        record["wal_mb"] = round((lsn["lsn_after"] - lsn["lsn_before"]) / 1048576, 1)
+        record["segments"] = lsn["lsn_after"] // 16777216 - lsn["lsn_before"] // 16777216
+    record["wal_container_running"] = fault.get("container_running_at_window_end")
+    tcpdump = run_dir / "dns.tcpdump.txt"
+    if tcpdump.exists() and fault:
+        probe = run_dir / "dns-probe.txt"
+        record["dns"] = summarize_dns(list(dns_messages(tcpdump.read_text(encoding="utf-8", errors="replace"), "order-postgres")), fault,
+                                      probe.read_text(encoding="utf-8") if probe.exists() else "")
+        record["delay_after_ready"] = _first_201(requests, ready) if ready else None
+    return record
+
+
+def _spread(values):
+    values = [v for v in values if v is not None]
+    return "-" if not values else f"{min(values):g} / {statistics.median(values):g} / {max(values):g}"
+
+
+def deep_command(args):
+    groups = collections.defaultdict(list)
+    for run_dir in sorted(Path(args.root).glob("rep-*/*/run-*")):
+        label = run_dir.parent.name
+        if not label.startswith("c-") and not (run_dir / "result.json").exists():
+            continue  # still running or failed to start
+        if label.startswith("c-"):  # one stack run holds the five same-key variants
+            for variant in ("c1", "c2", "c3", "neg", "seq"):
+                vdir = run_dir / variant
+                if not vdir.exists():
+                    continue
+                record = _deep_record(f"{label}:{variant}", vdir)
+                pairs = collections.defaultdict(list)
+                for request in _lines(vdir / "requests.jsonl"):
+                    pairs[request["pair"]].append(request)
+                record["pairs"] = pairs
+                record["calls"] = _json(run_dir / variant / "calls.json", {})
+                groups[f"{label}:{variant}"].append(record)
+            continue
+        groups[label].append(_deep_record(label, run_dir))
+    def count(runs, name):
+        return sum(1 for r in runs if (r["result"].get("invariants") or {}).get(name))
+    print("| condition | n | all four | lost 0 | counts equal | no duplicates | converged | load avg before (min / med / max) |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    for label in sorted(groups):
+        runs = groups[label]
+        print(f"| {label} | {len(runs)} | {sum(1 for r in runs if r['result'].get('pass_all'))} | {count(runs, 'lost_accepted_zero')} | "
+              f"{count(runs, 'counts_equal')} | {count(runs, 'no_duplicates')} | {count(runs, 'converged')} | {_spread([r['load'] for r in runs])} |")
+    print("\n(a) duplicate remote calls, min / median / max over runs\n")
+    print("| condition | n | exposure | takeover claims | A dup_calls | A xdup_keys | A overlap | A double_201 | B dup_calls | B xdup_keys | B double_201 | planted seen (A foreign) | converge s |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for label in sorted(g for g in groups if g.startswith("a-")):
+        runs = groups[label]
+        def c(side, field):
+            return _spread([(r["calls"].get(side) or {}).get(field) for r in runs])
+        print(f"| {label} | {len(runs)} | {_spread([r['exposure'] for r in runs])} | {_spread([r['lease'].get('takeover_claims') for r in runs])} | "
+              f"{c('a', 'dup_calls')} | {c('a', 'xdup_keys')} | {c('a', 'overlap_keys')} | {c('a', 'double_201')} | {c('b', 'dup_calls')} | {c('b', 'xdup_keys')} | "
+              f"{c('b', 'double_201')} | {c('a', 'foreign_keys')} | {_spread([r['result'].get('converge_seconds') for r in runs])} |")
+    print("\n(b) pg_wal only\n")
+    print("| condition | n | PANIC lines | No-space lines | crash restarts | order DB container exited | WAL MB in window | segments crossed | first 201 after ready s |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for label in sorted(g for g in groups if g.startswith("b-")):
+        runs = groups[label]
+        def p(field):
+            return _spread([r["pg"].get(field) for r in runs])
+        print(f"| {label} | {len(runs)} | {p('panic')} | {p('no_space_left')} | {p('crash_restart')} | "
+              f"{sum(1 for r in runs if r.get('wal_container_running') is False)}/{len(runs)} | {_spread([r.get('wal_mb') for r in runs])} | "
+              f"{_spread([r.get('segments') for r in runs])} | {_spread([r.get('first_201_after_ready') for r in runs])} |")
+    print("\n(c) same-key pairs\n")
+    print("| variant | stacks | pairs | exactly one 201 and 200/202 | two 201 | overlapping pairs | order / A / B reserved | A xdup keys | A double_201 | all four |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for label in sorted(g for g in groups if g.startswith("c-")):
+        runs = groups[label]
+        total = sum(len(r["pairs"]) for r in runs)
+        good = two = overlap = 0
+        for r in runs:
+            for pair in r["pairs"].values():
+                statuses = [x["http"] for x in pair]
+                good += statuses.count(201) == 1 and all(s in (200, 201, 202) for s in statuses)
+                two += statuses.count(201) >= 2
+                overlap += max(x["sent"] for x in pair) < min(x["ended"] for x in pair)
+        reserved = ", ".join("{}/{}/{}".format(*[(r["result"].get("equal_values") or {}).get(k) for k in
+                             ("order_reserved", "location_a_reservations", "location_b_reservations")]) for r in runs)
+        print(f"| {label.split(':')[1]} | {len(runs)} | {total} | {good} | {two} | {overlap} | {reserved} | "
+              f"{_spread([(r['calls'].get('a') or {}).get('xdup_keys') for r in runs])} | {_spread([(r['calls'].get('a') or {}).get('double_201') for r in runs])} | "
+              f"{sum(1 for r in runs if r['result'].get('pass_all'))}/{len(runs)} |")
+    print("\n(d) DNS: delay after the database accepts connections (each run), against the cache model\n")
+    print("| condition | n | offset from last lookup s | NXDOMAIN answers | model delay s (each) | measured first 201 after ready s (each) |")
+    print("| --- | --- | --- | --- | --- | --- |")
+    for label in sorted(g for g in groups if g.startswith("d-")):
+        runs = groups[label]
+        def each(key):
+            return ", ".join(str(r.get("dns", {}).get(key)) for r in runs)
+        print(f"| {label} | {len(runs)} | {_spread([r.get('dns', {}).get('fault_offset_s') for r in runs])} | {_spread([r.get('dns', {}).get('nxdomain_count') for r in runs])} | "
+              f"{each('model_delay_s')} | {', '.join(str(r.get('delay_after_ready')) for r in runs)} |")
+    print("\n(e) network and pause cells\n")
+    print("| condition | n | 201 / 202 / 5xx / 0 per run | max latency s | converge s | B calls begun in window |")
+    print("| --- | --- | --- | --- | --- | --- |")
+    for label in sorted(g for g in groups if g.startswith("e-")):
+        runs = groups[label]
+        def split(r):
+            status = r["result"].get("http_status") or {}
+            five = sum(v for k, v in status.items() if k.startswith("5"))
+            return f"{status.get('201', 0)}/{status.get('202', 0)}/{five}/{status.get('0', 0)}"
+        print(f"| {label} | {len(runs)} | {'; '.join(split(r) for r in runs)} | {_spread([(r['result'].get('latency_s') or {}).get('max') for r in runs])} | "
+              f"{_spread([r['result'].get('converge_seconds') for r in runs])} | {_spread([(r['calls'].get('b') or {}).get('in_window_calls') for r in runs])} |")
+    return 0
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -475,6 +874,28 @@ def main():
     summarize_parser = sub.add_parser("summarize")
     summarize_parser.add_argument("--results", required=True)
     summarize_parser.set_defaults(handler=summarize)
+    calls_parser = sub.add_parser("calls")
+    calls_parser.add_argument("--log", action="append", required=True, help="name=path of a location's access log, repeatable")
+    calls_parser.add_argument("--ips", help="JSON {app, app2: container IP}")
+    calls_parser.add_argument("--since", type=float, default=0.0)
+    calls_parser.add_argument("--until", type=float)
+    calls_parser.add_argument("--fault")
+    calls_parser.add_argument("--out", required=True)
+    calls_parser.set_defaults(handler=calls_command)
+    dns_parser = sub.add_parser("dns")
+    dns_parser.add_argument("--log", required=True, help="tcpdump -tt -xx output of the application's namespace")
+    dns_parser.add_argument("--name", default="order-postgres")
+    dns_parser.add_argument("--last-success", action="store_true")
+    dns_parser.add_argument("--before", type=float)
+    dns_parser.add_argument("--fault")
+    dns_parser.add_argument("--probe", help="resolver probe lines '<epoch> ok|fail' from a separate container")
+    dns_parser.add_argument("--out")
+    dns_parser.set_defaults(handler=dns_command)
+    deep_parser = sub.add_parser("deep")
+    deep_parser.add_argument("--root", required=True)
+    deep_parser.set_defaults(handler=deep_command)
+    selftest_parser = sub.add_parser("selftest")
+    selftest_parser.set_defaults(handler=selftest)
     args = parser.parse_args()
     sys.exit(args.handler(args))
 

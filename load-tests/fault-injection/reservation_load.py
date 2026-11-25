@@ -9,6 +9,12 @@ Subcommands:
   replay  after a run, resend requests with the SAME idempotency key: phase "retry" repeats every
         request that did not get 200/201/202 until it gets 200/201 (or the deadline), phase "all"
         then sends every key once more. One JSON line per attempt.
+  race  send the same Idempotency-Key twice at the same moment (EXP-095 (c)); variants:
+        c1 same key, one request to each of two application instances, released together by a barrier
+        c2 same key, both to the same instance, released together
+        c3 retry during processing: the second request (same key, OTHER instance) follows --gap seconds after the first
+        neg NEGATIVE CONTROL: the two requests carry different keys and different orders (every pair must make two workflows)
+        seq sequential control: the second request starts after the first answered (the overlap must be about zero)
 
 Every request is one order with one SKU at location A (two items) and one at location B,
 the same shape EXP-070 used. The client does not retry: a request that gets no answer is
@@ -18,6 +24,7 @@ ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN), never from arguments.
 Standard library only, so the host needs nothing but python3.
 """
 import argparse
+import concurrent.futures
 import http.client
 import itertools
 import json
@@ -218,6 +225,77 @@ def replay(args):
                       "end_at": max((a["ended"] for a in attempts), default=time.time())}))
 
 
+def race_send(url, headers, key, body, timeout):
+    sender = Sender(url, headers, timeout)
+    begin = time.time()
+    status, raw, error = sender.post(json.dumps(body), key)
+    end = time.time()
+    sender.close()
+    parsed = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = {}
+    return {"sent": begin, "ended": end, "http": status, "body_status": parsed.get("status"), "error": error,
+            "replayed": parsed.get("replayed"), "workflow_id": parsed.get("workflowId")}
+
+
+def race_pair(args, urls, headers, pair, records, lock):
+    variant = args.variant
+    if variant == "neg":
+        keys = [f"{args.run_id}-{pair}a", f"{args.run_id}-{pair}b"]
+        indices = [2 * pair, 2 * pair + 1]
+    else:
+        keys = [f"{args.run_id}-{pair}"] * 2
+        indices = [pair, pair]
+    bodies = [request_body(args.run_id, index) for index in indices]
+    first = pair % len(urls)
+    targets = {"c1": [first, 1 - first], "c2": [first, first], "c3": [first, 1 - first],
+               "neg": [first, 1 - first], "seq": [first, 1 - first]}[variant]
+    results = [None, None]
+    barrier = threading.Barrier(2)
+
+    def worker(role):
+        if variant in ("c1", "c2", "neg"):
+            barrier.wait()
+        elif variant == "c3" and role == 1:
+            time.sleep(args.gap)
+        results[role] = race_send(urls[targets[role]], headers, keys[role], bodies[role], args.timeout)
+
+    if variant == "seq":
+        for role in (0, 1):
+            worker(role)
+    else:
+        threads = [threading.Thread(target=worker, args=(role,)) for role in (0, 1)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    with lock:
+        for role in (0, 1):
+            records.append({"i": 2 * pair + role if variant == "neg" else None, "pair": pair, "role": role, "variant": variant,
+                            "key": keys[role], "target": targets[role], "scheduled": results[role]["sent"], **results[role]})
+
+
+def race(args):
+    urls = args.url.split(",")
+    headers = {"X-Atlas-Service-Token": os.environ["ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN"], "Content-Type": "application/json"}
+    records, lock = [], threading.Lock()
+    began = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+        list(pool.map(lambda pair: race_pair(args, urls, headers, pair, records, lock), range(args.pairs)))
+    finished = time.time()
+    ordered = sorted(records, key=lambda r: (r["pair"], r["role"]))
+    for record in ordered:
+        if record["i"] is None:
+            record["i"] = record["pair"]
+    with open(args.out, "w", encoding="utf-8") as handle:
+        for record in ordered:
+            handle.write(json.dumps(record) + "\n")
+    print(json.dumps({"pairs": args.pairs, "begin": began, "end_at": finished, "requests": len(ordered)}))
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -247,6 +325,16 @@ def main():
     replay_parser.add_argument("--deadline", type=float, default=60.0)
     replay_parser.add_argument("--out", required=True)
     replay_parser.set_defaults(handler=replay)
+    race_parser = sub.add_parser("race")
+    race_parser.add_argument("--run-id", required=True)
+    race_parser.add_argument("--url", required=True, help="two application reservation URLs, comma separated")
+    race_parser.add_argument("--variant", choices=["c1", "c2", "c3", "neg", "seq"], required=True)
+    race_parser.add_argument("--pairs", type=int, default=800)
+    race_parser.add_argument("--concurrency", type=int, default=24)
+    race_parser.add_argument("--gap", type=float, default=0.3)
+    race_parser.add_argument("--timeout", type=float, default=15.0)
+    race_parser.add_argument("--out", required=True)
+    race_parser.set_defaults(handler=race)
     args = parser.parse_args()
     args.handler(args)
 

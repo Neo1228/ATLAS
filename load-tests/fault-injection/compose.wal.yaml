@@ -1,0 +1,20 @@
+# order DB의 pg_wal을 크기 제한 볼륨에 따로 둔다(EXP-095 (b)).
+# WAL_DEVICE는 Docker VM 안에서 loop 마운트한 ext4 디렉터리다(runner가 만들고 지운다).
+# 데이터 디렉터리는 기본 볼륨(order-data)에 그대로 둔다. initdb가 pg_wal을 /wal/pg_wal 심볼릭 링크로 만든다.
+# ext4 루트의 lost+found 때문에 마운트 지점 자체가 아니라 하위 디렉터리를 waldir로 쓴다.
+services:
+  order-postgres:
+    environment:
+      POSTGRES_INITDB_WALDIR: /wal/pg_wal
+    volumes:
+      - order-wal:/wal
+
+volumes:
+  order-wal:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${WAL_DEVICE:?Set WAL_DEVICE}
+    labels:
+      atlasexp: ${EXP_TAG:-fault-injection}
