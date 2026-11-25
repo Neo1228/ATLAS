@@ -1,7 +1,7 @@
 # EXP-095: lease 2대·`pg_wal` 단독 가득 참·같은 key 동시 요청·DNS 부정 캐시·SYN/비대칭·DB `pause`에서도 예약 불변식은 지켜지는가
 
 - 질문: [EXP-087](EXP-087-fault-injection-network-disk-multi-app.md)이 "증명하지 못한 것"으로 남긴 다섯 칸에서도 네 불변식(응답받은 예약 유실 0, order 대 location 수 일치, 중복 예약 0, 90초 안 수렴)이 유지되는가? 그리고 EXP-070의 정확히 10초 복구 지연은 실제 application 스택에서 일어날 수 있는가, 일어난다면 어떤 조건에서인가?
-- 상태: **부분 실행.** "가설"과 "시험 가동 뒤에 추가한 가설"은 본 가동 전에 별도 커밋했다(커밋 이력이 증거). 계획한 121회(21개 조건 × n=5, DNS 2칸 n=3) 중 **9개 실행만 끝냈고**(조건별 n=1) 나머지는 실행하지 않았다. 따라서 가설 대부분은 **판정하지 못했다**. 이 문서는 하네스와 n=1 관측, 그것이 보여 준 것과 보여 주지 못한 것을 적는다. 이슈 [#652](https://github.com/Neo1228/ATLAS/issues/652).
+- 상태: **부분 실행.** "가설"과 "시험 가동 뒤에 추가한 가설"은 본 가동 전에 별도 커밋했다(커밋 이력이 증거). 계획한 121회(21개 조건 × n=5, DNS 2칸 n=3) 중 **결과가 있는 11개 실행만 끝냈고**(조건별 n=1) 나머지는 실행하지 않았다. 따라서 가설 대부분은 **판정하지 못했다**. 이 문서는 하네스와 n=1 관측, 그것이 보여 준 것과 보여 주지 못한 것을 적는다. 이슈 [#652](https://github.com/Neo1228/ATLAS/issues/652).
 - 날짜: 2026-11-25
 - 관련: [EXP-085](EXP-085-fault-injection-repeated.md), [EXP-087](EXP-087-fault-injection-network-disk-multi-app.md), [EXP-070](EXP-070-real-stack-fault-injection.md), [EXP-071](EXP-071-production-like-fault-injection.md), [EXP-078](EXP-078-relay-lease-length.md), [EXP-068](EXP-068-stage-evidence-map.md)(8단계 표), D-144, D-146
 
@@ -145,15 +145,17 @@
 - 하네스를 확장했다(`load-tests/fault-injection/`, 새 파일은 `compose.wal.yaml` 하나뿐이고 나머지는 기존 스크립트의 옵션이다). `run-fault-injection.sh`: 결함 `app-pause`, `order-db-pause`, `order-db-wal-full`, `location-b-syn-drop`, `location-b-resp-drop`, `location-b-req-drop`, `dns-kill`, `dns-restart`, `dns-recreate`, `race`와 옵션 `LOCATION_ACCESSLOG`, `PLANT_DUP`, `APP1_DELAY`, `LEASE_AUDIT`, `DNS_TRACE`, `DNS_OFFSET`, `DNS_REFRESH`, `MAILPIT=0`, `WAL_*`. `reservation_load.py race`: 같은 key 동시 쌍. `audit_invariants.py calls|dns|deep|selftest`: location access log의 key별 중복 호출, DNS 패킷 디코딩, 조건별 표, 탐지기 자체 시험. `run-expansion-matrix.sh SET=deep`: 고정 시드로 섞은 매트릭스.
 - 탐지기 자체 시험(음성 대조군 성격): `python3 load-tests/fault-injection/audit_invariants.py selftest`가 알려진 답이 있는 합성 입력을 판정한다. 규칙 7곳(교차 인스턴스, 이중 201, 겹침, 외부 출처, DNS rcode·qr·qtype 판독)을 하나씩 깨뜨려 시험이 실패함을 확인하고 `cmp`로 복원을 확인했다(7/7 실패, 복원 7/7).
 - 호스트 부하: 실행 직전 1분 load average는 12~42였다(공유 Docker VM). 시간 값은 맥락으로만 쓴다.
-- 실행 순서는 시드 20261125로 섞었다. 섞은 목록 앞의 9개만 돌렸고(c-race 1, a-pause12-L7 1, a-pause12-L10-nodelay 1, b-ctl-burn 1, d-fresh 1, d-recreate 1, d-s36-fix 1, e-ctl-none 1, e-syn-drop 1) 매트릭스는 호스트 사정과 요청 예산 때문에 중단했다. 중단 시 컨테이너·볼륨·네트워크는 `atlasexp=h5` 라벨로 0개다.
+- 실행 순서는 시드 20261125로 섞었다. 섞은 목록 앞의 9개만 돌렸고(c-race 1, a-pause12-L7 1, a-pause12-L10 1, a-ctl-L7 1, a-pause12-L10-nodelay 1, b-ctl-burn 1, d-fresh 1, d-recreate 1, d-s36-fix 1, e-ctl-none 1, e-syn-drop 1) 매트릭스는 호스트 사정과 요청 예산 때문에 중단했다. 중단 시 컨테이너·볼륨·네트워크는 `atlasexp=h5` 라벨로 0개다.
 
-## 결과 (본 가동 9개 실행, 조건별 n=1)
+## 결과 (본 가동 11개 실행, 조건별 n=1)
 
 이 표의 모든 칸은 n=1이다. n=1은 위반율에 대해 아무것도 배제하지 못한다(95% 상한 `1−0.05^(1/1)=95%`). 관측이 있었다는 존재 증명으로만 읽는다.
 
 | 조건(n=1) | 네 불변식 | 관측 |
 | --- | --- | --- |
 | a-pause12-L7 (2대, application 1을 12초 `pause`, lease PT7S, 지연 400ms) | 통과 | 정지 직전 lease 보유 workflow 14, lease 인수 13건(13개 workflow). location A 중복 호출 10건(서로 다른 application에서 온 key 9), B 6건(5). 이중 201 0. 수렴 9.83초. 상태 0:6, 201:350, 202:199, 503:5 |
+| a-ctl-L7 (2대, 정지 없음, PT7S, 지연 400ms, **PLANT_DUP**) | 통과 | **음성 대조군 반응**: 호스트가 이미 있던 key를 location A에 한 번 더 호출했고 탐지기가 중복 호출 1건·외부 출처 key 1건으로 잡았다. 정지 없이는 lease 인수 0, 교차 인스턴스 key 0, 수렴 5.53초 |
+| a-pause12-L10 (2대, 12초 `pause`, PT10S, 지연 400ms) | 통과 | 정지 직전 lease 보유 24, lease 인수 14건. A 중복 호출 12건(교차 인스턴스 key 12), B 5건(5). **A에서 호출 구간이 시간상 겹친 key 4개**(두 인스턴스가 실제로 동시에 호출). 이중 201 0. 수렴 9.38초 |
 | a-pause12-L10-nodelay (2대, 12초 `pause`, PT10S, netem 없음) | 통과 | 노출 47, lease 인수 35건. A 중복 호출 163건(교차 인스턴스 key 84), B 1건. 이중 201 0. 수렴 16.31초. 상태 0:90, 201:317, 202:132, 503:21 |
 | c-race (2대+Toxiproxy, 쌍 800개) | 5변형 모두 통과 | c1 800쌍 중 786쌍이 "201 하나와 200/202", 201 두 개 0건, 예약 order=A=B=800. c2 765쌍, 201 두 개 0. c3 799쌍, 0. **음성 대조군 neg**: 다른 key·다른 주문 800쌍에서 예약 1600(쌍마다 2개)으로 탐지기가 반응함. seq 100쌍 겹침 0 |
 | b-ctl-burn (별도 `pg_wal` 볼륨, 채움 없음, WAL 소각기 켬) | 통과 | PANIC 0, 컨테이너 종료 0, WAL 15.6MB(세그먼트 1개 경계), 대조군이 정상 |
@@ -228,4 +230,4 @@ python3 load-tests/fault-injection/audit_invariants.py selftest
 
 ## 실행하지 않은 것
 
-121회 계획 중 9회만 실행했다. 특히 A 칸의 PT30S·PT15S, B 칸 본 가동(`b-full-6s`, `b-full-30s`), D-expired·D-s15·s27·s36 n=5, D-restart, E2·E3·E4와 음성 대조군 PLANT_DUP(a-ctl-L7)은 실행하지 않았다. 이 PR의 가치는 하네스와 n=1 존재 증명이며, 위의 not confirmed 칸은 `SET=deep` 한 명령으로 이어서 돌릴 수 있다.
+121회 계획 중 결과가 있는 11회만 실행했다. 특히 A 칸의 PT30S·PT15S, B 칸 본 가동(`b-full-6s`, `b-full-30s`), D-expired·D-s15·s27·s36 n=5, D-restart, E2·E3·E4는 실행하지 않았다. 매트릭스를 중단할 때 진행 중이던 `e-syn-drop` 두 번째 실행은 결과 파일이 없어 집계하지 않았다. 이 PR의 가치는 하네스와 n=1 존재 증명이며, 위의 not confirmed 칸은 `SET=deep` 한 명령으로 이어서 돌릴 수 있다.
