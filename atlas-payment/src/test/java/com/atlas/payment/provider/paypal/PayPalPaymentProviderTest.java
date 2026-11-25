@@ -14,6 +14,7 @@ import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.dto.request.PaymentRequest;
 import java.net.ConnectException;
+import java.time.Clock;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +30,7 @@ import org.slf4j.LoggerFactory;
  */
 class PayPalPaymentProviderTest {
     private final PayPalRestClient client = mock(PayPalRestClient.class);
-    private final PayPalPaymentProvider provider = new PayPalPaymentProvider(client);
+    private final PayPalPaymentProvider provider = new PayPalPaymentProvider(client, Clock.systemUTC());
     private ListAppender<ILoggingEvent> appender;
     private Logger providerLogger;
 

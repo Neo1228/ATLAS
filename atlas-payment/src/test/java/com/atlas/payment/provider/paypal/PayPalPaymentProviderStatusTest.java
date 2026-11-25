@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -69,7 +70,7 @@ class PayPalPaymentProviderStatusTest {
         OAuth2AuthorizedClientManager manager = mock(OAuth2AuthorizedClientManager.class);
         when(manager.authorize(any(OAuth2AuthorizeRequest.class))).thenReturn(authorized);
         provider = new PayPalPaymentProvider(new PayPalRestClient(RestClient.builder(), properties, manager,
-                new ObjectMapper(), Duration.ofMillis(500), Duration.ofSeconds(1)));
+                new ObjectMapper(), Duration.ofMillis(500), Duration.ofSeconds(1)), Clock.systemUTC());
     }
 
     @AfterEach

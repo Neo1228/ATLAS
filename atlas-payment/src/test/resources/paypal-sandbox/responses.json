@@ -1030,5 +1030,900 @@
    ],
    "links": []
   }
+ },
+ "orderCreateError422TransactionLimitExceeded": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "issue": "TRANSACTION_LIMIT_EXCEEDED",
+     "description": "Total payment amount exceeded transaction limit."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#TRANSACTION_LIMIT_EXCEEDED",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "orderCreateError400InvalidParameterSyntax": {
+  "status": 400,
+  "body": {
+   "name": "INVALID_REQUEST",
+   "message": "Request is not well-formed, syntactically incorrect, or violates schema.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/amount/value",
+     "value": "abc",
+     "location": "body",
+     "issue": "INVALID_PARAMETER_SYNTAX",
+     "description": "The value of a field does not conform to the expected format."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/orders/v2/#error-INVALID_PARAMETER_SYNTAX",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "orderCreateError422DecimalPrecision": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/amount/value",
+     "value": "1.001",
+     "issue": "DECIMAL_PRECISION",
+     "description": "If the currency supports decimals, only two decimal place precision is supported."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#DECIMAL_PRECISION",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "orderCreateError400InvalidParameterValue": {
+  "status": 400,
+  "body": {
+   "name": "INVALID_REQUEST",
+   "message": "Request is not well-formed, syntactically incorrect, or violates schema.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "field": "/intent",
+     "value": "STEAL",
+     "location": "body",
+     "issue": "INVALID_PARAMETER_VALUE",
+     "description": "The value of a field is invalid."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/orders/v2/#error-INVALID_PARAMETER_VALUE",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "orderCreateError400MissingRequiredParameter": {
+  "status": 400,
+  "body": {
+   "name": "INVALID_REQUEST",
+   "message": "Request is not well-formed, syntactically incorrect, or violates schema.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/amount",
+     "location": "body",
+     "issue": "MISSING_REQUIRED_PARAMETER",
+     "description": "A required field / parameter is missing."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/orders/v2/#error-MISSING_REQUIRED_PARAMETER",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "orderCreateError422CannotBeZeroOrNegative": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/amount/value",
+     "value": "-1.00",
+     "issue": "CANNOT_BE_ZERO_OR_NEGATIVE",
+     "description": "Must be greater than zero. If the currency supports decimals, only two decimal place precision is supported."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#CANNOT_BE_ZERO_OR_NEGATIVE",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "orderCreateError400InvalidStringLength": {
+  "status": 400,
+  "body": {
+   "name": "INVALID_REQUEST",
+   "message": "Request is not well-formed, syntactically incorrect, or violates schema.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/custom_id",
+     "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     "location": "body",
+     "issue": "INVALID_STRING_LENGTH",
+     "description": "The value of a field is either too short or too long."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/orders/v2/#error-INVALID_STRING_LENGTH",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "orderCreateError422ItemTotalMismatch": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/amount/breakdown/item_total/value",
+     "value": "9.00",
+     "issue": "ITEM_TOTAL_MISMATCH",
+     "description": "Should equal sum of (unit_amount * quantity) across all items for a given purchase_unit"
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#ITEM_TOTAL_MISMATCH",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "orderCreateError422InvalidCurrencyCode": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/amount/currency_code",
+     "value": "ZZZ",
+     "issue": "INVALID_CURRENCY_CODE",
+     "description": "Currency code is invalid. Please refer https://developer.paypal.com/docs/integration/direct/rest/currency-codes/ for list of supported currency codes."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#INVALID_CURRENCY_CODE",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "orderCreateError400InvalidArrayMinItems": {
+  "status": 400,
+  "body": {
+   "name": "INVALID_REQUEST",
+   "message": "Request is not well-formed, syntactically incorrect, or violates schema.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "field": "/purchase_units",
+     "value": "[]",
+     "location": "body",
+     "issue": "INVALID_ARRAY_MIN_ITEMS",
+     "description": "The number of items in an array parameter is too small."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/orders/v2/#error-INVALID_ARRAY_MIN_ITEMS",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "orderCreateError422CurrencyNotSupported": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "issue": "CURRENCY_NOT_SUPPORTED",
+     "description": "Currency code is not currently supported. Please refer https://developer.paypal.com/docs/integration/direct/rest/currency-codes/ for list of supported currency codes."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#CURRENCY_NOT_SUPPORTED",
+     "rel": "information_link"
+    }
+   ]
+  }
+ },
+ "orderCreateError422DecimalsNotSupported": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "field": "/purchase_units/@reference_id=='h4'/amount/value",
+     "value": "1.50",
+     "issue": "DECIMALS_NOT_SUPPORTED",
+     "description": "Currency does not support decimals. Please refer to https://developer.paypal.com/docs/integration/direct/rest/currency-codes/ for more information."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#DECIMALS_NOT_SUPPORTED",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "error422AuthorizationVoided": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "issue": "AUTHORIZATION_VOIDED",
+     "description": "Authorization has been voided."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/payments/v2/#error-AUTHORIZATION_VOIDED",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "error422AuthorizationVoidedAfterPartialCapture": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "issue": "AUTHORIZATION_VOIDED",
+     "description": "Authorization has been voided."
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/payments/v2/#error-AUTHORIZATION_VOIDED",
+     "rel": "information_link",
+     "encType": "application/json"
+    }
+   ]
+  }
+ },
+ "error422PreviouslyVoided": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "issue": "PREVIOUSLY_VOIDED",
+     "field": "authorization_id",
+     "value": "3C679366HH908993F",
+     "description": "Authorization has been previously voided and hence cannot be voided again.",
+     "location": "path"
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/payments/v2/#error-PREVIOUSLY_VOIDED",
+     "rel": "information_link"
+    }
+   ]
+  }
+ },
+ "error422PreviouslyCaptured": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "details": [
+    {
+     "issue": "PREVIOUSLY_CAPTURED",
+     "field": "authorization_id",
+     "value": "3C679366HH908993F",
+     "description": "Authorization has been previously captured and hence cannot be voided.",
+     "location": "path"
+    }
+   ],
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/api/payments/v2/#error-PREVIOUSLY_CAPTURED",
+     "rel": "information_link"
+    }
+   ]
+  }
+ },
+ "error422OrderAlreadyAuthorized": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "issue": "ORDER_ALREADY_AUTHORIZED",
+     "description": "Order already authorized.If 'intent=AUTHORIZE' only one authorization per order is allowed."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/api/rest/reference/orders/v2/errors/#ORDER_ALREADY_AUTHORIZED",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "mockError422AuthorizationExpired": {
+  "status": 422,
+  "body": {
+   "name": "UNPROCESSABLE_ENTITY",
+   "details": [
+    {
+     "issue": "AUTHORIZATION_EXPIRED",
+     "description": "An expired authorization cannot be captured."
+    }
+   ],
+   "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+   "debug_id": "REDACTED",
+   "links": [
+    {
+     "href": "https://developer.paypal.com/docs/limited-release/orders/api/#error-AUTHORIZATION_EXPIRED",
+     "rel": "information_link",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getOrderAuthorizationVoided": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "COMPLETED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "h4",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00",
+      "breakdown": {}
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "custom_id": "h4-au0",
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     },
+     "payments": {
+      "authorizations": [
+       {
+        "status": "VOIDED",
+        "id": "3C679366HH908993F",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "custom_id": "h4-au0",
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "expiration_time": "2026-12-24T07:11:54Z",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/capture",
+          "rel": "capture",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/void",
+          "rel": "void",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/reauthorize",
+          "rel": "reauthorize",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T07:11:54Z",
+        "update_time": "2026-11-25T07:11:56Z"
+       }
+      ]
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T07:11:54Z",
+   "update_time": "2026-11-25T07:11:56Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T",
+     "rel": "self",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getOrderPartiallyCapturedThenVoided": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "COMPLETED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "h4",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00",
+      "breakdown": {}
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "custom_id": "h4-hu4",
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     },
+     "payments": {
+      "authorizations": [
+       {
+        "status": "VOIDED",
+        "id": "3C679366HH908993F",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "custom_id": "h4-hu4",
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "expiration_time": "2026-12-24T07:13:53Z",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/capture",
+          "rel": "capture",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/void",
+          "rel": "void",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/reauthorize",
+          "rel": "reauthorize",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T07:13:53Z",
+        "update_time": "2026-11-25T07:13:57Z"
+       }
+      ],
+      "captures": [
+       {
+        "id": "2GG279541U471931P",
+        "status": "COMPLETED",
+        "amount": {
+         "currency_code": "USD",
+         "value": "0.50"
+        },
+        "final_capture": false,
+        "disbursement_mode": "INSTANT",
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "seller_receivable_breakdown": {
+         "gross_amount": {
+          "currency_code": "USD",
+          "value": "0.50"
+         },
+         "paypal_fee": {
+          "currency_code": "USD",
+          "value": "0.32"
+         },
+         "net_amount": {
+          "currency_code": "USD",
+          "value": "0.18"
+         }
+        },
+        "custom_id": "h4-hu4",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/captures/2GG279541U471931P",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/captures/2GG279541U471931P/refund",
+          "rel": "refund",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T07:13:55Z",
+        "update_time": "2026-11-25T07:13:55Z"
+       }
+      ]
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T07:13:53Z",
+   "update_time": "2026-11-25T07:13:57Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T",
+     "rel": "self",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "getOrderAuthorizedAfterMockedExpiry": {
+  "status": 200,
+  "body": {
+   "id": "5O190127TN364715T",
+   "intent": "AUTHORIZE",
+   "status": "COMPLETED",
+   "payment_source": {
+    "paypal": {
+     "email_address": "REDACTED",
+     "account_id": "REDACTED",
+     "account_status": "REDACTED",
+     "name": {
+      "given_name": "REDACTED",
+      "surname": "REDACTED"
+     },
+     "address": {
+      "country_code": "REDACTED"
+     }
+    }
+   },
+   "purchase_units": [
+    {
+     "reference_id": "h4",
+     "amount": {
+      "currency_code": "USD",
+      "value": "1.00",
+      "breakdown": {}
+     },
+     "payee": {
+      "email_address": "REDACTED",
+      "merchant_id": "REDACTED"
+     },
+     "custom_id": "h4-mk0",
+     "shipping": {
+      "name": {
+       "full_name": "REDACTED"
+      },
+      "address": {
+       "address_line_1": "REDACTED",
+       "admin_area_2": "REDACTED",
+       "admin_area_1": "REDACTED",
+       "postal_code": "REDACTED",
+       "country_code": "REDACTED"
+      }
+     },
+     "payments": {
+      "authorizations": [
+       {
+        "status": "CREATED",
+        "id": "3C679366HH908993F",
+        "amount": {
+         "currency_code": "USD",
+         "value": "1.00"
+        },
+        "custom_id": "h4-mk0",
+        "seller_protection": {
+         "status": "ELIGIBLE",
+         "dispute_categories": [
+          "ITEM_NOT_RECEIVED",
+          "UNAUTHORIZED_TRANSACTION"
+         ]
+        },
+        "expiration_time": "2026-12-24T07:14:56Z",
+        "links": [
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F",
+          "rel": "self",
+          "method": "GET"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/capture",
+          "rel": "capture",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/void",
+          "rel": "void",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/reauthorize",
+          "rel": "reauthorize",
+          "method": "POST"
+         },
+         {
+          "href": "https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T",
+          "rel": "up",
+          "method": "GET"
+         }
+        ],
+        "create_time": "2026-11-25T07:14:56Z",
+        "update_time": "2026-11-25T07:14:56Z"
+       }
+      ]
+     }
+    }
+   ],
+   "payer": {
+    "name": {
+     "given_name": "REDACTED",
+     "surname": "REDACTED"
+    },
+    "email_address": "REDACTED",
+    "payer_id": "REDACTED",
+    "address": {
+     "country_code": "REDACTED"
+    }
+   },
+   "create_time": "2026-11-25T07:14:56Z",
+   "update_time": "2026-11-25T07:14:56Z",
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T",
+     "rel": "self",
+     "method": "GET"
+    }
+   ]
+  }
+ },
+ "webhookAuthorizationVoided": {
+  "delayAfterApiCallSeconds": 7,
+  "signatureVerifiedByPayPal": "SUCCESS",
+  "body": {
+   "id": "event-id-redacted",
+   "event_version": "1.0",
+   "create_time": "2026-11-25T07:31:31.722Z",
+   "resource_type": "authorization",
+   "resource_version": "2.0",
+   "event_type": "PAYMENT.AUTHORIZATION.VOIDED",
+   "summary": "A payment authorization was voided.",
+   "resource": {
+    "id": "3C679366HH908993F",
+    "status": "VOIDED",
+    "amount": {
+     "currency_code": "USD",
+     "value": "1.00"
+    },
+    "custom_id": "h4w-A",
+    "seller_protection": {
+     "status": "ELIGIBLE",
+     "dispute_categories": [
+      "ITEM_NOT_RECEIVED",
+      "UNAUTHORIZED_TRANSACTION"
+     ]
+    },
+    "supplementary_data": {
+     "related_ids": {
+      "order_id": "5O190127TN364715T"
+     }
+    },
+    "payee": {
+     "email_address": "REDACTED",
+     "merchant_id": "REDACTED"
+    },
+    "expiration_time": "2026-12-24T07:31:15Z",
+    "create_time": "2026-11-25T07:31:15Z",
+    "update_time": "2026-11-25T07:31:27Z",
+    "links": [
+     {
+      "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F",
+      "rel": "self",
+      "method": "GET"
+     },
+     {
+      "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/capture",
+      "rel": "capture",
+      "method": "POST"
+     },
+     {
+      "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/void",
+      "rel": "void",
+      "method": "POST"
+     },
+     {
+      "href": "https://api.sandbox.paypal.com/v2/payments/authorizations/3C679366HH908993F/reauthorize",
+      "rel": "reauthorize",
+      "method": "POST"
+     },
+     {
+      "href": "https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T",
+      "rel": "up",
+      "method": "GET"
+     }
+    ]
+   },
+   "links": [
+    {
+     "href": "https://api.sandbox.paypal.com/v1/notifications/webhooks-events/WH-redacted2ea5-REDACTED",
+     "rel": "self",
+     "method": "GET"
+    },
+    {
+     "href": "https://api.sandbox.paypal.com/v1/notifications/webhooks-events/WH-redacted2ea5-REDACTED/resend",
+     "rel": "resend",
+     "method": "POST"
+    }
+   ]
+  }
  }
 }

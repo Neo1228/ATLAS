@@ -9,6 +9,8 @@ import com.atlas.payment.dto.request.PaymentRefundRequest;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +27,11 @@ public class PayPalPaymentProvider implements PaymentProvider {
      */
     private static final Logger LOGGER = LoggerFactory.getLogger(PayPalPaymentProvider.class);
     private final PayPalRestClient client;
+    private final Clock clock;
 
-    public PayPalPaymentProvider(PayPalRestClient client) {
+    public PayPalPaymentProvider(PayPalRestClient client, Clock clock) {
         this.client = Objects.requireNonNull(client);
+        this.clock = Objects.requireNonNull(clock);
     }
     @Override
     public String providerCurrency() { return "USD"; }
@@ -285,15 +289,21 @@ public class PayPalPaymentProvider implements PaymentProvider {
         validateOrderAmount(request, current);
         if (current.id() == null || !current.id().equals(request.providerOrderId())) throw rejection;
         if (current.captureId() != null) return completedOrderResult(request, current);
-        // 만료는 PayPal 이 상태를 VOIDED 로 바꾸는지 아직 관측하지 못했다(EXP-086). 만료 거절이면 조회가
-        // CREATED 여도 capture 가 없다는 것만 확인되면 종결한다.
+        // 만료는 PayPal 이 상태를 VOIDED 로 바꾸는지 아직 관측하지 못했다(EXP-086). 만료 거절인데 조회가
+        // CREATED 면 조회가 알려 준 만료 시각이 이미 지났을 때만 종결한다. Sandbox 모의 헤더는 거절만 만들고
+        // authorization 은 CREATED 에 만료 29일 전으로 두며 이후 capture 도 성공했다(EXP-094).
         boolean unusable = current.authorizationStatus() == PayPalAuthorizationStatus.VOIDED
-                || (expired && current.authorizationStatus() == PayPalAuthorizationStatus.CREATED);
+                || (expired && current.authorizationStatus() == PayPalAuthorizationStatus.CREATED
+                && hasExpired(current.authorizationExpiresAt()));
         if (!unusable) throw rejection;
         LOGGER.warn("PayPal authorization is no longer capturable; issue={} authorizationStatus={}",
                 rejection.issue(), current.authorizationStatus());
         return result(PaymentProviderResponse.Outcome.VOIDED, request.providerOrderId(),
                 request.providerAuthorizationId(), null, null);
+    }
+
+    private boolean hasExpired(Instant expiresAt) {
+        return expiresAt != null && !expiresAt.isAfter(clock.instant());
     }
 
     private static PaymentRequest withOrder(PaymentRequest request, String orderId) {

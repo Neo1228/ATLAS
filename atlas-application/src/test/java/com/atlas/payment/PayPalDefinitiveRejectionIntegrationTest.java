@@ -185,6 +185,8 @@ class PayPalDefinitiveRejectionIntegrationTest extends PayPalIntegrationTestSupp
         // 거절 뒤 provider 가 주문을 조회한다: capture 없이 authorization 만 있는 주문.
         queueOrderStatus("COMPLETED");
         queueOrderAuthorizationStatus("AUTHORIZATION_VOIDED".equals(issue) ? "VOIDED" : "CREATED");
+        // 만료 거절은 조회의 만료 시각이 이미 지났을 때만 종결한다(EXP-094).
+        queueOrderAuthorizationExpiration("2020-01-01T00:00:00Z");
         queueOrderCaptureStatus("NONE");
 
         PaymentResponse first = payments.reconcile(orderId, "unusable-" + orderId);
