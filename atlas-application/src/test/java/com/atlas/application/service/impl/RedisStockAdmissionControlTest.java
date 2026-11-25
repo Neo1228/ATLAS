@@ -46,8 +46,12 @@ class RedisStockAdmissionControlTest {
         clients.clear();
     }
 
+    /**
+     * 명령 timeout을 넉넉히 둔다. 운영 기본값(200ms)은 연결 초기화 핸드셰이크까지 덮는다. 호스트가 바쁘면 첫 호출이
+     * timeout으로 fail-open(통과)되고, 테스트에서는 "거절돼야 하는 요청이 통과했다"는 단정 실패로 나타난다(EXP-099).
+     */
     private RedisStockAdmissionControl gate(String uri, LocationClient inventory) {
-        RedisClient client = new RedisStockAdmissionControlConfiguration().admissionGateRedisClient(uri, Duration.ofMillis(200));
+        RedisClient client = new RedisStockAdmissionControlConfiguration().admissionGateRedisClient(uri, Duration.ofSeconds(30));
         clients.add(client);
         return new RedisStockAdmissionControl(inventory, new SimpleMeterRegistry(), client,
                 Duration.ofMinutes(5), Duration.ofMinutes(5), Duration.ofSeconds(2));
