@@ -140,6 +140,19 @@
 
 이 모형이 맞으면 "정확히 10초"는 필연이 아니다. 지연은 `[0, 10)`초 균등 분포에 가깝고 EXP-070의 두 값(10.0, 9.8)은 정지 길이와 조회 위상이 만든 값으로 설명된다. 그 반대(관측이 모형을 따르지 않음)가 나오면 원인은 모른다고 쓴다. 표본 n=5는 모형의 정량 예측을 시험할 뿐 지연이 날 확률을 추정하지 않는다.
 
+## 2차 가동 사전 등록 (가동 전에 별도 커밋으로 기록)
+
+1차 가동은 11개 실행(조건별 n=1)에서 멈췄다. 2차 가동은 위 가설 표(A1~A4, B1~B4, C1~C4, DNS 모형, E1~E4)와 그 반증 조건을 **한 글자도 바꾸지 않고** 계획한 칸 전부에서 판정한다. 조건별 n=5(DNS의 `d-restart`·`d-recreate`만 n=3)이며, 모든 (조건, 반복)을 고정 시드 20261125로 한 번에 섞어 순차 실행한다(블록 무작위화: 시간대와 호스트 부하가 조건과 섞이지 않게 한다). 1차와 같은 시드를 쓰지만 목록이 달라 순서는 다르다. 실행 순서·시드·앞뒤 `uptime`은 결과에 남긴다. 아래는 1차 데이터를 본 뒤 추가하는 가설이므로 독립적이지 않다.
+
+| 추가 가설 | 예측 | 반증 | 힘 | 이 가설이 정하는 결정 |
+| --- | --- | --- | --- | --- |
+| A5 정지가 lease보다 길면 PT30S도 교차 인스턴스 중복을 만든다(새 조건 `a-pause35-L30`: 2대, 35초 `pause`, PT30S, 지연 400ms) | xdup≥1인 실행이 5회 중 4회 이상. 불변식 통과, 이중 201 0 | xdup=0인 실행이 2회 이상(정지 모형이 틀림) 또는 불변식 위반 | n=5 | PT30S가 "안전"한 것이 아니라 "허용 정지 길이가 약 27초까지"인 것임을 문서에 쓸지 |
+| A6 기본 lease 변경 규칙 | PT30S 유지. 아래 세 조건을 **모두** 만족하는 더 짧은 L\*가 있을 때만 변경 후보: (i) 12초 정지 n=5 모두 네 불변식 통과·이중 201 0, (ii) 같은 조건에서 xdup=0이 5/5, (iii) PT30S보다 12초 정지 수렴 시간 중앙값이 짧다 | 후보가 없으면 기본값 변경 없음(문서만) | n=5 | 기본값 변경이면 코드·설정 변경, 테스트, ADR-0093. 변경이 없으면 ADR 없음 |
+| B5 재시작 정책이 있고 채움이 유지되면 order DB는 재시작을 되풀이하고, 공간 확보 뒤에는 사람 없이 복구된다(새 조건 `b-full-30s-restart`: `b-full-30s`와 같고 order DB에 `docker update --restart unless-stopped`) | 채움 30초 동안 재시작 횟수 2 이상(5회 중 4회 이상), 공간 확보 뒤 60초 안에 첫 201 5/5, 네 불변식 통과 | 재시작 0이거나(서버가 떠 있음) 공간 확보 뒤 60초 안에 첫 201 실패 | n=5 | 런북에 "재시작 정책이 있을 때의 증상은 반복 재시작이고 복구 조치는 공간 확보뿐"이라고 쓸지 |
+| D-ship JVM `networkaddress.cache.negative.ttl=0`을 이미지·compose에 싣는 결정 | D-expired가 사전 예측대로(5초 이상 4/5 이상)이고 D-expired+fix·D-s36-fix가 해소(2초 이하 5/5)일 때만 싣는다. 그 외에는 싣지 않는다 | D-expired에서 2초 이하가 3회 이상이면 지연이 재현되지 않으므로 싣지 않는다(이득이 측정되지 않았고 속성은 조회를 늘린다) | n=5 | 싣는다면 설정 변경, 되돌리기 시험, ADR. 안 싣는다면 "이 스택에서 불가능한 조건"으로 기록 |
+
+대조군과 음성 대조군은 위 각 절의 것을 그대로 쓴다(`a-ctl-L7`의 PLANT_DUP, `c-race`의 neg·seq, `b-ctl-burn`, `d-fresh`·`d-expired-fix`, `e-ctl-none`과 칸별 주입 증거). 하네스 변경은 `a-pause35-L30` 조건 한 줄과 `WAL_RESTART=1` 옵션뿐이다. 1차 가동의 11개 실행은 이 2차 집계에 넣지 않는다(다른 하네스 버전·다른 시각이므로 참고로만 둔다).
+
 ## 실제로 한 것
 
 - 하네스를 확장했다(`load-tests/fault-injection/`, 새 파일은 `compose.wal.yaml` 하나뿐이고 나머지는 기존 스크립트의 옵션이다). `run-fault-injection.sh`: 결함 `app-pause`, `order-db-pause`, `order-db-wal-full`, `location-b-syn-drop`, `location-b-resp-drop`, `location-b-req-drop`, `dns-kill`, `dns-restart`, `dns-recreate`, `race`와 옵션 `LOCATION_ACCESSLOG`, `PLANT_DUP`, `APP1_DELAY`, `LEASE_AUDIT`, `DNS_TRACE`, `DNS_OFFSET`, `DNS_REFRESH`, `MAILPIT=0`, `WAL_*`. `reservation_load.py race`: 같은 key 동시 쌍. `audit_invariants.py calls|dns|deep|selftest`: location access log의 key별 중복 호출, DNS 패킷 디코딩, 조건별 표, 탐지기 자체 시험. `run-expansion-matrix.sh SET=deep`: 고정 시드로 섞은 매트릭스.
