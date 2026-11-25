@@ -36,6 +36,7 @@
 | 이벤트 유실 없음(커밋 순서 역전) | `ReservationEventReadIntegrationTest`, [EXP-061](EXP-061-event-log-fanout-and-replay.md) |
 | 상태 변화마다 정확히 한 건, 연속 version | `ReservationEventTriggerIntegrationTest` |
 | 전송 실패 뒤 cursor 보존과 재전달 | `ReservationEventKafkaIntegrationTest` |
+| relay의 broker 중단 중 누락 0·cursor 정지·복구 수렴, 중복 크기 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`, 조건 10종 × n=5, 로컬 단일 broker, 첫 전달 순서 역행 3건은 원인 미확정) |
 | 읽기 순서, 재읽기, 단조 cursor, 그룹 독립 | `ReservationEventConsumerContractIntegrationTest`(EXP-067, PR #518에서 병합 대기) |
 | 중복 제거, 같은 그룹 두 인스턴스(리밸런스), 재시작·재전달, 브로커 중단 뒤 복구 | `ReservationEventConsumerKafkaIntegrationTest`([EXP-082](EXP-082-event-consumer-contract.md), [ADR-0076](../02-decisions/adr/ADR-0076-reference-consumer-in-tests-only.md)). 소비자는 테스트 전용 참조 구현이고 운영 소비자는 없다. 파티션 2개, 소비자 2개, 이벤트 18~36건 규모 |
 
@@ -67,14 +68,14 @@
 | 디스크 가득 참(order DB), application 2대, 장애 뒤 같은 key 재시도 | [EXP-087](EXP-087-fault-injection-network-disk-multi-app.md) | 각 n=5, 위반 0. 디스크는 128MiB tmpfs(PostgreSQL 유지·PANIC 0), 2대는 클라이언트 라운드 로빈, 재시도는 `kill`·OOM·CPU 하드 한도 3종 15회에서 재전송이 새 예약을 만들지 않음. 단일 호스트·공유 VM |
 | CPU·메모리 스트레스 | [EXP-085](EXP-085-fault-injection-repeated.md) | application 컨테이너에 CPU 바쁜 루프·CPU 하드 한도·메모리 한도 근처·OOM을 각 n=5, 위반 0. 단일 호스트·공유 VM |
 | PostgreSQL 서버 재시작(WAL 재생) | [EXP-085](EXP-085-fault-injection-repeated.md) | `docker restart`(WAL 재생 없음, 정상 종료)·컨테이너 `kill`·WAL writer `kill -9`(크래시 복구, 로그 5/5 확인) 각 n=5, 위반 0. 프로세스 크래시만이고 정전·fsync는 아님 |
-| 브로커(Kafka) 중단 | EXP-072(PR #548) | 조건별 n=1, 코드 미공개, 파티션 1개 |
+| 브로커(Kafka) 중단 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`), EXP-072(PR #548, 탐색) | 조건 10종(stop·kill -9·pause 8/20/45초·kill 45초·지연 2/6초·손실 25%·대조군) × n=5, 파티션 3개, 누락 0. 단일 broker, 첫 전달 순서 역행 3건은 원인 미확정([#644](https://github.com/Neo1228/ATLAS/issues/644)) |
 
 ## 비어 있는 것(후속 후보)
 
 1. 운영 소비자: 제품 요구가 없어 만들지 않았다. 테스트 전용 참조 소비자가 중복 제거, 같은 그룹 두 인스턴스, 재시작, 브로커 중단을 확인한다([EXP-082](EXP-082-event-consumer-contract.md)). 실제 소비자의 부수 효과가 DB 밖이면 적용 표시와 효과를 한 트랜잭션에 묶을 수 없어 이 근거가 그대로 성립하지 않는다.
 2. PayPal 대역의 응답 규칙이 실제 Sandbox와 같은지 비교(비교했다: [EXP-081](EXP-081-paypal-double-vs-sandbox.md)). 어긋나면 5단계 근거 중 대역에 기대는 단위·통합 테스트가 흔들린다. 실제 Sandbox 근거는 EXP-050의 capture 응답 유실 3건과 worker 활성 조건 매트릭스다.
 3. 계획 3.3의 창고 선택 정책(출고 용량, 배송 기한, 배송 비용, 창고별 실패율): `LocationAllocationPolicy`는 위 표의 재고 기반 테스트만 있고, 용량·기한·비용·실패율 입력은 이 조사에서 확인하지 못했다.
-4. 컨테이너 수준 장애(Pumba), PostgreSQL 컨테이너 kill·내부 프로세스 크래시, Kafka 중단은 EXP-070·071·072(PR #548)에서 조건별 n=1로 실행했다. Kafka 중단에서는 relay가 이벤트를 잃지 않았고 중복은 `pause`에서만 나왔다. EXP-070의 location·order DB 컨테이너 장애 일부는 [EXP-085](EXP-085-fault-injection-repeated.md)에서 n=5로 다시 돌렸다(네트워크 지연·손실과 디스크 가득 참은 [EXP-087](EXP-087-fault-injection-network-disk-multi-app.md)이 location B 구간에서 n=5로 반복했고 `pause`와 Kafka는 여전히 n=1). 파티션이 여러 개인 경우와 relay를 가진 application의 kill은 아직 실행하지 않았다.
+4. 컨테이너 수준 장애(Pumba), PostgreSQL 컨테이너 kill·내부 프로세스 크래시, Kafka 중단은 EXP-070·071·072(PR #548)에서 조건별 n=1로 실행했다. Kafka 중단에서는 relay가 이벤트를 잃지 않았고 중복은 `pause`에서만 나왔다. 이 결과는 [EXP-089](EXP-089-kafka-outage-repeated.md)에서 하네스를 올려 조건별 n=5로 다시 돌렸다(누락 0, 중복은 `pause`·큰 지연에서, 파티션 3개). EXP-070의 location·order DB 컨테이너 장애 일부는 [EXP-085](EXP-085-fault-injection-repeated.md)에서 n=5로 다시 돌렸다(네트워크 지연·손실과 디스크 가득 참은 [EXP-087](EXP-087-fault-injection-network-disk-multi-app.md)이 location B 구간에서 n=5로 반복했고 `pause`는 여전히 n=1). relay를 가진 application의 kill은 아직 실행하지 않았다(파티션 3개는 EXP-089에서 다뤘다).
 5. 배송 실패와 carrier 연동: [ADR-0010](../02-decisions/adr/ADR-0010-order-fulfillment-lifecycle.md)에 carrier 연동이 범위 밖으로 적혀 있는 것으로 읽었다. 이 조사에서 해당 문장을 다시 검증하지는 않았다.
 
 ## 확인 수준과 한계

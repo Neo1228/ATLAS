@@ -237,7 +237,8 @@ atlas:
       enabled: false
       bootstrap-servers: localhost:9092
       topic: atlas.order-inventory.events
-      batch-size: 500
+      # 한 묶음의 크기. 전송이 실패하면 같은 묶음을 다시 보내므로 이 값이 한 번의 실패가 만드는 중복의 상한이다(ADR-0082).
+      batch-size: 100
       poll-interval: PT0.2S
       # 한 묶음 전송의 한도. 넘기면 cursor를 옮기지 않고 같은 묶음을 다시 보낸다.
       send-timeout: PT10S

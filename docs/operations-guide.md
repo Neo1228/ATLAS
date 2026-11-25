@@ -340,7 +340,7 @@ GATE=redis REDIS_KILL_AFTER=<초> load-tests/run-hot-sku-coordinator.sh
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_ENABLED` | `false` | relay 활성화 |
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka 주소 |
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_TOPIC` | `atlas.order-inventory.events` | Kafka 토픽 |
-| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BATCH_SIZE` | `500` | 한 번에 보내는 이벤트 수 |
+| `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_BATCH_SIZE` | `100` | 한 번에 보내는 이벤트 수. 전송이 실패하면 같은 묶음을 다시 보내므로 broker가 멈춘 구간의 중복 상한이다([ADR-0082](02-decisions/adr/ADR-0082-relay-batch-size-and-producer-log.md)) |
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_POLL_INTERVAL` | `PT0.2S` | relay poll 간격 |
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_SEND_TIMEOUT` | `PT10S` | 한 묶음 전송의 한도(1초 이상 5분 이하). 넘기면 cursor를 옮기지 않고 같은 묶음을 다시 보낸다 |
 | `ATLAS_ORDER_INVENTORY_RESERVATION_EVENT_RELAY_LEASE_DURATION` | `PT30S` | relay 단일 실행 lease. `SEND_TIMEOUT`보다 5초 이상 길어야 한다 |
