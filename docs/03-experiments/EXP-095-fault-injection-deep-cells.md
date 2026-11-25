@@ -1,7 +1,7 @@
 # EXP-095: lease 2대·`pg_wal` 단독 가득 참·같은 key 동시 요청·DNS 부정 캐시·SYN/비대칭·DB `pause`에서도 예약 불변식은 지켜지는가
 
 - 질문: [EXP-087](EXP-087-fault-injection-network-disk-multi-app.md)이 "증명하지 못한 것"으로 남긴 다섯 칸에서도 네 불변식(응답받은 예약 유실 0, order 대 location 수 일치, 중복 예약 0, 90초 안 수렴)이 유지되는가? 그리고 EXP-070의 정확히 10초 복구 지연은 실제 application 스택에서 일어날 수 있는가, 일어난다면 어떤 조건에서인가?
-- 상태: **사전 등록 단계(이 절 아래 "가설"까지는 어떤 칸도 돌리기 전에 커밋한다).** 결과 절은 실행 뒤에 같은 문서에 더한다. 이슈 [#652](https://github.com/Neo1228/ATLAS/issues/652).
+- 상태: **부분 실행.** "가설"과 "시험 가동 뒤에 추가한 가설"은 본 가동 전에 별도 커밋했다(커밋 이력이 증거). 계획한 121회(21개 조건 × n=5, DNS 2칸 n=3) 중 **9개 실행만 끝냈고**(조건별 n=1) 나머지는 실행하지 않았다. 따라서 가설 대부분은 **판정하지 못했다**. 이 문서는 하네스와 n=1 관측, 그것이 보여 준 것과 보여 주지 못한 것을 적는다. 이슈 [#652](https://github.com/Neo1228/ATLAS/issues/652).
 - 날짜: 2026-11-25
 - 관련: [EXP-085](EXP-085-fault-injection-repeated.md), [EXP-087](EXP-087-fault-injection-network-disk-multi-app.md), [EXP-070](EXP-070-real-stack-fault-injection.md), [EXP-071](EXP-071-production-like-fault-injection.md), [EXP-078](EXP-078-relay-lease-length.md), [EXP-068](EXP-068-stage-evidence-map.md)(8단계 표), D-144, D-146
 
@@ -140,6 +140,92 @@
 
 이 모형이 맞으면 "정확히 10초"는 필연이 아니다. 지연은 `[0, 10)`초 균등 분포에 가깝고 EXP-070의 두 값(10.0, 9.8)은 정지 길이와 조회 위상이 만든 값으로 설명된다. 그 반대(관측이 모형을 따르지 않음)가 나오면 원인은 모른다고 쓴다. 표본 n=5는 모형의 정량 예측을 시험할 뿐 지연이 날 확률을 추정하지 않는다.
 
-## 아직 쓰지 않은 것
+## 실제로 한 것
 
-사전 부검(어떻게 실패할 수 있는가), 되돌리기 시험, 결과, 가설 대조, 주장 표는 실행 뒤에 이 문서에 더한다.
+- 하네스를 확장했다(`load-tests/fault-injection/`, 새 파일은 `compose.wal.yaml` 하나뿐이고 나머지는 기존 스크립트의 옵션이다). `run-fault-injection.sh`: 결함 `app-pause`, `order-db-pause`, `order-db-wal-full`, `location-b-syn-drop`, `location-b-resp-drop`, `location-b-req-drop`, `dns-kill`, `dns-restart`, `dns-recreate`, `race`와 옵션 `LOCATION_ACCESSLOG`, `PLANT_DUP`, `APP1_DELAY`, `LEASE_AUDIT`, `DNS_TRACE`, `DNS_OFFSET`, `DNS_REFRESH`, `MAILPIT=0`, `WAL_*`. `reservation_load.py race`: 같은 key 동시 쌍. `audit_invariants.py calls|dns|deep|selftest`: location access log의 key별 중복 호출, DNS 패킷 디코딩, 조건별 표, 탐지기 자체 시험. `run-expansion-matrix.sh SET=deep`: 고정 시드로 섞은 매트릭스.
+- 탐지기 자체 시험(음성 대조군 성격): `python3 load-tests/fault-injection/audit_invariants.py selftest`가 알려진 답이 있는 합성 입력을 판정한다. 규칙 7곳(교차 인스턴스, 이중 201, 겹침, 외부 출처, DNS rcode·qr·qtype 판독)을 하나씩 깨뜨려 시험이 실패함을 확인하고 `cmp`로 복원을 확인했다(7/7 실패, 복원 7/7).
+- 호스트 부하: 실행 직전 1분 load average는 12~42였다(공유 Docker VM). 시간 값은 맥락으로만 쓴다.
+- 실행 순서는 시드 20261125로 섞었다. 섞은 목록 앞의 9개만 돌렸고(c-race 1, a-pause12-L7 1, a-pause12-L10-nodelay 1, b-ctl-burn 1, d-fresh 1, d-recreate 1, d-s36-fix 1, e-ctl-none 1, e-syn-drop 1) 매트릭스는 호스트 사정과 요청 예산 때문에 중단했다. 중단 시 컨테이너·볼륨·네트워크는 `atlasexp=h5` 라벨로 0개다.
+
+## 결과 (본 가동 9개 실행, 조건별 n=1)
+
+이 표의 모든 칸은 n=1이다. n=1은 위반율에 대해 아무것도 배제하지 못한다(95% 상한 `1−0.05^(1/1)=95%`). 관측이 있었다는 존재 증명으로만 읽는다.
+
+| 조건(n=1) | 네 불변식 | 관측 |
+| --- | --- | --- |
+| a-pause12-L7 (2대, application 1을 12초 `pause`, lease PT7S, 지연 400ms) | 통과 | 정지 직전 lease 보유 workflow 14, lease 인수 13건(13개 workflow). location A 중복 호출 10건(서로 다른 application에서 온 key 9), B 6건(5). 이중 201 0. 수렴 9.83초. 상태 0:6, 201:350, 202:199, 503:5 |
+| a-pause12-L10-nodelay (2대, 12초 `pause`, PT10S, netem 없음) | 통과 | 노출 47, lease 인수 35건. A 중복 호출 163건(교차 인스턴스 key 84), B 1건. 이중 201 0. 수렴 16.31초. 상태 0:90, 201:317, 202:132, 503:21 |
+| c-race (2대+Toxiproxy, 쌍 800개) | 5변형 모두 통과 | c1 800쌍 중 786쌍이 "201 하나와 200/202", 201 두 개 0건, 예약 order=A=B=800. c2 765쌍, 201 두 개 0. c3 799쌍, 0. **음성 대조군 neg**: 다른 key·다른 주문 800쌍에서 예약 1600(쌍마다 2개)으로 탐지기가 반응함. seq 100쌍 겹침 0 |
+| b-ctl-burn (별도 `pg_wal` 볼륨, 채움 없음, WAL 소각기 켬) | 통과 | PANIC 0, 컨테이너 종료 0, WAL 15.6MB(세그먼트 1개 경계), 대조군이 정상 |
+| d-fresh (마지막 조회 8.9초 뒤 `kill`, 6초) | 통과 | NXDOMAIN 0, DB가 연결을 받은 뒤 첫 201까지 0.19초 |
+| d-recreate (조회 41초 뒤 `rm -f` 후 재생성) | 통과 | NXDOMAIN 0, 0.70초 |
+| d-s36-fix (조회 9.6초 뒤, 36초 정지, JVM `negative.ttl=0`) | 통과 | NXDOMAIN 8건, 모형 지연 3.44초, 측정 4.24초 |
+| e-ctl-none | 통과 | 201:544, 202:9, 5xx:7, 최대 지연 3.36초(load average 22) |
+| e-syn-drop (location B 새 연결 SYN 6초 드롭) | 통과 | 201:453, 202:103, 5xx:4, 수렴 13.22초, 장애 구간에 B로 시작한 호출 370, 드롭 카운터 95(SYN-SENT 소켓 2개 관측) |
+
+### 시험 가동(n=1, 본 가동과 별개이며 하네스 수정 전 일부 포함)에서 본 것
+
+- `pg_wal` 가득 참(b-full-6s, 128MiB ext4, 채움 6초, WAL 소각기 켬): `could not write to file "pg_wal/xlogtemp.411": No space left on device`로 **PANIC**, 백엔드 `signal 6`, postmaster가 모든 프로세스를 종료하고 재초기화, 복구 중 startup process가 같은 이유로 `FATAL`, 서버가 **종료**돼 컨테이너가 내려갔다. 채움 파일을 지우고 `docker start`하자 `redo starts`/`redo done` 뒤 정상 기동, 해제 뒤 첫 201까지 0.28초, 네 불변식 통과(`503` 72건, 유실 0). EXP-087 tmpfs 칸(PANIC 0, 서버 유지)과 다르다. 이 한 번으로 "항상 PANIC"은 말할 수 없고 "PANIC과 서버 종료가 일어날 수 있다"는 존재 증명이다.
+- DNS 36초 이상 정지(d-long-0 시험, 첫 조회 직후 `kill`, 약 33초 정지): NXDOMAIN 272건, DB가 열린 뒤 첫 201까지 8.34초. 이 시험의 해석기 탐침은 application과 같은 네임스페이스에 있어 캡처에 섞였으므로 정량 근거로 쓰지 않는다(그래서 탐침을 별도 컨테이너로 옮겼다).
+- 짧은 lease 시험(a-pause12-L10, 지연 400ms): 불변식 통과, 정지 직전 lease 보유 49.
+
+## 가설 대조
+
+| 가설 | 판정 | 근거 |
+| --- | --- | --- |
+| A1 불변식(2대·lease·12초 정지) | **부분 확인(n=1 두 조건)**, 판정 불가 | PT7S·PT10S 두 실행에서 위반 0. PT30S·PT15S는 실행하지 않음 |
+| A2 짧은 lease는 교차 인스턴스 중복을 만든다 | **관측됨(존재), 5회 중 4회 기준은 시험 못 함** | PT7S에서 교차 key 9, PT10S에서 84(n=1씩). 정지한 인스턴스의 lease가 만료돼 다른 인스턴스 worker가 인수했고(takeover 13·35건), 같은 key로 location을 두 번 호출했다 |
+| A3 PT30S는 12초 정지에서 중복 없음 | **실행하지 않음** | |
+| A4 중복은 무해 | **지지(n=1 두 조건)** | 중복 호출이 163건이어도 두 번째 호출은 `200`(재생)이고 이중 201 0, 예약 행 order당 1, 네 불변식 통과. 펜싱은 `lease_token` 조건부 쓰기와 location의 `Idempotency-Key` 멱등이다 |
+| B1 PANIC | **관측됨(시험 가동 n=1, 본 가동은 b-full 미실행)** | 위 절 |
+| B2 응답받은 예약 유실 0 | 시험 가동 n=1에서 지지 | 통과 |
+| B3 공간 확보 뒤 `docker start` 한 번으로 복구 | 시험 가동 n=1에서 지지 | 수동 복구 불필요. 단 서버가 종료되므로 재시작 정책이 없으면 사람이 시작해야 함 |
+| B4 응용 가시 실패 | 지지(시험 n=1) | `503` 72건, 커밋되지 않은 `201` 없음 |
+| C1 key당 workflow·예약 1개, 이중 201 0 | **지지, 상한 3/800=0.4%(쌍 단위, 변형당 한 스택)** | c1~c3 각 800쌍 모두 order=A=B=800, 이중 201 0 |
+| C2 쌍마다 201 정확히 1개 | **일부 틀림** | c1에서 14쌍, c2에서 35쌍이 "201 하나와 200/202" 형태가 아니었다(원인은 5xx 응답 등으로 짐작하나 이번에 가려내지 않음) |
+| C3 동시성이 실제로 일어남 | 지지 | 800쌍 모두 요청 구간이 겹침, seq는 0 |
+| C4 처리 중 재시도는 원격 호출을 만들지 않음 | **지지** | c3에서 같은 key의 location 이중 호출(교차 인스턴스) 0 |
+| (c) 예상 밖 | 관측 | c2(같은 인스턴스 대상)에서도 location A에 교차 인스턴스 key 5건. 처리 중이던 요청이 실패한 뒤 다른 인스턴스 복구 worker가 인수한 것으로 짐작하나 확인하지 않음 |
+| D-fresh | 지지(n=1) | 0.19초 |
+| D-expired | **본 가동 미실행**(시험 가동 n=1에서 0.18초로 예측 "5~11초"가 틀림) | |
+| D-s15·s27·s36 정량 모형 | **판정 불가** | s36-fix 한 번에서 모형 지연 3.44초, 측정 4.24초(모형의 수치와 0.8초 차이). `negative.ttl=0`인데도 4초가 나온 이유는 가리지 못했다(Hikari 재시도·연결 풀 대기 후보) |
+| D-restart | 미실행 | |
+| D-recreate | 기록만(n=1) | 0.70초 |
+| E1 SYN 드롭 | 지지(n=1) | 통과, 202 103, 드롭 카운터 95(SYN-SENT 소켓 2개 관측) |
+| E2 응답 드롭, E3 요청 드롭, E4 DB `pause` | **실행하지 않음** | |
+
+## 사전 부검과 되돌리기
+
+- 이번에 production 코드·설정을 바꾸지 않았다(ADR 없음). 따라서 되돌리기 시험은 해당 없다. 바꿀 것이 생기는 후보(DNS `negative.ttl=0` 적용)는 이번 데이터로 근거가 서지 않아 적용하지 않았다.
+- 이 하네스 변경이 실패할 수 있는 방식과 감지: ① 탐지기가 0을 거짓으로 낼 수 있다 → `selftest`와 PLANT_DUP·`neg` 음성 대조군. ② 호스트 부하가 시간 값을 흔든다 → 개수와 불변식으로만 결론, load average 기록. ③ 조건이 섞인다 → 시드 고정 섞기. ④ 공유 Docker를 오염시킨다 → 모든 객체 `atlasexp=h5` 라벨, 종료 시 0개 확인, `pg_wal` 이미지는 VM 안 임시 마운트(종료 때 해제, 이번에 남은 빈 디렉터리 하나를 삭제).
+
+## 삭제한 파일의 내용
+
+원자료(`.local`이 아니라 `/tmp`의 실행 로그, JSONL, pcap 텍스트, 조건별 `result.json`)는 저장소에 올리지 않았다. 위 표가 그 집계다. 재현 명령:
+
+```bash
+./gradlew :atlas-application:bootJar :atlas-inventory-location:bootJar
+# jar와 jvm-negative-dns-ttl0.security를 $HOME 아래로 복사해 APP_JAR·LOCATION_JAR·FI_DIR로 준다(Docker VM이 읽어야 함)
+SET=deep REPS=5 ONLY='^c-race$' load-tests/fault-injection/run-expansion-matrix.sh
+python3 load-tests/fault-injection/audit_invariants.py deep --root <OUT>
+python3 load-tests/fault-injection/audit_invariants.py selftest
+```
+
+## 주장 표
+
+| 주장 | 근거 | 확신 |
+| --- | --- | --- |
+| 같은 key 동시 쌍(2대, 변형 3종 각 800쌍)에서 예약은 key당 정확히 하나이고 이중 201이 없다 | c1~c3 order=A=B=800, 이중 201 0, neg가 1600으로 반응 | confirmed(이 스택, 한 스택 실행씩; 쌍 단위 상한 0.4%) |
+| 짧은 lease(PT7S·PT10S)에서 정지한 application의 lease를 다른 인스턴스가 인수해 location을 같은 key로 두 번 호출한다 | takeover 13·35, 교차 key 9·84 | local-only(n=1씩) |
+| 그 중복은 돈·재고 불변식을 깨지 않는다 | 이중 201 0, 네 불변식 통과 | local-only(n=1씩) |
+| `pg_wal`만 가득 차면 PostgreSQL이 PANIC으로 종료할 수 있고 공간 확보 뒤 한 번의 시작으로 복구된다 | 시험 가동 1회 | local-only(본 가동 아님) |
+| PT30S·PT15S의 2대 중복 수, 최소 안전 lease, 기본값 결정 | 실행하지 않음 | not confirmed |
+| DNS 부정 캐시가 실제 application 스택에서 "정확히 10초" 지연을 만든다 | 6초 정지는 0.19~0.70초, 33초 정지 시험은 8.3초(오염된 캡처) | not confirmed |
+| `negative.ttl=0`이 필요하다/충분하다 | s36-fix n=1에서 4.24초 지연 | not confirmed(기본값 변경 근거 없음) |
+| 응답 드롭·요청 드롭·DB `pause`에서도 불변식이 지켜진다 | 실행하지 않음 | not confirmed |
+| SYN 드롭 6초에서 불변식이 지켜진다 | n=1 | local-only |
+| n=5 반복 | 21개 조건 중 어느 것도 n=5에 이르지 못함 | not confirmed |
+
+## 실행하지 않은 것
+
+121회 계획 중 9회만 실행했다. 특히 A 칸의 PT30S·PT15S, B 칸 본 가동(`b-full-6s`, `b-full-30s`), D-expired·D-s15·s27·s36 n=5, D-restart, E2·E3·E4와 음성 대조군 PLANT_DUP(a-ctl-L7)은 실행하지 않았다. 이 PR의 가치는 하네스와 n=1 존재 증명이며, 위의 not confirmed 칸은 `SET=deep` 한 명령으로 이어서 돌릴 수 있다.
