@@ -1,6 +1,6 @@
 # ADR-0078: Seller 지급의 운영자 통제는 V1 Sandbox 한계로 두고 production 전환 gate를 체크리스트로 고정한다
 
-- 상태: 채택(제안 PR, 병합은 통합 담당). Sandbox 전용. Live 지급은 이 문서의 gate를 모두 닫은 뒤 별도 결정한다.
+- 상태: 채택(제안 PR, 병합은 통합 담당). Sandbox 전용. **갱신:** 운영자 사람별 신원과 승인자 ≠ 검증자 강제는 [ADR-0092](ADR-0092-payout-operator-person-identity-and-maker-checker.md)에서 구현했다. 아래 사실 1의 "없음" 행(사람별 신원, 운영자 간 maker-checker)은 기준 커밋 546d8002 시점의 사실이고 gate 7 행이 현재 상태다. Live 지급은 이 문서의 gate를 모두 닫은 뒤 별도 결정한다.
 - 날짜: 2026-11-25
 - 관련: [ADR-0057](ADR-0057-financial-operation-outbox-and-payout-reconciliation.md), [ADR-0052](ADR-0052-settlement-fee-reserve-payout.md), [ADR-0027](ADR-0027-account-jwt-authentication.md), [EXP-073](../../03-experiments/EXP-073-paypal-sandbox-payouts-response-shapes.md)
 - 추적: [Q-013](../../01-requirements/requirements-index.md), [D-142](../../00-governance/decision-log.md#d-142), [Issue #621](https://github.com/Neo1228/ATLAS/issues/621)
@@ -79,7 +79,7 @@ Live 지급을 열기 전에 아래가 모두 닫혀야 한다. 닫는 증거가
 | 4 | Funding: USD 잔액이 금액과 수수료를 함께 덮어야 한다. ATLAS에 잔액 사전 확인이 없다. 선충전 또는 auto-funding 절차, KRW에서 USD로 바꾸는 주체와 환율 책임을 정한다 | treasury 절차 문서, 기존 `PayPalBalanceReport` 대사 | treasury | 미결 |
 | 5 | Provider fee: 계약 요율 확인과 `PLATFORM_PAYOUT_FEE` 처리의 회계 승인 | 요율 확인, 재무 승인 | finance | 미결 |
 | 6 | 건당 한도: USD 60,000(등록), 20,000(미등록). 앱 측 상한을 둘지, 둔다면 값 | 결정 기록. 구현하면 통합 테스트 | product | 미결 |
-| 7 | 운영자 **사람별 신원과 MFA**를 IdP나 gateway가 제공하고, principal 이름이 사람 한 명을 가리킨다. 공유 비밀번호 Basic은 Live에서 쓰지 않는다. 그 뒤에 승인자 ≠ 프로필 검증자 검사와 PostgreSQL 통합 테스트(변경 전 실패, 후 통과)를 넣는다 | IdP 구성, 통합 테스트 | security, backend | 미결 |
+| 7 | 운영자 **사람별 신원과 MFA**를 IdP나 gateway가 제공하고, principal 이름이 사람 한 명을 가리킨다. 공유 비밀번호 Basic은 Live에서 쓰지 않는다. 그 뒤에 승인자 ≠ 프로필 검증자 검사와 PostgreSQL 통합 테스트(변경 전 실패, 후 통과)를 넣는다 | IdP 구성, 통합 테스트 | security, backend | **부분 충족**([ADR-0092](ADR-0092-payout-operator-person-identity-and-maker-checker.md), [EXP-096](../../03-experiments/EXP-096-operator-identity-maker-checker.md)). 충족: 사람별 신원(앱 안 account, IdP 아님), 승인자 ≠ 검증자 DB 강제와 PostgreSQL 통합 테스트(기준 코드는 같은 자격 증명의 검증·승인이 100/100 성공, 변경 후 거절), 공유 Basic은 기본 꺼짐. **미충족:** 로그인 시 TOTP 사용 강제와 step-up(등록만 요구), 계정 잠금·자격 증명 회전 정책, 재큐·provider 검토 해소 등 나머지 운영 조치의 4-eyes, IdP·gateway. Live 전 결정 필요 |
 | 8 | 프로필 검토 증거: 검토에 무엇을 봤는지(소유 증빙, 세무 등)를 정하고, 증거 저장 위치를 정한다. 지금 `evidenceReference`는 형식만 검사한다 | compliance 기준 문서 | compliance | 미결 |
 | 9 | 지급 일정: 요청 주기, 마감 시각, 보류 기간. 지금은 Seller 요청으로만 생기고 일정이 없다 | 정책 결정 | product, finance | 미결 |
 | 10 | 감사 보관 기간과 검토 주기(`seller_payout_profile_action`, `settlement_payout_operator_action`) | 정책 결정 | compliance | 미결 |
