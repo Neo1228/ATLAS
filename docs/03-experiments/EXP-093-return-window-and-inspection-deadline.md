@@ -172,6 +172,8 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 
 명령(각 worktree에서 5회): `./gradlew --no-daemon --console=plain :atlas-application:test --rerun --tests 'com.atlas.order.LocationReservationServiceIntegrationTest'`. 이 10회에서는 앞의 6개 실패를 재현하지 못했다. 원인은 **확정하지 못했다**. 재현 증거가 없어 H3 문제라고 단정하거나 “flaky”로 부르지 않았고 별도 이슈도 만들지 않았다. 실험 전후 load average 2.96/4.04/6.90→5.06/5.62/6.87, Docker container 수 16, CPU 합계 23.6%→7.9%, peak container 13.8%→2.5%였다. 이 결과도 지연/SLA 비교에 쓰지 않는다.
 
+이후 최신 main `d6b4d4ed`로 재기반한 H3 branch `9cecd581`에서 두 번째 `clean check`를 실행했다: exit 0, 184 XML suites·1,099 tests·실패 0 (`BUILD SUCCESSFUL`). 첫 실행의 6개 실패는 이 실행 및 clean-main/H3 각 n=5 비교에서 재현되지 않았다. 원인은 끝내 확인되지 않았다.
+
 ## 대안 비교 요약
 
 세부 비용·위험·steel-man은 [ADR-0089](../02-decisions/adr/ADR-0089-return-window-and-inspection-deadline.md)에 있다. 선택은 출고별 168시간 경계 포함, 5영업일 초과 시 표시·gauge만, 자동 승인·환불 없음, 설정 flag로 기간 검사 rollback이다. 비용 0인 “do nothing”은 기준선 7/7 수락으로 재현된 무기한 요청을 남기므로 기각했다.
