@@ -497,6 +497,12 @@ public class AccountServiceImpl implements AccountService {
         return accountId != null && familyId != null
                 && accounts.isRefreshFamilyActive(accountId, familyId, clock.instant());
     }
+
+    @Transactional(readOnly = true)
+    @Override
+    public boolean isPayoutOperator(UUID accountId) {
+        return accountId != null && accounts.isActivePayoutOperator(accountId);
+    }
     @Transactional(readOnly = true)
     @Override
     public AccountResponse.SessionPage listSessions(

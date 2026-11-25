@@ -115,6 +115,13 @@ public interface AccountService {
 
     boolean isAccessTokenFamilyActive(UUID accountId, UUID familyId);
 
+    /**
+     * 지급 운영자 경로(프로필 검증·지급 승인)를 쓸 수 있는 계정인지 확인한다.
+     * 운영자 권한이 해제되지 않았고, 계정이 활성이며 이메일이 검증됐고, TOTP MFA를 등록해야 한다.
+     * 토큰 수명 안에서도 해제와 정지가 바로 적용되도록 요청마다 호출한다(ADR-0092).
+     */
+    boolean isPayoutOperator(UUID accountId);
+
     AccountResponse.SessionPage listSessions( UUID accountId, UUID currentFamilyId, int requestedLimit, int offset);
 
     void revokeSession(UUID accountId, UUID familyId);

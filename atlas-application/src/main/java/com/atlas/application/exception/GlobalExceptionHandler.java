@@ -10,6 +10,7 @@ import com.atlas.order.exception.OrderException;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.settlement.exception.SettlementException;
 import java.net.URI;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpHeaders;
@@ -41,6 +43,9 @@ public class GlobalExceptionHandler {
     /** 용량 부족 응답의 재시도 대기 힌트(초). 클라이언트가 같은 순간에 몰려 재시도하지 않도록 범위로 흩는다. */
     private static final int RETRY_AFTER_MIN_SECONDS = 1;
     private static final int RETRY_AFTER_MAX_SECONDS = 3;
+
+    private static final String CHECK_VIOLATION = "23514";
+    private static final String SEPARATION_OF_DUTIES_MARKER = "_separation_of_duties";
 
     private final SampledFailureLog capacityFailures = new SampledFailureLog(
             LOGGER, Clock.systemUTC(), Duration.ofMinutes(1));
@@ -191,6 +196,20 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 지급 운영자 감사 행의 DB trigger가 같은 사람의 연속 단계를 거절한 경우(V5, ADR-0092). 승인 트랜잭션은 이미
+     * 롤백됐고, 같은 사람이 다시 보내도 결과가 같으므로 409가 아니라 403으로 알린다. 다른 무결성 위반은 코드 결함이라 500으로 둔다.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ProblemDetail> dataIntegrityViolation(DataIntegrityViolationException exception) {
+        Throwable cause = exception.getMostSpecificCause();
+        if (cause instanceof SQLException sql && CHECK_VIOLATION.equals(sql.getSQLState())
+                && cause.getMessage() != null && cause.getMessage().contains(SEPARATION_OF_DUTIES_MARKER)) {
+            return response(HttpStatus.FORBIDDEN, "SEPARATION_OF_DUTIES", null);
+        }
+        return internalError(exception);
+    }
+
+    /**
      * 경로·쿼리 변수 형식 오류와 읽을 수 없는 요청 본문(깨진 JSON, 알 수 없는 enum 값)은 모두 클라이언트 입력 오류다.
      * 이 둘이 {@link #handleUnexpected}로 떨어지면 500으로 응답하므로 따로 400으로 매핑한다.
      */
@@ -243,6 +262,7 @@ public class GlobalExceptionHandler {
             case "PAYMENT_PROVIDER_UNAVAILABLE" -> "결제 서비스에 일시적으로 연결할 수 없습니다. 결제 상태를 확인한 뒤 같은 요청으로 다시 시도해 주세요.";
             case "INSUFFICIENT_STOCK" -> "요청한 수량의 재고를 확보할 수 없습니다.";
             case "PRODUCT_NOT_ORDERABLE" -> "현재 주문할 수 없는 상품입니다.";
+            case "SEPARATION_OF_DUTIES" -> "이전 단계를 수행한 운영자는 이 단계를 수행할 수 없습니다. 다른 운영자가 처리해 주세요.";
             case "INTERNAL_ERROR" -> "서버에서 요청을 처리하지 못했습니다. 요청 ID를 고객 지원에 전달해 주세요.";
             case "SERVICE_UNAVAILABLE" -> "서버가 일시적으로 요청을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.";
             default -> switch (status.value()) {

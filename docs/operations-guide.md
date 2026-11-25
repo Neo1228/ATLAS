@@ -44,10 +44,21 @@ PayPal Payouts 자동 송금은 구매자 결제와 별도 경로이며 기본 �
 ATLAS_PAYPAL_PAYOUTS_ENABLED=true
 ATLAS_PAYPAL_PAYOUT_RECIPIENT_ENCRYPTION_KEY=<base64-32-byte-key>
 ATLAS_SETTLEMENT_PAYOUT_OPERATOR_ENABLED=true
-ATLAS_SETTLEMENT_PAYOUT_OPERATOR_USERNAME=<dedicated-sandbox-operator>
-ATLAS_SETTLEMENT_PAYOUT_OPERATOR_PASSWORD=<at-least-32-characters>
 ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=false
 ```
+
+운영자는 사람마다 따로 가진 account다([ADR-0092](02-decisions/adr/ADR-0092-payout-operator-person-identity-and-maker-checker.md)). 일반 signup으로 account를 만들고 이메일을 검증한 뒤 **TOTP MFA를 등록**한다. 첫 운영자와 이후 운영자는 DB 권한자가 `payout_operator_account`에 행을 넣어 부여한다. 이 표에 행이 하나도 없으면 운영자 경로는 모두 403이다. 앱은 부여 API를 일부러 제공하지 않는다(권한을 줄 수 있는 경로가 앱에 생기면 그 경로가 새 관문이 된다).
+
+```sql
+-- 부여. granted_by는 부여한 DB 사용자가 자동으로 남는다.
+INSERT INTO payout_operator_account (account_id) VALUES ('<operator-account-id>');
+-- 해제. 행을 지우지 않고 revoked_at만 채운다. 이미 발급된 access token(10분)에도 다음 요청부터 바로 적용된다.
+UPDATE payout_operator_account SET revoked_at = now() WHERE account_id = '<operator-account-id>';
+```
+
+운영자 호출은 `Authorization: Bearer <access token>`이고 감사 행의 actor는 account id다. 프로필을 검증한 사람은 그 지급을 승인할 수 없고(403 `SEPARATION_OF_DUTIES`), 수동 지급에서 승인한 사람은 송금을 기록할 수 없으며 송금을 기록한 사람은 확인할 수 없다. 운영자 자신의 account가 수취 account인 프로필은 그 운영자가 검증할 수 없다. 소규모 팀이면 운영자를 최소 두 명 부여해야 지급이 진행된다.
+
+**되돌리기(rollback):** `ATLAS_SETTLEMENT_PAYOUT_OPERATOR_IDENTITY=shared-credential`로 재기동하면 기존 HTTP Basic 단일 자격 증명 모드로 돌아간다. 이때 `ATLAS_SETTLEMENT_PAYOUT_OPERATOR_USERNAME`(비어 있지 않게)과 32자 이상 `ATLAS_SETTLEMENT_PAYOUT_OPERATOR_PASSWORD`가 필요하고, 감사 actor는 사람을 구분하지 못하며 승인자 분리 규칙은 적용되지 않는다(기동 로그에 WARN). 긴급 우회가 아니라 되돌리기 수단이다.
 
 먼저 worker를 끈 채 profile을 만들고 operator 검토를 통과시킨 다음, 지급 요청·operator 승인을 수행해 immutable outbox intent가 생성되는지 확인한다. Profile·국가·암호화 key·Sandbox entitlement 확인 후에만 `ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=true`로 전환한다. 적격하지 않은 profile은 자동 전송하지 않으며, 별도 manual route는 외부 증빙과 operator audit을 요구한다. Live credential이나 실계좌를 사용하지 않는다.
 

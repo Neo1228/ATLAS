@@ -66,6 +66,9 @@ public class PayoutDispatchApprovalCommitService {
         if (approved.state() != SettlementPayoutState.APPROVED) {
             throw conflict("Payout approval did not reach the approved state");
         }
+        // payouts.approve 가 Seller 지급 잠금을 잡은 뒤에 읽으므로, 다른 운영자의 승인이 먼저 커밋됐다면 outbox 가 이미 보인다.
+        // 그 경우 이 요청은 승인을 만든 것이 아니라 재전송이라 PAYOUT_APPROVED 행을 또 남기지 않는다(EXP-096 H4).
+        boolean firstApproval = dispatches.find(payoutId).isEmpty();
         PayoutDispatchRecord record = dispatches.enqueue(plan);
         if (!sameDispatchFacts(plan, record)) {
             throw conflict("Payout already has different immutable dispatch facts");
@@ -75,7 +78,9 @@ public class PayoutDispatchApprovalCommitService {
                 currentRecipient.verifiedEmail().getBytes(StandardCharsets.UTF_8))) {
             throw conflict("Existing provider dispatch recipient differs from the verified Seller identity");
         }
-        recordAction(payoutId, idempotencyKey, PayoutOperatorActionType.PAYOUT_APPROVED, actor, reason);
+        recordAction(payoutId, idempotencyKey, firstApproval
+                ? PayoutOperatorActionType.PAYOUT_APPROVED : PayoutOperatorActionType.PAYOUT_APPROVAL_REPLAYED,
+                actor, reason);
         return approved;
     }
 

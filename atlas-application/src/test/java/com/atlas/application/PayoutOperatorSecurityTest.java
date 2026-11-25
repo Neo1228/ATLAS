@@ -43,6 +43,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @EnableWebSecurity
 @TestPropertySource(properties = {
         "atlas.settlement.payout.operator.enabled=true",
+        "atlas.settlement.payout.operator.identity=shared-credential",
         "atlas.settlement.payout.operator.username=payout-operator",
         "atlas.settlement.payout.operator.password=0123456789abcdef0123456789abcdef",
         "atlas.payment.paypal.payouts.enabled=true"
