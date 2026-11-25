@@ -16,6 +16,8 @@
 | 단일 job(ADR-0070 이전) | 124 | **0** | 7 |
 | 샤딩(ADR-0070 이후) | 118 | **3**(2.5%) | 2 |
 
+> **정정(2026-11-25, [EXP-097](EXP-097-ci-observation.md) Q3):** 이 절의 "429 3건"과 위 표의 3/118은 재실행이 가린 실행 3건을 빠뜨린 값이다. 같은 창(11-24T11:37Z까지)에서 EXP-097이 모든 시도를 세어 전체 검사 시도 116건 중 429 실패 6건으로 정정했다. 본문 숫자는 당시 측정 그대로 두고 이 안내로 고친다. 아래 3건의 jar·시간 분석은 그대로 유효하며 "3번 shard" 판단(표본 3건, 우연과 구별 안 됨)은 EXP-097에서 429가 shard 3번만이 아니라 app1, app3, app4에서 났다는 점에서 더 약해진다.
+
 샤딩 이후 429 3건은 다음과 같다. 세 번 모두 `Received status code 429 from server: Too Many Requests`가 같은 jar 5개에서 났고(`lz4-java-1.11.2`, `zstd-jni-1.5.6-10`, `prometheus-metrics-exposition-formats-1.7.0`, `prometheus-metrics-exposition-textformats-1.7.0`, `snappy-java-1.1.10.7`), Gradle은 17~32초 만에 `BUILD FAILED`로 끝났다.
 
 | 실행 | 이벤트 | 시각(UTC) | 실패한 job |

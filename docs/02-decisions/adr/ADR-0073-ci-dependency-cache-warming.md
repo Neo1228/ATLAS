@@ -7,12 +7,12 @@
 
 ## 문제
 
-앱 테스트 shard 4개가 매 실행 같은 jar 5개를 Maven Central에서 다시 받아서(실행당 요청 20건), 샤딩 이후 전체 검사 118건 중 3건이 HTTP 429로 실패했다(샤딩 이전 단일 job 124건은 0건).
+앱 테스트 shard 4개가 매 실행 같은 jar 5개를 Maven Central에서 다시 받아서(실행당 요청 20건), 샤딩 이후 전체 검사 118건 중 3건이 HTTP 429로 실패했다(샤딩 이전 단일 job 124건은 0건). 이 3건은 재실행이 가린 3건을 빠뜨린 값이고 [EXP-097](../../03-experiments/EXP-097-ci-observation.md)이 같은 창에서 6건(전체 검사 시도 116건 중)으로 정정했다. 결정의 근거는 약해지지 않고 문제의 크기가 커진다.
 
 ## 결정
 
 1. **`verify`의 Gradle 호출에 `resolveTestRuntimeClasspath`를 더한다.** `.github/gradle/resolve-test-runtime-classpaths.init.gradle`(CI 전용 init script)이 프로젝트마다 `testRuntimeClasspath`를 해석해 jar까지 받는다. main push의 `verify`가 저장하는 Gradle 캐시에 shard가 쓰는 jar가 들어가고, shard는 캐시를 읽기만 하는 지금 구조를 그대로 둔다.
-2. **shard가 Maven Central에서 새로 받은 jar 수를 요약에 남긴다**(`DOWNLOADED_JARS n`). 캐시가 데워진 뒤 main push 실행에서 0이 아니면 캐시에 shard 의존성이 빠졌다는 신호다. 이 구조적 결함이 하루 넘게 보이지 않았던 것을 막기 위한 것이다.
+2. **shard가 Maven Central에서 새로 받은 jar 수를 요약에 남긴다**(`DOWNLOADED_JARS n`). 이 값은 shard가 도는 PR 실행의 요약에서만 나온다(#613 뒤 main push는 `app-tests`를 건너뛰므로 push에는 이 값이 없다). 캐시가 데워진 뒤 PR이 `build.gradle*`, `settings.gradle*`, `gradle/**`를 바꾸지 않았는데 0이 아니면 캐시에 shard 의존성이 빠졌다는 신호이니 캐시 키, 복원 로그, 직전 main push `verify`의 캐시 저장을 조사한다. 의존성을 바꾼 PR이나 그 변경을 담은 main push의 캐시 저장이 끝나기 전에 시작한 PR은 0이 아니어도 정당할 수 있다. 이 구조적 결함이 하루 넘게 보이지 않았던 것을 막기 위한 것이다. 이 값을 읽는 자동 장치는 만들지 않았다.
 3. **`docs-lint.yml`의 `PR checklist`를 열린 PR에서만 실행하고, 본문 검사 실패 메시지를 check annotation(`::error`)으로 낸다.** 병합된 PR의 `edited` 이벤트에서 `Invalid revision range`로 실패한 4건을 없애고, 작성 실수 11건이 "exit code 1"만 보이던 것을 고친다. 필수 체크 이름(`Markdown lint`, `PR checklist`, `Java 25 and PostgreSQL integration checks`)은 바꾸지 않는다. 닫힌 PR에서 `PR checklist`가 건너뛰어진 상태가 되지만 닫힌 PR은 병합 대상이 아니다.
 
 ## 대안과 버린 이유
@@ -54,7 +54,7 @@
 
 ## 실패 경로와 롤백
 
-- **캐시가 오염되거나 깨지면**: Gradle이 jar를 다시 받는다. 이 변경 이전과 같은 상태이고 요약의 `DOWNLOADED_JARS`가 5로 돌아간다. 캐시 항목은 브랜치 범위라 PR이 main 캐시를 오염시킬 수 없다.
+- **캐시가 오염되거나 깨지면**: Gradle이 jar를 다시 받는다. 이 변경 이전과 같은 상태이고 PR 실행 shard 요약의 `DOWNLOADED_JARS`가 5로 돌아간다. 캐시 항목은 브랜치 범위라 PR이 main 캐시를 오염시킬 수 없다.
 - **init script가 깨지면**(Gradle 업그레이드 등): `verify`가 실패해 `Java 25 and PostgreSQL integration checks`가 빨개진다. 조용히 지나가지 않는다.
 - **의존성을 바꾼 PR**: 캐시 미적중이라 `verify`와 shard가 각자 새 jar를 받는다. 429 위험이 남는다. 이때는 재실행하면 된다.
 - **병합 직후 첫 main push**가 캐시를 쓸 때까지는 효과가 없다.
@@ -63,5 +63,6 @@
 ## 한계
 
 - 429가 왜 났는지(어느 VM이 왜 차단됐는지)는 설명하지 못했다. 이 변경은 원인이 아니라 노출을 줄인다.
-- 변경 후 측정은 반복 3회, shard-job 12개다. 실패율은 429가 샤딩 이후 2.5%(3/118)로 드물어서 이 표본으로 줄었다고 말할 수 없다. 줄인 것은 jar 요청 수(20 → 0)이고 이것은 직접 셌다.
+- main push에는 `DOWNLOADED_JARS`가 없고 되살리지 않았다. [EXP-097 후속 점검](../../03-experiments/EXP-097-ci-observation.md#후속-점검653-downloaded_jars-신호를-어디서-읽는가)에서 PR 신호가 차가운 캐시를 5로 읽었고(shard job 24개 중 8개) 따뜻한 PR shard 44개는 모두 0이었다. push 시점 대용 지표 둘은 대조를 통과하지 못해 push 신호가 PR 신호에 더하는 정보는 확인하지 못했다. `verify`는 shard의 의존성을 직접 해석하므로 push 시점의 값이 shard의 누락을 읽는다는 보장도 없다(추정). 누락은 캐시 저장이 깨진 push 다음 PR의 shard에서 보이고, 피해(shard의 429 노출)가 나는 곳도 같은 shard다.
+- 변경 후 측정은 반복 3회, shard-job 12개다. 실패율은 429가 샤딩 이후 2.5%(3/118, EXP-097 정정 뒤 6건)로 드물어서 이 표본으로 줄었다고 말할 수 없다. 줄인 것은 jar 요청 수(20 → 0)이고 이것은 직접 셌다.
 - 캐시를 데우는 임시 설정(`cache-read-only: false`)으로 PR 실행에서 측정했다. 운영 경로(main push가 쓰고 PR이 읽음)의 전체 사슬은 병합 뒤 첫 push와 그다음 PR에서 확인해야 한다.

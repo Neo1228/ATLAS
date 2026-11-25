@@ -216,7 +216,7 @@ CI 실행 목록 → job·step 시각 → 로그 줄 순서로만 내려간다. 
 - `W` = 2026-11-24T12:37:42Z(B604 뒤 첫 push `verify` 성공 종료). **따뜻한 shard job 160개 모두 0**: 0/160, 95% 상한 2.28%. 0이 아닌 job이 없어 PR의 빌드 파일 변경 여부를 확인할 대상이 없었다. S0의 5개짜리 8개는 PR #603·#604 자신의 캐시 없는 실행이다.
 - **429**: #604 전 S0에서 전체 검사 시도 133건 중 6건(4.51%, [1.67, 9.56]), job 단위 6/665(0.90%, [0.33, 1.95]). #604 뒤 S1~S3에서 시도 0/48([0.00, 7.40]), job 0/240([0.00, 1.53]). 429 줄이 있는 job은 후 0개, HTTP 오류 줄이 있는 job도 0개다. **구간이 겹친다. 데이터가 전후를 구별하지 못한다.** 전 비율 4.5%라면 후 48건 중 0건일 확률은 약 0.11이다. 후 0건의 95% 상한은 시도 기준 약 6.3%(3/48), job 기준 1.3%(3/240)다. `verify` 전용 push 17건도 0건이다.
 - **정정: EXP-075와 D-137의 "샤딩 뒤 429 3건"은 6건이다.** 세 건(`45232740877`, `45236495342`, `45256086889`, 모두 11-23 PR 실행)은 429로 실패했지만 재실행해 마지막 시도가 success 또는 cancelled가 되어 `gh run list`에 보이지 않았다. EXP-075 창(11-24T11:37Z까지)에서 이 규칙으로 센 값은 전체 검사 시도 116건 중 429 실패 6건이다(EXP-075는 118건 중 3건). 429가 shard 한 개만이 아니라 PR 실행에서도(app1, app3, app4) 났다. 이 정정은 [EXP-075](EXP-075-ci-pipeline-reliability.md)의 결정(shard 의존성을 캐시에 넣음)을 약하게 하지 않고 오히려 문제의 크기를 키운다. 단 이 데이터로는 #604가 비율을 낮췄다고 말하지 못한다.
-- **H9 확인**: S3 push 17건 가운데 `app-tests`가 돈 것 0건, `DOWNLOADED_JARS` 줄이 있는 job 0개. ADR-0073과 `backend-ci.yml` 주석의 "main push 실행에서 0이 아니면 신호"는 #613 뒤에는 PR 실행에서만 성립한다. 후속 이슈 [#653](https://github.com/Neo1228/ATLAS/issues/653).
+- **H9 확인**: S3 push 17건 가운데 `app-tests`가 돈 것 0건, `DOWNLOADED_JARS` 줄이 있는 job 0개. ADR-0073과 `backend-ci.yml` 주석의 "main push 실행에서 0이 아니면 신호"는 #613 뒤에는 PR 실행에서만 성립한다. 후속 이슈 [#653](https://github.com/Neo1228/ATLAS/issues/653)(처리: 아래 "후속 점검").
 
 ### Q4: push 생략의 전제와 job 분(H7, H8)
 
@@ -272,7 +272,7 @@ CI 실행 목록 → job·step 시각 → 로그 줄까지만 내려갔다. Loca
 
 ## 결정과 후속
 
-[D-163](../00-governance/decision-log.md)에 적었다. 요약: #604, #609, #613을 모두 유지한다. 시간 절감은 주장하지 않는다. 429 건수를 3건에서 6건으로 정정한다. 다시 볼 조건은 D-163에 있다. 후속 이슈 [#653](https://github.com/Neo1228/ATLAS/issues/653)(DOWNLOADED_JARS 신호 설명).
+[D-163](../00-governance/decision-log.md)에 적었다. 요약: #604, #609, #613을 모두 유지한다. 시간 절감은 주장하지 않는다. 429 건수를 3건에서 6건으로 정정한다. 다시 볼 조건은 D-163에 있다. 후속 이슈 [#653](https://github.com/Neo1228/ATLAS/issues/653)(DOWNLOADED_JARS 신호 설명, 아래 "후속 점검"에서 처리).
 
 ## 되돌리기 시연 결과
 
@@ -353,6 +353,46 @@ ADR-0073과 `backend-ci.yml` 주석이 "`DOWNLOADED_JARS`가 main push에서 0�
 - 롤백: 문서와 주석만 바꾸므로 PR 되돌리기다. 별도 worktree에서 실제로 되돌려 `git diff --stat origin/main`이 비는지 확인하고 결과를 아래 "되돌리기 시연"에 적는다.
 - 이 선택이 틀리는 경로(사전 부검): (1) `verify`의 캐시 저장이 조용히 실패해도 push에서는 알 수 없고 다음 PR의 shard가 0이 아닌 값을 보일 때에야 알게 된다. 그 지연은 다음 PR 실행까지고, 피해(shard의 429 노출)가 나는 곳도 같은 PR shard이므로 신호와 피해의 시점이 같다. (2) 아무도 PR 요약을 읽지 않으면 신호는 쓰이지 않는다. 이를 막는 자동 장치는 만들지 않는다.
 
+### 후속 점검 결과(2026-11-25 12:00Z까지 수집)
+
+수집 범위: `backend-ci.yml` 실행 중 생성 시각(`created`)이 `W`(2026-11-24T12:37:42Z) 이후인 76건(push 30건, PR 46건). 수집 절차와 열 설명은 아래 "삭제한 파일의 내용"의 "후속 점검 수집 절차"에 있다.
+
+| 가설 | 표본 | 관측 | 판정 |
+| --- | --- | --- | --- |
+| H1 push에서 신호가 구조상 없음 | #613 병합(2026-11-24T15:04:43Z) 이후 push 실행 26건 | 실행마다 `Application tests` job은 1개(matrix 자리 표시)였고 26/26이 `skipped`. 실행된 shard job 0건. 이 26건의 `verify` 로그에서 `DOWNLOADED_JARS` 줄 0개 | **confirmed**(워크플로의 `if`에서 나오는 구조적 결과이므로 상한 계산은 의미가 없다) |
+| H2 PR 신호가 차가움은 5, 따뜻함은 0 | 양성 대조: `W` 이전 시작 shard job 24개(EXP-097 S0와 같은 집합). 새 표본: `T_cut`(2026-11-25T07:10:07Z) 이후 PR shard job 44개 | 대조: 값 0이 16개, 5가 8개(EXP-097 S0 히스토그램과 같다). 새 표본: 44/44가 0. 44개는 11개 실행, PR 7개(#656~#661, #663)이고 모두 첫 시도다. 이 PR들의 최종 diff에 빌드 파일 변경 0개 | **not falsified**. 0/44의 95% 상한은 job 기준 6.8%(3/44)이고 job은 PR 안에서 독립이 아니라 PR 기준 0/7의 상한은 43%라 정보가 거의 없다. EXP-097의 0/160과 합치지 않고 따로 적는다 |
+| H3 의존성 변경 PR에서 0 아님이 정당하게 나옴 | `W` 이후 main 커밋 30개 중 빌드 파일을 바꾼 것 1개(PR #605) | #605는 `atlas-inventory-location/build.gradle`에 프로젝트 의존(`testImplementation(project(':atlas-order')) { transitive = false }`)을 더하고 루트 `build.gradle`의 `inputs.file` 선언을 지웠다. 외부 jar를 더하거나 올리지 않았다. 이 PR의 `W` 이후 shard job 4개는 모두 0 | **not testable**. 외부 의존성을 바꾼 PR이 창 안에 0건이라 반증도 확인도 못 했다. "정당하게 나올 수 있다"는 ADR-0073의 추론이며 이 절이 확인한 것은 "빌드 파일을 바꾼 PR이 항상 0이 아닌 것은 아니다"(1건)뿐이다 |
+| H4 push 시점 값은 PR 신호에 더하는 정보가 없음 | push `verify` 로그 26개, 대조 shard job 24개, 따뜻한 PR shard job 44개 | 사전 등록한 대용 지표(`Download ...jar` 줄)는 5개를 받은 job 8개에서도 0줄이라 보이지 않는다(대조 탈락). 등록 뒤에 더한 둘째 대용 지표(`gradle-dependencies` 캐시 항목의 정확 적중)는 5를 읽은 8개와 0을 읽은 16개 모두 적중이라 구별하지 못한다(대조 탈락). 26/26 `verify`가 `gradle-home` 캐시 항목을 저장했다 | **not tested**. 로그만으로는 push 시점에 shard 의존성 누락을 읽을 수 없다. (b)가 더할 정보가 있는지는 반증도 확인도 못 했다 |
+
+사전 등록에서 달라진 점: 둘째 대용 지표(`gradle-dependencies` 적중)는 첫째 대용 지표가 대조에서 탈락한 것을 본 뒤 추가했다. 사후 추가이고 같은 대조 집합으로 검사해 이것도 탈락했으며 결론에는 쓰지 않았다. 새 표본 기준 시각은 등록 때 `T_cut`로 적었고 그대로 썼다.
+
+### 결정과 대안 비교
+
+| 선택지 | 판단 | 근거 |
+| --- | --- | --- |
+| (a) 문구만 고침 | **채택** | H1: 지금 문구가 틀렸다. H2: 신호가 읽히는 곳(PR shard)에서 대조가 통과했다. 워크플로 동작과 job 분이 변하지 않는다 |
+| (b) `verify`에 push 신호 step | 기각 | step 비용은 작다(로컬 macOS에서 jar 2,184개에 `find -newer` 0.49초, 맥락일 뿐 CI 값이 아니다). 기각 이유는 비용이 아니라 근거 부족이다: H4가 대조에서 탈락해 push 시점 값이 PR 신호에 더하는 정보를 확인하지 못했다. `verify`는 shard 의존성을 직접 해석하므로 그 값은 shard의 누락이 아니라 `verify`의 캐시 신선도를 읽는다(추정). 정보가 필요하다는 증거가 생기면 다시 본다 |
+| (c) 아무것도 안 함 | 기각 | H1: 운영자가 push에서 신호를 기다리다 "없음"을 "정상"으로 읽는다 |
+| (d) 값이 0이 아니면 shard 실패 | 기각 | PR의 `cache-read-only`는 `true`라 PR이 캐시 상태를 고칠 수 없는데 PR을 실패시키게 된다. 의존성을 바꾼 PR도 정당하게 실패한다 |
+
+결정 로그 D-165는 만들지 않았다. D-163 다시 볼 조건(3)이 이미 "빌드 파일을 바꾸지 않은 PR의 `DOWNLOADED_JARS`가 0이 아니면 조사"로 적고 있어 결정이 바뀌지 않았고, ADR-0073의 설명과 워크플로 주석이 그 결정에 맞춰졌다.
+
+푼 문제와 이 절이 바로잡은 문서: ADR-0073 결정 2와 롤백·한계 절, `backend-ci.yml` 주석, D-137·D-163 문구, EXP-075의 429 건수 안내. 이슈 #653의 둘째 성공 기준("분석 스크립트의 H9·H5 줄이 같은 설명")은 그 스크립트가 이미 저장소에서 삭제되어(위 안내) 해당이 없다. 분석 출력 원문의 H9 줄("push 시도 17건 중 app 단계가 돈 시도 0건")은 신호 위치를 틀리게 말하지 않는다.
+
+### 후속 점검의 주장 표
+
+| 주장 | 증거 | 신뢰도 |
+| --- | --- | --- |
+| #613 뒤 main push에서 shard가 돌지 않는다 | push 26건, `app-tests` 26/26 `skipped`, `DOWNLOADED_JARS` 줄 0/26 | confirmed |
+| PR 실행의 `DOWNLOADED_JARS`가 차가운 캐시를 5로 읽는다 | 대조 shard job 24개 중 8개가 5, 16개가 0(EXP-097 S0와 같은 히스토그램) | confirmed(대조는 EXP-097과 같은 집합이라 독립 재현은 아니다) |
+| 따뜻한 PR shard는 0이다 | 새 표본 44/44(PR 7개), 상한 6.8%(job) | confirmed(표본 작음, 독립성 낮음) |
+| 빌드 파일을 바꾼 PR이 항상 0이 아닌 값을 내지는 않는다 | PR #605 shard job 4개가 0 | confirmed(n=1 PR, 프로젝트 의존만 추가) |
+| 외부 의존성을 바꾼 PR에서 0이 아닌 값이 나온다 | 창 안에 해당 PR 0건 | **not confirmed**(ADR-0073의 추론) |
+| push 시점 신호가 PR 신호에 더하는 정보가 없다 | 대용 지표 둘이 대조에서 탈락 | **not confirmed** |
+| main push `verify`가 `gradle-home` 캐시를 저장한다 | 26/26 로그에 저장 줄 | confirmed(로그 줄이며 캐시 내용은 열어보지 않았다) |
+| 캐시 만료(7일 미사용, 10GB 한도) 때 0 아님이 나온다 | 창 안 관측 0건 | not confirmed(GitHub 문서 기준을 다시 확인하지 않았다) |
+| 이 데이터는 공유 GitHub 호스티드 러너에서 얻었다 | 시간은 쓰지 않았고 개수만 썼다 | assumed |
+
 ## 재현(수집 뒤)
 
 수집 스크립트와 분석 스크립트와 집계 CSV는 삭제했다. 이 문서의 숫자는 `T_cut` = 2026-11-25T07:10:07Z 수집분이며, 다시 수집하면 이후 실행이 더해져 숫자가 달라진다. 수집 절차, 데이터 열, 분석 출력 원문은 아래 "삭제한 파일의 내용" 절에 있다. 파일은 커밋 `546d8002` 이후 이력에서 복원할 수 있다.
@@ -382,6 +422,21 @@ ADR-0073과 `backend-ci.yml` 주석이 "`DOWNLOADED_JARS`가 main push에서 0�
 | `prs.csv` | 120 | `pr, branch, head_sha, merged_at, merge_sha, created_at, state` |
 | `nonzero_jars_prs.csv` | 2 | `pr, files, build_files` |
 | `collection.json` | 9개 키 | `t_cut, runs_listed, attempts_fetched, logs_missing, repo_settings, branch_protection, branch_rules_count, branch_rules_types, branch_rules_strict` |
+
+### 후속 점검 수집 절차(삭제한 임시 스크립트의 동작, #653)
+
+임시 스크립트는 저장소에 올리지 않았고 원자료는 저장소 밖 임시 폴더에 두었다. 아래는 그 동작과 열의 의미다.
+
+- 읽기 전용: `gh api`의 GET만 썼다. 로그는 `gh`가 터미널 이스케이프 시퀀스가 있다며 출력을 거부해서 `--allow-escape-sequences`를 붙였다. 이 옵션이 없으면 모든 로그 요청이 실패해 "로그 없음"이 70건이 된다(첫 시도에서 실제로 겪었다).
+- 실행 목록: `repos/Neo1228/ATLAS/actions/workflows/backend-ci.yml/runs?per_page=100&page=<n>&created=>=2026-11-24T12:37:42Z`를 끝 쪽 페이지까지 읽어 76건(push 30건 중 성공 29·실패 1, PR 46건 중 성공 41·취소 3·실패 2).
+- job 목록: 실행마다 `actions/runs/<id>/jobs?filter=all&per_page=100`. push 실행의 `Application tests` job 이름은 matrix 표현식 문자열 그대로(`Application tests (${{ matrix.shard }}/${{ strategy.job-total }})`)인 자리 표시 job 1개로 나오며 결론이 `skipped`다. 이 job 수를 센 것이 H1의 지표다.
+- 로그: `actions/jobs/<job id>/logs`. 정규식은 `DOWNLOADED_JARS (\d+)`(신호), `Download https?://\S+\.jar`(첫째 대용 지표), `Cache hit for: gradle-dependencies-v1-`(둘째 대용 지표), `Saved cache entry with key gradle-home-v1`(캐시 저장). 이 정규식들이 로그를 읽을 수 있다는 대조는 위 결과 표의 H2 대조와 H4 줄이다.
+- PR 매핑: 실행의 `head_sha`로 `commits/<sha>/pulls`에서 PR 번호를 얻고 `pulls/<n>/files`의 파일 이름을 `(^|/)(build\.gradle[^/]*|settings\.gradle[^/]*)$|^gradle/` 정규식으로 검사했다. #661은 이전 머리 커밋이 둘 더 있어(job 8개) 이 둘은 PR 최종 diff 대신 커밋 단위 변경 파일로 검사했고 빌드 파일 0개였다.
+- push 커밋: 26건 모두 `git diff-tree --name-only -r <sha>`에서 빌드 파일 변경이 0개다. 빌드 파일을 바꾼 main 커밋 1개(#605)는 #613 병합보다 앞선 시각의 push다. 그래서 H4의 반증 후보(빌드 파일을 바꾸지 않은 push에서 jar 다운로드)는 26건에서 관측이 없고 양성 후보(빌드 파일을 바꾼 push)는 표본에 없다.
+- `W` 이후 main 커밋 중 빌드 파일을 바꾼 것은 `git log origin/main --since=2026-11-24T12:37:42Z -- 'build.gradle*' 'settings.gradle*' 'gradle/**' '*/build.gradle*'`로 셌다(30개 중 1개).
+- 대조 집합: PR #603의 브랜치와 #604의 브랜치에서 만든 `Application tests` job 24개를 같은 정규식으로 읽었다.
+- 신호 계산 조각 검사(로컬 전용): 워크플로의 `find ... -type f -name '*.jar' -newer <기준 파일> | wc -l`을 임시 디렉터리에서 그대로 실행했다. 새 jar 없음 → 0, 새 jar 1개 → 1, 캐시 디렉터리 없음 → 0이었다. 이 PR은 계산 코드를 바꾸지 않으므로 동작 불변의 확인이다.
+- 로컬 비용 맥락: 로컬 macOS에서 jar 2,184개 디렉터리에 `find -newer` 0.49초(CI 값이 아니다).
 
 ### 분석 출력 원문(삭제한 `results.md`, 분석 스크립트 자동 생성)
 
