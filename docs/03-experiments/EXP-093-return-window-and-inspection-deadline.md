@@ -159,6 +159,19 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 - 저장소의 `observability/`에는 scrape 설정만 있고 실제 alert rule/receiver가 없다. gauge가 값을 내는 것은 확인했으나 운영자가 경보를 수신하는 것은 확인하지 않았다.
 - Testcontainers 컨테이너는 종료 시 정리됐고, 실행 뒤 `atlasexp=h3` label 컨테이너·볼륨·네트워크 0개를 확인했다. 원시 TSV/log/임시 탐침은 커밋하지 않고 이 문서에 집계 결과와 실행 매개변수를 보존했다.
 
+### 전체 검증의 실패 추적 (H3 영향 분리)
+
+- 첫 full `clean check` 실행(`head=39b01eaa`)은 exit 1, 전체 XML 1,069 테스트 중 6개 실패였다. 여섯 실패는 모두 이번 diff가 건드리지 않은 `LocationReservationServiceIntegrationTest`(위치 lease/recovery)였다. H3 통합 테스트 자체는 6/6 통과했다. 해당 클래스 단독 1회 재실행은 18/18 통과했으나, 한 번의 재실행만으로 원인을 추정하지 않았다.
+
+실패 주장을 최신 clean `origin/main`과 rebased H3 branch에서 분리했다. 같은 호스트·같은 Gradle 명령으로 각 worktree에서 5회씩 실행했고, 실행 순서는 main→H3, H3→main으로 교차했다.
+
+| worktree | HEAD | 실행 | 테스트/실행 | 실패 |
+| --- | --- | ---: | ---: | ---: |
+| clean origin/main | `d6b4d4ed` | 5 | 18 | 0/5 |
+| H3 branch | `ed9cfbf3` | 5 | 18 | 0/5 |
+
+명령(각 worktree에서 5회): `./gradlew --no-daemon --console=plain :atlas-application:test --rerun --tests 'com.atlas.order.LocationReservationServiceIntegrationTest'`. 이 10회에서는 앞의 6개 실패를 재현하지 못했다. 원인은 **확정하지 못했다**. 재현 증거가 없어 H3 문제라고 단정하거나 “flaky”로 부르지 않았고 별도 이슈도 만들지 않았다. 실험 전후 load average 2.96/4.04/6.90→5.06/5.62/6.87, Docker container 수 16, CPU 합계 23.6%→7.9%, peak container 13.8%→2.5%였다. 이 결과도 지연/SLA 비교에 쓰지 않는다.
+
 ## 대안 비교 요약
 
 세부 비용·위험·steel-man은 [ADR-0089](../02-decisions/adr/ADR-0089-return-window-and-inspection-deadline.md)에 있다. 선택은 출고별 168시간 경계 포함, 5영업일 초과 시 표시·gauge만, 자동 승인·환불 없음, 설정 flag로 기간 검사 rollback이다. 비용 0인 “do nothing”은 기준선 7/7 수락으로 재현된 무기한 요청을 남기므로 기각했다.
