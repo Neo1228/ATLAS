@@ -7,6 +7,7 @@ import com.atlas.admission.persistence.projection.DueTicketCandidate;
 import com.atlas.admission.persistence.projection.DueTicketCursor;
 import com.atlas.admission.service.AdmissionService;
 import com.atlas.admission.service.AdmissionExpirySweepPolicy;
+import com.atlas.admission.service.AdmissionLimits;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.model.CheckoutSlotReleaseReason;
 import com.atlas.admission.model.TicketStatus;
@@ -51,11 +52,12 @@ public class AdmissionServiceImpl implements AdmissionService {
     private final Clock clock;
     private final PlatformTransactionManager transactionManager;
     private final AdmissionExpirySweepPolicy expirySweepPolicy;
+    private final AdmissionLimits limits;
     private DueTicketCursor expiryCursor;
 
     public AdmissionServiceImpl(TicketRepository tickets, QueueRepository queueRepository,
             CampaignService campaigns, AdmissionPolicyRepository policies, SellerSkuService sellerSkus,
-            Clock clock, PlatformTransactionManager transactionManager,
+            Clock clock, PlatformTransactionManager transactionManager, AdmissionLimits limits,
             @Value("${atlas.admission.expiry-sweep-batch-size:100}") int expiryBatchSize,
             @Value("${atlas.admission.expiry-sweep-time-budget:PT2S}") Duration expiryTimeBudget) {
         this.tickets = Objects.requireNonNull(tickets);
@@ -65,6 +67,7 @@ public class AdmissionServiceImpl implements AdmissionService {
         this.sellerSkus = Objects.requireNonNull(sellerSkus);
         this.clock = Objects.requireNonNull(clock);
         this.transactionManager = Objects.requireNonNull(transactionManager);
+        this.limits = Objects.requireNonNull(limits);
         this.expirySweepPolicy = new AdmissionExpirySweepPolicy(expiryBatchSize, expiryTimeBudget);
     }
 
@@ -75,8 +78,9 @@ public class AdmissionServiceImpl implements AdmissionService {
                 "Seller-SKU admission policy request is required");
         UUID sellerId = request.sellerId();
         String skuId = request.skuId();
-        int maxActiveCheckouts = request.maxActiveCheckouts();
-        if (sellerId == null || blank(skuId) || skuId.length() > 128 || maxActiveCheckouts < 1) {
+        int maxActiveCheckouts = limits.resolveMaxActiveCheckouts(request.maxActiveCheckouts());
+        if (sellerId == null || blank(skuId) || skuId.length() > 128
+                || !limits.allowsMaxActiveCheckouts(maxActiveCheckouts)) {
             throw new AdmissionException(AdmissionException.Code.INVALID_REQUEST, "Invalid seller-SKU admission policy");
         }
         if (sellerSkus.findOrderableSellerSku(sellerId, skuId, ProductSalesChannel.CAMPAIGN) == null) {

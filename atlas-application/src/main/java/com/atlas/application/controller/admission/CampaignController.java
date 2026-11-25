@@ -37,7 +37,7 @@ public class CampaignController {
         UUID accountId = UUID.fromString(jwt.getSubject());
         accounts.requireSellerOwnership(accountId, request.sellerId());
         return campaigns.create(new AdmissionRequest.CreateCampaign(request.sellerId(), request.skuId(),
-                Duration.ofSeconds(request.queueTicketTtlSeconds())));
+                request.queueTicketTtlSeconds() == null ? null : Duration.ofSeconds(request.queueTicketTtlSeconds())));
     }
 
     @PostMapping("/{campaignId}/open")

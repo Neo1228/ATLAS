@@ -10,13 +10,15 @@ public final class AdmissionHttpRequest {
     private AdmissionHttpRequest() {
     }
 
-    public record ConfigureSellerSkuPolicy(@Positive int maxActiveCheckouts) {
+    /** {@code maxActiveCheckouts}를 생략하면 {@code atlas.admission.default-max-active-checkouts}를 쓴다. */
+    public record ConfigureSellerSkuPolicy(@Positive Integer maxActiveCheckouts) {
     }
 
+    /** {@code queueTicketTtlSeconds}를 생략하면 {@code atlas.admission.default-ticket-ttl}을 쓴다. */
     public record CreateCampaign(
             @NotNull UUID sellerId,
             @NotBlank @Size(max = 128) String skuId,
-            @Positive long queueTicketTtlSeconds) {
+            @Positive Long queueTicketTtlSeconds) {
     }
 
     public record JoinQueue(
