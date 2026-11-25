@@ -46,6 +46,10 @@ ADR-0083은 종료된 ticket(tombstone)의 정리 값과 "같은 Seller-SKU에�
 | 9 | live 검사 위치 | counter 잠금 안, 순번 증가 전 | `AdmissionServiceImpl.join`. 변이(검사를 잠금 앞으로)로 통합 테스트 실패 확인 |
 | 10 | 스키마(V4) | `checkout_started_at` 열 + backfill, 부분 인덱스 2개. 제약 없음 | `V4__admission_ticket_tombstone_and_live_indexes.sql` |
 
+**"live"로 세는 상태:** `WAITING`·`CHECKOUT_ACTIVE`·`CHECKOUT_STARTED`(slot을 쥐었거나 줄을 서 있는 ticket). 결제를 제출하면(`CHECKOUT_SUBMITTED`), 만료되거나 실패하면(`EXPIRED`·`CHECKOUT_FAILED`) live가 아니므로 그 뒤에는 같은 Seller-SKU에 다시 join할 수 있다. 그래서 "앞선 주문이 결제 미해결인 동안 같은 SKU를 또 사려는" 정상 흐름은 막지 않는다: 첫 주문의 결제를 제출한 뒤 두 번째 ticket을 받으면 된다.
+
+**기존 테스트 하나가 바뀌었다(의도한 변경).** `BuyerFlowIntegrationTest.buyerCannotStartAnotherPaymentWhileAnEarlierCampaignAttemptIsUnresolved`는 같은 구매자가 같은 Campaign에 두 ticket을 **동시에** 들고(join 두 번 뒤 checkout 시작 두 번) 있는 상황을 전제했다. 이것이 이 규칙이 막으려는 패턴(Idempotency-Key만 바꿔 ticket·slot을 여러 개 잡기)이라 두 번째 join이 409가 된다. 테스트의 목적은 "미해결 결제가 있으면 두 번째 결제를 거절"이므로 두 번째 join을 첫 결제 제출 뒤로 옮겼고 단정은 그대로다. 규칙을 약화하지 않았다. 제품 이유: 한 구매자가 한 번에 한 SKU의 slot을 하나만 쥐는 것이 bot 방어의 요점이고(ADR-0083 12번), 정상 구매자는 결제를 제출하는 즉시 다시 줄에 설 수 있다. 영향: 같은 SKU 두 개를 사려는 구매자는 첫 결제를 제출한 뒤에야 두 번째 ticket을 받는다.
+
 보존 30일은 "key 유효 기간"이기도 하다: 삭제 뒤 같은 Idempotency-Key로 재요청하면 새 ticket이 생긴다. 이 점은 클라이언트 계약(문서)이다.
 
 ## 검증
