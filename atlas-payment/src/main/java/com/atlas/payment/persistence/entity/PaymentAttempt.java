@@ -64,6 +64,9 @@ public class PaymentAttempt {
     @Getter private String voidRequestId;
     @Column(name = "approval_expires_at")
     @Getter private Instant approvalExpiresAt;
+    /** PayPal 이 알려 준 authorization 만료 시각(29일). 응답에 없으면 null. */
+    @Column(name = "authorization_expires_at")
+    @Getter private Instant authorizationExpiresAt;
 
     protected PaymentAttempt() { }
 
@@ -104,6 +107,7 @@ public class PaymentAttempt {
 
     /** 승인 대기 deadline. 지나면 worker가 실제 provider 상태를 조회해 확정한다. */
     public void setApprovalExpiresAt(Instant value) { this.approvalExpiresAt = value; }
+    public void setAuthorizationExpiresAt(Instant value) { this.authorizationExpiresAt = value; }
     public boolean hasFxSnapshot() {
         return providerAmountMinor != null && providerAmountMinor > 0
                 && "USD".equals(providerCurrency) && fxRateWonPerUsd != null

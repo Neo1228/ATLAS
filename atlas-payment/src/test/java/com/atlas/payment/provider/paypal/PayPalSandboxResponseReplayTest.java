@@ -186,6 +186,29 @@ class PayPalSandboxResponseReplayTest {
         assertThatThrownBy(() -> call.accept(client)).isInstanceOf(PayPalRestClient.PayPalUnavailableException.class);
     }
 
+    /**
+     * 4xx 는 상태와 PayPal 이슈를 담은 거절 예외가 되고(실제 Sandbox 본문), 이슈를 읽지 못하는 본문이나 5xx 는
+     * 확정 판단에 쓰이지 않는다. 어느 쪽이든 장애 예외의 하위 형식이라 분류하지 않는 호출부는 UNKNOWN 으로 둔다.
+     */
+    @Test
+    void rejectionCarriesStatusAndIssueOnlyForPayPalShapedClientErrors() {
+        replyWith("error422AuthorizationAlreadyCaptured");
+        assertThatThrownBy(() -> client.captureAuthorization(AUTHORIZATION_ID, new BigDecimal("1.00"), "USD",
+                "capture-request-1"))
+                .isInstanceOfSatisfying(PayPalRestClient.PayPalRejectedException.class,
+                        rejection -> assertThat(rejection.is(422, "AUTHORIZATION_ALREADY_CAPTURED")).isTrue());
+
+        reply.set(new Reply(400, "<html>Bad Request</html>"));
+        assertThatThrownBy(() -> client.authorizeOrder(ORDER_ID, "authorize-request-1"))
+                .isInstanceOfSatisfying(PayPalRestClient.PayPalRejectedException.class,
+                        rejection -> assertThat(rejection.issue()).isNull());
+
+        reply.set(new Reply(503, "{\"details\":[{\"issue\":\"AUTHORIZATION_VOIDED\"}]}"));
+        assertThatThrownBy(() -> client.authorizeOrder(ORDER_ID, "authorize-request-1"))
+                .isInstanceOf(PayPalRestClient.PayPalUnavailableException.class)
+                .isNotInstanceOf(PayPalRestClient.PayPalRejectedException.class);
+    }
+
     static Stream<Arguments> definitiveRejections() {
         PaymentWebhookSignatureRequest nonBlank = signature("signature-1");
         return Stream.of(

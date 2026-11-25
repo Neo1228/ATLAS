@@ -217,7 +217,8 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
     private static PaymentRecoveryResponse.ReviewItem toDto(PaymentRecoveryReviewRow item) {
         return new PaymentRecoveryResponse.ReviewItem(item.recoveryJobId(), item.operationType(), item.workStage(),
                 item.operationId(), item.paymentAttemptId(), item.orderId(), item.checkoutId(), item.attemptCount(),
-                item.manualRequeueCount(), item.firstEnqueuedAt(), item.lastAttemptAt(), item.lastErrorCode());
+                item.manualRequeueCount(), item.firstEnqueuedAt(), item.lastAttemptAt(), item.lastErrorCode(),
+                item.authorizationExpiresAt());
     }
 
     private static PaymentRecoveryResponse.Requeue toRequeue(PaymentRecoveryRequeueRow row) {

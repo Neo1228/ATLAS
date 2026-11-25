@@ -285,7 +285,8 @@ public class PaymentRecoveryRepository {
                     CASE WHEN job.operation_type = 'PAYMENT_ATTEMPT'
                         THEN attempt.checkout_id ELSE refund_attempt.checkout_id END AS related_checkout_id,
                     job.attempt_count, job.manual_requeue_count,
-                    job.first_enqueued_at, job.last_attempt_at, job.last_error_code
+                    job.first_enqueued_at, job.last_attempt_at, job.last_error_code,
+                    attempt.authorization_expires_at AS related_authorization_expires_at
                 FROM payment_recovery_job AS job
                 LEFT JOIN payment_attempt AS attempt ON attempt.attempt_id = job.payment_attempt_id
                 LEFT JOIN payment_refund_operation AS refund_operation
@@ -546,7 +547,7 @@ public class PaymentRecoveryRepository {
                 result.getObject("related_checkout_id", UUID.class),
                 result.getInt("attempt_count"), result.getInt("manual_requeue_count"),
                 instant(result, "first_enqueued_at"), instant(result, "last_attempt_at"),
-                result.getString("last_error_code"));
+                result.getString("last_error_code"), instant(result, "related_authorization_expires_at"));
     }
 
     private static Instant instant(ResultSet result, String column) throws SQLException {

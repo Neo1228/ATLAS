@@ -683,6 +683,12 @@ public class PaymentServiceImpl implements PaymentService {
                 attempt.setPaymentPhase(PaymentPhase.CAPTURE);
                 attempt.setAuthorizationActive(false);
             }
+            case VOIDED -> {
+                // authorization 이 void 되었거나 만료돼 capture 할 대상이 없다(provider 가 capture 없음을 확인한 경우).
+                attempt.setState(PaymentState.VOIDED);
+                attempt.setPaymentPhase(PaymentPhase.VOID);
+                attempt.setAuthorizationActive(false);
+            }
             case DECLINED -> {
                 attempt.setState(PaymentState.DECLINED);
                 attempt.setPaymentPhase(PaymentPhase.CAPTURE);
@@ -776,6 +782,9 @@ public class PaymentServiceImpl implements PaymentService {
         if (result.authorizationId() != null) attempt.setProviderAuthorizationId(result.authorizationId());
         if (result.captureId() != null) attempt.setProviderCaptureId(result.captureId());
         if (result.approvalUrl() != null) attempt.setApprovalUrl(result.approvalUrl());
+        if (result.authorizationExpiresAt() != null) {
+            attempt.setAuthorizationExpiresAt(result.authorizationExpiresAt());
+        }
     }
 
     private static long amountWon(BigDecimal amount) {

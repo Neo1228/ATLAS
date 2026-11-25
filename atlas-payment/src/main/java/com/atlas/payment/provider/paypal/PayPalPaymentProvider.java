@@ -116,10 +116,23 @@ public class PayPalPaymentProvider implements PaymentProvider {
     }
     private PaymentProviderResponse createOrAuthorize(PaymentRequest request) {
         if (request.providerOrderId() == null) {
-            PayPalRestClient.OrderResult order = client.createOrder(request.ownerId().toString(),
-                    BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
-                    request.returnUrl(),
-                    request.cancelUrl(), request.createOrderRequestId());
+            PayPalRestClient.OrderResult order;
+            try {
+                order = client.createOrder(request.ownerId().toString(),
+                        BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
+                        request.returnUrl(),
+                        request.cancelUrl(), request.createOrderRequestId());
+            } catch (PayPalRestClient.PayPalRejectedException rejection) {
+                // 400·422 와 PayPal 이슈가 함께 오면 PayPal 이 요청을 검증에서 거절한 것이라 주문이 만들어지지
+                // 않았다(같은 Request-Id 재전송도 같은 거절이다). 그 밖의 4xx(401, 403, 429 등)는 인증·한도 같은
+                // 일시 조건일 수 있어 결과 불명으로 남긴다.
+                if ((rejection.status() != 400 && rejection.status() != 422) || rejection.issue() == null) {
+                    throw rejection;
+                }
+                LOGGER.warn("PayPal rejected order creation definitively; status={} issue={}",
+                        rejection.status(), rejection.issue());
+                return result(PaymentProviderResponse.Outcome.DECLINED, null, null, null, null);
+            }
             if (order.id() == null) return unknown(request);
             PaymentRequest withOrder = withOrder(request, order.id());
             PayPalOrderStatus status = order.status();
@@ -170,8 +183,8 @@ public class PayPalPaymentProvider implements PaymentProvider {
         }
         if (order.authorizationId() == null) return unknown(request);
         return switch (order.authorizationStatus()) {
-            case CREATED -> result(PaymentProviderResponse.Outcome.AUTHORIZED, order.id(),
-                    order.authorizationId(), null, null);
+            case CREATED -> new PaymentProviderResponse(PaymentProviderResponse.Outcome.AUTHORIZED, order.id(),
+                    order.authorizationId(), null, null, order.authorizationExpiresAt());
             case PENDING -> result(PaymentProviderResponse.Outcome.PENDING, order.id(),
                     order.authorizationId(), null, null);
             case DENIED -> result(PaymentProviderResponse.Outcome.DECLINED, order.id(),
@@ -216,14 +229,20 @@ public class PayPalPaymentProvider implements PaymentProvider {
             case CAPTURED, PARTIALLY_CAPTURED -> PaymentProviderResponse.Outcome.UNKNOWN;
             case UNKNOWN -> PaymentProviderResponse.Outcome.UNKNOWN;
         };
-        return result(outcome, request.providerOrderId(), authorization.id(), null, null);
+        return new PaymentProviderResponse(outcome, request.providerOrderId(), authorization.id(), null, null,
+                authorization.expiresAt());
     }
 
     private PaymentProviderResponse capture(PaymentRequest request) {
         if (request.providerAuthorizationId() == null) return unknown(request);
-        PayPalRestClient.CaptureResult capture = client.captureAuthorization(request.providerAuthorizationId(),
-                BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
-                request.captureRequestId());
+        PayPalRestClient.CaptureResult capture;
+        try {
+            capture = client.captureAuthorization(request.providerAuthorizationId(),
+                    BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),
+                    request.captureRequestId());
+        } catch (PayPalRestClient.PayPalRejectedException rejection) {
+            return resolveUnusableAuthorization(request, rejection);
+        }
         if (!providerAmountMatches(request, capture.amount(), capture.currency())) return unknown(request);
         // capture 요청 응답은 완료와 대기만 확정하고, 거절을 포함한 나머지는 UNKNOWN으로 남긴다.
         PaymentProviderResponse.Outcome outcome = switch (capture.status()) {
@@ -239,7 +258,40 @@ public class PayPalPaymentProvider implements PaymentProvider {
         if (request.providerAuthorizationId() == null) {
             return result(PaymentProviderResponse.Outcome.VOIDED, request.providerOrderId(), null, null, null);
         }
-        client.voidAuthorization(request.providerAuthorizationId(), request.voidRequestId());
+        try {
+            client.voidAuthorization(request.providerAuthorizationId(), request.voidRequestId());
+        } catch (PayPalRestClient.PayPalRejectedException rejection) {
+            // PREVIOUSLY_VOIDED 는 authorization 이 이미 void 라는 뜻이라 목표 상태에 도달해 있다(EXP-081, Sandbox n=1).
+            if (!rejection.is(422, "PREVIOUSLY_VOIDED")) throw rejection;
+            LOGGER.info("PayPal authorization was already voided; treating void as done");
+        }
+        return result(PaymentProviderResponse.Outcome.VOIDED, request.providerOrderId(),
+                request.providerAuthorizationId(), null, null);
+    }
+
+    /**
+     * capture 가 "authorization 이 void 되었거나 만료됐다"(422 AUTHORIZATION_VOIDED, AUTHORIZATION_EXPIRED)로
+     * 거절되면 주문을 조회해 확인한 뒤에만 종결한다. 거절 본문 하나로 "자금이 잡히지 않았다"를 단정하지 않고,
+     * capture 가 이미 있으면 그 결과를 따른다(응답이 늦게 반영된 경합). 확인하지 못하면 거절을 그대로 던져
+     * 지금처럼 결과 불명(UNKNOWN)이 된다.
+     */
+    private PaymentProviderResponse resolveUnusableAuthorization(PaymentRequest request,
+            PayPalRestClient.PayPalRejectedException rejection) {
+        boolean expired = rejection.is(422, "AUTHORIZATION_EXPIRED");
+        if ((!expired && !rejection.is(422, "AUTHORIZATION_VOIDED")) || request.providerOrderId() == null) {
+            throw rejection;
+        }
+        PayPalRestClient.OrderStatus current = client.getOrder(request.providerOrderId());
+        validateOrderAmount(request, current);
+        if (current.id() == null || !current.id().equals(request.providerOrderId())) throw rejection;
+        if (current.captureId() != null) return completedOrderResult(request, current);
+        // 만료는 PayPal 이 상태를 VOIDED 로 바꾸는지 아직 관측하지 못했다(EXP-086). 만료 거절이면 조회가
+        // CREATED 여도 capture 가 없다는 것만 확인되면 종결한다.
+        boolean unusable = current.authorizationStatus() == PayPalAuthorizationStatus.VOIDED
+                || (expired && current.authorizationStatus() == PayPalAuthorizationStatus.CREATED);
+        if (!unusable) throw rejection;
+        LOGGER.warn("PayPal authorization is no longer capturable; issue={} authorizationStatus={}",
+                rejection.issue(), current.authorizationStatus());
         return result(PaymentProviderResponse.Outcome.VOIDED, request.providerOrderId(),
                 request.providerAuthorizationId(), null, null);
     }
