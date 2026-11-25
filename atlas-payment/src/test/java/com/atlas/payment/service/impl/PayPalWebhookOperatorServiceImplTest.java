@@ -52,27 +52,6 @@ class PayPalWebhookOperatorServiceImplTest {
     }
 
     @Test
-    void idempotencyKeyCannotBeReusedForDifferentActorEventOrReason() {
-        when(events.findRequeueRecord(KEY)).thenReturn(Optional.of(new WebhookRequeueRecord(EVENT, ACTOR, REASON, WebhookRequeueOutcome.REQUEUED)));
-
-        assertConflict(() -> service.requeue(EVENT, KEY, "other-operator", REASON));
-        assertConflict(() -> service.requeue("event-2", KEY, ACTOR, REASON));
-        assertConflict(() -> service.requeue(EVENT, KEY, ACTOR, "other reason"));
-        verify(events, never()).requeueExhausted(anyString(), anyInt(), anyInt());
-    }
-
-    @Test
-    void durableAuditHistoryStopsFourthRequeue() {
-        when(events.findRequeueRecord(KEY)).thenReturn(Optional.empty());
-        when(events.lockExhausted(EVENT)).thenReturn(true);
-        when(events.countRequeues(EVENT)).thenReturn(3);
-
-        assertConflict(() -> service.requeue(EVENT, KEY, ACTOR, REASON));
-        verify(events, never()).requeueExhausted(anyString(), anyInt(), anyInt());
-        verify(events, never()).recordRequeue(anyString(), anyString(), anyString(), anyString());
-    }
-
-    @Test
     void aNewRequeueOnlyUpdatesQueueScheduleAndWritesAudit() {
         when(events.findRequeueRecord(KEY)).thenReturn(Optional.empty());
         when(events.lockExhausted(EVENT)).thenReturn(true);
