@@ -139,13 +139,13 @@ run_one() {  # run_one <fault> <n>
   loc_a_url="http://127.0.0.1:$(dc port location-a 8090 | awk -F: '{print $NF}')"
   loc_b_url="http://127.0.0.1:$(dc port location-b 8090 | awk -F: '{print $NF}')"
 
-  warm_id="$(uuidgen | tr 'A-Z' 'a-z')"
+  warm_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
   python3 "$here/reservation_load.py" seed --run-id "$warm_id" --capacity 1000 \
     --location-a-url "$loc_a_url" --location-b-url "$loc_b_url"
   python3 "$here/reservation_load.py" load --run-id "$warm_id" --url "$app_url" --rate 20 --duration 5 \
     --out "$run_dir/warmup.jsonl" >/dev/null
 
-  run_id="$(uuidgen | tr 'A-Z' 'a-z')"
+  run_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
   python3 "$here/reservation_load.py" seed --run-id "$run_id" --capacity $(( rate * duration * 2 )) \
     --location-a-url "$loc_a_url" --location-b-url "$loc_b_url"
   stack_snapshot "$run_dir/env-before.txt"
@@ -161,12 +161,11 @@ run_one() {  # run_one <fault> <n>
     | jq -r '.end_at')"
   wait "$fault_pid" || true
 
-  local audit_status=0
   python3 "$here/audit_invariants.py" audit --run-id "$run_id" --requests "$run_dir/requests.jsonl" \
     --order-container "$(cid order-postgres)" --location-a-container "$(cid location-a-postgres)" \
     --location-b-container "$(cid location-b-postgres)" --since "$load_end" \
     --converge-timeout "$converge_timeout" --fault-file "$run_dir/fault.json" \
-    --out "$run_dir/result.json" >"$run_dir/audit.log" 2>&1 || audit_status=$?
+    --out "$run_dir/result.json" >"$run_dir/audit.log" 2>&1 || true  # a violated invariant is data, not a runner failure
   cat "$run_dir/audit.log"
   stack_snapshot "$run_dir/env-after.txt"
 
