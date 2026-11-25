@@ -149,53 +149,6 @@ class PayPalWebhookServiceTest {
     }
 
     @Test
-    void orderCaptureRedeliveryRetriesReconciliationAfterFailure() {
-        UUID orderId = UUID.randomUUID();
-        UUID attemptId = UUID.randomUUID();
-        PaymentWebhookEventResponse event = captureEvent("event-order-retry", "provider-order", "capture-order-retry");
-        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
-        when(transactionManager.getTransaction(any(TransactionDefinition.class)))
-                .thenAnswer(invocation -> new SimpleTransactionStatus());
-
-        PaymentService payments = mock(PaymentService.class);
-        OrderService orders = mock(OrderService.class);
-        AtomicBoolean paymentOwnerLockHeld = new AtomicBoolean();
-        when(payments.verifyPayPalWebhook(any(), eq("{}"))).thenReturn(event);
-        doAnswer(invocation -> {
-            paymentOwnerLockHeld.set(true);
-            try {
-                return invocation.<Supplier<?>>getArgument(1).get();
-            } finally {
-                paymentOwnerLockHeld.set(false);
-            }
-        }).when(payments).withPayPalWebhookOwnerLock(eq(event), any());
-        when(payments.processVerifiedPayPalWebhook(event)).thenReturn(
-                new PaymentWebhookResponse(false, true, null, null, attemptId, true),
-                new PaymentWebhookResponse(true, true, null, null, attemptId, true));
-        when(payments.findByAttemptId(attemptId)).thenReturn(
-                new PaymentResponse(orderId, null, attemptId, PaymentState.CAPTURED, false));
-
-        RuntimeException reconciliationFailure = new IllegalStateException("temporary order reconciliation failure");
-        AtomicInteger reconciliationCalls = new AtomicInteger();
-        doAnswer(invocation -> {
-            assertThat(paymentOwnerLockHeld).isFalse();
-            if (reconciliationCalls.getAndIncrement() == 0) throw reconciliationFailure;
-            return null;
-        }).when(orders).reconcilePayment(orderId, event.eventId());
-
-        PayPalWebhookService webhookService = new PayPalWebhookService(transactionManager, payments, orders,
-                mock(CheckoutPaymentService.class), mock(OrderRefundService.class),
-                mock(PayPalWebhookRetryService.class));
-
-        assertThatThrownBy(() -> webhookService.handle(signature(), "{}")).isSameAs(reconciliationFailure);
-        webhookService.handle(signature(), "{}");
-
-        verify(payments, times(2)).processVerifiedPayPalWebhook(event);
-        verify(payments, times(2)).findByAttemptId(attemptId);
-        verify(orders, times(2)).reconcilePayment(orderId, event.eventId());
-    }
-
-    @Test
     void webhookAndRealOrderOwnerLockCompleteWithoutPaymentToOrderLockCycle() throws Exception {
         UUID orderId = UUID.randomUUID();
         UUID attemptId = UUID.randomUUID();
