@@ -1,0 +1,23 @@
+{
+  "t_cut": "2026-11-25T07:10:07Z",
+  "runs_listed": 239,
+  "attempts_fetched": 253,
+  "logs_missing": 0,
+  "repo_settings": {
+    "allow_squash_merge": true,
+    "allow_merge_commit": false,
+    "allow_rebase_merge": false,
+    "default_branch": "main"
+  },
+  "branch_protection": {
+    "strict": true,
+    "contexts": [
+      "Markdown lint",
+      "PR checklist",
+      "Java 25 and PostgreSQL integration checks"
+    ]
+  },
+  "branch_rules_count": 0,
+  "branch_rules_types": [],
+  "branch_rules_strict": []
+}
