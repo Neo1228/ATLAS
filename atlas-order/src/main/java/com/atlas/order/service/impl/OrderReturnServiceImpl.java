@@ -24,6 +24,7 @@ import com.atlas.order.repository.OrderReturnRepository;
 import com.atlas.order.repository.OrderShipmentRepository;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
+import com.atlas.order.service.ReturnPolicy;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -53,14 +54,16 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     private final OrderShipmentRepository shipments;
     private final OrderRefundService refunds;
     private final Clock clock;
+    private final ReturnPolicy policy;
 
     public OrderReturnServiceImpl(PlatformTransactionManager manager, OrderRepository orders, OrderItemRepository items,
             OrderFulfillmentRepository fulfillments, OrderRefundRepository refundRecords,
-            OrderReturnRepository returns, OrderShipmentRepository shipments, OrderRefundService refunds, Clock clock) {
+            OrderReturnRepository returns, OrderShipmentRepository shipments, OrderRefundService refunds, Clock clock,
+            ReturnPolicy policy) {
         this.transactions = new TransactionTemplate(Objects.requireNonNull(manager));
         this.orders = orders; this.items = items; this.fulfillments = fulfillments;
         this.refundRecords = refundRecords; this.returns = returns; this.shipments = shipments;
-        this.refunds = refunds; this.clock = clock;
+        this.refunds = refunds; this.clock = clock; this.policy = policy;
     }
 
     @Override
@@ -101,15 +104,20 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                     .filter(shipment -> shipment.status() == OrderShipmentStatus.DELIVERED)
                     .toList();
             Map<UUID, UUID> shipmentByItem = new HashMap<>();
+            // 시계는 주문 행 잠금을 얻은 뒤에 읽는다. 잠금을 기다리는 동안 기간 경계를 넘은 요청이 통과하지 않게 한다.
+            var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
             for (OrderRequest.Return.Item line : lines) {
                 OrderItem item = byId.get(line.orderItemId());
                 if (item == null || !item.sellerId().equals(order.sellerId())) throw invalid("Return item does not belong to this seller order");
                 int eligible = item.quantity() - refunded.getOrDefault(item.orderItemId(), 0) - claimed.getOrDefault(item.orderItemId(), 0);
                 if (line.quantity() > eligible) throw conflict("Return quantity exceeds remaining eligible quantity");
                 OrderShipment shipment = resolveShipment(line, deliveredShipments, existingReturns);
+                // 기준 시각은 반품 줄이 속한 출고의 delivered_at이다. 한 줄이라도 기간 밖이면 요청 전체를 거절한다.
+                if (!policy.allowsReturn(shipment.deliveredAt(), now)) {
+                    throw windowExpired("반품 기간이 지났습니다. 기한: " + policy.returnWindowEndsAt(shipment.deliveredAt()));
+                }
                 shipmentByItem.put(line.orderItemId(), shipment.shipmentId());
             }
-            var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
             OrderReturn entity = new OrderReturn(order.orderId(), order.sellerId(), request.buyerRef(), request.idempotencyKey(), now);
             lines.forEach(line -> entity.addItem(new OrderReturnItem(
                     line.orderItemId(), line.quantity(), shipmentByItem.get(line.orderItemId()))));
@@ -168,6 +176,16 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             String nextCursor = hasNext ? encodeSellerReturnCursor(page.get(page.size() - 1)) : null;
             return new ReturnResponse.SellerOrderReturnPage(responses, nextCursor);
         }));
+    }
+
+    @Override
+    public long countInspectionOverdue() {
+        Instant now = clock.instant();
+        // 후보는 DB가 수령 시각으로 좁히고, 영업일 규칙의 정확한 판정은 정책이 한다. 열린 RECEIVED 건만 읽는다.
+        return Objects.requireNonNull(transactions.execute(tx -> returns
+                .findReceivedAtByStatusAndReceivedAtOnOrBefore(
+                        OrderReturnStatus.RECEIVED, now.minus(policy.minimumInspectionSpan()))
+                .stream().filter(receivedAt -> policy.isInspectionOverdue(receivedAt, now)).count()));
     }
 
     @Override
@@ -394,8 +412,12 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     private ReturnResponse.SellerOrderReturn sellerResponse(OrderReturn row) {
+        Instant dueAt = row.receivedAt() == null ? null : policy.inspectionDueAt(row.receivedAt());
+        boolean overdue = dueAt != null && row.status() == OrderReturnStatus.RECEIVED
+                && !clock.instant().isBefore(dueAt);
         return new ReturnResponse.SellerOrderReturn(row.returnId(), row.orderId(), row.sellerId(), row.status(),
-                paymentStatus(row), row.requestedAt(), row.receivedAt(), row.inspectedAt(), row.items().stream()
+                paymentStatus(row), row.requestedAt(), row.receivedAt(), row.inspectedAt(), dueAt, overdue,
+                row.items().stream()
                 .map(item -> new ReturnResponse.SellerOrderReturn.Item(item.orderItemId(), item.quantity(),
                         item.inspectionResult(), item.refundId(), item.refundAmountWon(), item.inspectedAt()))
                 .toList());
@@ -439,4 +461,5 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     private static OrderException notFound(String message) { return new OrderException(OrderException.Code.NOT_FOUND, message); }
     private static OrderException conflict(String message) { return new OrderException(OrderException.Code.CONFLICT, message); }
     private static OrderException invalid(String message) { return new OrderException(OrderException.Code.INVALID_REQUEST, message); }
+    private static OrderException windowExpired(String message) { return new OrderException(OrderException.Code.RETURN_WINDOW_EXPIRED, message); }
 }
