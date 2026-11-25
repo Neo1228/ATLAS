@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,6 +32,11 @@ public abstract class PayPalIntegrationTestSupport {
     protected static final MockWebServer PAYPAL = new MockWebServer();
     protected static final MockWebServer ECOS = new MockWebServer();
     private static final Map<String, Amount> ORDERS = new ConcurrentHashMap<>();
+    /** 실제 PayPal 처럼 같은 PayPal-Request-Id 로 생성·승인 요청을 다시 보내면 같은 리소스를 돌려준다. */
+    private static final Map<String, String> ORDER_IDS_BY_REQUEST_ID = new ConcurrentHashMap<>();
+    private static final Map<String, String> AUTHORIZATION_IDS_BY_REQUEST_ID = new ConcurrentHashMap<>();
+    private static final Map<String, String> CAPTURE_IDS_BY_AUTHORIZATION_ID = new ConcurrentHashMap<>();
+    private static final Map<String, BigDecimal> REFUNDED_TOTALS = new ConcurrentHashMap<>();
     private static final Map<String, Amount> AUTHORIZATIONS = new ConcurrentHashMap<>();
     private static final Map<String, Amount> CAPTURES = new ConcurrentHashMap<>();
     private static final Map<String, String> REFUNDS_BY_REQUEST_ID = new ConcurrentHashMap<>();
@@ -103,6 +109,10 @@ public abstract class PayPalIntegrationTestSupport {
         // "결제 1건이 외부 호출 1회"라는 계약이 테스트 순서에 의존하게 된다.
         if (fxCacheUnderTest != null) fxCacheUnderTest.clear();
         ORDERS.clear();
+        ORDER_IDS_BY_REQUEST_ID.clear();
+        AUTHORIZATION_IDS_BY_REQUEST_ID.clear();
+        CAPTURE_IDS_BY_AUTHORIZATION_ID.clear();
+        REFUNDED_TOTALS.clear();
         AUTHORIZATIONS.clear();
         CAPTURES.clear();
         REFUNDS_BY_REQUEST_ID.clear();
@@ -170,10 +180,13 @@ public abstract class PayPalIntegrationTestSupport {
                     return json("{\"access_token\":\"local-access-token\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
                 }
                 if (path.equals("/v2/checkout/orders") && "POST".equals(method)) {
-                    String id = "ORDER-" + UUID.randomUUID();
-                    Amount amount = Amount.from(body);
-                    ORDERS.put(id, amount);
-                    String status = nextStatus(ORDER_CREATE_STATUSES, "CREATED");
+                    String requestId = request.getHeader("PayPal-Request-Id");
+                    // 실제 Sandbox: 같은 Request-Id 는 본문이 달라도 처음 만든 주문을 돌려준다(EXP-081).
+                    String id = requestId == null ? newOrderId()
+                            : ORDER_IDS_BY_REQUEST_ID.computeIfAbsent(requestId, ignored -> newOrderId());
+                    ORDERS.computeIfAbsent(id, ignored -> Amount.from(body));
+                    // ATLAS 는 payment_source 를 보내므로 실제 응답은 HTTP 200, PAYER_ACTION_REQUIRED, payer-action 이다.
+                    String status = nextStatus(ORDER_CREATE_STATUSES, "PAYER_ACTION_REQUIRED");
                     String approvalRelation = nextStatus(ORDER_APPROVAL_LINK_RELATIONS,
                             "PAYER_ACTION_REQUIRED".equals(status) ? "payer-action" : "approve");
                     return json("{\"id\":\"" + id + "\",\"status\":\"" + status + "\",\"links\":[{\"rel\":\""
@@ -181,10 +194,23 @@ public abstract class PayPalIntegrationTestSupport {
                 }
                 if (path.matches("/v2/checkout/orders/[^/]+/authorize") && "POST".equals(method)) {
                     String orderId = lastSegment(path.substring(0, path.lastIndexOf('/')));
-                    Amount amount = ORDERS.getOrDefault(orderId, Amount.from(body));
-                    String authId = "AUTH-" + UUID.randomUUID();
+                    Amount amount = ORDERS.get(orderId);
+                    if (amount == null) return resourceNotFound();
+                    String requestId = request.getHeader("PayPal-Request-Id");
+                    String authId;
+                    synchronized (STUB_LOCK) {
+                        authId = requestId == null ? null : AUTHORIZATION_IDS_BY_REQUEST_ID.get(requestId);
+                        if (authId == null) {
+                            // 실제 Sandbox: 이미 승인한 주문을 다른 Request-Id 로 다시 승인하면 422 다(EXP-081).
+                            if (AUTHORIZATION_ORDER_IDS.containsValue(orderId)) {
+                                return unprocessable("ORDER_ALREADY_AUTHORIZED", "Authorization has already been created for this order.");
+                            }
+                            authId = "AUTH-" + UUID.randomUUID();
+                            if (requestId != null) AUTHORIZATION_IDS_BY_REQUEST_ID.put(requestId, authId);
+                            AUTHORIZATION_ORDER_IDS.put(authId, orderId);
+                        }
+                    }
                     AUTHORIZATIONS.put(authId, amount);
-                    AUTHORIZATION_ORDER_IDS.put(authId, orderId);
                     if (DISCONNECT_NEXT_AUTHORIZATION.compareAndSet(true, false)) {
                         return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
                     }
@@ -204,7 +230,8 @@ public abstract class PayPalIntegrationTestSupport {
                 }
                 if (path.matches("/v2/checkout/orders/[^/]+") && "GET".equals(method)) {
                     String orderId = lastSegment(path);
-                    Amount amount = ORDERS.getOrDefault(orderId, Amount.from(body));
+                    Amount amount = ORDERS.get(orderId);
+                    if (amount == null) return resourceNotFound();
                     String capturedId = CAPTURE_IDS_BY_ORDER_ID.get(orderId);
                     if (capturedId != null) {
                         return captured(orderId, capturedId, CAPTURES.getOrDefault(capturedId, amount), "COMPLETED");
@@ -215,7 +242,7 @@ public abstract class PayPalIntegrationTestSupport {
                             "COMPLETED".equals(orderStatus) ? "COMPLETED" : null);
                     String resources = "";
                     if (authorizationStatus != null && !"NONE".equals(authorizationStatus)) {
-                        resources = "\"authorizations\":[{\"id\":\"AUTH-" + orderId
+                        resources = "\"authorizations\":[{\"id\":\"" + authorizationIdOf(orderId)
                                 + "\",\"status\":\"" + authorizationStatus + "\"}]";
                     }
                     if (captureStatus != null && !"NONE".equals(captureStatus)) {
@@ -233,8 +260,16 @@ public abstract class PayPalIntegrationTestSupport {
                 }
                 if (path.matches("/v2/payments/authorizations/[^/]+/capture") && "POST".equals(method)) {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));
-                    Amount amount = AUTHORIZATIONS.getOrDefault(authId, Amount.from(body));
+                    Amount amount = AUTHORIZATIONS.get(authId);
+                    if (amount == null) return resourceNotFound();
                     String captureId = captureId(request);
+                    synchronized (STUB_LOCK) {
+                        // 실제 Sandbox: 이미 캡처한 승인을 다른 Request-Id 로 다시 캡처하면 422 다(EXP-081).
+                        String existing = CAPTURE_IDS_BY_AUTHORIZATION_ID.putIfAbsent(authId, captureId);
+                        if (existing != null && !existing.equals(captureId)) {
+                            return unprocessable("AUTHORIZATION_ALREADY_CAPTURED", "Authorization has already been captured.");
+                        }
+                    }
                     String orderId = AUTHORIZATION_ORDER_IDS.get(authId);
                     if (orderId != null) CAPTURE_IDS_BY_ORDER_ID.put(orderId, captureId);
                     CAPTURES.put(captureId, amount);
@@ -249,16 +284,37 @@ public abstract class PayPalIntegrationTestSupport {
                 }
                 if (path.matches("/v2/payments/authorizations/[^/]+/void") && "POST".equals(method)) {
                     String authId = lastSegment(path.substring(0, path.lastIndexOf('/')));
+                    if (!AUTHORIZATIONS.containsKey(authId)) return resourceNotFound();
                     return json("{\"id\":\"" + authId + "\",\"status\":\"" + nextStatus(VOID_STATUSES, "VOIDED") + "\"}");
                 }
                 if (path.matches("/v2/payments/captures/[^/]+/refund") && "POST".equals(method)) {
                     String captureId = lastSegment(path.substring(0, path.lastIndexOf('/')));
-                    Amount amount = Amount.from(body, CAPTURES.getOrDefault(captureId, Amount.ZERO));
+                    Amount captured = CAPTURES.get(captureId);
+                    if (captured == null) return resourceNotFound();
+                    Amount amount = Amount.from(body, captured);
                     String requestId = request.getHeader("PayPal-Request-Id");
                     String replayKey = requestId == null ? UUID.randomUUID().toString() : requestId;
+                    String refundId;
+                    synchronized (STUB_LOCK) {
+                        if (!REFUNDS_BY_REQUEST_ID.containsKey(replayKey)) {
+                            // 실제 Sandbox: 환불 누계가 캡처 금액을 넘으면 REFUND_AMOUNT_EXCEEDED,
+                            // 전액 환불된 캡처는 CAPTURE_FULLY_REFUNDED 로 422 다(EXP-081).
+                            BigDecimal capturedValue = new BigDecimal(captured.value);
+                            BigDecimal refundedSoFar = REFUNDED_TOTALS.getOrDefault(captureId, BigDecimal.ZERO);
+                            if (refundedSoFar.compareTo(capturedValue) >= 0) {
+                                return unprocessable("CAPTURE_FULLY_REFUNDED", "The capture has already been fully refunded.");
+                            }
+                            BigDecimal requested = body.contains("\"value\"")
+                                    ? new BigDecimal(amount.value) : capturedValue.subtract(refundedSoFar);
+                            if (refundedSoFar.add(requested).compareTo(capturedValue) > 0) {
+                                return unprocessable("REFUND_AMOUNT_EXCEEDED",
+                                        "The refund amount must be less than or equal to the capture amount that has not yet been refunded.");
+                            }
+                            REFUNDED_TOTALS.put(captureId, refundedSoFar.add(requested));
+                        }
+                        refundId = REFUNDS_BY_REQUEST_ID.computeIfAbsent(replayKey, ignored -> "REFUND-" + UUID.randomUUID());
+                    }
                     REFUND_REQUEST_IDS.add(replayKey);
-                    String refundId = REFUNDS_BY_REQUEST_ID.computeIfAbsent(replayKey,
-                            ignored -> "REFUND-" + UUID.randomUUID());
                     REFUND_AMOUNTS.put(refundId, amount);
                     if (DISCONNECT_NEXT_REFUND.compareAndSet(true, false)) {
                         return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST);
@@ -270,9 +326,7 @@ public abstract class PayPalIntegrationTestSupport {
                 if (path.matches("/v2/payments/refunds/[^/]+") && "GET".equals(method)) {
                     String refundId = lastSegment(path);
                     Amount amount = REFUND_AMOUNTS.get(refundId);
-                    if (amount == null) {
-                        return json("{\"id\":\"" + refundId + "\",\"status\":\"COMPLETED\"}");
-                    }
+                    if (amount == null) return resourceNotFound();
                     return json("{\"id\":\"" + refundId + "\",\"status\":\"COMPLETED\",\"amount\":{\"currency_code\":\""
                             + amount.currency + "\",\"value\":\"" + amount.value + "\"}}");
                 }
@@ -332,6 +386,47 @@ public abstract class PayPalIntegrationTestSupport {
         return paymentApprovalUrl.substring(paymentApprovalUrl.lastIndexOf('/') + 1);
     }
 
+    private static final Object STUB_LOCK = new Object();
+
+    private static String newOrderId() {
+        return "ORDER-" + UUID.randomUUID();
+    }
+
+    /** 이 주문에 대해 stub 이 발급한 승인 ID. 없으면(승인 전 조회) 주문 ID 로 만든 임의 값. */
+    private static String authorizationIdOf(String orderId) {
+        return AUTHORIZATION_ORDER_IDS.entrySet().stream()
+                .filter(entry -> entry.getValue().equals(orderId))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse("AUTH-" + orderId);
+    }
+
+    /**
+     * 실제 PayPal 오류 본문 모양(name, message, debug_id, details[], links[])이다.
+     * 실제 Sandbox 와 대조한 근거는 EXP-081.
+     */
+    private static MockResponse paypalError(int status, String name, String message, String issue,
+            String description) {
+        return new MockResponse().setResponseCode(status).addHeader("Content-Type", "application/json")
+                .setBody("{\"name\":\"" + name + "\",\"message\":\"" + message
+                        + "\",\"debug_id\":\"local-debug-id\",\"details\":[{\"issue\":\"" + issue
+                        + "\",\"description\":\"" + description + "\"}],\"links\":[{\"href\":"
+                        + "\"https://developer.paypal.com/api/rest/reference/orders/v2/errors/#" + issue
+                        + "\",\"rel\":\"information_link\",\"method\":\"GET\"}]}");
+    }
+
+    /** 처음 보는 ID 를 조회하거나 쓰면 실제 PayPal 은 404 RESOURCE_NOT_FOUND 를 준다. */
+    private static MockResponse resourceNotFound() {
+        return paypalError(404, "RESOURCE_NOT_FOUND", "The specified resource does not exist.",
+                "INVALID_RESOURCE_ID", "Specified resource ID does not exist. Please check the resource ID and try again.");
+    }
+
+    private static MockResponse unprocessable(String issue, String description) {
+        return paypalError(422, "UNPROCESSABLE_ENTITY",
+                "The requested action could not be performed, semantically incorrect, or failed business validation.",
+                issue, description);
+    }
+
     protected static MockResponse json(String value) {
         return new MockResponse().setResponseCode(200)
                 .addHeader("Content-Type", "application/json").setBody(value);
@@ -342,10 +437,16 @@ public abstract class PayPalIntegrationTestSupport {
     }
 
     private static MockResponse captured(String order, String capture, Amount amount, String status) {
+        // 실제 PayPal 은 캡처 뒤에도 authorizations[](상태 CAPTURED)를 captures[] 와 함께 준다(EXP-081).
+        String authorizations = AUTHORIZATION_ORDER_IDS.containsValue(order)
+                ? "\"authorizations\":[{\"id\":\"" + authorizationIdOf(order)
+                        + "\",\"status\":\"CAPTURED\",\"amount\":{\"currency_code\":\"" + amount.currency
+                        + "\",\"value\":\"" + amount.value + "\"}}],"
+                : "";
         return json("{\"id\":\"" + order
                 + "\",\"status\":\"COMPLETED\",\"purchase_units\":[{\"amount\":{\"currency_code\":\""
                 + amount.currency + "\",\"value\":\"" + amount.value
-                + "\"},\"payments\":{\"captures\":[{\"id\":\"" + capture
+                + "\"},\"payments\":{" + authorizations + "\"captures\":[{\"id\":\"" + capture
                 + "\",\"status\":\"" + status + "\",\"amount\":{\"currency_code\":\""
                 + amount.currency + "\",\"value\":\"" + amount.value + "\"}}]}}]}");
     }

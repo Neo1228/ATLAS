@@ -19,6 +19,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -142,6 +143,11 @@ public class PayPalRestClient {
             throw new PaymentException(PaymentException.Code.PAYMENT_PROVIDER_DISABLED,
                     "PayPal webhook credentials are not configured");
         }
+        if (hasBlankSignatureField(signature)) {
+            // 서명 헤더가 비면 PayPal 은 200 FAILURE 가 아니라 400 을 돌려준다(실제 Sandbox 확인,
+            // EXP-081). 400 을 장애로 감싸면 위조 요청이 503 과 PayPal 호출을 만든다.
+            return new WebhookVerificationResult(false);
+        }
         LinkedHashMap<String, Object> body = new LinkedHashMap<>();
         body.put("auth_algo", signature.authAlgorithm());
         body.put("cert_url", signature.certificateUrl());
@@ -157,6 +163,16 @@ public class PayPalRestClient {
         Map<String, Object> response = postWebhook(body);
         return new WebhookVerificationResult(PayPalWebhookVerificationStatus.from(
                 text(response, "verification_status")) == PayPalWebhookVerificationStatus.SUCCESS);
+    }
+
+    private static boolean hasBlankSignatureField(PaymentWebhookSignatureRequest signature) {
+        return isBlank(signature.authAlgorithm()) || isBlank(signature.certificateUrl())
+                || isBlank(signature.transmissionId()) || isBlank(signature.transmissionSignature())
+                || isBlank(signature.transmissionTime());
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     public PaymentWebhookEventResponse parseWebhook(String rawBody) {
@@ -240,7 +256,9 @@ public class PayPalRestClient {
                     .requestFactory(requestFactory)
                     .defaultHeader("Authorization", "Bearer " + authorized.getAccessToken().getTokenValue())
                     .build();
-        } catch (RestClientException exception) {
+        } catch (RestClientException | OAuth2AuthorizationException exception) {
+            // 토큰 발급 실패(401 invalid_client, 5xx, 연결 실패)는 RestClientException 이 아니라
+            // ClientAuthorizationException 으로 올라온다(실제 Sandbox 확인, EXP-081).
             throw new PayPalUnavailableException("PayPal OAuth request failed", exception);
         }
     }
