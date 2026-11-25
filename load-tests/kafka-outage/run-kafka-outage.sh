@@ -28,6 +28,7 @@
 # Variables: APP_JAR (jar the Docker VM can read; default: the bootJar output), RUNS=5 RATE=20
 #   FAULT_AT=10 TAIL=20 DRAIN_TIMEOUT=90 TAG=kafka-outage OUT=... and the relay settings
 #   RELAY_SEND_TIMEOUT / RELAY_LEASE_DURATION / RELAY_BATCH_SIZE / RELAY_POLL_INTERVAL.
+#   SEGMENTS=1 also writes segments.json per run (violations classified by broker batch, from kafka-dump-log).
 # Results: .local/kafka-outage/<timestamp>/<condition>/run-<n>/ (git-ignored). No secret is
 # written there: every secret is generated per invocation and lives only in this process.
 set -euo pipefail
@@ -158,6 +159,11 @@ run_one() {  # run_one <condition> <n>
   python3 "$here/outage_audit.py" audit --pg "$(cid order-postgres)" --kafka "$(cid kafka)" \
     --topic "$topic" --plan "$run_dir/plan.json" --fault "$run_dir/fault.json" \
     --samples "$run_dir/samples.csv" --drain-timeout "$drain_timeout" --out "$run_dir/result.json"
+  if [[ "${SEGMENTS:-0}" == 1 ]]; then  # SEGMENTS=1: also classify the violations by broker batch (segment dump)
+    python3 "$here/outage_audit.py" segments --kafka "$(cid kafka)" --topic "$topic" \
+      --run-tsv "$run_dir/topic-run.tsv" --out "$run_dir/segments.json" \
+      --records-out "$run_dir/segment-records.tsv" || true
+  fi
   kill "$sampler_pid" 2>/dev/null || true; wait "$sampler_pid" 2>/dev/null || true; sampler_pid=""
   { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime
     docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' \
