@@ -107,8 +107,8 @@
 
 ## 실행 방법 (이 저장소에 있는 것과 없는 것)
 
-- 저장소에 둔 재현 도구는 하나다: `load-tests/paypal-real-fault/rejection-rules.mjs`(주문 생성 거절, void된 authorization의 capture·void, 음성 사냥, 모의 헤더). `REAL_SANDBOX_OPT_IN=YES PHASES=orders,auth,hunt,mock node rejection-rules.mjs`로 실행하고 `.env.local`에서 자격 증명을 프로세스 안으로만 읽는다. 결과 파일은 `/tmp`에 쓰고 저장소에는 두지 않는다. 변이 15개와 반복 횟수(`REPS=3`), authorization 수(`AUTH_N=8`), 조건 순서 시드(`SEED=94`)가 매개변수다.
-- 저장소에 두지 않은 것: webhook 관측 도구(공개 터널을 열어 임시 webhook을 등록·삭제하는 로컬 전용 스크립트), 집계 스크립트, 실행별 원본 JSON. 이 문서의 표가 그 내용을 직접 옮긴 것이다(아래 "저장소에 두지 않은 기록의 내용"). webhook 관측은 이 저장소만으로 재현할 수 없다. 방법은 "webhook 관측 방법"에 말로 적었다.
+- 재현 도구는 저장소에 두지 않았다. 일회용 구동 스크립트(주문 생성 거절, void된 authorization의 capture·void, 음성 사냥, 모의 헤더)와 webhook 관측 도구, 집계 스크립트, 실행별 원본 JSON 모두 저장소 밖이다. 요청 본문·호출 순서·판별 방법·옵트인·실행 명령은 아래 "삭제한 파일의 내용"에 풀어 적었다.
+- 저장소에 두지 않은 것의 내용은 이 문서의 표("저장소에 두지 않은 기록의 내용", "삭제한 파일의 내용")가 직접 옮겼다. webhook 관측은 이 저장소만으로 재현할 수 없고, 방법은 "webhook 관측 방법"과 "삭제한 파일의 내용"에 말로 적었다.
 - 호출 대상은 `api-m.sandbox.paypal.com` 뿐이다. 자격 증명 값은 어디에도 출력·저장하지 않았고, 커밋하는 `responses.json`과 이 문서에서 자격 증명 값과 계정 식별자(이메일, 계정 ID, 가맹점 ID, 구매자 이름·주소)가 나오지 않는지 값으로 대조했다(일치 0건).
 
 ## 결과
@@ -237,7 +237,7 @@ webhook 관측 방법: 로컬 수신기와 SSH 역터널(`localhost.run`)로 공
 | 만료 뒤 조회에 `expiration_time`이 없음 | 같은 목록에서 `authorizationExpiresAt`이 null | UNKNOWN 유지(안전) |
 | 만료 뒤 조회가 `EXPIRED` 같은 새 상태값 | `PayPalAuthorizationStatus.UNKNOWN`으로 읽혀 분기 조건 불충족 → 거절을 그대로 던짐 | UNKNOWN 유지(안전) |
 | `PayPalPaymentProvider`에 `Clock` 빈이 없어 기동 실패 | `ClockConfiguration`이 `Clock` 빈을 제공하고 `./gradlew check`의 컨텍스트 테스트가 기동 | 배포 전 CI에서 잡힘 |
-| 녹화한 응답이 PayPal 변경으로 낡음 | `paypal-sandbox-contract.yml`은 OAuth·주문 생성·조회·404만 실제 Sandbox와 대조하고 거절 본문과 void·capture 응답은 대조하지 않는다(이 PR은 건드리지 않음) | CI가 이 녹화의 낡음을 잡지 못한다. 다시 녹화하려면 `rejection-rules.mjs`를 돌려 본문을 바꾼다 |
+| 녹화한 응답이 PayPal 변경으로 낡음 | `paypal-sandbox-contract.yml`은 OAuth·주문 생성·조회·404만 실제 Sandbox와 대조하고 거절 본문과 void·capture 응답은 대조하지 않는다(이 PR은 건드리지 않음) | CI가 이 녹화의 낡음을 잡지 못한다. 다시 녹화하려면 "삭제한 파일의 내용"의 호출을 실제 Sandbox에 다시 보내 본문을 바꾼다 |
 
 ## 변이 검증 (규칙을 깨면 테스트가 실패하는가)
 
@@ -321,3 +321,80 @@ webhook 관측 방법: 로컬 수신기와 SSH 역터널(`localhost.run`)로 공
 - 429, 실제 `DUPLICATE_INVOICE_ID`(이 계정에서는 중복 `invoice_id`가 수락된다), 422 다중 위반 순서.
 - Live 환경 호출.
 - webhook으로 상태를 바꾸는 처리, 복구를 깨우는 처리. 이득을 측정할 근거가 없다.
+
+## 삭제한 파일의 내용
+
+`load-tests/paypal-real-fault/rejection-rules.mjs`(386줄)는 이 실험 하나를 위한 일회용 구동 도구라 PR에서 뺐다(로컬 사본은 남아 있다). 아래는 그 스크립트가 한 일이다. 이 표만으로 같은 호출을 다시 만들 수 있게 적는다. 자격 증명 값은 없다.
+
+### 실행 조건과 명령
+
+- 호출 대상: `https://api-m.sandbox.paypal.com`만. `.env.local`의 `PAYPAL_BASE_URL`이 있으면 이 값이 아닐 때 중단한다.
+- 필수 옵트인: `REAL_SANDBOX_OPT_IN=YES`(없으면 중단). 자격 증명은 `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, 구매자 승인용 `PAYPAL_SANDBOX_BUYER_EMAIL`, `PAYPAL_SANDBOX_BUYER_PASSWORD`를 `.env.local`(또는 `ENV_FILE`)에서 프로세스 안으로만 읽고 출력·저장하지 않는다. 구매자 승인은 `playwright`(headless Chromium)로 승인 링크를 열어 로그인하고 제출 버튼을 누르는 방식이며 `return_url`은 `http://127.0.0.1:18981`로 두고 가로채 204로 응답한다(EXP-086 방식).
+- 옵션: `PHASES`(`orders`, `auth`, `hunt`, `mock`, 쉼표 목록), `REPS`(주문 변이별 반복, 3), `AUTH_N`(authorization 수, 8), `SEED`(조건 순서 섞기 시드, 94), `RESULTS_DIR`, `RAW_DIR`.
+- 실행한 명령: `REAL_SANDBOX_OPT_IN=YES PHASES=orders node rejection-rules.mjs`, `PHASES=auth AUTH_N=8`, `PHASES=hunt,mock`를 따로 한 번씩(단계 전후 `uptime` 기록). 조건 순서는 시드 94의 난수로 섞었다.
+- 모든 요청은 `PayPal-Request-Id`를 새 값으로 보냈고(재생 대조만 의도해 같은 값을 재사용), 응답에서 상태·`name`·`details[].issue` 순서·본문 키 집합·`id` 유무·승인 링크 유무를 기록했다. 모든 17자 PayPal ID는 실행별 해시 4자로, 이메일은 고정 문자열로 가렸다.
+
+### 기본 요청 본문 (주문 생성, 운영과 같은 모양)
+
+`POST /v2/checkout/orders` 본문: `intent=AUTHORIZE`, `purchase_units=[{reference_id:"h4", custom_id:<표식>, amount:{currency_code:"USD", value:"1.00"}}]`, `payment_source.paypal.experience_context={return_url:"http://127.0.0.1:18981/return", cancel_url:".../cancel", user_action:"PAY_NOW"}`. `<표식>`은 거절 호출이면 `h4-bad-<변이>-<반복>`, 교정 호출이면 `h4-fix-<변이>-<반복>`.
+
+### H1·H1b: 변이별 호출 순서와 비존재 판별
+
+변이마다 3회, 순서는 섞어서 다음을 수행했다.
+
+1. 변이 본문으로 `POST /v2/checkout/orders`(새 Request-Id R). 4xx이고 5xx·429가 아니면 계속.
+2. 같은 R, 같은 변이 본문으로 재전송(H1b).
+3. 같은 R, **교정 본문**(위 기본 본문, `custom_id=h4-fix-...`, 모의 헤더 없음)으로 재전송.
+4. 3에서 돌아온 주문 ID로 `GET /v2/checkout/orders/{id}`를 호출해 `purchase_units[0].custom_id`를 읽는다.
+5. `custom_id`가 `h4-fix-...`이면 "교정 본문의 새 주문", `h4-bad-...`이면 "반례(거절 호출이 주문을 만들었음)"로 분류한다.
+
+| 변이 | 바꾼 필드와 값(나머지는 기본 본문) | 결과 (3회 모두 같음) |
+| --- | --- | --- |
+| T01 | `amount.currency_code="KRW"`, `value="1000"` | 422 `CURRENCY_NOT_SUPPORTED` |
+| T02 | `currency_code="JPY"`, `value="1.50"` | 422 `DECIMALS_NOT_SUPPORTED` |
+| T03 | `value="0.00"` | 422 `CANNOT_BE_ZERO_OR_NEGATIVE` |
+| T04 | `value="-1.00"` | 422 `CANNOT_BE_ZERO_OR_NEGATIVE` |
+| T05 | `value="1.001"` | 422 `DECIMAL_PRECISION` |
+| T06 | `value="abc"` | 400 `INVALID_PARAMETER_SYNTAX` |
+| T07 | `amount` 필드 제거 | 400 `MISSING_REQUIRED_PARAMETER` |
+| T08 | `intent="STEAL"` | 400 `INVALID_PARAMETER_VALUE` |
+| T09 | `purchase_units=[]` | 400 `INVALID_ARRAY_MIN_ITEMS` |
+| T10 | `currency_code="ZZZ"` | 422 `INVALID_CURRENCY_CODE` |
+| T11 | `value="99999999999.00"` | 422 `TRANSACTION_LIMIT_EXCEEDED` |
+| T12 | `custom_id`를 `x` 300자로 | 400 `INVALID_STRING_LENGTH` |
+| T13 | `invoice_id`를 `i` 200자로 | 400 `INVALID_STRING_LENGTH` |
+| T14 | `amount.value="5.00"`, `amount.breakdown.item_total.value="9.00"`, `items=[{name:"x", quantity:"1", unit_amount:{USD,"1.00"}}]` | 422 `ITEM_TOTAL_MISMATCH` |
+| T15 | 기본 본문 + 헤더 `PayPal-Mock-Response: {"mock_application_codes":"DUPLICATE_INVOICE_ID"}` (재전송 단계 없음, 분모 제외) | 422 `DUPLICATE_INVOICE_ID` |
+
+- 비존재 판별(간접): 4번의 `custom_id`가 항상 교정 본문 값이면 거절 호출은 Request-Id R 아래에 주문을 남기지 않았다는 증거다(남겼다면 같은 Request-Id 재전송은 그 주문을 돌려준다). 결과 42/42가 교정 본문 값, 반례 0.
+- 판별기 양성 통제: 정상 본문 `custom_id=h4-neg-first`로 새 Request-Id N 호출(200) → 같은 N, `custom_id=h4-neg-second`로 재전송(200) → 같은 주문 ID가 돌아오고 조회한 `custom_id`는 `h4-neg-first`. 판별기가 "먼저 만든 주문의 본문이 재생된다"를 실제로 탐지함을 보였다.
+- 변경 없음 통제: 변이 시작 전과 끝에 기본 본문 호출 각 1회, 둘 다 200 `PAYER_ACTION_REQUIRED`.
+- 실제 중복 `invoice_id`: 같은 `invoice_id="h4-inv-<실행 표식>"`으로 Request-Id만 다른 두 주문 → 둘 다 200.
+- H5용 호출: `GET /v2/checkout/orders/0AAAAAAAAAAAAAAAA`(404 `RESOURCE_NOT_FOUND`/`INVALID_RESOURCE_ID`), `Authorization: Bearer invalid`로 같은 조회(401 `{error:"invalid_token"}`, `details` 없음), 위반 3개 본문(`intent="STEAL"`, `currency_code="KRW"`, `value="abc"`) 생성(400 `INVALID_REQUEST`, 이슈 순서 `INVALID_PARAMETER_VALUE`, `INVALID_PARAMETER_SYNTAX`), `POST /v2/payments/authorizations/0AAAAAAAAAAAAAAAA/capture`(404 `RESOURCE_NOT_FOUND`).
+
+### H2·H3: authorization 8개
+
+authorization 하나(`AUTHORIZE` 주문 1.00 USD, 구매자 승인, `POST /v2/checkout/orders/{id}/authorize` 201 `CREATED`, 만료 시각은 생성 +696.00시간) 마다 순서대로:
+
+1. `POST /v2/payments/authorizations/{id}/void`(Request-Id V) → 204. 직후 `GET /v2/checkout/orders/{order}`로 `authorizations[0].status`, `captures` 개수 기록(전부 `VOIDED`, 0).
+2. capture 변이 2개(인스턴스 번호로 4개 변이에서 순환 배정, 변이당 4회): (a) `{amount:{USD,"1.00"}, final_capture:true}` + `Prefer: return=representation`, (b) `{amount:{USD,"0.50"}, final_capture:false}` + `Prefer`, (c) 전액 본문 `Prefer` 없음, (d) 본문 `{}` + `Prefer`. 각 호출 직후 주문 조회. (a)·(b)는 같은 Request-Id로 한 번 더 재전송. 결과: 16/16 422 `AUTHORIZATION_VOIDED`, 조회 `VOIDED`·captures 0, 재전송 8/8 같은 422.
+3. void를 새 Request-Id로 두 번 → 16/16 422 `PREVIOUSLY_VOIDED`(`field=authorization_id`, `location=path`). 같은 V로 재전송 → 204 8/8. `GET /v2/payments/authorizations/{id}` → `VOIDED` 8/8.
+
+### H4: 음성 사냥
+
+| 사냥 | 호출 순서 | 결과 |
+| --- | --- | --- |
+| 1 | authorize 직후 capture(Request-Id C1, 전액) → 조회 → 새 Request-Id로 capture → 조회 → C1로 재전송 → void → 조회 → 같은 주문에 authorize | 201; captures 1 → 422 `AUTHORIZATION_ALREADY_CAPTURED`, captures 1 → 200; void 422 `PREVIOUSLY_CAPTURED`, `CAPTURED`; authorize 422 `ORDER_ALREADY_AUTHORIZED` |
+| 3 | 새 주문 authorize 후 같은 주문에 다른 Request-Id로 authorize → 조회 → void(정리) | 422 `ORDER_ALREADY_AUTHORIZED`, authorization 1개 `CREATED` |
+| 4 | 부분 capture 0.50(`final_capture=false`, C1) 201 → void 204 → 조회(`VOIDED`, captures 1) → C1로 재전송 200 → 새 Request-Id로 부분 capture 0.50 | 422 `AUTHORIZATION_VOIDED`인데 조회 captures 1(반례) |
+| 5 | authorize 뒤 capture(전액)와 void를 `Promise.all`로 동시 호출, 3회 | capture 3/3 422 `AUTHORIZATION_VOIDED`, void 3/3 204, captures 0 |
+
+(번호 2는 사냥 1의 void 호출이고, 번호 6은 H2의 같은 Request-Id 재전송이라 별도 호출이 없다.)
+
+### H6: 모의 헤더
+
+authorize한 authorization 2개에 capture(전액, `Prefer`)를 헤더 `PayPal-Mock-Response: {"mock_application_codes":"<코드>"}`와 함께 보냈다. `AUTHORIZATION_EXPIRED`, `AUTHORIZATION_VOIDED`, `AUTHORIZATION_ALREADY_CAPTURED` → 각 422 같은 이슈(`AUTHORIZATION_EXPIRED` 설명 "An expired authorization cannot be captured."). `PREVIOUSLY_VOIDED`, `INSTRUMENT_DECLINED` → 각 403 빈 본문. void에 `PREVIOUSLY_VOIDED` → 422. 그 뒤 주문 조회는 authorization `CREATED`·만료 29일 뒤, 헤더 없는 capture는 201 `COMPLETED`(2/2).
+
+### webhook 관측 도구 (저장소에 없음)
+
+위 "H7·H8" 절의 "webhook 관측 방법"이 이 도구가 한 일 전체다: 로컬 수신기, SSH 역터널(`nokey@localhost.run`, 공개 주소를 `*.lhr.life`로만 인식), `GET /v1/notifications/webhooks-event-types`로 이벤트 유형 조회, `POST /v1/notifications/webhooks`로 임시 webhook 등록(구독 3종)과 끝의 `DELETE`, authorization 두 개로 void·capture, `POST /v1/notifications/simulate-event`, 도착 본문마다 `POST /v1/notifications/verify-webhook-signature`(원본과 한 글자 바꾼 사본). 터널 양성 대조(공개 주소로 직접 POST가 로컬 수신기에 닿는가)가 실패하면 실행을 중단한다.
