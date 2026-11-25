@@ -245,5 +245,5 @@ atlas:
       poll-interval: PT0.2S
       # 한 묶음 전송의 한도. 넘기면 cursor를 옮기지 않고 같은 묶음을 다시 보낸다.
       send-timeout: PT10S
-      # relay replica 하나만 전송하게 하는 cursor lease. send-timeout보다 5초 이상 길어야 한다.
+      # relay replica 하나만 전송하게 하는 cursor lease. send-timeout의 두 배보다 5초 이상 길어야 한다.
       lease-duration: PT30S

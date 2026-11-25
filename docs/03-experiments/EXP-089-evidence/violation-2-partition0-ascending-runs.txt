@@ -1,4 +1,0 @@
-p0 msgs 695 ascending runs 3
-offsets 0-132 seq 10-392 n=133
-offsets 133-157 seq 387-798 n=25
-offsets 158-694 seq 387-2000 n=537

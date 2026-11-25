@@ -36,7 +36,7 @@
 | 이벤트 유실 없음(커밋 순서 역전) | `ReservationEventReadIntegrationTest`, [EXP-061](EXP-061-event-log-fanout-and-replay.md) |
 | 상태 변화마다 정확히 한 건, 연속 version | `ReservationEventTriggerIntegrationTest` |
 | 전송 실패 뒤 cursor 보존과 재전달 | `ReservationEventKafkaIntegrationTest` |
-| relay의 broker 중단 중 누락 0·cursor 정지·복구 수렴, 중복 크기 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`, 조건 10종 × n=5, 로컬 단일 broker, 첫 전달 순서 역행 3건은 원인 미확정) |
+| relay의 broker 중단 중 누락 0·cursor 정지·복구 수렴, 중복 크기 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`, 조건 10종 × n=5, 로컬 단일 broker)와 [EXP-091](EXP-091-kafka-first-delivery-order.md)(첫 전달 순서 역행의 원인 규명과 덩어리 전송 수정: 운영 클래스 수정 전 11/144 → 수정 후 0/144 시행-단계, 리밸런스+역행 입력 시험 7회, 재현기는 DB 없는 메모리 로그라 실제 스택 반복 안 함) |
 | 읽기 순서, 재읽기, 단조 cursor, 그룹 독립 | `ReservationEventConsumerContractIntegrationTest`(EXP-067, PR #518에서 병합 대기) |
 | 중복 제거, 같은 그룹 두 인스턴스(리밸런스), 재시작·재전달, 브로커 중단 뒤 복구 | `ReservationEventConsumerKafkaIntegrationTest`([EXP-082](EXP-082-event-consumer-contract.md), [ADR-0076](../02-decisions/adr/ADR-0076-reference-consumer-in-tests-only.md)). 소비자는 테스트 전용 참조 구현이고 운영 소비자는 없다. 파티션 2개, 소비자 2개, 이벤트 18~36건 규모 |
 
@@ -69,7 +69,7 @@
 | `pg_wal`만 가득 참, 같은 key 동시 요청, lease×2대 `pause`, SYN 드롭, DNS 정렬 | [EXP-095](EXP-095-fault-injection-deep-cells.md) | 계획 121회 중 9회만 실행(조건별 n=1). 같은 key 동시 쌍 3변형 각 800쌍 위반 0(음성 대조군 반응). 2대+12초 `pause`에서 lease 인수·중복 호출은 있으나 불변식 유지(n=1). `pg_wal` 가득 참은 시험 가동 1회에서 PANIC·서버 종료·한 번의 시작으로 복구. DNS 지연은 가리지 못함. 응답·요청 드롭, DB `pause`, PT30S·PT15S는 미실행 |
 | CPU·메모리 스트레스 | [EXP-085](EXP-085-fault-injection-repeated.md) | application 컨테이너에 CPU 바쁜 루프·CPU 하드 한도·메모리 한도 근처·OOM을 각 n=5, 위반 0. 단일 호스트·공유 VM |
 | PostgreSQL 서버 재시작(WAL 재생) | [EXP-085](EXP-085-fault-injection-repeated.md) | `docker restart`(WAL 재생 없음, 정상 종료)·컨테이너 `kill`·WAL writer `kill -9`(크래시 복구, 로그 5/5 확인) 각 n=5, 위반 0. 프로세스 크래시만이고 정전·fsync는 아님 |
-| 브로커(Kafka) 중단 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`), EXP-072(PR #548, 탐색) | 조건 10종(stop·kill -9·pause 8/20/45초·kill 45초·지연 2/6초·손실 25%·대조군) × n=5, 파티션 3개, 누락 0. 단일 broker, 첫 전달 순서 역행 3건은 원인 미확정([#644](https://github.com/Neo1228/ATLAS/issues/644)) |
+| 브로커(Kafka) 중단 | [EXP-089](EXP-089-kafka-outage-repeated.md)(`load-tests/kafka-outage/`), EXP-072(PR #548, 탐색) | 조건 10종(stop·kill -9·pause 8/20/45초·kill 45초·지연 2/6초·손실 25%·대조군) × n=5, 파티션 3개, 누락 0. 단일 broker, 첫 전달 순서 역행은 [EXP-091](EXP-091-kafka-first-delivery-order.md)에서 원인(한 파티션의 여러 producer batch 부분 만료)을 규명하고 수정([#644](https://github.com/Neo1228/ATLAS/issues/644)) |
 
 ## 비어 있는 것(후속 후보)
 
