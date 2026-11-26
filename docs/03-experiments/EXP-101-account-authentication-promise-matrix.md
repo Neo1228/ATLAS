@@ -147,7 +147,7 @@ FR-018·BR-018·INV-015·ADR-0027은 약 25개의 약속 문장을 담고 있지
 | H8 | 현재 baseline U unknown n=400 median 126.125ms, K known-wrong n=400 136.077ms, KC same-path control n=400 136.687ms. Paired U−K median −8.876ms(0.927 ratio); K−KC control median −2.041ms, MAD 32.137ms, 3×MAD=96.411ms. Mann–Whitney normal approximation: U vs K p=0.000643, AUC=0.430. 차이는 통계적으로 구별되지만 중앙값 효과는 control 3×MAD보다 작다. | dummy hash를 제거한 음성 대조군 U 16.831ms vs K 84.381ms, U−K −64.011ms; K−KC control MAD=11.360ms, 3×MAD=34.081ms, p≈1.42e−125, AUC=0.013로 detector가 울림. **constant-time 보장 없음으로 결정**; status/body 동일만 계약. |
 | H9 | `SmtpAccountEmailSenderTest`는 `JavaMailSender` mock으로 subject/body 검증, production transport는 실행되지 않음. SMTP 관련 env name 없음; `127.0.0.1:25` 연결은 `ConnectionRefusedError: [Errno 61] Connection refused` | **EXTERNAL-BLOCKED with proof**: live SMTP host·port·인증과 controlled inbox가 없음. V1은 post-commit delivery failure를 비밀 없이 기록하고 verification/reset 재요청 허용. Live acceptance: 실제 verification·reset 메일 수신 후 각각 action token 소비까지 확인 |
 
-H8은 Node/JVM warmup 이후 한 번에 3 조건을 매 round 순서를 섞어 측정, `n=400`/조건, raw `/tmp/t1_timing_control_before.csv` 및 negative-control file은 커밋하지 않는다. 분석은 중앙값·분위수·paired median·control MAD·Mann–Whitney tie-corrected normal approximation·AUC이다. `uptime` 시 host load가 27.89/32.41/32.33으로 높았으므로 절대 지연은 맥락용이고 원인 판정은 대조군 대비 효과로만 한다. 알려진 경로와 없는 이메일이 똑같은 시간이라고 주장하지 않는다.
+H8은 Node/JVM warmup 이후 한 번에 3 조건을 매 round 순서를 섞어 측정, `n=400`/조건, raw 지연 CSV(조건 3개 × n=400, 행마다 round 번호·조건·지연 ms)와 negative-control 파일은 커밋하지 않고 측정한 호스트의 작업 폴더에만 둔다. 분석은 중앙값·분위수·paired median·control MAD·Mann–Whitney tie-corrected normal approximation·AUC이다. `uptime` 시 host load가 27.89/32.41/32.33으로 높았으므로 절대 지연은 맥락용이고 원인 판정은 대조군 대비 효과로만 한다. 알려진 경로와 없는 이메일이 똑같은 시간이라고 주장하지 않는다.
 
 ### 변이·롤백 검증
 
@@ -157,7 +157,7 @@ H8은 Node/JVM warmup 이후 한 번에 3 조건을 매 round 순서를 섞어 �
 
 | 주장 | 증거 | 확신도 |
 | --- | --- | --- |
-| FR-018 local PostgreSQL에서 account token, expiry, reset, MFA, ownership 약속 충족 | 위 P01–P24 route/controller·DB assertions, 최종 `/tmp/afull.sh` 결과 (아래 보충). 2026-11-26 재실행: 신규·수정 28건과 `com.atlas.account.*`·JWT 시험 80개 통과, 변이 17/18 재현 | confirmed |
+| FR-018 local PostgreSQL에서 account token, expiry, reset, MFA, ownership 약속 충족 | 위 P01–P24 route/controller·DB assertions, 최종 전체 `clean check` 결과(작업 폴더의 일회성 실행 스크립트로 돌린 것, 아래 보충). 2026-11-26 재실행: 신규·수정 28건과 `com.atlas.account.*`·JWT 시험 80개 통과, 변이 17/18 재현 | confirmed |
 | 없는 email login 전체 시간은 constant-time | 주장하지 않음; H8 결과와 mutant detector | decided |
 | General staff/admin role matrix | V1 범위 밖; Q-007에 이유·대안·revisit trigger·acceptance 기재 | decided |
 | Live SMTP delivery | env 없음, localhost:25 connect refused, mock sender test만 있음 | external-blocked(with proof) |
@@ -252,7 +252,7 @@ H8은 Node/JVM warmup 이후 한 번에 3 조건을 매 round 순서를 섞어 �
 | 이번 재실행, 더미 hash 계산을 건너뛰는 변이 | 2.909ms | 37.976ms | 37.894ms | −35.114ms | 0.077 | −0.001ms | 0.820ms | 2.459ms | 2.44e−132 | 0.000 |
 | 문서 원본, 같은 변이 | 16.831ms | 84.381ms | 84.954ms | −64.011ms | 0.199 | −0.820ms | 11.360ms | 34.081ms | 1.42e−125 | 0.013 |
 
-원본 CSV(`/tmp/t1_timing_control_before.csv`, 변이 쪽도)가 이 호스트에 남아 있어 같은 분석을 다시 돌렸고 문서 원본의 값(126.125, 136.077, 136.687, −8.876, 0.927, 32.137, 96.411, 0.000643, 0.430과 변이 쪽 값)이 소수점까지 그대로 나왔다(분석 계산 재현 ✓).
+원본 CSV(수정 전 조건과 변이 쪽 각각 조건 3개 × n=400 행, 열: round 번호·조건·지연 ms)가 이 호스트의 작업 폴더에 남아 있어 같은 분석을 다시 돌렸고 문서 원본의 값(126.125, 136.077, 136.687, −8.876, 0.927, 32.137, 96.411, 0.000643, 0.430과 변이 쪽 값)이 소수점까지 그대로 나왔다(분석 계산 재현 ✓).
 
 판정: 절대 지연은 호스트 부하에 따라 3배 이상 달랐다(이번 37ms 대 원본 126ms). 중앙값 차이는 이번 재실행에서 −0.670ms(U가 K보다 1.6% 빠름)로 원본(−8.876ms, 7.3%)보다 작지만 방향은 같다. 사전 등록 규칙의 기준은 "효과가 대조군 3×MAD보다 작은가"이고 이번에도 |−0.670|ms < 2.318ms로 충족한다(원본도 충족). 통계적으로는 두 조건이 구별된다(p=1.28e−13, AUC 0.349). 더미 hash 계산을 건너뛰면 차이가 3×MAD를 크게 넘어 탐지기가 울린다(−35.114ms ≫ 2.459ms). 따라서 "constant-time은 주장하지 않는다(ADR-0085 유지), status/body 동일만 계약"이라는 결정은 이번 재실행에서도 그대로 유지된다. 재현하지 못한 것: 원본의 절대값(126ms)이다. 원본이 부하가 높은 호스트에서 잰 값이었음을 문서가 이미 밝혔고, 이번에는 같은 코드가 3분의 1 시간에 돈다.
 
@@ -272,4 +272,4 @@ H8은 Node/JVM warmup 이후 한 번에 3 조건을 매 round 순서를 섞어 �
 | --- | --- | --- |
 | H9: `127.0.0.1:25` 연결이 `Connection refused`이고 SMTP 환경 이름이 없다 | 소켓 연결 | `127.0.0.1:25`와 `localhost:25` 모두 `ConnectionRefusedError [Errno 61]`, 이 프로세스 환경에 SMTP 이름 없음. 재현 ✓ (live SMTP는 여전히 external-blocked) |
 | H6: 정적 어노테이션 집계 non-internal 98, internal 40, 합 138 | 컨트롤러 소스의 `@Get/Post/Put/Delete/PatchMapping` 개수를 클래스 `@RequestMapping` 접두로 센 스크립트 | 98 / 40 / 138로 같다. 런타임 96 = 69 + 10 + 17은 `AccountOwnershipIntegrationTest`의 단정(통과)이 지킨다. 재현 ✓ |
-| `/tmp/afull.sh` 전체 `clean check` 결과(주장 표 "confirmed") | 다시 실행하지 않았다 | 재현 불가가 아니라 이번 PR이 운영 코드를 바꾸지 않아 전체 빌드를 돌리지 않았다. 대신 위 80개와 추가 변이를 돌렸다. 확신도는 바꾸지 않는다 |
+| 전체 `clean check` 결과(주장 표 "confirmed", 일회성 실행 스크립트로 돌림) | 다시 실행하지 않았다 | 재현 불가가 아니라 이번 PR이 운영 코드를 바꾸지 않아 전체 빌드를 돌리지 않았다. 대신 위 80개와 추가 변이를 돌렸다. 확신도는 바꾸지 않는다 |

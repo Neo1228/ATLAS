@@ -2,6 +2,9 @@ package com.atlas.settlement;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doReturn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -15,6 +18,7 @@ import com.atlas.application.service.payout.SellerPayoutProfileService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.response.PayoutResponse;
+import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
 import java.time.Clock;
@@ -22,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -39,6 +44,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -92,6 +98,7 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
     @Autowired private SettlementPayoutService payouts;
     @Autowired private SellerPayoutProfileService profiles;
     @Autowired private PayoutDispatchApprovalService approvals;
+    @MockitoSpyBean private PayoutDispatchStore dispatchStore;
 
     private final AtomicInteger origins = new AtomicInteger();
 
@@ -216,6 +223,24 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
     }
 
     @Test
+    void verifierThatReadsNoDispatchAfterTheApproverCommittedGetsConflictWithoutAnyActionRow() throws Exception {
+        // 동시 시험의 409 원인을 결정적으로 재현한다: 승인자가 commit한 뒤에도 검증자의 첫 dispatch 조회(approve의 첫 find)가
+        // 비어 있는 것으로 보이면, 4-eyes trigger에 닿기 전에 payout 상태(APPROVED)를 보고 409로 끝나고 검증자 행은 남지 않는다.
+        Operator verifier = operator();
+        Operator approver = operator();
+        Seeded seeded = seed();
+        assertThat(verify(verifier, seeded).getStatus()).isEqualTo(200);
+        assertThat(approve(approver, seeded, "a-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+        doReturn(Optional.empty()).doCallRealMethod().when(dispatchStore).find(any());
+
+        MockHttpServletResponse rejected = approve(verifier, seeded, "v-" + UUID.randomUUID());
+
+        assertThat(rejected.getStatus()).as("검증자 응답: " + rejected.getContentAsString()).isEqualTo(409);
+        assertThat(actionActors(seeded, "PAYOUT_APPROVED")).containsExactly(approver.accountId().toString());
+        assertThat(actionActors(seeded, "PAYOUT_APPROVAL_REPLAYED")).isEmpty();
+    }
+
+    @Test
     void concurrentApprovalsByTwoOperatorsLeaveExactlyOneApprovalAndTheVerifierIsAlwaysRejected() throws Exception {
         int rounds = Integer.parseInt(System.getenv().getOrDefault("H7_ROUNDS", "3"));
         Operator verifier = operator();
@@ -224,6 +249,8 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
         int approvedRows = 0;
         int outboxRows = 0;
         int verifierRejected = 0;
+        int verifier403 = 0;
+        int verifierConflicts = 0;
         int approverConflicts = 0;
         ExecutorService executor = Executors.newFixedThreadPool(3);
         try {
@@ -247,7 +274,15 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
                 MockHttpServletResponse one = byFirst.get();
                 MockHttpServletResponse two = bySecond.get();
 
-                assertThat(rejected.getStatus()).as("검증자의 승인은 언제나 거절").isEqualTo(403);
+                // 검증자의 요청은 승인자가 먼저 commit한 뒤 dispatch 조회가 비어 있는 상태를 읽으면 4-eyes trigger에 닿기 전에
+                // 409로 끝날 수 있다(approve가 transaction이 아니라 find 두 번 사이에 끼어든다). 어느 쪽이든 2xx는 아니다.
+                assertThat(rejected.getStatus()).as("검증자의 승인은 언제나 거절(403 또는 409)").isIn(403, 409);
+                verifier403 += rejected.getStatus() == 403 ? 1 : 0;
+                verifierConflicts += rejected.getStatus() == 409 ? 1 : 0;
+                assertThat(actionActors(seeded, "PAYOUT_APPROVED")).as("검증자가 승인 행의 actor가 된 적 없음")
+                        .doesNotContain(verifier.accountId().toString());
+                assertThat(actionActors(seeded, "PAYOUT_APPROVAL_REPLAYED")).as("검증자가 재생 행의 actor가 된 적 없음")
+                        .doesNotContain(verifier.accountId().toString());
                 verifierRejected++;
                 assertThat(List.of(one.getStatus(), two.getStatus())).as("승인자 둘의 응답")
                         .allMatch(status -> status == 202 || status == 409).contains(202);
@@ -262,6 +297,7 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
         }
         System.out.println("H7-CONCURRENCY rounds=" + rounds + " approvedRows=" + approvedRows
                 + " outboxRows=" + outboxRows + " verifierRejected=" + verifierRejected
+                + " verifier403=" + verifier403 + " verifier409=" + verifierConflicts
                 + " approverConflict409=" + approverConflicts + " approverAccepted202=" + (2 * rounds - approverConflicts));
     }
 
