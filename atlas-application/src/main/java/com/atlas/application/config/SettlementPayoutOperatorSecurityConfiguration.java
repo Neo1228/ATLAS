@@ -30,7 +30,7 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
  * <p>신원 모드는 {@code atlas.settlement.payout.operator.identity}로 고른다(ADR-0092).
  * <ul>
  *   <li>{@code account}(기본): 운영자는 사람별 account다. 기존 로그인(PBKDF2 해시, 로그인 한도, TOTP MFA)으로 받은
- *       access JWT로 인증하고, 요청마다 {@code payout_operator_account} 권한·계정 상태·MFA 등록을 DB에서 확인한다.
+ *       access JWT로 인증하고, 요청마다 {@code payout_operator_account} 권한·계정 상태·MFA 등록과 세션의 2차 인증 표식을 DB에서 확인한다.
  *       감사 actor는 account id다. 같은 사람이 프로필 검증과 지급 승인을 모두 하는 것은 DB trigger가 거절한다.</li>
  *   <li>{@code shared-credential}(rollback용): 기존 HTTP Basic 단일 자격 증명(ADR-0078). 사람별 신원이 없어
  *       감사 행의 actor가 운영자 모두에게 같은 문자열이고 승인자 ≠ 검증자 규칙이 적용되지 않는다. 사람 신원이 아닌
@@ -39,7 +39,7 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
  *
  * <p>전제: {@code account} 모드에서 principal 이름(account id)이 사람 한 명을 가리킨다는 것은 운영자 계정을
  * 한 사람이 쓴다는 운영 절차에 기대고, 앱은 이를 검사할 수 없다. 계정 잠금(영구)·자격 증명 회전 정책·행동별 재인증은
- * 이 코드에 없다. IdP나 gateway가 신원을 맡게 되면 principal 이름만 같은 의미로 넘기면 된다.
+ * 이 코드에 없고 그 이유는 ADR-0094에 있다. IdP나 gateway가 신원을 맡게 되면 principal 이름만 같은 의미로 넘기면 된다.
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "atlas.settlement.payout.operator.enabled", havingValue = "true")

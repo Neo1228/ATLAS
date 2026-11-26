@@ -227,7 +227,7 @@ public class AccountServiceImpl implements AccountService {
                     challengeNow, challengeNow.plus(MFA_CHALLENGE_LIFETIME));
             return new AccountResponse.Login(true, null, challenge);
         }
-        return new AccountResponse.Login(false, issueTokens(account), null);
+        return new AccountResponse.Login(false, issueTokens(account, false), null);
     }
 
     @Transactional
@@ -331,7 +331,7 @@ public class AccountServiceImpl implements AccountService {
         if (!accounts.consumeMfaChallenge(challengeHash, now)) {
             throw invalidCredentials();
         }
-        return issueTokens(account);
+        return issueTokens(account, true);
     }
 
     @Transactional(noRollbackFor = AccountException.class)
@@ -500,8 +500,8 @@ public class AccountServiceImpl implements AccountService {
 
     @Transactional(readOnly = true)
     @Override
-    public boolean isPayoutOperator(UUID accountId) {
-        return accountId != null && accounts.isActivePayoutOperator(accountId);
+    public boolean isPayoutOperator(UUID accountId, UUID sessionFamilyId) {
+        return accountId != null && sessionFamilyId != null && accounts.isActivePayoutOperator(accountId, sessionFamilyId);
     }
     @Transactional(readOnly = true)
     @Override
@@ -527,12 +527,13 @@ public class AccountServiceImpl implements AccountService {
         accounts.revokeRefreshFamily(accountId, familyId, clock.instant());
     }
 
-    private AccountResponse.Token issueTokens(AccountPrincipal account) {
+    /** {@code mfaVerified}는 이 세션이 2차 인증을 거쳐 만들어졌는지다. 갱신은 같은 family를 이어 가므로 표식도 이어진다. */
+    private AccountResponse.Token issueTokens(AccountPrincipal account, boolean mfaVerified) {
         Instant now = clock.instant();
         UUID familyId = UUID.randomUUID();
         Instant familyExpiresAt = now.plus(REFRESH_FAMILY_LIFETIME);
         String refreshToken = newRefreshToken();
-        accounts.createRefreshFamily(familyId, account.accountId(), now, familyExpiresAt);
+        accounts.createRefreshFamily(familyId, account.accountId(), now, familyExpiresAt, mfaVerified);
         accounts.insertRefreshSession(UUID.randomUUID(), familyId, hashRefreshToken(refreshToken), now,
                 minimum(now.plus(REFRESH_TOKEN_LIFETIME), familyExpiresAt));
         return tokenResponse(account, refreshToken, familyId);

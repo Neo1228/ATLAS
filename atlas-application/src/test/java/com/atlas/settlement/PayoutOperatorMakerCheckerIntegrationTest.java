@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.atlas.account.dto.request.AccountRequest;
+import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountService;
 import com.atlas.application.dto.request.SettlementHttpRequest;
@@ -16,6 +17,7 @@ import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -26,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import com.bastiaanjansen.otp.TOTPGenerator;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -77,6 +80,7 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
         registry.add("atlas.payment.paypal.payouts.recipient-encryption-key",
                 () -> Base64.getEncoder().encodeToString(new byte[32]));
         registry.add("atlas.settlement.payout.operator.enabled", () -> "true");
+        registry.add("atlas.account.mfa.encryption-key", () -> Base64.getEncoder().encodeToString(new byte[32]));
     }
 
     @Autowired private MockMvc mockMvc;
@@ -304,6 +308,188 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
         assertThat(status(suspended, path)).as("정지된 계정").isEqualTo(401);
     }
 
+    @Test
+    void aSessionThatNeverPassedTheSecondFactorIsRejectedEvenAfterTheAccountEnrols() throws Exception {
+        String path = "/api/internal/settlement/payouts/needs-review";
+        int rounds = Integer.parseInt(System.getenv().getOrDefault("H4_ROUNDS", "1"));
+        int acceptedBeforeEnrolmentSession = 0;
+        int rejectedSecondFactorSession = 0;
+        int rejectedRefreshedSession = 0;
+        for (int round = 0; round < rounds; round++) {
+            UUID accountId = newAccount();
+            grant(accountId);
+            Session passwordOnly = session(accountId);
+            List<String> recoveryCodes = enrol(accountId);
+
+            if (status(passwordOnly.token(), path) == 200) acceptedBeforeEnrolmentSession++;
+
+            AccountResponse.Login login = accountService.login(new AccountRequest.Login(
+                    jdbc.queryForObject("SELECT email FROM user_account WHERE account_id = ?", String.class, accountId),
+                    PASSWORD), "198.51.100." + (origins.incrementAndGet() % 250 + 1));
+            AccountResponse.Token verified = accountService.completeMfaLogin(
+                    new AccountRequest.MfaChallenge(login.challengeToken(), null, recoveryCodes.get(0)));
+            if (status(verified.accessToken(), path) != 200) rejectedSecondFactorSession++;
+            AccountResponse.Token refreshed = accountService.refresh(new AccountRequest.RefreshToken(verified.refreshToken()));
+            if (status(refreshed.accessToken(), path) != 200) rejectedRefreshedSession++;
+        }
+        System.out.println("H4-TOTP-SESSION rounds=" + rounds + " preEnrolmentSessionAccepted=" + acceptedBeforeEnrolmentSession
+                + " secondFactorSessionRejected=" + rejectedSecondFactorSession
+                + " refreshedSessionRejected=" + rejectedRefreshedSession);
+        assertThat(acceptedBeforeEnrolmentSession).as("등록 전에 비밀번호만으로 만든 세션").isZero();
+        assertThat(rejectedSecondFactorSession).as("2차 인증을 거친 세션을 거절한 횟수(오거절)").isZero();
+        assertThat(rejectedRefreshedSession).as("그 세션을 갱신해 받은 access token을 거절한 횟수").isZero();
+    }
+
+    @Test
+    void aSessionFromAnOlderMfaEnrollmentIsRejectedAfterTheSecretIsReplaced() throws Exception {
+        String path = "/api/internal/settlement/payouts/needs-review";
+        int rounds = Integer.parseInt(System.getenv().getOrDefault("H4B_ROUNDS", "1"));
+        int acceptedBeforeDisable = 0;
+        int oldSessionsReactivated = 0;
+        int newMfaSessionsRejected = 0;
+        for (int round = 0; round < rounds; round++) {
+            UUID accountId = newAccount();
+            grant(accountId);
+            AccountResponse.MfaEnrollment initial = accountService.startMfaEnrollment(accountId);
+            List<String> oldRecoveryCodes = accountService.confirmMfaEnrollment(accountId,
+                    new TOTPGenerator.Builder(initial.secret()).build().now()).recoveryCodes();
+            String oldToken = mfaSession(accountId, oldRecoveryCodes.get(0));
+            if (status(oldToken, path) == 200) acceptedBeforeDisable++;
+
+            String disableCode = new TOTPGenerator.Builder(initial.secret())
+                    .withClock(Clock.offset(Clock.systemUTC(), Duration.ofSeconds(30))).build().now();
+            accountService.disableMfa(accountId, disableCode);
+            List<String> newRecoveryCodes = enrol(accountId);
+            if (status(oldToken, path) == 200) oldSessionsReactivated++;
+            if (status(mfaSession(accountId, newRecoveryCodes.get(0)), path) != 200) newMfaSessionsRejected++;
+        }
+        System.out.println("H4B-MFA-REENROLLMENT rounds=" + rounds + " acceptedBeforeDisable=" + acceptedBeforeDisable
+                + " oldSessionsReactivated=" + oldSessionsReactivated
+                + " newMfaSessionsRejected=" + newMfaSessionsRejected);
+        assertThat(acceptedBeforeDisable).isEqualTo(rounds);
+        assertThat(oldSessionsReactivated).as("새 MFA enrollment 뒤에도 살아난 예전 session 수").isZero();
+        assertThat(newMfaSessionsRejected).as("새 MFA challenge session의 오거절 수").isZero();
+    }
+
+    @Test
+    void aProviderReviewCannotBeResolvedByTheOperatorWhoApprovedThePayout() throws Exception {
+        int rounds = Integer.parseInt(System.getenv().getOrDefault("H5_ROUNDS", "1"));
+        Operator verifier = operator();
+        Operator approver = operator();
+        Operator other = operator();
+        int resolvedBySameOperator = 0;
+        int secondPayoutAfterSameOperatorResolution = 0;
+        int rejectedOther = 0;
+        for (int round = 0; round < rounds; round++) {
+            Seeded seeded = seed();
+            assertThat(verify(verifier, seeded).getStatus()).isEqualTo(200);
+            assertThat(approve(approver, seeded, "approve-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+            forceProviderReview(seeded);
+
+            MockHttpServletResponse same = resolveNotPaid(approver, seeded);
+            if (same.getStatus() == 200) {
+                resolvedBySameOperator++;
+                Instant now = Instant.now();
+                if (payouts.request(seeded.sellerId(), now.minus(Duration.ofDays(3)), now.minus(Duration.ofDays(2)),
+                        "again-" + UUID.randomUUID()).state().name().equals("REQUESTED")) {
+                    secondPayoutAfterSameOperatorResolution++;
+                }
+            } else {
+                assertThat(same.getStatus()).isEqualTo(403);
+                assertThat(code(same)).isEqualTo("SEPARATION_OF_DUTIES");
+                assertThat(payouts.find(seeded.payoutId()).state().name()).as("거절되면 상태 전이도 되돌려진다")
+                        .isEqualTo("NEEDS_REVIEW");
+                assertThat(actions(seeded, "PROVIDER_REVIEW_NOT_PAID")).isZero();
+                assertThatThrownBy(() -> jdbc.update("""
+                        INSERT INTO settlement_payout_operator_action(payout_id, idempotency_key, action, actor, reason, created_at)
+                        VALUES (?, ?, 'PROVIDER_REVIEW_PAID', ?, 'direct', now())
+                        """, seeded.payoutId(), "direct-" + UUID.randomUUID(), approver.accountId().toString()))
+                        .isInstanceOf(DataIntegrityViolationException.class);
+                MockHttpServletResponse byOther = resolveNotPaid(other, seeded);
+                if (byOther.getStatus() != 200) rejectedOther++;
+                assertThat(payouts.find(seeded.payoutId()).state().name()).isEqualTo("FAILED");
+                assertThat(actionActors(seeded, "PROVIDER_REVIEW_NOT_PAID")).containsExactly(other.accountId().toString());
+            }
+        }
+        System.out.println("H5-PROVIDER-REVIEW rounds=" + rounds + " resolvedBySameOperator=" + resolvedBySameOperator
+                + " secondPayoutAfterSameOperatorResolution=" + secondPayoutAfterSameOperatorResolution
+                + " otherOperatorRejected=" + rejectedOther);
+        assertThat(resolvedBySameOperator).as("승인한 운영자가 해소에 성공한 횟수").isZero();
+        assertThat(rejectedOther).as("다른 운영자의 해소를 거절한 횟수(오거절)").isZero();
+    }
+
+    @Test
+    void requeueThatCanStartAnUnacceptedPayoutRequiresAnotherOperator() throws Exception {
+        Operator verifier = operator();
+        Operator approver = operator();
+        Operator other = operator();
+        Seeded seeded = seed();
+        assertThat(verify(verifier, seeded).getStatus()).isEqualTo(200);
+        assertThat(approve(approver, seeded, "approve-requeue-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+        forceProviderReview(seeded);
+        String path = "/api/internal/settlement/payouts/" + seeded.payoutId() + "/requeue";
+
+        MockHttpServletResponse same = postAs(approver, path, "requeue-same-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}");
+        assertThat(same.getStatus()).isEqualTo(403);
+        assertThat(code(same)).isEqualTo("SEPARATION_OF_DUTIES");
+        assertThat(actions(seeded, "PAYOUT_REQUEUED")).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM settlement_payout_dispatch_outbox WHERE payout_id = ?",
+                String.class, seeded.payoutId())).isEqualTo("NEEDS_REVIEW");
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO settlement_payout_operator_action(payout_id, idempotency_key, action, actor, reason, created_at)
+                VALUES (?, ?, 'PAYOUT_REQUEUED', ?, 'direct', now())
+                """, seeded.payoutId(), "direct-requeue-" + UUID.randomUUID(), approver.accountId().toString()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(postAs(other, path, "requeue-other-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}").getStatus()).isEqualTo(200);
+        assertThat(actionActors(seeded, "PAYOUT_REQUEUED")).containsExactly(other.accountId().toString());
+        assertThat(jdbc.queryForObject("SELECT status FROM settlement_payout_dispatch_outbox WHERE payout_id = ?",
+                String.class, seeded.payoutId())).isEqualTo("PENDING");
+    }
+
+    @Test
+    void anOperatorWhoReplayedTheApprovalCannotRequeueTheSamePayout() throws Exception {
+        Operator verifier = operator();
+        Operator approver = operator();
+        Operator replayer = operator();
+        Operator other = operator();
+        Seeded seeded = seed();
+        assertThat(verify(verifier, seeded).getStatus()).isEqualTo(200);
+        assertThat(approve(approver, seeded, "approve-first-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+        assertThat(approve(replayer, seeded, "approve-replay-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+        assertThat(actionActors(seeded, "PAYOUT_APPROVAL_REPLAYED")).containsExactly(replayer.accountId().toString());
+        forceProviderReview(seeded);
+        String path = "/api/internal/settlement/payouts/" + seeded.payoutId() + "/requeue";
+
+        MockHttpServletResponse byReplayer = postAs(replayer, path, "requeue-replayer-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}");
+        assertThat(byReplayer.getStatus()).isEqualTo(403);
+        assertThat(code(byReplayer)).isEqualTo("SEPARATION_OF_DUTIES");
+        assertThat(actions(seeded, "PAYOUT_REQUEUED")).isZero();
+        assertThat(postAs(other, path, "requeue-other-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}").getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void aLegacyNoTransferConfirmationCannotComeFromTheOperatorWhoRecordedTheTransfer() throws Exception {
+        Operator approver = operator();
+        Operator sender = operator();
+        Seeded seeded = seed();
+        String base = "/api/internal/settlement/payouts/" + seeded.payoutId();
+        String evidence = "{\"evidenceReference\":\"bank-ref-1\"}";
+        assertThat(postAs(approver, base + "/manual-approve", "m-approve", "{\"reason\":\"reviewed\"}").getStatus()).isEqualTo(202);
+        assertThat(postAs(sender, base + "/manual-sent", "m-sent", evidence).getStatus()).isEqualTo(200);
+
+        MockHttpServletResponse bySender = postAs(sender, base + "/manual-no-transfer", "m-none-sender", evidence);
+        assertThat(bySender.getStatus()).isEqualTo(403);
+        assertThat(code(bySender)).isEqualTo("SEPARATION_OF_DUTIES");
+        assertThat(payouts.find(seeded.payoutId()).state().name()).isEqualTo("SENT");
+        assertThat(postAs(approver, base + "/manual-no-transfer", "m-none-approver", evidence).getStatus()).isEqualTo(200);
+        assertThat(payouts.find(seeded.payoutId()).state().name()).isEqualTo("FAILED");
+    }
+
     private MockHttpServletResponse verify(Operator operator, Seeded seeded) throws Exception {
         return postAs(operator, "/api/internal/settlement/payout-profiles/" + seeded.sellerId() + "/verify",
                 "verify-" + UUID.randomUUID(), "{\"profileVersion\":1,\"evidenceReference\":\"case-1\"}");
@@ -312,6 +498,19 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
     private MockHttpServletResponse approve(Operator operator, Seeded seeded, String key) throws Exception {
         return postAs(operator, "/api/internal/settlement/payouts/" + seeded.payoutId() + "/approve", key,
                 "{\"reason\":\"reviewed\"}");
+    }
+
+    private MockHttpServletResponse resolveNotPaid(Operator operator, Seeded seeded) throws Exception {
+        return postAs(operator, "/api/internal/settlement/payouts/" + seeded.payoutId() + "/resolve-provider-review",
+                "resolve-" + UUID.randomUUID(),
+                "{\"outcome\":\"NOT_PAID\",\"evidenceReference\":\"paypal-dashboard-checked\","
+                        + "\"providerCurrency\":\"USD\",\"providerFeeMinor\":0}");
+    }
+
+    /** 워커가 결과를 확정하지 못해 사람 검토로 올린 상태를 만든다(provider 호출 없이 outbox와 지급 상태만 같이 옮긴다). */
+    private void forceProviderReview(Seeded seeded) {
+        jdbc.update("UPDATE settlement_payout_dispatch_outbox SET status = 'NEEDS_REVIEW' WHERE payout_id = ?", seeded.payoutId());
+        jdbc.update("UPDATE settlement_payout SET state = 'NEEDS_REVIEW' WHERE payout_id = ?", seeded.payoutId());
     }
 
     private MockHttpServletResponse postAs(Operator operator, String path, String key, String body) throws Exception {
@@ -370,14 +569,30 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
         jdbc.update("INSERT INTO payout_operator_account(account_id, granted_by) VALUES (?, 'integration-test')", accountId);
     }
 
-    /** 로그인은 TOTP 등록 전에 한다. 등록 상태는 권한 확인이 요청마다 읽으며, TOTP 로그인 흐름은 account 테스트가 다룬다. */
+    /**
+     * 운영자는 TOTP를 등록한 뒤 2차 인증을 거친 로그인으로 세션을 얻는다(ADR-0094). 복구 코드로 챌린지를 풀어
+     * TOTP 단계 재사용 방지 때문에 기다리는 일을 피한다.
+     */
     private Operator operator() {
         UUID accountId = newAccount();
-        Session session = session(accountId);
         grant(accountId);
-        jdbc.update("INSERT INTO account_mfa_secret(account_id, encrypted_secret, enabled_at) VALUES (?, 'test', now())",
-                accountId);
-        return new Operator(accountId, session.token());
+        return new Operator(accountId, mfaSession(accountId, enrol(accountId).get(0)));
+    }
+
+    private List<String> enrol(UUID accountId) {
+        AccountResponse.MfaEnrollment enrollment = accountService.startMfaEnrollment(accountId);
+        String code = new TOTPGenerator.Builder(enrollment.secret()).build().now();
+        return accountService.confirmMfaEnrollment(accountId, code).recoveryCodes();
+    }
+
+    private String mfaSession(UUID accountId, String recoveryCode) {
+        String email = jdbc.queryForObject("SELECT email FROM user_account WHERE account_id = ?", String.class, accountId);
+        String origin = "198.51.100." + (origins.incrementAndGet() % 250 + 1);
+        AccountResponse.Login login = accountService.login(new AccountRequest.Login(email, PASSWORD), origin);
+        assertThat(login.mfaRequired()).as("TOTP를 등록한 계정의 로그인은 챌린지를 요구한다").isTrue();
+        assertThat(login.tokens()).isNull();
+        return accountService.completeMfaLogin(new AccountRequest.MfaChallenge(login.challengeToken(), null, recoveryCode))
+                .accessToken();
     }
 
     private Seeded seed() {

@@ -8,6 +8,7 @@
 // - 자격 증명·토큰·승인 URL·PayPal 주문 ID 는 출력하거나 결과 파일에 남기지 않는다.
 // - 진실 원천 비교: PayPal 주문 상태는 Toxiproxy 를 거치지 않는 직접 연결로 조회한다.
 import { execFileSync } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -21,10 +22,11 @@ const PG_CONTAINER = process.env.PG_CONTAINER || 'atlas-real-pg';
 const PRIVATE = process.env.PRIVATE_DIR || '/tmp/atlas-real';
 const RESULTS_DIR = process.env.RESULTS_DIR || `${PRIVATE}/results`;
 const REPEAT = Number(process.env.REPEAT || 2);
-const UNIT_PRICE_WON = 1_000; // 1,000원 ≒ 0.71 USD, Sandbox 소액
+const UNIT_PRICE_WON = Number(process.env.UNIT_PRICE_WON || 1_000); // payout flow는 환율 반올림 상한을 넘도록 10,000원
 const SYNTHETIC_RATE = '1400.0000000000'; // 실측 환율 아님: SYNTHETIC_FIXTURE
 const RECOVERY_WAIT_MS = Number(process.env.RECOVERY_WAIT_MS || 150_000);
 const RECOVERY_WORKER_ENABLED = process.env.ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED !== 'false';
+const PAYOUT_E2E = process.env.PAYOUT_E2E === 'YES';
 if (!Number.isInteger(REPEAT) || REPEAT < 1 || REPEAT > 5) throw new Error('REPEAT 는 1-5 사이여야 한다');
 if (!Number.isInteger(RECOVERY_WAIT_MS) || RECOVERY_WAIT_MS < 1000 || RECOVERY_WAIT_MS > 300_000) {
   throw new Error('RECOVERY_WAIT_MS 는 1000-300000 ms 사이여야 한다');
@@ -101,7 +103,7 @@ async function verifyProxyTopology() {
 // ---------- PostgreSQL(실험 전용 컨테이너) ----------
 function sql(query) {
   return execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-q', '-U', 'atlas', '-d', 'atlas', '-v', 'ON_ERROR_STOP=1', '-At', '-F', '\t'],
-    { input: query, encoding: 'utf8' }).trim();
+    { input: query, encoding: 'utf8' }).replace(/\r?\n$/, ''); // 앞쪽 빈 열(탭)을 보존한다
 }
 const uuidOnly = (v) => { if (!/^[0-9a-f-]{36}$/i.test(v)) throw new Error('UUID 아님'); return v; };
 
@@ -147,26 +149,26 @@ async function verificationToken(email) {
   }
   throw new Error('검증 메일 없음');
 }
-async function account(role, index) {
-  const email = `${RUN}-${role}-${index}@example.test`;
+async function account(role, index, emailOverride = null) {
+  const email = emailOverride ?? `${RUN}-${role}-${index}@example.test`;
   expect(await api('POST', '/api/auth/signup', { body: { email, password: ACCOUNT_PASSWORD } }), 202, 'signup');
   expect(await api('POST', '/api/auth/verify-email', { body: { token: await verificationToken(email) } }), 204, 'verify');
   const login = async () => {
     const body = expect(await api('POST', '/api/auth/login', { body: { email, password: ACCOUNT_PASSWORD } }), 200, 'login');
     return body.tokens ?? body;
   };
-  return { ...(await login()), relogin: login };
+  return { ...(await login()), email, relogin: login };
 }
-async function setupCatalog() {
-  const seller = await account('seller', 0);
+async function setupCatalog(emailOverride = null, skuOverride = null) {
+  const seller = await account('seller', 0, emailOverride);
   const sellerId = expect(await api('POST', '/api/sellers', { token: seller.accessToken }), 201, 'seller').sellerId;
   const sellerToken = (await seller.relogin()).accessToken;
   const product = expect(await api('POST', `/api/sellers/${sellerId}/products`,
     { token: sellerToken, body: { name: `실제 Sandbox 장애 실험 ${RUN}`, description: 'EXP-050 실험 상품' } }), 201, 'product');
-  const skuId = `${RUN}-sku`;
+  const skuId = skuOverride ?? `${RUN}-sku`;
   expect(await api('POST', `/api/sellers/${sellerId}/products/${product.productId}/skus`,
     { token: sellerToken, body: { skuId, priceWon: UNIT_PRICE_WON, initialStock: 500 } }), 201, 'sku');
-  return { sellerId, skuId };
+  return { sellerId, skuId, seller };
 }
 async function createCheckout(catalog, buyer, n) {
   const ref = encodeURIComponent(buyer.buyerRef);
@@ -480,7 +482,205 @@ async function runCondition(cond, catalog, buyers, counter) {
   return { condition: cond.name, catalog: catalogStats, warmups: warmupObservations, checkouts: results };
 }
 
+function totpCode(secret, at = Date.now()) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  const bytes = [];
+  for (const char of secret.replace(/=+$/, '').toUpperCase()) {
+    value = (value << 5) | alphabet.indexOf(char);
+    bits += 5;
+    if (bits >= 8) { bits -= 8; bytes.push((value >> bits) & 255); }
+  }
+  const counter = BigInt(Math.floor(at / 30_000));
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(counter);
+  const digest = createHmac('sha1', Buffer.from(bytes)).update(msg).digest();
+  const offset = digest[digest.length - 1] & 15;
+  const number = (digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000;
+  return String(number).padStart(6, '0');
+}
+
+async function operator(label) {
+  const user = await account(`payout-operator-${label}`, 0);
+  const enrollment = expect(await api('POST', '/api/auth/mfa/enroll', { token: user.accessToken }), 200, 'operator MFA enrollment');
+  const enabled = expect(await api('POST', '/api/auth/mfa/enable', {
+    token: user.accessToken, body: { code: totpCode(enrollment.secret) },
+  }), 200, 'operator MFA enable');
+  const granted = sql(`INSERT INTO payout_operator_account(account_id, granted_by) VALUES ('${uuidOnly(user.accountId)}', 'EXP-102') ON CONFLICT (account_id) DO UPDATE SET revoked_at = NULL`);
+  if (granted !== '') throw new Error('operator grant SQL returned unexpected output');
+  const login = expect(await api('POST', '/api/auth/login', {
+    body: { email: user.email, password: ACCOUNT_PASSWORD },
+  }), 200, 'operator login');
+  if (!login.mfaRequired || login.tokens) throw new Error('operator login did not require second factor');
+  const tokens = expect(await api('POST', '/api/auth/mfa/challenge', {
+    body: { challengeToken: login.challengeToken, recoveryCode: enabled.recoveryCodes[0] },
+  }), 200, 'operator MFA challenge');
+  if (!tokens.accessToken) throw new Error('operator second-factor challenge returned no access token');
+  return { ...tokens, email: user.email };
+}
+
+async function createPayoutCheckout(catalog, buyer, n) {
+  const item = await createCheckout(catalog, buyer, n);
+  const submit = await api('POST', `/api/checkouts/${item.checkoutId}/payment`, { token: buyer.accessToken });
+  const approvalUrl = submit.json?.paymentApprovalUrl;
+  if (submit.status !== 200 || !approvalUrl) throw new Error(`payout checkout submit failed: HTTP ${submit.status} ${submit.json?.code ?? ''}`);
+  const returnPath = await approve(approvalUrl);
+  const returned = await api('GET', returnPath, { timeoutMs: 60_000 });
+  if (returned.status !== 200 || returned.json?.state !== 'PAID' || returned.json?.paymentState !== 'CAPTURED') {
+    throw new Error(`payout checkout capture failed: HTTP ${returned.status} state=${returned.json?.state ?? 'none'}`);
+  }
+  const state = dbState(item.checkoutId);
+  if (state.journals !== 1) throw new Error(`capture journal count ${state.journals}, expected 1`);
+  return { checkoutId: item.checkoutId, totalWon: state.amountMinor, seller: catalog.sellerId };
+}
+
+async function payoutProfile(sellerId, seller, verifier, id) {
+  const configured = await api('PUT', `/api/sellers/${sellerId}/payout-profile`, {
+    token: seller.accessToken, headers: { 'Idempotency-Key': `${RUN}-profile-${id}` },
+    body: { countryCode: 'US', usdWalletConfirmed: true, verifiedAccountEmailConfirmed: true },
+  });
+  const profile = expect(configured, 200, 'payout profile configure');
+  const verified = await api('POST', `/api/internal/settlement/payout-profiles/${sellerId}/verify`, {
+    token: verifier.accessToken, headers: { 'Idempotency-Key': `${RUN}-verify-${id}` },
+    body: { profileVersion: profile.profileVersion, evidenceReference: `EXP102-${id}` },
+  });
+  return expect(verified, 200, 'payout profile verify');
+}
+
+async function payoutCycle(catalog, seller, verifier, approver, cycle, expectedItemStatus) {
+  const buyer = await account('payout-buyer', cycle);
+  const checkout = await createPayoutCheckout(catalog, buyer, cycle);
+  const profile = await api('GET', `/api/sellers/${catalog.sellerId}/payout-profile`, { token: seller.accessToken });
+  if (profile.status === 404 || profile.json?.state !== 'ACTIVE') {
+    await payoutProfile(catalog.sellerId, seller, verifier, cycle);
+  }
+  const periodStart = new Date(Date.now() - 86_400_000 * (cycle + 2)).toISOString();
+  const periodEnd = new Date(Date.now() - 86_400_000 * (cycle + 1)).toISOString();
+  const requested = expect(await api('POST', `/api/sellers/${catalog.sellerId}/payouts?periodStart=${encodeURIComponent(periodStart)}&periodEnd=${encodeURIComponent(periodEnd)}`, {
+    token: seller.accessToken, headers: { 'Idempotency-Key': `${RUN}-payout-${cycle}` },
+  }), 201, 'seller payout request');
+  const payoutId = uuidOnly(requested.payoutId);
+  const approvalKey = `${RUN}-approve-${cycle}`;
+  expect(await api('POST', `/api/internal/settlement/payouts/${payoutId}/approve`, {
+    token: approver.accessToken, headers: { 'Idempotency-Key': approvalKey }, body: { reason: `EXP102-${cycle}` },
+  }), 202, 'operator payout approval');
+  const deadline = Date.now() + 180_000;
+  let dispatch = null;
+  let payout = null;
+  while (Date.now() < deadline) {
+    payout = (await api('GET', `/api/sellers/${catalog.sellerId}/payouts/${payoutId}`, { token: seller.accessToken })).json;
+    dispatch = (await api('GET', `/api/internal/settlement/payouts/${payoutId}/dispatch`, { token: approver.accessToken })).json;
+    if (['CONFIRMED', 'UNCLAIMED', 'NEEDS_REVIEW', 'FAILED'].includes(payout?.state)) break;
+    await sleep(1_000);
+  }
+  if (!payout || !dispatch) throw new Error(`payout ${cycle}: no result before bounded polling deadline`);
+  // 같은 Idempotency-Key로 승인을 다시 보낸 뒤 워커가 한 바퀴 이상 돈 다음에 상태를 읽어, 재생이 항목을 늘리지 않는지 본다.
+  const batchBeforeReplay = sql(`SELECT coalesce(provider_batch_id, '') FROM settlement_payout_dispatch_outbox WHERE payout_id='${payoutId}'`);
+  const replay = await api('POST', `/api/internal/settlement/payouts/${payoutId}/approve`, {
+    token: approver.accessToken, headers: { 'Idempotency-Key': approvalKey }, body: { reason: `EXP102-${cycle}` },
+  });
+  await sleep(4_000);
+  const db = sql(`SELECT o.provider_batch_id, o.provider_item_id, o.sender_item_id, o.provider_item_status, o.provider_batch_status, o.provider_amount_minor, o.provider_fee_minor, o.provider_fee_currency, o.provider_fee_won, p.state, (SELECT count(*) FROM settlement_journal j WHERE j.source_payout_id=p.payout_id), (SELECT count(*) FROM settlement_entry e JOIN settlement_journal j USING (journal_id) WHERE j.source_payout_id=p.payout_id), COALESCE((SELECT sum(e.amount_won) FROM settlement_entry e JOIN settlement_journal j USING (journal_id) WHERE j.source_payout_id=p.payout_id AND e.entry_side='DEBIT'), 0), COALESCE((SELECT sum(e.amount_won) FROM settlement_entry e JOIN settlement_journal j USING (journal_id) WHERE j.source_payout_id=p.payout_id AND e.entry_side='CREDIT'), 0), (SELECT count(*) FROM settlement_payout_operator_action a WHERE a.payout_id=p.payout_id AND a.action='PAYOUT_APPROVED'), (SELECT count(*) FROM settlement_payout_dispatch_outbox x WHERE x.payout_id=p.payout_id) FROM settlement_payout p JOIN settlement_payout_dispatch_outbox o USING (payout_id) WHERE p.payout_id='${payoutId}'`);
+  const fields = db.split('\t');
+  const [batchId, itemId, senderItemId, itemStatus, batchStatus, amountMinor, feeMinor, feeCurrency, feeWon, payoutState, journalCount, journalLines, debitWon, creditWon, approvalCount, outboxCount] = fields;
+  const journalBalanced = Number(journalLines) > 0 && Number(debitWon) === Number(creditWon);
+  let truth = null;
+  if (batchId) {
+    const batch = await paypalDirect(`/v1/payments/payouts/${encodeURIComponent(batchId)}?page=1&page_size=100&total_required=true`);
+    const item = (batch.items ?? []).find((candidate) => candidate.payout_item_id === itemId)
+      ?? (batch.items ?? []).find((candidate) => candidate.payout_item?.sender_item_id === senderItemId);
+    truth = {
+      topKeys: Object.keys(batch).sort(),
+      batchStatus: batch.batch_header?.batch_status ?? null,
+      items: batch.items?.length ?? 0,
+      itemStatus: item?.transaction_status ?? null,
+      amount: item?.payout_item?.amount?.value ?? null,
+      currency: item?.payout_item?.amount?.currency ?? null,
+      fee: item?.payout_item_fee?.value ?? null,
+      feeCurrency: item?.payout_item_fee?.currency ?? null,
+      senderItemMatches: item?.payout_item?.sender_item_id === senderItemId,
+    };
+  }
+  const balance = expect(await api('GET', `/api/sellers/${catalog.sellerId}/payouts/balance`, { token: seller.accessToken }), 200, 'payout balance');
+  const ok = expectedItemStatus === 'SUCCESS'
+    ? payoutState === 'CONFIRMED' && itemStatus === 'SUCCESS' && Number(journalCount) === 1 && journalBalanced
+      && Number(balance.pendingPayoutAmountWon) === 0 && Number(approvalCount) === 1 && Number(outboxCount) === 1 && replay.status === 202 && batchBeforeReplay === batchId
+      && truth?.itemStatus === 'SUCCESS' && truth.items === 1 && truth.senderItemMatches
+      && truth.amount === (Number(amountMinor) / 100).toFixed(2) && truth.currency === 'USD'
+      && truth.fee === (Number(feeMinor) / 100).toFixed(2) && truth.feeCurrency === 'USD'
+      && feeCurrency === 'USD'
+    : payoutState === 'UNCLAIMED' && itemStatus === 'UNCLAIMED' && Number(journalCount) === 0
+      && truth?.itemStatus === 'UNCLAIMED' && truth.items === 1
+      && Number(outboxCount) === 1 && Number(approvalCount) === 1 && replay.status === 202 && batchBeforeReplay === batchId
+      && Number(balance.pendingPayoutAmountWon) >= Number(requested.amountWon);
+  const result = {
+    cycle, sellerId: catalog.sellerId, checkoutId: checkout.checkoutId,
+    payoutState, itemStatus, batchStatus, journalCount: Number(journalCount), approvalCount: Number(approvalCount),
+    outboxCount: Number(outboxCount), journalLines: Number(journalLines), debitWon: Number(debitWon), creditWon: Number(creditWon),
+    journalBalanced, amountMinor: Number(amountMinor), feeMinor: feeMinor ? Number(feeMinor) : null,
+    feeCurrency, feeWon: feeWon ? Number(feeWon) : null, replayStatus: replay.status,
+    reservedWon: Number(balance.pendingPayoutAmountWon), truth, ok,
+  };
+  if (!ok) throw new Error(`payout cycle invariant failed: ${JSON.stringify(result)}`);
+  console.log(JSON.stringify({ payoutCycle: result }));
+  return result;
+}
+
+async function loginThrottleProbe() {
+  // H7: 틀린 비밀번호 n=30을 보낸 뒤 올바른 비밀번호가 거절되는지, 실패 카운터가 한도에서 멈추는지 본다.
+  const user = await account('throttle', 0);
+  const statuses = [];
+  const slowCounts = { beforeLimit: 0, afterLimit: 0 };
+  for (let attempt = 1; attempt <= 30; attempt += 1) {
+    const response = await api('POST', '/api/auth/login', { body: { email: user.email, password: `wrong-${attempt}-${RUN}` } });
+    statuses.push(response.status);
+    if (response.ms >= 30) slowCounts[attempt <= 10 ? 'beforeLimit' : 'afterLimit'] += 1;
+  }
+  const correct = await api('POST', '/api/auth/login', { body: { email: user.email, password: ACCOUNT_PASSWORD } });
+  const failures = sql(`SELECT max(failures) FROM auth_subject_bucket WHERE scope='LOGIN'`);
+  const result = {
+    wrongAttempts: statuses.length, status401: statuses.filter((code) => code === 401).length,
+    status429: statuses.filter((code) => code === 429).length, otherStatus: statuses.filter((code) => code !== 401 && code !== 429).length,
+    slowFirst10: slowCounts.beforeLimit, slowAfter10: slowCounts.afterLimit,
+    correctPasswordAfterLimitStatus: correct.status, failureCounter: Number(failures),
+  };
+  console.log(JSON.stringify({ loginThrottle: result }));
+  return result;
+}
+
+async function payoutMain() {
+  try {
+    await verifyProxyTopology();
+    await clearToxics();
+    await clearToxics(CAPTURE_PROXY);
+    const sellerEmail = envLocal.PAYPAL_SANDBOX_BUYER_EMAIL;
+    const successCatalog = await setupCatalog(sellerEmail, `${RUN}-success-sku`);
+    const successSeller = successCatalog.seller;
+    const verifier = await operator('verifier');
+    const approver = await operator('approver');
+    const successful = [];
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      successful.push(await payoutCycle(successCatalog, successSeller, verifier, approver, cycle, 'SUCCESS'));
+    }
+    const unclaimed = [];
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      const catalog = await setupCatalog(`${RUN}-unclaimed-${cycle}@example.test`, `${RUN}-unclaimed-sku-${cycle}`);
+      const seller = catalog.seller;
+      await unclaimed.push(await payoutCycle(catalog, seller, verifier, approver, 10 + cycle, 'UNCLAIMED'));
+    }
+    if (successful.length !== 3 || successful.some((item) => !item.ok) || unclaimed.length !== 2 || unclaimed.some((item) => !item.ok)) {
+      throw new Error('payout E2E expected 3 SUCCESS and 2 UNCLAIMED terminal cases');
+    }
+    await loginThrottleProbe();
+    console.log(JSON.stringify({ payoutE2E: { status: 'verified', success: successful.length, unclaimed: unclaimed.length } }));
+  } finally {
+    await browser?.close();
+  }
+}
+
 async function main() {
+  if (PAYOUT_E2E) return payoutMain();
   await verifyProxyTopology();
   await clearToxics();
   await clearToxics(CAPTURE_PROXY);

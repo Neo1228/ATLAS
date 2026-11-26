@@ -198,18 +198,23 @@ public class AccountRepository {
         return Boolean.TRUE.equals(enabled);
     }
 
-    /** 지급 운영자 권한이 해제되지 않았고, 계정이 활성·이메일 검증·TOTP MFA 등록 상태인지 본다. 요청마다 읽으므로 해제가 바로 적용된다. */
-    public boolean isActivePayoutOperator(UUID accountId) {
+    /**
+     * 지급 운영자 권한이 해제되지 않았고, 계정이 활성·이메일 검증·TOTP MFA 등록 상태이며, 요청한 세션이 2차 인증을 거쳐
+     * 만들어졌는지 본다. 요청마다 읽으므로 해제가 바로 적용된다.
+     */
+    public boolean isActivePayoutOperator(UUID accountId, UUID sessionFamilyId) {
         Boolean operator = jdbc.queryForObject("""
                 SELECT EXISTS (
                     SELECT 1
                     FROM payout_operator_account operator
                     JOIN user_account account ON account.account_id = operator.account_id
                     JOIN account_mfa_secret mfa ON mfa.account_id = operator.account_id
+                    JOIN refresh_token_family family ON family.account_id = operator.account_id
                     WHERE operator.account_id = ? AND operator.revoked_at IS NULL
                       AND account.status = 'ACTIVE' AND account.email_verified_at IS NOT NULL
-                      AND mfa.enabled_at IS NOT NULL)
-                """, Boolean.class, accountId);
+                      AND mfa.enabled_at IS NOT NULL
+                      AND family.family_id = ? AND family.mfa_verified_at >= mfa.enabled_at)
+                """, Boolean.class, accountId, sessionFamilyId);
         return Boolean.TRUE.equals(operator);
     }
 
@@ -339,11 +344,14 @@ public class AccountRepository {
                 .stream().findFirst();
     }
 
-    public void createRefreshFamily(UUID familyId, UUID accountId, Instant createdAt, Instant expiresAt) {
+    /** {@code mfaVerified}가 참이면 이 세션이 2차 인증을 거쳐 만들어졌다는 표식을 같은 행에 남긴다(ADR-0094). */
+    public void createRefreshFamily(UUID familyId, UUID accountId, Instant createdAt, Instant expiresAt,
+            boolean mfaVerified) {
         jdbc.update("""
-                        INSERT INTO refresh_token_family(family_id, account_id, created_at, expires_at)
-                        VALUES (?, ?, ?, ?)
-                        """, familyId, accountId, Timestamp.from(createdAt), Timestamp.from(expiresAt));
+                        INSERT INTO refresh_token_family(family_id, account_id, created_at, expires_at, mfa_verified_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """, familyId, accountId, Timestamp.from(createdAt), Timestamp.from(expiresAt),
+                mfaVerified ? Timestamp.from(createdAt) : null);
     }
 
     public void insertRefreshSession(UUID tokenId, UUID familyId, String tokenHash,

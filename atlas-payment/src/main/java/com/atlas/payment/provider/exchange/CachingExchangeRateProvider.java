@@ -11,6 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -18,9 +19,8 @@ import org.springframework.stereotype.Component;
 /**
  * 외부 환율 조회를 짧은 TTL 로 캐시하고, 캐시 미스가 겹치면 한 번만 조회한다.
  *
- * <p>왜 안전한가: BOK ECOS 731Y001 은 일 단위 고시 환율이라 초 단위로 바뀌지 않고, 결제 금액은
- * {@code PaymentAttempt} 에 불변 스냅샷으로 고정된다. 따라서 같은 영업일의 같은 고시값을
- * 수십 초 재사용해도 확정된 결제의 금액이 달라지지 않는다.
+ * <p>왜 안전한가: BOK ECOS와 Frankfurter(ECB)는 일 단위 고시 환율이라 초 단위로 바뀌지 않고, 결제 금액은
+ * {@code PaymentAttempt} 에 불변 스냅샷으로 고정된다. 같은 영업일 고시값을 TTL 동안 재사용해도 확정된 금액은 바뀌지 않는다.
  *
  * <p>왜 캐시만으로 부족한가: 만료 직후 동시 요청이 몰리면 N개가 동시에 외부로 나간다
  * (thundering herd). 단일 비행으로 첫 요청만 나가고 나머지는 그 결과를 기다리게 한다.
@@ -57,7 +57,7 @@ public class CachingExchangeRateProvider implements ExchangeRateProvider {
     private volatile Instant retryNotBefore;
 
     public CachingExchangeRateProvider(
-            BokEcosExchangeRateProvider delegate,
+            @Qualifier("exchangeRateProviderDelegate") ExchangeRateProvider delegate,
             Clock clock,
             Duration ttl,
             Duration maxStale) {
@@ -66,7 +66,7 @@ public class CachingExchangeRateProvider implements ExchangeRateProvider {
 
     @Autowired
     public CachingExchangeRateProvider(
-            BokEcosExchangeRateProvider delegate,
+            @Qualifier("exchangeRateProviderDelegate") ExchangeRateProvider delegate,
             Clock clock,
             @Value("${atlas.payment.fx.cache-ttl:PT60S}") Duration ttl,
             @Value("${atlas.payment.fx.max-stale:PT10M}") Duration maxStale,

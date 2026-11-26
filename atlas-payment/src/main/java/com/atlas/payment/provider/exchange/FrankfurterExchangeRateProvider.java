@@ -9,6 +9,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -24,6 +25,7 @@ import tools.jackson.databind.JsonNode;
  * 일 때만 사용한다. 출처와 기준일은 결제 시도의 FX snapshot에 함께 저장된다.
  */
 @Component
+@Qualifier("exchangeRateProviderDelegate")
 @ConditionalOnProperty(name = "atlas.payment.exchange-rate.provider", havingValue = "frankfurter")
 public class FrankfurterExchangeRateProvider implements ExchangeRateProvider {
     private static final String SOURCE = "FRANKFURTER_ECB_USD_KRW";

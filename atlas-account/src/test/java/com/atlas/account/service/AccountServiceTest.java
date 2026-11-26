@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -224,7 +225,7 @@ class AccountServiceTest {
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
         verify(accessTokens, never()).issue(any(), any());
         verify(passwords).matches(eq("incorrect-password"), eq("dummy-encoded-password"));
-        verify(accounts, never()).createRefreshFamily(any(), any(), any(), any());
+        verify(accounts, never()).createRefreshFamily(any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -254,7 +255,7 @@ class AccountServiceTest {
 
         assertEquals(AccountException.Code.INVALID_CREDENTIALS, error.code());
         verify(accessTokens, never()).issue(any(), any());
-        verify(accounts, never()).createRefreshFamily(any(), any(), any(), any());
+        verify(accounts, never()).createRefreshFamily(any(), any(), any(), any(), anyBoolean());
         verify(accounts, never()).createMfaChallenge(anyString(), any(), any(), any());
     }
 
