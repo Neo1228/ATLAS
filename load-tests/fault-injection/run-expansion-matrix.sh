@@ -12,6 +12,9 @@
 # SYN/asymmetric drops, DB pause). Every (condition, repetition) is one run-fault-injection.sh run; the whole list is
 # shuffled with a fixed SEED so time of day and host load are not tied to a condition (the Docker VM is shared); the plan
 # is written to <out>/plan.txt and finished jobs (<out>/done/) are skipped on a re-run.
+# SET=closeout runs the EXP-104 cells instead (negative-control rerun, stall-free duplicates under host CPU load, the PT15S boundary sweep,
+# PT30S under load, SYN drop with reset connections, request drop with a strict window); same plan/shuffle/skip mechanics, TAG default t4.
+#   SET=closeout SEED=20261126 load-tests/fault-injection/run-expansion-matrix.sh
 #   SET=deep REPS=5 load-tests/fault-injection/run-expansion-matrix.sh
 #   SET=deep ONLY='^d-' REPS=1 ...        # labels matching the regex
 # Needs APP_JAR/LOCATION_JAR and FI_DIR (the directory holding jvm-negative-dns-ttl0.security) under a path the Docker VM can
@@ -60,6 +63,32 @@ deep_matrix() {
     "e-req-drop|FAULTS=location-b-req-drop LOAD_THREADS=256"
     "e-db-pause|FAULTS=order-db-pause LOAD_THREADS=256"
   )
+  if [[ "${SET:-}" == closeout ]]; then
+    export TAG="${TAG:-t4}"
+    conn="CONN_TRACE=1"
+    hog="HOG=48"
+    conditions=(
+      "a-ctl-L7@5|$two FAULTS=none RECOVERY_LEASE=PT7S $delay PLANT_DUP=1"
+      "a-ctl-hog0@6|$two FAULTS=none RECOVERY_LEASE=PT10S $delay PLANT_DUP=1 $conn"
+      "a-ctl-hog16@6|$two FAULTS=none RECOVERY_LEASE=PT10S $delay PLANT_DUP=1 $conn HOG=16"
+      "a-ctl-hog48@10|$two FAULTS=none RECOVERY_LEASE=PT10S $delay PLANT_DUP=1 $conn $hog"
+      "a-ctl-hog48-L30@5|$two FAULTS=none RECOVERY_LEASE=PT30S $delay PLANT_DUP=1 $conn $hog"
+      "a-p15-s12.5@5|$two FAULTS=app-pause FAULT_FOR=12.5 RECOVERY_LEASE=PT15S $delay"
+      "a-p15-s13@5|$two FAULTS=app-pause FAULT_FOR=13 RECOVERY_LEASE=PT15S $delay"
+      "a-p15-s14@5|$two FAULTS=app-pause FAULT_FOR=14 RECOVERY_LEASE=PT15S $delay"
+      "a-p15-s15@5|$two FAULTS=app-pause FAULT_FOR=15 RECOVERY_LEASE=PT15S $delay"
+      "a-p15-s16@5|$two FAULTS=app-pause FAULT_FOR=16 RECOVERY_LEASE=PT15S $delay"
+      "a-p30-hog-s12@5|$two FAULTS=app-pause FAULT_FOR=12 RECOVERY_LEASE=PT30S $delay $hog"
+      "a-p30-quiet-s12@5|$two FAULTS=app-pause FAULT_FOR=12 RECOVERY_LEASE=PT30S $delay"
+      "a-p15-hog-s12@5|$two FAULTS=app-pause FAULT_FOR=12 RECOVERY_LEASE=PT15S $delay $hog"
+      "a-ctl-hog-strong@4|$two FAULTS=none RECOVERY_LEASE=PT10S $delay PLANT_DUP=1 $conn HOG=48 HOG_SHARES=65536"
+      "a-p30-hog-strong-s12@4|$two FAULTS=app-pause FAULT_FOR=12 RECOVERY_LEASE=PT30S $delay HOG=48 HOG_SHARES=65536"
+      "e-ctl-none@5|FAULTS=none LOAD_THREADS=256 $conn"
+      "e-syn-drop@5|FAULTS=location-b-syn-drop LOAD_THREADS=256 $conn"
+      "e-syn-reset@5|FAULTS=location-b-syn-drop LOAD_THREADS=256 SYN_RESET=1 $conn"
+      "e-req-drop-strict@5|FAULTS=location-b-req-drop LOAD_THREADS=256"
+    )
+  fi
 
   plan="$out_dir/plan.txt"
   if [[ ! -f "$plan" ]]; then
@@ -97,7 +126,7 @@ deep_matrix() {
   echo "matrix finished $(date -u +%FT%TZ)" | tee -a "$out_dir/progress.log"
 }
 
-if [[ "${SET:-}" == deep ]]; then deep_matrix; exit 0; fi
+if [[ "${SET:-}" == deep || "${SET:-}" == closeout ]]; then deep_matrix; exit 0; fi
 runs="${RUNS:-5}"
 runs_dns="${RUNS_DNS:-3}"
 out="${OUT:-$(cd "$here/../.." && pwd)/.local/fault-injection/expansion-$(date +%Y%m%d-%H%M%S)}"

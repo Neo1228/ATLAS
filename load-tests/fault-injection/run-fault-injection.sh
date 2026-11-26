@@ -50,6 +50,12 @@
 #   FI_DIR (directory the Docker VM can read that holds jvm-negative-dns-ttl0.security), WAL_SIZE_MB (default 128), WAL_BURN_MB_S, WAL_RESTART=1 (restart policy unless-stopped on the order DB, no manual start after the space is freed),
 #   DNS_TRACE=1 / DNS_OFFSET=<s> (tcpdump sidecar on the application's DNS traffic; the load starts so the fault lands DNS_OFFSET seconds
 #   after the last observed successful lookup of order-postgres), DNS_REFRESH=1 (force a fresh lookup first), APP_IMAGE (default eclipse-temurin:25-jre).
+# Options (EXP-104): LOCATION_ACCESSLOG now logs unbuffered (compose.yaml), PLANT_DUP waits until the planted call is visible in the location log and
+#   writes planted.json (key, HTTP status, seen_in_log) which `audit_invariants.py calls --planted` turns into control_fired (exit 3 when the control
+#   did not fire), HOG=<n> [HOG_SHARES=<weight, default 8192>] (n busy loops with a high CPU weight in a labelled throwaway container on the Docker VM: host CPU pressure, removed after the
+#   audit), CONN_TRACE=1 (per application: 0.2 s samples of SYN-SENT/ESTABLISHED sockets towards :8090 and a SYN/RST capture, read-only sidecars),
+#   SYN_RESET=1 (location-b-syn-drop: besides dropping SYN, reset the established connections of the applications once, so they have to open new ones),
+#   app-pause, location-b-syn-drop and location-b-*-drop write strict_begin/strict_end (the rule or pause really in force) and the location clock skew.
 # Variables: APP_JAR / LOCATION_JAR (jars the Docker VM can read; default: the bootJar outputs), RUNS=5 RATE=40 DURATION=14 FAULT_AT=3 FAULT_FOR=6 CONVERGE_TIMEOUT=90 TAG=fault-injection OUT=...
 # Results: .local/fault-injection/<timestamp>/<fault>/run-<n>/ (git-ignored). No secret is written there:
 # every secret is generated per invocation and lives only in this process's environment.
@@ -86,6 +92,10 @@ wal_burn_mb_s="${WAL_BURN_MB_S:-0}"
 wal_fill="${WAL_FILL:-1}"
 wal_restart="${WAL_RESTART:-0}"
 sniffer_image="${SNIFFER_IMAGE:-atlasexp-h5-sniffer:1}"
+hog="${HOG:-0}"
+hog_shares="${HOG_SHARES:-8192}"
+conn_trace="${CONN_TRACE:-0}"
+syn_reset="${SYN_RESET:-0}"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 out="${OUT:-$repo_root/.local/fault-injection/$timestamp}"
 
@@ -147,7 +157,44 @@ wal_volume_down() {
   vm "sudo umount $wal_mount; sudo rmdir $wal_mount; sudo rm -f $wal_mount.img" >/dev/null 2>&1 || true
   wal_mount=""
 }
+hog_id=""
+hog_start() {  # HOG=<n>: n busy loops in one labelled container; a high CPU weight makes it compete with every container of the stack
+  hog_id="$(docker run -d --label "atlasexp=$tag" --cpu-shares "$hog_shares" alpine:3.21 sh -c "i=0; while [ \$i -lt $hog ]; do (while :; do :; done) & i=\$((i+1)); done; wait")"
+}
+hog_stop() {
+  [[ -z "$hog_id" ]] || docker rm -f "$hog_id" >/dev/null 2>&1 || true
+  hog_id=""
+}
+trace_file=""
+conn_trace_start() {  # CONN_TRACE=1: read-only sidecars in each application's network namespace
+  local svc id ip_a ip_b
+  ip_a="$(container_ip "$(cid location-a)")"; ip_b="$(container_ip "$(cid location-b)")"
+  trace_file="$1"; : > "$trace_file"
+  for svc in app app2; do
+    [[ "$svc" == app2 && "$apps" != 2 ]] && continue
+    # columns: epoch, SYN-SENT sockets to location A, to location B, ESTABLISHED to A, to B
+    id="$(docker run -d --label "atlasexp=$tag" --network "container:$(cid "$svc")" --cap-add NET_ADMIN --entrypoint sh "$nettools_image" -c \
+      "while :; do echo \"\$(date +%s.%N) \$(ss -tn state syn-sent dst $ip_a | tail -n +2 | wc -l) \$(ss -tn state syn-sent dst $ip_b | tail -n +2 | wc -l) \$(ss -tn state established dst $ip_a | tail -n +2 | wc -l) \$(ss -tn state established dst $ip_b | tail -n +2 | wc -l)\"; sleep 0.2; done")"
+    printf '%s ss %s\n' "$svc" "$id" >> "$trace_file"
+    id="$(docker run -d --label "atlasexp=$tag" --network "container:$(cid "$svc")" --cap-add NET_ADMIN --cap-add NET_RAW \
+      "$sniffer_image" tcpdump -l -tt -n -i eth0 'tcp port 8090 and (tcp[tcpflags] & (tcp-syn|tcp-rst) != 0)')"
+    printf '%s cap %s\n' "$svc" "$id" >> "$trace_file"
+  done
+}
+conn_trace_stop() {  # <run dir>: collect ss-<svc>.txt and synrst-<svc>.txt, remove the sidecars
+  local svc kind id
+  [[ -n "$trace_file" && -f "$trace_file" ]] || return 0
+  while read -r svc kind id; do
+    if [[ "$kind" == ss ]]; then docker logs "$id" > "$1/ss-$svc.txt" 2>&1 || true; else docker logs "$id" > "$1/synrst-$svc.txt" 2>&1 || true; fi
+    docker rm -f "$id" >/dev/null 2>&1 || true
+  done < "$trace_file"
+  trace_file=""
+}
 teardown() {
+  hog_stop
+  if [[ -n "$trace_file" && -f "$trace_file" ]]; then
+    while read -r _ _ id; do docker rm -f "$id" >/dev/null 2>&1 || true; done < "$trace_file"
+  fi
   if [[ -n "$project" ]]; then
     dc down -v --remove-orphans >/dev/null 2>&1 || true
   fi
@@ -170,7 +217,8 @@ now() { python3 -c 'import time; print(f"{time.time():.3f}")'; }
 cid() { dc ps -aq "$1"; }
 
 stack_snapshot() {
-  { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime; docker stats --no-stream \
+  { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime; printf 'vm_loadavg=%s\n' "$(docker exec "$(cid order-postgres)" cat /proc/loadavg 2>/dev/null || true)"
+    docker stats --no-stream \
       --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' $(docker ps -q --filter "label=atlasexp=$tag") 2>/dev/null || true; } > "$1"
 }
 
@@ -233,9 +281,9 @@ pg_ready_wait() {  # <container>: print the epoch at which the database accepts 
 # per lease claim: new token, old token and the old lease_until. A claim whose OLD token is not NULL took over a lease that was
 # never released (the holder died, stalled or failed to finish): that is the only way a second instance acts on a workflow.
 lease_audit_install() {
-  order_psql "CREATE TABLE IF NOT EXISTS h5_lease_log(workflow_id uuid, key text, old_token uuid, new_token uuid, old_until timestamptz, at timestamptz);
+  order_psql "CREATE TABLE IF NOT EXISTS h5_lease_log(workflow_id uuid, key text, old_token uuid, new_token uuid, old_until timestamptz, at timestamptz, client inet);
     CREATE OR REPLACE FUNCTION h5_lease_trace() RETURNS trigger AS \$\$ BEGIN
-      INSERT INTO h5_lease_log VALUES (NEW.workflow_id, NEW.idempotency_key, OLD.lease_token, NEW.lease_token, OLD.lease_until, clock_timestamp());
+      INSERT INTO h5_lease_log VALUES (NEW.workflow_id, NEW.idempotency_key, OLD.lease_token, NEW.lease_token, OLD.lease_until, clock_timestamp(), inet_client_addr());
       RETURN NEW; END \$\$ LANGUAGE plpgsql;
     DROP TRIGGER IF EXISTS h5_lease_trace ON order_inventory_reservation_workflow;
     CREATE TRIGGER h5_lease_trace AFTER UPDATE ON order_inventory_reservation_workflow FOR EACH ROW
@@ -248,10 +296,20 @@ lease_audit_collect() {  # <run id> <out file>
       'takeover_max_per_workflow', coalesce(max(c), 0))
     FROM (SELECT workflow_id, old_token, count(*) OVER (PARTITION BY workflow_id, old_token IS NOT NULL) c FROM h5_lease_log WHERE key LIKE '$1-%') s" > "$2" || true
 }
+lease_audit_dump() {  # <run id> <out file>: every lease claim of the run (epoch seconds, claiming application address) and every workflow with its attempts, error and location command keys (location key -> workflow)
+  order_psql "SELECT json_build_object('claims', coalesce((SELECT json_agg(json_build_object('key', key, 'old_null', old_token IS NULL, 'old_until', extract(epoch FROM old_until), 'at', extract(epoch FROM at), 'client', host(client)) ORDER BY at) FROM h5_lease_log WHERE key LIKE '$1-%'), '[]'::json),
+      'workflows', coalesce((SELECT json_agg(json_build_object('key', w.idempotency_key, 'attempts', w.attempt_count, 'state', w.workflow_state, 'error', w.last_error_code,
+        'loc_keys', (SELECT json_agg(c.idempotency_key) FROM order_inventory_location_command c WHERE c.workflow_id = w.workflow_id))) FROM order_inventory_reservation_workflow w WHERE w.idempotency_key LIKE '$1-%' ), '[]'::json))" > "$2" || true
+}
+skew_probe() {  # <container>: "<its clock minus the host clock> <half the measurement round trip>" in seconds
+  local t1 v t2
+  t1="$(now)"; v="$(docker exec "$1" date +%s.%N 2>/dev/null || echo "$t1")"; t2="$(now)"
+  python3 -c "print('%.3f %.3f' % ($v - ($t1 + $t2) / 2, ($t2 - $t1) / 2))"
+}
 order_psql() { docker exec "$(cid order-postgres)" psql -X -U atlas -d atlas_order -At -c "$1" 2>/dev/null; }
 
 inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epoch seconds
-  local fault="$1" run_dir="$2" begin finish order app
+  local fault="$1" run_dir="$2" begin finish order app strict_begin strict_end skew skew_err host_q
   order="$(cid order-postgres)"; app="$(cid app)"
   begin="$(now)"
   case "$fault" in
@@ -309,24 +367,46 @@ inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epo
     app-pause)
       # exposure: workflows that hold a live lease right before the stall (what could be taken over once it expires)
       order_psql "SELECT count(*) FROM order_inventory_reservation_workflow WHERE idempotency_key LIKE '$run_id-%' AND lease_until > now() AND workflow_state IN ('PENDING','RETRY_PENDING','COMPENSATING','COMPENSATION_REQUIRED','CANCEL_PENDING')" > "$run_dir/exposure-leased.txt"
-      docker pause "$app" >/dev/null; sleep "$fault_for"; docker unpause "$app" >/dev/null ;;
+      host_q="$(now)"  # the same workflows with the epoch their lease runs until (database clock), to compare with the stall length
+      order_psql "SELECT coalesce(json_agg(json_build_object('key', idempotency_key, 'lease_until', extract(epoch FROM lease_until), 'db_now', extract(epoch FROM clock_timestamp()))), '[]'::json) FROM order_inventory_reservation_workflow WHERE idempotency_key LIKE '$run_id-%' AND lease_until > now() AND workflow_state IN ('PENDING','RETRY_PENDING','COMPENSATING','COMPENSATION_REQUIRED','CANCEL_PENDING')" > "$run_dir/exposure-leases.json" || true
+      docker pause "$app" >/dev/null; strict_begin="$(now)"; sleep "$fault_for"; strict_end="$(now)"; docker unpause "$app" >/dev/null
+      printf '{"strict_begin":%s,"strict_end":%s,"exposure_host_epoch":%s}\n' "$strict_begin" "$strict_end" "$host_q" > "$run_dir/fault-extra.json" ;;
     order-db-pause)
       docker pause "$order" >/dev/null; sleep "$fault_for"; docker unpause "$order" >/dev/null ;;
     location-b-syn-drop)
-      local locb app_ip; locb="$(cid location-b)"
+      local locb app_ip rules="" reset_rules="" ip; locb="$(cid location-b)"
+      read -r skew skew_err <<<"$(skew_probe "$locb")"
       fw "$locb" "iptables -I INPUT -p tcp --syn -j DROP" >/dev/null
-      sleep "$(python3 -c "print($fault_for/2)")"
+      strict_begin="$(now)"
+      if [[ "$syn_reset" == 1 ]]; then  # established connections of the applications get an RST on their next segment, so the pool has to connect again
+        for ip in "$(container_ip "$app")" $([[ "$apps" == 2 ]] && container_ip "$(cid app2)" || true); do
+          reset_rules="$reset_rules iptables -I INPUT -p tcp ! --syn -s $ip -j REJECT --reject-with tcp-reset;"
+        done
+        fw "$locb" "$reset_rules" >/dev/null
+        sleep 1
+        fw "$locb" "iptables -L INPUT -v -n -x" > "$run_dir/iptables-reset-counters.txt" 2>&1 || true
+        fw "$locb" "iptables -S INPUT | grep -- '--reject-with tcp-reset' | sed 's/^-A/-D/' | while read -r r; do iptables \$r; done" >/dev/null || true
+        sleep "$(python3 -c "print(max(0, $fault_for - 1)/2)")"
+      else
+        sleep "$(python3 -c "print($fault_for/2)")"
+      fi
       fw "$app" "ss -tn state syn-sent | tail -n +2 | wc -l" > "$run_dir/syn-sent-sockets.txt" 2>&1 || true
       sleep "$(python3 -c "print($fault_for/2)")"
       fw "$locb" "iptables -L INPUT -v -n -x" > "$run_dir/iptables-counters.txt" 2>&1 || true
-      fw "$locb" "iptables -D INPUT -p tcp --syn -j DROP" >/dev/null ;;
+      strict_end="$(now)"
+      fw "$locb" "iptables -D INPUT -p tcp --syn -j DROP" >/dev/null
+      printf '{"strict_begin":%s,"strict_end":%s,"skew":%s,"skew_err":%s}\n' "$strict_begin" "$strict_end" "$skew" "$skew_err" > "$run_dir/fault-extra.json" ;;
     location-b-resp-drop|location-b-req-drop)
       local locb app_ip rule_in rule_out; locb="$(cid location-b)"; app_ip="$(container_ip "$app")"
       if [[ "$fault" == location-b-resp-drop ]]; then rule_in="OUTPUT -p tcp -d $app_ip"; else rule_in="INPUT -p tcp -s $app_ip"; fi
+      read -r skew skew_err <<<"$(skew_probe "$locb")"
       fw "$locb" "iptables -I $rule_in -j DROP" >/dev/null
+      strict_begin="$(now)"
       sleep "$fault_for"
       fw "$locb" "iptables -L -v -n -x" > "$run_dir/iptables-counters.txt" 2>&1 || true
-      fw "$locb" "iptables -D $rule_in -j DROP" >/dev/null ;;
+      strict_end="$(now)"
+      fw "$locb" "iptables -D $rule_in -j DROP" >/dev/null
+      printf '{"strict_begin":%s,"strict_end":%s,"skew":%s,"skew_err":%s}\n' "$strict_begin" "$strict_end" "$skew" "$skew_err" > "$run_dir/fault-extra.json" ;;
     order-db-wal-full)
       local lsn_before lsn_after running burned=0 failed=0 rows end_s
       [[ "$wal_restart" == 1 ]] && docker update --restart unless-stopped "$order" >/dev/null
@@ -490,6 +570,8 @@ run_one() {  # run_one <fault> <n>
     --location-a-url "$loc_a_url" --location-b-url "$loc_b_url"
   python3 "$here/reservation_load.py" load --run-id "$warm_id" --url "$app_url" --rate 20 --duration 5 \
     --out "$run_dir/warmup.jsonl" >/dev/null
+  [[ "$hog" -gt 0 ]] && hog_start
+  [[ "$conn_trace" == 1 ]] && conn_trace_start "$run_dir/trace-ids.txt"
 
   if [[ "$fault" == race ]]; then run_race "$run_dir" "$app_url" "$loc_a_url" "$loc_b_url"; return 0; fi
   run_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
@@ -524,12 +606,20 @@ run_one() {  # run_one <fault> <n>
   fi
   docker logs "$(cid location-a)" > "$run_dir/location-a.log" 2>&1 || true
   if [[ "$plant_dup" == 1 ]]; then  # negative control for the duplicate-call detector: the host repeats one existing reserve call
-    local planted_key
+    local planted_key planted_status="" planted_seen=false before_lines=0 seen_lines i
     planted_key="$(grep 'POST .*/reservations 201' "$run_dir/location-a.log" | tail -1 | awk '{print $NF}')"
-    curl -s -o /dev/null -X POST "$loc_a_url/internal/v1/fulfillment-locations/00000000-0000-0000-0000-000000000001/reservations" \
-      -H "X-Atlas-Service-Token: $INVENTORY_LOCATION_SERVICE_TOKEN" -H "Idempotency-Key: $planted_key" -H 'Content-Type: application/json' \
-      -d '{"orderId":"00000000-0000-4000-8000-00000000f00d","items":[{"sellerId":"00000000-0000-0000-0000-000000000011","skuId":"planted","quantity":1}]}' || true
-    printf '%s\n' "$planted_key" > "$run_dir/planted-key.txt"
+    if [[ -n "$planted_key" ]]; then
+      before_lines="$(grep -c -F "$planted_key" "$run_dir/location-a.log" || true)"
+      planted_status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$loc_a_url/internal/v1/fulfillment-locations/00000000-0000-0000-0000-000000000001/reservations" \
+        -H "X-Atlas-Service-Token: $INVENTORY_LOCATION_SERVICE_TOKEN" -H "Idempotency-Key: $planted_key" -H 'Content-Type: application/json' \
+        -d '{"orderId":"00000000-0000-4000-8000-00000000f00d","items":[{"sellerId":"00000000-0000-0000-0000-000000000011","skuId":"planted","quantity":1}]}' || true)"
+      for i in $(seq 1 100); do  # the access log reaches `docker logs` late when the JVM buffers it: wait for the planted call instead of assuming
+        seen_lines="$(docker logs "$(cid location-a)" 2>&1 | grep -c -F "$planted_key" || true)"
+        [[ "$seen_lines" -gt "$before_lines" ]] && { planted_seen=true; break; }
+        sleep 0.2
+      done
+    fi
+    jq -n --arg key "$planted_key" --arg status "$planted_status" --argjson seen "$planted_seen" '{key:$key, status:$status, seen_in_log:$seen}' > "$run_dir/planted.json"
   fi
   if [[ "$retry_mode" == 1 ]]; then  # same-key retries after the fault, then every key once more
     for _ in $(seq 1 180); do  # a restarted application needs ~20 s; the retries start when it is healthy
@@ -548,8 +638,10 @@ run_one() {  # run_one <fault> <n>
     --converge-timeout "$converge_timeout" --fault-file "$run_dir/fault.json" \
     --out "$run_dir/result.json" >"$run_dir/audit.log" 2>&1 || true  # a violated invariant is data, not a runner failure
   cat "$run_dir/audit.log"
-  [[ "${LEASE_AUDIT:-0}" == 1 ]] && lease_audit_collect "$run_id" "$run_dir/lease-claims.json"
+  [[ "${LEASE_AUDIT:-0}" == 1 ]] && { lease_audit_collect "$run_id" "$run_dir/lease-claims.json"; lease_audit_dump "$run_id" "$run_dir/lease-log.json"; }
   stack_snapshot "$run_dir/env-after.txt"
+  conn_trace_stop "$run_dir"
+  hog_stop
 
   kill "$events_pid" 2>/dev/null || true
   dc logs --no-color order-postgres >"$run_dir/order-postgres.log" 2>&1 || true
@@ -558,8 +650,10 @@ run_one() {  # run_one <fault> <n>
   docker logs "$(cid location-b)" >"$run_dir/location-b.log" 2>&1 || true
   docker logs "$(cid location-a)" >"$run_dir/location-a.log" 2>&1 || true
   if [[ "$LOCATION_ACCESSLOG" == true ]]; then  # duplicate remote calls per Idempotency-Key, from the locations' own access logs
+    local planted_args=(); [[ -f "$run_dir/planted.json" ]] && planted_args=(--planted "$run_dir/planted.json")
     python3 "$here/audit_invariants.py" calls --log "a=$run_dir/location-a.log" --log "b=$run_dir/location-b.log" --ips "$run_dir/ips.json" \
-      --since "$start_at" --fault "$run_dir/fault.json" --out "$run_dir/calls.json" >"$run_dir/calls.log" 2>&1 || true
+      --since "$start_at" --fault "$run_dir/fault.json" ${planted_args[@]+"${planted_args[@]}"} --out "$run_dir/calls.json" >"$run_dir/calls.log" 2>&1 \
+      || echo "calls audit exit $?: $(tail -1 "$run_dir/calls.log")" >&2
   fi
   local containers='{}' service state
   for service in app app2 order-postgres location-a location-b; do
@@ -570,13 +664,13 @@ run_one() {  # run_one <fault> <n>
     --argjson duration "$duration" --argjson fault_at "$fault_at" --argjson fault_for "$fault_for" \
     --argjson apps "$apps" --argjson retry "$retry_mode" --argjson proxy "$proxy" --arg lease "$RECOVERY_LEASE" \
     --argjson idle "$idle_before_load" --argjson load_threads "$load_threads" --argjson db_by_ip "$db_by_ip" --arg negative_ttl0 "${APP_NEGATIVE_DNS_TTL0:-0}" \
-    --arg app1_delay "$app1_delay" --arg dns_offset "$dns_offset" --argjson plant_dup "$plant_dup" --argjson wal_size_mb "$wal_size_mb" \
+    --arg app1_delay "$app1_delay" --arg dns_offset "$dns_offset" --argjson plant_dup "$plant_dup" --argjson wal_size_mb "$wal_size_mb" --argjson hog "$hog" --argjson syn_reset "$syn_reset" \
     --argjson wal_burn_mb_s "$wal_burn_mb_s" --argjson mailpit "$mailpit" \
     --argjson containers "$containers" --argjson oom_events "$(wc -l <"$run_dir/oom-events.txt" | tr -d ' ')" --argjson pg "$(pg_markers "$run_dir/order-postgres.log")" \
     '{fault:$fault, label:$label, run:$n, run_id:$run_id, rate:$rate, duration:$duration, fault_at:$fault_at,
       fault_for:$fault_for, apps:$apps, retry:$retry, proxy:$proxy, recovery_lease:$lease,
       idle_before_load:$idle, load_threads:$load_threads, db_by_ip:$db_by_ip, negative_dns_ttl0:$negative_ttl0,
-      app1_delay:$app1_delay, dns_offset:$dns_offset, plant_dup:$plant_dup, wal_size_mb:$wal_size_mb, wal_burn_mb_s:$wal_burn_mb_s, mailpit:$mailpit, containers:$containers, oom_events:$oom_events, order_postgres_log:$pg}' > "$run_dir/meta.json"
+      app1_delay:$app1_delay, dns_offset:$dns_offset, plant_dup:$plant_dup, hog:$hog, syn_reset:$syn_reset, wal_size_mb:$wal_size_mb, wal_burn_mb_s:$wal_burn_mb_s, mailpit:$mailpit, containers:$containers, oom_events:$oom_events, order_postgres_log:$pg}' > "$run_dir/meta.json"
   dc down -v --remove-orphans >/dev/null 2>&1 || true
   project=""
   return 0

@@ -471,12 +471,13 @@ def parse_calls(text):
     return calls
 
 
-def analyse_calls(calls, app_ips, since, window, until=None):
+def analyse_calls(calls, app_ips, since, window, until=None, strict=None):
     calls = [c for c in calls if c["begin"] >= since - 0.3 and (until is None or c["begin"] <= until + 2.0)]
     by_key = collections.defaultdict(list)
     for call in calls:
         by_key[call["key"]].append(call)
     xdup = foreign = double_201 = overlap = 0
+    foreign_names = []
     sources = collections.Counter(c["ip"] for c in calls)
     max_calls = 0
     for key_calls in by_key.values():
@@ -486,6 +487,7 @@ def analyse_calls(calls, app_ips, since, window, until=None):
             xdup += 1
         if any(c["ip"] not in app_ips for c in key_calls) and app_ips:
             foreign += 1
+            foreign_names.append(key_calls[0]["key"])
         if sum(1 for c in key_calls if c["status"] == 201) >= 2:
             double_201 += 1
         ordered = sorted(key_calls, key=lambda c: c["begin"])
@@ -494,7 +496,7 @@ def analyse_calls(calls, app_ips, since, window, until=None):
     summary = {
         "calls": len(calls), "keys": len(by_key),
         "dup_calls": len(calls) - len(by_key), "max_calls_per_key": max_calls,
-        "xdup_keys": xdup, "foreign_keys": foreign, "double_201": double_201, "overlap_keys": overlap,
+        "xdup_keys": xdup, "foreign_keys": foreign, "foreign_key_names": sorted(foreign_names), "double_201": double_201, "overlap_keys": overlap,
         "status": dict(collections.Counter(str(c["status"]) for c in calls)),
         "by_source": dict(sources),
     }
@@ -503,7 +505,19 @@ def analyse_calls(calls, app_ips, since, window, until=None):
         inside = [c for c in calls if begin <= c["begin"] <= end]
         summary["in_window_calls"] = len(inside)
         summary["in_window_status"] = dict(collections.Counter(str(c["status"]) for c in inside))
+    if strict:  # the interval in which the fault was really in force, in the location's clock (EXP-104)
+        begin, end = strict
+        inside = [c for c in calls if begin <= c["begin"] <= end]
+        summary["strict_window_calls"] = len(inside)
+        summary["strict_window_status"] = dict(collections.Counter(str(c["status"]) for c in inside))
     return summary
+
+
+def control_verdict(planted, summary):
+    """Did the negative control (a call with an existing key from outside the applications) show up in the audit?
+    It fired only if the runner saw the planted call in the location log AND the audit lists that key as foreign."""
+    key = (planted or {}).get("key") or ""
+    return bool(key and planted.get("seen_in_log") and key in (summary.get("foreign_key_names") or []))
 
 
 CALL_SELFTEST_LINES = """\
@@ -526,6 +540,23 @@ def selftest_calls():
     bad = {k: (got[k], v) for k, v in want.items() if got[k] != v}
     if bad:
         raise SystemExit(f"self-test FAILED (got, want): {bad}")
+    print("self-test ok")
+
+
+def selftest_control():
+    """The control verdict must be False whenever the planted call is missing, was not seen, or came from an application."""
+    got = analyse_calls(parse_calls(CALL_SELFTEST_LINES), {"10.0.0.2", "10.0.0.3"}, 0.0, None, strict=(4999.0, 5001.0))
+    cases = [
+        ({"key": "k2", "status": "409", "seen_in_log": True}, got, True),
+        ({"key": "k2", "status": "409", "seen_in_log": False}, got, False),   # the runner never saw the line
+        ({"key": "k1", "status": "200", "seen_in_log": True}, got, False),    # k1 was only called by applications
+        ({"key": "", "status": "", "seen_in_log": False}, got, False),        # nothing was planted
+        (None, got, False),                                                   # planted.json missing
+        ({"key": "k2", "status": "409", "seen_in_log": True}, analyse_calls([], {"10.0.0.2"}, 0.0, None), False),  # log without the line
+    ]
+    bad = [i for i, (planted, summary, want) in enumerate(cases) if control_verdict(planted, summary) != want]
+    if bad or got["strict_window_calls"] != 1 or got["strict_window_status"] != {"409": 1}:
+        raise SystemExit(f"self-test FAILED: control cases {bad}, strict window {got.get('strict_window_calls')}")
     print("self-test ok")
 
 
@@ -675,18 +706,29 @@ def selftest_dns():
 def calls_command(args):
     ips = json.loads(Path(args.ips).read_text(encoding="utf-8")) if args.ips else {}
     app_ips = {ips[name] for name in ("app", "app2") if name in ips}
-    window = None
+    window = strict = None
     if args.fault and Path(args.fault).exists():
         fault = json.loads(Path(args.fault).read_text(encoding="utf-8"))
         window = (fault["begin"], fault["end"])
+        if fault.get("strict_begin") is not None and fault.get("strict_end") is not None:
+            skew = fault.get("skew") or 0.0  # the location's clock minus the host's clock
+            strict = (fault["strict_begin"] + skew, fault["strict_end"] + skew)
     result = {}
     for spec in args.log:  # name=path
         name, path = spec.split("=", 1)
         result[name] = analyse_calls(parse_calls(Path(path).read_text(encoding="utf-8", errors="replace")), app_ips,
-                                     args.since, window, args.until)
+                                     args.since, window, args.until, strict)
     result["app_ips"] = sorted(app_ips)
+    exit_code = 0
+    if args.planted:
+        planted = json.loads(Path(args.planted).read_text(encoding="utf-8"))
+        result["control"] = {"planted_key": planted.get("key"), "http_status": planted.get("status"), "seen_in_log": planted.get("seen_in_log"),
+                             "fired": control_verdict(planted, result.get("a") or {})}
+        if not result["control"]["fired"]:
+            print("negative control did NOT fire: the duplicate-call zero of this run proves nothing", file=sys.stderr)
+            exit_code = 3
     Path(args.out).write_text(json.dumps(result, indent=1), encoding="utf-8")
-    return 0
+    return exit_code
 
 
 def dns_command(args):
@@ -704,6 +746,7 @@ def dns_command(args):
 
 def selftest(args):
     selftest_calls()
+    selftest_control()
     selftest_dns()
     return 0
 
@@ -800,15 +843,16 @@ def deep_command(args):
         print(f"| {label} | {len(runs)} | {sum(1 for r in runs if r['result'].get('pass_all'))} | {count(runs, 'lost_accepted_zero')} | "
               f"{count(runs, 'counts_equal')} | {count(runs, 'no_duplicates')} | {count(runs, 'converged')} | {_spread([r['load'] for r in runs])} |")
     print("\n(a) duplicate remote calls, min / median / max over runs\n")
-    print("| condition | n | exposure | takeover claims | A dup_calls | A xdup_keys | A overlap | A double_201 | B dup_calls | B xdup_keys | B double_201 | planted seen (A foreign) | converge s |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| condition | n | exposure | takeover claims | A dup_calls | A xdup_keys | A overlap | A double_201 | B dup_calls | B xdup_keys | B double_201 | planted seen (A foreign) | control fired | converge s |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for label in sorted(g for g in groups if g.startswith("a-")):
         runs = groups[label]
         def c(side, field):
             return _spread([(r["calls"].get(side) or {}).get(field) for r in runs])
         print(f"| {label} | {len(runs)} | {_spread([r['exposure'] for r in runs])} | {_spread([r['lease'].get('takeover_claims') for r in runs])} | "
               f"{c('a', 'dup_calls')} | {c('a', 'xdup_keys')} | {c('a', 'overlap_keys')} | {c('a', 'double_201')} | {c('b', 'dup_calls')} | {c('b', 'xdup_keys')} | "
-              f"{c('b', 'double_201')} | {c('a', 'foreign_keys')} | {_spread([r['result'].get('converge_seconds') for r in runs])} |")
+              f"{c('b', 'double_201')} | {c('a', 'foreign_keys')} | {sum(1 for r in runs if (r['calls'].get('control') or {}).get('fired'))}/"
+              f"{sum(1 for r in runs if 'control' in r['calls'])} | {_spread([r['result'].get('converge_seconds') for r in runs])} |")
     print("\n(b) pg_wal only\n")
     print("| condition | n | PANIC lines | No-space lines | crash restarts | order DB container exited | WAL MB in window | segments crossed | restarts in window | restarts total | ready after space freed s | first 201 after ready s |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
@@ -886,6 +930,7 @@ def main():
     calls_parser.add_argument("--since", type=float, default=0.0)
     calls_parser.add_argument("--until", type=float)
     calls_parser.add_argument("--fault")
+    calls_parser.add_argument("--planted", help="planted.json of the negative control (PLANT_DUP): exit 3 when the control did not fire")
     calls_parser.add_argument("--out", required=True)
     calls_parser.set_defaults(handler=calls_command)
     dns_parser = sub.add_parser("dns")
