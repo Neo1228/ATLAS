@@ -213,7 +213,7 @@ public class AccountRepository {
                     WHERE operator.account_id = ? AND operator.revoked_at IS NULL
                       AND account.status = 'ACTIVE' AND account.email_verified_at IS NOT NULL
                       AND mfa.enabled_at IS NOT NULL
-                      AND family.family_id = ? AND family.mfa_verified_at IS NOT NULL)
+                      AND family.family_id = ? AND family.mfa_verified_at >= mfa.enabled_at)
                 """, Boolean.class, accountId, sessionFamilyId);
         return Boolean.TRUE.equals(operator);
     }

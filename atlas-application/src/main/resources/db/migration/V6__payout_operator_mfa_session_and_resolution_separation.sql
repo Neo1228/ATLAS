@@ -14,8 +14,10 @@ ALTER TABLE refresh_token_family ADD COLUMN mfa_verified_at timestamp with time 
 --     승인한 사람이 결과도 단독 판정하면 이중 지급이나 허위 확정이 한 사람의 판단으로 가능하다.
 --   MANUAL_NO_TRANSFER_CONFIRMED: actor는 같은 지급의 MANUAL_PAYOUT_SENT actor와 달라야 한다.
 --     송금했다고 기록한 사람이 같은 지급을 "송금 없음"으로 뒤집으면 예약이 풀려 이중 지급이 가능하다.
--- 적용하지 않는 조치: PAYOUT_REQUEUED는 같은 provider ID와 같은 payload로 다시 시도할 뿐 돈의 수취인과 금액을 바꾸지
---   못하고, PAYOUT_CANCELLED와 MANUAL_PAYOUT_FAILED는 돈이 나가는 것을 막는 쪽이다(ADR-0094).
+--   PAYOUT_REQUEUED: 같은 지급의 PAYOUT_APPROVED 또는 PAYOUT_APPROVAL_REPLAYED actor와 달라야 한다.
+--     같은 ID로 재시도하더라도 provider가 첫 요청을 받지 않았으면 재큐가 실제 이체를 시작할 수 있다.
+--   PAYOUT_CANCELLED와 MANUAL_PAYOUT_FAILED는 돈이 나가는 것을 막는 쪽이므로 단독 조치를 허용한다.
+--   PAYOUT_REQUEUED, provider review, MANUAL_NO_TRANSFER_CONFIRMED의 4-eyes는 Live 이전 필수 통제다.
 -- 근거 행이 없으면(SQL로 직접 심은 데이터) 거절하지 않는다. V5와 같은 이유다.
 CREATE OR REPLACE FUNCTION enforce_payout_operator_separation() RETURNS trigger
     LANGUAGE plpgsql
@@ -48,10 +50,12 @@ BEGIN
             SELECT 1 FROM settlement_payout_operator_action prior
             WHERE prior.payout_id = NEW.payout_id AND prior.action = 'MANUAL_PAYOUT_SENT' AND prior.actor = NEW.actor
         ) INTO conflicts;
-    ELSIF NEW.action IN ('PROVIDER_REVIEW_PAID', 'PROVIDER_REVIEW_NOT_PAID') THEN
+    ELSIF NEW.action IN ('PROVIDER_REVIEW_PAID', 'PROVIDER_REVIEW_NOT_PAID', 'PAYOUT_REQUEUED') THEN
         SELECT EXISTS (
             SELECT 1 FROM settlement_payout_operator_action prior
-            WHERE prior.payout_id = NEW.payout_id AND prior.action = 'PAYOUT_APPROVED' AND prior.actor = NEW.actor
+            WHERE prior.payout_id = NEW.payout_id
+              AND prior.action IN ('PAYOUT_APPROVED', 'PAYOUT_APPROVAL_REPLAYED')
+              AND prior.actor = NEW.actor
         ) INTO conflicts;
     ELSIF NEW.action = 'MANUAL_NO_TRANSFER_CONFIRMED' THEN
         SELECT EXISTS (

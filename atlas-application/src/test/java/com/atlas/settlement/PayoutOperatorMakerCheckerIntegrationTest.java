@@ -17,6 +17,7 @@ import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -340,6 +341,37 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
     }
 
     @Test
+    void aSessionFromAnOlderMfaEnrollmentIsRejectedAfterTheSecretIsReplaced() throws Exception {
+        String path = "/api/internal/settlement/payouts/needs-review";
+        int rounds = Integer.parseInt(System.getenv().getOrDefault("H4B_ROUNDS", "1"));
+        int acceptedBeforeDisable = 0;
+        int oldSessionsReactivated = 0;
+        int newMfaSessionsRejected = 0;
+        for (int round = 0; round < rounds; round++) {
+            UUID accountId = newAccount();
+            grant(accountId);
+            AccountResponse.MfaEnrollment initial = accountService.startMfaEnrollment(accountId);
+            List<String> oldRecoveryCodes = accountService.confirmMfaEnrollment(accountId,
+                    new TOTPGenerator.Builder(initial.secret()).build().now()).recoveryCodes();
+            String oldToken = mfaSession(accountId, oldRecoveryCodes.get(0));
+            if (status(oldToken, path) == 200) acceptedBeforeDisable++;
+
+            String disableCode = new TOTPGenerator.Builder(initial.secret())
+                    .withClock(Clock.offset(Clock.systemUTC(), Duration.ofSeconds(30))).build().now();
+            accountService.disableMfa(accountId, disableCode);
+            List<String> newRecoveryCodes = enrol(accountId);
+            if (status(oldToken, path) == 200) oldSessionsReactivated++;
+            if (status(mfaSession(accountId, newRecoveryCodes.get(0)), path) != 200) newMfaSessionsRejected++;
+        }
+        System.out.println("H4B-MFA-REENROLLMENT rounds=" + rounds + " acceptedBeforeDisable=" + acceptedBeforeDisable
+                + " oldSessionsReactivated=" + oldSessionsReactivated
+                + " newMfaSessionsRejected=" + newMfaSessionsRejected);
+        assertThat(acceptedBeforeDisable).isEqualTo(rounds);
+        assertThat(oldSessionsReactivated).as("새 MFA enrollment 뒤에도 살아난 예전 session 수").isZero();
+        assertThat(newMfaSessionsRejected).as("새 MFA challenge session의 오거절 수").isZero();
+    }
+
+    @Test
     void aProviderReviewCannotBeResolvedByTheOperatorWhoApprovedThePayout() throws Exception {
         int rounds = Integer.parseInt(System.getenv().getOrDefault("H5_ROUNDS", "1"));
         Operator verifier = operator();
@@ -384,6 +416,60 @@ class PayoutOperatorMakerCheckerIntegrationTest extends PayPalIntegrationTestSup
                 + " otherOperatorRejected=" + rejectedOther);
         assertThat(resolvedBySameOperator).as("승인한 운영자가 해소에 성공한 횟수").isZero();
         assertThat(rejectedOther).as("다른 운영자의 해소를 거절한 횟수(오거절)").isZero();
+    }
+
+    @Test
+    void requeueThatCanStartAnUnacceptedPayoutRequiresAnotherOperator() throws Exception {
+        Operator verifier = operator();
+        Operator approver = operator();
+        Operator other = operator();
+        Seeded seeded = seed();
+        assertThat(verify(verifier, seeded).getStatus()).isEqualTo(200);
+        assertThat(approve(approver, seeded, "approve-requeue-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+        forceProviderReview(seeded);
+        String path = "/api/internal/settlement/payouts/" + seeded.payoutId() + "/requeue";
+
+        MockHttpServletResponse same = postAs(approver, path, "requeue-same-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}");
+        assertThat(same.getStatus()).isEqualTo(403);
+        assertThat(code(same)).isEqualTo("SEPARATION_OF_DUTIES");
+        assertThat(actions(seeded, "PAYOUT_REQUEUED")).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM settlement_payout_dispatch_outbox WHERE payout_id = ?",
+                String.class, seeded.payoutId())).isEqualTo("NEEDS_REVIEW");
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO settlement_payout_operator_action(payout_id, idempotency_key, action, actor, reason, created_at)
+                VALUES (?, ?, 'PAYOUT_REQUEUED', ?, 'direct', now())
+                """, seeded.payoutId(), "direct-requeue-" + UUID.randomUUID(), approver.accountId().toString()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(postAs(other, path, "requeue-other-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}").getStatus()).isEqualTo(200);
+        assertThat(actionActors(seeded, "PAYOUT_REQUEUED")).containsExactly(other.accountId().toString());
+        assertThat(jdbc.queryForObject("SELECT status FROM settlement_payout_dispatch_outbox WHERE payout_id = ?",
+                String.class, seeded.payoutId())).isEqualTo("PENDING");
+    }
+
+    @Test
+    void anOperatorWhoReplayedTheApprovalCannotRequeueTheSamePayout() throws Exception {
+        Operator verifier = operator();
+        Operator approver = operator();
+        Operator replayer = operator();
+        Operator other = operator();
+        Seeded seeded = seed();
+        assertThat(verify(verifier, seeded).getStatus()).isEqualTo(200);
+        assertThat(approve(approver, seeded, "approve-first-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+        assertThat(approve(replayer, seeded, "approve-replay-" + UUID.randomUUID()).getStatus()).isEqualTo(202);
+        assertThat(actionActors(seeded, "PAYOUT_APPROVAL_REPLAYED")).containsExactly(replayer.accountId().toString());
+        forceProviderReview(seeded);
+        String path = "/api/internal/settlement/payouts/" + seeded.payoutId() + "/requeue";
+
+        MockHttpServletResponse byReplayer = postAs(replayer, path, "requeue-replayer-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}");
+        assertThat(byReplayer.getStatus()).isEqualTo(403);
+        assertThat(code(byReplayer)).isEqualTo("SEPARATION_OF_DUTIES");
+        assertThat(actions(seeded, "PAYOUT_REQUEUED")).isZero();
+        assertThat(postAs(other, path, "requeue-other-" + UUID.randomUUID(),
+                "{\"reason\":\"provider-status-reviewed\"}").getStatus()).isEqualTo(200);
     }
 
     @Test
