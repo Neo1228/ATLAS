@@ -212,7 +212,7 @@ A3은 사전 예측(줄 수가 15초 뒤보다 적은 실행 ≥ 1)보다 강하
 - **E1: 맞음(예측대로 클래스 이름 없음).** `afull_h4.log`(124줄)에는 `AssertionFailedError`(`RedisStockAdmissionControlTest.java:101`)와 `FAILED` 줄 두 개뿐이고 `RedisConnectionException`·`RedisCommandTimeoutException`·WARN 줄은 0개다(`grep` 실행 결과). 테스트 XML 결과는 로그가 가리키는 요약(`xml 179 tests 1067 fail 1`)뿐이다. 그러므로 원래 실패 사건의 예외 클래스는 영구히 알 수 없다(기록이 없다).
 - **E2: 실행하지 않음, 결정(아래 종결 표 #667).**
 
-#667 결정(닫는 근거 네 가지):
+이슈 #667 결정(닫는 근거 네 가지):
 
 1. 같은 단정(`admit("c")`가 `true`)을 만드는 기전 계열은 재현했다: EXP-099 CPU 기아에서 수정 전 실제 클래스가 6/45 run 실패했고 그 WARN은 fail-open 증거(연결 초기화 timeout)였다. 지연 주입 10/10, `docker pause` 12/12도 같은 단정으로 실패했다.
 2. 수정(`#668`, 테스트 `gate()`의 명령 timeout 200ms → 30초)이 병합됐고 같은 환경에서 변경 전 대 후가 결정적 팔 10/10 대 0/10, 12/12 대 0/12다.
@@ -263,7 +263,7 @@ A3은 사전 예측(줄 수가 15초 뒤보다 적은 실행 ≥ 1)보다 강하
 
 - 새 옵션의 기본값은 기존 동작과 같다: `HOG` 0, `CONN_TRACE` 0, `SYN_RESET` 0, `LOCATION_ACCESSLOG_BUFFERED` 기본이 false(이것만 기존 `docker logs` 읽기 동작을 바꾼다. 줄은 같은 형식이고 더 일찍 나타난다). `bash -n` 두 개와 `selftest` 두 개를 변경 전·후 파일로 실행했다(통과).
 - 변경한 파일: `compose.yaml`, `run-fault-injection.sh`, `run-expansion-matrix.sh`, `audit_invariants.py`와 새 `closeout_tables.py`. 이 PR의 하네스 커밋을 되돌리면 `closeout_tables.py`가 사라지고 나머지는 변경 전 파일과 같아진다.
-- PR 전 점검: `git diff --stat origin/main...HEAD`로 마크다운·소스가 아닌 파일 0개(스크립트는 모두 재사용 하네스, 결과 파일 없음), `git grep -n -E '/Users/|/tmp/|mz01'`에 새 줄 없음.
+- PR 전 점검: `git diff --stat origin/main...HEAD`로 마크다운·소스가 아닌 파일 0개(스크립트는 모두 재사용 하네스, 결과 파일 없음), 저장소 밖 경로·사용자 홈 경로·계정명 검색에 이 PR이 더한 줄 없음.
 
 ## 삭제한 파일의 내용
 
