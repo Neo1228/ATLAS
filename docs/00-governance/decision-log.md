@@ -2,11 +2,11 @@
 
 사용자 승인 전 제안은 확정이 아니다. 결정 변경 시 새 항목/ADR을 만들고 과거 기록을 소급 수정하지 않는다.
 
-상태 표기: `✓ 확정`(승인되었거나 구현으로 채택), `✓ 결정(가정)`(근거 일부가 가정이며 바꿀 조건이 같은 행에 있음), `대체됨`(새 항목이 이어받음), `✗`(기각). `△`·`◐`·`?`처럼 끝나지 않은 상태는 쓰지 않는다.
+상태 표기: `✓ 확정`(사용자 또는 ADR의 승인 기록이 있음), `✓ 결정(가정)`(근거 일부가 가정이며 바꿀 조건이 같은 행에 있음), `대체됨`(새 항목이 이어받음), `✗`(기각). `△`·`◐`·`?`처럼 끝나지 않은 상태는 쓰지 않는다.
 
 | ID | 상태 | 요약 | 근거/추적 |
 |---|---|---|---|
-| D-001 | ✓ 확정(2026-11-26 갱신: 가설로 시작해 구현과 AGENTS.md가 채택) | Modular Monolith First 초기 가설 | [ADR-0001 상세](#detailed-decision-records) |
+| D-001 | ✓ 확정(ADR-0001이 구조·기술 방향 승인으로 기록; 승인 주체는 ADR에 명시되지 않음) | Modular Monolith First 초기 가설 | [ADR-0001 상세](#detailed-decision-records) |
 | D-002 | ✓ 확정 | A/B/C 세 영역을 장기 범위로 유지하고 순차 진행 | [요구사항](../01-requirements/requirements-index.md); 현재 범위는 [README](../../README.md) 참조 |
 | D-003 | ✓ 확정 | 결제 provider는 PayPal Sandbox. Authorization/capture/refund와 unknown-result recovery 기준은 D-081, ADR-0026 및 ADR-0029 참조. 통화 경계는 ADR-0030 기준. | [D-081](decision-log.md), [ADR-0026](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md), [ADR-0029](../02-decisions/adr/ADR-0029-order-payment-recovery-contract.md), [ADR-0030](../02-decisions/adr/ADR-0030-paypal-currency-boundary.md) |
 | D-004 | 대체됨·역사 기록 | 초기 test-environment 제약은 PayPal Sandbox 연동으로 대체. 현재 결제 처리 기준은 D-081/ADR-0026. | [D-081](decision-log.md), [ADR-0026](../02-decisions/adr/ADR-0026-paypal-sandbox-payments.md) |
