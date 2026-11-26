@@ -6,6 +6,7 @@ import com.atlas.account.service.AccountService;
 import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +30,7 @@ import jakarta.validation.Valid;
  * <p>idempotency-key 를 헤더로 받는 이유: 운영 자동화가 재시도할 때 감사 기록이
  * 중복되지 않아야 합니다. 본문에 넣으면 사유와 섞여 실수로 같은 키를 재사용하기 쉽습니다.
  */
+@ConditionalOnProperty(name = "atlas.account.suspension.operator.enabled", havingValue = "true")
 @RestController
 @RequestMapping("/api/internal/accounts")
 public class AccountSuspensionOperatorController {

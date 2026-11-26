@@ -1,10 +1,10 @@
 # ADR-0027: Buyer·Seller 계정 인증과 JWT session
 
-- 상태: D-082 확정; D-084 후속 결정·구현 및 PostgreSQL/SMTP 통합 검증 대기
+- 상태: ✓ D-082 결정, D-084 구현·PostgreSQL 통합 검증 완료. 외부 SMTP 전달과 운영 signing-key rotation은 [ADR-0093](ADR-0093-fr018-account-authentication-verification.md)의 별도 Live gate.
 - 날짜: 2026-11-10
 - 결정 ID: [D-082](../../00-governance/decision-log.md), [D-084](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-018/BR-018/INV-015/Q-007](../../01-requirements/requirements-index.md)
-- 관련 Issue: [Issue #206](https://github.com/Neo1228/ATLAS/issues/206)
+- 관련 Issue: [Issue #206](https://github.com/Neo1228/ATLAS/issues/206) (최초 구현, 닫힘), [Issue #672](https://github.com/Neo1228/ATLAS/issues/672) (약속별 증명과 잔여 결정)
 - 선행 결정: [ADR-0026 PayPal](ADR-0026-paypal-sandbox-payments.md)
 
 ## 배경
@@ -30,8 +30,8 @@ ADR-0027 결정 전 baseline:
 - Default deny. 공개 route는 login/register/refresh 및 명시적으로 검토된 catalog browse만. PayPal return/cancel callback과 서명 검증 webhook은 필요한 경로만 anonymous로 허용; provider callback은 내부 persisted state와 signature/provider token 검증을 계속 요구.
 - Checkout PayPal cancel URL에 PaymentAttempt의 create-order 요청 ID를 `state` query로 포함. Anonymous cancel callback은 `state`가 저장값과 일치할 때만 checkout 취소 실행. 누락·불일치는 400 `INVALID_REQUEST`이며 checkout·order·reservation·payment 상태 변경 0건. `state`는 attempt ID 기반 결정적 값이므로 checkoutId와 attemptId를 함께 아는 주체의 재계산 가능; 무작위 nonce·HMAC 전환은 후속 범위.
 - 배포 전 생성된 checkout attempt의 cancel URL에는 `state` 부재. 해당 PayPal 취소 redirect는 400이며, reservation은 인증된 `POST /api/checkouts/{checkoutId}/cancel`·reconcile, 승인 완료, 서명 검증 webhook 등 확정 결과 반영 시점까지 유지.
-- API는 refresh token을 refresh/logout request body와 token response body로 전달; URL·query·log 금지. Client는 secure storage 사용. Browser storage integration은 미구현; browser cookie 도입 시 HttpOnly/Secure/SameSite와 CSRF 방어를 별도 구현.
-- Core authentication/authorization behavior는 stateless access JWT + stateful refresh session. 별도 IdP/social login/MFA는 범위 외.
+- API는 refresh token을 refresh/logout request body와 token response body로 전달; URL·query·log 금지. Client는 secure storage 사용. Browser storage integration은 V1 범위 밖으로 결정; browser client를 추가할 때 HttpOnly/Secure/SameSite cookie와 CSRF 방어를 함께 수용해야 한다.
+- Core authentication/authorization behavior는 stateless access JWT + stateful refresh session. Social login·외부 IdP는 범위 밖. First-party 계정의 선택형 TOTP MFA는 D-084에서 포함.
 
 ## 근거와 대안
 
@@ -41,7 +41,7 @@ ADR-0027 결정 전 baseline:
 - Cookie session만: 단일 monolith에서는 간결하고 즉시 revoke 가능. 현재 요구는 JWT를 명시하므로 access API에는 JWT를 사용하되 refresh session을 DB에 두어 revoke와 replay detection을 확보. JWT의 완전 무상태성은 비선택.
 - Home-grown JWT, password hashing, Spring Security filter: 검증이 불완전해지기 쉬워 제외. Spring Security Resource Server, Nimbus, `PasswordEncoder`, JDK `SecureRandom` 사용.
 - BCrypt 기본 72-byte input 한계가 128자 입력 계약과 충돌. 추가 runtime dependency 없이 Spring Security PBKDF2 encoder를 사용해 입력 잘림·요청 실패 방지. Cost 증가는 실제 local workload 측정 후 검토.
-- Buyer persona는 account당 1개, Seller profile은 account당 여러 개 허용. Multi-buyer personas, staff roles, permissions matrix는 후속 범위.
+- Buyer persona는 account당 1개, Seller profile은 account당 여러 개 허용. 범용 staff/admin role matrix는 V1 범위 밖으로 결정; payout operator는 [ADR-0092](ADR-0092-payout-operator-person-identity-and-maker-checker.md)의 per-account 권한이고 나머지 내부 작업은 전용 operator chain을 쓴다. 두 번째 비-payout staff 작업을 열 때 resource별 최소 권한 matrix와 HTTP 통합 테스트를 Live gate로 수용한다.
 
 ## 흐름
 
@@ -65,12 +65,12 @@ sequenceDiagram
 ## 검증
 
 - Registration/login: duplicate normalized email, invalid password, generic unknown-account response, disabled account.
-- JWT: wrong signature/algorithm/issuer/audience, expired token, missing claims, key rotation configuration.
-- Refresh: single-use rotation, concurrent refresh race, replay-family revoke, expired/revoked session, logout.
-- Ownership: Buyer A→Buyer B cart/order/checkout/return/shipment denial; Seller A→Seller B product/inventory/coupon/order/settlement denial.
-- Security boundary: anonymous protected endpoint denied; explicitly public catalog/login/callback/webhook routes still obey route-specific validation; authenticated role cannot bypass ownership.
-- Testcontainers PostgreSQL for account/session uniqueness, transaction rollback, rotation race, and migration. ArchUnit verifies application/security dependency boundaries.
-- 미구현 정책: 이메일 인증, 비밀번호 재설정, MFA. 도입 시 요구사항과 위협 모델 별도 검토.
+- JWT: wrong signature/algorithm/issuer/audience, expired token, missing claims, 10-minute lifetime (`AccountJwtConfigurationTest`); HMAC algorithm allow-list와 60-second timestamp-skew 경계는 같은 테스트가 고정한다. 운영 signing-key rotation은 V1에서 수행하지 않고 [ADR-0093](ADR-0093-fr018-account-authentication-verification.md)의 Live gate로 결정.
+- Refresh: single-use rotation, concurrent refresh race, replay-family revoke, 7-day token·30-day family boundary, expired/revoked session, logout (`AccountAuthenticationIntegrationTest`, `AccountCredentialLifecycleIntegrationTest`).
+- Ownership: Buyer A→Buyer B cart/order/checkout/return/shipment denial; Seller A→Seller B product/inventory/coupon/order/settlement denial. 매핑된 계정 API route 전수 분류와 cross-account 거절은 `AccountOwnershipIntegrationTest`가 확인한다.
+- Security boundary: anonymous protected endpoint denied; explicitly public catalog/login/callback/webhook routes still obey route-specific validation; authenticated principal cannot bypass ownership. Operator 계정 정지 controller는 feature flag가 꺼져 있으면 등록되지 않고, 켜지면 별도 HTTP Basic chain을 쓴다.
+- Testcontainers PostgreSQL for account/session uniqueness, transaction rollback, rotation race, password/action-token expiry, MFA single-use and migration. Application/security dependency boundaries는 ArchUnit으로 확인한다.
+- Email verification, password reset, optional TOTP MFA는 D-084에서 구현·검증 완료; [EXP-101](../../03-experiments/EXP-101-account-authentication-promise-matrix.md)의 sentence-to-assertion matrix 참조.
 - Account workflow: [AccountService](../../../atlas-account/src/main/java/com/atlas/account/service/AccountService.java) · [AccountController](../../../atlas-application/src/main/java/com/atlas/application/controller/account/AccountController.java)
 - Ownership/schema: [AccountOwnershipInterceptor](../../../atlas-application/src/main/java/com/atlas/application/security/AccountOwnershipInterceptor.java) · [V25 account migration](https://github.com/Neo1228/ATLAS/blob/8bfc366bb23647993518591b06c3b9c8f6034adf/ATLAS-application/src/main/resources/db/migration/V25__account_identity.sql)(#529에서 기준 스키마로 통합되기 전 커밋)
 - Unit tests: [AccountServiceTest](../../../atlas-account/src/test/java/com/atlas/account/service/AccountServiceTest.java) · [AccountSecurityConfigurationTest](../../../atlas-account/src/test/java/com/atlas/account/config/AccountSecurityConfigurationTest.java)
