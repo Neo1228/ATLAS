@@ -101,3 +101,21 @@ Kafka 실제 스택 PR에서 넘겨받은 EXP-100 남은 항목:
 종류별 개수(위 19개 가설: 9+4+1+4+1=19): 유형 1만 9(G1, G3, G9, G10, G11, G12, G13, G15, G19), 유형 2만 4(G2, G5, G7, G16), 유형 3만 1(G4), 유형 1과 2 4(G6, G8, G14, G17), 유형 1과 3 1(G18). 모호하게 남은 항목 0. 단 G18·G19와 EXP-081·084·086의 일부 실행은 local-only(이전 에이전트 보고)이고 EXP-091의 보관 원자료 재분석과 EXP-092 G8·G9·G10 실행도 같다. 이 에이전트가 직접 실행한 것은 G1(PR #679 병합 확인), G3, G9~G12(분석 재집계 포함), G14, G15, G16(재계산), G17, 그리고 EXP-097 재수집(하위 에이전트가 같은 스크립트로 실행)이다.
 
 이 에이전트가 설치한 도구: 없음(PostgreSQL 18.6, 앱 jar, Docker Compose 스택, 파이썬 표준 라이브러리, 일회용 `markdownlint-cli2@0.24.0`). 컨테이너는 `atlasexp=t5k`, `atlasexp=t5db` 라벨을 붙이고 끝에 지웠다. 원자료는 저장소에 올리지 않았다.
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+위 종결 표에서 "local-only(이전 에이전트 보고)"로 적힌 행을 다시 실행했다. 변이는 한 번에 하나씩 넣고 대상 클래스를 돌린 뒤 복원하고 `cmp`로 같음을 확인했다. Gradle은 `--no-build-cache cleanTest`로 돌렸고 통과·실패만 보는 확인이라 호스트 부하와 무관하다.
+
+| 주장 | 다시 실행한 것 | 관측(n) | 판정 |
+| --- | --- | --- | --- |
+| G1 PR #679: 수정 전 실패·수정 후 통과 | 수정 hunk(`OrderRefundServiceImpl`의 `latestFailed` 기반 키 선택)를 되돌려(예전 한 줄 `retryAttempts == 0 ? baseKey : baseKey + "-r" + retryAttempts`) `OrderReturnWindowIntegrationTest`(7개) 실행, 수정 포함으로 다시 실행 | 되돌린 쪽: 1/7 실패(`reinspectionAfterProviderRefundFailureKeepsTheOriginalInspectionDeadline`만). 수정 포함: 7/7 통과. 각 2회 실행에서 같았다. `cmp` 일치 | 재현 ✓ |
+| G3 `ReturnPolicyTest` 21/21, 변이: 달력일 4/21, `isAfter` 2, `plusDays(2)` 10 | 기준선과 변이 3종 | 기준선 21/21. `isAfter` 변이(`!now.isBefore(...)`→`now.isAfter(...)`) 2건 실패, `plusDays(1)`→`plusDays(2)` 10건 실패. 달력일 변이는 구현 형태에 따라 개수가 달랐다: 현지 달력일 `plusDays(window.toDays())` 형태는 7건, 1일 이상 창에만 적용하는 DST 인지 형태는 4건 | `isAfter`·`plusDays(2)` 재현 ✓. 달력일 "4/21"은 DST 인지 형태에서만 재현되며 변이 문장에 그 한 줄 변경을 적어야 한다(변이 형태에 따라 4 또는 7) |
+| G13 EXP-084 `PayPalWebhookServiceTest` 변이 3종 3/3, 2/3, 1/3 실패, 무변경 대조 3/3 통과 | EXP-084 표의 설명으로 변이 3종을 새로 만들어 적용(이전 에이전트의 정확한 편집은 남아 있지 않다) | 무변경 3/3 통과. 변이 1: 3/3 실패, 변이 2: 2/3 실패, 변이 3: 1/3 실패(`checkoutCaptureRedeliveryRetriesReconciliationAfterFailure`만). `cmp` 일치 | 재현 ✓(변이는 재구성, 3·2·1 패턴 일치) |
+| G17 EXP-099 CI | EXP-099 재실행 절 참조 | 12 run·6회·0·39.3% 재현. 지금까지 43 run, Redis 클래스 16회, `FAILED` 0 | 재현 ✓ |
+| G18 EXP-081 Sandbox 호출·429 차단 | 아래 EXP-081 재실행 | 429 후보 이름 4종 n=3 모두 403 본문 없음(429 0/12), PENDING·DENIED n=3 모두 403, `INTERNAL_SERVER_ERROR` n=3 모두 500 | 재현 ✓ |
+| G19 EXP-086 민감도 321칸 불변식 위반 0, 음성 대조 27/27 | 남아 있던 원자료(`jsonl` 16개)로 집계를 다시 계산 | 321칸(대조 27, 변형 10종×27, 매진 재진입 12, 시작 한도 30 12): oversell·큐 순서 위반·오류·슬롯 한도 초과·미해결 모두 0. `stay persistent` 3칸 미해결 186·189·192(문서 "186~192명"), 지속 변형 6칸 모두 oversell·K·순서·오류 0. `maxSlotsHeld == K` 327/327칸. 음성 대조 27/27칸에서 위반 ≥1(최소 1, 최대 231) | 집계 재현 ✓. 시뮬레이션 자체는 다시 실행하지 않았다(구동기는 git 이력 `e7b0c425^`에만 있고 321칸×PostgreSQL 컨테이너 실행은 이번 예산 밖) |
+| EXP-091 첫 시행 쏠림 통계(초기하 p=0.00825, Fisher p=0.0353) | 산술 재계산 | 두 값 일치 | 재현 ✓(계산만) |
+| EXP-091 보관 원자료 재분석, EXP-092 G8·G9·G10 | 다시 실행하지 않았다 | EXP-091 원자료 보관본의 위치를 찾지 못했고, EXP-092는 57분짜리 다중 컨테이너 실행이다 | 재현 불가(원자료 없음 / 57분 실행이 이번 예산 밖). 확신도는 바꾸지 않는다 |
+| EXP-093 변이표(M0~M12) | M0, M1, M3, M4, M6, M9, M11을 한 줄 변이로 재구성해 `ReturnPolicyTest`(21)와 `OrderReturnWindowIntegrationTest`(7)를 실행 | M0 28/28 통과. M1·M3·M4·M6·M9·M11은 문서의 실패 개수와 같다. M2·M7·M8·M10은 잡히지만 변이 형태에 따라 개수가 달랐다. M5·M12는 한 줄 변이로 줄이지 못해 실행하지 못했다. 문서의 반복 횟수(n=5, n=30)는 다시 돌리지 않았다 | 부분 재현 ✓(개수는 변이 형태 의존) |
+
+재실행으로 문장을 고친 곳: G3 달력일 "4/21"에 변이 형태 단서를 붙인다(위 표). 다시 실행하지 못한 것: 위 표에서 "재현 불가"로 표시한 행과 G19 시뮬레이션 자체, EXP-093의 M5·M12·반복 횟수.

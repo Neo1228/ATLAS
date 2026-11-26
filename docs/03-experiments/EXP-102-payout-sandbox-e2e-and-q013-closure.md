@@ -107,7 +107,7 @@ FR-019, BR-019, Q-013이 `◐`, `△`로 끝나 있다. 이유는 셋이다. 지
 |---|---|---|---|
 | D1 | `provider=frankfurter`에서 앱이 기동하지 않는다 | `CachingExchangeRateProvider`가 구현 클래스 `BokEcosExchangeRateProvider`에 직접 의존해 `No qualifying bean of type ...BokEcosExchangeRateProvider`로 컨텍스트가 실패한다(이전 에이전트의 기동 로그, local-only) | 위임 대상을 인터페이스와 `@Qualifier`로 받는다. 실제 컴포넌트 선언으로 두 설정을 확인하는 시험 2건. 한정자 제거 변이 2건이 각각 실패하고 되돌리면 통과한다 |
 | D2 | 지급이 `PROVIDER_REJECTED`로 끝나는데 이유를 알 수 없다 | 예외 메시지가 상태 코드만 가졌다. 하네스 로그에서 `403 name=NOT_AUTHORIZED`가 처음 보였다(수정 후 실행 a4) | 예외 메시지에 PayPal 오류 이름과 `details[].issue` 코드만 싣는다(문자 집합 `[A-Za-z0-9_. -]`만, 수취인 값은 버린다). 워커가 WARN으로 남긴다. 시험 1건, 변이 2건이 실패한다 |
-| D3 | 실제 Sandbox가 지급 생성을 403 `NOT_AUTHORIZED`로 거절한다 | 지급용 OAuth 등록이 `scope=https://uri.paypal.com/services/payments/payouts`를 요청했다. 같은 자격 증명으로 직접 호출해 가렸다: scope 없는 토큰은 지급 생성 201, scope를 요청한 토큰은 `scope` 응답이 `openid` 한 개이고 지급 생성 403, 존재하지 않는 배치 조회도 403(scope 없는 토큰은 400 `VALIDATION_ERROR`) | scope 요청을 제거한다(ADR-0057 갱신). 시험은 scope가 비어 있음을 지킨다. 변이(scope 되살림)가 실패한다. 수정 전 실행 a4는 지급 1건이 `FAILED`로 끝났고 수정 후 a5, a6, a7은 5/5가 기대 종결 상태였다 |
+| D3 | 실제 Sandbox가 지급 생성을 403 `NOT_AUTHORIZED`로 거절한다 | 지급 OAuth 등록이 `scope=https://uri.paypal.com/services/payments/payouts`를 요청했다(이 문자열에 한정된 현상이다: `/services/` 없는 `https://uri.paypal.com/payments/payouts`는 payouts scope를 유지하고 지급 생성 201이었다, 2026-11-26 재실행 n=1). 같은 자격 증명으로 직접 호출해 가렸다: scope 없는 토큰은 지급 생성 201, scope를 요청한 토큰은 `scope` 응답이 `openid` 한 개이고 지급 생성 403, 존재하지 않는 배치 조회도 403(scope 없는 토큰은 400 `VALIDATION_ERROR`) | scope 요청을 제거한다(ADR-0057 갱신). 시험은 scope가 비어 있음을 지킨다. 변이(scope 되살림)가 실패한다. 수정 전 실행 a4는 지급 1건이 `FAILED`로 끝났고 수정 후 a5, a6, a7은 5/5가 기대 종결 상태였다 |
 
 D3 때문에 EXP-073(2026-11-25)의 "별도 활성화 없이 생성 201"은 scope를 요청하지 않은 직접 호출의 사실이었고, 앱 경로는 그동안 한 번도 실제 Sandbox에서 지급을 만든 적이 없었다는 것이 이번에 처음 드러났다.
 
@@ -146,7 +146,7 @@ D3 때문에 EXP-073(2026-11-25)의 "별도 활성화 없이 생성 201"은 scop
 | H4 (등록 전 비밀번호 세션) | 운영자 경로 통과 | 20/20 | 0/20 | 일치 |
 | H4b (MFA 재등록 이전 세션) | 이전 family가 새 enrollment 뒤에 통과 | 20/20 | 0/20 (오거절: 새 MFA 세션 0/20) | 일치 |
 | H5 (승인자가 같은 지급의 provider 검토를 `NOT_PAID`로 해소하고 두 번째 지급 요청) | 같은 account 해소 성공, 이후 두 번째 지급 요청 성공 | 20/20, 20/20 | 0/20, 0/20 (다른 운영자 오거절 0/20) | 일치 |
-| 재큐(탐색, 사전등록 이탈) | 승인자 또는 승인 재생자가 재큐 | 허용(규칙을 provider 검토와 함께 빼면 시험 3건, 재큐만 빼면 1건 실패) | 403 `SEPARATION_OF_DUTIES`, 직접 INSERT는 23514, 다른 운영자는 200 | 사전등록 표에 없던 하위 질문이라 확증이 아니라 탐색 |
+| 재큐(탐색, 사전등록 이탈) | 승인자 또는 승인 재생자가 재큐 | 허용(규칙을 provider 검토와 함께 빼면 시험 3건, 재큐만 빼면 2건 실패. 2026-11-26 재실행으로 1건에서 2건으로 고침) | 403 `SEPARATION_OF_DUTIES`, 직접 INSERT는 23514, 다른 운영자는 200 | 사전등록 표에 없던 하위 질문이라 확증이 아니라 탐색 |
 
 H4b는 사전등록 후 별도로 추가한 가설이다(위 "추가 사전등록 H4b"). H4와 H5의 `20/20 → 0/20`은 코드 경로가 결정적이라 확률이 아니라 입력 변형 20개(계정 20개)다.
 
@@ -189,6 +189,87 @@ H4b는 사전등록 후 별도로 추가한 가설이다(위 "추가 사전등�
 
 - 하네스 실행 로그 a1~a7: 결과 JSON 한 줄(지급별 상태, journal 수, 직접 조회 값)과 앱 로그의 WARN 줄. a1은 `sql()` 열 밀림으로 중단, a2는 앱이 지급 거절 사유를 남기지 않아 원인 불명으로 종료, a3는 같은 상태, a4는 사유 로그로 `403 name=NOT_AUTHORIZED issues=[NOT_AUTHORIZED]`를 보여 주었고, a5, a6, a7이 3 SUCCESS 2 UNCLAIMED였다(a6, a7은 재생과 한도 측정을 포함). 원본 결과 JSON은 하네스 `RESULTS_DIR`에만 쓰고 저장소에 두지 않는다.
 - 직접 호출 기록: scope 없는 토큰의 scope 문자열은 24개 서비스(`payments/payouts`는 목록에 없음, 그래도 생성 201), scope 요청 토큰은 `openid` 1개. 생성 201 두 건(0.74, 7.44 USD)과 `INSUFFICIENT_FUNDS` 422 한 건의 응답 키 집합.
-- 변이 결과: 서로 다른 변이 13건 중 12건은 시험이 실패했고 되돌리면 파일 비교가 같았다(MFA 표식 검사 제거 2건 실패, enrollment 비교 제거 1건, MFA 로그인 표식 제거 12건, provider 검토와 재큐 규칙 함께 제거 3건, 재큐 규칙만 제거 1건, 승인 재생 제외 1건, 송금 없음 규칙 제거 1건, 환율 공급자 한정자 제거 2건 각 1건, OAuth scope 되살림 1건, 오류 요약 제거 1건, 이메일 허용 1건). 살아남은 변이 1건은 비밀번호 로그인에도 MFA 표식을 찍는 변이이며 동등 변이다: 표식이 MFA enrollment 시각보다 이전이면 거절하는 비교(`>= enabled_at`)가 있어, 비밀번호 로그인 세션은 표식이 있어도 등록 이전이라 거절되고, 등록 이후의 비밀번호 로그인은 MFA challenge를 반환할 뿐 세션을 만들지 않으므로 관측 가능한 동작이 같다.
+- 변이 결과: 서로 다른 변이 13건 중 12건은 시험이 실패했고 되돌리면 파일 비교가 같았다(MFA 표식 검사 제거 2건 실패, enrollment 비교 제거 1건, MFA 로그인 표식 제거 12건, provider 검토와 재큐 규칙 함께 제거 3건, 재큐 규칙만 제거 2건(2026-11-26 재실행으로 1건에서 2건으로 고침), 승인 재생 제외 1건, 송금 없음 규칙 제거 1건, 환율 공급자 한정자 제거 2건 각 1건, OAuth scope 되살림 1건, 오류 요약 제거 1건, 이메일 허용 1건). 살아남은 변이 1건은 비밀번호 로그인에도 MFA 표식을 찍는 변이이며 동등 변이다: 표식이 MFA enrollment 시각보다 이전이면 거절하는 비교(`>= enabled_at`)가 있어, 비밀번호 로그인 세션은 표식이 있어도 등록 이전이라 거절되고, 등록 이후의 비밀번호 로그인은 MFA challenge를 반환할 뿐 세션을 만들지 않으므로 관측 가능한 동작이 같다.
 - 공개 문서 스냅샷: 지원 국가 표 92행의 feature set 집계와 국가 행 부재, 환율 변환 제외 목록의 South Korea 줄, PayPal 본사 페이지 403 목록.
 - 하네스 컨테이너: `atlasexp=t2` 라벨 컨테이너와 네트워크는 실행 종료 시 `compose down`이 제거했고 남은 컨테이너는 0개다.
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+위 결과·판정표 중 근거가 "에이전트 보고"나 로컬 전용이던 주장을 같은 날 다시 실행했다. 실제 Sandbox 호출은 같은 앱, 같은 자격 증명(값은 어디에도 쓰지 않았다)으로 `api-m.sandbox.paypal.com`에만 보냈고 금액은 USD 0.01이다. DB 트리거·MFA·결제 변이는 커밋된 시험을 한 번에 하나씩 변이시켜 대상 클래스를 돌리고 되돌린 뒤 `git show origin/main:<경로> | cmp`로 같음을 확인했다. 변이 확인은 통과·실패만 보므로 호스트 부하와 무관하다(호스트 잠금을 잡지 않았다). 아래 Sandbox 호출은 provider 수준에서 같은 응답을 재현한 것이다.
+
+### 실제 Sandbox 지급 호출(provider 수준)
+
+| 주장 | 다시 실행한 것 | 관측(n) | 판정 |
+| --- | --- | --- | --- |
+| D3: `scope=https://uri.paypal.com/services/payments/payouts`를 요청한 토큰은 scope가 `openid`뿐이고 지급 생성이 403 `NOT_AUTHORIZED`다 | 그 scope로 토큰을 받고 `POST /v1/payments/payouts` | 토큰 200, `scope` 목록 `[openid]`, 지급 생성 403 `name=NOT_AUTHORIZED`, `issues=[NOT_AUTHORIZED]`(n=1). `scope=openid`만 요청해도 같은 403. 임의의 문자열을 scope로 요청해도 토큰 200, `scope=[openid]`, 지급 403(n=1) | 재현 ✓ |
+| D3: scope 없이 받은 토큰은 지급 생성 201이다(앱 경로 `PayPalOAuth2ClientConfiguration`은 scope를 요청하지 않는다) | scope 없는 토큰으로 지급 생성 2건(등록된 구매자 계정 수취, 등록되지 않은 이메일 수취) | 둘 다 201, 배치 상태 `PENDING`. 코드는 읽기만 했다(`.scope(...)` 없음). 토큰의 `scope` 문자열은 지금 30개이고 `https://uri.paypal.com/payments/payouts`(`/services/` 없음)는 있으나 `https://uri.paypal.com/services/payments/payouts`는 없다. 위 "scope 문자열 24개" 기록과 지금의 30개가 다른 원인은 확인하지 않았다 | 재현 ✓(개수는 달라짐) |
+| D3 보강(문서에 없던 사실): `/services/`가 없는 `https://uri.paypal.com/payments/payouts`를 요청하면 | 같은 토큰 요청과 지급 생성 1건 | 토큰이 payouts scope를 유지하고 지급 생성 201(n=1) | 새 관측. "payouts scope를 요청하면 토큰이 `openid`로 줄어든다"는 문장은 `/services/payments/payouts` 문자열에만 해당한다(아래 문장 정정 참고) |
+| D3: 존재하지 않는 배치 조회·잘못된 본문은 scope 없는 토큰에서 400 `VALIDATION_ERROR`, scope 요청 토큰에서는 403이다(권한 검사가 먼저) | 빈 `items`로 지급 생성 | 전체 권한 토큰: 400 `VALIDATION_ERROR`. 잘못된 scope 토큰: 403 `NOT_AUTHORIZED`(n=1씩) | 재현 ✓ |
+| 응답 모양: 생성 201 `PENDING` → 조회 `PROCESSING` → `SUCCESS`, 미가입 이메일은 항목 `UNCLAIMED`(배치 `SUCCESS`) | 지급 3건 생성 뒤 `GET /v1/payments/payouts/{id}` 5번 | 생성 직후 `PENDING`, 약 8초 뒤 배치 `PROCESSING`·항목 `PENDING`, 약 35초 뒤 배치 `SUCCESS`·항목 `SUCCESS`(구매자 수취). 미가입 이메일 수취는 항목 `UNCLAIMED`·배치 `SUCCESS`(각 n=1) | 모양 재현 ✓. 앱 전체의 15/15(`SUCCESS` 9, `UNCLAIMED` 6)는 아래 별도 행 |
+| 같은 `sender_batch_id`로 다시 보내기(PAYOUT_REQUEUED가 의존) | 같은 `sender_batch_id`를 같은 `PayPal-Request-Id`로, 새 `PayPal-Request-Id`로 다시 생성(합계 3번) | 3번 모두 400 `USER_BUSINESS_ERROR`, 이슈 "Batch with given sender_batch_id already exists"(필드 `SENDER_BATCH_ID`). 200 재생이 아니고 응답에 원래 배치 ID나 링크가 없다 | EXP-073의 "중복은 400" 기록과 일치 ✓. 문서·ADR-0094에서 "같은 배치 ID 재전송이 원래 배치를 돌려준다"고 쓴 문장은 찾지 못했다 |
+| EXP-102 요약의 "지급 OAuth scope" 판정 | 위 두 행 | 앱 경로(scope 없음)는 지급을 만들고, 요청 문자열이 `/services/payments/payouts`일 때만 403이다 | 재현 ✓ |
+
+### 운영자 MFA·4-eyes DB 트리거 변이
+
+기준선: `PayoutOperatorMakerCheckerIntegrationTest` + `AccountAuthenticationIntegrationTest` 26개 통과, 실패 0, skipped 0(`PayoutOperatorMakerCheckerIntegrationTest` 단독으로는 15개이고, EXP-096의 8개에서 #680이 늘렸다). 시험 DB는 Flyway V1~V6 마이그레이션에서 만든 Testcontainers PostgreSQL 18.6이라 변이한 마이그레이션이 곧 시험 DB다.
+
+| 변이(정확한 내용) | 실패한 시험 수(이름) | `cmp` |
+| --- | --- | --- |
+| V6 승인-검증자 규칙 끔(`IF NEW.action IN ('PAYOUT_APPROVED','PAYOUT_APPROVAL_REPLAYED')` → `('NONE')`) | 3(`theSameOperatorCannotApproveThePayoutOfAProfileItVerified`, `theRuleComparesWithTheVerifierOfTheProfileVersionBoundToTheOutbox`, `concurrentApprovalsByTwoOperatorsLeaveExactlyOneApprovalAndTheVerifierIsAlwaysRejected`) | 일치 |
+| 수동 송금 승인≠송금 규칙 끔(`MANUAL_PAYOUT_SENT` → `NONE`) | 1(`manualPayoutStepsRequireDifferentOperators`) | 일치 |
+| 송금≠확인 규칙 끔(`MANUAL_PAYOUT_CONFIRMED` → `NONE`) | 1(같은 시험) | 일치 |
+| provider 검토 3종과 재큐 규칙 모두 끔 | 3(`anOperatorWhoReplayedTheApprovalCannotRequeueTheSamePayout`, `requeueThatCanStartAnUnacceptedPayoutRequiresAnotherOperator`, `aProviderReviewCannotBeResolvedByTheOperatorWhoApprovedThePayout`) | 일치 |
+| 재큐 규칙(`PAYOUT_REQUEUED`)만 끔 | **2**(`anOperatorWhoReplayedTheApprovalCannotRequeueTheSamePayout`, `requeueThatCanStartAnUnacceptedPayoutRequiresAnotherOperator`) | 일치 |
+| provider 검토만 끔(재큐 유지) | 1(`aProviderReviewCannotBeResolvedByTheOperatorWhoApprovedThePayout`) | 일치 |
+| `PROVIDER_REVIEW_PAID`만 / `PROVIDER_REVIEW_NOT_PAID`만 뺌 | 각 1(같은 검토 시험) | 일치 |
+| 승인 재생을 이전 승인 집합에서 제외(`prior.action IN (...)` → `('PAYOUT_APPROVED')`) | 1(`anOperatorWhoReplayedTheApprovalCannotRequeueTheSamePayout`) | 일치 |
+| 송금 없음 확정 규칙 끔(`MANUAL_NO_TRANSFER_CONFIRMED` → `NONE`) | 1(`aLegacyNoTransferConfirmationCannotComeFromTheOperatorWhoRecordedTheTransfer`) | 일치 |
+| 사람 계정이 아닌 행동자 면제 가드 삭제 | 1(`actorsThatAreNotPersonAccountsAreNotSubjectToTheRule`) | 일치 |
+| 운영자 행동 트리거 통째로 삭제(`DROP TRIGGER ...`) | 9 | 일치 |
+| V5 프로필 검증자≠수취인 규칙 끔 | 1(`anOperatorCannotVerifyThePayoutProfileOfItsOwnAccount`) | 일치 |
+| `AccountRepository.isActivePayoutOperator`의 MFA 표식 검사(`mfa_verified_at >= mfa.enabled_at`) 제거 | 2(`aSessionThatNeverPassedTheSecondFactorIsRejectedEvenAfterTheAccountEnrols`, `aSessionFromAnOlderMfaEnrollmentIsRejectedAfterTheSecretIsReplaced`) | 일치 |
+| 위 비교를 `mfa_verified_at IS NOT NULL`로 약화(enrollment 비교 제거) | 1(`aSessionFromAnOlderMfaEnrollmentIsRejectedAfterTheSecretIsReplaced`) | 일치 |
+| MFA 로그인이 표식을 찍지 않음(`issueTokens(account, true)` → `false`) | 12 | 일치 |
+| 세션 family를 쓰지 않음(`isPayoutOperator(accountId, sessionFamilyId)` → 임의 UUID) | 12 | 일치 |
+| `GlobalExceptionHandler`가 `23514`를 403 `SEPARATION_OF_DUTIES`로 바꾸지 않음 | 8 | 일치 |
+| 비밀번호 로그인에도 MFA 표식을 찍음(문서의 동등 변이) | 0(살아남음) | 일치 |
+| MFA 로그인 표식 제거를 `:atlas-account`의 `AccountServiceTest`(단위, 23개)에 적용 | 0(살아남음) | 일치 |
+
+결과: 트리거 분기와 MFA 검사는 변이 하나도 빠짐없이 시험을 실패시켰다(재현 ✓). 문서가 동등 변이라고 한 비밀번호 로그인 표식 변이만 살아남았다(재현 ✓, 이유는 위 문서의 설명대로 `>= enabled_at` 비교가 막는다). 모순 한 건: 위 표의 "재큐 규칙만 제거"는 문서가 시험 1건이 실패한다고 적었지만 이번에는 **2건**이 실패했다(승인 재생자가 재큐하는 시험과 재큐는 다른 운영자가 해야 한다는 시험). 문서의 같은 두 문장(재큐 행, 변이 결과 목록)을 이 값으로 고쳤다. 새 관측: `AccountServiceTest`(단위)는 MFA 로그인 표식 제거를 잡지 못하고 통합 시험만 잡는다(문서는 단위 시험이 잡는다고 쓰지 않았다).
+
+되돌림 SQL("되돌리기 훈련")은 커밋된 시험에 없다(`git grep 'DROP COLUMN mfa_verified_at'`는 V6 머리 주석에만 걸린다). 이번에 라벨 `atlasexp=claims` PostgreSQL 18.6에서 V1~V6 적용, 되돌림 SQL 실행(컬럼 사라짐 확인), V6 재적용을 한 번 수동으로 확인했다. 자동 시험이 아니라 1회 수동 확인이다.
+
+### 결제 쪽 변이와 앱 전체 지급 E2E
+
+기준선(변이 없음, `--no-build-cache`): `PayPalOAuth2ClientConfigurationTest` 2, `CachingExchangeRateProviderTest` 8, `FrankfurterExchangeRateProviderWiringTest` 2, `PayPalPayoutsRestClientTest` 10, 모두 통과(합계 22). 문서는 원래 변이 문자열을 남기지 않아 같은 의도로 다시 만들어 적용했다.
+
+| 변이 | 실패한 시험 | `cmp` |
+| --- | --- | --- |
+| D1: `BokEcosExchangeRateProvider`의 `@Qualifier("exchangeRateProviderDelegate")` 제거 | 1(`bokEcosProviderRemainsTheDefaultDelegateOfTheSharedCache`) | 일치 |
+| D1: `FrankfurterExchangeRateProvider`의 같은 한정자 제거 | 1(`frankfurterProviderIsWrappedByTheSharedCache`) | 일치 |
+| D3: 지급 OAuth 등록에 `scope(".../services/payments/payouts")`를 되살림 | 1(`payoutsRegistrationIsSeparateAndRequestsNoScope`) | 일치 |
+| D2: 지급 HTTP 오류 메시지에서 `errorSummary(payload)`를 뺌 | 1(`definitiveRejectionCarriesOnlyThePayPalErrorNameAndIssueCodesNotRecipient...`) | 일치 |
+| D2: 오류 코드 정규식이 `@`를 허용(이메일 모양 값이 메시지에 실림) | 1(같은 시험) | 일치 |
+
+결과: 변이 5건 모두 지정 시험이 실패했고 복원 뒤 `cmp`가 일치한다(재현 ✓, 문서의 "한정자 제거 변이 2건 각각 1건, scope 되살림 1건, 오류 요약 제거 1건, 이메일 허용 1건"과 같다). 새 관측: `CachingExchangeRateProvider` 생성자 두 곳의 매개변수 `@Qualifier`를 지워도 시험은 통과한다(2건). 구성마다 위임 빈이 하나뿐이라 타입만으로 주입되기 때문이며, 시험이 지키는 것은 구성 요소 선언의 한정자(위 첫 두 행)다. 문서가 이 두 변이를 주장한 적은 없다.
+
+D1의 기동 실패 증상(`No qualifying bean of type ...BokEcosExchangeRateProvider`)은 이전 에이전트의 기동 로그 인용이라 이번에 재현하지 못했다. 시도: #680의 `exchange` 패키지 수정 hunk 3개를 되돌리고 시험을 돌렸으나 현재 시험이 수정 후 생성자 시그니처를 써서 `compileTestJava`가 실패했다(수정 전 코드에 새 시험을 얹을 수 없다). 수정 전 앱 기동은 전체 스택이 필요한 확인이라 이번에 하지 않았다. 증상 기록은 `local-only`로 남기고, 수정은 위 한정자 변이 2건이 지킨다.
+
+### 앱 전체 지급 E2E(실제 Sandbox, 15/15)
+
+`load-tests/paypal-real-fault/run-local.sh`를 `REAL_SANDBOX_OPT_IN=YES PAYOUT_E2E=YES`로 3번 돌렸다(문서는 실행 명령을 적지 않았고 이 하네스의 지급 모드는 한 번에 5건으로 고정이다: 등록된 개인 계정 수취 3건 `SUCCESS` 기대, 새 이메일 수취 2건 `UNCLAIMED` 기대). 앱은 이 브랜치의 `bootJar`, PostgreSQL·Toxiproxy·Mailpit 컨테이너(`atlasexp=claims`, 하네스가 종료 때 제거, 남은 것 0), 실제 PayPal Sandbox였다. 통과·실패만 보는 확인이라 호스트 잠금 없이 `nice`로 돌렸다.
+
+| 관측 | 결과(3회, 지급 15건) | 문서 주장 |
+| --- | --- | --- |
+| 기대 종결 상태 | 15/15: `SUCCESS` 9, `UNCLAIMED` 6. 3회 모두 종료 코드 0, `payoutE2E verified` | 15/15(`SUCCESS` 9, `UNCLAIMED` 6) ✓ |
+| journal | `SUCCESS` 9건에서만 각 1건(4줄, 균형), `UNCLAIMED` 6건은 0건. 예약 금액은 `SUCCESS` 0, `UNCLAIMED` 10,000원 유지 | "journal은 `SUCCESS`에서만 1건" ✓ |
+| 승인 재생 응답 | 202 15/15, 재생 뒤 outbox·승인 행·provider 배치 ID 변화 없음 15/15 | 202 15/15 ✓ (불변은 문서가 a6·a7 10/10으로 적었고 이번은 15/15) |
+| 항목 직접 조회 | 15/15에서 항목 1개, 금액 7.44 USD, 수수료 0.15 USD, `sender_item_id` 일치 | a6·a7 10/10의 금액·수수료 대조 ✓ |
+
+재현 ✓: 문서의 E2E 주장 전부가 같은 값으로 다시 나왔다. 다시 실행하지 못한 것: PayPal 호출의 정확한 횟수(앱 로그에 provider 호출 줄이 없고 하네스가 세지 않는다. 지급 생성·조회·상세 조회가 지급 건수에 비례한다는 사실만 알고 있다). 문서의 a1~a4 실패(`sql()` 열 밀림, 403 `NOT_AUTHORIZED`)는 현재 코드에서 재현되지 않으며 이는 수정이 들어갔다는 뜻과 같다. 새로 만든 Sandbox 데이터: 지급 15건(각 7.44 USD 상당, 수수료 0.15 USD).
+
+### 확신도 갱신과 문장 정정
+
+- 판정표의 "Q-013 운영자 MFA 세션"과 "Q-013 money-moving 4-eyes" 행: 변이 실패 확인을 위 두 표로 다시 확인했다(재현). 확신도는 바꾸지 않는다.
+- 판정표의 "지급 OAuth scope, 오류 사유 가시성, Frankfurter 기동" 행과 D3 서술: "payouts scope 요청이 토큰을 `openid`로 줄인다"는 `https://uri.paypal.com/services/payments/payouts` 문자열에 한정한다는 단서를 이 문서·ADR-0057·ADR-0078 문장에 붙였다. `/services/`가 없는 문자열은 payouts scope를 유지한다(Sandbox, 2026-11-26, n=1).
+- 호출 횟수(Sandbox REST, EXP-103 재실행과 합산한 토큰 요청 33번을 포함): 지급 생성 10(201 3, 403 3, 400 4), 지급 조회 5(200), 그 밖 호출은 EXP-103 재실행 절에 적었다(전체 526). 만든 Sandbox 데이터: 지급 3건 USD 0.01(구매자 계정 2, 미등록 이메일 1).

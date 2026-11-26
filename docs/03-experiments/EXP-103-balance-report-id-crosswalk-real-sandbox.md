@@ -164,7 +164,7 @@ H6 **반증**(수정 전: 샘플 전체를 거절하고 수수료·순액 열 �
 | 파서는 공식 샘플 39행 전체를 읽고 `Sale` 외 행은 `MATCHED`가 되지 않는다 | 파서 수정 후 탐침 39행, 단위 테스트, 변이 6건 | confirmed(로컬 테스트, 공식 샘플 1개) |
 | Balance Reconciliation CSV는 이 저장소 자격 증명으로 받을 수 없다 | REST 후보 5개 404, 공식 문서의 전달 경로(웹·SFTP), 구매자 계정에 Secure FTP 메뉴 없음, SFTP 사용자 없음 | external-blocked(증거: 위 표) |
 | 실제 merchant 보고서의 열 구성이 공식 샘플과 같다 | 공식 문서가 "계정 설정에 따라 다를 수 있다"고 명시 | decided(LG-1 기준 1) |
-| Transaction Search는 실시간이 아니다 | 지연 102~132분, 관측 30여 회 | local-only |
+| Transaction Search는 실시간이 아니다 | 지연 102~132분, 관측 30여 회. 2026-11-26 재측정: 5건이 (111, 121]분에 처음 보임(해상도 10분, 1회, 1계정) | local-only(원 관측), 재측정으로 범위 안에서 재현 |
 
 ## 하지 않은 것
 
@@ -180,3 +180,24 @@ H6 **반증**(수정 전: 샘플 전체를 거절하고 수수료·순액 열 �
 - 새 결제 호출 순서와 본문: 주문 `{intent: AUTHORIZE, purchase_units: [{reference_id, amount: {currency_code: USD, value}}], payment_source: {paypal: {experience_context: {return_url, cancel_url, user_action: PAY_NOW}}}}` → authorize 본문 `{}` → capture 본문 `{amount, final_capture: true}`와 `Prefer: return=representation` → refund 본문 `{}`(전액) 또는 `{amount}`(부분). 호출마다 새 `PayPal-Request-Id`.
 - 거래 기록 조회: `GET /v1/reporting/transactions?start_date=<ISO>&end_date=<ISO>&fields=all&page_size=100&page=<n>`. 날짜 형식 `YYYY-MM-DDTHH:MM:SS-0000`.
 - 샘플 열 분석 명령: `csv.reader`로 `RD` 헤더의 `Record Type`/`Record Subtype`별 건수와 Record ID 모양(`[0-9A-Z]{17}`)을 셌다. 출력: Sale 18, Refund/Referenced 3, Refund/Non-Referenced 14, Fees/Scheme Fees 4(Record ID 빈 값).
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+위 결과 중 근거가 "에이전트 보고" 또는 로컬 전용이던 주장을 같은 날 다시 실행했다. Sandbox 호출은 같은 Sandbox 앱 1개, 같은 자격 증명(값은 어디에도 쓰지 않았다)으로 `api-m.sandbox.paypal.com`에만 보냈다. 시험은 `origin/main` 기준 커밋된 시험이며, 변이는 한 번에 하나씩 넣고 대상 클래스를 돌린 뒤 되돌리고 `git show origin/main:<경로> | cmp`로 같음을 확인했다.
+
+| 주장 | 다시 실행한 것 | 관측(n) | 판정 |
+| --- | --- | --- | --- |
+| Transaction Search `GET /v1/reporting/transactions`가 200이고 토큰에 `reporting/search/read`가 있다 | 29일 창, `fields=all`, `page_size=100`, 페이지를 끝까지 따라감 | 3쪽 모두 200(100+100+25=225건). 토큰 scope 30개에 `https://uri.paypal.com/services/reporting/search/read` 포함 | 재현 ✓ |
+| `transaction_id`는 Payments v2 capture ID와 같다(기존 109/109 + 새 7/7) | 목록의 `T0006` 139건 중 무작위 30건에 `GET /v2/payments/captures/{id}` | 30/30이 200이고 응답 `id`가 `transaction_id`와 같다. 139건 전체는 아니다 | 재현 ✓(표본 30, 전수 아님) |
+| 환불 기록의 `transaction_id`는 refund ID, `paypal_reference_id`는 원 capture ID다(기존 5/5 + 새 8/8) | 목록의 `T1107` 16건 전부에 `GET /v2/payments/refunds/{id}` | 16/16이 200, `id` 일치 16/16, `paypal_reference_id`가 목록의 `T0006` 집합에 있음 16/16, 유형 `TXN` 16/16 | 재현 ✓(n=16) |
+| 가짜 ID 0/114 | 무작위 17자리 `[0-9A-Z]` ID 114개를 두 번(같은 시드) | Payments `GET /v2/payments/captures/{id}`: 첫 실행 114개 모두 404, 둘째 실행 113개 404와 1개 503(일시적, 본문 오류 이름 없음). 목록 225건과의 충돌 0/114. Transaction Search `?transaction_id=<id>`로는 가짜 ID가 404가 아니라 200과 빈 목록(114/114)이고 실제 ID 5개는 항목 1개씩(5/5) | 재현 ✓(찾은 가짜 ID 0/114). 가짜 ID의 응답 모양은 경로마다 다르다 |
+| Balance Reconciliation CSV는 REST로 받을 수 없다(후보 경로 404) | `GET /v1/reporting/reports`, `/v1/reporting/balance-reconciliation`, `/v2/reporting/reports`, `/v1/reports` 각 2회 | 8번 모두 404 | 재현 ✓(경로 4개, 각 n=2) |
+| Transaction Search는 실시간이 아니다(지연 102~132분, 관측 30여 회, 로컬 전용) | 새 capture 3건(11:46:39~42Z)과 환불 2건(약 11:46:47Z)을 만들고 10분 간격으로 목록을 조회(13회) | 13:37:43Z에 5건 모두 안 보였고(`last_refreshed`가 11:29:59Z) 13:47:44Z에 5/5가 보였다(`last_refreshed` 11:59:59Z). 첫 노출 지연은 110.9분 초과 121.1분 이하이고 조회 간격(10분)이 해상도다. `last_refreshed`는 30분 단계로 움직이고 각 단계는 그 시각 뒤 약 97~107분 지나 보였다(3단계) | 재현 ✓: 기존 범위 안(1회 측정, 5건, 1계정, 하루). 근거를 "로컬 전용"에서 "재측정 (111, 121]분, n=5, 해상도 10분"으로 바꾼다 |
+| 거래 수(133건: T0006 109, T1107 5, 그 밖 19) | 같은 목록 | 지금은 225건: `T0006` 139, `T1107` 16, `T0001` 23, `T1105` 23, `T1503` 23, `T1900` 1 | 개수는 달라졌다(Sandbox에 다른 실행이 계속 쌓임). 위 133·109·5는 "그 시점의 값"이다. 구조(T0006, T1107, 그 밖)는 같다 |
+| 공식 샘플 CSV는 UTF-8, BOM 없음, CRLF 43개(44행), 행마다 73열 | 공식 샘플(REF-124)을 다시 내려받음 | BOM 없음, CRLF 43, 44행, 73열 44행 모두, SHA-256 앞 16자 `db06835b7aedde87` | 재현 ✓ |
+| 파서가 공식 샘플 39행을 읽고 `Sale` 외 행은 `MATCHED`가 아니다(수정 전 파서는 거절) | 공식 샘플(REF-124)을 다시 내려받아 현재 파서·서비스에 넣고(모든 ID에 확정 `CAPTURE` 후보를 주는 적대적 입력), 같은 입력을 #675의 파서 hunk를 되돌린 파서에도 넣음 | 현재 파서: 39행 읽음, 수수료 non-null 35, 순액 non-null 35, `Related Record ID` 3, `Original Record ID` 0, `Record ID`가 빈 행 4(`Fees/Scheme Fees`). 서비스: `Sale` 18 → `MATCHED`, `Refund/Referenced` 3과 `Refund/Non-Referenced` 14 → `MISMATCH`(`PROVIDER_ID_TYPE_CONFLICT`), `Fees/Scheme Fees` 4 → `UNMATCHED`(`UNSUPPORTED_PROVIDER_RECORD_TYPE`). `Sale`이 아닌 행의 `MATCHED` 0/21. 파서 hunk를 되돌린 파서: 샘플 전체를 `SettlementException`("PayPal Balance report is invalid or unsupported")으로 거절. 복원 뒤 `cmp` 일치. 샘플 파일 자체: `Record ID` 35건·`Related Record ID` 3건 모두 `[0-9A-Z]{17}`, `Referenced` 환불 3건의 부모가 같은 파일의 `Sale`(3/3), 총액 음수 3/3 | 재현 ✓(숫자가 문서와 모두 같다) |
+| 변이 6건이 각각 대상 시험을 실패시킨다(서비스 단위 1, 통합 1) | #675의 파서·행 hunk를 되돌리거나 아래 변이를 넣고 `PayPalBalanceReport*` 22개를 실행. 기준선 22/22 통과 | 파서 hunk 되돌림: 2건 실패(`readsOfficialColumnNamesAndLeavesNonReferencedRefundAndFeeRowsUnmatched`, `persistsFeeRowsWithoutRecordIdOrGrossAndRestoresThemOnReplay`). 행 hunk(빈 `recordId` 다시 거절): 1건(통합). 서비스의 빈 ID `DUPLICATE` 묶음: 2건. 순액 열 별칭 제거: 1건(서비스 단위). 수수료 열 별칭 제거: 1건(서비스 단위). `reconcilable` 항상 참: 2건. 예전 규칙 조건식: 2건. #675 운영 코드 hunk 전체 되돌림: 2건. 모든 변이에서 `cmp` 일치 | 재현 ✓(8회). 문서의 "19개"는 당시 개수이고 #695 이후 같은 클래스 묶음은 22개다 |
+
+호출 횟수(Sandbox REST, 이 문서 몫): 토큰 요청 33(모두 200), `GET /v1/reporting/transactions` 139(첫 폴링 시작 1건은 빈 창이라 404 `start_date`, 나머지 200), `GET /v2/payments/captures/{id}` 실제 60과 가짜 228, `GET /v2/payments/refunds/{id}` 32, 경로 탐색 8, `POST /v2/checkout/orders` 6(3개는 승인하지 않고 쓰지 않음), 주문 capture 3(201), 환불 2(201). 이 문서와 EXP-102를 합친 전체는 526번이다. 구매자 승인은 REST가 아니라 헤드리스 브라우저 세션 3번으로 했다. 만든 Sandbox 데이터: capture 3건과 환불 2건(각 USD 0.50), 쓰지 않은 주문 3건.
+
+재실행으로 문장을 고친 곳: 없다(위 표의 모든 판정이 기존 문장과 모순되지 않는다. 133건 등 개수는 "그 시점의 값"으로 읽으면 된다). 재현하지 못한 것: 없다. 다시 실행하지 못한 것: 처음 109건 전수 조회(이번에는 139건 중 30건 표본)와 지연의 분포(이번 1회, 5건).

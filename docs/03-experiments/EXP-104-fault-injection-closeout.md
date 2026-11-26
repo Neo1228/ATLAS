@@ -372,3 +372,16 @@ python3 load-tests/fault-injection/audit_invariants.py deep --root <작업 폴�
 - 워밍업 확인(일회용): U 5개 key의 location 호출 시각을 같은 실행의 `warmup.jsonl`(시작·끝)과 `requests.jsonl`(부하 시작)에 대조했다. 워밍업의 상태별 개수도 센 값이 위 설명의 근거다(202가 58·94·97·60건).
 - #667 E2 실행기: 만들지 않았다. 잠금을 얻지 못해 측정을 돌릴 수 없었고 EXP-099의 "삭제한 파일의 내용"에 같은 실행기(`junit-platform-launcher`로 클래스 하나를 `Launcher.execute`하는 `main`)의 만드는 방법이 있다.
 - 컨테이너: 라벨 `atlasexp=t4`. 끝난 뒤 컨테이너·볼륨·네트워크 0개, 이름 `atlasexp-t4*` 0개를 확인했다. 중단한 `e-req-drop-strict`(두 번째)와 잠금 요청을 취소한 묶음은 stack을 띄우지 않았거나 라벨로 정리했다.
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+주장 표 중 근거가 로컬 전용이던 것을 다시 실행했다. 변이는 `load-tests/fault-injection/`의 스크립트 복사본이 아니라 작업 파일에 한 번에 하나씩 넣고 자체 시험을 돌린 뒤 복원하고 `cmp`로 같음을 확인했다. 통과·실패만 보는 확인이라 호스트 부하와 무관하다.
+
+| 주장 | 다시 실행한 것 | 관측(n) | 판정 |
+| --- | --- | --- | --- |
+| `audit_invariants.py selftest`, `closeout_tables.py selftest`가 통과한다 | 두 자체 시험 실행 | 둘 다 `self-test ok` | 재현 ✓ |
+| 판정·분류 규칙 10곳을 깨뜨리면 자체 시험이 10/10 실패한다(빈 key 허용은 처음 살아남았고 `planted.json` 없음 사례를 추가한 뒤 같은 곳을 깨뜨리는 변이로 바꿔 10/10) | 본문이 나열한 10곳(대조군이 `seen_in_log` 무시, 외부 key 목록 무시, `planted.json` 없을 때 처리, 외부 key 이름 기록 중단, 외부 출처 탐지 끔, 엄격 창 집계 끔, 분류 T·R 미부착, 단일 인스턴스 key를 교차로 셈, 이전 토큰 없는 인수를 인수로 셈, 빈 key 허용)에 각각 대응하는 변이를 새로 만들어 적용 | 9곳은 자체 시험이 실패시켰다(대조군 사례 `[0]`, `[1]`, `[2,5]`, `[4]`, 외부 key 0 대 1, 교차 key 3 대 1, 분류 단정, 인수 판정 등). 빈 key 허용의 원래 형태는 살아남았고(`self-test ok`) 이는 감사가 `key in foreign_key_names`도 요구해 동작이 같아서다(동등 변이, 본문 설명과 일치). 그 자리를 대신한 `planted.json` 없음 변이(두 형태)는 실패시켰다. 엄격 창 집계 끔과 `planted` None 비허용 변이는 단정이 아니라 파이썬 예외(`KeyError`, `AttributeError`)로 잡혔다 | 10/10 재현 ✓(두 곳이 예외로만 잡힘, 빈 key 허용의 원래 형태는 본문대로 생존) |
+| (본문에 없는 추가 확인) 시간 필터 마진과 엄격 창 상한 | `since - 0.3`→`since + 0.3`, 엄격 창의 `<= end` 상한 삭제 | 둘 다 자체 시험이 통과했다(생존). 자체 시험 데이터에 그 경계의 호출이 없다. 같은 확인에서 `double 201`의 임계(2→1), 겹침 비교 반전, 분류 5종은 잡혔다(추가 변이 16개 중 14 잡힘, 2 생존) | 새 관측. 문서가 이 두 곳을 지킨다고 쓰지는 않았다. 자체 시험에 경계 사례를 추가하는 후속이 필요하다 |
+| #669 access log 버퍼링 0/10 대 10/10, 음성 대조 5/5 발동, EXP-095 줄 수 하한(5~110줄), 강한 hog 교차 중복 10/10(848 key, T 72%/R 28%), 약한 hog 0, PT15S 12.5~16초 스윕, PT30S, 174 workflow 인수 0 | 원자료(`result.json`, `calls.json`, `lease-log.json`, access log, `planted.json`)와 A1 측정 스크립트 | 다시 실행하지 못했다. `find /tmp /Users/<사용자>/Documents -maxdepth 8 -name calls.json -o -name planted.json -o -name lease-log.json`이 아무것도 돌려주지 않았고 `accesslog-probe` 스크립트도 없다. 이 실행은 앱 2대·location 2대·PostgreSQL 3개와 hog 컨테이너의 전체 compose 스택이 필요하고 칸 하나가 10~60분이다. `jars`는 `/tmp`에 남아 있으나 이번에 행렬을 돌리지 않았다 | 재현 불가(원자료·스크립트 없음, 스택 실행이 이번 예산 밖). 확신도는 바꾸지 않는다 |
+
+재실행으로 문장을 고친 곳: 없다("10/10"은 본문이 나열한 자리에서 정확하다). 추가 변이에서 드러난 두 곳의 자체 시험 공백은 위 표에 적었다.
