@@ -19,6 +19,7 @@ import com.atlas.settlement.model.PayPalBalanceReportRowStatus;
 import com.atlas.settlement.repository.JdbcPayPalBalanceReportStore;
 import com.atlas.settlement.service.PayPalBalanceReportOperatorService;
 import com.atlas.settlement.service.PayPalBalanceReportParser;
+import com.atlas.settlement.service.PayPalBalanceReportStore;
 import com.atlas.settlement.service.impl.CsvPayPalBalanceReportParser;
 import com.atlas.settlement.service.impl.PayPalBalanceReportOperatorServiceImpl;
 import java.math.BigDecimal;
@@ -29,8 +30,15 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.support.AopUtils;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -58,6 +66,7 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6");
 
     private JdbcTemplate jdbc;
+    private PayPalBalanceReportReconciliationService reconciliation;
     private PayPalBalanceReportRunIngestionService ingestion;
     private PayPalBalanceReportOperatorService operator;
 
@@ -79,8 +88,7 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                 new PayPalReportMatchResponse.Candidate("capture-mismatch", PayPalReportMatchResponse.Kind.CAPTURE,
                         true, "capture-mismatch", 5_000L, "USD")));
         JdbcPayPalBalanceReportStore store = new JdbcPayPalBalanceReportStore(jdbc);
-        PayPalBalanceReportReconciliationService reconciliation =
-                new PayPalBalanceReportReconciliationService(matchQuery, new CsvPayPalBalanceReportParser());
+        reconciliation = new PayPalBalanceReportReconciliationService(matchQuery, new CsvPayPalBalanceReportParser());
         ingestion = new PayPalBalanceReportRunIngestionService(reconciliation, store);
         operator = new PayPalBalanceReportOperatorServiceImpl(store);
     }
@@ -163,6 +171,38 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                 .isEqualTo(1);
     }
 
+    /**
+     * 운영은 {@code @Transactional} 프록시가 적용된 저장소를 쓴다. {@code new}로 만든 저장소에는 그 경계가 없어
+     * 다른 시험은 원자성을 증명하지 못하므로 여기서는 Spring 트랜잭션 안에서 행 삽입 도중 실패시킨다.
+     */
+    @Test
+    void midInsertFailureRollsBackTheRunAndItsRowsTogether() {
+        jdbc.execute("""
+                CREATE FUNCTION fail_third_row() RETURNS trigger AS $$
+                BEGIN
+                    IF NEW.row_number = 3 THEN RAISE EXCEPTION 'injected'; END IF;
+                    RETURN NEW;
+                END $$ LANGUAGE plpgsql""");
+        jdbc.execute("CREATE TRIGGER fail_third_row BEFORE INSERT ON paypal_balance_report_row "
+                + "FOR EACH ROW EXECUTE FUNCTION fail_third_row()");
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(PlatformTransactionManager.class,
+                    () -> new DataSourceTransactionManager(jdbc.getDataSource()));
+            context.register(TransactionConfiguration.class);
+            context.registerBean(PayPalBalanceReportStore.class, () -> new JdbcPayPalBalanceReportStore(jdbc));
+            context.refresh();
+            PayPalBalanceReportStore proxiedStore = context.getBean(PayPalBalanceReportStore.class);
+            assertThat(AopUtils.isAopProxy(proxiedStore)).isTrue();
+            var transactional = new PayPalBalanceReportRunIngestionService(reconciliation, proxiedStore);
+
+            assertThatThrownBy(() -> transactional.reconcile(REPORT.getBytes(StandardCharsets.UTF_8)))
+                    .isInstanceOf(DataAccessException.class);
+        }
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM paypal_balance_report_run", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM paypal_balance_report_row", Integer.class)).isZero();
+    }
+
     @Test
     void concurrentDuplicateUploadsAndDispositionsPersistOnlyOnce() throws Exception {
         try (var executor = Executors.newFixedThreadPool(4)) {
@@ -205,5 +245,10 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
         assertThatThrownBy(() -> operator.listExceptions(PayPalBalanceReportRowStatus.UNMATCHED, null, null, null, 20, 10_001))
                 .isInstanceOfSatisfying(SettlementException.class,
                         error -> assertThat(error.code()).isEqualTo(SettlementException.Code.INVALID_REQUEST));
+    }
+
+    @Configuration
+    @EnableTransactionManagement
+    static class TransactionConfiguration {
     }
 }

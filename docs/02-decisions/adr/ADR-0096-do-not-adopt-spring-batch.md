@@ -7,7 +7,7 @@
 
 ## 문제
 
-Spring Batch를 도입하면 이점이 있는 곳이 있는가? 후보는 두 부류다. ① `@Scheduled` 폴링 작업 12개(11개 클래스). ② PayPal 잔액 보고서 가져오기(CSV 최대 10 MiB·10,000행). 새 dependency는 필요성과 대안을 확인해야 한다(`AGENTS.md`).
+Spring Batch를 도입하면 이점이 있는 곳이 있는가? 후보는 두 부류다. ① `@Scheduled` 메서드 15개(13개 클래스, 2026-11-26 `git grep` 기준). ② PayPal 잔액 보고서 가져오기(CSV 최대 10 MiB·10,000행). 새 dependency는 필요성과 대안을 확인해야 한다(`AGENTS.md`).
 
 ## 결정
 
