@@ -191,7 +191,7 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 | 운영자가 실제로 알림을 받는다 | alert rule/receiver 확인 못 함 | not confirmed |
 | 7일·5영업일이 법 또는 Seller 정책에 맞다 | 외부 정책 근거를 조사하지 않음 | assumed |
 | 공휴일이 낀 5영업일 마감이 실제 법·정책상 맞다 | 휴일 달력 미지원 | not confirmed |
-| provider 실패 뒤 재검수에도 dueAt이 유지된다 | receive replay에서 시각 불변, provider 실패 재시도는 실행 안 함 | inconclusive |
+| provider 실패 뒤 재검수에도 dueAt이 유지된다 | 통합 테스트 `reinspectionAfterProviderRefundFailureKeepsTheOriginalInspectionDeadline`: 첫 검수에서 provider가 `FAILED`를 돌려준 뒤 같은 검수를 다시 호출하면 수정 후 `REFUND_RECORDED`가 되고 `receivedAt`·`inspectionDueAt`은 그대로다(수정 전에는 재호출이 `OrderException`으로 막혀 환불이 기록되지 않았다) | local-only(실행함, 결정적 시험 1건, 수정 전·후 비교) |
 | 추가 설정 값 및 공휴일/DST 생산 날짜가 모두 정확하다 | P30D 단일 설정 행렬 및 단위 시간대 sweep만 수행 | not confirmed |
 
 ## 최종 가설 판정
@@ -208,6 +208,17 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 | H8 | confirmed | 주말 skip, 금요일→화요일, timezone edge; M7 탐지 |
 | H9 | confirmed | 마감 -1초/-1ns 정상, 정각부터 overdue; M8 탐지 |
 | H10 | local-only | flag·gauge 및 no-auto-money와 늦은 환불 확인; receiver는 미확인 |
-| H11 | inconclusive | receive replay 불변; provider 실패 뒤 재검수는 실행 안 함 |
+| H11 | local-only(실행함) | 수정 후 통과, 수정 전 실패(재검수가 `OrderException`으로 막힘). 마감 불변은 확인됐고, 시험이 환불 키 결함을 드러내 고쳤다(아래 후속 절) |
 | H12 | local-only | 값 범위와 운영 yml 기본값 확인; 잘못된 ZoneId 문자열의 context startup은 직접 시험 안 함 |
 | H13 | confirmed | 실제 env flag=false에서 7/7, 기본 flag=true에서 만료 4/4 거절; 서비스 fixture off→on 시험 |
+
+## 후속 점검(2026-11-26): provider 환불 실패 뒤 재검수가 막히던 결함
+
+이 절은 H11이 `inconclusive`로 남았던 이유(provider 실패 뒤 재검수를 실행하지 않았다)를 실행으로 닫은 결과다. 본문과 구분하려고 따로 둔다.
+
+- 문제: 반품 검수(`OrderReturnServiceImpl.inspect`)에서 환불을 송금하려는 첫 시도를 provider가 `FAILED`로 돌려주면, 같은 검수를 다시 호출해도 환불이 기록되지 않고 `OrderException`이 났다. 환불 요청 키를 고르는 `OrderRefundServiceImpl`이 재시도 횟수(`-r` 접미사 개수)가 0이면 기본 키를 다시 썼고, 그 키의 기록이 이미 터미널 `FAILED`라서 새 송금 작업이 만들어지지 않았다.
+- 재현(결정적 시험 1건): `OrderReturnWindowIntegrationTest.reinspectionAfterProviderRefundFailureKeepsTheOriginalInspectionDeadline`. 수정 전에는 이 시험이 재검수 호출(318행)에서 `OrderException`으로 실패하고, 수정 후에는 `REFUND_RECORDED`가 되고 `receivedAt`과 `inspectionDueAt`이 첫 시도와 같다. 같은 시험을 수정을 제거한 채 다시 돌려 실패함을 확인했고(변이 1건) 복원은 `cmp`로 바이트 동일을 확인했다.
+- 수정: 가장 최근 시도가 `FAILED`일 때만 다음 회차 키(`-rN+1`)를 만든다. `FAILED`가 아닌 시도(진행 중, 결과 불명, 응답 유실)는 같은 키를 다시 써서 같은 송금 작업을 이어 간다. 그래야 이중 환불이 생기지 않는다.
+- 금전 안전: 새 키를 만드는 조건은 "최근 시도가 영구 실패로 확정됨" 하나뿐이다. 결과 불명 상태에서 새 키를 만들지 않는다.
+- 한계: 시험은 결정적 1건이고 provider는 대역이다. 실제 PayPal Sandbox에서 환불 실패를 유도해 재검수까지 이어 본 실행은 없다. 결과 불명(`UNKNOWN`)에서 재호출이 같은 키를 쓰는지는 기존 시험이 다룬다고 가정하며 이 시험으로 확인하지 않았다.
+- 되돌리기: 이 PR을 되돌리면 이전 키 선택으로 돌아간다(스키마 변경 없음).

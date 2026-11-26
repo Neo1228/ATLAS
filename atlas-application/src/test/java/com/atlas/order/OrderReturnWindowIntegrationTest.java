@@ -16,6 +16,7 @@ import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.dto.response.ReturnResponse;
 import com.atlas.order.exception.OrderException;
+import com.atlas.order.model.OrderRefundPaymentStatus;
 import com.atlas.order.model.OrderReturnStatus;
 import com.atlas.order.model.OrderState;
 import com.atlas.order.repository.OrderFulfillmentRepository;
@@ -278,6 +279,51 @@ class OrderReturnWindowIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(sellerView(fixture, first.returnId()).inspectionOverdue()).isFalse();
         inspectionMetrics.refresh();
         assertThat(overdueGauge()).isEqualTo(1.0);
+    }
+
+    /**
+     * 검수 중 provider 환불이 FAILED로 끝나면 반품은 RECEIVED로 남고(충돌 응답) 같은 검수를 다시 호출해 재시도한다
+     * (EXP-093 H11, EXP-105 G1). 이 재시도가 {@code received_at}을 다시 쓰거나 마감을 현재 시각에서 다시 계산하면
+     * 실패 횟수만큼 마감이 밀린다. 시계는 실패 시점과 재시도 시점에 각각 앞으로 옮겨 재계산이 있으면 값이 달라지게 한다.
+     */
+    @Test
+    void reinspectionAfterProviderRefundFailureKeepsTheOriginalInspectionDeadline() {
+        Fixture fixture = paidOrder(3);
+        Instant monday = nextMondayTenKst(Instant.now());
+        deliverAll(fixture, monday);
+        ReturnResponse.OrderReturn requested = returns.request(returnRequest(fixture, "key-retry", 0, 1));
+        ReturnResponse.OrderReturn received = returns.receive(
+                fixture.sellerId(), fixture.orderId(), requested.returnId());
+        Instant receivedAt = jdbc.queryForObject(
+                "SELECT received_at FROM order_return WHERE return_id = ?", Instant.class, requested.returnId());
+        Instant dueAt = sellerView(fixture, requested.returnId()).inspectionDueAt();
+        assertThat(received.receivedAt()).isEqualTo(receivedAt);
+        assertThat(dueAt).isEqualTo(policy.inspectionDueAt(receivedAt));
+
+        // 첫 시도: provider가 환불을 FAILED로 돌려준다. 시계는 수령 2일 뒤다.
+        clock.set(monday.plus(Duration.ofDays(2)));
+        queueRefundStatus("FAILED");
+        assertThatThrownBy(() -> returns.inspect(fixture.sellerId(), fixture.orderId(), requested.returnId(),
+                inspection(fixture, "PASSED")))
+                .isInstanceOfSatisfying(OrderException.class,
+                        error -> assertThat(error.code()).isEqualTo(OrderException.Code.CONFLICT));
+        ReturnResponse.SellerOrderReturn afterFailure = sellerView(fixture, requested.returnId());
+        assertThat(afterFailure.status()).isEqualTo(OrderReturnStatus.RECEIVED);
+        assertThat(afterFailure.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.FAILED);
+        assertThat(afterFailure.receivedAt()).isEqualTo(receivedAt);
+        assertThat(afterFailure.inspectionDueAt()).isEqualTo(dueAt);
+
+        // 재시도: 같은 검수를 다시 호출한다. 시계는 수령 3일 뒤라 마감 재계산이 있으면 값이 달라진다.
+        clock.set(monday.plus(Duration.ofDays(3)));
+        ReturnResponse.OrderReturn retried = returns.inspect(fixture.sellerId(), fixture.orderId(),
+                requested.returnId(), inspection(fixture, "PASSED"));
+        assertThat(retried.status()).isEqualTo(OrderReturnStatus.REFUND_RECORDED);
+        assertThat(retried.receivedAt()).isEqualTo(receivedAt);
+        ReturnResponse.SellerOrderReturn afterRetry = sellerView(fixture, requested.returnId());
+        assertThat(afterRetry.receivedAt()).isEqualTo(receivedAt);
+        assertThat(afterRetry.inspectionDueAt()).isEqualTo(dueAt);
+        assertThat(jdbc.queryForObject("SELECT received_at FROM order_return WHERE return_id = ?",
+                Instant.class, requested.returnId())).isEqualTo(receivedAt);
     }
 
     @Test

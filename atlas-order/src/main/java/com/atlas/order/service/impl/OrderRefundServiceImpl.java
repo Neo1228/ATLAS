@@ -122,9 +122,17 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         // key 를 고를 필요가 없다.
         String baseKey = "return-" + returnId;
         // 회차 구분자 "-r" 까지 포함해 세야 다른 반품 키와 섞이지 않는다. key 의 유일 범위가
-        // 주문이므로 같은 주문 안에서만 센다.
-        int priorAttempts = refunds.countByKeyPrefix(row.orderId(), baseKey + "-r");
-        String idempotencyKey = priorAttempts == 0 ? baseKey : baseKey + "-r" + priorAttempts;
+        // 주문이므로 같은 주문 안에서만 센다. 이 수는 기본 키 뒤에 붙은 재시도 회차(-r1, -r2, ...)의 개수다.
+        int retryAttempts = refunds.countByKeyPrefix(row.orderId(), baseKey + "-r");
+        String latestKey = retryAttempts == 0 ? baseKey : baseKey + "-r" + retryAttempts;
+        // 가장 최근 시도가 영구 실패(FAILED)일 때만 다음 회차를 만든다. 실패가 아닌 시도(진행 중, 결과 불명,
+        // 응답 유실)는 같은 키를 다시 써서 같은 송금 작업을 이어 가야 이중 환불이 생기지 않는다.
+        // 기본 키가 FAILED 인데 "-r" 개수가 0이라고 기본 키를 다시 쓰면 첫 재시도가 terminal FAILED 를
+        // 곧바로 돌려받아 영원히 송금되지 않는다(EXP-093 G1 통합 시험이 찾은 결함).
+        boolean latestFailed = refunds.findByIdempotencyKey(row.orderId(), latestKey)
+                .map(record -> refunds.paymentStatus(record.refundId()) == OrderRefundPaymentStatus.FAILED)
+                .orElse(false);
+        String idempotencyKey = latestFailed ? baseKey + "-r" + (retryAttempts + 1) : latestKey;
         return new OrderRequest.Refund(row.sellerId(), row.orderId(), idempotencyKey, passed);
     }
 
