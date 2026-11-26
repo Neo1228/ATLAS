@@ -5,6 +5,8 @@ import com.atlas.order.dto.response.ReservationWorkflowResponse;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.model.RemoteReservationStatus;
 import com.atlas.order.service.LocationClient;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -14,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -32,12 +35,19 @@ public class HttpLocationClient implements LocationClient {
     private final String serviceToken;
     private final Duration connectTimeout;
     private final Duration readTimeout;
+    private final LocationCallBulkhead bulkhead;
 
     public HttpLocationClient(RestClient.Builder builder,
             @Value("${atlas.order-inventory-reservation.location-endpoints:}") String endpointConfiguration,
             @Value("${atlas.order-inventory-reservation.service-token:}") String serviceToken,
             @Value("${atlas.order-inventory-reservation.connect-timeout:250ms}") Duration connectTimeout,
-            @Value("${atlas.order-inventory-reservation.read-timeout:PT2S}") Duration readTimeout) {
+            @Value("${atlas.order-inventory-reservation.read-timeout:PT2S}") Duration readTimeout,
+            @Value("${atlas.order-inventory-reservation.bulkhead.max-concurrent-calls:0}") int maxConcurrentCalls,
+            MeterRegistry meters) {
+        Counter rejected = Counter.builder("atlas.inventory.location.bulkhead.rejected")
+                .description("위치 서비스 호출 상한 초과로 보내기 전에 거절한 요청 스레드 호출 수")
+                .register(meters);
+        this.bulkhead = new LocationCallBulkhead(maxConcurrentCalls, rejected::increment);
         this.builder = builder;
         this.endpoints = parseEndpoints(endpointConfiguration);
         this.serviceToken = serviceToken;
@@ -55,12 +65,12 @@ public class HttpLocationClient implements LocationClient {
         ReserveRequest request = new ReserveRequest(orderId,
                 items.stream().map(item -> new RequestItem(item.sellerId(), item.skuId(), item.quantity())).toList());
         try {
-            InventoryResponse response = client(fulfillmentLocationId).post()
+            InventoryResponse response = guarded(() -> client(fulfillmentLocationId).post()
                     .uri("/internal/v1/fulfillment-locations/{locationId}/reservations", fulfillmentLocationId)
                     .header("Idempotency-Key", idempotencyKey)
                     .body(request)
                     .retrieve()
-                    .body(InventoryResponse.class);
+                    .body(InventoryResponse.class));
             if (response == null || response.reservationId() == null || response.expiresAt() == null) {
                 throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_RESPONSE", "Inventory service returned no reservation identity or expiry");
@@ -81,12 +91,12 @@ public class HttpLocationClient implements LocationClient {
     @Override
     public void cancel(UUID fulfillmentLocationId, UUID orderId, String idempotencyKey) {
         try {
-            client(fulfillmentLocationId).post()
+            guarded(() -> client(fulfillmentLocationId).post()
                     .uri("/internal/v1/fulfillment-locations/{locationId}/reservations/cancel", fulfillmentLocationId)
                     .header("Idempotency-Key", idempotencyKey)
                     .body(new CancellationRequest(orderId))
                     .retrieve()
-                    .toBodilessEntity();
+                    .toBodilessEntity());
         } catch (RestClientResponseException exception) {
             throw clientFailure(exception);
         } catch (ResourceAccessException exception) {
@@ -121,13 +131,13 @@ public class HttpLocationClient implements LocationClient {
         RestockRequest request = new RestockRequest(
                 items.stream().map(item -> new RequestItem(item.sellerId(), item.skuId(), item.quantity())).toList());
         try {
-            InventoryResponse response = client(fulfillmentLocationId).post()
+            InventoryResponse response = guarded(() -> client(fulfillmentLocationId).post()
                     .uri("/internal/v1/fulfillment-locations/{locationId}/reservations/{reservationId}/restock",
                             fulfillmentLocationId, reservationId)
                     .header("Idempotency-Key", restockKey)
                     .body(request)
                     .retrieve()
-                    .body(InventoryResponse.class);
+                    .body(InventoryResponse.class));
             if (response == null || !reservationId.equals(response.reservationId())) {
                 throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_OR_UNEXPECTED_RESPONSE", "Inventory restock result is unknown");
@@ -145,11 +155,11 @@ public class HttpLocationClient implements LocationClient {
     @Override
     public long availableStock(UUID fulfillmentLocationId, UUID sellerId, String skuId) {
         try {
-            StockResponse response = client(fulfillmentLocationId).get()
+            StockResponse response = guarded(() -> client(fulfillmentLocationId).get()
                     .uri("/internal/v1/fulfillment-locations/{locationId}/availability/{sellerId}/{skuId}",
                             fulfillmentLocationId, sellerId, skuId)
                     .retrieve()
-                    .body(StockResponse.class);
+                    .body(StockResponse.class));
             if (response == null) {
                 throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                         "EMPTY_RESPONSE", "Inventory stock is unknown");
@@ -167,11 +177,11 @@ public class HttpLocationClient implements LocationClient {
     private ReservationWorkflowResponse.RemoteReservation transition(UUID fulfillmentLocationId, UUID reservationId,
             String operation, Set<RemoteReservationStatus> acceptedStates) {
         try {
-            InventoryResponse response = client(fulfillmentLocationId).post()
+            InventoryResponse response = guarded(() -> client(fulfillmentLocationId).post()
                     .uri("/internal/v1/fulfillment-locations/{locationId}/reservations/{reservationId}/{operation}",
                             fulfillmentLocationId, reservationId, operation)
                     .retrieve()
-                    .body(InventoryResponse.class);
+                    .body(InventoryResponse.class));
             if (response == null || !reservationId.equals(response.reservationId())) {
                 throw new LocationClientException(
                         LocationClientException.Failure.RETRYABLE_UNKNOWN,
@@ -193,6 +203,11 @@ public class HttpLocationClient implements LocationClient {
             throw new LocationClientException(LocationClientException.Failure.RETRYABLE_UNKNOWN,
                     "INVENTORY_UNAVAILABLE", "Inventory location transition result is unknown");
         }
+    }
+
+    /** 요청 스레드의 동시 호출 상한 안에서 호출한다(기본은 상한 없음). */
+    private <T> T guarded(Supplier<T> call) {
+        return bulkhead.call(call);
     }
 
     private RestClient client(UUID fulfillmentLocationId) {
