@@ -78,3 +78,15 @@ FR-019, BR-019, Q-013이 `◐`, `△`로 끝나 있다. 이유는 셋이다. 지
 2. H4, H5가 기각되지 않으면 구현한다. 기각되면 구현하지 않고 기각 증거를 적는다.
 3. H6이 0이면 유형 3이다. 문서에 "확인하지 못했다"로 끝내지 않고 질문, 필요한 입력, V1 결정을 적는다.
 4. H7은 결과와 무관하게 영구 잠금·회전 정책을 이번에 구현하지 않는다(근거를 결과 절에 쓴다). 한도 자체가 없으면 그때만 구현한다.
+## 추가 사전등록 H4b (2026-11-26)
+
+| 가설 | 지표 | 기대값 | 반증 조건 | 결정 |
+|---|---|---|---|---|
+| MFA가 꺼졌다가 새 secret으로 재등록되면 이전 enrollment 때 2차 인증한 refresh family는 지급 운영자 경로에 다시 들어오지 못한다 | 같은 PostgreSQL account에서 disable → 새 secret enrollment/confirm 후, 예전 access JWT와 새 MFA challenge access JWT를 각각 검사하는 n=20 | 변경 전 이전 family 통과 20/20; 변경 후 이전 family 통과 0/20, 새 family 거절 0/20 | 변경 전 이미 이전 family가 거절됨 | 기존 `mfa_verified_at`만으로는 enrollment 재설정을 구별 못 하므로, 현재 `account_mfa_secret.enabled_at`보다 그 family의 인증 표식이 이후인지 비교한다 |
+
+- 등록 시각 비교는 로그인 순간의 추측이 아니라 MFA enrollment generation 경계를 구분하는 용도다. Disable 후에는 MFA secret row가 삭제되고 re-enrollment는 새 `enabled_at`을 만든다. H4b에서는 그 경계 이후 처음 재사용된 이전 토큰이 반증 사례인지 먼저 실행해 측정한다.
+
+## 사전등록 이탈 기록
+
+- 코드 검토에서 `PAYOUT_REQUEUED`가 provider 호출 전에 재전송할 수 있다는 점을 확인했다. 같은 `sender_batch_id`·요청 ID는 중복 전송을 막지만, 첫 요청이 provider에 도달하지 않았다면 재큐가 실제 지급을 처음 만들 수 있다. 이 조치는 money-moving으로 분류한다.
+- 이 하위 질문은 초기 사전등록 표에 없었다. 이를 보완하는 회귀 테스트의 변경 전 기준 실행이 이미 수행됐으므로 H1–H7과 같은 사전등록·확증 실험이라고 주장하지 않는다. 변경 전 결과는 탐색 근거로만 기록하고, 수정 뒤 테스트·변이 결과도 이 프로토콜 이탈을 그대로 표시한다.
