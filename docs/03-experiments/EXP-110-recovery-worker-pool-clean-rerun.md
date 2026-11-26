@@ -13,7 +13,7 @@ EXP-106은 모든 창이 오염(다른 에이전트의 라벨 스택과 겹침, 
 - 코드·설정은 EXP-106과 같다: Hikari 풀 10(`maximum-pool-size` 미설정 기본값), `connection-timeout` 500 ms, Tomcat 최대 40, worker 풀 4+1+3+1+1 = 10 스레드. main `201f6361` 기준이며 이 실험은 운영 코드를 바꾸지 않는다(결함이 나오면 예외).
 - HikariCP 7.0.2 `ConcurrentBag`(소스 jar를 읽음): `borrow`는 (a) 스레드 지역 목록, (b) 공유 목록 CAS, (c) 둘 다 실패하면 `waiters`를 올리고 공정 모드 `SynchronousQueue handoffQueue.poll(timeout)`에서 대기한다. `requite`는 상태를 `NOT_IN_USE`로 바꾼 뒤 `waiters > 0`이면 `handoffQueue.offer`로 대기자에게 넘긴다. 따라서 대기자끼리는 FIFO이고, 새로 도착한 스레드가 `setState`와 `offer` 사이에 공유 목록 CAS로 끼어들 수는 있다(barging). 이것은 소스를 읽은 추정이며 H8이 실행으로 검증한다.
 - 실제 일감(`seed.sql`, 창마다 유형당 3000행을 새로 심음): 결제 복구 job(주문이 없는 종료 시도 → 복구가 `OrderException`으로 실패하고 재예약하는 쓰기 경로), 예약 workflow(PENDING + 위치 명령 → 위치 API `reserve` 호출 → RESERVED 쓰기), 재입고(PENDING → 위치 API `restock` 호출 → COMPLETED 쓰기), webhook 재시도(미지원 유형 이벤트). 위치 API는 JVM이 아니라 20 ms 지연을 주는 스텁(`ThreadingHTTPServer`)이 답한다(`HttpLocationClient`가 쓰는 두 경로와 `Idempotency-Key` 헤더 형식만 응답). 체크아웃 완료 worker와 만료 sweep은 심을 수 있는 일감 경로를 구성하지 못해 빈 폴링이다(한계 절에 적는다).
-- 이벤트 릴레이는 켬 조건에서 Kafka 없이(`localhost:9092` 닫힘) 돈다. 예약 workflow가 이벤트를 만들면 릴레이는 발행에 실패한다. 릴레이의 실패는 풀 시간 초과와 섞이므로 worker 실패 집계는 릴레이를 뺀 5개 폴링 worker로 한다.
+- 이벤트 릴레이는 켬 조건에서 Kafka 없이(`localhost:9092` 닫힘) 돈다. 예약 workflow가 이벤트를 만들면 릴레이는 발행에 실패한다. 릴레이의 실패는 풀 시간 초과와 섞이므로 worker 실패 집계는 릴레이를 뺀 5개 폴링 worker로 한다. Kafka 발행이 닫힌 포트에서 막히는 시간이 DB 무진행으로 보이지 않도록 켬 조건에 `event-relay.send-timeout=PT1S`(허용 최소값)를 준다(기본 PT10S면 발행 대기만으로 10초 무진행이 생겨 R1이 거짓으로 발동한다). 이 값은 측정 실행 전에 정했다.
 
 ## 측정 방법 (사전 등록)
 
