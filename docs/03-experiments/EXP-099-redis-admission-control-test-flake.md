@@ -202,3 +202,16 @@ PR #668은 origin/main에서 `b071a963`로 2026-11-25 16:35:45Z에 병합됐다.
 ### ModuleBoundaryTest runner 원인
 
 실행함: 문서의 launcher 접근을 사용해 `java -Xmx512m -cp "<probe classes>:<Gradle test runtimeClasspath>" P3Run shard com.atlas.ModuleBoundaryTest`. 7개 rule 중 6개 성공, `dependenciesRespectLayeredModulePackages` 1개 실패(exit 0은 experiment runner가 `System.exit(0)`이기 때문). `ClassFileImporter.importPackages("com.atlas")`가 probe directory의 `RedisStockAdmissionControlProbe`를 test source 위치가 아닌 production package에서 읽어 `@Testcontainers`, `GenericContainer`, AssertJ/JUnit dependency 등 76 architecture violations를 냈다. 대조: probe classes directory 없이 같은 7-rule class 실행은 7/7 success. 결정: 실패는 실험 runner classpath artifact이며 CI/Gradle의 구조 테스트 실패가 아니다. 원인·대안·재검토 trigger는 위 claim과 같다.
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+주장 표 중 로컬 전용이던 것을 다시 실행했다. 변이는 커밋된 시험 파일의 한 줄(`Duration.ofSeconds(30)`→`Duration.ofMillis(200)`)이고 복원 뒤 `cmp`가 일치했다. Gradle은 `--no-build-cache cleanTest`로 돌렸고 통과·실패만 보는 확인이라 호스트 부하와 무관하다.
+
+| 주장 | 다시 실행한 것 | 관측(n) | 판정 |
+| --- | --- | --- | --- |
+| 병합 뒤 Backend CI 12 run, Redis 클래스 6회 실행, `FAILED` 0, 상한 39.3% | GitHub API 읽기 전용 호출로 `#668` 병합 이후 run과 Application tests 작업 로그를 다시 셈 | 2026-11-26T03:30Z까지 12 run(push 6), Redis 클래스 6회, `FAILED` 0. 0/6의 95% 정확 상한 1−0.05^(1/6)=39.3%. 지금까지 전체는 43 run(push 20, PR 23, 성공 42, 취소 1), Redis 클래스 16회, `FAILED` 0(상한 17.1%) | 재현 ✓ |
+| pause 팔: 수정 전(변이) 12/12 실패, 수정 후 0/12 | 시험이 띄운 Redis 컨테이너를 연결 뒤 0.4초 `docker pause`/0.15초 `unpause`로 반복(복사한 긴 시험이 아니라 클래스 자체, 한 실행에 1~2주기) | 변이 4/6 실패(실패 시험 `manySkusSharingSeedLockStripesAreEachSeededOnceAndAdmitOnlyTheirStock`), 수정 0/6. 정지 없이 변이만 돌리면 4/4 통과(n=1) | 방향 재현 ✓(변이만 정지에서 실패, 수정은 실패 없음, 단측 Fisher 4/6 대 0/6 p=0.030). 비율은 재현하지 못했다: 원래 구동기가 남아 있지 않아 더 거친 구동기로 재시도했고 12/12가 아니라 4/6이다 |
+| 지연 주입 팔 10/10 대 0/10, CPU 기아 3/60·6/45 대 0/60, 자연 부하 0/250 | 원래 구동기(`P3Run`, TCP 지연 프록시, pause 스크립트)와 원자료 | 다시 실행하지 못했다. 구동기가 저장소에 올라간 적이 없고 `/tmp`에서 `find /tmp -name 'P3Run*'`로 찾았으나 비어 있었다. 250회 루프는 이번 예산 밖이다 | 재현 불가(구동기·원자료 없음). 확신도는 바꾸지 않는다 |
+| `clean check` 1,104 테스트 0 실패 | 전체 빌드 | 다시 실행하지 않았다. 이 PR은 운영 코드를 바꾸지 않아 전체 `clean check`를 돌리지 않았고 약 24분 걸리는 빌드다 | 이번에 확인하지 않음(근거 유지, 확신도 변경 없음) |
+
+문장 정정: 위 주장 표의 "pause 변이 12/12"와 "pause 0/12 (변이 12/12)"는 원래 측정의 값이며 구동기가 남지 않았다. 이번 재시도(n=6)는 4/6이다. 두 값은 같은 변이의 서로 다른 구동기 결과이므로 합산하지 않는다.

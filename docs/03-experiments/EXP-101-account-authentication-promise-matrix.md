@@ -151,13 +151,13 @@ H8은 Node/JVM warmup 이후 한 번에 3 조건을 매 round 순서를 섞어 �
 
 ### 변이·롤백 검증
 
-> 검증 범위 안내(2026-11-26): 아래 변이 18건과 H8 타이밍 측정은 이 PR 작업을 처음 수행한 에이전트가 실행한 결과를 그대로 옮긴 것이다. 작업을 이어받아 직접 다시 실행해 확인한 것은 다음뿐이다: (1) 신규·수정 테스트 28건(lifecycle 9, ownership 7, JWT 12) 통과, (2) 운영자 컨트롤러의 `@ConditionalOnProperty`를 제거하면 `disabledAccountOperatorRouteCannotBeReachedWithABuyerToken`를 포함해 3건이 실패하고 복원하면 통과(보안 결함의 회귀 시험이 실제로 결함을 잡음), (3) 라우트 분류 수 96·69·10·17과 비공개 79를 실제 handler mapping과 정적 어노테이션 집계로 다시 센 값. 이 과정에서 에이전트가 쓴 98·71·81이 기능 플래그(`atlas.payment.paypal.payouts.enabled=true`)를 켠 구성의 수였음을 확인해 기본 구성 수치로 고쳤다. 변이 18건과 H8의 n=400은 재실행하지 않았으므로 확신도는 `local-only(에이전트 보고)`다.
+> 검증 범위 안내(2026-11-26): 아래 변이 18건과 H8 타이밍 측정은 이 PR 작업을 처음 수행한 에이전트가 실행한 결과를 그대로 옮긴 것이다. 작업을 이어받아 직접 다시 실행해 확인한 것은 다음뿐이다: (1) 신규·수정 테스트 28건(lifecycle 9, ownership 7, JWT 12) 통과, (2) 운영자 컨트롤러의 `@ConditionalOnProperty`를 제거하면 `disabledAccountOperatorRouteCannotBeReachedWithABuyerToken`를 포함해 3건이 실패하고 복원하면 통과(보안 결함의 회귀 시험이 실제로 결함을 잡음), (3) 라우트 분류 수 96·69·10·17과 비공개 79를 실제 handler mapping과 정적 어노테이션 집계로 다시 센 값. 이 과정에서 에이전트가 쓴 98·71·81이 기능 플래그(`atlas.payment.paypal.payouts.enabled=true`)를 켠 구성의 수였음을 확인해 기본 구성 수치로 고쳤다. 변이 18건과 H8의 n=400은 2026-11-26에 같은 스크립트와 같은 설계로 다시 실행했고 결과는 아래 `재실행 결과` 절에 있다(변이 17건이 대상 시험을 실패시켰고 1건은 본문이 적은 대로 통과, H8 결정 유지). 이 문단의 "재실행하지 않은" 서술은 그 이전 상태의 기록이다.
 
-18개 신규 테스트 method 모두 자신의 주장을 깨는 targeted mutation에서 실패하고, 코드는 매 mutation 뒤 원본 bytes와 `cmp`로 같음을 확인해 복원했다. 7d/24h/30m/5m boundary, replay/reuse family revoke, reset·challenge revoke, TOTP step, recovery consume, enumeration response, JWT algorithm/timestamp, route classification/default-deny, buyer ownership/owner positive control, body seller ID, nested product scope가 해당 테스트를 깨뜨렸다. `consumeRefreshSession`의 `false` 분기에서만 revoke를 제거한 mutant는 실패하지 않았다: `findRefreshSessionForUpdate`가 `FOR UPDATE`로 먼저 직렬화하므로 해당 race는 consumed-token branch에 도달한다. 그 reachable branch의 revoke를 제거한 mutant에서는 concurrent test가 실패했다. Operator endpoint는 실제 rollback drill로 flag guard 제거 → Buyer JWT `204` 및 regression failure; guard 복구 → test pass·`cmp` identical. H8 negative control은 dummy PBKDF2 skip → effect가 noise threshold를 넘어 검출; 원본 복구 후 SHA-256 `9f01dbc8f78a79f299e397468b2801263f9d296143f5a5e861efbab2abdb683d`로 byte-identical 확인.
+18개 신규 테스트 method 모두 자신의 주장을 깨는 targeted mutation에서 실패하고(재실행 결과: 변이 18건 중 17건이 대상 시험을 실패시켰고, 도달할 수 없는 `consumeRefreshSession` `false` 분기를 지우는 1건은 아래 서술대로 통과했다), 코드는 매 mutation 뒤 원본 bytes와 `cmp`로 같음을 확인해 복원했다. 7d/24h/30m/5m boundary, replay/reuse family revoke, reset·challenge revoke, TOTP step, recovery consume, enumeration response, JWT algorithm/timestamp, route classification/default-deny, buyer ownership/owner positive control, body seller ID, nested product scope가 해당 테스트를 깨뜨렸다. `consumeRefreshSession`의 `false` 분기에서만 revoke를 제거한 mutant는 실패하지 않았다: `findRefreshSessionForUpdate`가 `FOR UPDATE`로 먼저 직렬화하므로 해당 race는 consumed-token branch에 도달한다. 그 reachable branch의 revoke를 제거한 mutant에서는 concurrent test가 실패했다. Operator endpoint는 실제 rollback drill로 flag guard 제거 → Buyer JWT `204` 및 regression failure; guard 복구 → test pass·`cmp` identical. H8 negative control은 dummy PBKDF2 skip → effect가 noise threshold를 넘어 검출; 원본 복구 후 SHA-256 `9f01dbc8f78a79f299e397468b2801263f9d296143f5a5e861efbab2abdb683d`로 byte-identical 확인.
 
 | 주장 | 증거 | 확신도 |
 | --- | --- | --- |
-| FR-018 local PostgreSQL에서 account token, expiry, reset, MFA, ownership 약속 충족 | 위 P01–P24 route/controller·DB assertions, 최종 `/tmp/afull.sh` 결과 (아래 보충) | confirmed |
+| FR-018 local PostgreSQL에서 account token, expiry, reset, MFA, ownership 약속 충족 | 위 P01–P24 route/controller·DB assertions, 최종 `/tmp/afull.sh` 결과 (아래 보충). 2026-11-26 재실행: 신규·수정 28건과 `com.atlas.account.*`·JWT 시험 80개 통과, 변이 17/18 재현 | confirmed |
 | 없는 email login 전체 시간은 constant-time | 주장하지 않음; H8 결과와 mutant detector | decided |
 | General staff/admin role matrix | V1 범위 밖; Q-007에 이유·대안·revisit trigger·acceptance 기재 | decided |
 | Live SMTP delivery | env 없음, localhost:25 connect refused, mock sender test만 있음 | external-blocked(with proof) |
@@ -166,3 +166,110 @@ H8은 Node/JVM warmup 이후 한 번에 3 조건을 매 round 순서를 섞어 �
 ### 결정하지 않고 남긴 사항
 
 없음. FR-018 구현은 검증 완료. H8은 constant-time 성질을 외부에 약속하지 않기로 결정했고, H9 실제 provider delivery는 증거와 필요한 입력이 특정된 external-blocked Live gate다. Browser storage, social login, generic staff role matrix, production key rotation은 이유·대안·측정 가능한 trigger/acceptance가 있는 V1 out-of-scope 결정이다.
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+위 "검증 범위 안내"가 `local-only(에이전트 보고)`라고 적은 변이 18건과 H8 타이밍을 같은 날 직접 다시 실행했다. 대상은 `origin/main` 기준 커밋된 시험이다. 변이 확인은 통과·실패만 보므로 호스트 부하와 무관하다(호스트 잠금 없이 `nice`로 한 번에 하나씩 돌렸다). Gradle은 `--no-build-cache cleanTest`로 돌려 캐시에서 재생된 결과를 실행으로 세지 않았다. H8은 시간 민감해서 호스트 잠금을 잡고 돌렸다.
+
+### 변이 18건 다시 실행(원래 스크립트 그대로)
+
+원래 에이전트가 쓴 변이 스크립트(`t1_mutations.py`, 18건의 파일·원문·대체문·대상 시험이 그대로 들어 있다)가 남아 있어 같은 문자열 치환을 그대로 적용했다. 변이마다 한 번에 하나, 대상 시험 한 개를 실행했고, 복원 뒤 파일 바이트가 원래와 같은지와 `git status`가 깨끗한지 확인했다.
+
+| 번호 | 변이(원래 18건 중) | 대상 시험 | 실패 | `cmp` |
+| --- | --- | --- | --- | --- |
+| M01 | refresh 7일: `Duration.ofDays(7)`→`ofDays(8)` | `refreshTokenAndFamilyExpireExactlyAtTheirBoundaries` | 실패(시험이 잡음) | 일치 |
+| M02 | 재사용 분기의 family 폐기 제거 | `reusedRefreshTokenRevokesTheLatestTokenAndLeavesSiblingSessionsAlone` | 실패(시험이 잡음) | 일치 |
+| M03 | `consumeRefreshSession`이 `false`일 때의 family 폐기만 제거 | `concurrentRefreshOfOneTokenSucceedsOnceAndRevokesTheWholeFamily` | 통과(살아남음), 실패한 시험 0건 | 일치 |
+| M04 | 이메일 인증 24시간: `ofHours(24)`→`ofHours(25)` | `emailVerificationTokenExpiresAtTwentyFourHoursAndLoginStaysBlockedUntilItIsConsumed` | 실패(시험이 잡음) | 일치 |
+| M05 | 재설정 30분: `ofMinutes(30)`→`ofMinutes(31)` | `passwordResetTokenExpiresAtThirtyMinutesAndSuccessRevokesEverySession` | 실패(시험이 잡음) | 일치 |
+| M06 | 재설정이 MFA challenge 폐기를 생략 | `passwordResetMakesAnOutstandingMfaChallengeUnusable` | 실패(시험이 잡음) | 일치 |
+| M07 | MFA challenge 5분: `ofMinutes(5)`→`ofMinutes(6)` | `mfaChallengeExpiresAtFiveMinutes` | 실패(시험이 잡음) | 일치 |
+| M08 | TOTP step 단회 소비 조건(`last_accepted_step < ?`) 제거 | `totpStepAndRecoveryCodeCanBeUsedOnlyOnce` | 실패(시험이 잡음) | 일치 |
+| M09 | recovery code 단회 소비 조건(`consumed_at IS NULL`) 제거 | `totpStepAndRecoveryCodeCanBeUsedOnlyOnce` | 실패(시험이 잡음) | 일치 |
+| M10 | 가입 열거 응답: 기존 계정이면 `Action(false)` | `signupVerificationAndResetRequestsAnswerTheSameForKnownAndUnknownEmails` | 실패(시험이 잡음) | 일치 |
+| M11 | JWT 알고리즘 허용 목록 `HS256`→`HS512` | `decoderAcceptsOnlyTheConfiguredHmacAlgorithm` | 실패(시험이 잡음) | 일치 |
+| M12 | JWT 만료·발급 시각 검증 제거(issuer 검증을 항상 성공으로) | `accessTokenIsAcceptedUntilItsExpiryPlusTheDefaultSixtySecondClockSkew` | 실패(시험이 잡음) | 일치 |
+| M13 | 라우트 분류 자체 시험: 분류 조건에 `false &&` 추가 | `everyMappedRouteIsPublicPrincipalScopedOrCoveredByAnOwnershipRule` | 실패(시험이 잡음) | 일치 |
+| M14 | 기본 거부: `anyRequest().authenticated()`→`permitAll()` | `routesThatAreNotExplicitlyPublicRejectAnonymousRequests` | 실패(시험이 잡음) | 일치 |
+| M15 | Buyer 소유 검사 생략 | `anotherAccountIsRefusedOnEveryOwnershipRoute` | 실패(시험이 잡음) | 일치 |
+| M16 | Buyer 소유 양성 대조군: 소유 여부와 무관하게 거절 | `theOwnerPassesTheOwnershipRulesOnReadRoutesAndTheWrongRoleDoesNot` | 실패(시험이 잡음) | 일치 |
+| M17 | 요청 본문 sellerId 소유 검사 제거 | `foreignIdentifiersInRequestBodiesAreRefusedWithoutSideEffects` | 실패(시험이 잡음) | 일치 |
+| M18 | 중첩 상품 범위: `findByProductIdAndSellerIdForUpdate`→`findById` | `childResourcesOfAnotherSellerCannotBeReachedThroughOwnSellerPath` | 실패(시험이 잡음) | 일치 |
+
+결과: 18건 중 **17건은 대상 시험이 실패**했다(재현). 나머지 1건(M03, `consumeRefreshSession`이 `false`일 때의 family 폐기만 제거)은 시험이 통과했다. 이는 문서 본문이 이미 적은 대로다: 그 분기는 `findRefreshSessionForUpdate`의 `FOR UPDATE` 직렬화 때문에 도달하지 않고, 도달 가능한 분기(재사용 분기, M02)를 제거한 변이에서는 시험이 실패한다. 본문 문장 "18개 신규 테스트 method 모두 자신의 주장을 깨는 targeted mutation에서 실패"는 "18건 중 17건이 실패하고, 도달 불가능한 분기를 지우는 1건은 같은 의미라 통과한다"로 읽어야 한다(본문 그 문장을 이 값으로 고쳤다). 모든 변이에서 복원 뒤 `cmp`와 `git status`가 깨끗했다.
+
+### 경계 변이의 이중 방어(동등 변이)와 이를 겨냥한 변이
+
+문서의 24시간·30분 경계 변이(M04, M05)는 `Duration` 상수를 바꾸는 변이였고 시험이 잡았다. 그런데 같은 경계를 비교 연산자만 바꿔 어기려 하면 Java 비교(`!now.isBefore(token.expiresAt())`)와 SQL 조건(`consumed_at IS NULL AND expires_at > ?`)이 서로를 막는다. 한 군데만 바꾼 변이는 시험이 통과하고(동등 변이), 둘을 함께 바꾸면 시험이 실패한다.
+
+| 번호 | 변이 | 실패한 시험 수 | 실패한 시험 | `cmp` |
+| --- | --- | --- | --- | --- |
+| M02 | refresh: `familyExpiresAt` 비교만 `!isBefore`→`isAfter`(`expiresAt` 비교는 그대로) | 0 | 없음(시험 통과) | 일치 |
+| M05 | 이메일 인증 24시간: Java 비교만 `!isBefore`→`isAfter`(SQL 조건 `expires_at > ?`는 그대로) | 0 | 없음(시험 통과) | 일치 |
+| M06 | 재설정 30분: Java 비교만 `!isBefore`→`isAfter`(SQL 조건은 그대로) | 0 | 없음(시험 통과) | 일치 |
+| M04 | `consumeRefreshSession`이 `false`일 때의 family 폐기만 제거(문서가 실패하지 않는다고 적은 변이) | 0 | 없음(시험 통과) | 일치 |
+| M02b | refresh: `expiresAt`·`familyExpiresAt` 비교를 둘 다 `isAfter`로 | 1 | `refreshTokenAndFamilyExpireExactlyAtTheirBoundaries` | 일치 |
+| M05b | 이메일 인증 24시간: Java 비교(`!isBefore`→`isAfter`)와 SQL 조건(`expires_at > ?`→`>=`)을 둘 다 포함 비교로 | 1 | `emailVerificationTokenExpiresAtTwentyFourHoursAndLoginStaysBlockedUntilItIsConsumed` | 일치 |
+| M06b | 재설정 30분: Java 비교와 SQL 조건을 둘 다 포함 비교로 | 1 | `passwordResetTokenExpiresAtThirtyMinutesAndSuccessRevokesEverySession` | 일치 |
+
+해석: 문서가 말한 "경계에서 정확히 거절"은 두 방어 중 어느 하나만 남아도 지켜지는 불변식이며, 시험은 둘 다 무너졌을 때만 잡는다. 시험이 헐겁다는 뜻이 아니라 방어가 둘이라는 뜻이다. refresh의 7일 경계는 SQL 조건이 없어 Java 비교 하나만 바꿔도 잡힌다(M01).
+
+### 새로 만든 추가 변이(소유·MFA·JWT·재설정)
+
+원래 18건에 없던 변이를 더해 시험이 약속을 지키는지 한 번 더 확인했다(한 번에 하나, 해당 시험 클래스, 복원 뒤 `cmp`).
+
+| 번호 | 변이 | 실패한 시험 수 | 실패한 시험 | `cmp` |
+| --- | --- | --- | --- | --- |
+| M01 | refresh 7일 경계: `!isBefore(expiresAt)`→`isAfter`(재설정·인증과 달리 SQL 조건이 없어 잡혀야 한다) | 1 | `refreshTokenAndFamilyExpireExactlyAtTheirBoundaries` | 일치 |
+| M03 | 재사용 분기의 family 폐기 제거 | 2 | `concurrentRefreshOfOneTokenSucceedsOnceAndRevokesTheWholeFamily`, `reusedRefreshTokenRevokesTheLatestTokenAndLeavesSiblingSessionsAlone` | 일치 |
+| M07 | 재설정이 `revokeAllRefreshFamilies` 생략 | 1 | `passwordResetTokenExpiresAtThirtyMinutesAndSuccessRevokesEverySession` | 일치 |
+| M08 | 재설정이 `revokeMfaChallenges` 생략 | 1 | `passwordResetMakesAnOutstandingMfaChallengeUnusable` | 일치 |
+| M09 | MFA challenge 5분: SQL 조건 `expires_at > ?`→`>=`(세 곳) | 1 | `mfaChallengeExpiresAtFiveMinutes` | 일치 |
+| M10 | TOTP step 단회 소비: `last_accepted_step < ?`→`<=` | 1 | `totpStepAndRecoveryCodeCanBeUsedOnlyOnce` | 일치 |
+| M11 | recovery code 단회 소비: `consumed_at IS NULL` 제거 | 1 | `totpStepAndRecoveryCodeCanBeUsedOnlyOnce` | 일치 |
+| M12 | 가입 열거: 재설정 요청이 없는 이메일에서 예외 | 1 | `signupVerificationAndResetRequestsAnswerTheSameForKnownAndUnknownEmails` | 일치 |
+| M13 | 운영자 정지 컨트롤러의 `@ConditionalOnProperty` 제거(PR #677 결함의 회귀) | 1 | `disabledAccountOperatorRouteCannotBeReachedWithABuyerToken` | 일치 |
+| M14 | 기본 거부 `anyRequest().authenticated()`→`permitAll()` | 1 | `routesThatAreNotExplicitlyPublicRejectAnonymousRequests` | 일치 |
+| M15 | 인터셉터가 `buyerRef` 소유 검사를 생략 | 1 | `anotherAccountIsRefusedOnEveryOwnershipRoute` | 일치 |
+| M16 | 인터셉터가 주문의 seller 범위 검사를 생략 | 2 | `anotherAccountIsRefusedOnEveryOwnershipRoute`, `theOwnerPassesTheOwnershipRulesOnReadRoutesAndTheWrongRoleDoesNot` | 일치 |
+| M17 | `ownsBuyer`가 항상 거짓(소유자 양성 대조군) | 7 | `anotherAccountIsRefusedOnEveryOwnershipRoute`, `childResourcesOfAnotherSellerCannotBeReachedThroughOwnSellerPath`, `disabledAccountOperatorRouteCannotBeReachedWithABuyerToken`, `everyMappedRouteIsPublicPrincipalScopedOrCoveredByAnOwnershipRule`, `foreignIdentifiersInRequestBodiesAreRefusedWithoutSideEffects`, `routesThatAreNotExplicitlyPublicRejectAnonymousRequests`, `theOwnerPassesTheOwnershipRulesOnReadRoutesAndTheWrongRoleDoesNot` | 일치 |
+| M18 | `CampaignController`가 본문 `sellerId` 소유 검사 생략 | 1 | `foreignIdentifiersInRequestBodiesAreRefusedWithoutSideEffects` | 일치 |
+| M19 | 중첩 상품 범위: `findByProductIdAndSellerIdForUpdate`→`findById` | 1 | `childResourcesOfAnotherSellerCannotBeReachedThroughOwnSellerPath` | 일치 |
+| M20 | 분류 안 된 새 라우트를 `CampaignController`에 추가 | 2 | `everyMappedRouteIsPublicPrincipalScopedOrCoveredByAnOwnershipRule`, `routesThatAreNotExplicitlyPublicRejectAnonymousRequests` | 일치 |
+| M21 | JWT 디코더 허용 알고리즘 HS256→HS512 | 4 | `accessTokenIsAcceptedUntilItsExpiryPlusTheDefaultSixtySecondClockSkew`, `decoderAcceptsOnlyTheConfiguredHmacAlgorithm`, `decoderRejectsMalformedFamilyAndFailsClosedWhenFamilyLookupIsUnavailable`, `signedAccessTokenCarriesExpectedIdentityAndClaims` | 일치 |
+| M22 | JWT 디코더에서 만료·발급 시각 검증 제거(issuer만) | 1 | `accessTokenIsAcceptedUntilItsExpiryPlusTheDefaultSixtySecondClockSkew` | 일치 |
+
+모든 추가 변이를 해당 클래스가 잡았다(재현). 소유자 양성 대조군(M17)은 클래스의 시험 7건이 모두 실패해 조회 경로가 함께 무너짐을 보인다.
+
+### H8 로그인 실패 경로 타이밍(n=400/조건, 같은 짝짓기 설계)
+
+같은 탐침(`LoginTimingProbe`: 알려진 계정 40개, 워밍업 50회, 조건 U 없는 이메일, K 알려진 이메일의 틀린 비밀번호, KC 같은 K 대조, 매 라운드 조건 순서를 섞음)을 `AccountService.login`에 직접 호출해 조건당 400회 측정했다. 호스트 잠금을 잡았고 시작 때 `load1` 6.08(≤12), 끝날 때 4.37이었다. 다른 라벨 스택은 `pool110` 1개가 떠 있었으나 활동은 확인하지 못했다.
+
+| 구성 | U 중앙값 | K 중앙값 | KC 중앙값 | 짝 U−K 중앙값 | U/K | K−KC 중앙값 | MAD | 3×MAD | Mann–Whitney p | AUC |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 이번 재실행, 현재 코드 | 37.486ms | 38.087ms | 38.093ms | −0.670ms | 0.984 | 0.023ms | 0.773ms | 2.318ms | 1.28e−13 | 0.349 |
+| 문서 원본(호스트 `load1` 27.89~32.41) | 126.125ms | 136.077ms | 136.687ms | −8.876ms | 0.927 | −2.041ms | 32.137ms | 96.411ms | 0.000643 | 0.430 |
+| 이번 재실행, 더미 hash 계산을 건너뛰는 변이 | 2.909ms | 37.976ms | 37.894ms | −35.114ms | 0.077 | −0.001ms | 0.820ms | 2.459ms | 2.44e−132 | 0.000 |
+| 문서 원본, 같은 변이 | 16.831ms | 84.381ms | 84.954ms | −64.011ms | 0.199 | −0.820ms | 11.360ms | 34.081ms | 1.42e−125 | 0.013 |
+
+원본 CSV(`/tmp/t1_timing_control_before.csv`, 변이 쪽도)가 이 호스트에 남아 있어 같은 분석을 다시 돌렸고 문서 원본의 값(126.125, 136.077, 136.687, −8.876, 0.927, 32.137, 96.411, 0.000643, 0.430과 변이 쪽 값)이 소수점까지 그대로 나왔다(분석 계산 재현 ✓).
+
+판정: 절대 지연은 호스트 부하에 따라 3배 이상 달랐다(이번 37ms 대 원본 126ms). 중앙값 차이는 이번 재실행에서 −0.670ms(U가 K보다 1.6% 빠름)로 원본(−8.876ms, 7.3%)보다 작지만 방향은 같다. 사전 등록 규칙의 기준은 "효과가 대조군 3×MAD보다 작은가"이고 이번에도 |−0.670|ms < 2.318ms로 충족한다(원본도 충족). 통계적으로는 두 조건이 구별된다(p=1.28e−13, AUC 0.349). 더미 hash 계산을 건너뛰면 차이가 3×MAD를 크게 넘어 탐지기가 울린다(−35.114ms ≫ 2.459ms). 따라서 "constant-time은 주장하지 않는다(ADR-0085 유지), status/body 동일만 계약"이라는 결정은 이번 재실행에서도 그대로 유지된다. 재현하지 못한 것: 원본의 절대값(126ms)이다. 원본이 부하가 높은 호스트에서 잰 값이었음을 문서가 이미 밝혔고, 이번에는 같은 코드가 3분의 1 시간에 돈다.
+
+### 신규·수정 테스트 28건과 `com.atlas.account.*` 전체
+
+| 범위 | 클래스(시험 수) | 결과 |
+| --- | --- | --- |
+| 신규·수정 28건 | `AccountCredentialLifecycleIntegrationTest`(9), `AccountOwnershipIntegrationTest`(7), `AccountJwtConfigurationTest`(12) | 28/28 통과, 실패 0, skipped 0 |
+| `atlas-application`의 `com.atlas.account.*`와 JWT 시험 | 위 3개 + `AccountAuthenticationIntegrationTest`(12), `AuthAttemptLimiterIntegrationTest`(8), `AccountSuspensionOperatorIntegrationTest`(1), `LoginConnectionPoolIntegrationTest`(2) | 51/51 통과 |
+| `atlas-account` 모듈 | `AccountServiceTest`(23), `AccountSecurityConfigurationTest`(1), `AccountMfaSecretProtectorTest`(3), `SmtpAccountEmailSenderTest`(2) | 29/29 통과 |
+
+합계 80/80 통과, 실패 0, skipped 0(`--no-build-cache cleanTest`, 캐시 재생 0건).
+
+### 그 밖의 주장
+
+| 주장 | 다시 실행한 것 | 판정 |
+| --- | --- | --- |
+| H9: `127.0.0.1:25` 연결이 `Connection refused`이고 SMTP 환경 이름이 없다 | 소켓 연결 | `127.0.0.1:25`와 `localhost:25` 모두 `ConnectionRefusedError [Errno 61]`, 이 프로세스 환경에 SMTP 이름 없음. 재현 ✓ (live SMTP는 여전히 external-blocked) |
+| H6: 정적 어노테이션 집계 non-internal 98, internal 40, 합 138 | 컨트롤러 소스의 `@Get/Post/Put/Delete/PatchMapping` 개수를 클래스 `@RequestMapping` 접두로 센 스크립트 | 98 / 40 / 138로 같다. 런타임 96 = 69 + 10 + 17은 `AccountOwnershipIntegrationTest`의 단정(통과)이 지킨다. 재현 ✓ |
+| `/tmp/afull.sh` 전체 `clean check` 결과(주장 표 "confirmed") | 다시 실행하지 않았다 | 재현 불가가 아니라 이번 PR이 운영 코드를 바꾸지 않아 전체 빌드를 돌리지 않았다. 대신 위 80개와 추가 변이를 돌렸다. 확신도는 바꾸지 않는다 |

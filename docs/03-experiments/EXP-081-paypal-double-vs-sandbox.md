@@ -211,3 +211,15 @@ webhook 컨트롤러는 서명 헤더 5개가 있기만 하면(빈 값 포함) �
 - 특정 4xx의 확정 분류는 이미 EXP-088/ADR-0079에서 범위를 정했다. 여기서 추가 분류를 제안하지 않는다.
 - 지급 클라이언트 token 실패 wrapping은 결제 범위 밖으로 결정한다. 대안은 지급 API 전용 실패·응답 실험(EXP-073)이며, 결제 클라이언트가 payout endpoint를 호출하는 코드 변경이 생기면 재검토한다.
 - 구매자 계약 검사는 PR 필수 CI가 아니라 수동 실행으로 결정했다. 자격 증명과 UI를 쓰는 대안이며, 재검토 조건은 서로 다른 runner 3회 연속 승인·취소 성공이다.
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+위 "재실행 표기"가 이전 에이전트 보고로 적은 mock 오류 코드 행 중 주문 생성 쪽을 같은 Sandbox 앱으로 다시 실행했다(`POST /v2/checkout/orders`, `PayPal-Mock-Response: {"mock_application_codes": "<이름>"}`, 이름마다 n=3, 금액 USD 0.50). 호출은 토큰 1번과 주문 생성 21번이다.
+
+| 조건 | 관측(n) | 판정 |
+| --- | --- | --- |
+| 429 대용 mock 이름 `RATE_LIMIT_REACHED`, `TOO_MANY_REQUESTS`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`을 주문 생성에 전달 | 각 n=3, 모두 HTTP 403, 본문이 JSON이 아님(키 집합 없음). 429는 0/12 | 재현 ✓ |
+| `PENDING`, `DENIED` 상태 이름을 mock 오류 코드로 주문 생성에 전달 | 각 n=3, 모두 HTTP 403 | 재현 ✓(주문 생성 endpoint만 다시 실행) |
+| `INTERNAL_SERVER_ERROR` mock(양성 통제) | 주문 생성 n=3, 모두 HTTP 500, 키 `{message, name}` | 재현 ✓ |
+
+다시 실행하지 않은 것: authorize·capture·refund endpoint의 mock 행, 구매자 승인·취소 링크 probe, no-mock 양성 통제(승인된 주문이 필요한 흐름). 이 행들의 근거는 이전 에이전트 보고 그대로다.

@@ -251,3 +251,18 @@ EXP-100 포함 변경 묶음의 revert/restore drill을 별도 clean scratch wor
 ### 되돌리기 드릴(하네스 매개변수)
 
 `git diff HEAD -- load-tests/kafka-outage/run-kafka-outage.sh`로 얻은 패치를 임시 복사본에서 `git apply --reverse`한 결과가 `HEAD`의 파일과 `cmp` 일치, 다시 적용한 결과가 현재 파일과 `cmp` 일치했다(2/2). `bash -n`은 통과한다. 기본값 동일성: `NETEM_JITTER_MS` 미지정이면 netem 명령이 변경 전과 같은 `delay 2000ms 500ms`로 전개된다(문자열 전개 확인).
+
+## 재실행 결과 (2026-11-26, [Issue #707](https://github.com/Neo1228/ATLAS/issues/707))
+
+주장 표 중 근거가 로컬 전용이던 것을 다시 실행했다. 커밋된 시험은 `origin/main` 위에서 다시 돌렸고, 수정 hunk는 한 번에 하나씩 되돌리거나 지운 뒤 대상 클래스를 돌리고 `git show origin/main:<경로> | cmp`로 복원을 확인했다.
+
+| 주장 | 다시 실행한 것 | 관측(n) | 판정 |
+| --- | --- | --- | --- |
+| 커밋된 시험이 통과한다 | `KafkaReservationEventPublisherTest`와 `ReservationEventConsumerKafkaIntegrationTest`(Testcontainers Kafka `apache/kafka:3.9.1` + PostgreSQL) | 7/7 통과(단위 2, 통합 5), 실패 0, skipped 0 | 재현 ✓ |
+| 수정(덩어리 상한·덩어리 사이 ack 확인)이 첫 전달 역행을 막는다 | #660 수정의 `atlas-application/src/main` hunk 4개 파일을 모두 되돌림(`git apply -R`) | `KafkaReservationEventPublisherTest`의 2건(`laterChunksAreSentOnlyAfterEarlierChunksAreAcknowledged`, `aFailedChunkStopsTheBatchBeforeAnyLaterChunkIsSent`)이 실패. 소비자 통합 시험 5건은 그대로 통과. 복원 뒤 `cmp` 4개 일치 | 재현 ✓. 단, 소비자 통합 시험은 생산자 쪽 수정을 지키지 않는다(기준 소비자만 시험). 수정을 지키는 것은 생산자 단위 시험 2건이다 |
+| 덩어리 상한 제거와 덩어리 사이 ack 대기 제거는 모두 `KafkaReservationEventPublisherTest`가 실패시킨다(ADR-0086) | `chunkBytes + size > CHUNK_BYTES`를 `false`로, `awaitChunk(sends);`를 지움(각 1회) | 둘 다 같은 2건이 실패, 복원 뒤 `cmp` 일치 | 재현 ✓(n=2) |
+| 실제 스택에서 수정 후 `pause20` 35회 역행 0, 수정 전 2/35, 처리량 39.9 대 39.9 이벤트/초, 한 batch 10건 | 이 묶음은 `load-tests/kafka-outage/run-kafka-outage.sh`로 compose 스택(앱 2대, Kafka, PostgreSQL)을 수정 전·후 jar로 각 35회 돌린 것이다 | 다시 실행하지 않았다. 수정 전 2/35는 비율이 낮아 같은 크기로 확인하려면 팔마다 35회씩 필요하고, 문서가 적은 대로 몇 시간짜리 실행이라 호스트 잠금 30분 상한 안에 들지 않는다. 시행별 원자료(분류 레코드)는 저장소에 올리지 않았고, 이 호스트에서 `/tmp`를 `pause20`으로 검색했을 때 이 실행의 원자료는 나오지 않았다(나온 파일은 EXP-089·EXP-091 시기의 요약뿐이다) | 재현 불가(원자료 없음, 필요한 표본 팔당 35회가 한 번의 잠금 보유에 들지 않음). 위 시험 결과는 이 실행을 대신하지 않으므로 확신도는 "confirmed(로컬, n이 작음)"에서 바꾸지 않는다 |
+| EXP-091 첫 시행 쏠림: 초기 3/19 대 0/71 초기하분포 p=0.00825, Fisher p=0.0353 | 두 값의 산술 재계산 | 두 값 모두 문서와 같다 | 재현 ✓(계산만, 원자료는 다시 열지 않음) |
+| EXP-091 denominator 260,925 | 원자료 보관본이 필요한 합계 | 다시 실행하지 않았다. 이번에 그 보관본을 찾지 못했다 | 재현 불가(원자료 없음) |
+
+재실행으로 문장을 고친 곳: 없다. 이 문서가 "시험이 수정을 증명한다"고 말하는 곳이 소비자 통합 시험을 가리키지 않는지 확인했다: 증명 주체는 생산자 단위 시험 2건이다.

@@ -48,7 +48,7 @@ Q-013은 PayPal Payouts의 상인 권한·funding source, 수취 국가·통화 
 
 - 운영 법인이 South Korea에 있을 때 Business 계정이 Payouts를 보낼 수 있는지: 공개 문서로 결정되지 않는다. 지원 국가 표 92행에 South Korea 행이 0행이고 표 도입 문장은 "The following table lists countries eligible for payouts and their available feature sets"다. 발송 불가를 명시하는 문장도 없다("Merchants cannot send payouts from this country"는 `Receive and withdraw` 2행, India와 Mexico의 설명이다). 이 질문은 gate 2에서 유형 3(외부 차단)으로 끝낸다.
 - PayPal 고객센터 신청 안내(help250)와 본사 페이지 6개: `urllib` 6/6, 헤드리스 Chromium 4/4가 HTTP 403이라 읽을 수 없었다. 그래서 "지원에 활성화 요청"의 근거는 개발자 문서의 서술(`use-payouts/set-up`: "Work with your account manager, call 1-888-221-1161, or contact PayPal to request Payouts access")이다. Merchant Fees 페이지도 403이다.
-- Sandbox 사실: 앱 전체 경로의 지급 생성이 실제 Sandbox에서 15/15 성공했다(EXP-102). EXP-073의 "별도 활성화 없이 생성 201"은 OAuth scope를 요청하지 않은 직접 호출이었고, 앱이 요청하던 payouts scope는 토큰을 `openid`로 줄여 403이었다. 이 결함은 이번에 고쳤다. Sandbox 사실은 Live 권한이 같은 방식으로 열린다는 증거가 아니다.
+- Sandbox 사실: 앱 전체 경로의 지급 생성이 실제 Sandbox에서 15/15 성공했다(EXP-102). EXP-073의 "별도 활성화 없이 생성 201"은 OAuth scope를 요청하지 않은 직접 호출이었고, 앱이 요청하던 `/services/payments/payouts` scope는 토큰을 `openid`로 줄여 403이었다(2026-11-26 재실행 n=1). 이 결함은 이번에 고쳤다. Sandbox 사실은 Live 권한이 같은 방식으로 열린다는 증거가 아니다.
 
 ## 대안
 
