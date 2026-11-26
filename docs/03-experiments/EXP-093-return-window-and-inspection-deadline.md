@@ -4,7 +4,7 @@
 
 ## 해결할 문제
 
-[ADR-0085](../02-decisions/adr/ADR-0085-v1-scope-channel-operator-and-payout-decisions.md)는 반품 기간 7일과 검수 기한 5영업일(둘 다 가정)을 정했지만, `origin/main`(82345acd)의 `OrderReturnServiceImpl.request`는 배송 완료 여부만 보고 `delivered_at` 이후 경과 시간을 보지 않는다(`git grep`으로 기한 검사 0건, 코드 읽기). 그래서 배송 완료 몇 달 뒤에도 반품과 환불이 열리고, 수령된 반품의 검수가 늦어져도 운영자가 알 길이 없다. 피해를 보는 쪽은 환불 책임이 무한한 Seller와 플랫폼이다. 지금 몇 건이 이 상태인지는 **측정하지 못했다**(운영 데이터가 없다, 가정).
+[ADR-0085](../02-decisions/adr/ADR-0085-v1-scope-channel-operator-and-payout-decisions.md)는 7일·5영업일을 V1 설정 기본값으로 정했지만 법률·Seller 계약에 맞는다는 승인은 아니다(아래 G5 결정). 사전 등록 기준선 `82345acd`의 `OrderReturnServiceImpl.request`는 배송 완료 여부만 보고 `delivered_at` 경과 시간을 검사하지 않았고, PostgreSQL 경계 행렬에서 기간 밖 6/6건이 수락됐다. 현재 영향 주문 수는 외부 차단: 운영 `order_shipment`·`order_return`의 읽기 전용 집계가 제공되지 않았다. V1은 새 반품에 설정된 기간 검사를 적용한다. 재검토 조건: 운영자가 비식별 집계 입력을 제공할 때 영향 건수를 산출한다.
 
 ## 코드에서 확인한 사실 (실행 전, 코드 읽기)
 
@@ -72,7 +72,7 @@
 
 ### 문제와 전후 경계 행렬
 
-**문제 한 문장:** 반품 7일·검수 5영업일 규칙이 코드에 없어 Seller와 플랫폼이 7일 뒤에도 반품·환불 요청을 받아야 하고 수령 뒤 검수 지연을 알 수 없으며, 운영 데이터가 없어 현재 영향 건수는 확인하지 못했다(가정).
+**문제 한 문장:** 기준선은 배송 완료 뒤 기간 제한 없이 반품을 수락했다(경계 행렬 비통제 지점 6/6). 변경 후에는 기간 밖 요청을 거절한다. 실제 운영 영향 건수는 운영 배송·반품 테이블의 비식별 집계가 없어 외부 차단이며, V1은 측정되지 않은 발생 건수를 주장하지 않는다. 재검토 조건: 읽기 전용 집계 입력이 제공될 때.
 
 기준선은 사전 등록 커밋 다음, 구현 커밋 이전의 `82345acd` 코드에서 실행했다. 같은 탐침·Testcontainers PostgreSQL 18.6·조정 가능 Clock으로 배송 후 나이별 7개 요청을 시도했다. 경과 시간은 배송 완료 시각 기준이다.
 
@@ -95,11 +95,11 @@
 | 기준선 행렬 | 3.61/6.63/12.88 → 4.36/6.64/12.77 | 16 | 22.9% → 30.2% | 5.7% → 13.9% |
 | 변경 후 행렬 | 4.25/6.58/12.72 → 4.47/6.52/12.59 | 16 | 15.3% → 94.7% | 4.3% → 88.5% |
 
-변경 후 행렬의 후 스냅샷에는 공유 Docker 컨테이너 하나가 CPU 88.5%를 썼다(수정 소유자·원인은 조사하지 않았고, 종료·변경하지 않았다). 그래서 시간·CPU를 효과로 해석하지 않고 DB 상태 개수만 결론에 쓴다.
+변경 후 행렬의 후 스냅샷에는 공유 Docker 컨테이너 하나가 CPU 88.5%를 썼다. 공유 `docker stats`만으로 소유자·원인을 특정할 수 없어 종료·변경하지 않기로 결정했고, 시간·CPU를 효과로 해석하지 않고 DB 상태 개수만 결론에 쓴다. 재검토 조건: 통제 재실행에서 `atlasexp=h3`로 표시된 자체 컨테이너가 CPU 50%를 넘으면 그 컨테이너만 추가 조사한다.
 
 ### 분할 출고·멱등성·잠금
 
-PostgreSQL 시험에서 출고 A만 완료된 동안은 기존의 주문 전체 배송 게이트가 요청을 막았다. A와 B 배송 완료 뒤 A의 `delivered_at + 7일 + 1초`에 A 줄은 409, B 줄은 수락, A+B 혼합은 전체 거절·행 0이었다. 같은 key 재전송은 만료 뒤에도 원래 응답, 새 key는 거절. 잠금 대기 중 시계를 경계 정각에서 +1초로 이동한 요청도 거절됐다. `pg_stat_activity`/`pg_blocking_pids`로 실제 Postgres 잠금 대기를 관측했다.
+PostgreSQL 시험에서 출고 A만 완료된 동안은 기존의 주문 전체 배송 게이트가 요청을 막았다. A와 B 배송 완료 뒤 A의 `delivered_at + 7일 + 1초`에 A 줄은 409, B 줄은 수락, A+B 혼합은 전체 거절·행 0이었다. 같은 key 재전송은 만료 뒤에도 원래 응답, 새 key는 거절. 잠금 대기 중 시계를 경계 정각에서 +1초로 이동한 요청도 거절됐다. `pg_stat_activity`/`pg_blocking_pids`로 실제 Postgres 잠금 대기를 관측했다. 추가로 provider refund 응답을 `FAILED`로 만든 PostgreSQL 통합 시나리오에서 첫 검수는 충돌로 끝나고 `RECEIVED`가 유지됐다. 같은 검수를 재시도해 환불을 완료했으며 DB `received_at`과 Seller 응답 `inspectionDueAt` 모두 최초 값과 같았다(자세한 내용은 G1).
 
 ### 검수 마감·표시·환불
 
@@ -154,14 +154,14 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 - H6의 최초 통합 실행은 1회였고, 사후 `--rerun` 반복 5회에서 5/5 통과. 같은 host 반복이며 독립 환경 표본이 아니다. 실패 0/5의 95% rule-of-three 상한은 60%.
 - **절차 이탈:** 사전등록에서 “pre-mortem before implementation”을 약속했지만 실제로는 구현 후 위험·감지 표를 ADR-0089에 적었다. 이를 사전 분석이었다고 주장하지 않는다.
 - ADR-0085의 `inspection-deadline: P7D` 대신 `inspection-business-days` 정수로 의미를 명확히 했다. 5영업일은 평일 수령이면 7 calendar days, 토요일이면 6, 일요일이면 5다. ADR-0089에 대안과 근거를 남겼다.
-- 기준선은 service API 경계 행렬이며 HTTP 응답 코드는 변경 후 통합 시험만 확인했다. 정상 데이터 재고 불변량은 경계 행렬에서 직접 확인하지 않았다.
-- **조사 중단 층:** 앱 서비스·응답·PostgreSQL 행 잠금·금전 상태까지 확인했다. proxy/network, JVM GC/thread dump, OS/container/cgroup은 조사하지 않았다. 문제와 경계가 앱/DB 계층에서 재현·수정돼 하위 층으로 갈 근거가 없었다.
-- 저장소의 `observability/`에는 scrape 설정만 있고 실제 alert rule/receiver가 없다. gauge가 값을 내는 것은 확인했으나 운영자가 경보를 수신하는 것은 확인하지 않았다.
+- 기준선은 service API 경계 행렬이며 HTTP 응답 코드는 변경 후 통합 시험에서 확인했다. 그 행렬은 재고 불변량을 측정하도록 설계되지 않았으므로 재고 효과를 주장하지 않는다. 재검토 조건: 기간 만료의 재고 영향이 의사결정에 필요해지면 별도 DB invariant 시험을 추가한다.
+- **조사 중단 층:** 앱 서비스·응답·PostgreSQL 행 잠금·금전 상태에서 동작을 재현하고 수정했으므로 proxy/network, JVM GC/thread dump, OS/container/cgroup은 조사하지 않기로 결정했다. 재검토 조건: 동일 상태 전이가 수정 후에도 재현되지 않거나 DB 오류가 원인으로 관측되면 하위 계층을 연다.
+- Alertmanager/Prometheus/Grafana를 포함한 tracked alert rule·receiver 정의는 `git grep` 결과 0건이다. 저장소의 `observability/prometheus.yml:5-9`는 scrape만 하고, 애플리케이션은 `ReturnInspectionMetrics.java:23`에서 gauge를 만들며 observability profile(`application-observability.yml:17-18`)에서 Prometheus endpoint를 노출한다. 실제 운영 경보는 외부 차단: 운영자의 Prometheus alert-rule 및 Alertmanager 수신자·라우팅 설정이 필요하다. V1 동작은 gauge 제공뿐이며 개별 경보 로그·수신은 하지 않는다.
 - Testcontainers 컨테이너는 종료 시 정리됐고, 실행 뒤 `atlasexp=h3` label 컨테이너·볼륨·네트워크 0개를 확인했다. 원시 TSV/log/임시 탐침은 커밋하지 않고 이 문서에 집계 결과와 실행 매개변수를 보존했다.
 
 ### 전체 검증의 실패 추적 (H3 영향 분리)
 
-- 첫 full `clean check` 실행(`head=39b01eaa`)은 exit 1, 전체 XML 1,069 테스트 중 6개 실패였다. 여섯 실패는 모두 이번 diff가 건드리지 않은 `LocationReservationServiceIntegrationTest`(위치 lease/recovery)였다. H3 통합 테스트 자체는 6/6 통과했다. 해당 클래스 단독 1회 재실행은 18/18 통과했으나, 한 번의 재실행만으로 원인을 추정하지 않았다.
+- 첫 full `clean check`(`head=39b01eaa`)는 exit 1, 전체 1,069 tests 중 `LocationReservationServiceIntegrationTest`의 18개 중 6개 assertion 실패였다. 로그상 실패 메서드는 `renewsLeaseBeforeNextRemoteCallWhenFanoutConsumesHalfTheLease`, `splitOrderRestockBeyondOneLocationsClaimedQuantityLeavesNoRestockRows`, `retryScheduledDuringPollWaitsForTheNextRecoveryPoll`, `splitOrderReturnRestocksEachLocationWithItsOwnQuantitiesExactlyOnce`, `holdTooCloseToExpiryAfterTheNextLocationRespondsIsCompensated`, `recoveryClaimsEachWorkflowImmediatelyBeforeProcessing`이며, XML 결과는 보존되지 않아 실패 원인을 더 분류할 증거가 없다. H3 통합 테스트는 6/6 통과했다.
 
 실패 주장을 최신 clean `origin/main`과 rebased H3 branch에서 분리했다. 같은 호스트·같은 Gradle 명령으로 각 worktree에서 5회씩 실행했고, 실행 순서는 main→H3, H3→main으로 교차했다.
 
@@ -170,9 +170,9 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 | clean origin/main | `d6b4d4ed` | 5 | 18 | 0/5 |
 | H3 branch | `ed9cfbf3` | 5 | 18 | 0/5 |
 
-명령(각 worktree에서 5회): `./gradlew --no-daemon --console=plain :atlas-application:test --rerun --tests 'com.atlas.order.LocationReservationServiceIntegrationTest'`. 이 10회에서는 앞의 6개 실패를 재현하지 못했다. 원인은 **확정하지 못했다**. 재현 증거가 없어 H3 문제라고 단정하거나 “flaky”로 부르지 않았고 별도 이슈도 만들지 않았다. 실험 전후 load average 2.96/4.04/6.90→5.06/5.62/6.87, Docker container 수 16, CPU 합계 23.6%→7.9%, peak container 13.8%→2.5%였다. 이 결과도 지연/SLA 비교에 쓰지 않는다.
+명령(각 worktree에서 5회): `./gradlew --no-daemon --console=plain :atlas-application:test --rerun --tests 'com.atlas.order.LocationReservationServiceIntegrationTest'`. 두 worktree의 10회는 모두 18/18 통과(0/10 실패)했다. 앞선 단독 재실행 18/18과 두 번째 clean check의 클래스 실행 18/18을 합쳐 최초 실패 뒤 후속 실행은 0/12 실패다. 클래스 실행을 표본 단위로 한 rule-of-three 95% 상한은 3/12=25%다. 같은 호스트 실행이므로 독립 호스트·CI 실패율 추정치는 아니다. [EXP-074](EXP-074-slow-test-forensics.md)·[EXP-097](EXP-097-ci-observation.md)의 `LocationFaultConvergenceIntegrationTest` 장애는 다른 테스트 클래스이며, 해당 문서의 dangling claim 서명과 이 클래스의 assertion 실패를 연결하는 증거는 없다. 따라서 이 6건의 원인은 규명되지 않았고, 기존 LocationFault/dead-DB/context 지연 문제와 같은 원인이라고 보지 않기로 결정했다. 재현되지 않은 코드 수정도 하지 않는다. 재검토 조건: 다음 10회 clean-worktree 단독 실행에서 1회라도 실패하면 XML·실패 DB 행·thread dump를 보존해 원인을 분류한다. 공유 호스트 지표는 위와 같으며 성능/SLA 결론에는 사용하지 않는다.
 
-이후 최신 main `d6b4d4ed`로 재기반한 H3 branch `9cecd581`에서 두 번째 `clean check`를 실행했다: exit 0, 184 XML suites·1,099 tests·실패 0 (`BUILD SUCCESSFUL`). 첫 실행의 6개 실패는 이 실행 및 clean-main/H3 각 n=5 비교에서 재현되지 않았다. 원인은 끝내 확인되지 않았다.
+이후 최신 main `d6b4d4ed`로 재기반한 H3 branch `9cecd581`에서 두 번째 `clean check`를 실행했다: exit 0, 184 XML suites·1,099 tests·실패 0 (`BUILD SUCCESSFUL`). 최초 6개 실패는 0/12 후속 클래스 실행과 이 clean check 모두에서 재현되지 않았다. 이로써 원인을 규명한 것은 아니며, 현 시점 결정은 코드 변경 없이 보류하고 위 재검토 조건을 적용하는 것이다.
 
 ## 대안 비교 요약
 
@@ -188,11 +188,12 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 | 경계 동시 요청은 n=30 모두 수량 3을 지키고 +1초 요청은 모두 거절됐다 | 0/30 위반, 95% 상한 10%, M1 음성 통제 5/5가 위반 15건 검출 | local-only |
 | 마감 계산은 월~금·Asia/Seoul이며 공휴일 미지원이다 | 표 기반 단위 테스트와 KST/UTC 경계, M7 | confirmed (구현 의미만) |
 | 검수 초과는 상태·돈을 바꾸지 않고 목록/gauge로 표시하며 늦은 검수도 된다 | PostgreSQL 통합, gauge 2→1, late/on-time 환불 비교, M8/M9/M12 | local-only |
-| 운영자가 실제로 알림을 받는다 | alert rule/receiver 확인 못 함 | not confirmed |
-| 7일·5영업일이 법 또는 Seller 정책에 맞다 | 외부 정책 근거를 조사하지 않음 | assumed |
-| 공휴일이 낀 5영업일 마감이 실제 법·정책상 맞다 | 휴일 달력 미지원 | not confirmed |
+| 운영자가 실제로 경보를 받는다 | 저장소 tracked alert-rule·receiver 설정 0건; `observability/prometheus.yml:5-9` scrape, `ReturnInspectionMetrics.java:23` gauge, `application-observability.yml:17-18` endpoint 노출 | 외부 차단: 운영 Prometheus alert-rule와 Alertmanager 수신자·라우팅 설정 필요. V1은 gauge만 내보내며 로그·경보 수신은 하지 않음 |
+| 7일·5영업일이 법 또는 Seller 정책에 맞다 | [전자상거래법 제17조 제1항 제1호](https://www.law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1022341869)는 서면 수령일부터 7일, 공급이 늦으면 공급일부터 7일을 규정; 이 조항만으로 endpoint의 시작 기준·적용 범위나 5영업일 Seller 검수를 검증할 수 없음 | 결정: 법률 적합성은 V1 범위 밖. Seller 계약·관할 근거 없이 준수 주장하지 않음. 설정 기본값 유지와 법무 승인 선행 중 설정 가능 기본값을 선택. 재검토 조건: 첫 Seller 계약 또는 관할 법무 검토 |
+| 공휴일이 낀 5영업일 마감 | `ReturnPolicy.java:68-75,92-95`는 주말만 제외하며 주입 가능한 달력 없음. 월요일 2026-12-21 수령·5일·12-25 단일 휴일 가정 시 V1 배타 마감 12-29 00:00, 휴일도 세면 12-30 00:00 | 결정: V1은 주말만 제외하고 공휴일을 건너뛰지 않음; 이 예에서 1일 일찍 초과 표시. full calendar 구현 대신 이 규칙을 유지. 재검토 조건: 운영 국가 확정 또는 휴일 때문에 마감 분쟁 1건 |
 | provider 실패 뒤 재검수에도 dueAt이 유지된다 | 통합 테스트 `reinspectionAfterProviderRefundFailureKeepsTheOriginalInspectionDeadline`: 첫 검수에서 provider가 `FAILED`를 돌려준 뒤 같은 검수를 다시 호출하면 수정 후 `REFUND_RECORDED`가 되고 `receivedAt`·`inspectionDueAt`은 그대로다(수정 전에는 재호출이 `OrderException`으로 막혀 환불이 기록되지 않았다) | local-only(실행함, 결정적 시험 1건, 수정 전·후 비교) |
-| 추가 설정 값 및 공휴일/DST 생산 날짜가 모두 정확하다 | P30D 단일 설정 행렬 및 단위 시간대 sweep만 수행 | not confirmed |
+| 설정값·DST 경계 | UTC·Asia/Seoul·America/New_York × P1H/P7D/P30D 18개 return-window 시나리오, 영업일 1/5/30 × 두 2026 NY DST 주변 구간 8,640개 수령 시각; 경계 ±1초 단위 확인 | local-only: 이 설정·시간대·날짜 행렬에서 전부 통과. 공휴일은 위 G2 결정이며 모든 미래 생산 날짜에 대한 주장은 아님 |
+| 사전 등록 이후 추가: 잘못된 `business-zone` 문자열의 Spring binding이 시작을 막는다 | 이 설정-binding 경로용 app-context test를 실행하지 않음; 기존 테스트는 값 경계와 기본값 일치만 검증 | 결정(범위 밖): 시간 계산 invariant와 property conversion 경로는 별개이고 현 운영 zone 변경 요구도 없다. 잘못된 설정 app-context 시험 대안은 고려했으나 별도 Spring context를 추가하지 않음. 재검토 조건: 첫 운영자 지정 zone 기능 또는 invalid-zone 배포 차단 1건 |
 
 ## 최종 가설 판정
 
@@ -205,11 +206,11 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 | H5 | confirmed | 만료 뒤 같은 key replay는 원응답, 새 key는 거절; M5 탐지 |
 | H6 | local-only | 잠금 대기 5/5, M3 탐지; 0/5 상한 60% |
 | H7 | local-only | 경계 경합 n=30 위반 0, 상한 10%; M1 음성 통제 n=5 위반 15건 탐지 |
-| H8 | confirmed | 주말 skip, 금요일→화요일, timezone edge; M7 탐지 |
+| H8 | confirmed | 주말 skip, 금요일→화요일, UTC·서울·뉴욕 DST 주변 행렬 M7 탐지 |
 | H9 | confirmed | 마감 -1초/-1ns 정상, 정각부터 overdue; M8 탐지 |
-| H10 | local-only | flag·gauge 및 no-auto-money와 늦은 환불 확인; receiver는 미확인 |
+| H10 | local-only | overdue flag·gauge·no-auto-money·late refund 확인; 3 RECEIVED 상태 유지, gauge 2→1 |
 | H11 | local-only(실행함) | 수정 후 통과, 수정 전 실패(재검수가 `OrderException`으로 막힘). 마감 불변은 확인됐고, 시험이 환불 키 결함을 드러내 고쳤다(아래 후속 절) |
-| H12 | local-only | 값 범위와 운영 yml 기본값 확인; 잘못된 ZoneId 문자열의 context startup은 직접 시험 안 함 |
+| H12 | local-only | ReturnPolicyTest 범위 값 검증 및 `application.yml` 기본값/code 기본값 일치 |
 | H13 | confirmed | 실제 env flag=false에서 7/7, 기본 flag=true에서 만료 4/4 거절; 서비스 fixture off→on 시험 |
 
 ## 후속 점검(2026-11-26): provider 환불 실패 뒤 재검수가 막히던 결함
@@ -222,3 +223,38 @@ M7·M10의 실패 테스트 수가 1보다 큰 이유는 한 테스트 안의 �
 - 금전 안전: 새 키를 만드는 조건은 "최근 시도가 영구 실패로 확정됨" 하나뿐이다. 결과 불명 상태에서 새 키를 만들지 않는다.
 - 한계: 시험은 결정적 1건이고 provider는 대역이다. 실제 PayPal Sandbox에서 환불 실패를 유도해 재검수까지 이어 본 실행은 없다. 결과 불명(`UNKNOWN`)에서 재호출이 같은 키를 쓰는지는 기존 시험이 다룬다고 가정하며 이 시험으로 확인하지 않았다.
 - 되돌리기: 이 PR을 되돌리면 이전 키 선택으로 돌아간다(스키마 변경 없음).
+
+## EXP-105 종결 결과
+
+- **G1 — provider 실패 뒤 재검수:** 위 "후속 점검(2026-11-26)" 절이 실행으로 닫았다(#679, D-173). 이 PR은 그 시험을 다시 쓰지 않는다.
+- **G2 — 공휴일:** `git grep -n -E "BusinessDay|BusinessCalendar|holiday|Holiday|isBusinessDay|calendar" -- atlas-order/src/main/java/com/atlas/order atlas-order/src/test/java/com/atlas/order` 결과 달력 주입 지점 0개; `ReturnPolicy.java`는 월~금만 센다. 다음 계산으로 방향을 확인했다. V1은 2026-12-21 월요일 수령·5일 때 12-25를 세어 12-29 00:00 KST에 마감하지만, 같은 날을 휴일로 건너뛰면 12-30 00:00 KST다. V1 표시가 하루 일찍 시작하는 concrete example이며 달력 미도입은 위의 결정으로 종결한다.
+
+  ```bash
+  python3 - <<'PY'
+  from datetime import date, timedelta
+  start, holiday = date(2026, 12, 21), date(2026, 12, 25)
+  def due(skip_holiday):
+      day, remaining = start, 5
+      while remaining:
+          day += timedelta(days=1)
+          if day.weekday() < 5 and not (skip_holiday and day == holiday):
+              remaining -= 1
+      return day + timedelta(days=1)
+  print(due(False), due(True))
+  PY
+  ```
+
+- **G3 — 설정·DST 행렬:** `ReturnPolicyTest` 실행에서 UTC·Asia/Seoul·America/New_York × P1H/P7D/P30D 18개 window 시나리오와 영업일 1/5/30 × 두 뉴욕 DST 전환 구간의 수령 시각 8,640개를 확인했다. 각 deadline은 현지 자정, 직전 날짜의 평일 수 N개, overdue `-1초/정각/+1초` 경계를 만족했다. 아래 unit 명령에서 21 tests, 실패 0.
+- **사전 등록 이후 추가 — invalid ZoneId 설정 subclaim:** Spring `business-zone` property conversion이 잘못된 문자열에서 시작을 막는지는 시험하지 않았다. 마감 함수의 시간대 invariant와 다른 입력 검증 경로이고 V1은 운영자가 zone을 바꾸는 기능을 별도로 요구하지 않아, 잘못된 값을 넣은 전체 app-context 시험 대안은 추가하지 않기로 결정했다. 재검토 조건: 운영자 지정 zone 기능을 추가하거나 invalid-zone 때문에 배포가 한 번 차단될 때.
+- **G4 — alert 수신:** `git grep -n -i -E "rule_files|alerting:|alert:|groups:|receivers:|route:|Alertmanager|PrometheusRule" -- observability grafana`는 0줄이다. scrape 설정과 actuator gauge 위치는 claims 표에 적었다. 외부 운영 alert-rule/Alertmanager 수신·라우팅 설정 입력이 없어 실제 수신은 외부 차단; V1은 gauge만 노출한다.
+- **G5 — 법·Seller 정책:** `git grep -n -i -E "반품 기간|5영업일|청약철회|전자상거래법" -- docs/01-requirements docs/02-decisions/adr docs/00-governance`는 13줄이며 기존 문서는 두 값을 가정·feature-config로만 기록한다. 법제처 [전자상거래법 제17조](https://www.law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1022341869) 제1항 제1호만 확인했다(서면 수령일부터 7일, 재화 공급이 늦으면 공급일부터 7일); 이는 이 endpoint의 시작 기준·전체 적용 범위·Seller의 5영업일 검수를 승인하지 않는다. 법률 적합성 주장은 범위 밖으로 결정하고 첫 Seller 계약 또는 관할 법무 검토 시 재검토한다.
+- **재현·변이 명령:** 아래 두 명령은 컴파일·Checkstyle도 포함한다. 첫 명령은 PostgreSQL 통합 클래스 7 tests, 둘째는 단위 클래스 21 tests를 실행한다.
+
+  ```bash
+  ./gradlew --no-daemon --console=plain compileJava compileTestJava checkstyleMain checkstyleTest :atlas-application:test --tests 'com.atlas.order.OrderReturnWindowIntegrationTest'
+  ./gradlew --no-daemon --console=plain compileJava compileTestJava checkstyleMain checkstyleTest :atlas-order:test --tests '*ReturnPolicyTest'
+  ```
+
+  단위 시험 쪽은 이 세션에서 다시 실행해 확인했다(2026-11-26): `ReturnPolicyTest` 21/21 통과, 변이 뒤 매번 저장본과 `cmp` 일치. 변이와 결과: 검수 초과 판정을 `now.isAfter(due)`로 바꿈(경계 정각 오판) 21건 중 2건 실패, 검수 마감 계산을 `plusDays(2)`로 바꿈 10건 실패, DST 구간에서 반품 기간을 현지 달력일로 계산(`ZonedDateTime.plusDays`) 4건 실패. 통합 시험 쪽(PostgreSQL 7건과 변이 "실패한 idempotency key 재사용 1/7, dueAt을 현재 시각으로 재계산 2/7, 검수 재시도 때 received_at 재기록 1/7")과 "UTC 자정으로 계산 10/21" 변이는 local-only(이전 에이전트 보고)이며 이 세션에서 다시 실행하지 않았다.
+- **실제 롤백 드릴:** 세 Java 파일(`OrderRefundServiceImpl.java`, `OrderReturnWindowIntegrationTest.java`, `ReturnPolicyTest.java`)의 실제 diff를 scratch copy에 적용하고 `git apply --reverse actual-java.patch`로 되돌린 뒤 다시 적용했다. 순방향 적용·HEAD 복원·최종 재적용 각각 `cmp` 3/3 일치; 작업 worktree는 건드리지 않았다. 명령 형식: `git diff --binary HEAD -- <three files>`, `git apply actual-java.patch`, `git apply --reverse actual-java.patch`, 양방향 `cmp`.
+- **혼란 요인·미실행 범위:** 통합 시험은 PostgreSQL 18.6과 로컬 provider status stub이며 실제 PayPal 계정·운영 receiver 설정을 사용하지 않았다. 시간은 조정 가능 Clock/고정 Instant라 호스트 시계 영향이 없고 DST 행렬은 순수 단위 시험이다. 도구: 일회성 `markdownlint-cli2@0.24.0` (`npx --yes`, Markdown lint); 별도 시스템 도구 설치는 없다. lint 명령 `npx --yes markdownlint-cli2@0.24.0 docs/03-experiments/EXP-093-return-window-and-inspection-deadline.md` 결과 0 issues. 전체 `clean check`는 이 작업에서 재실행하지 않았다(부모가 실행); 운영 데이터 조회·실제 Seller 계약 검토도 범위 밖/외부 입력 차단이다.

@@ -37,20 +37,45 @@
 
 | 후보 | 기각 이유 |
 | --- | --- |
-| `order`/`payment`의 `OwnerLockRegistryTest` 두 개(본문 diff 0줄) | 두 모듈에 같은 이름의 `OwnerLockRegistry` 클래스가 각각 있고 테스트는 각자의 클래스를 검증합니다. 테스트 중복이 아니라 SUT가 둘인 것입니다(두 클래스 본문이 같은지는 비교하지 않았습니다). SUT 통합은 별도 설계 판단이라 이 감사에서 다루지 않았습니다. |
+| `order`/`payment`의 `OwnerLockRegistryTest` 두 개(본문 diff 0줄) | 두 모듈에 같은 이름의 `OwnerLockRegistry` 클래스가 각각 있고 테스트는 각자의 클래스를 검증합니다. 테스트 중복이 아니라 SUT가 둘인 것입니다. 실행함(EXP-105): 두 클래스를 `diff`로 비교하면 `package` 줄, `@Component` import와 어노테이션, `public` 한정자까지 7줄만 다르고 락 로직 본문은 같습니다. 결정: 클래스 통합은 모듈 경계(order와 payment가 서로 의존하지 않음) 설계 판단이라 테스트 감사 범위 밖이며, 시험은 SUT가 둘인 동안 지우지 않습니다. 재검토 조건: 두 클래스 중 한쪽만 고쳐지고 다른 쪽이 따라가지 않은 변경이 `git log`에 1건 나타나거나 `ModuleBoundaryTest`가 공용 모듈을 허용하게 바뀔 때. |
 | `ExpirySweepPolicyTest`(order)와 `AdmissionExpirySweepPolicyTest` | 서로 다른 SUT 클래스입니다(본문 diff 40줄). |
 | `InventoryLocationLayerBoundaryTest`와 `ModuleBoundaryTest` | `ModuleBoundaryTest`에는 `inventorylocation` 참조가 없습니다(grep 0건). 구조 테스트이므로 규칙상 보존 대상이기도 합니다. |
 | `FxRateCallCostIntegrationTest.identicalAmountConversionsReuseTheCachedQuote`와 `CachingExchangeRateProviderTest.repeatedLookupsWithinTtlHitTheDelegateOnce` | 불변식은 겹치지만 EXP-041이 이 테스트를 측정 근거로 인용합니다. 클래스 전체가 1.8초이고 같은 Spring context를 공유해 삭제 이득이 없습니다. |
-| `PayPalWebhookServiceTest.checkoutCaptureRedeliveryRetriesReconciliationAfterFailure` | 재조정 재시도 부분은 통합 테스트와 겹치지만, "체크아웃 경로의 재조정이 소유자 잠금 해제 뒤에 실행된다"는 단정은 이 테스트에만 있습니다. 이 단정을 깨는 변이는 실행하지 않았고 읽어서 확인했습니다. |
+| `PayPalWebhookServiceTest.checkoutCaptureRedeliveryRetriesReconciliationAfterFailure` | 재조정 재시도 부분은 통합 테스트와 겹치지만, "체크아웃 경로의 재조정이 소유자 잠금 해제 뒤에 실행된다"는 단정은 이 테스트에만 있습니다. 실행함(EXP-105, 병합 전 `origin/main`의 별도 worktree에서 변이 3종, 매번 원본과 `cmp` 일치로 복원): (a) 체크아웃·주문 재조정 두 호출 모두를 소유자 잠금 안으로 옮기면 이 테스트와 `captureWebhookTransactionRunsInsideOwnerLockAndReconciliationRunsAfterRelease` 등 3건 중 3건이 실패, (b) 체크아웃 재조정만 잠금 안으로 옮기면 3건 중 2건 실패(이 테스트와 `captureWebhookTransactionRunsInsideOwnerLockAndReconciliationRunsAfterRelease`. 후자는 `findByAttemptId`가 잠금 밖이라는 단정을 공유하지만 이 변이는 그 호출 위치도 함께 옮겼기 때문), (c) `findByAttemptId`는 잠금 밖에 두고 체크아웃 재조정 호출만 `withPayPalWebhookOwnerLock` 안으로 옮기면 3건 중 **이 테스트 1건만 실패**하고 나머지 2건은 통과. 변이 없는 대조군은 3건 모두 통과(`BUILD SUCCESSFUL`). 결론: "체크아웃 경로 재조정이 소유자 잠금 해제 뒤에 실행된다"는 단정은 이 테스트만 가지고 있음이 실행으로 확인됐고 그래서 유지합니다(근거: 변이 (c), n=1). |
 | `PayPalWebhookOperatorServiceImplTest`의 나머지 7건 | 재생 시 큐에 손대지 않음, 새 재큐의 큐·감사 기록, NOT_FOUND/CONFLICT 구분, lost update 경합, 페이지 경계는 같은 단정을 가진 통합 테스트를 찾지 못했습니다. |
 | `PayPalWebhookRetryHistoryRedactionTest`와 `PayPalWebhookOperatorSecurityTest.authenticatedReadReturnsSafePage...` | 검증하는 DTO가 다릅니다(pending page·summary와 exhausted page). |
 | 목 호출 밀도 상위 클래스(`CheckoutBehaviorTest`, `PayoutDispatchApprovalCommitServiceTest`, `AccountServiceTest` 등) | 서비스가 포트에 보내는 호출이 계약입니다. 같은 단정을 가진 더 낮은 계층·통합 테스트를 찾지 못했습니다. |
-| `FxRateLatencyProbeTest`(1.7초, 단정은 `isNotEmpty()`), `InventoryFlashSaleContentionIntegrationTest`(5.1초, 최대 128 스레드) | 측정 도구를 `check`에 둔 것으로 규칙 4에 해당할 가능성이 높습니다. 그러나 EXP-041/EXP-044가 재현 방법으로 직접 인용하므로 옵트인 방식과 문서 수정이 함께 필요하고, 정리 종류(중복 제거 vs 실험 분리)가 달라 한 PR에 섞지 않았습니다. 후속 후보입니다. `FlashSale`의 oversell 불변식이 `InventoryConcurrencyIntegrationTest`와 같은지는 이름만 대조했고 본문 대조는 하지 않았습니다. |
-| `LocationFaultConvergenceIntegrationTest`(21.6초, sleep·await 7곳) | 가장 느리지만 간헐 실패 로그나 반복 실행 증거를 찾지 못했습니다. 근거 없이 줄이지 않았습니다. |
+| `FxRateLatencyProbeTest`(1.7초, 단정은 `isNotEmpty()`), `InventoryFlashSaleContentionIntegrationTest`(5.1초, 최대 128 스레드) | 측정 도구를 `check`에 둔 것으로 규칙 4에 해당할 가능성이 높습니다. 그러나 EXP-041/EXP-044가 재현 방법으로 직접 인용하므로 옵트인 방식과 문서 수정이 함께 필요하고, 정리 종류(중복 제거 vs 실험 분리)가 달라 한 PR에 섞지 않았습니다. 후속 후보입니다. 실행함(EXP-105): `FlashSale`의 oversell 불변식(`available`이 음수가 아님, `available + reserved` 보존)을 `InventoryConcurrencyIntegrationTest`와 본문으로 대조했습니다. 후자가 `accepted == capacity`, `available == 0`, `reserved == capacity`, `claimed == 0`, 합 = 초기 용량(`assertConserved`)을 같은 PostgreSQL 위에서 확인하므로 oversell·보존 불변식은 겹칩니다. 겹치지 않는 부분은 `FlashSale`의 처리량 보고와 128 스레드 규모뿐입니다. 결정: 이 감사(중복 제거 한 종류)에서는 건드리지 않고 "실험을 `check`에서 옵트인으로 분리"하는 별도 정리로 남깁니다. 재검토 조건: EXP-041/EXP-044의 재현 방법을 옵트인 명령으로 바꾸는 PR이 열리거나, 두 클래스 중 하나가 CI에서 간헐 실패를 1건 낼 때. |
+| `LocationFaultConvergenceIntegrationTest`(21.6초, sleep·await 7곳) | 가장 느리지만 이 감사 시점에는 간헐 실패 로그나 반복 실행 증거를 찾지 못했습니다. 근거 없이 줄이지 않았습니다. 이후 [EXP-097](EXP-097-ci-observation.md)이 CI에서 LocationFault 계열 간헐 실패를 관측했고(원인은 시험 내용이 아니라 죽은 DB를 기다리는 컨텍스트 종료 지연이라고 봤으며 #609로 다뤘다) 그 결과를 따릅니다. 결정: 중복 근거가 아니므로 줄이지 않습니다. 재검토 조건: EXP-097의 재수집에서 이 클래스가 다시 실패하거나, 클래스 시간 합이 shard 시간의 10%를 넘을 때. |
 
 ## 한계
 
-- 후보 탐색은 이름과 본문 읽기 기반이라 놓친 중복이 있을 수 있습니다. 커버리지 도구로 같은 분기를 지나는지 확인하지는 않았습니다(이 저장소에는 커버리지 gate가 없음).
-- 변이는 수동으로 고른 3건이며 변이 점수를 계산한 것이 아닙니다.
+- 후보 탐색은 이름과 본문 읽기 기반이라 놓친 중복이 있을 수 있습니다. 커버리지 도구로 같은 분기를 지나는지는 보지 않았습니다. 결정: 이 저장소에는 커버리지 gate가 없고(테스트 정리 기준 5번) 도구를 새로 도입하는 것은 이 감사의 범위를 넘습니다. 대신 후보마다 변이 실행으로 "같은 단정이 있는가"를 직접 확인했습니다. 재검토 조건: 저장소가 커버리지 gate를 도입하거나, 놓친 중복이 리뷰에서 1건 지적될 때.
+- 변이는 수동으로 고른 3건에 EXP-105의 3종을 더한 것이며 변이 점수를 계산한 것이 아닙니다. 결정: 변이 점수 계산(예: PIT 도입)은 도구 도입이라 범위 밖이고, 삭제 판단은 후보별 변이 실행으로 충분합니다. 재검토 조건: 삭제 PR이 한 번에 10건 이상으로 커질 때.
 - 기준선 시간은 공유 머신 값이고 일부 모듈은 캐시 복원 값이라 성능 근거로 쓰지 않습니다.
 - 삭제 후 `clean check` 결과는 PR 본문에 기록합니다.
+
+## EXP-105 종결 결과
+
+재실행 표기: 변이 3종과 무변경 대조(PayPalWebhookServiceTest 3/3 등)와 롤백 드릴은 이전 에이전트가 보고한 값이며 이 에이전트는 다시 실행하지 않았다: local-only(이전 에이전트 보고).
+
+이 문서의 인벤토리 삼각형은 1건이었다: 후보표의 체크아웃 재조정 잠금 경계 주장. 결정: 변이로 검증한 유일한 단정이므로 테스트를 유지한다. 기존 테스트 3건만 실행했으며 신규 `check` 테스트는 없고, production 코드도 바꾸지 않았다.
+
+| 변이 | 변경 | 결과 |
+|---|---|---|
+| no-change | `./gradlew --no-daemon --console=plain :atlas-application:test --tests 'com.atlas.application.service.PayPalWebhookServiceTest'` | 3/3 통과, `BUILD SUCCESSFUL` |
+| negative 1 | 체크아웃·주문 재조정 모두를 owner-lock lambda 안으로 이동 | 3/3 실패 |
+| negative 2 | 체크아웃 재조정과 그 안의 `findByAttemptId`를 lock 안으로 이동, 주문 재조정은 밖에 둠 | 2/3 실패; `findByAttemptId`도 lock 밖이어야 한다는 별도 단정이 추가로 발동 |
+| negative 3 | 원래 `findByAttemptId`는 밖에 두고 체크아웃 `reconcile` 호출만 `withPayPalWebhookOwnerLock`으로 감쌈 | 대상 테스트 1/3 실패, 다른 2건 통과 |
+
+각 변이에서 위의 동일 Gradle 명령을 실행했다. 확인한 표본은 변이별 한 번이며 신뢰도 구간을 주장하지 않는다. 매 변이 뒤 저장한 production 파일과 복원 파일이 `cmp`로 일치함을 확인했다. 세 번째 변이는 의도한 checkout-only 단정을 격리했다. 실험은 JDK 25, 단일 JVM의 세 테스트였고 Docker/PostgreSQL 의존 테스트는 포함되지 않았다. 이 변이 결과는 기존 테스트가 더 정확한 통합 테스트와 중복되지 않는다는 근거다.
+
+추가 확인: 두 모듈의 `OwnerLockRegistry` 본문 차이는 package, `@Component` import/annotation, visibility까지 7줄이었다. `InventoryFlashSaleContentionIntegrationTest`의 oversell/conservation assertion은 `InventoryConcurrencyIntegrationTest`의 PostgreSQL 검증과 겹치고, 처리량 보고와 128-thread 범위는 다르므로 테스트를 삭제하지 않고 옵트인 분리 후보로 결정했다.
+
+되돌리기 드릴: 현재 EXP-084 차이를 임시 worktree의 `origin/main`에 `git apply "$PATCH"`로 적용한 뒤 `git apply -R "$PATCH"`로 역적용했다. `git diff --exit-code`와 `cmp`가 통과해 원본 파일과 바이트 단위 일치했다. 컴파일 코드는 바꾸지 않았다.
+
+### Claims (claim | evidence | confidence)
+
+| Claim | Evidence | Confidence |
+| --- | --- | --- |
+| 체크아웃 재조정은 owner lock 해제 뒤에 실행되며 이 단정은 유지 중인 테스트로 지켜진다 | no-change 3/3 통과; lock-boundary negative mutation 대상만 1/3 실패; 각 mutation 뒤 `cmp` 복원 | local-only |
