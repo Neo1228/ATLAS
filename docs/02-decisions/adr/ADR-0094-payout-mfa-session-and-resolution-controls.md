@@ -52,7 +52,8 @@ ADR-0092는 운영자를 account JWT로 식별하고 TOTP 등록을 요구하지
 
 ## 검증, 한계, 되돌리기
 
-- EXP-102에 baseline/after 수치, PostgreSQL 통합 테스트, 변이 결과, 실제 Sandbox E2E 및 public-source 판정을 집계한다. 실행하지 않은 검증은 완료로 적지 않는다.
+- 결과는 [EXP-102](../../03-experiments/EXP-102-payout-sandbox-e2e-and-q013-closure.md)에 집계했다. PostgreSQL 통합 테스트(`PayoutOperatorMakerCheckerIntegrationTest` 14건), n=20 입력 변형에서 등록 전 세션 20/20 → 0/20, MFA 재등록 이전 세션 20/20 → 0/20, 같은 account의 provider 검토 해소 20/20 → 0/20(오거절 0/20). 변이 12건이 모두 시험을 실패시켰다. 살아남은 변이 1건(비밀번호 로그인에도 표식을 찍음)은 `>= enabled_at` 비교 때문에 관측 가능한 동작이 같은 동등 변이다. 실제 Sandbox 앱 전체 지급은 15/15가 기대 종결 상태였다.
+- 이 ADR이 다루지 않는 것: 두 운영자의 공모, 운영자 account 탈취 후의 사용(MFA를 통과한 세션 안에서의 행동), Live.
 - V6는 column 추가와 trigger function 교체만 한다. 기존 row는 갱신하지 않는다.
 - 되돌림 순서: 먼저 애플리케이션 코드를 V6 이전으로 되돌리고 flag를 꺼서 운영자 경로를 닫는다. 그 다음 `refresh_token_family.mfa_verified_at`을 제거하고 V5 trigger function body를 복원한다. V6 column을 제거한 채 V6 코드를 실행하면 operator query가 실패하므로 schema downgrade 전에 code rollback이 필수다.
 - Payout provider feature flag와 worker flag는 기본 `false`다. Sandbox E2E에서 사용한 실제 Sandbox credential은 repository/workflow에 저장하지 않는다.

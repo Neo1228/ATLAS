@@ -58,6 +58,8 @@ UPDATE payout_operator_account SET revoked_at = now() WHERE account_id = '<opera
 
 운영자 호출은 `Authorization: Bearer <access token>`이고 감사 행의 actor는 account id다. 프로필을 검증한 사람은 그 지급을 승인할 수 없고(403 `SEPARATION_OF_DUTIES`), 수동 지급에서 승인한 사람은 송금을 기록할 수 없으며 송금을 기록한 사람은 확인할 수 없다. 운영자 자신의 account가 수취 account인 프로필은 그 운영자가 검증할 수 없다. 소규모 팀이면 운영자를 최소 두 명 부여해야 지급이 진행된다.
 
+운영자 access token은 **MFA challenge(TOTP 또는 recovery code)를 마친 세션에서 발급된 것만** 받아 준다([ADR-0094](02-decisions/adr/ADR-0094-payout-mfa-session-and-resolution-controls.md)). 비밀번호만으로 만든 세션과 MFA를 다시 등록하기 전에 만든 세션은 403이다. V6를 적용한 직후에는 모든 운영자 세션이 한 번 거절되므로 다시 로그인해 MFA를 거쳐야 한다. 재큐(`requeue`), provider 검토 해소(`resolve-provider-review`), 수동 지급의 송금 없음 확정(`manual-no-transfer`)은 같은 지급의 승인자(또는 송금 기록자)와 다른 운영자만 할 수 있고(403 `SEPARATION_OF_DUTIES`), 취소와 송금 전 실패 기록은 단독으로 할 수 있다.
+
 **되돌리기(rollback):** `ATLAS_SETTLEMENT_PAYOUT_OPERATOR_IDENTITY=shared-credential`로 재기동하면 기존 HTTP Basic 단일 자격 증명 모드로 돌아간다. 이때 `ATLAS_SETTLEMENT_PAYOUT_OPERATOR_USERNAME`(비어 있지 않게)과 32자 이상 `ATLAS_SETTLEMENT_PAYOUT_OPERATOR_PASSWORD`가 필요하고, 감사 actor는 사람을 구분하지 못하며 승인자 분리 규칙은 적용되지 않는다(기동 로그에 WARN). 긴급 우회가 아니라 되돌리기 수단이다.
 
 먼저 worker를 끈 채 profile을 만들고 operator 검토를 통과시킨 다음, 지급 요청·operator 승인을 수행해 immutable outbox intent가 생성되는지 확인한다. Profile·국가·암호화 key·Sandbox entitlement 확인 후에만 `ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=true`로 전환한다. 적격하지 않은 profile은 자동 전송하지 않으며, 별도 manual route는 외부 증빙과 operator audit을 요구한다. Live credential이나 실계좌를 사용하지 않는다.

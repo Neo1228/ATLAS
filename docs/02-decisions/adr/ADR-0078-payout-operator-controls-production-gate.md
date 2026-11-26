@@ -1,13 +1,13 @@
 # ADR-0078: Seller 지급의 운영자 통제는 V1 Sandbox 한계로 두고 production 전환 gate를 체크리스트로 고정한다
 
-- 상태: 채택(제안 PR, 병합은 통합 담당). Sandbox 전용. **갱신:** 운영자 사람별 신원과 승인자 ≠ 검증자 강제는 [ADR-0092](ADR-0092-payout-operator-person-identity-and-maker-checker.md)에서 구현했다. 아래 사실 1의 "없음" 행(사람별 신원, 운영자 간 maker-checker)은 기준 커밋 546d8002 시점의 사실이고 gate 7 행이 현재 상태다. Live 지급은 이 문서의 gate를 모두 닫은 뒤 별도 결정한다.
+- 상태: 채택(제안 PR, 병합은 통합 담당). Sandbox 전용. **갱신:** 운영자 사람별 신원과 승인자 ≠ 검증자 강제는 [ADR-0092](ADR-0092-payout-operator-person-identity-and-maker-checker.md)에서 구현했다. 아래 사실 1의 "없음" 행(사람별 신원, 운영자 간 maker-checker)은 기준 커밋 546d8002 시점의 사실이고 gate 7 행이 현재 상태다. Live 지급은 이 문서의 gate를 모두 닫은 뒤 별도 결정한다. **갱신(2026-11-26):** gate 11개를 하나씩 종결 유형(1 검증, 2 결정, 3 외부 차단)으로 다시 썼다. 근거는 [ADR-0094](ADR-0094-payout-mfa-session-and-resolution-controls.md)와 [EXP-102](../../03-experiments/EXP-102-payout-sandbox-e2e-and-q013-closure.md)다. gate 1, 2, 4, 5는 PayPal 또는 treasury의 입력이 필요해 Live는 열리지 않는다.
 - 날짜: 2026-11-25
 - 관련: [ADR-0057](ADR-0057-financial-operation-outbox-and-payout-reconciliation.md), [ADR-0052](ADR-0052-settlement-fee-reserve-payout.md), [ADR-0027](ADR-0027-account-jwt-authentication.md), [EXP-073](../../03-experiments/EXP-073-paypal-sandbox-payouts-response-shapes.md)
 - 추적: [Q-013](../../01-requirements/requirements-index.md), [D-142](../../00-governance/decision-log.md#d-142), [Issue #621](https://github.com/Neo1228/ATLAS/issues/621)
 
 ## 문제
 
-Q-013은 PayPal Payouts의 상인 권한·funding source, 수취 국가·통화 적격성, USD 지갑·환율·provider fee, 프로필 검토 증거, 운영자 maker-checker·MFA, 지급 일정이 production 전에 미결이라고 적는다. 어떤 통제가 코드에 이미 있고 어떤 것이 없는지, 외부 전제가 무엇인지가 한곳에 정리돼 있지 않아 "정책으로 막았다"와 "코드로 막았다"를 구분할 수 없다. 이 ADR은 그 둘을 나누고, V1에서 코드를 바꿀 근거가 있는지 비교한다.
+Q-013은 PayPal Payouts의 상인 권한·funding source, 수취 국가·통화 적격성, USD 지갑·환율·provider fee, 프로필 검토 증거, 운영자 maker-checker·MFA, 지급 일정이 production 전에 남은 항목이라고 적었다. 어떤 통제가 코드에 이미 있고 어떤 것이 없는지, 외부 전제가 무엇인지가 한곳에 정리돼 있지 않아 "정책으로 막았다"와 "코드로 막았다"를 구분할 수 없다. 이 ADR은 그 둘을 나누고, V1에서 코드를 바꿀 근거가 있는지 비교한다.
 
 ## 사실 1: 코드에 있는 통제와 없는 통제
 
@@ -44,12 +44,11 @@ Q-013은 PayPal Payouts의 상인 권한·funding source, 수취 국가·통화 
 | 통화 변환 | South Korea는 통화 변환이 불가능한 국가 목록(Asia)에 있다. ADR-0057의 같은 주장을 현재 페이지로 다시 확인했다. | [Currency conversion](https://developer.paypal.com/payouts/currency-conversion) (Last updated: October 14, 2026) |
 | API 사전 조건 | 사전 조건으로 sandbox 설정, Business 계정 설정, 계정 funding을 든다. 멱등성은 `PayPal-Request-Id` 헤더와 `sender_batch_id`로 처리한다. | [Use Payouts API](https://developer.paypal.com/docs/payouts/standard/integrate-api) (Last updated: September 10, 2026) |
 
-확인하지 못한 것:
+확인하지 못했던 것의 현재 상태(2026-11-26, [EXP-102](../../03-experiments/EXP-102-payout-sandbox-e2e-and-q013-closure.md)):
 
-- ATLAS 운영 법인이 Korea에 있다면 그 국가의 Business 계정이 Payouts를 **보낼 수 있는지**. 지원 국가 표에 South Korea가 없다는 사실만 확인했고, 그것이 곧 "보낼 수 없다"인지는 PayPal에 확인하지 않았다. **not confirmed.**
-- PayPal 고객센터의 Payouts 신청 안내([help250](https://www.paypal.com/us/cshelp/article/what-is-the-payouts-api-formerly-known-as-mass-pay-and-how-to-apply-for-it-help250))는 HTTP 403으로 열리지 않았다. **not confirmed.** 위 "지원에 활성화 요청"은 개발자 문서의 서술만 근거다.
-- Merchant Fees의 계약 요율, 승인 심사 기준과 소요 시간.
-- Sandbox에서 별도 활성화 없이 지급이 만들어진 것([EXP-073](../../03-experiments/EXP-073-paypal-sandbox-payouts-response-shapes.md): 토큰 발급 200, 생성 201)은 Sandbox 사실이다. Live 권한이 같은 방식으로 열린다는 증거가 아니다.
+- 운영 법인이 South Korea에 있을 때 Business 계정이 Payouts를 보낼 수 있는지: 공개 문서로 결정되지 않는다. 지원 국가 표 92행에 South Korea 행이 0행이고 표 도입 문장은 "The following table lists countries eligible for payouts and their available feature sets"다. 발송 불가를 명시하는 문장도 없다("Merchants cannot send payouts from this country"는 `Receive and withdraw` 2행, India와 Mexico의 설명이다). 이 질문은 gate 2에서 유형 3(외부 차단)으로 끝낸다.
+- PayPal 고객센터 신청 안내(help250)와 본사 페이지 6개: `urllib` 6/6, 헤드리스 Chromium 4/4가 HTTP 403이라 읽을 수 없었다. 그래서 "지원에 활성화 요청"의 근거는 개발자 문서의 서술(`use-payouts/set-up`: "Work with your account manager, call 1-888-221-1161, or contact PayPal to request Payouts access")이다. Merchant Fees 페이지도 403이다.
+- Sandbox 사실: 앱 전체 경로의 지급 생성이 실제 Sandbox에서 15/15 성공했다(EXP-102). EXP-073의 "별도 활성화 없이 생성 201"은 OAuth scope를 요청하지 않은 직접 호출이었고, 앱이 요청하던 payouts scope는 토큰을 `openid`로 줄여 403이었다. 이 결함은 이번에 고쳤다. Sandbox 사실은 Live 권한이 같은 방식으로 열린다는 증거가 아니다.
 
 ## 대안
 
@@ -71,19 +70,21 @@ Q-013은 PayPal Payouts의 상인 권한·funding source, 수취 국가·통화 
 
 Live 지급을 열기 전에 아래가 모두 닫혀야 한다. 닫는 증거가 코드가 아닌 항목은 증거 위치를 정하고 이 표에 링크한다.
 
-| # | gate | 닫는 증거 | 담당 | 상태 |
+종결 유형: **1** 검증(실행한 명령과 결과), **2** 결정(이유, 대안, 재검토 조건을 같은 행에 적음), **3** 외부 차단(증거, 필요한 입력, V1이 그것 없이 하는 일). 모든 Live gate는 아래 인수 기준을 만족해야 닫힌다.
+
+| # | gate | 인수 기준 | 담당 | 상태 (종결 유형) |
 | --- | --- | --- | --- | --- |
-| 1 | PayPal Live Business 계정 검증과 **Payouts 활성화** | PayPal의 활성화 회신 | treasury | 미결 |
-| 2 | **보내는 국가 적격성.** 운영 법인 국가가 Payouts 발송 가능 국가인지. 지원 국가 표에 South Korea가 없었다 | PayPal 담당자 서면 확인 | compliance, treasury | **not confirmed** |
-| 3 | 수취 국가·통화. `supported-countries` 기본값은 `US`로 둔다. 국가를 늘릴 때마다 지원 국가 표와 통화 변환 제외 목록을 대조한다. South Korea KRW 자동 환전은 주장하지 않는다. DB는 `payout_currency = 'USD'`만 허용한다(`V1:1162`) | 국가별 대조 기록 | product, compliance | 미결 |
-| 4 | Funding: USD 잔액이 금액과 수수료를 함께 덮어야 한다. ATLAS에 잔액 사전 확인이 없다. 선충전 또는 auto-funding 절차, KRW에서 USD로 바꾸는 주체와 환율 책임을 정한다 | treasury 절차 문서, 기존 `PayPalBalanceReport` 대사 | treasury | 미결 |
-| 5 | Provider fee: 계약 요율 확인과 `PLATFORM_PAYOUT_FEE` 처리의 회계 승인 | 요율 확인, 재무 승인 | finance | 미결 |
-| 6 | 건당 한도: USD 60,000(등록), 20,000(미등록). 앱 측 상한을 둘지, 둔다면 값 | 결정 기록. 구현하면 통합 테스트 | product | 미결 |
-| 7 | 운영자 **사람별 신원과 MFA**를 IdP나 gateway가 제공하고, principal 이름이 사람 한 명을 가리킨다. 공유 비밀번호 Basic은 Live에서 쓰지 않는다. 그 뒤에 승인자 ≠ 프로필 검증자 검사와 PostgreSQL 통합 테스트(변경 전 실패, 후 통과)를 넣는다 | IdP 구성, 통합 테스트 | security, backend | **부분 충족**([ADR-0092](ADR-0092-payout-operator-person-identity-and-maker-checker.md), [EXP-096](../../03-experiments/EXP-096-operator-identity-maker-checker.md)). 충족: 사람별 신원(앱 안 account, IdP 아님), 승인자 ≠ 검증자 DB 강제와 PostgreSQL 통합 테스트(기준 코드는 같은 자격 증명의 검증·승인이 100/100 성공, 변경 후 거절), 공유 Basic은 기본 꺼짐. **미충족:** 로그인 시 TOTP 사용 강제와 step-up(등록만 요구), 계정 잠금·자격 증명 회전 정책, 재큐·provider 검토 해소 등 나머지 운영 조치의 4-eyes, IdP·gateway. Live 전 결정 필요 |
-| 8 | 프로필 검토 증거: 검토에 무엇을 봤는지(소유 증빙, 세무 등)를 정하고, 증거 저장 위치를 정한다. 지금 `evidenceReference`는 형식만 검사한다 | compliance 기준 문서 | compliance | 미결 |
-| 9 | 지급 일정: 요청 주기, 마감 시각, 보류 기간. 지금은 Seller 요청으로만 생기고 일정이 없다 | 정책 결정 | product, finance | 미결 |
-| 10 | 감사 보관 기간과 검토 주기(`seller_payout_profile_action`, `settlement_payout_operator_action`) | 정책 결정 | compliance | 미결 |
-| 11 | Live 자격 증명과 Live host는 현재 Sandbox host 검증이 막는다(ADR-0057). 이 검증을 푸는 변경은 위 gate와 같은 PR에서 하지 않는다 | 별도 PR | backend | 미결 |
+| 1 | PayPal Live Business 계정 검증과 **Payouts 활성화** | PayPal이 해당 Live 앱의 Payouts 활성화를 서면으로 회신한 사본 1건을 첨부한다. 첨부 전에는 Live host 검증(gate 11)을 풀지 않는다 | treasury | **외부 차단(3).** 증거: PayPal 개발자 문서가 "request Payouts access"를 계정 담당자 또는 PayPal 연락으로 요구하고, 이 저장소는 Live 자격 증명을 쓸 수 없다(코드가 막고 `PayPalPropertiesTest.liveEndpointRequiresExplicitOptIn`이 지킨다). 필요한 입력: Live 계정의 활성화 회신. V1: 실제 Sandbox 지급 15/15 성공(EXP-102), Live는 열지 않는다 |
+| 2 | **보내는 국가 적격성.** 운영 법인 국가가 Payouts 발송 가능 국가인지 | PayPal의 서면 답변이 "Republic of Korea에 등록한 business account가 Live Payouts를 시작할 수 있다"는 내용이고, 사용 가능한 funding source와 지급 통화를 적는다. 답변이 "불가"이면 운영 법인 국가를 바꾸거나 Payouts를 쓰지 않는 결정으로 gate를 닫는다 | compliance, treasury | **외부 차단(3).** 증거(2026-11-26): 지원 국가 표 92행에 South Korea 행 0, 발송 불가를 South Korea에 명시한 문장 0, PayPal 본사 페이지 6개는 HTTP 403이라 열 수 없었다. South Korea는 수취 통화 환전 제외 목록에만 있다. 필요한 입력: PayPal에 보낼 질문 "A business account registered in the Republic of Korea (South Korea) as the sender: can it initiate PayPal Payouts in Live, and if yes, which funding source and payout currencies are enabled?"의 서면 답변. V1: 보내는 국가를 주장하지 않는다. 지급은 Sandbox, USD, flag-off |
+| 3 | 수취 국가·통화. `supported-countries` 기본값 `US`, DB는 `payout_currency = 'USD'`만 허용(`V1:1162`) | 국가를 늘릴 때마다 (a) 지원 국가 표에 그 국가 행이 있고 (b) 통화 변환 제외 목록에 없으며 (c) 그 국가 수취 계정으로 실제 Sandbox E2E 3건이 `SUCCESS`인 기록이 있다 | product, compliance | **충족(1), V1 범위 US.** `US` 프로필 USD 지급이 실제 Sandbox에서 `CONFIRMED` 9건, 미등록 수취인 `UNCLAIMED` 6건(EXP-102). South Korea KRW 자동 환전은 주장하지 않는다(`currency-conversion` 제외 목록에 있다) |
+| 4 | Funding: USD 잔액이 금액과 수수료를 함께 덮는다 | treasury가 funding source(선충전 또는 auto-funding), 최소 유지 잔액, KRW에서 USD로 바꾸는 주체를 문서로 정하고, 앱 전체 경로에서 잔액 부족 응답이 지급 `FAILED`로 끝나고 같은 기간의 새 지급 요청이 다시 가능함을 Sandbox에서 한 번 재현한다 | treasury | **외부 차단(3).** 증거: 실제 Sandbox가 잔액을 넘는 지급(59,999 USD)에 HTTP 422, 본문 키 `debug_id, information_link, links, message, name`, `name=INSUFFICIENT_FUNDS`를 돌려주었다(직접 호출 1/1, 돈 이동 없음). 앱은 POST 4xx를 `DEFINITIVE_NO_SEND`로 분류해 `FAILED`로 끝낸다(분류 코드와 4xx 시험, 앱 전체 재현은 하지 않았다). 필요한 입력: treasury의 funding 절차. V1: Sandbox 계정 잔액은 PayPal이 채우고 앱은 잔액을 미리 확인하지 않는다 |
+| 5 | Provider fee: 계약 요율과 `PLATFORM_PAYOUT_FEE` 회계 승인 | finance가 Live 계약 요율표와 회계 처리를 승인하고, 앱이 쓰는 수수료(provider 응답값)가 요율표와 맞는지 첫 Live 지급 5건 이상을 대사한다 | finance | **외부 차단(3).** 증거: 공개 문서는 "Typically, PayPal applies a variable fee of 2%"이고 상한과 비율은 보내는 국가별이며 정확한 값은 Merchant Fees 페이지(HTTP 403)를 가리킨다. Sandbox 관측: 7.44 USD 지급의 수수료가 0.15 USD(2.02%)로 15/15 같았다. 필요한 입력: Live 계약 요율표와 재무 승인. V1: 앱은 provider 응답의 수수료를 journal에 올린다(성공 지급 줄 4개, 합 10,212원 = 지급 10,000 + 반올림 10 + 수수료 202, EXP-102) |
+| 6 | 건당 한도 | Live를 열기 전에 `max-amount-usd` 설정과 "초과 요청은 4xx이고 outbox 행이 없다"는 통합 테스트를 넣는다. 초안은 ADR-0085의 USD 5,000이다 | product | **결정(2): V1은 앱 상한 없음.** 이유: V1은 flag-off Sandbox이고, 지급마다 Seller 요청과 운영자 승인(maker-checker, MFA 세션)을 거치며 PayPal의 건당 한도(등록 60,000 USD, 미등록 20,000 USD)가 최종 상한이다. 대안: 앱 상한 구현(작은 변경이지만 Live 가정값 5,000을 근거 없이 코드에 박는다). 재검토 조건: Live 개방 승인 요청이 열리는 시점, 또는 Sandbox에서 운영자가 승인한 단일 지급이 USD 5,000을 넘는 시점(둘 중 먼저) |
+| 7 | 운영자 **사람별 신원과 MFA** | 승인자 ≠ 프로필 검증자, money-moving 조치의 4-eyes, MFA를 거친 세션만 허용을 PostgreSQL 통합 테스트로 지킨다(변경 전 실패, 변경 후 통과) | security, backend | **충족(1).** [ADR-0092](ADR-0092-payout-operator-person-identity-and-maker-checker.md), [ADR-0094](ADR-0094-payout-mfa-session-and-resolution-controls.md): 등록 전 세션 20/20 → 0/20, MFA 재등록 이전 세션 20/20 → 0/20, 같은 account의 provider 검토 해소 20/20 → 0/20, 재큐·송금 없음 확정은 같은 4-eyes. 변이 12건 실패 확인(EXP-102). 공유 Basic 자격 증명은 기본 꺼짐. **IdP·gateway는 결정(2): 도입하지 않는다.** 이유: 앱 안의 account, TOTP, DB trigger로 위 측정을 만족했고 IdP는 이 저장소에 없다. 대안: 외부 IdP. 재검토 조건: 운영자가 5명을 넘거나 외부 IdP가 이미 있는 조직에 배포되는 시점 |
+| 8 | 프로필 검토 증거 | compliance가 검토 항목(소유 증빙, 세무 등)을 정한 문서가 있고, `evidenceReference`가 그 문서의 보관 위치를 가리킨다 | compliance | **결정(2): V1은 형식 검사만.** 이유: V1은 실제 merchant가 없는 Sandbox다. 대안: 증거 파일 저장 기능. 재검토 조건: production seller의 프로필 검증 1건이 요청되는 시점 또는 Live 개방 승인 요청 시점(둘 중 먼저) |
+| 9 | 지급 일정 | 요청 주기, 마감 시각, 보류 기간을 정한 정책 문서가 있고 앱 설정으로 강제된다 | product, finance | **결정(2): V1은 Seller 요청만, 자동 일정 없음**([ADR-0085](ADR-0085-v1-scope-channel-operator-and-payout-decisions.md)). 이유: 자동 지급은 돈이 정기적으로 나가는 경로를 만든다. 대안: 주 1회 이하 제한 설정. 재검토 조건: 같은 Seller가 7일 안에 지급 2건 이상을 요청하는 기록이 Sandbox에서 관측되거나 Live 개방 승인 시점(둘 중 먼저) |
+| 10 | 감사 보관 기간과 검토 주기(`seller_payout_profile_action`, `settlement_payout_operator_action`) | compliance가 보존 기간을 정하면 정리 작업과 "기간 안의 행은 삭제되지 않는다" 시험을 넣는다 | compliance | **결정(2): V1은 삭제하지 않는다.** 이유: 저장소에 이 두 표를 지우는 코드가 없고(`git grep "DELETE FROM"` 결과 0건), V1은 Sandbox라 보존 기간을 정할 규제 입력이 없다. 대안: 보존 기간 후 정리 작업. 재검토 조건: 두 표 합계가 100만 행을 넘거나 compliance가 최소·최대 보존 기간을 정하는 시점(둘 중 먼저) |
+| 11 | Live 자격 증명과 Live host는 Sandbox host 검증이 막는다(ADR-0057) | 이 검증을 푸는 변경은 gate 1, 2, 4, 5가 닫힌 뒤 별도 PR에서만 하고, 그 PR은 Live 지급 첫 건을 사람이 승인하는 절차를 같이 넣는다 | backend | **결정(2): 현재 차단 유지.** 현재 차단은 `PayPalPropertiesTest.liveEndpointRequiresExplicitOptIn`이 지킨다(Live host는 `IllegalStateException`). 이유: gate 1, 2가 외부 차단이라 푸는 입력이 없다. 대안: 지금 설정으로 풀기(거절). 재검토 조건: gate 1과 2의 PayPal 회신이 도착한 시점 |
 
 ## 검증
 
@@ -95,9 +96,9 @@ Live 지급을 열기 전에 아래가 모두 닫혀야 한다. 닫는 증거가
 
 ## 한계와 되돌리기
 
-- 이 ADR은 Live 준비 완료를 주장하지 않는다. 표의 `미결`과 `not confirmed`는 그대로 남는다.
+- 이 ADR은 Live 준비 완료를 주장하지 않는다. gate 1, 2, 4, 5는 외부 입력이 오기 전까지 Live를 열 수 없다는 것이 현재 결론이다. 나머지 gate는 충족(1) 또는 재검토 조건이 있는 결정(2)이다.
 - 사실 1의 "없음"은 이 커밋의 코드에서 grep과 읽기로 확인한 결과다. 읽지 않은 경로(Seller JWT chain 세부, 건당 한도, 잔액 확인)는 위에 적은 대로 제한적이다.
-- PayPal 문서는 2026-11-25 시점이고 바뀔 수 있다. 페이지의 "Last updated" 날짜를 함께 적었다.
+- PayPal 문서는 2026-11-25와 2026-11-26 시점이고 바뀔 수 있다. 페이지의 "Last updated" 날짜를 함께 적었다.
 - 새 테스트는 Mock MVC 수준이라 실제 필터 chain 순서(`@Order(1)`)와 다른 chain과의 상호작용은 확인하지 않는다.
 - 되돌리기: 테스트 파일 삭제와 Javadoc 블록 삭제. 운영 동작은 바뀌지 않았으므로 데이터나 설정 되돌리기는 없다. 지급 기능 자체의 rollback은 ADR-0057의 flag off를 따른다.
 
