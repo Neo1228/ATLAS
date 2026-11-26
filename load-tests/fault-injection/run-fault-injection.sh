@@ -296,10 +296,10 @@ lease_audit_collect() {  # <run id> <out file>
       'takeover_max_per_workflow', coalesce(max(c), 0))
     FROM (SELECT workflow_id, old_token, count(*) OVER (PARTITION BY workflow_id, old_token IS NOT NULL) c FROM h5_lease_log WHERE key LIKE '$1-%') s" > "$2" || true
 }
-lease_audit_dump() {  # <run id> <out file>: every lease claim of the run (epoch seconds, claiming application address) and every workflow with its attempts, error and location command keys (location key -> workflow)
-  order_psql "SELECT json_build_object('claims', coalesce((SELECT json_agg(json_build_object('key', key, 'old_null', old_token IS NULL, 'old_until', extract(epoch FROM old_until), 'at', extract(epoch FROM at), 'client', host(client)) ORDER BY at) FROM h5_lease_log WHERE key LIKE '$1-%'), '[]'::json),
+lease_audit_dump() {  # <run id> <out file>: every lease claim of this stack (epoch seconds, claiming application address, warm-up included: the database is fresh per run) and every workflow with its attempts, error and location command keys (location key -> workflow)
+  order_psql "SELECT json_build_object('claims', coalesce((SELECT json_agg(json_build_object('key', key, 'old_null', old_token IS NULL, 'old_until', extract(epoch FROM old_until), 'at', extract(epoch FROM at), 'client', host(client)) ORDER BY at) FROM h5_lease_log), '[]'::json),
       'workflows', coalesce((SELECT json_agg(json_build_object('key', w.idempotency_key, 'attempts', w.attempt_count, 'state', w.workflow_state, 'error', w.last_error_code,
-        'loc_keys', (SELECT json_agg(c.idempotency_key) FROM order_inventory_location_command c WHERE c.workflow_id = w.workflow_id))) FROM order_inventory_reservation_workflow w WHERE w.idempotency_key LIKE '$1-%' ), '[]'::json))" > "$2" || true
+        'loc_keys', (SELECT json_agg(c.idempotency_key) FROM order_inventory_location_command c WHERE c.workflow_id = w.workflow_id))) FROM order_inventory_reservation_workflow w ), '[]'::json))" > "$2" || true
 }
 skew_probe() {  # <container>: "<its clock minus the host clock> <half the measurement round trip>" in seconds
   local t1 v t2
@@ -367,8 +367,8 @@ inject() {  # inject <fault> <run_dir>; writes fault.json with the window in epo
     app-pause)
       # exposure: workflows that hold a live lease right before the stall (what could be taken over once it expires)
       order_psql "SELECT count(*) FROM order_inventory_reservation_workflow WHERE idempotency_key LIKE '$run_id-%' AND lease_until > now() AND workflow_state IN ('PENDING','RETRY_PENDING','COMPENSATING','COMPENSATION_REQUIRED','CANCEL_PENDING')" > "$run_dir/exposure-leased.txt"
-      host_q="$(now)"  # the same workflows with the epoch their lease runs until (database clock), to compare with the stall length
-      order_psql "SELECT coalesce(json_agg(json_build_object('key', idempotency_key, 'lease_until', extract(epoch FROM lease_until), 'db_now', extract(epoch FROM clock_timestamp()))), '[]'::json) FROM order_inventory_reservation_workflow WHERE idempotency_key LIKE '$run_id-%' AND lease_until > now() AND workflow_state IN ('PENDING','RETRY_PENDING','COMPENSATING','COMPENSATION_REQUIRED','CANCEL_PENDING')" > "$run_dir/exposure-leases.json" || true
+      host_q="$(now)"  # workflows whose lease is really held (token set; a released workflow keeps a future lease_until) with the epoch it runs until (database clock), to compare with the stall length
+      order_psql "SELECT coalesce(json_agg(json_build_object('key', idempotency_key, 'lease_until', extract(epoch FROM lease_until), 'db_now', extract(epoch FROM clock_timestamp()))), '[]'::json) FROM order_inventory_reservation_workflow WHERE idempotency_key LIKE '$run_id-%' AND lease_until > now() AND lease_token IS NOT NULL AND workflow_state IN ('PENDING','RETRY_PENDING','COMPENSATING','COMPENSATION_REQUIRED','CANCEL_PENDING')" > "$run_dir/exposure-leases.json" || true
       docker pause "$app" >/dev/null; strict_begin="$(now)"; sleep "$fault_for"; strict_end="$(now)"; docker unpause "$app" >/dev/null
       printf '{"strict_begin":%s,"strict_end":%s,"exposure_host_epoch":%s}\n' "$strict_begin" "$strict_end" "$host_q" > "$run_dir/fault-extra.json" ;;
     order-db-pause)

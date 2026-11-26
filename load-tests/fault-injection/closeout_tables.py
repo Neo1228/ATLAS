@@ -8,6 +8,7 @@ injection of the SYN/request drops. Reads the run directories written by run-fau
 Cross-instance duplicate key (xdup): a location Idempotency-Key called from two different application addresses. Classes:
   T  lease takeover: the other application claimed the workflow while an old lease token was still set (claim with old_null=false)
   R  retry after release: no takeover, the other application claimed the workflow afterwards (attempts >= 2)
+  W  warm-up leftover: the key already had a call before the measured load started (the lease log only holds the measured run's workflows)
   U  not explained by the lease log
 Standard library only.
 """
@@ -38,7 +39,7 @@ def _mac_load(run_dir):
         return None
 
 
-def classify_xdup(calls, app_ips, claims, workflows):
+def classify_xdup(calls, app_ips, claims, workflows, early_keys=frozenset()):
     """calls: parse_calls() rows of one location after the load started; claims/workflows: the lease-log.json lists.
     Returns one row per xdup key."""
     by_key = collections.defaultdict(list)
@@ -61,7 +62,9 @@ def classify_xdup(calls, app_ips, claims, workflows):
         takeover = [c for c in wf_claims if not c["old_null"] and c["client"] == second["ip"]
                     and first["begin"] - 1 <= c["at"] <= second["begin"] + 1]
         later = [c for c in wf_claims if c["old_null"] and c["client"] == second["ip"] and c["at"] <= second["begin"] + 1]
-        if takeover:
+        if key in early_keys and not workflow:
+            kind = "W"
+        elif takeover:
             kind = "T"
         elif later and workflow and (workflow.get("attempts") or 0) >= 2:
             kind = "R"
@@ -75,25 +78,29 @@ def classify_xdup(calls, app_ips, claims, workflows):
 
 
 def run_calls(run_dir):
-    """The calls of both locations that belong to the load (after the warm-up), as {a: [...], b: [...]}."""
+    """The calls of both locations that belong to the load (after the warm-up), as {a: [...], b: [...]}, the application
+    addresses, and the keys that were already called before the load started (the warm-up's workflows)."""
     requests = _lines(run_dir / "requests.jsonl")
     sent = [r["sent"] for r in requests if r.get("sent")]
     since = (min(sent) - 0.5) if sent else 0.0
     ips = _json(run_dir / "ips.json", {})
     result = {}
+    early = set()
     for side in ("a", "b"):
         path = run_dir / f"location-{side}.log"
         text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
-        result[side] = [c for c in parse_calls(text) if c["begin"] >= since]
-    return result, {ips[n] for n in ("app", "app2") if n in ips}
+        every = parse_calls(text)
+        early |= {c["key"] for c in every if c["begin"] < since}
+        result[side] = [c for c in every if c["begin"] >= since]
+    return result, {ips[n] for n in ("app", "app2") if n in ips}, early
 
 
 def xdup_record(run_dir):
-    calls, app_ips = run_calls(run_dir)
+    calls, app_ips, early = run_calls(run_dir)
     lease = _json(run_dir / "lease-log.json", {})
     rows = []
     for side in ("a", "b"):
-        rows += classify_xdup(calls[side], app_ips, lease.get("claims") or [], lease.get("workflows") or [])
+        rows += classify_xdup(calls[side], app_ips, lease.get("claims") or [], lease.get("workflows") or [], early)
     plain = [round((c["end"] - c["begin"]) * 1000) for side in ("a", "b") for c in calls[side]]
     return rows, plain
 
@@ -153,9 +160,9 @@ def collect(root, only):
 def tables(args):
     groups = collect(args.root, args.only)
     print("(b) cross-instance duplicate keys by class (A and B summed per run)\n")
-    print("| condition | n | mac load before | VM load before | runs xdup>0 | xdup keys | T takeover | R retry | U unexplained | takeover claims "
+    print("| condition | n | mac load before | VM load before | runs xdup>0 | xdup keys | T takeover | R retry | W warm-up | U unexplained | takeover claims "
           "| first call > 1.5 s (xdup / all calls) | min gap s (R) | control fired |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for label in sorted(groups):
         runs = groups[label]
         per_run = [xdup_record(r) for r in runs]
@@ -167,7 +174,7 @@ def tables(args):
         fired = [(_json(r / "calls.json", {}).get("control") or {}).get("fired") for r in runs]
         gaps = [x["gap_s"] for x in rows if x["class"] == "R"]
         print(f"| {label} | {len(runs)} | {_spread([_mac_load(r) for r in runs])} | {_spread([_vm_load(r) for r in runs])} | "
-              f"{sum(1 for found, _ in per_run if found)}/{len(runs)} | {len(rows)} | {counts['T']} | {counts['R']} | {counts['U']} | "
+              f"{sum(1 for found, _ in per_run if found)}/{len(runs)} | {len(rows)} | {counts['T']} | {counts['R']} | {counts['W']} | {counts['U']} | "
               f"{sum(t or 0 for t in takeover)} | {sum(1 for x in rows if x['first_ms'] > 1500)} / {slow_all} of {len(durations)} | "
               f"{min(gaps) if gaps else '-'} | {sum(1 for f in fired if f)}/{sum(1 for f in fired if f is not None)} |")
     print("\n(c) takeover against the lease time left when the pause began (per workflow that held a live lease)\n")
@@ -228,19 +235,25 @@ def selftest(_args=None):
         {"ip": "10.0.0.3", "begin": 100.5, "end": 100.6, "status": 200, "key": "u:L"},
         {"ip": "10.0.0.2", "begin": 100.0, "end": 100.1, "status": 201, "key": "s:L"},   # one instance only
         {"ip": "10.0.0.2", "begin": 105.0, "end": 105.1, "status": 200, "key": "s:L"},
+        {"ip": "10.0.0.2", "begin": 100.0, "end": 100.1, "status": 201, "key": "w:L"},   # warm-up leftover: called before the load too
+        {"ip": "10.0.0.3", "begin": 100.4, "end": 100.5, "status": 200, "key": "w:L"},
+        {"ip": "10.0.0.2", "begin": 100.0, "end": 101.0, "status": 201, "key": "x:L"},   # called before the load as well, but its workflow is in the lease log
+        {"ip": "10.0.0.3", "begin": 112.0, "end": 112.2, "status": 200, "key": "x:L"},
         {"ip": "172.1.1.1", "begin": 100.0, "end": 100.1, "status": 409, "key": "f:L"},  # planted, not an application
         {"ip": "10.0.0.2", "begin": 101.0, "end": 101.1, "status": 200, "key": "f:L"},
     ]
     claims = [
         {"key": "wt", "old_null": True, "old_until": None, "at": 100.0, "client": "10.0.0.2"},
         {"key": "wt", "old_null": False, "old_until": 110.0, "at": 111.9, "client": "10.0.0.3"},
+        {"key": "wx", "old_null": True, "old_until": None, "at": 100.0, "client": "10.0.0.2"},
+        {"key": "wx", "old_null": False, "old_until": 110.0, "at": 111.9, "client": "10.0.0.3"},
         {"key": "wr", "old_null": True, "old_until": None, "at": 100.0, "client": "10.0.0.2"},
         {"key": "wr", "old_null": True, "old_until": None, "at": 103.9, "client": "10.0.0.3"},
     ]
     workflows = [{"key": "wt", "attempts": 2, "loc_keys": ["t:L"]}, {"key": "wr", "attempts": 2, "loc_keys": ["r:L"]},
-                 {"key": "wu", "attempts": 1, "loc_keys": ["u:L"]}]
-    rows = {r["key"]: r for r in classify_xdup(calls, app, claims, workflows)}
-    expected = {"t:L": "T", "r:L": "R", "u:L": "U"}
+                 {"key": "wu", "attempts": 1, "loc_keys": ["u:L"]}, {"key": "wx", "attempts": 2, "loc_keys": ["x:L"]}]
+    rows = {r["key"]: r for r in classify_xdup(calls, app, claims, workflows, early_keys={"w:L", "x:L"})}
+    expected = {"t:L": "T", "r:L": "R", "u:L": "U", "w:L": "W", "x:L": "T"}
     got = {k: r["class"] for k, r in rows.items()}
     if got != expected:
         raise SystemExit(f"self-test FAILED: classes {got}, expected {expected}")
