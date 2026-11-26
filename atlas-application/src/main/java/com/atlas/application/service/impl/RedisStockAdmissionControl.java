@@ -4,6 +4,7 @@ import com.atlas.order.dto.request.StockClaimRequest;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.service.StockAdmissionControl;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisCommandTimeoutException;
 import io.lettuce.core.ScriptOutputType;
 import io.lettuce.core.SetArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -104,6 +105,11 @@ public class RedisStockAdmissionControl implements StockAdmissionControl, Dispos
     private final Counter admitted;
     private final Counter rejected;
     private final Counter failedOpen;
+    /** fail_open의 사유별 분해. 총계({@code result=fail_open})는 그대로 두어 기존 집계가 깨지지 않는다. */
+    private final Counter failedOpenBreakerOpen;
+    private final Counter failedOpenUnseeded;
+    private final Counter failedOpenTimeout;
+    private final Counter failedOpenError;
     private final long breakerCooldownNanos;
     private volatile long breakerOpenUntilNanos;
 
@@ -123,13 +129,17 @@ public class RedisStockAdmissionControl implements StockAdmissionControl, Dispos
         this.admitted = Counter.builder("atlas.order.admission.gate").tag("result", "admitted").register(meters);
         this.rejected = Counter.builder("atlas.order.admission.gate").tag("result", "rejected").register(meters);
         this.failedOpen = Counter.builder("atlas.order.admission.gate").tag("result", "fail_open").register(meters);
+        this.failedOpenBreakerOpen = failOpenReason(meters, "breaker_open");
+        this.failedOpenUnseeded = failOpenReason(meters, "unseeded");
+        this.failedOpenTimeout = failOpenReason(meters, "timeout");
+        this.failedOpenError = failOpenReason(meters, "error");
     }
 
     @Override
     public boolean admit(String admissionKey, List<StockClaimRequest> claims) {
         if (System.nanoTime() - breakerOpenUntilNanos < 0) {
             // Redis가 방금 실패했다. 요청마다 timeout을 기다리지 않고 곧바로 정본 경로로 보낸다.
-            failedOpen.increment();
+            failOpen(failedOpenBreakerOpen);
             return true;
         }
         try {
@@ -140,7 +150,7 @@ public class RedisStockAdmissionControl implements StockAdmissionControl, Dispos
                 first = evaluate(admissionKey, merged);
             }
             if (first == UNSEEDED) {
-                failedOpen.increment();
+                failOpen(failedOpenUnseeded);
                 return true;
             }
             if (first == 1) {
@@ -150,7 +160,7 @@ public class RedisStockAdmissionControl implements StockAdmissionControl, Dispos
             rejected.increment();
             return false;
         } catch (RuntimeException exception) {
-            failedOpen.increment();
+            failOpen(exception instanceof RedisCommandTimeoutException ? failedOpenTimeout : failedOpenError);
             breakerOpenUntilNanos = System.nanoTime() + breakerCooldownNanos;
             LOGGER.warn("Admission gate unavailable; bypassing it for {} ms: {}",
                     breakerCooldownNanos / 1_000_000, exception.getClass().getSimpleName());
@@ -256,5 +266,14 @@ public class RedisStockAdmissionControl implements StockAdmissionControl, Dispos
             locks[i] = new Object();
         }
         return locks;
+    }
+
+    private static Counter failOpenReason(MeterRegistry meters, String reason) {
+        return Counter.builder("atlas.order.admission.gate.fail_open").tag("reason", reason).register(meters);
+    }
+
+    private void failOpen(Counter reason) {
+        failedOpen.increment();
+        reason.increment();
     }
 }

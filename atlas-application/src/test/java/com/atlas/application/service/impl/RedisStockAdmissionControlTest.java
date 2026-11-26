@@ -51,9 +51,13 @@ class RedisStockAdmissionControlTest {
      * timeout으로 fail-open(통과)되고, 테스트에서는 "거절돼야 하는 요청이 통과했다"는 단정 실패로 나타난다(EXP-099).
      */
     private RedisStockAdmissionControl gate(String uri, LocationClient inventory) {
+        return gate(uri, inventory, new SimpleMeterRegistry());
+    }
+
+    private RedisStockAdmissionControl gate(String uri, LocationClient inventory, SimpleMeterRegistry meters) {
         RedisClient client = new RedisStockAdmissionControlConfiguration().admissionGateRedisClient(uri, Duration.ofSeconds(30));
         clients.add(client);
-        return new RedisStockAdmissionControl(inventory, new SimpleMeterRegistry(), client,
+        return new RedisStockAdmissionControl(inventory, meters, client,
                 Duration.ofMinutes(5), Duration.ofMinutes(5), Duration.ofSeconds(2));
     }
 
@@ -120,7 +124,8 @@ class RedisStockAdmissionControlTest {
     @Test
     void unreachableRedisFallsThroughInsteadOfRejectingOrders() {
         LocationClient inventory = mock(LocationClient.class);
-        RedisStockAdmissionControl gate = gate("redis://127.0.0.1:1", inventory);
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        RedisStockAdmissionControl gate = gate("redis://127.0.0.1:1", inventory, meters);
 
         // 판단할 수 없으면 거절하지 않는다. 정본 검증(location의 조건부 UPDATE)이 뒤에 남아 있다.
         List<StockClaimRequest> claim = List.of(new StockClaimRequest(LOCATION, SELLER, "sku", 1));
@@ -131,6 +136,11 @@ class RedisStockAdmissionControlTest {
             assertThat(gate.admit("order-" + i, claim)).isTrue();
         }
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofMillis(500));
+        // 통과한 이유를 구분한다: 처음 한 번은 연결 오류, 이후 200번은 breaker가 열려 있어서다.
+        assertThat(failOpenCount(meters, "error")).isEqualTo(1);
+        assertThat(failOpenCount(meters, "breaker_open")).isEqualTo(200);
+        assertThat(meters.get("atlas.order.admission.gate").tag("result", "fail_open").counter().count())
+                .isEqualTo(201);
         gate.destroy();
     }
 
@@ -167,5 +177,9 @@ class RedisStockAdmissionControlTest {
         assertThat(admitted.get()).isEqualTo(skuCount);
         verify(inventory, times(skuCount)).availableStock(any(), any(), anyString());
         gate.destroy();
+    }
+
+    private static double failOpenCount(SimpleMeterRegistry meters, String reason) {
+        return meters.get("atlas.order.admission.gate.fail_open").tag("reason", reason).counter().count();
     }
 }
