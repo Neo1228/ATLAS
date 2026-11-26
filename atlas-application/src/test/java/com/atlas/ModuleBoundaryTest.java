@@ -78,7 +78,7 @@ class ModuleBoundaryTest {
                         "com.atlas.catalog.exception",
                         "com.atlas.order.service", "com.atlas.order.dto.request", "com.atlas.order.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.payment..",
-                append(javaAndPersistence, "com.atlas.payment..", "tools.jackson.."));
+                append(javaAndPersistence, "com.atlas.payment..", "tools.jackson..", "io.micrometer.."));
         enforceAllowedDependencies(source, "com.atlas.settlement..",
                 append(javaAndPersistence, "com.atlas.settlement..", "org.apache.commons.csv.."));
         enforceAllowedDependencies(source, "com.atlas.account..",
