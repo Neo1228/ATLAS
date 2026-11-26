@@ -14,11 +14,11 @@
 PayPal 호출에만 **요청 스레드 동시 호출 상한**을 옵트인으로 둔다. 기본값은 상한 없음(이전 동작)이다.
 
 - 설정: `atlas.payment.paypal.bulkhead.max-concurrent-calls`(환경 변수 `ATLAS_PAYPAL_BULKHEAD_MAX_CONCURRENT_CALLS`), 기본 0(상한 없음). 켤 때는 Tomcat 최대 스레드(40)보다 작은 값(20~30)을 둔다. 20과 30 모두 측정했다(EXP-108).
-- 구현: 결제 모듈이 소유하는 `PayPalCallBulkhead`(`provider.paypal`, 약 50줄)가 `Semaphore.tryAcquire()`로 요청 스레드 호출만 센다. `PayPalRestClient`의 모든 HTTP 호출(주문 생성·조회, authorize, capture, void, refund 조회·실행, webhook 검증)이 이를 거친다.
+- 구현: 결제 모듈이 소유하는 `PayPalCallBulkhead`(`provider.paypal`, 약 50줄)가 `Semaphore.tryAcquire()`로 요청 스레드 호출만 센다. `PayPalRestClient`의 모든 HTTP 호출(주문 생성·조회, authorize, capture, void, refund 조회·실행, webhook 검증)이 이를 거친다. 거절 수는 생성자로 받은 `Runnable` 훅으로 알리고, 훅을 Micrometer 계수기에 잇는 일은 `atlas-application`의 `PayPalCallBulkheadConfiguration`이 한다. 결제 모듈이 지표 라이브러리(Micrometer)에 의존하지 않게 하려는 것이다(`ModuleBoundaryTest`의 결제 모듈 허용 의존성을 넓히지 않는다).
 - 요청 스레드 판별: `RequestContextHolder.getRequestAttributes() != null`(서블릿 요청을 처리하는 동안만 값이 있다). 복구 worker 같은 스케줄러 스레드는 세지도 거절하지도 않는다. 상한이 worker를 막으면 UNKNOWN 복구가 멈추기 때문이다.
 - 거절: 상한을 넘으면 **기다리지 않고, 아무것도 보내기 전에** `PayPalBusyException`을 던진다. 이는 `PayPalUnavailableException`의 하위 형식이라 기존 처리(`PAYMENT_PROVIDER_UNAVAILABLE`, 결제 시도는 `UNKNOWN`, 구매자 응답 503)를 그대로 지난다. 호출 전에 거절하므로 PayPal에는 아무것도 도달하지 않았고(확정 미전송), `UNKNOWN`의 같은 `PayPal-Request-Id` 재시도가 중복 capture를 만들지 않는다(PostgreSQL 시험 `rejectedCaptureSendsNothingAndTheRetryCapturesExactlyOnce`).
-- 관측: Micrometer 계수기 `atlas.payment.paypal.bulkhead.rejected`.
-- 직접 구현한 이유: 필요한 것은 세마포어 하나와 계수기 하나다. Resilience4j `Bulkhead`는 같은 일을 하지만 새 dependency(그리고 Spring Boot 4.1.2와의 호환 조합 확인)와 설정 체계를 들이고, 요청 스레드만 세는 판별은 어차피 직접 써야 한다. breaker를 도입하지 않으므로 Resilience4j가 주는 나머지(상태 기계, 슬라이딩 창)는 쓰지 않는다. micrometer-core는 이미 애플리케이션 classpath에 있고 결제 모듈이 직접 선언만 한다(새 외부 dependency 없음).
+- 관측: Micrometer 계수기 `atlas.payment.paypal.bulkhead.rejected`(application 모듈에서 등록).
+- 직접 구현한 이유: 필요한 것은 세마포어 하나와 계수기 하나다. Resilience4j `Bulkhead`는 같은 일을 하지만 새 dependency(그리고 Spring Boot 4.1.2와의 호환 조합 확인)와 설정 체계를 들이고, 요청 스레드만 세는 판별은 어차피 직접 써야 한다. breaker를 도입하지 않으므로 Resilience4j가 주는 나머지(상태 기계, 슬라이딩 창)는 쓰지 않는다. 새 외부 dependency는 없다(Micrometer는 application 모듈의 기존 의존이고 결제 모듈은 쓰지 않는다).
 - 도입하지 않는 것: breaker(점진 복구 포함), read timeout 변경, 위치 서비스 상한. 이유는 아래 표와 EXP-108이다.
 
 ## 근거 (EXP-108, 단일 호스트, 칸당 n=3)

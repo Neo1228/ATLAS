@@ -23,7 +23,6 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -57,7 +56,7 @@ public class PayPalRestClient {
             OAuth2AuthorizedClientManager authorizedClientManager, ObjectMapper objectMapper,
             Duration connectTimeout, Duration readTimeout) {
         this(builder, properties, authorizedClientManager, objectMapper, connectTimeout, readTimeout,
-                new PayPalCallBulkhead(new SimpleMeterRegistry(), 0));
+                new PayPalCallBulkhead(0, () -> { }));
     }
 
     @Autowired

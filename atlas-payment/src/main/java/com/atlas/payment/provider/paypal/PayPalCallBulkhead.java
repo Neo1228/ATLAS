@@ -1,13 +1,8 @@
 package com.atlas.payment.provider.paypal;
 
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 
 /**
@@ -17,26 +12,22 @@ import org.springframework.web.context.request.RequestContextHolder;
  * 상한을 넘는 요청 스레드의 호출은 아무것도 보내기 전에 기다리지 않고 거절한다.
  * <p>복구 worker 같은 서블릿 요청 밖의 스레드는 세지도 거절하지도 않는다: worker 가 거절되면 복구가 멈춘다.
  * 요청 스레드 여부는 {@link RequestContextHolder} 로 구분하며 서블릿 요청을 처리하는 동안에만 값이 있다.
+ * <p>결제 모듈은 지표 라이브러리에 의존하지 않는다. 거절 수는 조립하는 쪽(application)이 넘긴 훅으로 알린다.
  */
-@Component
-@ConditionalOnProperty(name = "atlas.payment.provider", havingValue = "paypal")
 public class PayPalCallBulkhead {
     private final Semaphore permits;
-    private final Counter rejected;
+    private final Runnable onRejected;
 
     /** {@code maxConcurrentCalls} 가 0 이하이면 상한이 없다(이전 동작). */
-    public PayPalCallBulkhead(MeterRegistry meters,
-            @Value("${atlas.payment.paypal.bulkhead.max-concurrent-calls:0}") int maxConcurrentCalls) {
+    public PayPalCallBulkhead(int maxConcurrentCalls, Runnable onRejected) {
         this.permits = maxConcurrentCalls > 0 ? new Semaphore(maxConcurrentCalls) : null;
-        this.rejected = Counter.builder("atlas.payment.paypal.bulkhead.rejected")
-                .description("PayPal 호출 상한 초과로 보내기 전에 거절한 요청 스레드 호출 수")
-                .register(Objects.requireNonNull(meters));
+        this.onRejected = Objects.requireNonNull(onRejected);
     }
 
     <T> T call(Supplier<T> action) {
         if (permits == null || RequestContextHolder.getRequestAttributes() == null) return action.get();
         if (!permits.tryAcquire()) {
-            rejected.increment();
+            onRejected.run();
             throw new PayPalRestClient.PayPalBusyException("PayPal in-flight call limit reached");
         }
         try {

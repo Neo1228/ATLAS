@@ -208,7 +208,7 @@
 
 ## 결정
 
-증거가 지지하는 가장 작은 것은 **PayPal 호출의 요청 스레드 동시 상한을 옵트인(기본 0 = 이전 동작)으로 두는 것**이다([ADR-0098](../02-decisions/adr/ADR-0098-paypal-call-bulkhead-opt-in.md), D-176). 결제 모듈이 소유하는 `PayPalCallBulkhead` 한 클래스(약 50줄)이며 `Semaphore`와 Micrometer 계수기 하나로 구현하고 Resilience4j는 들이지 않는다(필요한 기능이 세마포어 하나이고 요청 스레드만 세는 판별은 어차피 직접 써야 한다). breaker와 읽기 상한 변경은 도입하지 않는다(위 해석과 ADR 대안 표). 위치 서비스 호출은 같은 결함이 측정됐지만 호출 종류별 거절 경로를 따로 검증해야 해서 이번에는 바꾸지 않고 재검토 조건에 수치로 남겼다.
+증거가 지지하는 가장 작은 것은 **PayPal 호출의 요청 스레드 동시 상한을 옵트인(기본 0 = 이전 동작)으로 두는 것**이다([ADR-0098](../02-decisions/adr/ADR-0098-paypal-call-bulkhead-opt-in.md), D-176). 결제 모듈이 소유하는 `PayPalCallBulkhead` 한 클래스(약 50줄)이며 `Semaphore`와 거절 `Runnable` 훅으로 구현하고(Micrometer 계수기는 application의 `PayPalCallBulkheadConfiguration`이 훅에 연결한다. 결제 모듈이 지표 라이브러리에 의존하지 않게 하려는 것이다) Resilience4j는 들이지 않는다(필요한 기능이 세마포어 하나이고 요청 스레드만 세는 판별은 어차피 직접 써야 한다). breaker와 읽기 상한 변경은 도입하지 않는다(위 해석과 ADR 대안 표). 위치 서비스 호출은 같은 결함이 측정됐지만 호출 종류별 거절 경로를 따로 검증해야 해서 이번에는 바꾸지 않고 재검토 조건에 수치로 남겼다.
 
 기본값을 켜지 않은 이유: 평상시 동시 PayPal 호출 수(실제 Sandbox·운영 지연)를 측정하지 못했다. 가짜 서버로는 포화의 기전과 상한의 효과만 확인했다.
 
