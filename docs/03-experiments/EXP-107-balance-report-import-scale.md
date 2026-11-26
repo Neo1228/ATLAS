@@ -57,7 +57,7 @@
 
 ## 후속
 
-- 후속 1: 원자성 회귀 테스트가 프록시 없는 저장소로 돌고 있어 약하다. 필요하면 Spring 컨텍스트 기반으로 올린다(이 PR에서는 하지 않음, 기존 테스트가 이미 반복 업로드 멱등성을 검증한다). 재검토 조건: 저장소 저장 로직을 바꿀 때.
+- 후속 1(2026-11-26 완료): 프록시를 적용한 PostgreSQL 시험 `midInsertFailureRollsBackTheRunAndItsRowsTogether`를 `PayPalBalanceReportReconciliationWorkflowIntegrationTest`에 추가했다. 3번째 행 삽입을 실패시키면 실행 수와 행 수가 모두 0이다. `createRunIfAbsent`의 `@Transactional`을 지우면 이 시험만 실패한다(변이 확인, 복원 뒤 `cmp` 동일).
 
 ## 삭제한 파일의 내용
 
