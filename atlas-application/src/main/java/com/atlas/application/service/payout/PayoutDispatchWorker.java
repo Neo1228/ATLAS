@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,6 +31,8 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(prefix = "atlas.payment.paypal.payouts.worker", name = "enabled", havingValue = "true")
 @ConditionalOnProperty(prefix = "atlas.payment.paypal.payouts", name = "enabled", havingValue = "true")
 public class PayoutDispatchWorker {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PayoutDispatchWorker.class);
+
     private final PayoutDispatchStore repository;
     private final PayoutDispatchOutcomeService outcomes;
     private final SettlementPayoutService payouts;
@@ -222,6 +226,9 @@ public class PayoutDispatchWorker {
 
     private void handleProviderException(PayoutDispatchRecord r, PayPalPayoutException exception) {
         Classification classification = exception.getClassification();
+        // 사유를 DB에는 분류 코드로만 남기므로, 거절 상태 코드와 PayPal 오류 이름은 로그로 남긴다(수취인 값은 싣지 않는다).
+        LOGGER.warn("payout provider exception payoutId={} classification={} detail={}",
+                r.payoutId(), classification, exception.getMessage());
         if (classification == Classification.DEFINITIVE_NO_SEND) {
             if (outcomes.fail(r, null, null, null, null, "PROVIDER_REJECTED", null, null)) outcome("failed");
         } else if (classification == Classification.DUPLICATE_BATCH) {

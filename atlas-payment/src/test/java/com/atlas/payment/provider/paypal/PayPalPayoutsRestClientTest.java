@@ -193,6 +193,22 @@ class PayPalPayoutsRestClientTest {
     }
 
     @Test
+    void definitiveRejectionCarriesOnlyThePayPalErrorNameAndIssueCodesNotRecipientValues() {
+        responseStatus.set(422);
+        responseBody.set("{\"name\":\"UNPROCESSABLE_ENTITY\",\"message\":\"payee@example.com is rejected\","
+                + "\"details\":[{\"field\":\"items[0].receiver\",\"issue\":\"RECEIVER_UNREGISTERED\"},"
+                + "{\"field\":\"items[0].receiver\",\"issue\":\"payee@example.com is invalid\"}]}");
+        assertThatThrownBy(() -> client.createBatch(new PayPalPayoutRequest(
+                "batch-stable", "item-stable", "request-stable", "payee@example.com", 100, "USD")))
+                .isInstanceOfSatisfying(PayPalPayoutException.class, exception -> {
+                    assertThat(exception.getClassification())
+                            .isEqualTo(PayPalPayoutException.Classification.DEFINITIVE_NO_SEND);
+                    assertThat(exception.getMessage()).contains("HTTP 422", "UNPROCESSABLE_ENTITY",
+                            "RECEIVER_UNREGISTERED").doesNotContain("payee@example.com");
+                });
+    }
+
+    @Test
     void missingProviderBatchIdIsNotConfusedWithSenderBatchId() {
         responseBody.set("{\"batch_header\":{\"sender_batch_id\":\"batch-stable\",\"batch_status\":\"PENDING\"}}");
         PayPalPayoutBatchResponse result = client.createBatch(new PayPalPayoutRequest(

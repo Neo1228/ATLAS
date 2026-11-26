@@ -32,12 +32,13 @@ public class PayPalOAuth2ClientConfiguration {
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
                 .tokenUri(baseUrl + "/v1/oauth2/token")
                 .build();
+        // scope를 요청하지 않는다. 실제 Sandbox는 payouts URI를 scope로 요청하면 토큰의 scope를 "openid"로만 줄이고
+        // 이 토큰으로 지급을 만들면 403 NOT_AUTHORIZED다(EXP-102). Payouts 권한은 앱 설정이 주며 scope 요청으로 좁히지 않는다.
         ClientRegistration payoutsRegistration = ClientRegistration.withRegistrationId("paypal-payouts")
                 .clientId(properties.getClientId())
                 .clientSecret(properties.getClientSecret())
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-                .scope("https://uri.paypal.com/services/payments/payouts")
                 .tokenUri(baseUrl + "/v1/oauth2/token")
                 .build();
         return new InMemoryClientRegistrationRepository(registration, payoutsRegistration);

@@ -10,7 +10,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 
 class PayPalOAuth2ClientConfigurationTest {
     @Test
-    void oauthScopeIsIsolatedFromBuyerRegistration() {
+    void payoutsRegistrationIsSeparateAndRequestsNoScope() {
         PayPalProperties properties = new PayPalProperties();
         properties.setBaseUrl("https://api-m.sandbox.paypal.com");
         properties.setClientId("client");
@@ -19,8 +19,10 @@ class PayPalOAuth2ClientConfigurationTest {
                 .paypalClientRegistrationRepository(properties);
         ClientRegistration buyer = registrations.findByRegistrationId("paypal");
         ClientRegistration payouts = registrations.findByRegistrationId("paypal-payouts");
-        assertThat(buyer.getScopes()).doesNotContain("https://uri.paypal.com/services/payments/payouts");
-        assertThat(payouts.getScopes()).containsExactly("https://uri.paypal.com/services/payments/payouts");
+        assertThat(buyer.getScopes()).isNullOrEmpty();
+        // 실제 Sandbox는 payouts URI scope 요청을 "openid" 토큰으로 낮추고 지급 생성을 403으로 거절한다(EXP-102).
+        assertThat(payouts.getScopes()).isNullOrEmpty();
+        assertThat(payouts.getRegistrationId()).isNotEqualTo(buyer.getRegistrationId());
     }
 
     @Test

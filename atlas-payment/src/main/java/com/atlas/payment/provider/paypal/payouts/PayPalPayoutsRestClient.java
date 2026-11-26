@@ -39,6 +39,8 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
     private static final String REGISTRATION_ID = "paypal-payouts";
     private static final String CREATE_PATH = "/v1/payments/payouts";
     private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9_-]{1,128}");
+    /** 오류 이름과 issue에 허용하는 문자. @ 같은 문자가 있으면(이메일 가능성) 통째로 버린다. */
+    private static final Pattern ERROR_CODE = Pattern.compile("[A-Za-z0-9_. -]{1,120}");
 
     private final RestClient.Builder builder;
     private final PayPalProperties properties;
@@ -119,7 +121,7 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
                                     : method == HttpMethod.POST && status >= 400 && status < 500
                                             ? PayPalPayoutException.Classification.DEFINITIVE_NO_SEND
                                             : PayPalPayoutException.Classification.UNKNOWN;
-                    throw payoutException("PayPal Payouts HTTP " + status, null, classification, senderBatchId, null);
+                    throw payoutException("PayPal Payouts HTTP " + status + errorSummary(payload), null, classification, senderBatchId, null);
                 }
                 return parse(bytes, senderBatchId);
             });
@@ -168,6 +170,31 @@ public class PayPalPayoutsRestClient implements PayPalPayoutsProvider {
                 decimal(conversion.path("to_amount"), "value"),
                 text(conversion.path("to_amount"), "currency"),
                 decimal(conversion, "exchange_rate"), item.has("currency_conversion"));
+    }
+
+    /**
+     * 거절 사유를 운영자가 볼 수 있게 PayPal의 오류 이름과 details[].issue 코드만 남긴다.
+     * message와 field는 수취인 이메일 같은 값을 담을 수 있어 싣지 않고, 코드 형태 토큰만 길이를 제한해 싣는다.
+     */
+    private String errorSummary(String payload) {
+        try {
+            JsonNode root = objectMapper.readTree(payload);
+            StringBuilder summary = new StringBuilder();
+            String name = text(root, "name");
+            if (name != null && ERROR_CODE.matcher(name).matches()) summary.append(" name=").append(name);
+            JsonNode details = root.path("details");
+            if (details.isArray()) {
+                List<String> issues = new ArrayList<>();
+                for (JsonNode detail : details) {
+                    String issue = text(detail, "issue");
+                    if (issue != null && ERROR_CODE.matcher(issue).matches() && issues.size() < 5) issues.add(issue);
+                }
+                if (!issues.isEmpty()) summary.append(" issues=").append(issues);
+            }
+            return summary.toString();
+        } catch (JacksonException ignored) {
+            return "";
+        }
     }
 
     private boolean isDuplicateBatch(String payload) {
