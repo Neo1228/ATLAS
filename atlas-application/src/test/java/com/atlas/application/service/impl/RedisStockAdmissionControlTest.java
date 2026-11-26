@@ -12,6 +12,7 @@ import com.atlas.application.config.RedisStockAdmissionControlConfiguration;
 import com.atlas.order.service.LocationClient;
 import com.atlas.order.dto.request.StockClaimRequest;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.api.StatefulRedisConnection;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -118,6 +119,41 @@ class RedisStockAdmissionControlTest {
         gate.confirm("b");
         gate.release("b");
         assertThat(gate.admit("f", one)).isFalse();
+        gate.destroy();
+    }
+
+    /**
+     * 명령 timeout은 연결 오류와 다른 사유로 센다. 서버를 {@code CLIENT PAUSE}로 멈추면 이미 연결된 명령이
+     * 결정적으로 timeout 된다(호스트 부하에 기대지 않는다).
+     */
+    @Test
+    void commandTimeoutIsCountedAsTimeoutNotAsConnectionError() {
+        String uri = "redis://" + REDIS.getHost() + ":" + REDIS.getFirstMappedPort();
+        LocationClient inventory = mock(LocationClient.class);
+        when(inventory.availableStock(any(), any(), anyString())).thenReturn(100L);
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        RedisClient shortTimeoutClient = new RedisStockAdmissionControlConfiguration()
+                .admissionGateRedisClient(uri, Duration.ofMillis(300));
+        RedisClient adminClient = new RedisStockAdmissionControlConfiguration()
+                .admissionGateRedisClient(uri, Duration.ofSeconds(30));
+        clients.add(shortTimeoutClient);
+        clients.add(adminClient);
+        RedisStockAdmissionControl gate = new RedisStockAdmissionControl(inventory, meters, shortTimeoutClient,
+                Duration.ofMinutes(5), Duration.ofMinutes(5), Duration.ofSeconds(2));
+        List<StockClaimRequest> claim = List.of(
+                new StockClaimRequest(LOCATION, SELLER, "timeout-" + UUID.randomUUID(), 1));
+        assertThat(gate.admit("warm-" + UUID.randomUUID(), claim)).isTrue();
+        assertThat(meters.get("atlas.order.admission.gate").tag("result", "admitted").counter().count())
+                .isEqualTo(1);
+
+        try (StatefulRedisConnection<String, String> admin = adminClient.connect()) {
+            // 다른 시험이 같은 컨테이너를 쓰므로 멈춤은 짧게 두고 스스로 풀리게 한다(300ms timeout보다 길면 충분).
+            admin.sync().clientPause(1_500);
+            assertThat(gate.admit("paused-" + UUID.randomUUID(), claim)).isTrue();
+        }
+
+        assertThat(failOpenCount(meters, "timeout")).isEqualTo(1);
+        assertThat(failOpenCount(meters, "error")).isZero();
         gate.destroy();
     }
 
