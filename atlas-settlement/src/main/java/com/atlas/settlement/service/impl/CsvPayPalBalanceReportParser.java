@@ -117,18 +117,25 @@ public final class CsvPayPalBalanceReportParser implements PayPalBalanceReportPa
         String originalRecordId = field(record, columns, "original record id");
         String currency = fieldAlias(record, columns, "transaction currency", "record currency");
         String gross = fieldAlias(record, columns, "gross transaction amount", "gross amount");
-        if (recordId.isBlank() || recordType.isBlank() || gross.isBlank()) throw invalid();
+        if (recordType.isBlank()) throw invalid();
+        // 공식 샘플의 Fees/Scheme Fees 집계 행은 Record ID와 총액이 비어 있다. 대사 대상인 Sale·Refund만 둘 다 필수로 두고,
+        // 나머지 종류는 빈 값을 그대로 보존해 UNMATCHED로 보이게 한다(보고서 전체를 거절하지 않는다).
+        boolean reconcilable = "sale".equalsIgnoreCase(recordType) || "refund".equalsIgnoreCase(recordType);
+        if (reconcilable && (recordId.isBlank() || gross.isBlank())) throw invalid();
         try {
             return new ParsedPayPalReportRow(recordId, recordType, recordSubtype, relatedRecordId, originalRecordId, currency,
-                    new BigDecimal(gross), optionalAmount(record, columns, "total fees net billed"),
-                    optionalAmount(record, columns, "net amount"), field(record, columns, "transfer id"));
+                    gross.isBlank() ? null : new BigDecimal(gross),
+                    optionalAmount(record, columns, "total net fees", "total fees net billed"),
+                    optionalAmount(record, columns, "net transaction amount", "net amount"),
+                    field(record, columns, "transfer id"));
         } catch (NumberFormatException exception) {
             throw invalid();
         }
     }
 
-    private static BigDecimal optionalAmount(CSVRecord record, Map<String, Integer> columns, String name) {
-        String value = field(record, columns, name);
+    // 공식 최신 열 이름(Total Net Fees, Net Transaction Amount)과 이전 fixture의 열 이름을 모두 받는다.
+    private static BigDecimal optionalAmount(CSVRecord record, Map<String, Integer> columns, String... aliases) {
+        String value = fieldAlias(record, columns, aliases);
         return value.isBlank() ? null : new BigDecimal(value);
     }
 

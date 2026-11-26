@@ -24,8 +24,9 @@ public record PayPalBalanceReportRow(UUID runId, int rowNumber, String recordId,
         requireLength(currency, 3, "currency");
         requireLength(transferId, 256, "transferId");
         requireLength(reasonCode, 64, "reasonCode");
-        if (recordId.isBlank() || recordType.isBlank()) {
-            throw new IllegalArgumentException("recordId and recordType must not be blank");
+        // Fees 같은 집계 행은 Record ID가 비어 있을 수 있다(공식 샘플). 빈 ID는 어떤 provider 기록과도 대조하지 않는다.
+        if (recordType.isBlank()) {
+            throw new IllegalArgumentException("recordType must not be blank");
         }
     }
 

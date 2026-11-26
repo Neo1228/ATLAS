@@ -45,7 +45,10 @@ public class PayPalBalanceReportReconciliationService {
         Map<String, List<PayPalReportMatchResponse.Candidate>> providerFacts = providerFacts(rows);
         Map<String, List<Integer>> occurrences = new HashMap<>();
         for (int index = 0; index < rows.size(); index++) {
-            occurrences.computeIfAbsent(rows.get(index).recordId(), ignored -> new ArrayList<>()).add(index);
+            // Record ID가 없는 행(Fees 같은 집계 행)은 서로 같은 ID로 반복된 것이 아니다.
+            if (!rows.get(index).recordId().isBlank()) {
+                occurrences.computeIfAbsent(rows.get(index).recordId(), ignored -> new ArrayList<>()).add(index);
+            }
         }
 
         List<RowResult> results = new ArrayList<>(rows.size());
@@ -55,7 +58,7 @@ public class PayPalBalanceReportReconciliationService {
         int mismatch = 0;
         for (int index = 0; index < rows.size(); index++) {
             ParsedPayPalReportRow row = rows.get(index);
-            List<Integer> sameRecordIds = occurrences.get(row.recordId());
+            List<Integer> sameRecordIds = occurrences.getOrDefault(row.recordId(), List.of());
             RowResult result = sameRecordIds.size() > 1
                     ? repeatedRecord(row, index + 1, sameRecordIds, rows)
                     : classify(row, index + 1, providerFacts);
@@ -110,7 +113,7 @@ public class PayPalBalanceReportReconciliationService {
                 && normalize(left.relatedRecordId()).equals(normalize(right.relatedRecordId()))
                 && normalize(left.originalRecordId()).equals(normalize(right.originalRecordId()))
                 && normalize(left.currency()).equals(normalize(right.currency()))
-                && left.grossAmount().compareTo(right.grossAmount()) == 0
+                && sameAmount(left.grossAmount(), right.grossAmount())
                 && sameAmount(left.feeAmount(), right.feeAmount())
                 && sameAmount(left.netAmount(), right.netAmount())
                 && normalize(left.transferId()).equals(normalize(right.transferId()));

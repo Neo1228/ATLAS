@@ -220,6 +220,51 @@ class PayPalBalanceReportReconciliationServiceTest {
         });
     }
 
+    /** 공식 Balance report 문서·샘플 CSV의 열 이름과 행 종류(Sale, Refund/Referenced, Refund/Non-Referenced, Fees)를 그대로 쓴다. ID와 금액은 합성값이다. */
+    @Test
+    void readsOfficialColumnNamesAndLeavesNonReferencedRefundAndFeeRowsUnmatched() {
+        addCandidate("SALE000000000001A", PayPalReportMatchResponse.Kind.CAPTURE, true, "SALE000000000001A", 10_100L, "USD");
+        addCandidate("REFUND00000000001", PayPalReportMatchResponse.Kind.REFUND, true, "SALE000000000001A", 300L, "USD");
+        String report = "\uFEFFRH,Report Name,Report Status,Report Start Date and Time,Report End Date and Time,"
+                + "Report Generation Date and Time,Hierarchy,Timezone\n"
+                + "RH,BALANCE_RECONCILIATION_REPORT,Success,2026/07/02 00:00:00 -0400,2026/07/02 23:59:59 -0400,"
+                + "2026/07/03 15:05:22 -0400,US-NRC,America/New_York\n"
+                + "RD,Merchant Account ID,Record ID,Related Record ID,Invoice ID,Original Invoice ID,Partner Identifier,"
+                + "Created At,Record Type,Record Subtype,Transaction Currency,Gross Transaction Amount,Total Gross Fees,"
+                + "Total Net Fees,Partner Commission,Net Transaction Amount,Settlement Currency,Settlement Amount,"
+                + "Pending Settlement Amount,Exchange Rate,Gratuity,Reference Type,Reference ID,Payout Reference ID,"
+                + "Transfer ID,Transfer Account\n"
+                + "RD,MERCHANT0001,SALE000000000001A,,,,PARTNER,2026-07-02 14:25:07 -0400,Sale,,USD,101.00,-0.64,"
+                + "-0.64,-2.00,98.36,USD,0.00,0.00,1,,,,,,\n"
+                + "RD,MERCHANT0001,REFUND00000000001,SALE000000000001A,INV-1,,PARTNER,2026-07-02 14:53:48 -0400,Refund,"
+                + "Referenced,USD,-3.00,0.00000,0.00,,-3.00,USD,0.00,0.00,1,,,,,,\n"
+                + "RD,MERCHANT0001,REFUND00000000002,,,,PARTNER,2026-07-02 14:57:50 -0400,Refund,Non-Referenced,USD,"
+                + "-5.00,0.00000,0.00,,-5.00,USD,0.00,0.00,1,,,,,,\n"
+                + "RD,MERCHANT0001,,,,,PARTNER,2026-07-02 23:59:59 -0400,Fees,Scheme Fees,GBP,"
+                + ",-0.02301,,,,,,,,,,,,\n"
+                + "RD,MERCHANT0001,,,,,PARTNER,2026-07-02 23:59:59 -0400,Fees,Scheme Fees,USD,"
+                + ",-2.53386,,,,,,,,,,,,\n"
+                + "RF,File Number,Total Records,Total Files\nRF,1,5,1\n";
+
+        SettlementHttpResponse.PayPalBalanceReportReconciliation response = service.reconcile(report.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::status)
+                .containsExactly(PayPalBalanceReportRowStatus.MATCHED, PayPalBalanceReportRowStatus.MATCHED,
+                        PayPalBalanceReportRowStatus.UNMATCHED, PayPalBalanceReportRowStatus.UNMATCHED,
+                        PayPalBalanceReportRowStatus.UNMATCHED);
+        assertThat(response.rows()).extracting(SettlementHttpResponse.PayPalBalanceReportReconciliation.RowResult::reasonCode)
+                .containsExactly("EXACT_CAPTURE_ID_AND_AMOUNT_CURRENCY_MATCH", "EXACT_REFUND_AND_CAPTURE_LINK_MATCH",
+                        "PROVIDER_REFUND_ID_NOT_FOUND", "UNSUPPORTED_PROVIDER_RECORD_TYPE",
+                        "UNSUPPORTED_PROVIDER_RECORD_TYPE");
+        assertThat(response.rows().get(0).feeAmount()).isEqualByComparingTo("-0.64");
+        assertThat(response.rows().get(0).netAmount()).isEqualByComparingTo("98.36");
+        assertThat(response.rows().get(1).relatedRecordId()).isEqualTo("SALE000000000001A");
+        assertThat(response.rows().get(1).feeAmount()).isEqualByComparingTo("0.00000");
+        assertThat(response.rows().get(1).netAmount()).isEqualByComparingTo("-3.00");
+        assertThat(response.rows().get(3).grossAmount()).isNull();
+        assertThat(response.summary().duplicate()).isZero();
+    }
+
     @Test
     void rejectsFailedReportsMissingRequiredColumnsAndSplitReports() {
         String failed = "RH,Report name,Report status\nRH,BALANCE_RECONCILIATION_REPORT,Error\n"
