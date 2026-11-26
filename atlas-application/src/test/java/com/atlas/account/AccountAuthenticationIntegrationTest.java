@@ -264,7 +264,7 @@ class AccountAuthenticationIntegrationTest {
         Instant now = Instant.now();
         accounts.verifyEmail(accountId, now);
         UUID targetFamilyId = UUID.randomUUID();
-        accounts.createRefreshFamily(targetFamilyId, accountId, now, now.plusSeconds(3600));
+        accounts.createRefreshFamily(targetFamilyId, accountId, now, now.plusSeconds(3600), false);
 
         List<Object[]> families = new ArrayList<>();
         for (int i = 0; i < 2_500; i++) {
