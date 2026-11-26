@@ -9,11 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.mockwebserver.SocketPolicy;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -69,6 +71,20 @@ public abstract class PayPalIntegrationTestSupport {
     private static final Map<String, Integer> PROVIDER_CALLS =
             new ConcurrentHashMap<>();
     private static final Queue<String> REFUND_REQUEST_IDS = new ConcurrentLinkedQueue<>();
+
+    /**
+     * 다음 create-order 호출 하나를 붙잡는다. 호출이 PayPal stub 에 도착하면 {@code arrived}가 풀리고,
+     * 시험이 {@code release}를 풀기 전까지 응답하지 않아 그 호출을 보낸 스레드가 묶인 상태를 만든다.
+     */
+    protected record Hold(CountDownLatch arrived, CountDownLatch release) { }
+
+    private static final AtomicReference<Hold> CREATE_ORDER_HOLD = new AtomicReference<>();
+
+    protected static Hold holdNextCreateOrder() {
+        Hold hold = new Hold(new CountDownLatch(1), new CountDownLatch(1));
+        CREATE_ORDER_HOLD.set(hold);
+        return hold;
+    }
     protected static void queueAuthorizationStatus(String status) { AUTHORIZATION_STATUSES.add(status); }
     protected static void queueOrderStatus(String status) { ORDER_STATUSES.add(status); }
     protected static void queueOrderCreateStatus(String status) { ORDER_CREATE_STATUSES.add(status); }
@@ -124,6 +140,7 @@ public abstract class PayPalIntegrationTestSupport {
     protected void resetPayPalStubState() throws InterruptedException {
         // 결제 테스트는 Spring context 를 공유한다. 앞선 테스트가 데운 환율 캐시를 비우지 않으면
         // "결제 1건이 외부 호출 1회"라는 계약이 테스트 순서에 의존하게 된다.
+        CREATE_ORDER_HOLD.set(null);
         if (fxCacheUnderTest != null) fxCacheUnderTest.clear();
         ORDERS.clear();
         ORDER_IDS_BY_REQUEST_ID.clear();
@@ -199,6 +216,15 @@ public abstract class PayPalIntegrationTestSupport {
                     return json("{\"access_token\":\"local-access-token\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
                 }
                 if (path.equals("/v2/checkout/orders") && "POST".equals(method)) {
+                    Hold hold = CREATE_ORDER_HOLD.getAndSet(null);
+                    if (hold != null) {
+                        hold.arrived().countDown();
+                        try {
+                            hold.release().await(30, TimeUnit.SECONDS);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
                     MockResponse rejected = pollRejection("create-order");
                     if (rejected != null) return rejected;
                     String requestId = request.getHeader("PayPal-Request-Id");
