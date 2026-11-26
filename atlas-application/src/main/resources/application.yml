@@ -192,6 +192,13 @@ atlas:
       capture-base-url: ${ATLAS_PAYPAL_CAPTURE_BASE_URL:}
       # 비표준 PayPal port는 JVM에서 loopback으로 확인된 로컬 proxy에만 허용한다.
       local-proxy-enabled: ${ATLAS_PAYPAL_LOCAL_PROXY_ENABLED:false}
+      # 서블릿 요청 스레드가 PayPal 응답을 기다리며 동시에 묶일 수 있는 호출 수의 상한(ADR-0098, EXP-108).
+      # 0 이하면 상한이 없다(기본, 이전 동작). 상한을 넘는 요청 스레드의 호출은 아무것도 보내기 전에 기다리지 않고
+      # 거절해 UNKNOWN(복구 대상)으로 남는다. 복구 worker의 호출은 세지도 거절하지도 않는다.
+      # 측정(EXP-108): 지연 10초에서 Tomcat 스레드 40개는 도착률 4/s(40개 점유)에서 차고, 8/s에서는 PayPal을 쓰지
+      # 않는 요청까지 밀린다. 켜려면 Tomcat 최대 스레드(40)보다 작은 값(예: 20~30)을 둔다.
+      bulkhead:
+        max-concurrent-calls: ${ATLAS_PAYPAL_BULKHEAD_MAX_CONCURRENT_CALLS:0}
       client-id: ${PAYPAL_CLIENT_ID:}
       client-secret: ${PAYPAL_CLIENT_SECRET:}
       webhook-id: ${PAYPAL_WEBHOOK_ID:}

@@ -23,6 +23,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -48,11 +49,23 @@ public class PayPalRestClient {
      */
     private final Duration connectTimeout;
     private final Duration readTimeout;
+    private final PayPalCallBulkhead bulkhead;
 
+    /** 호출 수 상한이 없는 클라이언트(시험과 직접 조립용). */
+    public PayPalRestClient(RestClient.Builder builder, PayPalProperties properties,
+            OAuth2AuthorizedClientManager authorizedClientManager, ObjectMapper objectMapper,
+            Duration connectTimeout, Duration readTimeout) {
+        this(builder, properties, authorizedClientManager, objectMapper, connectTimeout, readTimeout,
+                new PayPalCallBulkhead(0, () -> { }));
+    }
+
+    @Autowired
     public PayPalRestClient(RestClient.Builder builder, PayPalProperties properties,
             OAuth2AuthorizedClientManager authorizedClientManager, ObjectMapper objectMapper,
             @Value("${atlas.payment.paypal.connect-timeout:PT2S}") Duration connectTimeout,
-            @Value("${atlas.payment.paypal.read-timeout:PT10S}") Duration readTimeout) {
+            @Value("${atlas.payment.paypal.read-timeout:PT10S}") Duration readTimeout,
+            PayPalCallBulkhead bulkhead) {
+        this.bulkhead = Objects.requireNonNull(bulkhead);
         this.builder = Objects.requireNonNull(builder).clone();
         this.properties = Objects.requireNonNull(properties);
         this.authorizedClientManager = Objects.requireNonNull(authorizedClientManager);
@@ -77,7 +90,8 @@ public class PayPalRestClient {
     public OrderStatus getOrder(String orderId) {
         Map<String, Object> response;
         try {
-            response = api().get().uri("/v2/checkout/orders/{id}", orderId).retrieve().body(mapType());
+            response = bulkhead.call(() ->
+                    api().get().uri("/v2/checkout/orders/{id}", orderId).retrieve().body(mapType()));
         } catch (RestClientException exception) {
             // 다른 호출과 같이 provider 장애로 감싼다. 감싸지 않으면 승인 반영 중 연결 시간 초과가
             // 500 으로 새어 나가고 결제 시도는 UNKNOWN 으로 기록되지 않아 복구 worker 가 재시도하지 못한다.
@@ -117,9 +131,9 @@ public class PayPalRestClient {
 
     public void voidAuthorization(String authorizationId, String requestId) {
         try {
-            api().post().uri("/v2/payments/authorizations/{id}/void", authorizationId)
+            bulkhead.run(() -> api().post().uri("/v2/payments/authorizations/{id}/void", authorizationId)
                     .header(REQUEST_ID, requestId).contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of()).retrieve().toBodilessEntity();
+                    .body(Map.of()).retrieve().toBodilessEntity());
         } catch (RestClientResponseException exception) {
             throw failure("PayPal authorization void failed", exception);
         } catch (RestClientException exception) {
@@ -138,8 +152,8 @@ public class PayPalRestClient {
 
     public RefundResult getRefund(String refundId) {
         try {
-            Map<String, Object> response = api().get().uri("/v2/payments/refunds/{id}", refundId)
-                    .retrieve().body(mapType());
+            Map<String, Object> response = bulkhead.call(() -> api().get().uri("/v2/payments/refunds/{id}", refundId)
+                    .retrieve().body(mapType()));
             return new RefundResult(text(response, "id"), text(response, "status"),
                     resourceAmount(response, "refund"), resourceCurrency(response, "refund"));
         } catch (RestClientException exception) {
@@ -223,8 +237,8 @@ public class PayPalRestClient {
 
     private Map<String, Object> postWebhook(Object body) {
         try {
-            return api().post().uri("/v1/notifications/verify-webhook-signature")
-                    .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(mapType());
+            return bulkhead.call(() -> api().post().uri("/v1/notifications/verify-webhook-signature")
+                    .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(mapType()));
         } catch (RestClientException exception) {
             throw new PayPalUnavailableException("PayPal webhook verification failed", exception);
         }
@@ -239,8 +253,9 @@ public class PayPalRestClient {
         try {
             // PayPal 기본값(return=minimal)은 capture·refund 응답에서 amount 를 빼므로, 성공한 capture 도
             // 금액 검증에 실패해 UNKNOWN 된다(실제 Sandbox 확인). 전체 표현을 명시적으로 요청한다.
-            return api(baseUrl).post().uri(uri).header(REQUEST_ID, requestId).header(PREFER, "return=representation")
-                    .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(mapType());
+            return bulkhead.call(() -> api(baseUrl).post().uri(uri).header(REQUEST_ID, requestId)
+                    .header(PREFER, "return=representation")
+                    .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(mapType()));
         } catch (RestClientResponseException exception) {
             throw failure("PayPal API request failed", exception);
         } catch (RestClientException exception) {
@@ -453,6 +468,15 @@ public class PayPalRestClient {
         private static final long serialVersionUID = 1L;
         public PayPalUnavailableException(String message) { super(message); }
         public PayPalUnavailableException(String message, Throwable cause) { super(message, cause); }
+    }
+
+    /**
+     * 요청 스레드의 동시 호출 상한을 넘어 {@code PayPalCallBulkhead} 가 보내기 전에 거절했다. 아무것도 보내지
+     * 않았으므로 결과가 불명한 것이 아니라 확정된 미전송이다. 호출자는 장애 예외와 같게 처리해도 안전하다.
+     */
+    public static class PayPalBusyException extends PayPalUnavailableException {
+        private static final long serialVersionUID = 1L;
+        public PayPalBusyException(String message) { super(message); }
     }
 
     /**
