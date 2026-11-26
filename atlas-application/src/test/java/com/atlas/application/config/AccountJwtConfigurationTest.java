@@ -15,6 +15,7 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
@@ -22,6 +23,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -121,6 +123,46 @@ class AccountJwtConfigurationTest {
         assertThrows(JwtException.class, () -> decoder.decode(missingIssuedAt));
         assertThrows(JwtException.class, () -> decoder.decode(missingExpiresAt));
         assertThrows(JwtException.class, () -> decoder.decode(missingFamily));
+    }
+
+    @Test
+    void decoderAcceptsOnlyTheConfiguredHmacAlgorithm() throws Exception {
+        // 같은 key로 정상 서명한 HS512 token도 거절돼야 알고리즘 허용 목록이 고정이라고 말할 수 있다(HS256 양성 대조군 포함).
+        byte[] secret = new byte[64];
+        Arrays.fill(secret, (byte) 7);
+        JwtDecoder strict = configuration.accountJwtDecoder(new SecretKeySpec(secret, "HmacSHA256"), ISSUER, AUDIENCE, accounts);
+        Instant now = Instant.now();
+        JWTClaimsSet claims = new JWTClaimsSet.Builder().issuer(ISSUER).audience(AUDIENCE)
+                .subject(ACCOUNT_ID.toString()).claim("sid", FAMILY_ID.toString())
+                .issueTime(Date.from(now)).expirationTime(Date.from(now.plusSeconds(600))).build();
+        SignedJWT hs256 = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
+        hs256.sign(new MACSigner(secret));
+        SignedJWT hs512 = new SignedJWT(new JWSHeader(JWSAlgorithm.HS512), claims);
+        hs512.sign(new MACSigner(secret));
+
+        assertEquals(ACCOUNT_ID.toString(), strict.decode(hs256.serialize()).getSubject());
+        assertThrows(JwtException.class, () -> strict.decode(hs512.serialize()));
+        assertThrows(JwtException.class, () -> strict.decode(new PlainJWT(claims).serialize()));
+    }
+
+    @Test
+    void accessTokenIsAcceptedUntilItsExpiryPlusTheDefaultSixtySecondClockSkew() throws Exception {
+        // 10분 수명의 허용 오차: 만료 30초 뒤까지는 받고 90초 뒤에는 거절한다(Spring 기본 skew 60초).
+        Instant now = Instant.now();
+        SignedJWT withinSkew = signed(now.minusSeconds(630), now.minusSeconds(30));
+        SignedJWT beyondSkew = signed(now.minusSeconds(690), now.minusSeconds(90));
+
+        assertEquals(ACCOUNT_ID.toString(), decoder.decode(withinSkew.serialize()).getSubject());
+        assertThrows(JwtException.class, () -> decoder.decode(beyondSkew.serialize()));
+    }
+
+    private SignedJWT signed(Instant issuedAt, Instant expiresAt) throws JOSEException {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder().issuer(ISSUER).audience(AUDIENCE)
+                .subject(ACCOUNT_ID.toString()).claim("sid", FAMILY_ID.toString())
+                .issueTime(Date.from(issuedAt)).expirationTime(Date.from(expiresAt)).build();
+        SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
+        jwt.sign(new MACSigner(key.getEncoded()));
+        return jwt;
     }
 
     @Test
