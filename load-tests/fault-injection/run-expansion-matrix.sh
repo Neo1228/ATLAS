@@ -12,6 +12,8 @@
 # SYN/asymmetric drops, DB pause). Every (condition, repetition) is one run-fault-injection.sh run; the whole list is
 # shuffled with a fixed SEED so time of day and host load are not tied to a condition (the Docker VM is shared); the plan
 # is written to <out>/plan.txt and finished jobs (<out>/done/) are skipped on a re-run.
+# SET=closeout3 re-runs the contaminated/open cells at n=5; HOLD_CHECK_CMD=<command> runs before every run and a non-zero exit stops the matrix
+# (use it to verify a host measurement lock), RUN_STATUS_CMD=<command> output is appended to uptime.log per run.
 # SET=closeout2 runs the cells EXP-104 left as decided-out (strong CPU hog arms, S=13/15 s, drop cells).
 # SET=closeout runs the EXP-104 cells instead (negative-control rerun, stall-free duplicates under host CPU load, the PT15S boundary sweep,
 # PT30S under load, SYN drop with reset connections, request drop with a strict window); same plan/shuffle/skip mechanics, TAG default t4.
@@ -107,6 +109,20 @@ deep_matrix() {
       "e-req-drop-strict@2|FAULTS=location-b-req-drop LOAD_THREADS=256"
     )
   fi
+  if [[ "${SET:-}" == closeout3 ]]; then
+    # EXP-104 clean re-run: the cells #699 flagged contaminated or left open, n=5 each (run them under the host lock; see HOLD_CHECK_CMD)
+    export TAG="${TAG:-t4}"
+    conn="CONN_TRACE=1"
+    strong="HOG=48 HOG_SHARES=65536"
+    conditions=(
+      "a-p15-s13@5|$two FAULTS=app-pause FAULT_FOR=13 RECOVERY_LEASE=PT15S $delay"
+      "a-p15-s15@5|$two FAULTS=app-pause FAULT_FOR=15 RECOVERY_LEASE=PT15S $delay"
+      "a-ctl-hog-strong-L30@5|$two FAULTS=none RECOVERY_LEASE=PT30S $delay PLANT_DUP=1 $conn $strong"
+      "e-ctl-none@5|FAULTS=none LOAD_THREADS=256 $conn"
+      "e-syn-reset@5|FAULTS=location-b-syn-drop LOAD_THREADS=256 SYN_RESET=1 $conn"
+      "e-req-drop-strict@5|FAULTS=location-b-req-drop LOAD_THREADS=256"
+    )
+  fi
 
   plan="$out_dir/plan.txt"
   if [[ ! -f "$plan" ]]; then
@@ -130,6 +146,10 @@ deep_matrix() {
     index=$((index + 1))
     [[ "$label" =~ $only_re ]] || continue
     [[ -f "$out_dir/done/$label-$k" ]] && continue
+    if [[ -n "${HOLD_CHECK_CMD:-}" ]] && ! bash -c "$HOLD_CHECK_CMD" >/dev/null 2>&1; then  # e.g. the host measurement lock is no longer ours
+      echo "hold check failed before $index/$total $label rep=$k" | tee -a "$out_dir/progress.log"; break
+    fi
+    [[ -z "${RUN_STATUS_CMD:-}" ]] || { echo "=== $label rep=$k status: $(bash -c "$RUN_STATUS_CMD" 2>&1 | tr '\n' ' ')"; } >> "$out_dir/uptime.log"
     if [[ -n "${DEADLINE:-}" && "$(date +%s)" -ge "$DEADLINE" ]]; then  # DEADLINE=<epoch seconds>: start no new run after it (the rest stays in the plan)
       echo "deadline reached before $index/$total $label rep=$k" | tee -a "$out_dir/progress.log"; break
     fi
@@ -150,7 +170,7 @@ deep_matrix() {
   echo "matrix finished $(date -u +%FT%TZ)" | tee -a "$out_dir/progress.log"
 }
 
-if [[ "${SET:-}" == deep || "${SET:-}" == closeout || "${SET:-}" == closeout2 ]]; then deep_matrix; exit 0; fi
+if [[ "${SET:-}" == deep || "${SET:-}" == closeout || "${SET:-}" == closeout2 || "${SET:-}" == closeout3 ]]; then deep_matrix; exit 0; fi
 runs="${RUNS:-5}"
 runs_dns="${RUNS_DNS:-3}"
 out="${OUT:-$(cd "$here/../.." && pwd)/.local/fault-injection/expansion-$(date +%Y%m%d-%H%M%S)}"
