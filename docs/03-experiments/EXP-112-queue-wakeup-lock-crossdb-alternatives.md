@@ -25,10 +25,10 @@
 ### 워크로드 (정상 상태, 팔마다 같은 시드)
 
 - 한 PostgreSQL 인스턴스에 다섯 큐를 동시에 구동한다. 각 큐의 생애는 실제 SQL(저장소의 문장)을 그대로 쓴다. 도착은 포아송.
-  - `payment_recovery_job`: 결제 60건/s. 건마다 INSERT → `markForApplication` → `markApplied`(정상 경로, 요청 안). 3%는 정상 경로를 건너뛰고 worker가 청구한다(청구 → 처리 200 ms → `markForApplication` → 재청구 → `complete`, 이 중 20%는 `reschedule` 후 재청구). worker 2개, 1초 폴링, poll당 최대 10청구, 매 poll `expireExhausted` 실행. 과거 이력 완료 행 50만 개를 미리 넣는다.
+  - `payment_recovery_job`: 결제 60건/s. 건마다 INSERT → `markForApplication` → `markApplied`(정상 경로, 요청 안). 3%는 정상 경로를 건너뛰고 worker가 청구한다(청구 → 처리 200 ms → `markForApplication` → 재청구 → `complete`, 이 중 20%는 `reschedule` 후 재청구). worker 2개, 1초 폴링, poll당 최대 10청구, 매 poll `expireExhausted` 실행. 과거 이력 완료 행 50만 개(대응하는 `payment_attempt` 50만 행 포함)를 미리 넣는다.
   - `paypal_webhook_retry`: 5건/s, 청구 후 30%는 재예약, 70%는 종료. 워커 1초 폴링.
   - `order_inventory_reservation_workflow`: 30건/s, PENDING → 청구 → RESERVED → CLAIMED 전이.
-  - `settlement_payout_dispatch_outbox`: 2건/s, 청구 → WAITING_PROVIDER → SENT, worker 5초 폴링.
+  - `settlement_payout_dispatch_outbox`: 2건/s, 청구 → 증거 기록 → WAITING_PROVIDER 또는 COMPLETED, worker 5초 폴링. 과거 이력 완료 행 10만 개를 미리 넣는다.
   - `order_inventory_event_cursor`: 소비자 그룹 1행을 0.2초마다 청구·갱신(커서 전진과 임대 갱신).
 - 자동 vacuum은 켜 둔 기본값(`autovacuum_vacuum_scale_factor=0.2`, 임계 50, `naptime=1min`). 팔 A2·A5만 테이블별 값을 바꾼다. 한 run 10분(워밍업 60초 제외), 같은 팔의 3 run을 동시에 돌리고 각각 별도 컨테이너(CPU 2개로 제한)를 쓴다.
 
@@ -41,6 +41,7 @@
 | A2 | 큐 5개 테이블별 자동 vacuum(`scale_factor=0.02`, 임계 50, `cost_limit` 기본 유지)만 변경 |
 | A3 | `payment_recovery_job`만 임대·시도 열을 별도 작은 테이블(`payment_recovery_job_lease`, 기본키만, `fillfactor=70`)로 분리(재설계). 청구가 작은 테이블만 갱신하도록 청구·완료·재예약 SQL을 바꾼 시제품 |
 | A4 | A0 스키마에서 청구만 변형: poll당 일감 하나씩 10번 대신 한 문장 `UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 10)` |
+| A5 | A0 스키마 + 부분 인덱스 2개: `payment_recovery_job (recovery_job_id) WHERE status = 'WAITING_FOR_BUYER'`, `settlement_payout_dispatch_outbox (lease_until) WHERE status = 'LEASED'` |
 
 ### 측정 지표 (run마다, 테이블별)
 
@@ -58,6 +59,18 @@
 | Q6 | A4는 일감당 질의 수를 5배 이상 줄이고 청구 처리량을 A0 이상으로 유지한다 | 질의 수 감소 5배 미만 또는 처리량 감소 | `pg_stat_statements` calls, 처리량 | 변형은 채택하지 않는다 |
 | Q7 | 어떤 팔도 A0 대비 p99 청구 지연이 10% 넘게 나빠지지 않는다(회귀 가드) | 10% 초과 악화 | p99 | 해당 팔 기각 |
 | Q8 | 이력 완료 행 50만 개 + 정상 상태 10분에서 A0의 `n_dead_tup`는 자동 vacuum으로 `payment_recovery_job` 라이브 행의 20% 이하로 유지된다 | 20% 초과 | `n_dead_tup/n_live_tup` | 큐 vacuum 튜닝 필요로 정정 |
+
+#### 추가 사전 등록 (영역 1, 측정 전에 커밋)
+
+아래 Q9~Q11은 첫 사전 등록 커밋 뒤, 측정 전 탐색 중 `EXPLAIN`에서 먼저 눈에 띈 현상을 확인하려고 추가했다(사전 등록 밖에서 발견한 것이라 "탐색 발견"으로 구분한다). 탐색 관찰(n=1, 가설 검증이 아님): 결제 복구 worker가 poll마다 호출하는 `resumeExpiredApprovalWaits` 질의가 이력 50만 행의 `payment_recovery_job`을 순차 스캔했고(`WAITING_FOR_BUYER` 행을 위한 인덱스가 없다), 지급 worker의 `claim` 질의는 `OR`로 `LEASED`를 함께 조회해 부분 인덱스를 못 쓰고 `settlement_payout_dispatch_outbox`를 순차 스캔했다.
+
+| # | 가설 | 반증(발동) 조건 | 지표 | 발동 시 |
+|---|---|---|---|---|
+| Q9 | 반복 실행되는 질의 중 이력 행 수에 비례해 읽는 블록이 늘어나는 것이 있다: 실제 앱을 이력 시드(결제 복구 50만, 지급 25만, workflow 10만 행)에 붙여 60초 유휴로 둘 때 `pg_stat_statements`의 호출당 블록 수가 시드 0일 때의 10배 이상인 질의가 2개 이상이다 | 그런 질의가 1개 이하 | 호출당 공유 블록, 호출/s, DB 시간/s | 인덱스 추가의 근거 없음 |
+| Q10 | A5는 같은 질의의 호출당 블록을 A0의 1% 이하로 줄이고(`EXPLAIN (ANALYZE, BUFFERS)`, 이력 10만·50만·100만 행 3 크기 각 n=3 반복의 최댓값) 완료 일감당 WAL은 A0 대비 5% 넘게 늘리지 않는다 | 블록 감소 99% 미만 또는 WAL 5% 초과 증가 | 블록, WAL/일감 | 인덱스 출하 기각 |
+| Q11 | A5의 `r_resume`·`p_claim` 호출 지연 중앙값은 A0의 10% 이하이고 다른 호출 p99는 A0보다 10% 넘게 나빠지지 않는다 | 위 기준 위반 | 호출 지연 | 인덱스 출하 기각 |
+
+Q9~Q11이 모두 성립하면 인덱스 2개를 V8로 출하한다(데이터를 바꾸지 않는 인덱스 추가라 질의 의미는 그대로). 출하 후 같은 `EXPLAIN`이 새 인덱스를 쓰는지 PostgreSQL 통합 시험에서 확인하고, 인덱스를 지운 변이에서 시험이 실패해야 한다.
 
 ### 결정 규칙 (실행 전 고정)
 
