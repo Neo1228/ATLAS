@@ -13,6 +13,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.stream.StreamSupport;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Component
+@Qualifier("exchangeRateProviderDelegate")
 @ConditionalOnProperty(name = "atlas.payment.exchange-rate.provider", havingValue = "bok-ecos",
         matchIfMissing = true)
 public class BokEcosExchangeRateProvider implements ExchangeRateProvider {

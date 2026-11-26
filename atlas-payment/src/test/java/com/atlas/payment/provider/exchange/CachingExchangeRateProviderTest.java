@@ -200,9 +200,9 @@ class CachingExchangeRateProviderTest {
                 Clock.fixed(now, ZoneOffset.UTC), Duration.ofSeconds(60), Duration.ofMinutes(10));
     }
 
-    private static BokEcosExchangeRateProvider delegate(AtomicInteger calls,
+    private static ExchangeRateProvider delegate(AtomicInteger calls,
             Supplier<FxResponse.ExchangeRateQuote> supplier) {
-        BokEcosExchangeRateProvider delegate = mock(BokEcosExchangeRateProvider.class);
+        ExchangeRateProvider delegate = mock(ExchangeRateProvider.class);
         when(delegate.latestUsdKrwRate()).thenAnswer(invocation -> {
             calls.incrementAndGet();
             return supplier.get();
