@@ -141,7 +141,7 @@ fail-open을 없애는 대신 fail-open이 일어났을 때 비용을 제한하�
 2. **계수 기반 breaker.** timeout 1회가 아니라 짧은 창에서 N회 연속·비율 초과일 때만 연다. 일시적 stall 한 번이 쿨다운 2초를 통째로 소모하지 않게 한다.
 3. **통과 동시성 상한(bulkhead).** 통과된 요청 수를 세마포어로 제한해 PostgreSQL 경로가 쓰러지지 않게 한다. 초과분은 거절이 아니라 짧은 대기 후 거절(503/409 재시도 안내) 중 하나를 정해야 하며, 정책 선택은 미결이다.
 4. **관측 보강.** `fail_open`을 사유(`timeout`, `unseeded`, `breaker_open`)별 태그로 나눈다. 이번에는 사유를 로그의 WARN 클래스로만 구분할 수 있었다.
-   - 2026-11-26 구현: 총계(`atlas.order.admission.gate{result=fail_open}`)는 그대로 두고 사유별 계수기 `atlas.order.admission.gate.fail_open{reason=breaker_open|unseeded|timeout|error}`를 더했다. 총계 태그를 바꾸면 `load-tests/redis-gate/analyze.py`가 `result` 라벨당 한 값만 읽어 깨지므로 새 지표 이름으로 분리했다. `breaker_open`과 `error`는 연결 불가 Redis 시험으로 확인했고(변이 확인 포함), `timeout`(Lettuce `RedisCommandTimeoutException`)과 `unseeded` 분류는 자동 시험으로 확인하지 못했다.
+   - 2026-11-26 구현: 총계(`atlas.order.admission.gate{result=fail_open}`)는 그대로 두고 사유별 계수기 `atlas.order.admission.gate.fail_open{reason=breaker_open|unseeded|timeout|error}`를 더했다. 총계 태그를 바꾸면 `load-tests/redis-gate/analyze.py`가 `result` 라벨당 한 값만 읽어 깨지므로 새 지표 이름으로 분리했다. `breaker_open`과 `error`는 연결 불가 Redis 시험으로, `timeout`(Lettuce `RedisCommandTimeoutException`)은 Redis `CLIENT PAUSE`로 서버를 멈춘 시험으로 확인했고(둘 다 변이 확인 포함) `unseeded` 분류는 결정적으로 유발할 방법을 찾지 못해 자동 시험이 없다(시드 직후 키가 사라지는 경쟁에서만 발생).
 
 ## 남은 과제 (미실행)
 
