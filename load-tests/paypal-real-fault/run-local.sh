@@ -10,7 +10,9 @@ chmod 700 "$private"
 project="atlas-paypal-fault-$$-$RANDOM"
 app_pid=''
 cleanup_done=0
+export ATLAS_EXP_TAG=${ATLAS_EXP_TAG:-t2}
 compose=(docker compose --project-name "$project" -f "$compose_file")
+if [[ -n ${COMPOSE_OVERRIDE_FILE:-} ]]; then compose+=(-f "$COMPOSE_OVERRIDE_FILE"); fi
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
@@ -73,9 +75,20 @@ export ATLAS_FAULT_SMTP_PROXY_PORT=${ATLAS_FAULT_SMTP_PROXY_PORT:-19026}
 export ATLAS_FAULT_MAIL_API_PORT=${ATLAS_FAULT_MAIL_API_PORT:-19025}
 export ATLAS_FAULT_DB_PASSWORD=${ATLAS_FAULT_DB_PASSWORD:-atlas-real-local}
 export ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED=${ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED:-true}
+if [[ ${PAYOUT_E2E:-} == YES ]]; then
+    export ATLAS_PAYPAL_PAYOUTS_ENABLED=true ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=true
+    export ATLAS_PAYPAL_PAYOUT_WORKER_INITIAL_DELAY=PT1S ATLAS_PAYPAL_PAYOUT_WORKER_POLL_INTERVAL=PT1S
+    export ATLAS_SETTLEMENT_PAYOUT_OPERATOR_ENABLED=true ATLAS_SETTLEMENT_PAYOUT_OPERATOR_IDENTITY=account
+    export ATLAS_PAYPAL_PAYOUT_SUPPORTED_COUNTRIES=US ATLAS_PAYMENT_EXCHANGE_RATE_PROVIDER=frankfurter
+    export UNIT_PRICE_WON=${UNIT_PRICE_WON:-10000}
+fi
 [[ $ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED == true || $ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED == false ]] \
     || fail 'ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED は true または false 여야 한다.'
 export PRIVATE_DIR="$private"
+if [[ ${PAYOUT_E2E:-} == YES ]]; then
+    export ATLAS_PAYPAL_PAYOUT_RECIPIENT_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+    export ATLAS_ACCOUNT_MFA_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+fi
 export APP_PORT="$ATLAS_FAULT_APP_PORT"
 export DB_PORT="$ATLAS_FAULT_PG_PROXY_PORT"
 export DB_PASSWORD="$ATLAS_FAULT_DB_PASSWORD"
@@ -94,6 +107,13 @@ done
 
 # 임시 JWT·비밀번호와 JVM hosts 설정은 권한 600/700 파일로만 저장하고 종료 시 제거한다.
 printf '127.0.0.1 api-m.sandbox.paypal.com\n' > "$private/hosts"
+# jdk.net.hosts.file은 이 파일에 없는 호스트의 이름 풀이를 모두 막는다. 지급 환율 공급자(Frankfurter)는
+# 실제 외부 호스트라 실행 머신의 DNS로 한 번 풀어 같은 파일에 적는다(없으면 환율 조회가 503이 된다).
+if [[ ${PAYOUT_E2E:-} == YES ]]; then
+    frankfurter_ip=$(python3 -c 'import socket; print(socket.gethostbyname("api.frankfurter.dev"))') \
+        || fail 'api.frankfurter.dev 를 풀지 못했다.'
+    printf '%s api.frankfurter.dev\n' "$frankfurter_ip" >> "$private/hosts"
+fi
 openssl rand -base64 48 | tr -d '\n' > "$private/jwt"
 printf 'Local-%s\n' "$(openssl rand -hex 16)" > "$private/acctpw"
 
