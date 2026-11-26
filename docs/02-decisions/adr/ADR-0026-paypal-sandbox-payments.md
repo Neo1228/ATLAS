@@ -2,7 +2,7 @@
 
 - 상태: ✓ 확정
 - 날짜: 2026-11-09
-- 결정 ID: [D-081](../../00-governance/decision-log.md), [D-085](../../00-governance/decision-log.md), [D-086](../../00-governance/decision-log.md)
+- 결정 ID: [D-081](../../00-governance/decision-log.md), [D-085](../../00-governance/decision-log.md), [D-086](../../00-governance/decision-log.md), [D-170](../../00-governance/decision-log.md)
 - 관련 요구사항: [FR-017/BR-017/INV-014](../../01-requirements/requirements-index.md), [Q-006](../../01-requirements/requirements-index.md#assumptions-and-open-questions)
 - 통화 경계: [ADR-0030](ADR-0030-paypal-currency-boundary.md)
 - 관련 Issue: [Issue #191](https://github.com/Neo1228/ATLAS/issues/191)
@@ -96,7 +96,7 @@ sequenceDiagram
 - Sale rows match only when Balance report `Record ID` exactly equals the persisted PayPal capture ID (`provider_capture_id`), the payment attempt is `CAPTURED`, and report currency/gross amount equal the stored provider currency/amount.
 - Refund rows match only when `Record ID` exactly equals the persisted PayPal refund ID (`provider_refund_id`), the refund is `COMPLETED`, `Related Record ID` equals the refund operation’s capture ID and a confirmed persisted capture ID, and currency/negative gross amount equal the stored provider refund facts. Top-level Order ID, fuzzy matching, amount-only matching, and missing parent links never match.
 - The Payment-owned query selects only provider record IDs, capture IDs, amounts, currencies, and confirmation booleans in one read-only query. It does not read FX snapshots, settlement journals, or ledger state and cannot mutate payment, inventory, order, settlement, ledger, or payout state. Internal attempt/refund identifiers are not included in the operator response.
-- Official sources define each field/ID but do not guarantee a universal Balance `Record ID` crosswalk to Orders/Payments IDs. A `MATCHED` result is therefore an exact row-level equality check plus fact validation, not a claim that every merchant report uses that mapping. Merchant-specific entitlement/version and real report verification remain pending. `Transfer ID` and report rows do not prove bank receipt or execute payouts.
+- Official sources define each field/ID but do not guarantee a universal Balance `Record ID` crosswalk to Orders/Payments IDs. A `MATCHED` result is therefore an exact row-level equality check plus fact validation, not a claim that every merchant report uses that mapping. Merchant-specific entitlement/version and real report verification are Live gate LG-1 in [ADR-0095](ADR-0095-balance-report-id-crosswalk-evidence-and-live-gate.md); the ID side of the rule was cross-checked against real Sandbox transaction records ([EXP-103](../../03-experiments/EXP-103-balance-report-id-crosswalk-real-sandbox.md)). `Transfer ID` and report rows do not prove bank receipt or execute payouts.
 
 ## 참고 자료
 
