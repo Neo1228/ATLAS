@@ -28,6 +28,9 @@
 # Variables: APP_JAR (jar the Docker VM can read; default: the bootJar output), RUNS=5 RATE=20
 #   FAULT_AT=10 TAIL=20 DRAIN_TIMEOUT=90 TAG=kafka-outage OUT=... and the relay settings
 #   RELAY_SEND_TIMEOUT / RELAY_LEASE_DURATION / RELAY_BATCH_SIZE / RELAY_POLL_INTERVAL.
+# NETEM_JITTER_MS=500 (delay2s/delay6s only): the jitter of tc netem delay, 0 = fixed delay.
+# FAULT_LENGTH=<s> overrides the fault length of every condition (default: per condition, see above).
+# SAMPLE_INTERVAL=1 seconds between cursor/lag samples.
 #   SEGMENTS=1 also writes segments.json per run (violations classified by broker batch, from kafka-dump-log).
 # Results: .local/kafka-outage/<timestamp>/<condition>/run-<n>/ (git-ignored). No secret is
 # written there: every secret is generated per invocation and lives only in this process.
@@ -43,6 +46,9 @@ fault_at="${FAULT_AT:-10}"
 tail_seconds="${TAIL:-20}"
 drain_timeout="${DRAIN_TIMEOUT:-90}"
 tag="${TAG:-kafka-outage}"
+jitter_ms="${NETEM_JITTER_MS:-500}"
+fault_length_override="${FAULT_LENGTH:-}"
+sample_interval="${SAMPLE_INTERVAL:-1}"
 topic="atlas.order-inventory.events"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 out="${OUT:-$repo_root/.local/kafka-outage/$timestamp}"
@@ -95,6 +101,7 @@ tc_in_broker() {
 
 # condition -> fault length in seconds
 fault_length() {
+  [[ -z "$fault_length_override" ]] || { echo "$fault_length_override"; return; }
   case "$1" in
     control) echo 10 ;; stop10|kill10) echo 10 ;; pause8) echo 8 ;; pause20) echo 20 ;;
     pause45|kill45) echo 45 ;; delay2s|delay6s|loss25) echo 20 ;;
@@ -122,10 +129,10 @@ inject() {
       docker inspect -f '{{.State.Status}} paused={{.State.Paused}}' "$kafka" >"$run_dir/state-during-fault.txt"
       sleep "$length"; down_end="$(now)"; docker unpause "$kafka" >/dev/null ;;
     delay2s)
-      tc_in_broker 'tc qdisc add dev eth0 root netem delay 2000ms 500ms && tc qdisc show dev eth0' >"$run_dir/state-during-fault.txt"
+      tc_in_broker "tc qdisc add dev eth0 root netem delay 2000ms ${jitter_ms}ms && tc qdisc show dev eth0" >"$run_dir/state-during-fault.txt"
       sleep "$length"; tc_in_broker 'tc qdisc del dev eth0 root' ;;
     delay6s)
-      tc_in_broker 'tc qdisc add dev eth0 root netem delay 6000ms 500ms && tc qdisc show dev eth0' >"$run_dir/state-during-fault.txt"
+      tc_in_broker "tc qdisc add dev eth0 root netem delay 6000ms ${jitter_ms}ms && tc qdisc show dev eth0" >"$run_dir/state-during-fault.txt"
       sleep "$length"; tc_in_broker 'tc qdisc del dev eth0 root' ;;
     loss25)
       tc_in_broker 'tc qdisc add dev eth0 root netem loss 25% && tc qdisc show dev eth0' >"$run_dir/state-during-fault.txt"
@@ -148,7 +155,7 @@ run_one() {  # run_one <condition> <n>
   echo "--- condition=$condition run=$n run_id=$run_id duration=${duration}s"
   run_started="$(now)"
   { printf 'time=%s\n' "$(date -u +%FT%TZ)"; uptime; } >"$run_dir/host-before.txt"
-  python3 "$here/outage_audit.py" sample --pg "$(cid order-postgres)" --out "$run_dir/samples.csv" &
+  python3 "$here/outage_audit.py" sample --pg "$(cid order-postgres)" --out "$run_dir/samples.csv" --interval "$sample_interval" &
   sampler_pid=$!
   python3 "$here/event_producer.py" --container "$(cid order-postgres)" --rate "$rate" \
     --duration "$duration" --run-id "$run_id" --plan "$run_dir/plan.json" &

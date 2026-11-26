@@ -9,10 +9,10 @@
 
 relay가 보낸 이벤트를 `aggregateVersion` 없이 도착 순서대로 적용하는 소비자는, broker가 20초 멈췄다 풀린 뒤 상태를 거꾸로 되돌릴 수 있다. 관측된 빈도는 보조 실행 39회 중 3회(7.7%), 한 실행의 workflow 1,000개 중 14~20개(1.4~2%)가 영향을 받았고, 누락은 0이었다. 원인이 어느 층인지 모르는 채 `aggregateVersion` 검사에만 기대고 있다(수치는 모두 [EXP-089](EXP-089-kafka-outage-repeated.md)에서 가져왔고, "첫 실행에서만"이라는 패턴은 사후에 찾은 것이다).
 
-## 이미 아는 것 (EXP-089 증거와 코드 읽기, 아직 새로 실행한 것은 없다)
+## 기존 증거의 재검산 (EXP-105)
 
 - 위반 실행의 파티션 0은 offset 0~132가 seq 10~392, offset 133~157이 seq 387~415와 764~798, offset 158부터 seq 387~2000이다.
-- 이 값을 시간으로 환산하면(초당 40건) 부하 10초 지점이 seq 약 400이다. 다시 말해 첫 시도의 묶음은 seq 387부터 시작하고, 전송 한도(10초) 뒤 재시도한 묶음은 약 seq 387~798이다. 764~798은 재시도 묶음의 끝 부분과 겹친다. 이 해석은 **추정**이며 가설로만 쓴다.
+- 실행함: seq를 초당 40건으로 환산하면 부하 10초 지점은 약 seq 400이다. 이는 387~798 범위와 pause 시작의 맥락 설명일 뿐 정확한 batch 생성·만료 시각은 아니다. 결정: 한 번의 offset trace와 고정 생산율만으로 batch별 시간 순서를 확정하는 일은 범위 밖이며, producer DEBUG 시간표를 모든 위반에 연결하는 대안은 아래 재검토 조건까지 보류한다. 재검토 조건: 향후 첫 전달 위반 1건 이상에서 producer DEBUG의 send·timeout·epoch 시각과 broker offset을 함께 보존하면 재분석한다.
 - relay 코드: 한 묶음을 `kafka.send`로 전부 낸 뒤 `allOf(...).get(전송한도+1초)`를 기다린다. 시간이 지나 예외를 던져도 이미 낸 레코드는 producer 안에 남아 있고 취소되지 않는다. producer는 `acks=all`, `enable.idempotence=true`, `delivery.timeout.ms=10000`, `request.timeout.ms=5000`, `linger.ms=5`이고 `max.in.flight.requests.per.connection`은 기본값(5)이다. kafka-clients 4.2.2, broker는 `apache/kafka:3.9.1`이다.
 
 ## 가설 (실행 전에 적음)
@@ -135,7 +135,7 @@ EXP-082의 시험용 참조 소비자(`ReservationEventReferenceConsumer`)를 �
 3. 만료로 producer는 `No inflight batches remaining ... Going to bump epoch and reset sequence numbers`로 epoch를 올리고 sequence를 0부터 다시 매긴다. 살아남은 뒤 batch가 broker에 먼저 기록된다(`ProduceResponse returned SUCCEEDED ... after batch ... had already been FAILED`는 스모크에서 관찰).
 4. relay는 시도 전체를 실패로 보고 같은 묶음을 다시 보낸다. 다시 보낸 묶음은 처음부터이므로 이미 기록된 뒤쪽 v2 다음에 앞쪽 v1이 온다(첫 전달 순서 역행). 이슈 #644의 형태(offset 133~157에 seq 387~415와 764~798, 그다음 offset 158에서 387부터 다시)와 일치한다. 위반 시행 하나의 batch 목록에서도 같은 형태를 보았다: 한 파티션에서 epoch 1의 batch 뒤에 baseSequence 0의 epoch 2 batch(seq 673~777)가 먼저 오고 그다음에 같은 relay 시도의 앞부분(seq 376~)을 다시 보낸 batch가 온다.
 
-집계(스모크와 캠페인 1~2의 모든 라운드에서 위반 키를 세그먼트로 분류. 덤프에서 batch를 찾지 못한 19키는 분류에서 빠졌고 아래 325키는 찾은 것이다):
+원래 집계 범위는 325키였고 19키는 dump 미분류였다. EXP-105가 보관된 토픽 TSV와 `dumplog.txt`를 다시 대조했다: 325는 `c2A1`, `c2A3`, `c2B1`, `c2B2`, `main3`의 비-NEG 라운드에서 재현되며, 원문이 쓴 “스모크와 캠페인 1~2의 모든 라운드”는 이 표본 범위보다 넓어 정정한다. `smoke1`은 19건 모두 첫 전달 역행이지만 `dumplog.txt`가 71바이트 오류 문구뿐이라 batch 분류가 불가능했다.
 
 | 분류 | 키 수(전체 325) |
 | --- | --- |
@@ -145,7 +145,7 @@ EXP-082의 시험용 참조 소비자(`ReservationEventReferenceConsumer`)를 �
 | 높은 버전 batch가 epoch 0 | 15 |
 | 낮은 버전 batch의 epoch가 더 높음 | 59 |
 
-해석: 분류한 위반 전부가 "한 시도 안에 v1·v2가 함께 있고 그 시도가 실패한 경우"다(필요조건). 88%는 epoch 증가 직후 batch다. 44%는 두 버전이 서로 다른 producer에서 왔지만(replica 2대), producer가 하나인 `R1`에서도 위반이 같은 정도로 나오므로(14/108) replica 겹침은 필요하지 않다. 한 batch 안에서 eventSeq가 오름차순이 아닌 경우가 batch 260,925개 중 10개 있었고 원인은 확인하지 못했다(위반 분류에는 쓰지 않았다). **정정([EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md))**: 보관 원자료 전체를 다시 세면 이웃 레코드의 `eventSeq` 감소가 10개인 것은 재현되지만(모두 한 라운드) 분모 260,925는 재현되지 않았다(레코드 2,788,082개, batch 468,193개). 10건은 앞 시도의 미취소 레코드와 다음 시도의 머리가 한 batch에 담긴 실제 현상이다(감사 오류 아님). 이 메커니즘은 로그와 덤프에서 확인한 사실과 추정이 섞여 있다: 사실 = 시도 안에 v1·v2가 있고 실패한 시도, epoch 증가 뒤 batch가 먼저 기록됨, 수정(batch 하나로 제한)으로 위반 0. 추정 = "batch마다 시한이 따로 흘러 앞 batch만 만료되는" 시간 순서의 세부(스모크 한 시행의 로그에서 읽었고 모든 위반에서 확인하지 않았다).
+재검산 결과: 지정된 다섯 라운드에서 덤프로 분류된 325키의 287(88.3%)은 높은 버전 batch가 epoch 증가 직후(`epoch>0`, `baseSequence=0`), 181(56%)은 같은 producerId, 15는 높은 버전 batch `epoch=0`, 59는 낮은 버전 batch의 epoch가 더 높다. 따라서 부분 만료·epoch 증가 메커니즘의 큰 줄기는 지지되지만, batch별 시한이 앞 batch만 만료시킨 정확한 시간 경로는 스모크 DEBUG 1회에서만 관찰했다. 결정: 시간 경로 세부는 현재 근거로 더 일반화하지 않는다. 대안은 위반별 DEBUG timestamp 대조이며, 재검토 조건은 향후 위반 1건 이상에서 해당 timestamp와 dump를 함께 보존하는 것이다. 전체 보관 archive에는 비-NEG 역행 648건이 있고, 629건은 dump batch에 연결됐으며 19건은 `smoke1` dump 부재로 연결되지 않았다. batch 내 `eventSeq` 감소 10건은 260,925 batches가 아니라 아래의 여섯 모드 합계 기준이다.
 
 ### 4. 수정 (F3, 이 PR)
 
@@ -159,14 +159,14 @@ EXP-082의 시험용 참조 소비자(`ReservationEventReferenceConsumer`)를 �
 
 | 가설 | 판정 | 근거 |
 | --- | --- | --- |
-| HA 감사가 거짓 경보 | **기각** | 음성 대조군이 108/108 울림, 장애 없는 대조군 0, 세그먼트 덤프(감사와 독립)에서 위반 키 325개의 batch 순서를 확인(19키는 덤프에서 batch를 못 찾아 확인하지 못함) |
-| HB `max.in.flight`가 원인 | **기각**(F1은 막지 못함) | `R2mif1` 3/108, `R2`와 구별 불가(p=0.19)이고 위반이 존재 |
+| HA 감사가 거짓 경보 | **기각** | 음성 대조군 108/108, 장애 없는 대조군 0. 독립 dump에서 원래 분류 표본 325키를 확인했고, 추가 재검산에서는 629/648키를 연결했다. 나머지 19키는 모두 `smoke1`이며 dump 파일이 없어 batch 식별이 불가능하다고 결정했다. 재검토 조건: 이후 위반을 dump와 연결하지 못한 사례가 1건이라도 생기면 해당 run의 dump 생성 경로를 수정해 재측정한다. |
+| HB `max.in.flight`가 원인 | **원인으로 기각; 효과 크기 미입증은 결정으로 종결** | `R2mif1` 3/108, `R2`와 구별 불가(p=0.19), 위반도 남았다. 결정: 설정 변경 대안은 채택하지 않는다. 재검토 조건: producer 설정 변경 뒤 같은 `pause20` 조건에서 위반 1건 이상이 재현되면 사전등록 후 비교한다. |
 | HC 두 producer 겹침이 원인 | **기각** | `R1` 14/108(13%)로 `R2`와 같거나 더 높음 |
-| HD 새 스택 첫 장애에만 | **기각**(결정 못 함) | 캠페인 2에서 첫 장애 9/180 대 이후 32/360(p=0.12). 캠페인 3 `base`에서는 첫 장애 0/48 대 이후 11/96(p=0.016). 두 캠페인이 서로 반대 방향이라 "첫 장애 때만"이라는 패턴은 지지되지 않는다 |
-| HE cursor 전진·재읽기가 원인 | **지지되지 않음**(직접 시험 안 함) | relay의 읽기 순서는 항상 `event_seq` 순이고 위반 325키가 모두 한 실패 시도 안이었다. 호출 순서 기록은 하지 않았다 |
-| HG 부분 만료(한 파티션에 batch 여럿) | **지지됨** | 위반이 수정(batch 하나로 제한)으로 144 시행-단계에서 0, 운영 `base` 11/144, 위반 88%가 epoch 증가 직후 batch. 시간 순서의 세부는 추정 |
+| HD 새 스택 첫 장애에만 | **일반 규칙으로 채택하지 않음** | 최초 EXP-089 3/19 대 0/71의 초기하 확률은 0.00825(사후 탐색). 독립 재현기 자료: 캠페인 2 첫 9/180 대 이후 32/360(Fisher p=0.1225), 캠페인 3 `base` 첫 0/48 대 이후 11/96(p=0.0161, 반대 방향), EXP-100 BEFORE 첫 2/7 대 이후 0/28(p=0.0353, 사후 탐색). 방향이 재현되지 않아 cold-producer 원인을 지지하지 않는다. 결정: 워밍업을 추가하지 않는다. 대안은 새 stack의 첫/두 번째 `pause20`을 짝지은 재현이다. 재검토 조건: 독립 fresh stack 20개 이상에서 첫 실행 위반률이 이후 실행률보다 높고, 사전 등록 Fisher 검정 p<0.05이면 재검토한다. |
+| HE cursor 전진·재읽기가 원인 | **결정: 범위 밖** | 보관된 629개 dump 연결 위반은 실패 시도에 속하고 relay 로그 읽기는 `event_seq` 순이다. producer API 호출 직전의 순서를 기록한 trace는 없다. 대안은 `send` 호출 전 key/version trace다. 재검토 조건: future/dump 상의 감소 1건이 DB cursor·event_seq의 역행과 동반되면 trace를 추가한다. |
+| HG 부분 만료(한 partition에 batch 여럿) | 큰 줄기 지지됨; 시간 순서 세부는 결정: 일반화하지 않음 | 원래 325 sample 중 287(88.3%) epoch increment 직후 batch; 144-step fix 0 vs base 11. Smoke producer DEBUG 1회만 batch별 timer 경로를 보였으며 all violations에 timestamp trace 없음. 대안은 per-violation DEBUG/send timing; 재검토 조건: future violation 1건에서 dump+timestamp 보존 |
 | (수정 4) 마지막 실패 시도 종료와 unpause의 근접(W∈[0,60]ms) | **반증** | 17개 중 위반 0, 위반 40건 중 37건이 W>600ms |
-| F2 producer 교체 | 채택 안 함 | `R2reset` 10/108, `R2`와 구별 불가 |
+| F2 producer 교체 | **결정: 범위 밖, 채택하지 않음** | `R2reset` 10/108로 `R2`와 구별되지 않았다. 기존 chunk fix가 재현기 0/144 및 실제 스택 0/35이며 producer 교체보다 직접적인 대안이다. 재검토 조건: 같은 fix에서 첫 전달 위반이 1회 이상 발생하면 producer reset을 새 비교군으로 등록한다. |
 
 ### 7. 대안 비교
 
@@ -185,7 +185,7 @@ EXP-082의 시험용 참조 소비자(`ReservationEventReferenceConsumer`)를 �
 
 | 실패 형태 | 탐지 |
 | --- | --- |
-| 덩어리 왕복이 늘어 relay 처리량이 부족해 lag가 쌓임 | `atlas.order.inventory.event.relay.lag_events`, `stalled_seconds` gauge. 정상 부하(초당 40건)에서 덩어리는 하나뿐이라 영향 없음. 한계까지는 측정하지 않았다 |
+| 덩어리 왕복이 늘어 relay 처리량이 부족해 lag가 쌓임 | gauge와 정상부하(40 events/s)만으로 saturation 상한을 평가하지 않음. 실제 포화 backlog-drain ratio는 EXP-100 EXP-105 closure에 기록. 결정: 64KB 외 다른 chunk size 비용은 범위 밖; 재검토 조건은 EXP-100의 ratio <0.8 또는 운영 20% throughput 저하 |
 | 큰 묶음(500)에서 한 덩어리가 파티션 3개에 나뉘어 batch가 여럿으로 돌아감(덩어리 64KB, batch 128KB는 한 파티션 쏠림까지 담지만 레코드 크기 추정이 틀리면 깨짐) | 단위 시험(레코드가 64KB를 넘지 않음)과 `RelayOrderRepro`의 위반 감사. 추정 오차는 batch 크기를 덩어리의 두 배로 둔 이유다 |
 | lease가 덩어리 소요보다 짧아 두 replica가 겹쳐 전송 | `ReservationEventWorker` 생성자가 `lease ≥ 2×send-timeout+5s`를 검사하고 기동 실패로 드러냄. 운영 기본값(PT30S, PT10S)은 통과 |
 | 실패가 반복되어 시한 두 배(약 20초) 동안 scheduler thread가 묶임 | 전용 scheduler thread 하나(기존), `relay.failed` counter와 1분 throttle WARN(기존) |
@@ -222,24 +222,50 @@ EXP-082의 시험용 참조 소비자(`ReservationEventReferenceConsumer`)를 �
 
 - 증명한 것: 이 스택에서 broker pause 뒤 relay 묶음 하나가 한 파티션에 producer batch 여럿으로 걸린 상태에서 실패하면, 높은 버전이 낮은 버전보다 먼저 첫 전달되는 일이 약 6~8%의 시행-단계(한 단계 안에서 workflow의 약 1~2%)에서 일어나고, 묶음을 batch 하나 크기의 덩어리로 나눠 하나씩 끝내면 운영 클래스 144 시행-단계에서 0이었다(95% 상한 2.1%).
 - 증명하지 못한 것:
-  - 위반이 생기는 시간 순서의 세부(batch마다 시한이 따로 흐른다는 부분)는 한 시행의 producer 로그에서 읽었고 모든 위반에서 확인하지 않았다. 한 batch 안에서 순서가 어긋난 10개(260,925개 중)는 설명하지 못했다.
-  - 이슈의 "새 스택 첫 실행에서만"은 재현되지 않았다(HD 판정 참고). 원래 3건이 왜 모두 첫 실행이었는지는 우연으로 보이나 확정하지 못했다.
-  - (정정: [EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md)이 실제 스택에서 AFTER 0/35, BEFORE 2/35를 측정했다.) 실제 DB·앱 두 대·lease를 쓰는 `run-kafka-outage.sh`로 `fix`를 반복하지 않았다(재현기가 DB를 메모리 로그로 대체). `fix`가 실제 앱에서 같은 효과를 낸다는 것은 같은 클래스를 쓴 재현기 결과로만 지지된다.
-  - relay 처리량의 한계, 장기 중단, broker 여러 대, `min.insync.replicas`는 보지 않았다. 처리량은 측정하지 않았다(성공한 시도 소요 중앙값 20 대 16ms, 95퍼센타일 485 대 224ms는 장애 근처 시도에서 본 맥락 값이다).
+  - 실행함: 부분 만료가 먼저·뒤 batch의 순서를 바꾼 사례는 producer DEBUG 1회에서 관찰했다. 결정: 모든 위반에 일반화하는 batch별 deadline 세부는 범위 밖이며, 10건은 [EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md)에서 실제 broker batch 내부 두 구간으로 재현했다. 분모 260,925는 여섯 사전 수정 모드만의 batch 수로 바로잡았다(아래 종결 결과).
+  - "새 스택 첫 실행만"은 일반 규칙으로 채택하지 않는다(HD 표). 원래 3/3이 첫 실행일 확률은 19/90 기준 초기하 0.00825이나, 사후 패턴 선택과 캠페인 2·3 및 EXP-100의 반대 방향 자료 때문에 cold producer 원인으로 결론 내리지 않는다.
+  - 실행함: [EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md)의 실제 DB·앱 2대·lease 스택에서 BEFORE 2/35, AFTER 0/35(p=0.49)였다. 이는 실제 스택 단독으로 차이를 유의하게 구별하지 못했지만, 재현기 `base` 13/179 대 `fix` 0/179(p=0.0002)와 방향이 같다. 결정은 EXP-100 종결 결과에 적었다.
+  - 처리량은 [EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md)의 포화 backlog-drain 측정으로 종결했다(아래 링크). 결정: 10분 이상 중단, 다중 broker·복제·`min.insync.replicas`는 단일 노드·복제 1 설정으로 장애 복구를 검증하지 못하므로 범위 밖이다. 대안은 3 broker KRaft와 replication factor 3이다. 재검토 조건: 운영 배포가 replication factor 3 또는 10분 이상 broker outage SLO를 채택하면 해당 조건 각 n≥3으로 실행한다.
   - 시행 간 독립성: 시행은 같은 broker와 같은 pause 시각을 공유하므로 효과적 독립 단위는 시행-단계보다 적다(라운드 단위로 보면 운영 `base` 4 라운드, `fix` 4 라운드). p 값은 시행-단계를 독립으로 본 것이다.
-  - 소비자 리밸런스는 파티션 3개·소비자 2개·1회 crash다. 세션 만료 시간이 짧은(6초) 설정에서만 보았다.
+  - consumer rebalance 증거는 파티션 3개·consumer 2개·crash 1회·session timeout 6초에 한정된다(n=7 통합 시나리오). 결정: 장시간·반복 rebalance는 범위 밖이며 기존 `(workflowId,version)` 적용 보장은 이 설정에서만 주장한다. 재검토 조건: 배포 session timeout이 6초를 넘거나 rebalance 관련 중복 적용 1건이 생기면 실 DB 통합 시나리오를 추가한다.
 
 ## 주장 표
 
 | 주장 | 근거 | 확신 |
 | --- | --- | --- |
-| 첫 전달 순서 역행은 한 relay 시도 안에서 v1·v2가 함께 나가고 그 시도가 broker pause로 실패한 경우에만 생긴다 | 위반 325키 모두 그런 시도 안(세그먼트 분류와 시도 기록) | confirmed(로컬) |
-| 원인은 한 파티션에 producer batch가 여럿 걸린 상태의 부분 만료와 epoch 증가 | 88%가 epoch 증가 직후 batch, batch 하나로 제한하면 위반 0(144 시행-단계), `max.in.flight=1`·producer 교체·replica 1대로는 안 사라짐 | confirmed(메커니즘의 큰 줄기), 시간 순서 세부는 assumed |
-| 덩어리 전송이 위반을 없앤다 | 운영 클래스 `fix` 0/144(상한 2.1%) 대 `base` 11/144, p=0.0008, 교차 라운드 | confirmed(로컬, 이 재현기·이 부하) |
-| `max.in.flight=1`은 막지 못한다 | 3/108 위반 | confirmed(막지 못함), 효과 크기는 not confirmed |
-| 새 스택 첫 실행에서만 나온다 | 캠페인 2와 3의 방향이 반대 | 기각(not supported) |
+| 첫 전달 순서 역행은 실패한 relay 시도와 연관된다 | 원래 분류 325/325; 전체 재검산 648건 중 629건 dump 연결, 모두 attempt range 안 | confirmed(보관 범위). 19 smoke1 키는 dump 부재로 batch 연결 불가; 일반화는 재검토 조건 참조 |
+| 높은 버전 batch가 epoch 증가 직후에 기록되는 메커니즘 | 재현 표본 287/325(88.3%), fix 0/144; 정확한 batch별 만료 시점은 스모크 DEBUG 1회만 관찰 | 큰 줄기 confirmed; 시간 세부는 결정: 일반화하지 않음. 재검토 조건: 향후 위반의 producer timestamp+dump 동시 보존 |
+| 덩어리 전송이 위반을 없앤다 | 운영 클래스 `fix` 0/144(상한 2.1%) 대 `base` 11/144, p=0.0008, 교차 라운드; 실제 스택 EXP-100 BEFORE 2/35, AFTER 0/35, p=0.49 | 재현기 효과 confirmed; 실제 스택 방향 일치, 단독 차이는 분리 불가(자세한 표본 수·재검토 기준은 EXP-100) |
+| `max.in.flight=1`은 막지 못한다 | 3/108, `R2`와 p=0.19 | 이 조건에서 막지 못함. 설정 효과 크기는 결정: 변경하지 않음; 재검토 조건은 새 producer 설정 비교가 필요한 경우 사전 등록 |
+| 새 스택 첫 실행에서만 나온다 | 최초 3/19 대 0/71(p_hypergeom=0.00825, 사후); 재현 캠페인 2 p=0.1225, 캠페인 3은 반대 방향 p=0.0161, EXP-100 p=0.0353 사후 | 결정: 일반 규칙으로 채택하지 않음; fresh-stack paired 재검토 조건은 가설 표 |
 | 누락은 없다 | 모든 시행에서 누락 0 | confirmed(로컬) |
-| 리밸런스를 건너도 `(workflowId, version)` 효과가 한 번이고 상태가 거꾸로 가지 않는다 | 통합 시험 7회 연속 통과, 변이로 실패 확인 | confirmed(시나리오, n=7), DB 밖 효과는 not confirmed |
-| 실제 앱·DB·lease 조합에서도 위반 0이다 | 재현기만. 이후 EXP-100: 실제 스택 AFTER 0/35, BEFORE 2/35 | 약하게 confirmed(로컬, n=35, 차이는 p = 0.49로 단독 유의하지 않음) |
-| relay 처리량에 영향이 없다 | 측정하지 않음. 이후 EXP-100: 정상 부하(초당 40건)에서 39.9 대 39.9 이벤트/초, 포화는 측정 안 함 | 정상 부하만 confirmed(로컬), 포화는 not confirmed |
-| 한 batch 안 10건의 순서 이탈의 원인 | EXP-100이 보관 원자료에서 앞 시도 꼬리+다음 시도 머리의 두 구간임을 확인(분모 260,925는 정정 대상) | confirmed(사후 탐색) |
+| 리밸런스 뒤 `(workflowId, version)` 실효 1회 적용 | 통합 시험 7회 통과, 변이로 실패 확인 | 해당 시나리오에서 confirmed(n=7). DB 밖/다른 session timeout 효과는 결정: 범위 밖; 재검토 조건은 결과 제한 bullet 참조 |
+| 실제 앱·DB·lease 조합에서 fix가 위반을 줄인다 | EXP-100 BEFORE 2/35, AFTER 0/35; Fisher p=0.49, AFTER 0/35 상한 8.6% | 실제 스택 단독으로 차이 미분리; 재현기 pooled 13/179 대 0/179 p=0.0002와 방향 일치. 표본 수 결정은 EXP-100 |
+| relay 처리량에 영향이 없다 | 정상 40 events/s에서 39.9 대 39.9; saturated backlog-drain ratio는 EXP-100 종결 표 | 정상·포화 각 지표의 측정 결과를 EXP-100이 보고; 64KB 외 다른 chunk 크기 비용은 별도 결정 참조 |
+| batch 내부 10개 eventSeq 감소 | 여섯 사전 수정 모드의 batch 260,925개에서 10개(모두 c2A3: R1 4, R2 4, R2mif1 2); 전체 archive는 468,193 batches | 10건·분모 재현; 10건의 두 구간 원인은 사후 탐색으로 confirmed. EXP-100 상세 |
+
+## EXP-105 종결 결과
+
+재실행 표기: 보관 원자료 재분석(분모 260,925, 325키 분류 재현)은 이전 에이전트가 보고한 값이며 이 에이전트는 원자료를 다시 읽지 않았다: local-only(이전 에이전트 보고). 이 에이전트가 직접 다시 계산한 것은 아래 G16의 초기하 확률과 Fisher p(0.0082, 0.0353)다.
+
+### 1. 재현 가능한 dump 분류와 분모
+
+실행함: 보관한 `dumplog.txt`, `*.topic.tsv`, `*.attempts.tsv`를 입력으로, 토픽 offset에서 첫 v1/v2를 고르고 세그먼트 batch의 `[baseOffset,lastOffset]`와 producerId/epoch/baseSequence를 결합했다. 보관 archive 전체는 2,788,082 records, 468,193 batches다. 비-NEG 첫 전달 역행 648건 중 629건은 dump batch를 찾았고 19건은 모두 `smoke1`이다. `smoke1/dumplog.txt`는 71 bytes(“Dumping” 오류 문구)여서 그 19건을 batch로 분류할 수 없다. 결정: 19건의 batch 상세는 과거 원자료 부재로 범위 밖; 대안은 새 실행에서 broker dump 경로를 확인하는 것, 재검토 조건은 향후 1건이라도 dump 미연결이면 dump 설정을 고친 뒤 재실행하는 것이다.
+
+원래 325키의 분류표는 다섯 라운드(`c2A1`, `c2A3`, `c2B1`, `c2B2`, `main3`)에서 재현됐다: 287/325(88.3%) 높은 버전 batch가 epoch 증가 후 첫 batch, 181/325(55.7%) 동일 producerId, 15건은 높은 batch epoch 0, 59건은 낮은 batch의 epoch가 더 높았다. 원문 “스모크와 캠페인 1~2의 모든 라운드”는 이 다섯 파일의 범위와 일치하지 않아 위와 같이 정정했다; 전체 archive 집계는 629 found + 19 no-dump다.
+
+batch 내 `eventSeq` 감소 분모는 **전체 archive 468,193 batch가 아니라 여섯 사전 수정 mode의 260,925 batch**다: `R1` 36,565 + `R2` 85,194 + `R2mif1` 45,530 + `R2chunk` 38,343 + `R2reset` 37,810 + `R2b100` 17,483 = 260,925. 10건/260,925 = **0.00383%**이며, 10건은 모두 `c2A3`의 R1 4, R2 4, R2mif1 2다. 원래 분모는 여섯 mode의 batch 합으로 재현되며 전체 archive 분모로 읽히지 않도록 정정했다.
+
+집계 절차(실제 명령/입력): `nice python3 recount.py`로 archive round의 `dumplog.txt`에서 mode별 batch header `count`를 합산하고, `nice python3 viol5.py`로 같은 root의 `*.topic.tsv`와 dump offset을 결합했다; 입력 root는 위 round 디렉터리, 각 trial의 `dumplog.txt`, topic TSV, attempts TSV다. 첫 명령은 batch header의 `count`로 mode별 batch/record를 합산하고, 두 번째는 같은 batch offset에서 이웃 `eventSeq` 감소를 센다. 260,925용 입력 mode 목록은 위 6개이며 NEG·Rreal·R2nofault·Rfix 등 나머지 모드는 제외한다. 325 분류 재현 입력은 위에 적은 5개 round이며, 19건은 `smoke1`이다. 분석 스크립트는 일회용으로 저장소에 올리지 않았다.
+
+### 2. “첫 실행만” 가설 G16
+
+실행함: 원래 3/3 first-run concentration의 확률은 90 duplicate-runs 중 19 first-runs일 때 초기하 `C(19,3)/C(90,3)=0.00825` (이항 근사 `(19/90)^3=0.00941`)이다. 다만 사후 패턴 선택이다. 재현기 자료는 캠페인 2 9/180 대 32/360(p=0.1225), 캠페인 3 base 0/48 대 11/96(p=0.0161, 반대 방향), EXP-100 BEFORE 2/7 대 0/28(p=0.0353, 탐색)이다. 캠페인 2·3을 단순 합산한 first 9/228 대 later 43/456는 양측 Fisher p=0.0094이며 첫-run rate가 더 낮은 방향이며, EXP-100을 추가로 합치는 것은 스택·실험 단위가 달라 주 판정으로 사용하지 않았다. 결정: “cold producer 때문에 새 stack 첫 장애에서만 난다”는 일반 규칙으로 채택하지 않고 producer warm-up을 추가하지 않는다. 대안은 fresh stack별 first/second `pause20` 짝비교다. 재검토 조건: 독립 fresh stack 20개 이상에서 first-run 비율이 later-run보다 높고, 사전등록 Fisher p<0.05이면 다시 평가한다.
+
+### 3. 실제 스택 처리량 연결
+
+실행함: 실제 PostgreSQL·Kafka·앱 2대·lease 경로의 saturation 측정과 64KB chunk throughput 결과는 [EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md)의 `EXP-105 종결 결과`에 표와 명령이 있다. 이 문서의 이전 “측정하지 않음” 문장은 해당 결과 링크로 종결했다. 결정: 64KB 이외의 chunk 크기 비용은 동일 backlog·rate·host 조건의 비교가 없어 변경하지 않는다. 재검토 조건: saturation AFTER/BEFORE ratio <0.8이거나 chunk 변경 후 동일 조건의 throughput가 20% 이상 감소하면 chunk 크기를 비교한다.
+
+### 4. 명령과 실행 범위
+
+실제 집계 명령은 `nice python3 recount.py`(mode별 dump batch 수)와 `nice python3 viol5.py`(토픽 TSV·dump offset을 결합한 325-key 분류), `nice python3 viol4.py`(attempt range 결합)였고 input은 저장된 round의 `dumplog.txt`, `*.topic.tsv`, `*.attempts.tsv`다. 집계 스크립트·원자료는 저장소에 넣지 않았다. (추가 가설: 사전 등록 이후 추가—원래 325 표본이 어떤 round 묶음에서 재현되는지, 그리고 dump 누락 19건이 단일 smoke round인지 확인.)

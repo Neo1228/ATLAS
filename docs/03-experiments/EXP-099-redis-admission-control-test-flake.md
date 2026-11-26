@@ -1,13 +1,13 @@
 # EXP-099: RedisStockAdmissionControlTest 간헐 실패는 어디서 나는가
 
 - 질문: 로컬 전체 `clean check`(헤드 `7655f063`)에서 `RedisStockAdmissionControlTest.releaseReturnsQuantityOnceAndConfirmedAdmissionsAreNeverReturned`가 한 번 실패했고 CI는 실패하지 않았다. 원인은 무엇이고, 테스트 결함인가 운영 코드 결함인가?
-- 상태: 분석 완료(단일 호스트 로컬 재현, CI 미측정). 가설·반증 조건·지표·통제는 해당 측정 전에 따로 커밋했고(커밋 이력이 증거), 사전 등록 이후에 추가한 가설(H6~H9)은 해당 절에 표시했다.
+- 상태: 로컬 기전 재현 및 #668 이후 GitHub Actions read-only 관찰 완료. 원래 7655f063 사건의 정확한 예외는 원 로그 소실로 재구성 불가(결정·재검토 조건은 아래). 가설·통제는 측정 전에 커밋했고, 사전등록 뒤 H6~H9를 추가했다.
 - 날짜: 2026-11-25
 - 관련: [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [EXP-063](EXP-063-redis-gate-failopen-and-paired-rerun.md), [점검표](experiment-checklist.md)
 
 ## 문제
 
-`./gradlew clean check`가 재현 가능하게 통과해야 하는데, 입장 게이트 Redis 테스트가 가끔 실패하면 이 저장소에서 병합 전 검증을 돌리는 1인 운영자와 에이전트 여러 명이 실패가 자기 변경 때문인지 알 수 없다. 실패는 한 번뿐이고 로컬 24분짜리 전체 빌드 안에서 났다. 확인된 사실은 둘이다. 첫째, 실패 지점은 테스트 파일 101행 `assertThat(gate.admit("c", one)).isFalse()`("Expecting value to be false but was true")다. 둘째, 이 테스트 파일과 운영 클래스는 이 실패 이전부터 바뀐 적이 없다(`git log`에 `4e3c883b` 한 커밋). 그 밖의 것(실행 시점 호스트 부하, 예외 클래스, 컨테이너 상태)은 기록이 없다.
+`./gradlew clean check`가 재현 가능하게 통과해야 하는데, 입장 게이트 Redis 테스트가 가끔 실패하면 이 저장소에서 병합 전 검증을 돌리는 1인 운영자와 에이전트 여러 명이 실패가 자기 변경 때문인지 알 수 없다. 실패는 한 번뿐이고 로컬 24분짜리 전체 빌드 안에서 났다. 확인된 사실은 둘이다. 첫째, 실패 지점은 테스트 파일 101행 `assertThat(gate.admit("c", one)).isFalse()`("Expecting value to be false but was true")다. 둘째, 이 테스트 파일과 운영 클래스는 이 실패 이전부터 바뀐 적이 없다(`git log`에 `4e3c883b` 한 커밋). 결정: 원래 실행의 load, 예외 클래스, 컨테이너 상태를 입증할 빌드 로그·XML은 보관되지 않아 이 원인 귀속은 범위 밖이다. 대안은 당시 raw log 복구였으나 현재 로컬 원자료가 없어 실행 불가다. 재검토 조건: 같은 assertion이 재발하면 테스트 XML `system-out`에서 `Admission gate unavailable` WARN과 예외 클래스, `fail_open` meter, Redis command latency, `uptime`/Docker state를 함께 보존한다.
 
 코드를 읽고 세운 가설의 출발점: `RedisStockAdmissionControl.admit`은 Redis 호출이 `RuntimeException`을 던지면 거절하지 않고 **통과(true)** 시키고 2초 동안 Redis를 건드리지 않는다(fail-open, 코드 주석과 ADR-0066). 테스트는 `gate()`에서 명령 timeout을 200ms로 둔다. 따라서 `a`나 `b`나 `c`의 Redis 호출이 한 번이라도 200ms를 넘기거나 연결에 실패하면 `c`가 `true`가 되어 101행이 정확히 이 메시지로 실패한다.
 
@@ -18,7 +18,7 @@
 | H1 | 실패는 Redis 명령(또는 첫 연결 핸드셰이크)이 200ms를 넘겨 `RedisCommandTimeoutException`이 나고 fail-open으로 `true`가 된 것이다. 호스트 부하가 원인이다 | 실패한 run에서 `fail_open` 카운터가 0이고 `Admission gate unavailable` WARN도 없다. 또는 같은 환경에서 timeout을 30초로 키운 팔이 200ms 팔과 같은 비율로 실패한다 | run별 실패 여부, `fail_open` 카운터, WARN 예외 클래스, Redis 호출별 지연 | 자연 부하(현재 load1 약 5/11코어)에서 200ms 팔 실패율은 0~1% 수준이라 n=200이면 0건일 수 있다. 대신 호출 지연 최댓값이 200ms보다 얼마나 낮은지(여유)는 측정된다 | 확정이면 시간 값에 결과가 좌우되는 테스트를 결정적으로 고친다(모의 지연 없이 timeout을 키우고 `fail_open`을 단정). 운영 기본값 200ms는 EXP-063이 유지를 지지하므로 바꾸지 않는다 |
 | H2 | 반환과 승인 사이의 실제 경쟁이나 Lua 논리 결함이다. Redis가 정상 응답했는데 `c`가 승인됐다 | 관측된 실패가 모두 `fail_open` 1 이상이면 H2는 그 실패를 설명하지 못하므로 기각한다(테스트는 단일 스레드이고 Lua 스크립트는 Redis에서 원자적이다). 실패가 한 건도 없으면 기각하지 못하고 실패율 상한만 얻는다 | 실패 run의 `fail_open` | 0건(코드상 단일 스레드 순차 호출) | `fail_open` 0인 실패가 한 건이라도 나오면 운영 결함이므로 ADR-0094와 회귀 테스트로 운영 코드를 고친다 |
 | H3 | key 충돌이나 이전 실행의 잔여 상태다. `a`~`f` 같은 고정 key가 SKU처럼 유일하지 않아 같은 Redis에 남은 decision이 영향을 준다 | 같은 Redis에 시나리오를 두 번 연속 재생해도 단정이 모두 통과한다. 컨테이너가 클래스마다 새로 뜨고 재사용 설정이 없다 | 같은 컨테이너 2연속 재생의 단정 결과, `testcontainers.reuse.enable` 설정 | 통과(재생 때 `c`는 이미 `0`이 기록돼 있어 `false`) | 기각이면 변경 없음 |
-| H4 | 컨테이너 준비 순서다. 포트는 열렸지만 Redis가 아직 연결을 받지 못해 첫 호출이 `RedisConnectionException`을 내고 fail-open이 된다. 클래스에서 처음 실행되는 테스트에서만 나야 한다 | WARN 예외 클래스가 `RedisConnectionException`인 실패가 한 건도 없다. 또는 실패가 첫 테스트가 아닌 곳에서만 난다 | 실패 run의 WARN 예외 클래스, 실패한 테스트의 클래스 안 실행 순서 | 0건 | 확정이면 첫 연결에서 재시도(ping)를 테스트에 넣는다 |
+| H4 | 컨테이너 준비 순서다. 포트는 열렸지만 Redis가 아직 연결을 받지 못해 첫 호출이 `RedisConnectionException`을 내고 fail-open이 된다. 클래스에서 처음 실행되는 테스트에서만 나야 한다 | WARN 예외 클래스가 `RedisConnectionException`인 실패가 한 건도 없다. 또는 실패가 첫 테스트가 아닌 곳에서만 난다 | 실패 run의 WARN 예외 클래스, 실패한 테스트의 클래스 안 실행 순서 | 0건 | 컨테이너 미준비 원인으로는 기각. 실패 WARN `RedisConnectionException`은 `ConnectedEvent` 뒤 연결 초기화 timeout이다. 결정: 추가 retry를 넣지 않는다. 재검토 조건: 재발 시 WARN 시각과 container healthy/connected timestamp를 XML·Docker inspect로 보존한다 |
 | H5 | 이웃 클래스와 같은 JVM(CI는 shard당 2 fork)에서 CPU·GC 경쟁이 커져 H1이 더 자주 난다 | 이웃을 붙인 팔의 실패율이 단독 팔 이하이고 호출 지연 분포도 이동하지 않는다 | 팔별 실패율, 호출 지연 p99·max | 단독 팔과 같다(0~1%) | 기각이면 shard 구성은 건드리지 않는다 |
 
 H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2는 fail-open이 없는 실패를 뜻하므로 H1과 배타적이다.
@@ -97,7 +97,7 @@ H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2�
 | 10000ms | 0/400 | - | 21 / 37 / 46 / 73 | 74 / 2 / 0 |
 
 - `connect()` 전체는 p50 257~261ms, 최댓값 500~568ms(Netty·DNS 리졸버 초기화 포함)인데 timeout 200ms에서도 실패하지 않는다. 즉 연결 전체가 아니라 연결 직후 핸드셰이크 구간만 timeout에 걸린다. 첫 `EVAL`은 p50 6ms, 최댓값 24ms(timeout 10000 팔).
-- 핸드셰이크가 30ms를 넘는 비율(11~19%)이 30ms 팔의 실패율(3.75%)과 맞지 않는다. 핸드셰이크 시간만으로 30ms 팔의 실패율을 설명하지는 못한다(원인 미확정, 아래 H8).
+- 실행함: handshake >30ms 비율은 11–19%, 30ms-arm fail rate 3.75%로 사전 예측과 불일치. 결정: handshake elapsed만으로 H8 failure rate를 설명하지 않는다. 대안은 Lettuce timeout interval 계측; 재검토 조건: 같은 arm에서 ≥20 timeout failures 및 interval coverage 확보.
 
 ## 결과 3: CPU 기아 (JVM `nice 15`, hog `nice 5` 22개, load1 중앙값 약 110~200)
 
@@ -127,20 +127,20 @@ H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2�
 
 ## 결과 5: shard JVM(이웃 클래스와 같은 JVM) (n=12)
 
-`atlas.test.shard=1/4` 필터로 같은 JVM에서 클래스 27개(테스트 132건)를 실행했다. Redis 테스트 4건은 매번 81~84번째로 실행됐다. 12 run, 48/48 통과. Redis 테스트 구간(0.85~1.64초)과 겹친 GC 정지(`-Xlog:gc`)의 최댓값은 20.7ms다. 이 팔에서는 `ModuleBoundaryTest` 1건이 매 run 실패했다. 실험용 실행기(기본 패키지 클래스)가 클래스 경로에 있어서 생긴 인공물로 보이나 **원인은 확인하지 않았다**. Redis 테스트와 무관하다.
+`atlas.test.shard=1/4` 필터에서 12 run, 48/48 Redis 테스트는 통과했으나 `ModuleBoundaryTest`는 매 run 실패했다. 별도 `P3Run` 재현에서 실험 runner classpath의 `RedisStockAdmissionControlProbe`가 ArchUnit production package rule을 위반(76건)했고, probe classpath를 뺀 대조는 7/7 규칙 통과했다. 결정: 실험 runner classpath artifact로 종결하며 재검토 조건은 정상 Gradle `ModuleBoundaryTest` failure 1건이다.
 
 ## 가설 판정
 
 | ID | 판정 | 근거 |
 | --- | --- | --- |
-| H1 (명령·연결 timeout 뒤 fail-open) | **기전 확인(재현함), 원래 사건은 확정 못 함** | 탐침 팔의 실패 770건 모두 `fail_open` > 0, 실제 클래스도 CPU 기아에서 같은 101행으로 6/45 실패하고 WARN이 fail-open 증거였다. 자연 부하에서는 `real` 0/250이다. 원래 실패의 예외 클래스는 기록이 없어서 같은 원인이었다고 확정하지 못한다 |
-| H2 (실제 경쟁·Lua 결함) | 근거 없음 | `fail_open`=0인 실패 0건. 실패율의 상한이 아니라 "관측된 모든 실패가 fail-open으로 설명된다"는 뜻이다. 운영 코드는 건드리지 않는다 |
+| H1 (명령·연결 timeout 뒤 fail-open) | 기전 재현; 원 사건 귀속은 결정: 범위 밖 | 탐침 770 failures 모두 fail_open>0, real CPU-starvation arm 6/45; 원 사건 exception/XML 소실. 재검토 조건: 재발 시 XML WARN exception, fail_open, latency, host load 동시 보존 |
+| H2 (실제 경쟁·Lua 결함) | 결정: 이 관측 표본에서는 증거 없음, 운영 결함으로 판정하지 않음 | `fail_open=0`인 실패 0건. 대안은 Redis 정상응답 후 Lua decision trace; 재검토 조건: fail_open=0인 assertion failure 1건 |
 | H3 (key 충돌·잔여 상태) | 기각 | 같은 컨테이너에서 3회 연속 재생 3/3 통과, 재사용 설정 없음. 코드상으로도 잔여 decision은 이 단정을 `true`로 만들 수 없다(`c`의 decision은 `0`) |
-| H4 (컨테이너 준비 순서) | 기각하지 못함, 지지 근거 없음 | 실패 WARN 예외는 `RedisConnectionException`(연결 초기화 timeout)이었지만 이는 "컨테이너가 준비되지 않아서"가 아니라 "Redis가 정상이어도 핸드셰이크가 timeout 안에 못 끝남"(`ConnectedEvent` 발생 뒤 timeout)이다. 컨테이너 시작 직후 실패는 구분하지 못했다. 이 테스트가 클래스에서 항상 첫 번째로 실행되므로(250/250) 콜드 JVM 첫 연결을 맨 먼저 치르는 것은 사실이다 |
-| H5 (이웃 클래스, 같은 JVM) | 지지하지 못함 | shard JVM 0/48, 단독 0/250(자연 부하). 표본이 작아 차이가 없다고 말하지는 못한다(상한 6%) |
-| H6 (GC 정지·JVM 정지) | 지지하지 못함(GC) | shard JVM에서 Redis 구간과 겹친 GC 정지 최댓값 20.7ms. CPU 기아는 실제로 같은 증상을 만든다(결과 3) |
+| H4 (컨테이너 준비 순서) | 제어한 timeout 경로와 원래 사건을 분리해 종결 | 관측한 WARN은 `RedisConnectionException`; `ConnectedEvent` 뒤 연결 초기화 timeout이었다. 그러나 7655f063 원 사건에는 readiness timestamp가 없다. 결정: 원 사건의 준비 순서 귀속은 범위 밖이며 추가 ping/retry는 채택하지 않는다. 대안은 재발 시 `docker inspect` healthy timestamp와 first connection event를 비교한다. 재검토 조건: WARN가 healthy/ConnectedEvent 이전에 발생한 실패 1건 |
+| H5 (이웃 클래스, 같은 JVM) | 결정: 효과를 입증하지 못했고 shard 변경은 하지 않음 | shard JVM Redis test 0/48, standalone 0/250. 작은 표본으로 동등성을 주장하지 않는다. 재검토 조건: 이웃 class 조건에서 Redis failure 1건 또는 CI Redis class 100회 도달 |
+| H6 (GC 정지·JVM 정지) | GC 원인은 결정: 현재 표본에서 지지되지 않음; CPU starvation 경로는 재현됨 | Redis 구간 중 GC max 20.7ms(n=12), CPU starvation에서 동일 assertion fail-open 발생. 재검토 조건: Redis 호출과 겹친 GC pause ≥100ms 또는 재발 XML에 GC pause correlation |
 | H7 (연결은 timeout 밖) | **기각** | 30ms 팔이 12/250 실패했고 9건은 `Connection initialization timed out after 30 millisecond(s)`. 사전 예측(30ms 팔 0건)이 틀렸다 |
-| H8 (핸드셰이크 시간이 30ms 팔 실패율을 결정) | 질적으로만 확인, 양적 판정 기준은 충족하지 못함 | 연결 초기화 timeout이 실패의 9/15를 차지한다. 그러나 사전에 적은 기준(핸드셰이크 > 30ms 비율 ≈ 30ms 팔 실패율)과 달리 비율이 11~19% 대 3.75%로 어긋난다. 나머지 6/15는 첫 명령 timeout이다. 핸드셰이크 계측이 Lettuce 내부 timeout 구간 전체를 덮지 않는 것으로 보이나 확인하지 않았다 |
+| H8 (핸드셰이크가 30ms arm failure rate를 결정) | 결정: 정량 연관성은 이 실험에서 입증되지 않음 | connection-init timeout은 failures 9/15였으나 >30ms handshake 11–19%와 30ms-arm fail 3.75%가 사전 예측과 불일치, 나머지 6/15는 first-command timeout. 대안은 Lettuce timeout 구간 계측. 재검토 조건: 향후 동일 arm에서 ≥20 timeout failures를 수집하고 계측 구간을 확인 |
 | H9 (CPU 기아에서 200ms도 넘김) | **확인** | 연결 단계 2/40, 클래스 6/45. 사전 예측("200ms에는 못 미칠 것")은 틀렸다(핸드셰이크 최댓값 234~248ms) |
 
 ## 결정
@@ -148,7 +148,7 @@ H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2�
 - **테스트만 고친다**(`RedisStockAdmissionControlTest.gate()`의 명령 timeout 200ms → 30초). 이 테스트들이 검증하려는 것은 승인·반환·확정 논리와 SKU 시드이고 timeout이 아니다. 운영 `command-timeout` 기본값(200ms)은 바꾸지 않는다. 이유는 EXP-063이 200ms 유지를 지지했고, 운영의 fail-open이 설계 의도이기 때문이다(ADR-0066).
 - `unreachableRedisFallsThroughInsteadOfRejectingOrders`도 같은 `gate()`를 쓰므로 timeout이 30초가 되지만 영향이 없다. 이 테스트의 WARN 예외 클래스는 매번 `RedisConnectionException`(연결 거부)이고 timeout을 기다리지 않는다(`probe200` 250/250, WARN 줄 250개, `RedisCommandTimeoutException` 0).
 - 운영 의미: 부팅 직후 첫 요청이 CPU가 극도로 모자란 호스트에서 연결 초기화 timeout을 만나면 fail-open(PostgreSQL 경로)으로 처리된다. 설계상 허용된 동작이므로 코드는 바꾸지 않는다. 이 문서의 수치(콜드 핸드셰이크 p99 46ms)는 `command-timeout` 설정을 줄이려는 사람이 하한을 알 수 있게 남긴다.
-- 원래 로컬 실패(`7655f063`, 24분 전체 빌드)는 **같은 원인이었다고 확정하지 못한다**. 같은 단정이 같은 기전(fail-open)으로 재현되는 조건(호스트 CPU 기아)이 존재함은 확인했다. 그 당시 호스트 부하와 예외 클래스는 기록이 없다.
+- 결정: 7655f063 원래 failure가 같은 기전이었다고 귀속하는 것은 범위 밖이다. 당시 log/XML은 보존되지 않아 exception을 복구할 수 없고, 현재 같은 assertion의 fail-open 기전은 CPU starvation에서 재현됐다. 대안은 원 artifact 복구(현재 없음); 재검토 조건: 같은 failure가 1회 재발하면 XML `system-out` WARN exception, `fail_open`, command latency, host load를 함께 보존한다.
 
 ## 주장 표
 
@@ -157,13 +157,13 @@ H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2�
 | 이 테스트가 101행에서 실패하는 경로가 있다: Redis 호출이 timeout을 넘기면 fail-open이 되어 `c`가 `true`가 된다 | 음성 통제 247/250, `probe30` 10건, 지연 주입 10/10, pause 변이 12/12, 모두 `fail_open`>0 | 확인됨(confirmed) |
 | 실제 클래스(수정 전)가 CPU 기아에서 같은 단정으로 실패한다 | `real` 6/45 run(101행 2건), 같은 부하에서 `orig` 3/60 | 확인됨(로컬, 단일 호스트) |
 | 자연 부하(load1 약 10/11코어)에서 수정 전 실제 클래스의 실패율 | 0/250, 상한 1.2% | 확인됨(0건, 상한만 말한다) |
-| 원래 로컬 실패가 이 기전이었다 | 같은 단정, 재현 가능한 조건 존재. 당시 예외 클래스·부하 기록 없음 | 확정하지 못함 |
+| 원래 로컬 실패가 이 기전이었다 | 현재 같은 assertion의 fail-open 경로를 CPU starvation에서 재현했지만, 7655f063의 exception/log/XML 소실 | 결정: 원 사건 귀속은 범위 밖; 같은 기전의 재현은 원인 가능성을 보인다. 재검토 조건: 재발 시 XML `system-out`의 WARN exception class, `fail_open`, command latency, host load를 보존 |
 | 연결 초기화(핸드셰이크)가 명령 timeout 안에 있고 콜드 JVM에서 p99 46ms, CPU 기아에서 최대 약 250ms | 결과 2, 3 | 확인됨(로컬) |
 | 수정(30초)이 이 실패 경로를 없앤다 | 지연 주입 0/10(대조 10/10), pause 0/12(변이 12/12), CPU 기아 0/60 | 확인됨(수정으로 결정적 팔이 바뀜). CPU 기아만의 쌍 비교는 p=0.12로 유의하지 않음 |
-| 운영 코드 결함은 없다 | 실패 770건이 모두 `fail_open`으로 설명됨 | 이 실험의 범위에서는 근거 없음. 없다고 증명하지는 않았다 |
-| GC 정지가 원인이다 | shard JVM 12회, 겹친 최대 정지 20.7ms | 지지하지 못함(n=12) |
-| CI 환경(shard당 2 fork, GitHub runner)에서의 실패율 | 측정하지 않았다 | 확인하지 못함 |
-| `ModuleBoundaryTest`가 실험용 실행기에서 실패한 이유 | 조사하지 않았다 | 확인하지 못함 |
+| 운영 코드 결함을 배제할 수 있는가 | 실패 770건 모두 `fail_open`으로 설명됐고 `fail_open=0`인 failure는 0건 | 결정: 이번 표본에 운영 Lua 결함 증거 없음; 부재를 증명하지 않는다. 대안은 fail_open=0인 실패를 capture. 재검토 조건: 그런 failure 1건 |
+| GC 정지가 원인이다 | Redis interval과 겹친 pause max 20.7ms(n=12) | 결정: 현재 표본에서 지지하지 않음; CPU-starvation 경로 별도 재현. 재검토 조건: Redis call 중 GC pause ≥100ms 또는 recurrence log correlation |
+| #668 merge 뒤 CI에서 Redis 테스트 실패 | 실제 Redis test class `CLASSTIME` 3회, Redis `FAILED` 0; 정확 95% 상한 63.2%(rule-of-three 근사 100%) | 실행함: 같은 방법으로 2026-11-26T03:30Z에 다시 읽어 병합 뒤 Backend CI 12 runs, shard job 24개, Redis class 실행 6회, `FAILED` 0(정확 95% 상한 39.3%). 결정(유형 2): 실패율의 실제 값은 주장하지 않는다. 재검토 조건: Redis class 실행 누적 100회(상한 약 3%) 또는 그 전에 Redis `FAILED`/fail-open WARN 1건 |
+| 실험 runner에서 `ModuleBoundaryTest`가 실패한 이유 | `P3Run shard com.atlas.ModuleBoundaryTest`: 1/7 architecture rule failed (76 violations); probe classpath를 뺀 control은 7/7 success | 실행함: runner가 `com.atlas.application.service.impl.RedisStockAdmissionControlProbe`를 production class로 import한 classpath artifact로 종결 |
 
 ## 전체 검증
 
@@ -184,3 +184,21 @@ H1과 H4는 둘 다 fail-open 경로이고 예외 클래스로 구분된다. H2�
 - 집계: run마다 한 줄 JSON(팔, 라운드, load1, 테스트별 상태·메시지, WARN 예외 클래스 건수)을 저장소 밖 임시 폴더에 쌓고 팔별로 센 값이 위 표다. 팔별 n은 표에 적었다. 루프 소요: 본 루프 1,000 run 약 55분, 연결 단계 1,200 run 약 13분, CPU 기아 연결 단계 약 20분, CPU 기아 클래스 단독 90 run 약 35분, 수정 비교 120 run 약 40분, shard 12 run 약 29분.
 - 컨테이너: 루프는 순차 실행이라 한 번에 Testcontainers 컨테이너 1개(측정 대조용으로 직접 띄운 `atlasexp=p3` 라벨 Redis 1개)만 썼고, 종료 뒤 라벨 `atlasexp=p3` 컨테이너 0개, `redis:7.4-alpine` 이미지 컨테이너 0개를 확인했다. Testcontainers가 띄운 컨테이너는 라벨을 못 붙이므로(위 탐침 복사본 제외) 이미지로 확인했다.
 - 교란 요인: 같은 호스트에서 다른 에이전트의 부하 실험(load1 5~16, CPU 기아 구간은 최대 약 240)이 돌았다. 호스트 스왑 사용량이 8GB 중 약 6.9GB였다(측정 시작 시점 1회). 본 루프 1,000 run은 연속 55분이라 라운드마다 팔을 번갈아 실행해 시간대 영향이 한 팔에 몰리지 않게 했다.
+
+## EXP-105 종결 결과
+
+재실행 표기: 아래 CI 관찰의 2026-11-25 값은 이전 에이전트 보고이며, 이 에이전트가 같은 읽기 전용 방법으로 다시 읽은 값(2026-11-26T03:30Z, 병합 뒤 12 runs·shard job 24개·Redis class 6회·`FAILED` 0)은 주장 표 해당 행과 아래 재현 명령 문단에 적었다.
+
+### CI 관찰 (#668 이후; GitHub API read-only GET)
+
+PR #668은 origin/main에서 `b071a963`로 2026-11-25 16:35:45Z에 병합됐다. 실행함: `gh api repos/Neo1228/ATLAS/actions/workflows/<Backend-CI-ID>/runs?per_page=100&page=<n>`에서 확인한 Backend CI 기록은 2026-11-02~11-25의 1,083 workflow runs다. 비교 모집단은 완료된 `push` on `main`과 `pull_request`: 병합 전 884 runs, 919 attempts(성공 783, 실패 82, 취소 19); 병합 뒤 6 runs/6 attempts(3 main push, 3 PR), 6/6 성공. 워크플로 수준 집계이므로 Redis 단위 실패율로 해석하지 않는다.
+
+실행함: job endpoint `gh api repos/Neo1228/ATLAS/actions/runs/<run-id>/attempts/<attempt>/jobs?per_page=100`으로 completed Application test shard jobs를 세고 `gh api --allow-escape-sequences repos/Neo1228/ATLAS/actions/jobs/<job-id>/logs`로 log body를 저장·검색했다. (이 GET은 download redirect를 따라가야 하므로 `--allow-escape-sequences`를 썼다; 로그 GET 응답은 HTTP 200.) 성공/실패 shard attempts 820개(전 808, 후 12) 중 log의 `CLASSTIME ... RedisStockAdmissionControlTest`로 확인된 실제 class execution은 전 141회, 후 3회다. Redis test `FAILED` line은 전 0/141(95% rule-of-three 상한 2.13%, exact 2.10%), 후 0/3(근사 상한 100%, exact 63.2%)다. 후 관찰은 아직 CI failure rate를 정밀하게 추정할 수 없는 작은 표본이다. 13개 실패 shard attempt는 모두 병합 전이었고 Redis `FAILED`는 없었다: 로그에 명시된 7건은 BuyerFlow 1, PayPal 1, LocationFault 5; 6건은 `prometheus-metrics` dependency download 실패였다. 다른 test/job 실패를 Redis failure로 세지 않았다.
+
+재현 명령(읽기 전용): `gh api repos/Neo1228/ATLAS/actions/workflows/<Backend-CI-ID>/runs?per_page=100&page=<n>`; 각 run attempt마다 `gh api repos/Neo1228/ATLAS/actions/runs/<run-id>/attempts/<attempt>/jobs?per_page=100`; shard log는 `gh api --allow-escape-sequences repos/Neo1228/ATLAS/actions/jobs/<job-id>/logs`. 집계 열: run event/branch/conclusion/attempt, shard job conclusion, `CLASSTIME` class-name hit, `FAILED` test-name hit. 결정: CI에서 #668 이후 Redis test failure는 0/3로 관찰됐으나 테스트별 실패율의 실제 값은 확정하지 않는다. 대안은 관찰을 늘리는 것. 재검토 조건: Redis class execution이 100회가 되거나 그 전에 Redis test `FAILED`/fail-open WARN이 1건이면 다시 판정한다. 2026-11-26T03:30Z 재수집(읽기 전용 `gh api`, 같은 방법): 병합 뒤 Backend CI 12 runs, shard job 24개 중 Redis class 실행 6회(전부 `Application tests (1/4)`, success), `FAILED` 0/6(정확 95% 상한 39.3%). 후 관찰은 6/100에서 멈췄고 이 속도(약 12시간에 6회)로는 100회까지 약 7일이 더 걸린다(6회/11시간에서의 산술이며 예측이 아니다).
+
+로그 캡처: post-#668 successful jobs는 `if: failure()` upload step을 실행하지 않아 XML artifact가 없다. 실패 job artifact는 retention 7일이며 XML `system-out`에 WARN을 포함한다(artifact GET 200, 포함 XML 33개 중 WARN 포함 15개). 보유 local test XML에서도 `Admission gate unavailable ... RedisConnectionException` 1행을 확인했다. #668은 test timeout을 200ms에서 30초로 늘렸으나 exception logging/capture를 새로 추가하지 않았다; production WARN 및 XML `system-out`은 이미 예외 클래스와 함께 기록한다. 원래 7655f063 실행의 XML/log는 없어 당시 exception class는 여전히 복구할 수 없다. 결정: 원래 사건은 같은 fail-open 기전일 가능성이 재현됐지만 그 기전으로 확정하지 않는다. 대안은 사건 재발 시 artifact를 보존하는 것이다. 재검토 조건: 해당 assertion 재발 1회에서 WARN exception class, `fail_open` meter, command latency, host load를 같은 run에 수집한다.
+
+### ModuleBoundaryTest runner 원인
+
+실행함: 문서의 launcher 접근을 사용해 `java -Xmx512m -cp "<probe classes>:<Gradle test runtimeClasspath>" P3Run shard com.atlas.ModuleBoundaryTest`. 7개 rule 중 6개 성공, `dependenciesRespectLayeredModulePackages` 1개 실패(exit 0은 experiment runner가 `System.exit(0)`이기 때문). `ClassFileImporter.importPackages("com.atlas")`가 probe directory의 `RedisStockAdmissionControlProbe`를 test source 위치가 아닌 production package에서 읽어 `@Testcontainers`, `GenericContainer`, AssertJ/JUnit dependency 등 76 architecture violations를 냈다. 대조: probe classes directory 없이 같은 7-rule class 실행은 7/7 success. 결정: 실패는 실험 runner classpath artifact이며 CI/Gradle의 구조 테스트 실패가 아니다. 원인·대안·재검토 trigger는 위 claim과 같다.

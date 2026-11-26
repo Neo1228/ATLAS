@@ -4,10 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.Test;
@@ -120,5 +123,68 @@ class ReturnPolicyTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatCode(() -> new ReturnPolicy(Duration.ofHours(1), true, 1, SEOUL)).doesNotThrowAnyException();
         assertThatCode(() -> new ReturnPolicy(Duration.ofDays(365), true, 30, SEOUL)).doesNotThrowAnyException();
+    }
+
+    /**
+     * 시간대(UTC·서울·뉴욕) x 영업일 수(1·5·30)에서, 뉴욕의 일광 절약 시간 전환(2026-03-08 개시, 2026-11-01 종료)을 걸친
+     * 모든 수령 시각이 같은 불변식을 지킨다(EXP-093, EXP-105 G3). 마감은 현지 자정이고, 마감 1초 전의 현지 날짜는 평일이며,
+     * 수령 다음 날부터 그날까지 평일이 정확히 N개이고, 초과 판정은 마감 정각에서만 바뀐다.
+     */
+    @Test
+    void inspectionDeadlineInvariantsHoldAcrossZonesAndDaylightSavingTransitions() {
+        List<ZoneId> zones = List.of(ZoneId.of("UTC"), SEOUL, ZoneId.of("America/New_York"));
+        List<Instant> starts = List.of(Instant.parse("2026-03-04T00:00:00Z"), Instant.parse("2026-10-29T00:00:00Z"));
+        int checked = 0;
+        for (ZoneId zone : zones) {
+            for (int businessDays : new int[] {1, 5, 30}) {
+                ReturnPolicy policy = new ReturnPolicy(Duration.ofDays(7), true, businessDays, zone);
+                for (Instant start : starts) {
+                    // 열흘을 한 시간 간격으로, 각 시각의 1초 전과 정각을 함께 본다(현지 자정 경계 포함).
+                    for (int hour = 0; hour < 24 * 10; hour++) {
+                        for (int offsetSeconds : new int[] {-1, 0}) {
+                            Instant received = start.plusSeconds(hour * 3600L + offsetSeconds);
+                            Instant dueAt = policy.inspectionDueAt(received);
+
+                            assertThat(dueAt.atZone(zone).toLocalTime().toNanoOfDay()).isZero();
+                            LocalDate lastDay = dueAt.minusSeconds(1).atZone(zone).toLocalDate();
+                            assertThat(lastDay.getDayOfWeek()).isNotIn(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY);
+                            long weekdays = 0;
+                            LocalDate receivedDay = received.atZone(zone).toLocalDate();
+                            for (LocalDate day = receivedDay.plusDays(1); !day.isAfter(lastDay); day = day.plusDays(1)) {
+                                if (day.getDayOfWeek() != DayOfWeek.SATURDAY && day.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                                    weekdays++;
+                                }
+                            }
+                            assertThat(weekdays).isEqualTo(businessDays);
+                            assertThat(policy.isInspectionOverdue(received, dueAt.minusSeconds(1))).isFalse();
+                            assertThat(policy.isInspectionOverdue(received, dueAt)).isTrue();
+                            assertThat(policy.isInspectionOverdue(received, dueAt.plusSeconds(1))).isTrue();
+                            checked++;
+                        }
+                    }
+                }
+            }
+        }
+        assertThat(checked).isEqualTo(3 * 3 * 2 * 240 * 2);
+    }
+
+    /**
+     * 반품 기간 경계는 일광 절약 시간 전환을 걸쳐도 정확히 {@code window}(Duration)이고 +-1초에서만 판정이 바뀐다
+     * (EXP-093, EXP-105 G3). 업무 시간대 UTC·서울·뉴욕 모두에서 기간이 동일해야 한다.
+     */
+    @ParameterizedTest(name = "배송 {0} 기간 {1}")
+    @CsvSource({
+            "2026-03-07T12:00:00Z, PT1H", "2026-03-07T12:00:00Z, P7D", "2026-03-07T12:00:00Z, P30D",
+            "2026-10-31T12:00:00Z, PT1H", "2026-10-31T12:00:00Z, P7D", "2026-10-31T12:00:00Z, P30D"})
+    void windowBoundaryIsExactAcrossDaylightSavingTransitions(Instant delivered, Duration window) {
+        for (ZoneId zone : List.of(ZoneId.of("UTC"), SEOUL, ZoneId.of("America/New_York"))) {
+            ReturnPolicy policy = new ReturnPolicy(window, true, 5, zone);
+            Instant end = policy.returnWindowEndsAt(delivered);
+
+            assertThat(Duration.between(delivered, end)).isEqualTo(window);
+            assertThat(policy.allowsReturn(delivered, end.minusSeconds(1))).isTrue();
+            assertThat(policy.allowsReturn(delivered, end)).isTrue();
+            assertThat(policy.allowsReturn(delivered, end.plusSeconds(1))).isFalse();
+        }
     }
 }

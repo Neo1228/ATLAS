@@ -1,13 +1,13 @@
 # EXP-089: Kafka broker 장애 10종을 조건별 5회 반복하고 하네스를 저장소에 올리면 relay는 이벤트를 잃거나 순서를 뒤집지 않는가
 
 - 질문: [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md)의 relay(`ReservationEventWorker` → `KafkaReservationEventPublisher`)는 broker가 멈추거나 죽거나 느려져도 이벤트를 잃지 않고 키(workflowId)별 순서를 지키는가? 중복은 얼마나, 어떤 조건에서 생기는가? broker가 돌아오면 밀린 이벤트가 모두 전달되는가?
-- 상태: 탐색 실험 완료(로컬). 10개 조건 × n=5(50회)에 더해 batch·로그 설정 전후 비교 40회, 가설 검증용 보조 실행. **가설은 실행 전에 적었고** 그 커밋(`docs(experiments): Kafka 중단 반복 측정의 가설을 실행 전에 기록 (EXP-089)`)이 git 이력에 남아 있다. 하네스는 `load-tests/kafka-outage/`에 올렸다. 발견 1건(첫 전달 순서 역행, [#644](https://github.com/Neo1228/ATLAS/issues/644))은 원인을 확정하지 못했다.
+- 상태: 탐색 완료. #644 첫 전달 역행의 producer/broker mechanism은 [EXP-091](EXP-091-kafka-first-delivery-order.md)에서 broker dump로 규명하고, 실제 앱 경로는 [EXP-100](EXP-100-kafka-first-delivery-fix-real-stack.md)에서 별도 측정했다.
 - 날짜: 2026-11-25
 - 관련: [ADR-0082](../02-decisions/adr/ADR-0082-relay-batch-size-and-producer-log.md), [EXP-072](EXP-072-kafka-outage-relay.md)(n=1, 하네스 미공개), [EXP-078](EXP-078-relay-lease-length.md)(lease 길이), [EXP-082](EXP-082-event-consumer-contract.md)(소비자 참조 구현), [EXP-085](EXP-085-fault-injection-repeated.md)(같은 구조의 하네스), [EXP-068](EXP-068-stage-evidence-map.md)(6단계 표), [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md), 이슈 [#638](https://github.com/Neo1228/ATLAS/issues/638)
 
 ## 왜 했는가
 
-[EXP-072](EXP-072-kafka-outage-relay.md)는 시나리오마다 한 번 실행했다. "누락 0"은 8개 실행 모두에서 나왔지만 중복 89건(`pause30`)과 0건(`kill20`, `stop10x2`)이 우연인지 조건 때문인지 구별할 수 없고, 하네스가 저장소에 없어 다시 돌릴 수 없다. 네트워크 지연·손실, 토픽 파티션이 여러 개인 경우, send-timeout과 lease보다 긴 중단은 측정하지 않았다. 소비자 쪽은 [EXP-082](EXP-082-event-consumer-contract.md)가 결정적 테스트로 확인했으나 broker 장애를 길게 겪는 실제 relay 경로는 아니다.
+네트워크 delay2s/delay6s/loss25%, 3-partition topic, pause45s(send-timeout 10s·lease 30s 초과)는 측정했다. 10분 outage, burst-loss, broker replication/failover, Kafka+DB 동시 장애와 application restart는 이 단일-node suite에서 실행하지 않았다; EXP-105 decision/revisit triggers를 아래에 기록한다.
 
 ## 가설 (실행 전에 적음)
 
@@ -76,7 +76,7 @@
 - 검증 통과 = 누락 0, 예상 밖 메시지 0, 첫 전달 순서 위반 0, 키가 한 파티션에만 있음, 토픽 전체를 읽음, cursor가 로그 끝까지 도달, cursor가 거꾸로 가지 않음, 장애 중 cursor 이동 0. 모든 실행의 `event-id` 헤더·payload `eventId`는 `workflowId:aggregateVersion`과 일치했다.
 - 같은 스택의 DB에는 이전 실행의 이벤트도 있다. 감사는 실행의 `idempotency_key` 접두사로 이 실행 workflow만 대조하고, 모든 실행의 DB 이벤트 전체도 토픽에 있는지 따로 확인했다(누락 0).
 - `kill`·`stop`은 요청이 broker에 도달하지 못해 중복이 거의 없다(`stop10`의 8건은 5회 중 1회). `pause`는 연결이 열린 채 응답만 멈춰 send-timeout(10초)을 넘기면 한 묶음이 기록된 뒤 실패로 처리돼 같은 묶음을 다시 보낸다. `pause8`(시간 안)은 5회 모두 0이고 `pause20`·`pause45`는 5회 모두 151~385건이다.
-- 응답을 6초 늦추는 `delay6s`는 5회 모두 중복이 생기고(3~130건) 2초 지연 `delay2s`는 5회 중 2회에서 161·221건이 생겼다. 손실 25%는 느려지기만 하고 중복도 없었다. 지연이 요청 시한 안인 `delay2s`에서 중복이 생긴 것은 가설(H6, 0)과 다르다. 지터(500ms) 때문에 일부 produce 요청이 `request.timeout.ms` 5초를 넘은 것으로 추정하며 확인하지는 않았다.
+- 실행함: `delay6s` 5/5에서 3~130 duplicates; `delay2s` 5회 중 2회에서 161·221 duplicates. 지연 2초 condition의 500ms jitter가 producer request timeout 5초 초과를 일으켰다는 원인 설명은 아래 `EXP-105 종결 결과` jitter 0/500ms A/B로 검증했다.
 - 복구 뒤 소진 시간은 0.5~2.7초(맥락용)다. lease(30초)가 회복을 막은 실행은 없다.
 
 ## 결과 2: 발견 — 첫 전달의 순서 역행 3건
@@ -84,7 +84,7 @@
 `first_delivery_violations`가 0이 아닌 실행이 3건 있다(모두 `pause20`, 누락 0). 증거(수치)는 아래 "삭제한 파일의 내용" 절에 옮겨 적었다. 같은 workflow의 v2가 v1의 첫 전달보다 앞선 offset에 있다(중복 재전달이 아니다). 같은 파티션 0의 offset 133~157에서 seq 387~415 다음에 seq 764~798이 오고(416~763을 건너뜀), offset 158에서 seq 387부터 다시 시작해 끝까지 전달됐다.
 
 - 3건은 모두 새 스택에서 `pause20`의 **첫 실행(run-1)**이다. 중복이 생긴 실행 90건 중 첫 실행 19건에서 3건, 나머지 71건에서 0건이다(Fisher 정확 검정 양쪽 p≈0.008, 사후에 찾은 패턴이라 탐색 수준). 조건 10종 × n=5 표(50회)와 전후 비교·최종 실행 50회에서는 위반이 0이었고, 위반은 개발 중 실행과 보조 실행 39회 중 3건이다.
-- 가설: 한 relay 묶음(500건)이 파티션마다 producer batch 여러 개로 나뉘어 일부 batch만 만료·기록된다. 시험: `batch.size`를 키워 한 묶음이 파티션마다 batch 하나에 담기게 하고 relay batch를 2,000으로 올려 증폭한 A/B(`pause20`, 원래 코드 8회 대 batch.size 증가 4회에서 중단)에서 **위반이 사라지지 않았다**(원래 코드 0/8, 변경 1/4 — 첫 실행의 14건). 가설은 지지되지 않아 변경하지 않았다. 원인은 확정하지 못했고 [#644](https://github.com/Neo1228/ATLAS/issues/644)에 증거와 함께 남겼다.
+- A/B(`pause20`, 원래 코드 8회, `batch.size` 증가 4회)에서 원래 코드 0/8, 변경 쪽 1/4 위반이 발생했다. 따라서 **이 변경으로 위반이 사라졌다고 결론 낼 수 없다**. 원인의 큰 줄기는 이후 [EXP-091](EXP-091-kafka-first-delivery-order.md)에서 segment dump로 규명했다.
 - 영향: 소비자가 `aggregateVersion`으로 적용 순서를 맞추면(ADR-0067 한계 절, [EXP-082](EXP-082-event-consumer-contract.md)의 참조 소비자) 상태는 거꾸로 가지 않는다. 누락은 없다. 이 실험의 H2(키별 첫 전달 순서)는 **일부 틀렸다**.
 
 ## 결과 3: 설정을 바꾼 전후 (batch 크기와 producer 로그)
@@ -139,8 +139,8 @@
   - 소비자 그룹 리밸런스는 이 실험에서 다루지 않았다([EXP-082](EXP-082-event-consumer-contract.md)가 파티션 2개·소비자 2개로 확인).
   - 장기 중단(10분 이상) 중 로그 증가와 DB 부하, 장애 중 application 재시작, Kafka와 DB 동시 장애는 하지 않았다.
   - 예약 HTTP 응답은 이 실험에서 보지 않았다(EXP-072가 응답에 영향이 없음을 확인).
-  - `delay2s`에서 중복이 생긴 원인, `delay6s`에서 batch 100이 중복을 줄이지 못한 원인은 확인하지 않았다.
-  - 중복 감소 검정은 n=5 대 5, 순열 검정이고 보정하지 않았다.
+  - delay2s duplicate는 jitter A/B 결과로 판정한다. `delay6s`에서 batch 100 중앙값이 batch 500보다 증가한 이유는 batch 단위의 시한·retry 횟수를 분리 측정하지 않았으므로 결정: causal mechanism은 범위 밖, batch 100은 이 조건에서 채택하지 않는다. 대안은 request별 send/timeout trace다. 재검토 조건: 운영에서 delay6s급 요청 timeout 또는 batch 100 중복 증가 1건이 관측되면 trace를 추가한다.
+  - 중복 감소 검정은 n=5 대 5, 순열 검정이며 다중비교 보정은 하지 않았다. 이 수치는 탐색 신호로만 남긴다. 결정: 운영 기본 batch를 통계적 유의성 주장 없이 100으로 유지한다. 재검토 조건: 같은 조건에서 n≥20/arm을 사전 등록해 비교할 필요가 생기면 재검정한다.
 
 ## 재현
 
@@ -175,3 +175,31 @@ CONDITIONS="pause20" RUNS=5 load-tests/kafka-outage/run-kafka-outage.sh
 | 3 | 158~694 | 387~2000 | 537 |
 
 구간 2에는 387~415와 764~798만 있고 416~763은 없다. 구간 3은 387부터 다시 시작해 끝까지 있다. 이 구간 경계는 이슈 #644의 설명과 같고 원인은 [EXP-091](EXP-091-kafka-first-delivery-order.md)에서 규명했다.
+
+## EXP-105 종결 결과
+
+재실행 표기: 아래 "delay2s 지터 A/B"는 이 에이전트가 직접 실행했다. 그 밖의 범위 결정 문장은 코드·설정을 읽은 결정이며 새 실행이 없다.
+
+### 실행 범위 밖 결정과 재검토 조건
+
+- 실행함: topic은 3 partitions, replication factor 1; `control`, stop/kill/pause, delay2s/delay6s/loss25 각 n=5; `pause45`는 send-timeout PT10S와 lease PT30S보다 길다. 따라서 “다중 파티션 미실행”은 정정한다: 3개 partition에서 workflows가 분산됐고, 키별 order는 partition 내부에서 평가했다.
+- 결정: 10분 이상 outage와 application restart는 V1 startup/lease recovery scope 밖이다; 대안은 compose condition으로 `pause600`/app restart를 추가하는 것이나 공유 host와 90s drain limit로 이번 표본에 넣지 않았다. 재검토 조건: production outage SLO가 10분 이상이거나 outage 중 app restart가 운영 시나리오가 되면 해당 조건 n≥3으로 실행한다.
+- 결정: broker replication/failover와 `min.insync.replicas`는 KRaft single-node RF=1에서 시험할 수 없고, 동시에 PostgreSQL 장애도 주입하지 않았다. 대안은 3-node broker/PG fault matrix다. 재검토 조건: production replication factor ≥3 또는 broker failover requirement가 확정되면 3-broker suite로 재실행한다.
+- 결정: 이 harness는 DB trigger에 직접 입력해 HTTP/Location-service response를 포함하지 않는다. HTTP 경로 회귀를 이 결과로 주장하지 않는다. 대안은 HTTP-level test; 재검토 조건: 주문 API의 Kafka outage response가 운영 계약에 추가되면 end-to-end case를 추가한다.
+- 실행함(유형 1): H6의 delay2s 지터 기전은 아래 "delay2s 지터 A/B"에서 반증됐다(지터 0에서도 중복이 같은 비율로 난다). 다른 지터 분포와 6s delay의 원인은 요청 단위 trace가 없어 범위 밖이다(결정, 대안: request별 send/timeout trace). 재검토 조건: delay6s의 batch 크기 효과를 운영에서 재현하거나 delay2s 조건에서 `first_delivery_violations`가 1건 이상 나오면 trace를 수집한다.
+- 무변경/음성 대조와 `segments` path: direct broker synthetic-order injection previously detected 10/10 injected violations and 0 normal keys; 35+ actual stack runs called `segments`. 결정: separate unit test for `segments` is unnecessary for this docs/parameter-only change. 재검토 조건: direct-injection detector misses 1 case or future classification disagrees with topic audit.
+
+### delay2s 지터 A/B (G15, 실행함)
+
+가설(EXP-105 사전 등록 G15): 지터 500 ms가 produce 요청을 `request.timeout.ms` 5초 밖으로 밀어 낸 것이 delay2s 중복의 원인이다. 반증 조건: 지터 0에서도 같은 중복.
+
+방법: 수정 전 코드(EXP-089 당시 relay) jar, 같은 compose, `delay2s` 조건(`tc netem delay 2000ms`, 지터 0 또는 500 ms)을 블록당 5회, 블록 순서 지터 0, 500, 500, 0(교차). `NETEM_JITTER_MS`를 하네스에 매개변수로 추가했다(기본 500, 원래 동작). 적용 확인: 블록마다 첫 실행의 `tc qdisc show`가 `delay 2s`(지터 0)와 `delay 2s 500ms`(지터 500)로 찍혔다. 부하 초당 20 workflow, 이벤트 2,000건/회, 호스트 load 18~36(맥락일 뿐 결론은 개수로 낸다).
+
+| 지터 | 회 수 | 중복이 있는 회 | 그 회의 중복 건수 | 최대 사본 | 누락 | 첫 전달 위반 | 판정 `passed` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 ms | 10 | 4 | 164, 166, 168, 248 | 2 | 0 | 0 | 10/10 |
+| 500 ms | 10 | 6 | 156, 159, 176, 178, 244, 264 | 2 | 0 | 0 | 10/10 |
+
+중복이 있는 회의 비율은 4/10 대 6/10이고 양측 Fisher 정확 검정 p = 0.66이다. 지터 0에서도 중복이 났으므로 가설은 반증된다. 중복 건수 규모(150~270)도 두 팔이 같다. 이 실험은 중복의 원인이 지터가 아니라는 것까지만 말한다. 2초 고정 지연이 중복을 만드는 기전(요청 단위 재전송 여부)은 요청별 trace가 없어 주장하지 않는다(결정, 대안: request별 send/timeout trace, 재검토 조건은 위 범위 결정과 같다). 누락 0, 첫 전달 위반 0, `passed`는 20/20회에서 유지됐다.
+
+이 실행의 원자료(`result.json`, `samples.csv`, 앱 로그)는 저장소에 올리지 않았다(`삭제한 파일의 내용`의 규칙과 같음). 집계 열은 `result.json`의 `duplicates`, `max_copies`, `lost`, `first_delivery_violations`, `passed`다.
