@@ -12,6 +12,7 @@
 # SYN/asymmetric drops, DB pause). Every (condition, repetition) is one run-fault-injection.sh run; the whole list is
 # shuffled with a fixed SEED so time of day and host load are not tied to a condition (the Docker VM is shared); the plan
 # is written to <out>/plan.txt and finished jobs (<out>/done/) are skipped on a re-run.
+# SET=closeout4: e-ctl-none, the SYN-drop rerun and the saturation convergence-rate arm.
 # SET=closeout3 re-runs the contaminated/open cells at n=5; HOLD_CHECK_CMD=<command> runs before every run and a non-zero exit stops the matrix
 # (use it to verify a host measurement lock), RUN_STATUS_CMD=<command> output is appended to uptime.log per run.
 # SET=closeout2 runs the cells EXP-104 left as decided-out (strong CPU hog arms, S=13/15 s, drop cells).
@@ -123,6 +124,17 @@ deep_matrix() {
       "e-req-drop-strict@5|FAULTS=location-b-req-drop LOAD_THREADS=256"
     )
   fi
+  if [[ "${SET:-}" == closeout4 ]]; then
+    # EXP-104 last round: controls, the SYN-drop rerun and the host-saturation convergence rate (HOG=160 loops, weight 65536; run under the host lock)
+    export TAG="${TAG:-t4}"
+    conn="CONN_TRACE=1"
+    conditions=(
+      "e-ctl-none@5|FAULTS=none LOAD_THREADS=256 $conn"
+      "e-syn-reset@1|FAULTS=location-b-syn-drop LOAD_THREADS=256 SYN_RESET=1 $conn"
+      "a-ctl-hog-sat-L30@15|$two FAULTS=none RECOVERY_LEASE=PT30S $delay PLANT_DUP=1 $conn HOG=160 HOG_SHARES=65536"
+      "a-ctl-hog-sat240-L30@10|$two FAULTS=none RECOVERY_LEASE=PT30S $delay PLANT_DUP=1 $conn HOG=240 HOG_SHARES=65536"
+    )
+  fi
 
   plan="$out_dir/plan.txt"
   if [[ ! -f "$plan" ]]; then
@@ -170,7 +182,7 @@ deep_matrix() {
   echo "matrix finished $(date -u +%FT%TZ)" | tee -a "$out_dir/progress.log"
 }
 
-if [[ "${SET:-}" == deep || "${SET:-}" == closeout || "${SET:-}" == closeout2 || "${SET:-}" == closeout3 ]]; then deep_matrix; exit 0; fi
+if [[ "${SET:-}" == deep || "${SET:-}" == closeout || "${SET:-}" == closeout2 || "${SET:-}" == closeout3 || "${SET:-}" == closeout4 ]]; then deep_matrix; exit 0; fi
 runs="${RUNS:-5}"
 runs_dns="${RUNS_DNS:-3}"
 out="${OUT:-$(cd "$here/../.." && pwd)/.local/fault-injection/expansion-$(date +%Y%m%d-%H%M%S)}"
