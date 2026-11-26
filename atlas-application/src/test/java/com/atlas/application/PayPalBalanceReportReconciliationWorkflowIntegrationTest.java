@@ -103,6 +103,29 @@ class PayPalBalanceReportReconciliationWorkflowIntegrationTest {
                 .isEqualTo(first.summary().totalRows());
     }
 
+    /** 공식 샘플처럼 Record ID와 총액이 빈 Fees 행이 저장되고, 같은 보고서를 다시 올리면 그대로 복원된다. */
+    @Test
+    void persistsFeeRowsWithoutRecordIdOrGrossAndRestoresThemOnReplay() {
+        String report = "RH,Report Name,Report Status\nRH,BALANCE_RECONCILIATION_REPORT,Success\n"
+                + "RD,Merchant Account ID,Record ID,Record Type,Record Subtype,Transaction Currency,"
+                + "Gross Transaction Amount,Total Net Fees\n"
+                + "RD,MERCHANT0001,,Fees,Scheme Fees,GBP,,-0.02301\n"
+                + "RD,MERCHANT0001,,Fees,Scheme Fees,USD,,-2.53386\n"
+                + "RF,File Number,Total Records,Total Files\nRF,1,2,1\n";
+
+        var first = ingestion.reconcile(report.getBytes(StandardCharsets.UTF_8));
+        var replay = ingestion.reconcile(report.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(first.rows()).extracting(row -> row.status())
+                .containsExactly(PayPalBalanceReportRowStatus.UNMATCHED, PayPalBalanceReportRowStatus.UNMATCHED);
+        assertThat(first.rows()).extracting(row -> row.reasonCode()).containsOnly("UNSUPPORTED_PROVIDER_RECORD_TYPE");
+        assertThat(replay.duplicateUpload()).isTrue();
+        assertThat(replay.rows()).usingRecursiveComparison()
+                .withComparatorForType(BigDecimal::compareTo, BigDecimal.class).isEqualTo(first.rows());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM paypal_balance_report_row WHERE record_id = '' AND gross_amount IS NULL",
+                Integer.class)).isEqualTo(2);
+    }
+
     @Test
     void exceptionSearchAndDispositionAreBoundedAuditedAndIdempotent() {
         var run = ingestion.reconcile(REPORT.getBytes(StandardCharsets.UTF_8));
