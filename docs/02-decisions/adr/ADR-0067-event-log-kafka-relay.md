@@ -28,7 +28,7 @@
 
 ## 결정
 
-- 독립 offset·재생이 필요한 consumer의 기본 경로는 order DB의 append-only 이벤트 로그(V75 `order_inventory_event`)와 consumer group별 cursor(`order_inventory_event_cursor`)다. **cursor는 xmin 안전 방식이어야 한다.** 이 로그, trigger, cursor는 구현됐고 위 통합 테스트로 확인했다.
+- 독립 offset·재생이 필요한 consumer의 기본 경로는 order DB의 append-only 이벤트 로그(V75 `order_inventory_event`, V11부터 DB가 UPDATE·DELETE·TRUNCATE를 거절: [ADR-0105](ADR-0105-audit-table-append-only-guards.md))와 consumer group별 cursor(`order_inventory_event_cursor`)다. **cursor는 xmin 안전 방식이어야 한다.** 이 로그, trigger, cursor는 구현됐고 위 통합 테스트로 확인했다.
 - Kafka relay는 옵트인(`atlas.order-inventory-reservation.event-relay.enabled`, 기본 꺼짐)으로 구현했다. 소비자가 다른 서비스·DB에 있어 order DB를 직접 읽을 수 없는 경우(아래 조건 1)를 위해 둔 것이고, 기본 구성에는 브로커 의존이 없다.
 - Kafka를 기본 경로로 올리지 않는 근거는 아래 측정이다. 아래 세 조건 중 하나가 측정으로 확인되면 이 결정을 다시 본다.
 - 측정 하네스(`load-tests/run-event-log-fanout.sh`)와 정정 재현(`load-tests/event-log-gap-check.sh`)은 저장소에 둔다.
