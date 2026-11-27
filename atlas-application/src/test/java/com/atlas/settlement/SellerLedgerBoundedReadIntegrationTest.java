@@ -7,6 +7,8 @@ import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.service.SettlementBalanceCheckpointService;
 import com.atlas.settlement.service.SettlementService;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -202,6 +204,32 @@ class SellerLedgerBoundedReadIntegrationTest extends PayPalIntegrationTestSuppor
         assertThat(balance(seller)).isEqualTo(ledgerSum(seller));
         assertThat(jdbc.queryForObject("SELECT payable_won FROM settlement_seller_balance_checkpoint WHERE seller_id = ?",
                 Long.class, seller)).isEqualTo(ledgerSum(seller).get(0));
+    }
+
+    @Test
+    void documentedRollbackScriptRemovesTheV10ObjectsAndKeepsLedgerRows() throws Exception {
+        UUID sellerA = seller();
+        UUID sellerB = seller();
+        checkout(sellerA, sellerB);
+        long allocations = jdbc.queryForObject("SELECT count(*) FROM settlement_seller_allocation", Long.class);
+        String undo = Files.readString(Path.of("..", "scripts", "db", "rollback",
+                "V10__undo_seller_ledger_history_bounded_reads.sql").toAbsolutePath().normalize());
+        transactions.executeWithoutResult(status -> {
+            jdbc.execute(undo);
+            assertThat(jdbc.queryForObject("""
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_name = 'settlement_seller_allocation' AND column_name = 'recorded_at'
+                    """, Long.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT to_regclass('settlement_seller_balance_checkpoint') IS NULL",
+                    Boolean.class)).isTrue();
+            assertThat(jdbc.queryForObject("SELECT to_regclass('settlement_seller_allocation_seller_journal_idx') IS NOT NULL",
+                    Boolean.class)).isTrue();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM settlement_seller_allocation", Long.class))
+                    .isEqualTo(allocations);
+            status.setRollbackOnly();
+        });
+        assertThat(jdbc.queryForObject("SELECT to_regclass('settlement_seller_balance_checkpoint') IS NOT NULL",
+                Boolean.class)).isTrue();
     }
 
     private void foldAll() {
