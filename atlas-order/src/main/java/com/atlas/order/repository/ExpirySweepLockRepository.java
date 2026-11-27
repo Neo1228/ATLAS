@@ -26,6 +26,12 @@ import org.springframework.stereotype.Repository;
  * PESSIMISTIC_WRITE가 계속 보장합니다.
  *
  * <p>연결이 끊기면 서버가 session 락을 함께 해제하므로, 프로세스가 죽어도 락이 남지 않습니다.
+ *
+ * <p>배포 전제: session 락이므로 앱과 PostgreSQL 사이에 transaction pooling(PgBouncer {@code pool_mode=transaction})을
+ * 두면 안 됩니다. PgBouncer 기능 표는 transaction pooling에서 session-level advisory lock을 "Never"로 적습니다
+ * (https://www.pgbouncer.org/features.html). 잡기와 풀기가 다른 서버 연결로 가면 락이 그 서버 연결에 남아 모든
+ * replica가 sweep을 건너뛰고(만료가 멈춤), 같은 서버 연결로 다시 가면 재진입으로 둘이 동시에 실행합니다. pooler를
+ * 넣을 때는 session pooling을 쓰거나 이 락을 lease 행으로 바꿉니다(EXP-118, ADR-0107).
  */
 @Repository
 public class ExpirySweepLockRepository {

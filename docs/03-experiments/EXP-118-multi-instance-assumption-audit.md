@@ -38,6 +38,7 @@ TxBacklog(#729, EXP-117)의 F1·F2·F3·G1·C4·E3와 AuditGuards(EXP-116)의 �
 | H2c | 결제 반영을 checkout(주문) 행 잠금 아래에서 결제 시도의 현재 상태로 다시 정하면 인스턴스 2대에서도 0회다 | P-N2-fix | 100회 중 1회 이상 |
 | H3a | 새 migration(V13)이 적용된 DB에서 old jar(57e6ccd7)를 다시 기동해도 Flyway가 미래 migration을 무시해 기동하고, 인증·checkout 흐름이 5xx 없이 돈다 | R-old | 기동 실패 또는 5xx 1건 이상 |
 | H3b | old jar 1대 + new jar 1대가 섞인 동안, 코드 수정만으로는 old jar가 낸 결제 결과 역전을 막지 못하고, DB 가드(V13)는 막는다 | R-mix(V13 없음) 대 R-mix(V13) | H2a가 재현되지 않으면 이 칸은 돌리지 않고 V13을 만들지 않는다. 재현되면: V13 없는 칸에서 역전 0회이거나 V13 칸에서 역전 1회 이상 |
+| H3c | (첫 계수 전 추가) 가장 최근 실제 migration V10에서 rolling 배포가 안전하다: V9 jar(16275684)가 checkout 트래픽을 처리하는 중에 V10 jar(57e6ccd7)가 기동해 V10을 적용하고, V9 jar는 그동안과 그 뒤 재기동 후에도 5xx 없이 결제를 `PAID`로 마친다 | R-V10 | 3회 중 한 번이라도 V10 jar 기동 실패(백필 잠금·`lock_timeout`), V9 jar 재기동 실패, 또는 driver 오류(비 2xx) 1건 이상 |
 | H4 | 임시 JWT 키로 인스턴스 2대를 띄우면 로그인 뒤 인증 요청의 약 절반이 401이다 | J-N2 | 401이 0건 |
 
 ## 측정 방법
@@ -46,7 +47,69 @@ TxBacklog(#729, EXP-117)의 F1·F2·F3·G1·C4·E3와 AuditGuards(EXP-116)의 �
 
 - **A칸(H1).** 회차마다 새 이메일 1개에 오답 로그인 90건을 barrier로 동시에 보낸다. `X-Forwarded-For`를 9개 출처에 10건씩 나눠 출처 한도(60)가 묶이지 않게 한다. 통과 수 = 회차 뒤 `auth_subject_bucket`의 해당 주체 값. 현행 코드는 통과한 시도마다 실패 1을 기록하고(모든 비밀번호가 틀림), 수정 코드는 통과한 시도마다 1을 예약하므로 두 경우 모두 "검증까지 간 시도 수"다. 칸마다 n = 5.
 - **P칸(H2).** 로컬 PayPal·환율 stub(OAuth, 주문 생성·조회, authorize, capture, `PayPal-Request-Id` 멱등). 회차마다 장바구니 → checkout → 결제 제출 → stub에서 구매자 승인 → 같은 checkout에 대해 두 요청을 barrier로 동시에 보낸다. 모드 `double-return`(반환 GET 둘), `return-plus-reconcile`(반환 GET + reconcile POST). proxy가 번갈아 보내므로 두 요청이 다른 인스턴스로 간 회차만 센다(처리 인스턴스를 응답에서 확인). stub 지연: authorize 30 ms ± 20 ms, capture 20 ms ± 20 ms(균등). 결제 복구 worker는 켠 채 5초 정착 뒤 DB에서 결제 시도 상태와 checkout·자식 주문 상태를 읽는다. 위반 = 결제 `CAPTURED`인데 checkout이나 자식 주문이 `PAID`가 아님. 칸·모드마다 n = 100.
-- **R칸(H3).** new jar(이 브랜치, V13 포함)가 migration을 적용한 DB에서 old jar를 기동하고 A칸 1회와 P칸 happy path 10회를 돌린다. R-mix는 old jar 1대 + new jar 1대를 proxy 뒤에 두고 P칸을 100회 돈다.
+- **R칸(H3).** H3a·H3b: new jar(이 브랜치, V13 포함)가 migration을 적용한 DB에서 old jar를 기동하고 P칸 happy path 10회를 돌린다. R-mix는 old jar 1대 + new jar 1대를 proxy 뒤에 두고 P칸을 100회 돈다. H3c(R-V10): 회차마다 빈 DB `atlas_roll`에 V9 jar를 띄워 V9까지 적용하고, proxy(두 인스턴스, 기동 전인 쪽은 건너뜀)로 `double-return` 40회를 돌리는 도중 12초 뒤 V10 jar를 같은 DB로 기동한다. 트래픽이 끝나면 V9 jar를 재기동하고 V9 jar에만 10회를 더 보낸다. n = 3.
 - **J칸(H4).** 서명 비밀 없이 `ATLAS_JWT_ALLOW_EPHEMERAL_KEY=true`로 2대를 띄우고, 가입·로그인 뒤 인증이 필요한 GET 20건을 proxy로 보내 401 수를 센다. n = 3.
 
 시간 예산: 계수 run 합계 90분. 넘으면 우선순위가 낮은 칸(J, R-mix의 V13 없는 칸)부터 범위 밖 결정으로 닫는다.
+
+## 전수 조사 표 (코드 읽기, 줄 번호는 `origin/main` 57e6ccd7 기준)
+
+분류: **안전**(이유가 DB 쪽 장치), **정합성 결함**(돈·재고·권한·데이터 불변식이 깨지거나 멱등으로 흡수되지 않는 외부 부작용), **성능 저하**(효율·지표·부하·한도가 N배). 찾은 방법: `rg`로 `synchronized|ReentrantLock|Semaphore|ConcurrentHashMap|Atomic*|volatile|@Scheduled|CommandLineRunner|ApplicationRunner|@PostConstruct|@EventListener|Files\.|Instant\.now|clock\.instant` 를 `atlas-*/src/main` 전체에서 찾고 호출부를 읽었다. 줄 번호 37개는 원문과 다시 대조했다.
+
+### JVM 안의 잠금
+
+| 지점 | 무엇을 지키나 | 인스턴스가 여럿이면 | 분류 |
+|---|---|---|---|
+| `atlas-order/.../OrderServiceImpl.java:55`, `:591`, `OwnerLockRegistry.java:8-33` | 단일 판매자 주문의 결제 제출·대조·취소 직렬화 | 다른 JVM을 막지 못한다. 상태 전이는 `lockOrder`(`OrderRepository.java:25` PESSIMISTIC_WRITE)가 지키지만 `applyPayment`(`:417-456`)가 잠금 밖 스냅숏으로 상태를 정한다 | 정합성 결함(H2) |
+| `atlas-payment/.../PaymentServiceImpl.java:169`, `:802`, `PaymentRefundWorkflow.java:266`, `PaymentWebhookProcessor.java:190` | 결제 단계 예약·PayPal 호출·확정 직렬화 | 결제 행은 안전: 예약은 행 잠금(`:520-564`), 확정은 단계·요청 id 펜스(`:585-587`), 웹훅은 `ON CONFLICT (event_id) DO NOTHING`(`PaymentWebhookEventRepository.java:21`). 남는 것은 같은 `PayPal-Request-Id`의 중복 호출 | 성능 저하(외부 호출 중복). 결과 반영은 위 행의 결함 |
+| `atlas-admission/.../AdmissionServiceImpl.java:56`, `:239-300` (`synchronized` + 메모리 cursor) | 만료 sweep 한 번에 하나, 다음 tick 위치 | 인스턴스마다 매 초 후보 조회. 판매자 SKU 카운터는 `FOR UPDATE SKIP LOCKED`(`QueueRepository.java:78`), 표 갱신은 상태 조건부 | 성능 저하(distributed-readiness 2절과 같음) |
+| `atlas-application/.../RedisStockAdmissionControl.java:215`, `:234` | Redis 시드·연결 초기화 | 인스턴스 사이는 `SET NX`(`:225`)가 지킨다 | 안전 |
+| `atlas-payment/.../CachingExchangeRateProvider.java:50-57` | 환율 단일 비행·캐시 | 외부 호출 N배(실패 backoff로 상한). 금액은 결제 시도마다 행 잠금 아래 첫 값으로 고정(`PaymentServiceImpl.java:451-461`) | 성능 저하(ADR-0051·0053이 이미 정함) |
+| `atlas-payment/.../PaymentRecoveryServiceImpl.java:36-37`, `:69`; `ScheduledExpiryMetricsWorker.java:73` | 지표 스냅숏, 로그 | 지표·로그만 | 안전 |
+
+### 메모리 상태·캐시·한도
+
+| 지점 | 쓰임 | 인스턴스가 여럿이면 | 분류 |
+|---|---|---|---|
+| `atlas-account/.../AuthAttemptLimiterImpl.java:56-68`, `AccountServiceImpl.java:191-209`, `:298-308` | 인증 주체 한도(로그인·MFA) | 카운터는 DB에서 합산되지만 읽고 판단한 뒤 검증 후 기록해서 동시 시도가 한도를 넘는다. 동시 처리 상한이 인스턴스 수에 비례 | 정합성 결함(H1) |
+| `atlas-account/.../AuthThrottleRepository.java:40-58` | 인증 출처 한도 | 원자적 upsert | 안전 |
+| `atlas-application/.../PrecheckStockAdmissionControl.java:36` | 품절 음성 캐시(TTL 1초) | 인스턴스마다 location을 TTL마다 1회 더 읽고, 재입고 뒤 TTL 동안 과거절. 최종 판정은 location 조건부 갱신 | 성능 저하 |
+| `RedisStockAdmissionControl.java:113-114` | fail-open breaker | 인스턴스마다 따로 열림 | 성능 저하 |
+| `atlas-application/.../LocationCallBulkhead.java:23`, `atlas-payment/.../PayPalCallBulkhead.java:23`, `:28` | 요청 스레드의 외부 호출 동시 상한 | 클러스터 상한은 N × 설정값. 목적이 인스턴스 스레드 보호라 인스턴스별이 맞고, 외부 quota를 지키려면 설정값 = 전체 ÷ N | 성능 저하 |
+| `HttpLocationClient.java:33` | location별 RestClient | 설정 수로 한정 | 안전 |
+| `SampledFailureLog.java:21`, 각 worker의 `AtomicLong` 로그 간격 | 로그 표본 | 로그량 N배 | 성능 저하 |
+| `AccountNotificationWorker.java:38-41`, `DatabaseSignalMetrics.java:44-45`, `LedgerAuditMetrics.java:31-32`, `PayoutRiskMetrics.java:16`, `ReturnInspectionMetrics.java:18`, `PayoutDispatchWorker.java:44` | DB에서 읽은 전체 값 게이지 | 인스턴스마다 같은 전체 값을 낸다. 대시보드에서 `sum`이면 N배 | 성능 저하(관측) |
+| ID 생성(`PaymentConfiguration.java:14`, `UUID.randomUUID`, `uuidv7()`) | 행 id | 프로세스 안 순번 없음 | 안전 |
+
+### 스케줄 작업
+
+| 지점 | 인스턴스 사이 장치 | 분류 |
+|---|---|---|
+| 주문·checkout 만료 sweep (`ScheduledExpiryMetricsWorker.java:46`, `:51`, `ExpirySweepLockRepository.java:43-63`) | session advisory try-lock, 행마다 잠금 + 상태 재확인 | 안전. 배포 전제: transaction pooling 금지(아래 B절) |
+| 결제 복구 claim (`PaymentRecoveryRepository.java:164-200`, `:191`) | `FOR UPDATE SKIP LOCKED`, lease 60초, 펜스(`:510`) | 안전(PayPal 요청 id 멱등 전제) |
+| 결제 복구 소진 표시 (`PaymentRecoveryRepository.java:493-508`) | 잠금 없는 조건부 UPDATE를 인스턴스마다 매 초 | 성능 저하 |
+| PayPal 웹훅 재시도 (`PayPalWebhookRetryRepository.java:51-100`) | `SKIP LOCKED` + lease 펜스 | 안전 |
+| 지급 dispatch (`JdbcPayoutDispatchStore.java:57-72`, `:66`) | `SKIP LOCKED`, lease 60초, `sender_batch_id` 중복을 원 배치로 채택 | 안전(PayPal 멱등 전제) |
+| 인증 메일 outbox (`AccountNotificationRepository.java:41-66`, `:48`) | `SKIP LOCKED`, lease 2분, 완료 펜스 | 안전. SMTP 수락 뒤 완료 전 종료면 lease 뒤 한 번 더 보낸다(ADR-0102가 재시작 뒤 중복을 재검토 신호로 둠) |
+| 판매자 잔액 마감 (`SettlementBalanceCheckpointRepository.java:37`) | 커서 행 `SKIP LOCKED` | 안전 |
+| location 예약·재입고·checkout 마무리 (`LocationReservationRepository.java:197-215`, `LocationRestockRepository.java:47-60`, `CheckoutFinalizationServiceImpl.java:189-210`) | `SKIP LOCKED` + lease, 마무리는 잠금 없는 조회 후 행 잠금 + 상태 재확인 | 안전(마무리 조회는 N배). location 쓰기 fencing은 EXP-117 G1 |
+| 예약 이벤트 relay (`ReservationEventRepository.java:76`, `:96`) | lease + 펜스 전진. lease 만료 뒤 재전송은 `event-id` 헤더로 consumer가 거름 | 안전(ADR-0067) |
+| 원장 점검·DB 신호·지급 위험·반품 검수 지표 (`LedgerAuditMetrics.java:40`, `DatabaseSignalMetrics.java:55`, `PayoutRiskMetrics.java:32`, `ReturnInspectionMetrics.java:26`) | 없음. 모든 인스턴스가 읽기 질의 실행 | 성능 저하(읽기 N배) |
+| 인증 카운터·admission tombstone 정리 (`AuthThrottleRepository.java:82-100`, `QueueRepository.java:124-140`) | 정리는 정확성과 무관, tombstone은 `SKIP LOCKED` | 안전 |
+| location 서비스 예약 만료 (`atlas-inventory-location/.../InventoryReservationRepository.java:84-88`) | `SKIP LOCKED` + 조건부 전이 | 안전 |
+
+### 시작·세션·시계·파일·배포
+
+| 지점 | 인스턴스가 여럿이면 | 분류 |
+|---|---|---|
+| 시작 초기화 | `CommandLineRunner`·`ApplicationRunner`·`@PostConstruct`·`@EventListener`·`SmartLifecycle`이 운영 코드에 0곳. 시작 때 쓰기 없음 | 안전 |
+| Flyway (`application.yml:67-68`, 설정은 `enabled`뿐) | 모든 인스턴스가 기동 때 migrate. 동시 기동은 Flyway 잠금이 직렬화. 미래 migration 무시가 기본(H3a로 확인) | 안전 |
+| JWT 서명 키 (`AccountJwtConfiguration.java:41-51`, `application.yml:111-113`, `compose.yaml:41`) | 비밀이 없고 임시 키를 허용하면 인스턴스마다 다른 키 | 성능 저하(401로 닫힘, H4) · 배포 제약 |
+| refresh 세션·action token·MFA 챌린지 (`AccountRepository.java:106`, `:276-296`, `:372-385`) | DB 행 잠금 + 조건부 소비 | 안전 |
+| HTTP 세션 | `STATELESS` | 안전 |
+| 앱 시계로 쓴 기한을 다른 인스턴스 시계로 비교: admission 표(`QueueRepository.java:173-175` ↔ `AdmissionServiceImpl.java:240`), 주문 만료(`OrderRepository.java:59`, `OrderServiceImpl.java:408`), location 예약(`InventoryReservationService.java:90`, `:183`), 계정 토큰(`AccountRepository.java:122`, `:279`), 결제 승인 기한(`PaymentServiceImpl.java:544` ↔ `PaymentRecoveryWorker.java:239` `Instant.now()` ↔ `PaymentRecoveryRepository.java:459-481` DB 시계) | 시계 차이만큼 이르거나 늦게 만료. 상태는 행 잠금 + 재확인이 지킨다 | 성능 저하 · 배포 제약(NTP) |
+| DB 시계 lease (`PaymentRecoveryRepository.java:186-195`, `PayPalWebhookRetryRepository.java:61`, `JdbcPayoutDispatchStore.java:63`) | 앱 시계와 무관 | 안전 |
+| location workflow lease 앱 시계(`LocationReservationServiceImpl.java:110-112`) | 시계 차이만큼 이른 재claim. 쓰기 펜스는 EXP-117 G1 소관 | EXP-117로 넘김 |
+| 로컬 파일 | `Files.*`·`FileOutputStream`·임시 파일 0곳, CSV는 메모리에서 읽음 | 안전 |
+| 종료 (`SchedulingConfiguration.java:61-62`) | scheduler는 진행 작업을 10초 기다림. `kill -9`면 lease 만료 뒤 다른 인스턴스가 이어받음 | 안전 |
+| V5~V10 (rolling) | V5·V6은 old jar의 같은 행위자 조작을 23514로 거절(닫힘), V8은 비동시 인덱스 생성 잠금, V10은 백필 중 ACCESS EXCLUSIVE + `lock_timeout` 5초로 기동이 실패할 수 있음(측정하지 않음) | 성능 저하(배포) |
