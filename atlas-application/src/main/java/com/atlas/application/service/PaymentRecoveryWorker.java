@@ -98,7 +98,7 @@ public class PaymentRecoveryWorker {
         this.baseBackoff = baseBackoff;
         this.maxBackoff = maxBackoff;
         // 시도 한도가 창보다 먼저 닿으면 PayPal 장애가 창보다 짧아도 job이 사람 손으로 넘어간다(EXP-117 H1:
-        // 8회 기본값은 가상 시각 약 80~113초에 소진). 그 구성은 허용하되 시작할 때 드러낸다.
+        // 8회 기본값은 가상 시각 약 83~116초에 소진). 그 구성은 허용하되 시작할 때 드러낸다.
         Duration span = minimumRetrySpan(maxAttempts, baseBackoff, maxBackoff);
         if (span.compareTo(maxAge) < 0) {
             LOGGER.warn("Payment recovery max-attempts={} is exhausted after at least {} of backoff,"

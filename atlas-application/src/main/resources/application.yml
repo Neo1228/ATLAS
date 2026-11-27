@@ -202,7 +202,7 @@ atlas:
       lease-duration: ${ATLAS_PAYMENT_RECOVERY_LEASE_DURATION:PT60S}
       # 결과를 기록한 재시도(PayPal 503·연결 실패 등)는 max-age 창이 먼저 끝내도록 시도 한도를 창에 맞춘다.
       # 202는 backoff 최솟값의 합이 PT24H에 닿는 가장 작은 값이다(1초부터 두 배, 15분 상한, 지연은 지수값의
-      # 절반 이상). 8이었을 때는 약 80~113초에 소진돼 그보다 긴 PayPal 장애가 모두 NEEDS_REVIEW로 갔다(EXP-117).
+      # 절반 이상). 8이었을 때는 약 83~116초에 소진돼 그보다 긴 PayPal 장애가 모두 NEEDS_REVIEW로 갔다(EXP-117).
       # 되돌리기: ATLAS_PAYMENT_RECOVERY_MAX_ATTEMPTS=8(ADR-0106).
       max-attempts: ${ATLAS_PAYMENT_RECOVERY_MAX_ATTEMPTS:202}
       # 결과를 쓰지 못하고 lease가 만료된 claim(프로세스 강제 종료, lease보다 긴 정지)의 한도. 같은 job을 잡을

@@ -130,7 +130,7 @@ class PaymentRecoveryRetryBudgetIntegrationTest extends PayPalIntegrationTestSup
     }
 
     /**
-     * H3(a): 시도 한도 8에서는 PayPal 503이 약 80~113초(가상) 이어지면 job이 사람 손으로 넘어갔다(H1).
+     * H3(a): 시도 한도 8에서는 PayPal 503이 약 83~116초(가상) 이어지면 job이 사람 손으로 넘어갔다(H1).
      * 이제 그보다 훨씬 긴 6시간 장애 동안 자동 복구에 머물고, PayPal이 돌아오면 다음 claim에서 진행한다.
      */
     @Test
@@ -212,6 +212,57 @@ class PaymentRecoveryRetryBudgetIntegrationTest extends PayPalIntegrationTestSup
         queueRejection("create-order", 503, "INTERNAL_SERVER_ERROR");
         worker.poll();
         assertThat(job(attemptId).get("abandoned_claim_count")).isEqualTo(1);
+    }
+
+    /**
+     * 인스턴스가 여럿이면 lease는 죽지 않아도 만료된다(긴 GC 정지, DB와의 분할). 살아 있지만 느린 A가 lease를
+     * 잃은 뒤 B가 다시 잡고, A가 나중에 결과를 쓰려 하면: 버려진 claim은 한 번만 세고 A의 결과는 lease 토큰에
+     * 막혀 B의 기록을 덮지 않는다.
+     */
+    @Test
+    void slowLiveWorkerIsCountedOnceAndItsLateResultIsFenced() {
+        UUID attemptId = unknownCheckoutPayment();
+        var slow = recovery.claimNextDue(1, UUID.randomUUID(), leaseDuration, maxAttempts, maxAge).getFirst();
+        jdbc.update("""
+                UPDATE payment_recovery_job
+                SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second'
+                WHERE payment_attempt_id = ?
+                """, attemptId);
+        // B: 살아 있는 다른 인스턴스의 poll. 만료된 lease를 다시 잡고 PayPal 503으로 재예약한다.
+        queueRejection("create-order", 503, "INTERNAL_SERVER_ERROR");
+        worker.poll();
+        Map<String, Object> afterTakeover = job(attemptId);
+        assertThat(afterTakeover.get("status")).isEqualTo("PENDING");
+        assertThat(afterTakeover.get("abandoned_claim_count")).isEqualTo(1);
+        assertThat(afterTakeover.get("attempt_count")).isEqualTo(2);
+
+        // A가 깨어나 결과를 쓰려 한다. 재예약·완료·검토 전환 모두 토큰이 달라 0행이다.
+        assertThat(recovery.reschedule(slow, Duration.ZERO, maxAttempts, maxAge, "SLOW_WORKER")).isFalse();
+        assertThat(recovery.complete(slow)).isFalse();
+        Map<String, Object> afterLateWrite = job(attemptId);
+        System.out.printf("EXP117_SLOW abandoned=%s attempts=%s status=%s error=%s%n",
+                afterLateWrite.get("abandoned_claim_count"), afterLateWrite.get("attempt_count"),
+                afterLateWrite.get("status"), afterLateWrite.get("last_error_code"));
+        assertThat(afterLateWrite.get("abandoned_claim_count")).isEqualTo(1);
+        assertThat(afterLateWrite.get("attempt_count")).isEqualTo(2);
+        assertThat(afterLateWrite.get("last_error_code")).isEqualTo(afterTakeover.get("last_error_code"));
+        assertThat(afterLateWrite.get("available_at")).isEqualTo(afterTakeover.get("available_at"));
+    }
+
+    /** lease가 만료됐지만 아무도 다시 잡기 전에 느린 worker가 결과를 쓰면 버려진 claim이 아니다. */
+    @Test
+    void slowWorkerThatFinishesBeforeAnyTakeoverIsNotAbandoned() {
+        UUID attemptId = unknownCheckoutPayment();
+        var slow = recovery.claimNextDue(1, UUID.randomUUID(), leaseDuration, maxAttempts, maxAge).getFirst();
+        jdbc.update("""
+                UPDATE payment_recovery_job
+                SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second'
+                WHERE payment_attempt_id = ?
+                """, attemptId);
+        assertThat(recovery.reschedule(slow, Duration.ZERO, maxAttempts, maxAge, "SLOW_WORKER")).isTrue();
+        queueRejection("create-order", 503, "INTERNAL_SERVER_ERROR");
+        worker.poll();
+        assertThat(job(attemptId).get("abandoned_claim_count")).isEqualTo(0);
     }
 
     private record Outage(int claims, long virtualMillis) { }

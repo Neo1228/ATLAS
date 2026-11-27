@@ -30,6 +30,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.convert.ApplicationConversionService;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 class PaymentRecoveryWorkerTest {
@@ -242,5 +246,29 @@ class PaymentRecoveryWorkerTest {
     private static PaymentRefundResponse refund(UUID refundId, UUID attemptId, PaymentRefundState status) {
         return new PaymentRefundResponse(
                 refundId, attemptId, "capture-1", 100, "KRW", null, status, Instant.now());
+    }
+
+    /**
+     * 시도 한도 기본값은 창이 판정하도록 정한 값이다(ADR-0106). backoff 최솟값 합이 max-age에 닿는 가장 작은
+     * 시도 수여야 한다. 창·backoff 기본값이 바뀌면 이 시험이 시도 한도도 다시 정하라고 알린다.
+     */
+    @Test
+    void shippedMaxAttemptsIsTheSmallestCountWhoseMinimumBackoffReachesTheWindow() throws Exception {
+        var shipped = new StandardEnvironment();
+        shipped.setConversionService(new ApplicationConversionService());
+        for (var source : new YamlPropertySourceLoader().load("shipped",
+                new FileSystemResource("src/main/resources/application.yml"))) {
+            shipped.getPropertySources().addFirst(source);
+        }
+        int maxAttempts = shipped.getRequiredProperty("atlas.payment.recovery.max-attempts", Integer.class);
+        Duration maxAge = shipped.getRequiredProperty("atlas.payment.recovery.max-age", Duration.class);
+        Duration base = shipped.getRequiredProperty("atlas.payment.recovery.base-backoff", Duration.class);
+        Duration cap = shipped.getRequiredProperty("atlas.payment.recovery.max-backoff", Duration.class);
+
+        assertThat(PaymentRecoveryWorker.minimumRetrySpan(maxAttempts, base, cap)).isGreaterThanOrEqualTo(maxAge);
+        assertThat(PaymentRecoveryWorker.minimumRetrySpan(maxAttempts - 1, base, cap)).isLessThan(maxAge);
+        // 1초부터 두 배(10번째까지 합 511.5초), 이후 15분 상한의 절반 450초씩: 511.5 + 191 × 450 = 86,461.5초.
+        assertThat(PaymentRecoveryWorker.minimumRetrySpan(202, Duration.ofSeconds(1), Duration.ofMinutes(15)))
+                .isEqualTo(Duration.ofMillis(86_461_500));
     }
 }
