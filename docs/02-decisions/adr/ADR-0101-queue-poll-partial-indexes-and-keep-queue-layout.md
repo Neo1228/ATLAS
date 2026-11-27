@@ -15,7 +15,7 @@
    - `ix_payment_recovery_job_waiting_for_buyer ON payment_recovery_job (recovery_job_id) WHERE status = 'WAITING_FOR_BUYER'`
    - `ix_settlement_payout_dispatch_leased ON settlement_payout_dispatch_outbox (lease_until) WHERE status = 'LEASED'`
 2. **같은 멱등 키 동시 환불의 교착을 고친다.** `PaymentRefundRepository.updateResult`가 UPDATE 앞에서 같은 행을 `SELECT 1 ... FOR UPDATE`로 먼저 잡는다(약한 락을 쥔 채 `FOR UPDATE`로 올리는 순열 제거). 락 순서 순열 시험(실코드 6,780 겹침)에서 `40P01` 1건, 수정 뒤 1,500회 0건. 동작·스키마·설정은 그대로이고 `RefundOperationRowLockIntegrationTest`가 수정을 되돌리면 250쌍 중 7쌍에서 실패한다.
-3. **현행을 유지한다**(수치와 재검토 조건은 EXP-112): 폴링(`LISTEN/NOTIFY`는 8 클라이언트에서 커밋 처리량 0.37배, 32 클라이언트에서 0.21배), advisory 락 키 구성(64비트 충돌 0쌍), 지급 예약의 advisory 락(SERIALIZABLE은 처리량 0.351배·40001 89.8%), 두 DB 사이 workflow·outbox(2PC 시제품은 코디네이터 사망 시 같은 SKU 쓰기가 `lock_timeout`까지 100% 막히고 고아 prepared 트랜잭션이 vacuum 기준점을 고정). 큐 테이블 `fillfactor` 75(HOT +0.1%p, 크기 1.9배), 자동 vacuum 임계(p99 개선 없음), 임대 열 분리(WAL 0.99–1.00배), 배치 청구(호출 4.7–5.0배 감소, 절대 약 3 호출/s)는 깨끗한 창 2개에서 사전 등록 기준에 못 미쳐 바꾸지 않는다.
+3. **현행을 유지한다**(수치와 재검토 조건은 EXP-112): 폴링(`LISTEN/NOTIFY`는 8 클라이언트에서 커밋 처리량 0.37배, 32 클라이언트에서 0.21배), advisory 락 키 구성(64비트 충돌 0쌍), 지급 예약의 advisory 락(SERIALIZABLE은 처리량 0.351배·40001 89.8%), 두 DB 사이 workflow·outbox(2PC 시제품은 코디네이터 사망 시 같은 SKU 쓰기가 `lock_timeout`까지 100% 막히고 고아 prepared 트랜잭션이 vacuum 기준점을 고정). 큐 테이블 `fillfactor` 75(HOT +0.1%p, 크기 1.9배), 자동 vacuum 임계(p99 개선 없음), 임대 열 분리(WAL 0.99–1.00배), 배치 청구(호출 4.7–5.0배 감소, 절대 약 3 호출/s)는 깨끗한 창 n=2(창 3·4는 오염이라 분리, 같은 방향)에서 사전 등록 기준에 못 미쳐 바꾸지 않는다.
 
 ## 근거 (EXP-112, 깨끗한 같은 창에서 동시에 돌린 A0·A5 4쌍: 쌍 run 2개 load1 7.9→11.6, 6팔 동시 창 2개 load1 4.9→9.0·8.1→7.5, 라벨은 `queuetx`뿐)
 
