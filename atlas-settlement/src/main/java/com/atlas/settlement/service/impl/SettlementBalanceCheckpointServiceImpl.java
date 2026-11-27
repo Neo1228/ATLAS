@@ -1,5 +1,6 @@
 package com.atlas.settlement.service.impl;
 
+import com.atlas.settlement.persistence.projection.BalanceCheckpointPending;
 import com.atlas.settlement.repository.SettlementBalanceCheckpointRepository;
 import com.atlas.settlement.service.SettlementBalanceCheckpointService;
 import java.time.Duration;
@@ -37,7 +38,7 @@ public class SettlementBalanceCheckpointServiceImpl implements SettlementBalance
             return false;
         }
         UUID from = locked.get();
-        Optional<SettlementBalanceCheckpointRepository.Pending> pending = checkpoints.pending();
+        Optional<BalanceCheckpointPending> pending = checkpoints.pending();
         if (pending.isPresent()) {
             if (!pending.get().settled()) {
                 return false;

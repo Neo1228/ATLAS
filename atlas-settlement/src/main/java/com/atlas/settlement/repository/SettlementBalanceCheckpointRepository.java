@@ -1,5 +1,6 @@
 package com.atlas.settlement.repository;
 
+import com.atlas.settlement.persistence.projection.BalanceCheckpointPending;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -42,14 +43,14 @@ public class SettlementBalanceCheckpointRepository {
      * 앞 마감이 남긴 pending 경계와, 그 xid 보다 먼저 xid를 받은 트랜잭션이 모두 끝났는지. 커서 잠금 뒤 별도 문장으로
      * 읽어 잠금 이후의 스냅숏으로 판단한다.
      */
-    public Optional<Pending> pending() {
+    public Optional<BalanceCheckpointPending> pending() {
         return jdbc.query("""
                 SELECT pending_entry_id,
                        pending_xid IS NOT NULL AND pg_snapshot_xmin(pg_current_snapshot()) > pending_xid AS settled
                 FROM settlement_balance_checkpoint_cursor
                 WHERE pending_entry_id IS NOT NULL
                 """, resultSet -> resultSet.next()
-                ? Optional.of(new Pending(resultSet.getObject("pending_entry_id", UUID.class),
+                ? Optional.of(new BalanceCheckpointPending(resultSet.getObject("pending_entry_id", UUID.class),
                         resultSet.getBoolean("settled")))
                 : Optional.empty());
     }
@@ -104,9 +105,5 @@ public class SettlementBalanceCheckpointRepository {
     public static UUID uuidV7Floor(Instant at) {
         long millis = at.toEpochMilli();
         return new UUID((millis << 16) | 0x7000L, 0x8000_0000_0000_0000L);
-    }
-
-    /** 앞 마감이 남긴 경계. {@code settled}면 그 경계 아래 항목을 쓸 수 있는 트랜잭션이 모두 끝났다. */
-    public record Pending(UUID entryId, boolean settled) {
     }
 }
