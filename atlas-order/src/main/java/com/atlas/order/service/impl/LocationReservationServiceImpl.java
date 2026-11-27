@@ -222,11 +222,7 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         ReservationWorkflowSnapshot workflow = repository.findByWorkflowId(workflowId);
         if (workflow == null) throw new OrderException(OrderException.Code.NOT_FOUND,
                 "Inventory reservation workflow not found");
-        if (workflow.state() == LocationReservationWorkflowState.CLAIMED) return ClaimOutcome.CLAIMED;
-        if (workflow.state() != LocationReservationWorkflowState.RESERVED) {
-            return terminal(workflow.state()) || cancelRequested(workflow)
-                    ? ClaimOutcome.REJECTED : ClaimOutcome.PENDING;
-        }
+        if (workflow.state() != LocationReservationWorkflowState.RESERVED) return recordedClaimOutcome(workflow);
         Instant now = clock.instant();
         Instant leaseUntil = now.plus(leaseDuration);
         UUID leaseToken = repository.leaseForClaim(workflowId, now, leaseUntil);
@@ -254,8 +250,22 @@ public class LocationReservationServiceImpl implements LocationReservationServic
                         ? ClaimOutcome.PENDING : ClaimOutcome.REJECTED;
             }
         }
-        finish(workflow, lease.leaseToken(), LocationReservationWorkflowState.CLAIMED, null, clock.instant());
+        if (!finish(workflow, lease.leaseToken(), LocationReservationWorkflowState.CLAIMED, null, clock.instant())) {
+            // lease를 잃어 CLAIMED를 기록하지 못했다. 그 사이 다른 coordinator가 취소하고 재고를 되돌렸을 수 있으므로
+            // 원격 응답이 아니라 기록된 상태로 답한다. 호출자는 CLAIMED일 때만 매입한다.
+            return recordedClaimOutcome(repository.findByWorkflowId(workflowId));
+        }
         return ClaimOutcome.CLAIMED;
+    }
+
+    /**
+     * 기록된 workflow 상태로 claim 결과를 정한다. 취소 요청과 종결 상태는 REJECTED(호출자가 승인을 void),
+     * RESERVED(다른 claim이 lease를 쥠)와 보상 진행 중은 PENDING이다.
+     */
+    private ClaimOutcome recordedClaimOutcome(ReservationWorkflowSnapshot workflow) {
+        if (workflow.state() == LocationReservationWorkflowState.CLAIMED) return ClaimOutcome.CLAIMED;
+        if (workflow.state() == LocationReservationWorkflowState.RESERVED) return ClaimOutcome.PENDING;
+        return terminal(workflow.state()) || cancelRequested(workflow) ? ClaimOutcome.REJECTED : ClaimOutcome.PENDING;
     }
 
     private record SubmissionAttempt(ReservationWorkflowSnapshot workflow, ReservationWorkflowLease lease, boolean replayed) {}
@@ -603,13 +613,14 @@ public class LocationReservationServiceImpl implements LocationReservationServic
         return workflow.state() == LocationReservationWorkflowState.CANCEL_PENDING;
     }
 
-    private void finish(ReservationWorkflowSnapshot workflow, UUID leaseToken, LocationReservationWorkflowState state,
+    private boolean finish(ReservationWorkflowSnapshot workflow, UUID leaseToken, LocationReservationWorkflowState state,
             String errorCode, Instant nextAttemptAt) {
         boolean finished = repository.finishWorkflow(workflow.workflowId(), leaseToken, state, errorCode,
                 nextAttemptAt, clock.instant());
         if (finished) {
             settleAdmission(workflow, state, errorCode);
         }
+        return finished;
     }
 
     /** 종결 상태가 되면 gate에 알려 승인 때 잡아 둔 수량을 정리하거나 돌려준다. gate 오류는 workflow를 막지 않는다. */
