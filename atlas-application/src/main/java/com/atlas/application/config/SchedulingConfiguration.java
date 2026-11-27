@@ -47,6 +47,16 @@ public class SchedulingConfiguration {
         return scheduler;
     }
 
+    /** 인증 메일 outbox 전송. SMTP 대기가 다른 worker와 HTTP 스레드를 붙잡지 않게 분리한다(ADR-0102). */
+    @Bean(name = "accountNotificationTaskScheduler")
+    ThreadPoolTaskScheduler accountNotificationTaskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("atlas-account-notification-");
+        waitForInFlightTasks(scheduler);
+        return scheduler;
+    }
+
     private static void waitForInFlightTasks(ThreadPoolTaskScheduler scheduler) {
         scheduler.setWaitForTasksToCompleteOnShutdown(true);
         scheduler.setAwaitTerminationSeconds(10);

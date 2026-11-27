@@ -1,6 +1,8 @@
 package com.atlas.account.dto.response;
 
+import com.atlas.account.model.AccountNotificationOutcome;
 import com.atlas.account.model.AccountSuspensionActionType;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -66,5 +68,17 @@ public final class AccountResponse {
         public String toString() {
             return "VerifiedSellerAccount[accountId=" + accountId + ", email=[REDACTED]]";
         }
+    }
+
+    /** 알림 outbox 행 하나의 처리 결과. {@code sinceRequested}는 요청 커밋부터 이 처리까지의 시간이다. */
+    public record NotificationDelivery(AccountNotificationOutcome outcome, Duration sinceRequested) {
+        public NotificationDelivery {
+            Objects.requireNonNull(outcome);
+            Objects.requireNonNull(sinceRequested);
+        }
+    }
+
+    /** 알림 outbox 적체. 대기 행이 없으면 {@code oldestPendingAge}는 0이다. */
+    public record NotificationBacklog(long pending, long failed, Duration oldestPendingAge) {
     }
 }

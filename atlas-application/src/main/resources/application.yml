@@ -77,6 +77,13 @@ spring:
     client:
       connect-timeout: ${ATLAS_HTTP_CONNECT_TIMEOUT:2s}
       read-timeout: ${ATLAS_HTTP_READ_TIMEOUT:10s}
+  # JavaMail은 이 값이 없으면 SMTP 연결·읽기·쓰기를 무기한 기다린다. 인증 메일을 요청 스레드에서 보내는 현행
+  # 경로에서 SMTP가 멈추면 Tomcat 스레드(40)가 모두 묶여 무관한 API까지 멈췄다(EXP-113 C2). 0은 무한이다.
+  mail:
+    properties:
+      mail.smtp.connectiontimeout: ${ATLAS_SMTP_CONNECT_TIMEOUT_MS:5000}
+      mail.smtp.timeout: ${ATLAS_SMTP_READ_TIMEOUT_MS:5000}
+      mail.smtp.writetimeout: ${ATLAS_SMTP_WRITE_TIMEOUT_MS:5000}
   security:
     oauth2:
       client:
@@ -117,6 +124,22 @@ atlas:
       purge-batch-size: ${ATLAS_AUTH_THROTTLE_PURGE_BATCH_SIZE:500}
       purge-initial-delay: ${ATLAS_AUTH_THROTTLE_PURGE_INITIAL_DELAY:PT5M}
       purge-interval: ${ATLAS_AUTH_THROTTLE_PURGE_INTERVAL:PT10M}
+  # 인증 메일 outbox(ADR-0102, EXP-113). 끄면(기본) 현행대로 커밋 뒤 요청 스레드에서 보내고 실패는 로그만 남는다.
+  # 켜면 요청 transaction에 전달 의도만 기록하고 전용 worker가 보낸다. 켜기 전 V9가 적용돼 있어야 한다.
+  account:
+    notification:
+      outbox:
+        enabled: ${ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED:false}
+      # 메일 한 통의 최대 전송 시간(위 SMTP timeout 합)보다 길어야 한다. 짧으면 전송 중인 행을 다른 worker가 다시 잡는다.
+      lease-duration: ${ATLAS_ACCOUNT_NOTIFICATION_LEASE_DURATION:PT2M}
+      retry:
+        initial-backoff: ${ATLAS_ACCOUNT_NOTIFICATION_INITIAL_BACKOFF:PT5S}
+        max-backoff: ${ATLAS_ACCOUNT_NOTIFICATION_MAX_BACKOFF:PT5M}
+        max-attempts: ${ATLAS_ACCOUNT_NOTIFICATION_MAX_ATTEMPTS:10}
+      worker:
+        initial-delay: ${ATLAS_ACCOUNT_NOTIFICATION_INITIAL_DELAY:PT1S}
+        poll-interval: ${ATLAS_ACCOUNT_NOTIFICATION_POLL_INTERVAL:PT1S}
+        batch-size: ${ATLAS_ACCOUNT_NOTIFICATION_BATCH_SIZE:20}
   admission:
     expiry-poll-interval: PT1S
     expiry-sweep-batch-size: ${ATLAS_ADMISSION_EXPIRY_SWEEP_BATCH_SIZE:100}

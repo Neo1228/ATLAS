@@ -27,6 +27,7 @@ import com.atlas.account.persistence.projection.AccountActionToken;
 import com.atlas.account.persistence.projection.AccountMfaSecret;
 import com.atlas.account.persistence.projection.AccountPrincipal;
 import com.atlas.account.persistence.projection.RefreshTokenSession;
+import com.atlas.account.repository.AccountNotificationRepository;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.repository.AccountSuspensionRepository;
 import com.atlas.account.service.impl.AccessTokenService;
@@ -74,7 +75,8 @@ class AccountServiceTest {
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
         service = new AccountServiceImpl(accounts, passwords, accessTokens, emailSender, mfaSecrets,
-                Clock.fixed(NOW, ZoneOffset.UTC), suspensions, limiter, transactionManager);
+                Clock.fixed(NOW, ZoneOffset.UTC), suspensions, limiter, transactionManager,
+                mock(AccountNotificationRepository.class), false);
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.atlas.account.persistence.projection.AccountMfaSecret;
 import com.atlas.account.persistence.projection.AccountPrincipal;
 import com.atlas.account.persistence.projection.ActiveRefreshFamily;
 import com.atlas.account.persistence.projection.RefreshTokenSession;
+import com.atlas.account.repository.AccountNotificationRepository;
 import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.repository.AccountSuspensionRepository;
 import com.atlas.account.service.AccountEmailSender;
@@ -23,14 +24,12 @@ import com.bastiaanjansen.otp.TOTPGenerator;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -38,6 +37,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -52,8 +52,6 @@ import org.springframework.util.StringUtils;
 public class AccountServiceImpl implements AccountService {
     private static final Duration REFRESH_TOKEN_LIFETIME = Duration.ofDays(7);
     private static final Duration REFRESH_FAMILY_LIFETIME = Duration.ofDays(30);
-    private static final Duration EMAIL_VERIFICATION_LIFETIME = Duration.ofHours(24);
-    private static final Duration PASSWORD_RESET_LIFETIME = Duration.ofMinutes(30);
     private static final Duration MFA_CHALLENGE_LIFETIME = Duration.ofMinutes(5);
     private static final Logger LOGGER = LoggerFactory.getLogger(AccountServiceImpl.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -67,12 +65,16 @@ public class AccountServiceImpl implements AccountService {
     private final AuthAttemptLimiter limiter;
     private final TransactionTemplate transactions;
     private final String dummyLoginPasswordHash;
+    private final ActionTokenIssuer actionTokens;
+    private final AccountNotificationRepository notifications;
+    private final boolean notificationOutbox;
 
     public AccountServiceImpl(AccountRepository accounts, PasswordEncoder passwords,
             AccessTokenService accessTokens, AccountEmailSender emailSender,
             AccountMfaSecretProtector mfaSecrets, Clock clock,
             AccountSuspensionRepository suspensions, AuthAttemptLimiter limiter,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager, AccountNotificationRepository notifications,
+            @Value("${atlas.account.notification.outbox.enabled:false}") boolean notificationOutbox) {
         this.accounts = accounts;
         this.passwords = passwords;
         this.accessTokens = accessTokens;
@@ -83,6 +85,9 @@ public class AccountServiceImpl implements AccountService {
         this.limiter = Objects.requireNonNull(limiter);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.dummyLoginPasswordHash = passwords.encode(UUID.randomUUID().toString());
+        this.actionTokens = new ActionTokenIssuer(accounts, clock);
+        this.notifications = Objects.requireNonNull(notifications);
+        this.notificationOutbox = notificationOutbox;
     }
 
     @Override
@@ -102,8 +107,7 @@ public class AccountServiceImpl implements AccountService {
             if (createdAccount.isEmpty()) return new AccountResponse.Action(true);
             UUID accountId = createdAccount.get();
             accounts.createBuyer(accountId);
-            String token = newActionToken(accountId, AccountActionTokenPurpose.EMAIL_VERIFICATION, EMAIL_VERIFICATION_LIFETIME);
-            sendAfterCommit(() -> emailSender.sendVerification(email, token));
+            requestActionEmail(accountId, email, AccountActionTokenPurpose.EMAIL_VERIFICATION);
             return new AccountResponse.Action(true);
         });
     }
@@ -114,10 +118,8 @@ public class AccountServiceImpl implements AccountService {
         Instant now = clock.instant();
         if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, now)) return new AccountResponse.Action(true);
         return transactions.execute(status -> {
-            accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId -> {
-                String token = newActionToken(accountId, AccountActionTokenPurpose.PASSWORD_RESET, PASSWORD_RESET_LIFETIME);
-                sendAfterCommit(() -> emailSender.sendPasswordReset(email, token));
-            });
+            accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId ->
+                    requestActionEmail(accountId, email, AccountActionTokenPurpose.PASSWORD_RESET));
             return new AccountResponse.Action(true);
         });
     }
@@ -128,10 +130,8 @@ public class AccountServiceImpl implements AccountService {
         Instant now = clock.instant();
         if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, now)) return new AccountResponse.Action(true);
         return transactions.execute(status -> {
-            accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId -> {
-                String token = newActionToken(accountId, AccountActionTokenPurpose.EMAIL_VERIFICATION, EMAIL_VERIFICATION_LIFETIME);
-                sendAfterCommit(() -> emailSender.sendVerification(email, token));
-            });
+            accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId ->
+                    requestActionEmail(accountId, email, AccountActionTokenPurpose.EMAIL_VERIFICATION));
             return new AccountResponse.Action(true);
         });
     }
@@ -539,11 +539,17 @@ public class AccountServiceImpl implements AccountService {
         return tokenResponse(account, refreshToken, familyId);
     }
 
-    private String newActionToken(UUID accountId, AccountActionTokenPurpose purpose, Duration lifetime) {
-        String token = newRefreshToken();
-        Instant now = clock.instant();
-        accounts.replaceActionToken(accountId, purpose, hashRefreshToken(token), now, now.plus(lifetime));
-        return token;
+    /**
+     * 인증 메일 전달을 건다. outbox를 켜면 같은 transaction에 전달 의도만 기록하고 토큰은 worker가 전송 직전에
+     * 발급한다(토큰을 outbox에 두지 않는다, ADR-0102). 끄면 현행대로 토큰을 지금 발급하고 커밋 뒤 요청 스레드에서 보낸다.
+     */
+    private void requestActionEmail(UUID accountId, String email, AccountActionTokenPurpose purpose) {
+        if (notificationOutbox) {
+            notifications.enqueue(accountId, purpose, clock.instant());
+            return;
+        }
+        String token = actionTokens.issue(accountId, purpose);
+        sendAfterCommit(() -> ActionTokenIssuer.send(emailSender, purpose, email, token));
     }
 
     private AccountActionToken requireActionToken(String presentedToken,
@@ -613,18 +619,11 @@ public class AccountServiceImpl implements AccountService {
     }
 
     private static String newRefreshToken() {
-        byte[] value = new byte[48];
-        SECURE_RANDOM.nextBytes(value);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
+        return ActionTokenIssuer.newSecret();
     }
 
     private static String hashRefreshToken(String token) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
-        }
+        return ActionTokenIssuer.sha256Hex(token);
     }
 
     private static AccountException invalidCredentials() {
