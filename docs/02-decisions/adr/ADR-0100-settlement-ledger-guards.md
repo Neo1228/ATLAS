@@ -32,7 +32,6 @@
 | 복원(H7) | 덤프 `pg_restore -j 4` 2.41 s, 덤프 65 MB, PITR 승격까지 4.21 s, 항목 해시 일치 True, 점검 2.1 s |
 | 위험 | 균형 위반 버그는 정산 반영 transaction 전체를 롤백한다. 이전에는 조용히 commit됐다. 복구 job이 재시도하다 `NEEDS_REVIEW`로 올린다(기존 시험 `settlementFailureRollsBack...`가 같은 롤백 경로를 이미 확인) |
 
-
 ## 대안과 기각 사유
 
 | 대안 | 기각·채택 이유 |
@@ -46,7 +45,6 @@
 | 이벤트 소싱·외부 원장 서비스 | 범위 밖. 별도 시스템 도입이고 단일 PostgreSQL 결정과 충돌한다. |
 | 동기 복제·HA | 측정하지 않았다. RPO 0을 주장하지 않는다. |
 | pgBackRest·WAL-G | 이번에는 `pg_basebackup` + `archive_command`로 절차와 복원 시간을 증명했다. 도구 도입은 재검토 조건(분개 200만건)에서 비용을 비교한다. |
-
 
 ## 롤백
 
