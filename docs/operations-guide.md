@@ -309,6 +309,7 @@ SPRING_FLYWAY_URL=jdbc:postgresql://<host>:5432/atlas SPRING_FLYWAY_USER=atlas S
 - compose: `app` 서비스 `environment`에 위 변수를 추가하고(`ATLAS_DB_USER=atlas_runtime`), `postgres` 컨테이너에서 `docker compose exec -T postgres psql ... < scripts/db/runtime-role.sql`을 1)과 3)에 돌립니다.
 - Testcontainers: `SettlementLedgerRoleSeparationIntegrationTest`가 같은 구성입니다(컨테이너에 스크립트를 복사해 `psql`로 실행, `spring.flyway.*`로 소유 계정 지정).
 - 새 추가 전용 테이블을 만들면 스크립트의 `REVOKE UPDATE, DELETE` 목록에 넣고 다시 실행합니다.
+- 비밀번호 교체: 스크립트는 역할이 이미 있으면 비밀번호를 바꾸지 않습니다. `ALTER ROLE atlas_runtime PASSWORD '<새 비밀번호>'`로 바꾸고 앱 환경 변수를 같이 바꿉니다.
 - 되돌리기: 앱의 `ATLAS_DB_USER`/`PASSWORD`를 소유 계정으로 되돌리고 `SPRING_FLYWAY_*`를 지운 뒤 `DROP OWNED BY atlas_runtime; DROP ROLE atlas_runtime;`을 실행합니다(역할이 가진 권한만 지워지고 데이터는 그대로입니다).
 
 ### 백업과 복원
