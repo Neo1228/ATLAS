@@ -13,6 +13,7 @@ import com.atlas.application.service.PaymentRecoveryOperatorService;
 import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.model.PaymentRecoveryOperationType;
 import com.atlas.payment.service.PaymentRecoveryService;
+import com.atlas.support.AppendOnlyTestReset;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -67,7 +68,7 @@ class PaymentRecoveryIntegrationTest {
 
     @BeforeEach
     void clearRecoveryFixtures() {
-        jdbc.update("DELETE FROM payment_recovery_operator_action");
+        AppendOnlyTestReset.clear(jdbc, "payment_recovery_operator_action");
         jdbc.update("DELETE FROM payment_recovery_job");
         jdbc.update("DELETE FROM payment_refund_operation");
         jdbc.update("DELETE FROM payment_attempt");

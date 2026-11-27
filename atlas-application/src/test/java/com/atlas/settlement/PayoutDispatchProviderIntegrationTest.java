@@ -12,6 +12,7 @@ import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
+import com.atlas.support.AppendOnlyTestReset;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -99,7 +100,7 @@ class PayoutDispatchProviderIntegrationTest extends PayPalIntegrationTestSupport
         }
         FAKE.reset();
         jdbc.update("DELETE FROM settlement_payout_dispatch_outbox");
-        jdbc.update("DELETE FROM settlement_payout_operator_action");
+        AppendOnlyTestReset.clear(jdbc, "settlement_payout_operator_action");
     }
 
     @AfterAll

@@ -9,7 +9,7 @@ import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
-import com.atlas.support.LedgerTestReset;
+import com.atlas.support.AppendOnlyTestReset;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
@@ -68,7 +68,7 @@ class SettlementPayoutFailureRetryIntegrationTest extends PayPalIntegrationTestS
     @BeforeEach
     void clearLedgerAndPayouts() {
         // 지급 row 가 누적되면 pendingAmount 가 잔액을 예약된 것으로 오판한다. 빈 원장에서 시작한다.
-        LedgerTestReset.clearLedger(jdbc);
+        AppendOnlyTestReset.clearLedger(jdbc);
         jdbc.update("DELETE FROM settlement_payout");
     }
 

@@ -16,7 +16,7 @@ import com.atlas.settlement.model.SettlementPayoutState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.service.SettlementService;
-import com.atlas.support.LedgerTestReset;
+import com.atlas.support.AppendOnlyTestReset;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -84,9 +84,9 @@ class SettlementFeeReservePayoutIntegrationTest extends PayPalIntegrationTestSup
         // seller 는 테스트마다 새 UUID 지만, 지급 row 는 누적되면 pendingAmount 가 잔액을
         // 예약된 것으로 오판한다. 각 테스트는 빈 원장에서 시작해야 한다.
         jdbc.update("DELETE FROM settlement_payout_dispatch_outbox");
-        jdbc.update("DELETE FROM settlement_payout_operator_action");
+        AppendOnlyTestReset.clear(jdbc, "settlement_payout_operator_action");
         jdbc.update("DELETE FROM settlement_refund_reservation");
-        LedgerTestReset.clearLedger(jdbc);
+        AppendOnlyTestReset.clearLedger(jdbc);
         jdbc.update("DELETE FROM settlement_payout");
     }
 

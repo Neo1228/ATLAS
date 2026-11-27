@@ -144,6 +144,26 @@ class SettlementLedgerRoleSeparationIntegrationTest extends PayPalIntegrationTes
         assertThat(owner().queryForObject("SELECT count(*) FROM settlement_entry", Long.class)).isEqualTo(entries);
     }
 
+    /** 원장 밖의 추가 전용 감사·이벤트 테이블도 같은 스크립트가 UPDATE·DELETE를 회수한다(EXP-116, ADR-0105). */
+    @Test
+    void runtimeRoleCannotUpdateOrDeleteAppendOnlyAuditTables() {
+        for (String table : List.of(
+                "domain_audit_event", "order_inventory_event", "inventory_capacity_adjustment", "inventory_transfer",
+                "account_suspension_action", "payment_recovery_operator_action", "paypal_webhook_retry_operator_audit",
+                "seller_payout_profile_action", "settlement_payout_operator_action", "paypal_balance_report_run",
+                "paypal_balance_report_row", "paypal_balance_report_disposition")) {
+            assertThat(runtime.queryForObject("SELECT has_table_privilege(current_user, ?, 'INSERT')", Boolean.class, table))
+                    .as(table).isTrue();
+            for (String statement : List.of("DELETE FROM " + table, "TRUNCATE " + table)) {
+                assertThatThrownBy(() -> runtime.execute(statement))
+                        .as(statement)
+                        .satisfies(error -> assertThat(sqlState(error)).as(statement).isEqualTo("42501"));
+            }
+            assertThat(runtime.queryForObject("SELECT has_table_privilege(current_user, ?, 'UPDATE')", Boolean.class, table))
+                    .as(table).isFalse();
+        }
+    }
+
     @Test
     void flywayRunsAsTheOwnerOnItsOwnConnectionWhileTheRuntimeUrlKeepsItsTimeout() {
         assertThat(runtime.queryForObject("SHOW statement_timeout", String.class)).isEqualTo("1500ms");

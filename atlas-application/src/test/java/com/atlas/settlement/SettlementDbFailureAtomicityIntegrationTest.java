@@ -7,7 +7,7 @@ import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.settlement.service.SettlementPayoutService;
-import com.atlas.support.LedgerTestReset;
+import com.atlas.support.AppendOnlyTestReset;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -76,7 +76,7 @@ class SettlementDbFailureAtomicityIntegrationTest extends PayPalIntegrationTestS
 
     @BeforeEach
     void clearLedger() {
-        LedgerTestReset.clearLedger(jdbc);
+        AppendOnlyTestReset.clearLedger(jdbc);
         jdbc.update("DELETE FROM settlement_payout");
     }
 

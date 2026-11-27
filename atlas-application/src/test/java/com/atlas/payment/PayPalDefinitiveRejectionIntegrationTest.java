@@ -22,6 +22,7 @@ import com.atlas.payment.persistence.projection.PaymentRecoveryReviewRow;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.service.PaymentRecoveryService;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.support.AppendOnlyTestReset;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -103,7 +104,7 @@ class PayPalDefinitiveRejectionIntegrationTest extends PayPalIntegrationTestSupp
 
     @BeforeEach
     void setUp() {
-        jdbc.update("DELETE FROM payment_recovery_operator_action");
+        AppendOnlyTestReset.clear(jdbc, "payment_recovery_operator_action");
         jdbc.update("DELETE FROM payment_recovery_job");
         // 재시도 간격만 줄인 실제 worker. 최대 시도 8회, 24시간 window 는 운영 값 그대로다.
         worker = new PaymentRecoveryWorker(recovery, payments, orders, checkouts, refunds,

@@ -49,7 +49,7 @@ n = 3 run, 단일 호스트, 잠금 아래. 시간 값은 맥락용이고 결론
 - 원장 제외: `settlement_journal`은 V7로 이미 추가 전용이고 돈의 정본이다. 이 로그가 답할 질문(운영자별 조치, 대상별 조치 이력)에는 분개 행이 필요 없으므로 두 번째 사본을 만들지 않는다. 운영자 조치가 낳은 지급 분개는 `payout` 집계 ID로 원장에서 찾는다.
 - 재고 제외: 판매자 재고 조정 쓰기(`CapacityAdjustmentRepository.record`의 SQL)에서 트리거가 p99를 +44.8%(c = 1), p50을 +48.7%·p99를 +136.3%(c = 8) 늘렸고 `(tx_id)` 색인을 빼도 c = 1 p50 +49.0%로 사전 등록 임계(p50 ≤ +25%·+0.3 ms, p99 ≤ +25%)를 넘었다(EXP-113 H21). 그래서 `inventory_capacity_adjustment`·`inventory_transfer`는 로그에 넣지 않고 원본 테이블에서 읽는다. 남은 6개는 운영자 예외 조치라 요청 경로의 쓰기가 아니다(같은 함수의 행당 비용은 같으므로 드문 쓰기라는 점이 근거다).
 - 방식: 원본 테이블의 `AFTER INSERT` 트리거(`record_domain_audit_event`). 쓰기 코드를 고치지 않으므로 새 쓰기 경로도 빠지지 않고, 원본 쓰기가 롤백되면 로그도 없다. 앱 코드로 기록하는 안은 쓰기 경로마다 수정과 모듈 공용 기록기가 필요해 기각했고, 기존 `order_inventory_event`는 예약 workflow 전용 열 구조라 재사용하지 않았다. CDC·Kafka는 인프라 추가라 기각했다. `tx_id`가 있어 ADR-0067의 xmin 안전 cursor로 소비자를 붙일 수 있다(소비자는 이번 범위 밖).
-- 한계: 행위자 열이 없는 원본이 대상에 없으므로 `actor`는 원본에 행위자가 있는 행만 채워진다. 원본 테이블 일부는 UPDATE·DELETE 가드가 없어(후속 [#720](https://github.com/Neo1228/ATLAS/issues/720)) 원본이 바뀌어도 로그는 처음 값을 유지한다. 로그 INSERT가 실패하면 원본 쓰기도 실패한다.
+- 한계: 행위자 열이 없는 원본이 대상에 없으므로 `actor`는 원본에 행위자가 있는 행만 채워진다. 원본 테이블 일부는 UPDATE·DELETE 가드가 없어(후속 [#720](https://github.com/Neo1228/ATLAS/issues/720)) 원본이 바뀌어도 로그는 처음 값을 유지한다. V11([ADR-0105](ADR-0105-audit-table-append-only-guards.md))부터 원본 6개 모두 UPDATE·DELETE·TRUNCATE를 거절한다. 로그 INSERT가 실패하면 원본 쓰기도 실패한다.
 - 근거 수치: EXP-113 H14~H18, H21.
 
 ## 롤백

@@ -16,7 +16,7 @@ Seller가 재고 수량을 정정할 때 `reserved`와 `claimed` 재고를 보�
 - `reserved`와 `claimed`는 조정하지 않음. 보존식 `initialCapacity = available + reserved + claimed` 유지.
 - 요청은 SKU, signed delta, reason, `Idempotency-Key`로 구성.
 - 동일 key·동일 요청은 기존 결과 재응답. 동일 key·다른 요청은 conflict.
-- pool 변경과 append-only adjustment audit를 PostgreSQL transaction 하나로 처리.
+- pool 변경과 append-only adjustment audit를 PostgreSQL transaction 하나로 처리. audit 행의 UPDATE·DELETE·TRUNCATE는 V11 트리거가 거절한다([ADR-0105](ADR-0105-audit-table-append-only-guards.md)).
 
 ## 근거와 대안
 

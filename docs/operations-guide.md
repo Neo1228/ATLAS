@@ -42,6 +42,20 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 - 새 감사 테이블을 만들면 `record_domain_audit_event()`의 `CASE`에 매핑을 더하고 `AFTER INSERT` 트리거를 건다. 매핑이 없으면 그 테이블의 INSERT가 실패한다(누락을 조용히 넘기지 않기 위함). 운영자 조치가 아닌 잦은 쓰기 경로(판매자·구매자 요청마다 쓰는 테이블)는 넣기 전에 EXP-113 H21과 같은 방법으로 쓰기 비용을 잰다.
 - 되돌리기: 트리거만 끄려면 `DROP TRIGGER <table>_audit ON <table>;`, 전부 없애려면 이어서 `DROP TABLE domain_audit_event; DROP FUNCTION record_domain_audit_event(); DROP FUNCTION reject_domain_audit_event_mutation();`(소유 계정).
 
+## 감사·이벤트 테이블 추가 전용 가드 (V11, ADR-0105)
+
+- 항상 켜져 있다. 운영 코드가 UPDATE·DELETE·TRUNCATE하지 않는(사용처 0건, EXP-116) 감사·이벤트 테이블 8개를 V7 원장과 같은 방식으로 DB가 지킨다. 행 단위 `BEFORE UPDATE OR DELETE`와 문장 단위 `BEFORE TRUNCATE` 트리거가 SQLSTATE `P0001`로 거절한다. 슈퍼유저·소유 계정도 같다.
+  - 새로 가드한 6개(`<테이블>_is_append-only`): `inventory_capacity_adjustment`, `account_suspension_action`, `payment_recovery_operator_action`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `order_inventory_event`.
+  - V1의 행 가드에 TRUNCATE 가드만 더한 2개(메시지는 V1 그대로): `inventory_transfer`(`inventory transfer audit is append-only`), `paypal_webhook_retry_operator_audit`(`operator retry audit rows are immutable`).
+  - `paypal_webhook_retry_attempt_history`는 대상이 아니다. 시도 행이 `CLAIMED`로 들어와 한 번 종결 UPDATE를 받는다(V1 트리거가 그 전이만 허용).
+- INSERT 경로에는 발동하지 않는다. 가장 자주 쓰는 `order_inventory_event`(예약 상태 전이마다)의 INSERT 비용은 EXP-116 H4에 있다.
+- 적용: 새 이미지를 기동하면 Flyway가 V11을 적용한다. `CREATE TRIGGER`는 테이블마다 `SHARE ROW EXCLUSIVE` 잠금을 잠깐 잡아 그동안 그 테이블의 쓰기가 기다린다. 행을 읽지 않으므로 시간은 행 수와 무관하다. 기존 행은 검사하지 않는다.
+- 확인: `SELECT c.relname, t.tgname, t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgfoid = 'reject_append_only_mutation'::regproc OR t.tgname IN ('inventory_transfer_no_truncate', 'paypal_webhook_retry_operator_audit_no_truncate') ORDER BY 1, 2;`가 V11의 트리거 14개를 모두 `O`(켜짐)로 보여 준다.
+- 정정(break-glass): 감사 행은 고치지 않는 것이 원칙이다. 꼭 필요하면 소유 계정으로 한 트랜잭션에서 `ALTER TABLE <테이블> DISABLE TRIGGER <테이블>_append_only;` → 수정 → `ENABLE TRIGGER` → `COMMIT`(원장 정정 절과 같은 순서). 사유와 문장을 변경 기록에 남긴다.
+- 런타임 역할 분리(옵트인)를 쓰면 V11 적용 뒤 `scripts/db/runtime-role.sql`을 다시 실행한다. 이 스크립트가 원장 3개와 감사·이벤트 12개(위 8개, `domain_audit_event`, `paypal_balance_report_run`·`_row`·`_disposition`)의 UPDATE·DELETE를 런타임 역할에서 회수한다.
+- 롤백: `psql -v ON_ERROR_STOP=1 -1 -f scripts/db/rollback/V11__undo_audit_append_only_guards.sql`(소유 계정). V11의 트리거 14개와 함수 1개만 지우고 V1의 행 가드와 데이터는 남긴다. 마지막 줄이 `flyway_schema_history`의 V11 행을 지워 같은 이미지가 다시 V11을 적용한다. 앱을 V11 이전 이미지로 되돌리는 경우에도 이 스크립트를 먼저 돌린다(V7 롤백과 같은 이유). 역할 스크립트의 회수는 되돌리지 않는다(앱이 이 테이블들을 고치지 않는다).
+- 시험이 이 테이블을 비울 때는 `AppendOnlyTestReset.clear(jdbc, "<테이블>")`(한 연결에서 `session_replication_role = replica`)을 쓴다. 운영 코드는 쓰지 않는다.
+
 ## PayPal Balance report 대사
 
 - PayPal merchant portal에서 내려받은 Balance Reconciliation report CSV의 단일 파일 업로드 지원. 공식 [Balance report 문서](https://developer.paypal.com/reports/balance)와 [공개 CSV sample](https://www.paypalobjects.com/ppdevdocs/Sample-Balance%20Report-CCOP.csv) 기준의 header-driven parsing.
