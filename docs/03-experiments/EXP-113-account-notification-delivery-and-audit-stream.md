@@ -1,6 +1,6 @@
 # EXP-113: 인증 메일 전달의 유실·스레드 점유를 재현하고 SMTP timeout·알림 outbox·Spring 내부 이벤트를 같은 칸에서 비교하며, 감사 스트림의 필요성을 가른다
 
-- 상태: ✓ 완료(PostgreSQL 18.6, 단일 호스트, 가짜 SMTP, 칸·안마다 n = 3, 잠금 아래). 가설과 반증 조건은 첫 측정 전 커밋(`22630fc2`)으로 고정했고, 정정 1건·사후 안 A1b·사용자 지시로 추가한 감사 로그 가설은 각각 해당 측정 전에 커밋했다. 반증된 가설은 H4·H5·H6(C2)·H8이다.
+- 상태: ✓ 완료(PostgreSQL 18.6, 단일 호스트, 가짜 SMTP, 칸·안마다 n = 3, 잠금 아래). 가설과 반증 조건은 첫 측정 전 커밋(`6e0c87dd`)으로 고정했고, 정정 1건·사후 안 A1b·사용자 지시로 추가한 감사 로그 가설은 각각 해당 측정 전에 커밋했다. 반증된 가설은 H4·H5·H6(C2)·H8이다.
 - 날짜: 2026-11-27
 - 관련: [#718](https://github.com/Neo1228/ATLAS/issues/718), [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md), ADR-0102, D-181
 
@@ -107,7 +107,7 @@ A3와 측정 구동기는 저장소에 올리지 않는다(실험 전용 패치)
 
 ## 결과
 
-측정 시각 2026-11-27 12:16~12:54, 잠금 `notify` 아래 안마다 다시 잡음. run마다 load1 2.96~10.08(모두 ≤ 12). 다른 에이전트의 라벨 컨테이너 `eps-pg` 1개가 내내 떠 있었고 한 번 표본한 CPU는 0.00%였다. 사전 등록 규칙의 문자 그대로는 "다른 라벨 스택 있음"이라 모든 run을 오염 후보로 표시한다. 결론은 부하에 민감하지 않은 건수(유실·중복·전달·탐침 성공·503)로 내고, 시간 값은 맥락으로만 쓴다. 시운전 run(n = 1)은 표에서 뺐다. A1·A2 jar는 커밋 91ba8d12(전송이 `afterCommit` 안), A1b는 4eaf06b8(연결 반환 뒤 전송)이다.
+측정 시각 2026-11-27 12:16~12:54, 잠금 `notify` 아래 안마다 다시 잡음. run마다 load1 2.96~10.08(모두 ≤ 12). 다른 에이전트의 라벨 컨테이너 `eps-pg` 1개가 내내 떠 있었고 한 번 표본한 CPU는 0.00%였다. 사전 등록 규칙의 문자 그대로는 "다른 라벨 스택 있음"이라 모든 run을 오염 후보로 표시한다. 결론은 부하에 민감하지 않은 건수(유실·중복·전달·탐침 성공·503)로 내고, 시간 값은 맥락으로만 쓴다. 시운전 run(n = 1)은 표에서 뺐다. A1·A2 jar는 커밋 2ece01e5(전송이 `afterCommit` 안), A1b는 fcc6c55f(연결 반환 뒤 전송)이다.
 
 ### C1 커밋 직후 종료 (H1·H2·H3)
 
@@ -336,7 +336,7 @@ A0·A1·A1b는 가입 한 건이 SMTP 왕복 7번(약 7.1초)을 요청 스레�
 
 - 단일 호스트, 가짜 SMTP, 시간 값은 맥락용. `eps-pg` 컨테이너가 떠 있던 창이다(위 결과 머리말).
 - C1의 A0·A1은 풀 고갈 때문에 run당 커밋이 10건이라 표본이 30건이다.
-- A1·A2 jar는 최종 커밋 이전(91ba8d12)이다. 그 뒤의 변경은 현행 경로의 전송 위치(A1b로 따로 측정)와 감사 로그(시험·별도 측정)이고 outbox 경로 코드는 같다.
+- A1·A2 jar는 최종 커밋 이전(2ece01e5)이다. 그 뒤의 변경은 현행 경로의 전송 위치(A1b로 따로 측정)와 감사 로그(시험·별도 측정)이고 outbox 경로 코드는 같다.
 - 감사 로그의 소비자(cursor, relay)와 조회 API는 만들지 않았다. 질의는 운영 문서의 SQL이다.
 - 실제 메일 제공자, 다중 인스턴스 worker 경합, 운영 부하에서의 로그 증가 속도는 재지 않았다.
 
@@ -360,7 +360,7 @@ A0·A1·A1b는 가입 한 건이 SMTP 왕복 7번(약 7.1초)을 요청 스레�
 
 ### 구성
 
-- jar 4개: A0 = `origin/main` d2c8395f의 bootJar, A3 = 같은 기준 + 아래 A3 패치, A1·A2 = 이 브랜치 커밋 91ba8d12의 bootJar(A2는 `--atlas.account.notification.outbox.enabled=true --atlas.account.notification.lease-duration=PT30S`), A1b = 커밋 4eaf06b8의 bootJar.
+- jar 4개: A0 = `origin/main` d2c8395f의 bootJar, A3 = 같은 기준 + 아래 A3 패치, A1·A2 = 이 브랜치 커밋 2ece01e5의 bootJar(A2는 `--atlas.account.notification.outbox.enabled=true --atlas.account.notification.lease-duration=PT30S`), A1b = 커밋 fcc6c55f의 bootJar.
 - 공통 실행 인자: `--management.endpoints.web.exposure.include=health,prometheus --atlas.auth.throttle.origin-limit=1000000 --atlas.auth.throttle.subject-limit=1000 --atlas.admission.expiry-poll-interval=PT24H --atlas.orders.expiry-poll-interval=PT24H --atlas.payment.paypal.webhook-retry.worker.enabled=false`, 환경 변수 `ATLAS_PAYMENT_PROVIDER=disabled SPRING_MAIL_HOST=127.0.0.1 SPRING_MAIL_PORT=<가짜 SMTP>`, DB URL에 `statement_timeout=30000, idle_in_transaction_session_timeout=60000, lock_timeout=5000`, `-Xms768m -Xmx768m`.
 - PostgreSQL: `docker run -d --label atlasexp=notify -e POSTGRES_USER=atlas -e POSTGRES_PASSWORD=... -e POSTGRES_DB=atlas postgres:18.6`, 안마다 `DROP DATABASE atlas WITH (FORCE); CREATE DATABASE atlas`로 새로 만들고 앱 기동 때 Flyway가 스키마를 만든다.
 - 구동기(Python): 안마다 앱을 한 번 띄우고 C4 → C6 → C3 → C2 → C1(→ C5) 순서로 run 3회씩. 가입 요청은 `POST /api/auth/signup`(`{"email","password"}`), 이메일은 `c<칸>-<안>-r<run>-<i>@example.com`. 지연은 요청 시작부터 응답까지의 벽시계 시간, 전달 시간은 요청 시작부터 가짜 SMTP가 메일 본문을 받은 시각까지. 유실 = 커밋된 계정 수(`user_account`에서 접두어로 셈) − 메일을 받은 서로 다른 수신자 수. 중복 = 수신자별 (메일 수 − 1)의 합. 토큰 확인은 수신자별 마지막 토큰으로 `POST /api/auth/verify-email`(204 성공). C2의 SMTP 대기 스레드는 10초 시점 `jcmd <pid> Thread.print`에서 스택에 `SMTPTransport`가 있는 스레드를 이름 접두어별로 셌다. 모든 run 옆에 load1, 잠금 소유자, 다른 라벨 컨테이너를 기록했다.
