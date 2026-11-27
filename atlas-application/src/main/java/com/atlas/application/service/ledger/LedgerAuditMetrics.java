@@ -37,7 +37,7 @@ public class LedgerAuditMetrics {
         meters.gauge("settlement.ledger.audit.lastrunepochseconds", lastRunEpochSeconds, AtomicLong::get);
     }
 
-    @Scheduled(fixedDelayString = "${atlas.settlement.ledger-audit.poll-interval:PT15M}",
+    @Scheduled(fixedDelayString = "${atlas.settlement.ledger-audit.poll-interval:PT1H}",
             initialDelayString = "${atlas.settlement.ledger-audit.initial-delay:PT1M}")
     public void refresh() {
         try {
