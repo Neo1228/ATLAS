@@ -15,7 +15,15 @@ F1은 재현됐다. 결제 복구 기본값(시도 8회, backoff 1초부터 두 
 
 1. 결과를 기록한 재시도는 창(`max-age`, 24시간)이 끝낸다. `max-attempts` 기본값을 202로 올린다. 202는 창과 backoff 상한에서 나온다: 지연은 지수값의 절반 이상이라 10번째 시도까지 최솟값 합 511.5초, 이후 15분 상한의 절반 450초씩이고, 511.5 + (M−11) × 450 ≥ 86,400을 만족하는 가장 작은 M이 202다. 이제 시도 한도는 창보다 먼저 닿지 않는 안전 상한이고, `PaymentRecoveryWorkerTest`가 이 관계를 main 기본값으로 확인한다. 시작할 때 이 관계가 깨진 구성이면 경고를 남긴다.
 2. 결과를 쓰지 못하고 lease가 만료된 claim은 V12의 `abandoned_claim_count`로 따로 세고 `max-abandoned-claims`(기본 8)에서 `ABANDONED_CLAIMS`로 멈춘다. 만료된 lease가 남은 채 다시 claim되면 1을 더하고, sweep은 지금 만료된 lease까지 센다. 운영자 requeue는 두 계수를 0으로 돌린다.
-3. F2·F3·G1·C4·E3은 채택하지 않는다. 후보마다 근거와 재검토 조건은 아래 표에 둔다.
+3. 나머지 다섯은 이 ADR에서 코드를 바꾸지 않는다.
+
+| 후보 | 재현 결과(EXP-117) | 판정 | 재검토 조건 |
+|---|---|---|---|
+| F2 3자 대사 | 돈을 움직인 PayPal 호출은 모두 앞선 커밋이 provider 참조를 쥐어 failover 뒤 복구가 수렴(코드 읽기). ATLAS가 모르는 PayPal 주문은 돈이 움직이지 않은 주문뿐 | ✗ 기각(자동 일 대사 보류, 기존 보고서 대사 유지) | 보고서 대사 `UNMATCHED` capture 1건 이상, 또는 LG-1 해제 |
+| F3 멱등 기록 보존 | 1,000만 행 행당 310.4 B, PK 깊이 3, 키 조회 5 버퍼(100만 행과 같음) | ✗ 기각(ADR-0077 유지) | 표 1 GiB(약 346만 행) |
+| G1 location fencing token | 12경우 중 2경우 불일치(늦은 reserve의 고아 예약, lease 잃은 claim의 `CLAIMED` 보고). location 쪽 토큰은 둘 다 못 막음 | ✓ lease·claim 변경을 맡은 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘김 | #730에서 결정 |
+| C4 동기 복제 | 비동기 단절 중 확인된 커밋 200/200 손실(3회), 부하 중 종료 5회 중 3회 손실. 동기는 손실 0(7회)이지만 standby 단절 시 커밋 정지, 취소된 커밋은 사라짐. 지연 비 1.2~1.9 | ✓ 앱 변경 없음, 배포 구성은 [#731](https://github.com/Neo1228/ATLAS/issues/731)에서 사용자 결정 | #731 결정, 또는 replica를 둔 배포 |
+| E3 CDC | xid를 쥔 트랜잭션 T초 동안 relay 지연 최대 T±1초(9회), 유실 0. CDC는 이 정지가 없지만 논리 슬롯 failover 구성이 필요 | ✗ 기각 | `atlas.order.inventory.event.relay.stalled_seconds` > 30초 하루 1회 이상, 또는 소비 지연 목표 < 30초 |
 
 ## 대안과 기각 이유
 

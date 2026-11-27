@@ -1,6 +1,6 @@
 # EXP-117: 분산 배포 전제에서 남은 업그레이드 후보(F1·F2·F3·G1·C4·E3)를 재현으로 판정한다
 
-- 상태: 측정 전 사전 등록(이 절까지). 결과는 아래 "결과" 절에 측정 뒤 덧붙인다.
+- 상태: ✓ 완료. 가설·반증 조건은 첫 측정 전에 커밋했다(이 브랜치의 첫 커밋, 2026-11-27 23:46). 결과: F1 채택(V12, ADR-0106), G1 재현 2건을 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘김, C4 재현·측정 뒤 배포 구성을 [#731](https://github.com/Neo1228/ATLAS/issues/731)로 사용자에게 물음, F2·F3·E3 기각(재검토 조건은 아래 표).
 - 날짜: 2026-11-27
 - 관련: [#729](https://github.com/Neo1228/ATLAS/issues/729), [ADR-0038](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md), [ADR-0047](../02-decisions/adr/ADR-0047-abandoned-approval-deadline.md), [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md), [ADR-0072](../02-decisions/adr/ADR-0072-infrastructure-inventory-and-assumptions.md), [ADR-0077](../02-decisions/adr/ADR-0077-keep-reorder-idempotency-records.md), [EXP-064](EXP-064-location-fault-convergence.md), [EXP-083](EXP-083-reorder-idempotency-retention.md), [EXP-086](EXP-086-admission-k-ttl-and-authorize-window.md)
 
@@ -50,6 +50,8 @@
 ## 결과
 
 측정은 사전 등록 커밋(`docs(experiments): EXP-117 가설과 반증 조건을 측정 전에 등록한다`, 2026-11-27 23:46) 뒤에 했다.
+
+재실행 표기: F1과 F2 절의 시험은 작성자가 직접 돌렸다. G1·E3·F3·C4 절의 수치는 같은 작업의 하위 에이전트가 실행·보고했고 작성자가 다시 돌리지 않았다: local-only(에이전트 보고). 원자료는 저장소 밖에 있다.
 
 ### F1: 결제 복구 재시도 예산 (H1·H2·H3)
 
@@ -119,3 +121,77 @@
 - 고아 예약: location은 재고 부족으로 거절한 예약 행을 롤백해 그 키에 기록이 없고(`InventoryReservationService` 89~114행), 주문 쪽 보상은 `FAILED` location에 취소(tombstone)를 보내지 않는다. 늦은 reserve가 새 예약을 만든다. 인스턴스 둘이 필요 없고 한 coordinator의 재시도로도 생긴다(P-L). 영향은 TTL(2분) 동안 재고 1개 묶임이다.
 - 오래된 claim 보고: `claim()`이 마지막 location 호출 뒤 lease로 막힌 쓰기 결과를 보지 않고 `CLAIMED`를 돌려준다. 코드 읽기로는 checkout이 이 값을 보고 capture할 수 있고, 그러면 재고는 풀렸는데 결제는 잡힌다. HTTP 지연만으로는 생기지 않는다(읽기 시간 제한이 lease 절반보다 짧게 시작 시 검사된다). 약 13초 넘는 프로세스 정지(GC, VM 정지)나 인스턴스 사이 시계 차가 필요하다(P-N, P-K).
 - 이 두 결과와 제안 수정(주문 쪽에서 lease로 막힌 완료를 `CLAIMED`로 보고하지 않음. 줄인 시험 3건이 수정 전 1건 실패, 수정 뒤 두 번 0건 실패, 변이에서 1건 실패)은 lease·claim·fencing 변경을 맡은 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘겼다. 이 PR은 G1 코드와 마이그레이션을 바꾸지 않는다. location 쪽 fencing token(G1 원안)은 위 두 경우 어느 쪽도 막지 못한다. 고아 예약은 거절된 키에 대한 기록이 없어 비교할 토큰이 없고, 오래된 claim은 location이 claim을 적용한 시점에 A가 최신 소유자였다.
+
+### E3: relay horizon 정지와 CDC (H8)
+
+방법: PostgreSQL 18.6 컨테이너 하나. `order_inventory_event`와 같은 `tx_id xid8 DEFAULT pg_current_xact_id()`·`event_seq` 열을 둔 최소 표. 세션 B가 1초마다 이벤트 하나를 커밋하고, 세션 C가 relay 읽기 조건(`tx_id < pg_snapshot_xmin(pg_current_snapshot())`, `ReservationEventRepository` 46~48행) 그대로 0.5초마다 읽어 커밋 시각과 처음 보인 시각의 차를 잰다. 세션 A는 T초 동안 트랜잭션을 연다. 측정 잠금 아래(load 8~13).
+
+| A의 트랜잭션 | T | 회차 | 최대 지연 | 유실 |
+|---|---|---|---|---|
+| xid 할당(`pg_current_xact_id()`) | 5초 | 3 | 4.49 / 4.49 / 4.99초 | 0 |
+| xid 할당 | 15초 | 3 | 14.49 / 14.48 / 15.06초 | 0 |
+| xid 할당 | 30초 | 3 | 29.49 / 29.48 / 29.49초 | 0 |
+| 읽기 전용 READ COMMITTED(xid 없음) | 15초 | 1 | 0.50초(폴링 해상도) | 0 |
+| REPEATABLE READ 스냅숏만(xid 없음) | 15초 | 1 | 0.50초 | 0 |
+
+- H8 지지: 9회 모두 최대 지연이 T ±1초. 이벤트는 늦을 뿐 사라지지 않았다. 정지는 xid를 가진(쓰기를 한) 트랜잭션만 만들고 읽기 스냅숏은 만들지 않는다.
+- 분산 전제(P-N)에서의 뜻: 같은 DB를 쓰는 모든 인스턴스의 모든 쓰기 트랜잭션이 horizon을 잡는다. 한 문장은 `statement_timeout 30초`, 유휴는 `idle_in_transaction_session_timeout 60초`로 끊기지만, 문장을 계속 보내는 긴 쓰기 트랜잭션에는 상한이 없다(설정 읽기).
+- CDC(논리 복제)는 커밋 순서로 읽어 이 정지가 없다. 대신 논리 슬롯을 failover에서 살리려면 PostgreSQL 17 이후의 `failover` 슬롯과 standby의 `sync_replication_slots`, primary의 `synchronized_standby_slots`가 필요하고, 공식 문서가 그 구성에서도 "some latency is expected"라고 적는다([PostgreSQL 18 문서 47.2](https://www.postgresql.org/docs/18/logicaldecoding-explanation.html), 2026-11-28 열람). Kafka Connect 같은 인프라도 늘어난다(ADR-0038·0046의 기존 판단).
+- 판정: 채택하지 않는다. 지연은 측정됐지만 그 지연이 문제라는 근거(이벤트 지연 목표, 소비자 피해)가 없다. 재검토 조건: 운영 지표 `atlas.order.inventory.event.relay.stalled_seconds`가 30초를 넘는 일이 하루 1회 이상이거나, 이벤트 소비 지연 목표가 30초 아래로 정해질 때. 그때 먼저 긴 쓰기 트랜잭션을 찾고(`pg_stat_activity.backend_xid`), CDC는 그 다음 비교 대상이다.
+
+### F3: reorder 멱등 기록 1,000만 행 (H9)
+
+방법: PostgreSQL 18.6 컨테이너, V1의 `order_reorder_request` DDL 그대로(실험 DB에서 외래 키 2개만 뗌, EXP-083과 같음), EXP-083 설명대로 36자 UUID 키를 재구성한 생성기(원본 SQL은 이력에 없음). 100만 행을 재고 900만 행을 더했다. 시간은 재지 않았다.
+
+| 행 수 | 전체 크기 | 행당 | PK 깊이(`bt_metap` level) | 있는 키 조회 버퍼(두 번째) | 없는 키 조회 버퍼 |
+|---|---|---|---|---|---|
+| 1,000,000 | 309,551,104 B | 309.6 B | 3 | 5 | 4 |
+| 10,000,000 | 3,104,030,720 B | 310.4 B | 3 | 5 | 4 |
+
+- H9 지지: 행당 크기는 EXP-083(310 B) 대비 +0.1%, 키 조회는 깊이 3(루트에서 잎까지 4쪽 + 힙 1쪽)으로 100만에서 1,000만 행까지 같다.
+- 분산 전제: 멱등 키는 공유 DB의 PK라 인스턴스 수와 무관하다(P-N). failover(P-F) 쪽 비용은 크기에 비례하는 replica 재구축·백업 시간이고, 1,000만 행이 약 2.9 GiB다.
+- 판정: ADR-0077 유지(정리하지 않음). 재검토 조건은 ADR-0077의 1 GiB 점검 조건 그대로이며, 이 측정으로 1 GiB는 약 346만 행(310.4 B/행)이다. 한계: 각 크기 n=1, typical 키만, 1,000만 행은 한 번에 적재하지 않고 100만 행 위에 더했다.
+
+### C4: 비동기·동기 복제의 확인된 커밋 손실 (H4·H5)
+
+방법: 회차마다 새 클러스터(PostgreSQL 18.7, primary 1 + `pg_basebackup -R` standby 1, 정족수 회차는 2)를 전용 docker 네트워크에 띄웠다. 클라이언트 컨테이너의 psql이 autocommit `INSERT … RETURNING id`를 보내고, 출력에 id가 찍힌 것만 "확인된 커밋"으로 셌다. standby 단절은 `docker network disconnect`, primary 장애는 `docker kill`(프로세스 강제 종료, 디스크는 남음), 승격은 `pg_promote()`. 확인된 id 집합과 승격된 standby의 행을 대조했다.
+
+| 구성 | 경우 | 회차 | 확인됐지만 사라진 커밋 |
+|---|---|---|---|
+| 비동기 | standby 단절 중 200건 | 3 | 200 / 200 / 200 |
+| 비동기 | 쓰기 4개 부하 중 primary 종료 | 5 | 3 / 0 / 0 / 1 / 1 |
+| 동기 `on` | standby 단절 중 쓰기 4개 | 3 | 10초 동안 확인 0건(3회 모두). 대기 하나를 취소하면 그 커밋이 성공으로 돌아오고 승격 뒤 사라짐(3/3) |
+| 동기 `on` | 부하 중 primary 종료 | 5 | 0 / 0 / 0 / 0 / 0 |
+| 동기 `remote_apply` | 부하 중 primary 종료 | 2 | 0 / 0 |
+| 동기 정족수 `ANY 1 (s1,s2)` | s1 단절 중 200건 | 1 | 10초 안 200건 확인, 승격(s2) 뒤 손실 0 |
+
+- 취소 때 받은 메시지: `WARNING: canceling wait for synchronous replication due to user request` / `DETAIL: The transaction has already committed locally, but might not have been replicated to the standby.` 클라이언트는 이 경고와 함께 성공을 받는다.
+- `statement_timeout 3s`는 동기 대기를 끝내지 않았다(60초 넘게 대기, 1회, 하네스 시간 제한으로 종료).
+- 커밋 지연(측정 잠금 아래, `pgbench -c 4 -T 20`, 단일 행 INSERT, 같은 클러스터 3라운드 교대, load 6.9~10.5):
+
+| 라운드 | 비동기 평균(ms) | 동기 `on` | `remote_apply` | `on`/비동기 | `remote_apply`/비동기 |
+|---|---|---|---|---|---|
+| 1 | 0.619 | 0.746 | 0.710 | 1.21 | 1.15 |
+| 2 | 0.403 | 0.781 | 0.698 | 1.94 | 1.73 |
+| 3 | 0.391 | 0.619 | 0.646 | 1.58 | 1.65 |
+
+- H4 지지(단절 시 손실 = N, 부하 중 5회 중 3회 손실). H5 지지(동기에서 손실 0, 단절 중 확인 0). 단, 대기 중 취소된 커밋은 동기에서도 사라진다.
+- 지연 비는 라운드 사이 변동이 커(1.21~1.94) 자릿수 비교로만 쓴다. 비동기 1라운드와 동기 3라운드의 범위가 겹친다.
+- 앱에 대한 뜻(코드 읽기): ATLAS의 쓰기 경로는 JDBC 질의 시간 제한(취소)을 커밋에 쓰지 않는다(`setQueryTimeout`은 입장 대기열 읽기 한 곳). 그래서 취소로 내구성 없는 성공을 받는 경로는 지금 없지만, 동기 구성에서 standby가 끊기면 커밋이 끝나지 않아 연결 풀(10개)이 묶인다.
+- 판정: 앱 코드는 바꾸지 않는다. 배포 구성(비동기·동기 1대·정족수 2대)은 가용성과 RPO의 교환이라 근거와 선택지를 [#731](https://github.com/Neo1228/ATLAS/issues/731)로 사용자에게 묻는다. 결제 쪽 손실 영향은 F2 절(앞선 커밋이 provider 참조를 쥐어 복구가 수렴).
+- 배포 전제: P-F. 한계: 호스트 손실과 primary·클라이언트 사이 분할은 재지 않았다. 앱 드라이버 없이 psql로 확인을 판정했다. 비동기 부하 회차 1~4와 동기 단절 회차 1~3, 동기 부하 1회차는 다른 에이전트의 측정 잠금과 겹쳤다(건수만 쓰고 시간은 쓰지 않음).
+
+## 결정 요약 (ADR-0106, D-185)
+
+| 후보 | 재현 | 판정 | 기대는 전제 | 재검토 조건(수치·사건) |
+|---|---|---|---|---|
+| F1 | ✓ H1·H2 | ✓ 채택: 창이 판정(`max-attempts` 202), 버려진 claim 8회 한도(V12) | P-L, P-K, P-N | `ABANDONED_CLAIMS` 주 1건 이상, 또는 장애 중 복구 조회가 PayPal 429 |
+| F2 | 돈이 움직인 경로는 ✗(H6 부분 반증) | ✗ 기각: 자동 일 대사 보류 | P-F | 보고서 대사 `UNMATCHED` capture 1건 이상, 또는 LG-1 해제 |
+| F3 | ✗(H9 지지, 문제 없음) | ✗ 기각: ADR-0077 유지 | 없음 | 표 1 GiB(약 346만 행) |
+| G1 | ✓ H7 반증(2건) | ✓ #730으로 넘김(주문 쪽 수정, location fencing token은 효과 없음) | P-N, P-L, P-K | #730에서 결정 |
+| C4 | ✓ H4·H5 | ✓ 앱 변경 없음, 배포 구성은 #731에서 사용자 결정 | P-F | #731 결정, 또는 replica를 둔 배포가 생길 때 |
+| E3 | ✓ H8(지연 = T) | ✗ 기각: CDC 보류 | P-N | `relay.stalled_seconds` > 30초 하루 1회 이상, 또는 소비 지연 목표 < 30초 |
+
+## 커밋하지 않은 파일
+
+원자료와 구동 스크립트(PostgreSQL 컨테이너 스크립트, 회차별 출력, G1 하네스 시험 13건, 변이 로그)는 저장소에 올리지 않았다(실험 산출물 기준). 위 표가 숫자의 정본이다. G1 하네스와 수정안은 #730 담당에게 넘겼다.
