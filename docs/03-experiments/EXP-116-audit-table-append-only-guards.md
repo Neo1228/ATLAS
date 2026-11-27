@@ -50,7 +50,7 @@
 - `inventory_capacity_adjustment`: EXP-113 H21과 같은 `CapacityAdjustmentRepository.record` CTE(`inventory_pool` UPDATE + 조정 INSERT, `sku_id = 'sku-' || :client_id`, 멱등 키 `gen_random_uuid()::text`, delta 1). 재고 풀 16행은 준비 단계에서 `session_replication_role = replica`로 넣는다(측정 문장은 기본 모드).
 - run: 3초 데우기(버림) → `CHECKPOINT` → LSN 기록 → `pgbench -n -M prepared -c <c> -j <c> -T 10 --log` → LSN 기록. 지표는 로그 3열(마이크로초)의 중앙값·99번째 값, 처리량, run 앞뒤 LSN 차이 ÷ 처리 건수(WAL B/건).
 - 순서: 라운드마다 홀수는 무 → 유, 짝수는 유 → 무. 라운드 안에서 표·c 순서는 고정.
-- 깨끗한 run: run 시작 시 `load1 ≤ 12`, `measure-lock.sh status`에 다른 태그의 라벨 컨테이너 없음, 실패 트랜잭션 0. 한 칸에서 같은 라운드의 두 암이 모두 깨끗해야 그 라운드 쌍을 쓴다. 깨끗한 쌍이 칸마다 3개 모일 때까지 최대 6라운드를 돈다. 6라운드 안에 3개가 안 모이면 그 칸은 판정하지 않고 그렇게 적는다.
+- 깨끗한 run: run 시작 시 `load1 ≤ 12`, 다른 태그의 라벨 컨테이너가 있으면 run 직전 `docker stats --no-stream` 한 번에서 그 컨테이너들의 CPU가 모두 5% 미만, 실패 트랜잭션 0(첫 등록의 "다른 태그의 라벨 컨테이너 없음"을 첫 시간 측정 전에 이렇게 고쳤다. 다른 에이전트의 컨테이너가 쉬는 채로 떠 있어 부하가 아닌데도 모든 run을 버리게 되기 때문이다). 한 칸에서 같은 라운드의 두 암이 모두 깨끗해야 그 라운드 쌍을 쓴다. 깨끗한 쌍이 칸마다 3개 모일 때까지 최대 6라운드를 돈다. 6라운드 안에 3개가 안 모이면 그 칸은 판정하지 않고 그렇게 적는다.
 - 잠금: 시간 측정 전체를 `measure-lock.sh acquire audit720 40` 아래에서 돌린다.
 
 ## 가설과 반증 조건
