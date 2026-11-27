@@ -33,8 +33,9 @@ CREATE INDEX ix_account_notification_outbox_due
 
 -- (2) 통합 감사·도메인 이벤트 로그
 --
--- 감사 행이 테이블 9개에 흩어져 "운영자 X의 조치 전부"나 "주문·지급 하나의 돈 이벤트" 같은 질문을 한 질의로 답할 수
--- 없었다. 원본 테이블의 AFTER INSERT 트리거가 같은 transaction에서 이 로그에 한 행을 쓴다. 쓰기 코드를 고치지 않으므로
+-- 감사 행이 테이블 8개에 흩어져 "운영자 X의 조치 전부"나 "대상 하나의 조치 이력"을 한 질의로 답할 수 없었다.
+-- 도입 근거는 사용자 지시(2026-11-27, "감사 도메인 이벤트 로그는 필요해 도입해도 괜찮아")다. 원장 분개(settlement_journal)는
+-- 이미 V7로 추가 전용이고 돈의 정본이라 두 번째 사본을 만들지 않으려고 대상에서 뺐다. 원본 테이블의 AFTER INSERT 트리거가 같은 transaction에서 이 로그에 한 행을 쓴다. 쓰기 코드를 고치지 않으므로
 -- 앞으로 생기는 쓰기 경로도 빠지지 않고, 원본 쓰기가 롤백되면 로그 행도 없다.
 -- payload는 원본 행의 jsonb에서 자유 문자열(reason)과 멱등 키·요청 해시를 뺀 것이다. 자세한 사유는 source_table과
 -- source_id로 원본에서 읽는다. 로그는 추가 전용이다(UPDATE·DELETE·TRUNCATE 거절).
@@ -97,25 +98,10 @@ BEGIN
         WHEN 'inventory_transfer' THEN
             aggregate_type := 'sku'; aggregate_id := (source->>'seller_id') || ':' || (source->>'sku_id');
             source_id := source->>'transfer_id'; event_type := 'INVENTORY_TRANSFERRED';
-        WHEN 'settlement_journal' THEN
-            source_id := source->>'journal_id';
-            IF source->>'source_payout_id' IS NOT NULL THEN
-                aggregate_type := 'payout'; aggregate_id := source->>'source_payout_id';
-                event_type := 'PAYOUT_JOURNAL_POSTED';
-            ELSIF source->>'source_refund_id' IS NOT NULL THEN
-                aggregate_type := 'refund'; aggregate_id := source->>'source_refund_id';
-                event_type := 'REFUND_JOURNAL_POSTED';
-            ELSIF source->>'checkout_id' IS NOT NULL THEN
-                aggregate_type := 'checkout'; aggregate_id := source->>'checkout_id';
-                event_type := 'CHECKOUT_CAPTURE_JOURNAL_POSTED';
-            ELSE
-                aggregate_type := 'order'; aggregate_id := source->>'source_order_id';
-                event_type := 'CAPTURE_JOURNAL_POSTED';
-            END IF;
         ELSE
             RAISE EXCEPTION 'domain audit event source % is not mapped', TG_TABLE_NAME;
     END CASE;
-    occurred := coalesce((source->>'created_at')::timestamptz, (source->>'recorded_at')::timestamptz, now());
+    occurred := coalesce((source->>'created_at')::timestamptz, now());
     INSERT INTO domain_audit_event(occurred_at, source_table, source_id, event_type, aggregate_type, aggregate_id,
                                    actor, payload)
     VALUES (occurred, TG_TABLE_NAME, coalesce(source_id, ''), event_type, coalesce(aggregate_type, 'unknown'),
@@ -153,6 +139,4 @@ CREATE TRIGGER paypal_balance_report_disposition_audit AFTER INSERT ON paypal_ba
 CREATE TRIGGER inventory_capacity_adjustment_audit AFTER INSERT ON inventory_capacity_adjustment
     FOR EACH ROW EXECUTE FUNCTION record_domain_audit_event();
 CREATE TRIGGER inventory_transfer_audit AFTER INSERT ON inventory_transfer
-    FOR EACH ROW EXECUTE FUNCTION record_domain_audit_event();
-CREATE TRIGGER settlement_journal_audit AFTER INSERT ON settlement_journal
     FOR EACH ROW EXECUTE FUNCTION record_domain_audit_event();

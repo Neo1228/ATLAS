@@ -35,8 +35,8 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 
 ## 통합 감사·도메인 이벤트 로그 (V9 `domain_audit_event`, ADR-0102)
 
-- 항상 켜져 있다. 운영자 조치 6개 테이블(`account_suspension_action`, `payment_recovery_operator_action`, `paypal_webhook_retry_operator_audit`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `paypal_balance_report_disposition`), 재고 감사 2개(`inventory_capacity_adjustment`, `inventory_transfer`), 원장 분개(`settlement_journal`)에 행이 들어가면 같은 transaction에서 로그에 한 행이 생긴다. 로그는 UPDATE·DELETE·TRUNCATE를 거절한다.
-- 열: `occurred_at`(원본 `created_at`·`recorded_at`), `source_table`·`source_id`(원본 행), `event_type`(예: `ACCOUNT_SUSPEND`, `PAYOUT_<action>`, `CAPTURE_JOURNAL_POSTED`), `aggregate_type`·`aggregate_id`(예: `payout`/지급 ID, `order`/주문 ID), `actor`(원본에 없으면 NULL), `payload`(원본 행에서 `reason`·`idempotency_key`·`request_facts_sha256`를 뺀 jsonb), `tx_id`.
+- 항상 켜져 있다. 운영자 조치 6개 테이블(`account_suspension_action`, `payment_recovery_operator_action`, `paypal_webhook_retry_operator_audit`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `paypal_balance_report_disposition`), 재고 감사 2개(`inventory_capacity_adjustment`, `inventory_transfer`)에 행이 들어가면 같은 transaction에서 로그에 한 행이 생긴다. 로그는 UPDATE·DELETE·TRUNCATE를 거절한다.
+- 열: `occurred_at`(원본 `created_at`), `source_table`·`source_id`(원본 행), `event_type`(예: `ACCOUNT_SUSPEND`, `PAYOUT_<action>`, `INVENTORY_TRANSFERRED`), `aggregate_type`·`aggregate_id`(예: `payout`/지급 ID, `order`/주문 ID), `actor`(원본에 없으면 NULL), `payload`(원본 행에서 `reason`·`idempotency_key`·`request_facts_sha256`를 뺀 jsonb), `tx_id`.
 - 운영자별 조치: `SELECT occurred_at, event_type, aggregate_type, aggregate_id FROM domain_audit_event WHERE actor = '<account id>' ORDER BY occurred_at DESC LIMIT 100;`
 - 대상별 이력: `SELECT occurred_at, event_type, actor FROM domain_audit_event WHERE aggregate_type = 'payout' AND aggregate_id = '<payout id>' ORDER BY occurred_at;` 사유 원문은 `source_table`·`source_id`로 원본에서 읽는다.
 - 소비자를 붙일 때는 ADR-0067과 같이 `tx_id < pg_snapshot_xmin(pg_current_snapshot())` 범위까지만 읽어 커밋 순서 역전을 피한다.

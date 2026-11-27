@@ -261,7 +261,7 @@ A0·A1·A1b는 가입 한 건이 SMTP 왕복 7번(약 7.1초)을 요청 스레�
 
 ### 감사 로그 (H14~H18)
 
-- H14·H15·H18: `DomainAuditEventIntegrationTest` 3건 통과. 실제 `AccountSuspensionRepository.apply`로 쓴 조치는 로그 1행(행위자·집계·이벤트 종류·원본 시각 일치), 롤백한 조치는 0행, 대상 9개 테이블 모두에 트리거, 로그 UPDATE·DELETE·TRUNCATE 거절, payload에 `reason`·멱등 키·사유 문자열 없음. capture 분개는 `CAPTURE_JOURNAL_POSTED`/`order`로 기록.
+- H14·H15·H18: `DomainAuditEventIntegrationTest` 통과(원장 제외 전 3건, 제외 뒤 2건). 실제 `AccountSuspensionRepository.apply`로 쓴 조치는 로그 1행(행위자·집계·이벤트 종류·원본 시각 일치), 롤백한 조치는 0행, 대상 8개 테이블 모두에 트리거, 로그 UPDATE·DELETE·TRUNCATE 거절, payload에 `reason`·멱등 키·사유 문자열 없음.
 - H16 트리거 비용(`settlement_journal` 복사본, pgbench c = 1, 10초, n = 3):
 
 | run | 트리거 없음 p50 / p95 ms | 트리거 있음 p50 / p95 ms | p50 차이 ms | tps 없음 / 있음 | load1 |
@@ -325,12 +325,16 @@ A0·A1·A1b는 가입 한 건이 SMTP 왕복 7번(약 7.1초)을 요청 스레�
 - 유실은 내구성 있는 기록 없이는 막을 수 없다. A0·A1·A1b·A3는 커밋 직후 종료와 SMTP 오류에서 모두 잃었고, A2만 0건이었다. A3는 요청 지연을 줄이지만 유실을 그대로 두고 스레드를 무제한으로 만든다.
 - A2의 비용은 전달 지연(정상 p95 약 2.4초)과 응답 유실 시 중복 1통(앞 링크 무효)이다.
 
+## 사후 정정: 원장 분개 제외 (부모 검토, 2026-11-27)
+
+등록한 설계 D1의 대상 9개 중 `settlement_journal`을 뺐다. 원장은 V7로 이미 추가 전용이고 돈의 정본이며, 로그가 답할 질문(운영자별·대상별 조치)에 분개 행이 필요 없다. H16의 트리거 비용은 `settlement_journal` 복사본으로 쟀지만 같은 함수의 행당 비용이라 나머지 8개 테이블에도 그대로 읽는다. 시험의 capture 매핑 시험은 지웠다.
+
 ## 결정 (ADR-0102, D-181)
 
 - 기본값: SMTP timeout 5초 + 연결 반환 뒤 전송(A1b). 둘 다 기존 동작을 바꾸지 않고 무한 대기·풀 고갈만 없앤다.
 - 옵트인: 알림 outbox(A2), `ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=true`. 기본 전환 조건은 ADR-0102 재검토 조건.
 - 기각: A3(Spring 내부 이벤트).
-- 감사: 사용자 지시로 통합 감사·도메인 이벤트 로그를 V9에 도입(항상 켜짐).
+- 감사: 사용자 지시(2026-11-27, "감사 도메인 이벤트 로그는 필요해 도입해도 괜찮아")로 통합 감사·도메인 이벤트 로그를 V9에 도입(항상 켜짐, 원본 8개 테이블, 원장 제외).
 
 ## 한계
 

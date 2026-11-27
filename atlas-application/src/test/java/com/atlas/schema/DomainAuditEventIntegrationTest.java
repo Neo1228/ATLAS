@@ -25,14 +25,14 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * 통합 감사·도메인 이벤트 로그(V9 {@code domain_audit_event}, ADR-0102, EXP-113 H14·H15·H18)를 실제 PostgreSQL로 확인한다.
  *
  * <p>로그는 원본 테이블의 AFTER INSERT 트리거가 같은 transaction에서 쓴다. 쓰기 코드가 바뀌어도 로그가 빠지지 않는지는
- * 트리거 존재로 지키므로, 대상 테이블 9개 모두에 트리거가 걸려 있는지와 실제 저장소 코드로 쓴 조치가 로그에 남는지를 함께 본다.
+ * 트리거 존재로 지키므로, 대상 테이블 8개 모두에 트리거가 걸려 있는지와 실제 저장소 코드로 쓴 조치가 로그에 남는지를 함께 본다.
  */
 @Testcontainers
 class DomainAuditEventIntegrationTest {
     private static final List<String> AUDITED_TABLES = List.of(
             "account_suspension_action", "payment_recovery_operator_action", "paypal_webhook_retry_operator_audit",
             "seller_payout_profile_action", "settlement_payout_operator_action", "paypal_balance_report_disposition",
-            "inventory_capacity_adjustment", "inventory_transfer", "settlement_journal");
+            "inventory_capacity_adjustment", "inventory_transfer");
 
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6").withLabel("atlasexp", "t1");
@@ -86,22 +86,6 @@ class DomainAuditEventIntegrationTest {
         String payload = row.get("payload").toString();
         assertThat(payload).contains(accountId.toString())
                 .doesNotContain("reason", "010-0000-0000", "idempotency_key", "kept-key");
-    }
-
-    @Test
-    void capturePostingIsLoggedAsAMoneyEventOfItsOrder() {
-        // 원장 흐름 전체(외래 키·균형 트리거)는 원장 시험이 지킨다. 여기서는 분개 종류별 매핑만 보려고 감사 트리거만 남긴다.
-        jdbc.execute("ALTER TABLE settlement_journal DISABLE TRIGGER ALL");
-        jdbc.execute("ALTER TABLE settlement_journal ENABLE TRIGGER settlement_journal_audit");
-        UUID orderId = UUID.randomUUID();
-        jdbc.update("""
-                INSERT INTO settlement_journal(source_order_id, source_attempt_id, seller_id, gross_amount_won, recorded_at)
-                VALUES (?, ?, ?, 10000, now())
-                """, orderId, UUID.randomUUID(), UUID.randomUUID());
-
-        assertThat(auditRows("order", orderId.toString())).singleElement()
-                .satisfies(row -> assertThat(row).containsEntry("event_type", "CAPTURE_JOURNAL_POSTED")
-                        .containsEntry("source_table", "settlement_journal"));
     }
 
     @Test
