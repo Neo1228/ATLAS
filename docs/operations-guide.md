@@ -248,6 +248,99 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 - Prometheus metric prefix: `atlas.payment.recovery.*` (status별 backlog, stage별 `work_stage`+`status` backlog와 `oldest_due_age_seconds`, operation별 claim/retry/failure/completion, `operation_type`+`work_stage` 처리 duration). `work_stage=APPLY`의 pending count/age가 provider 결과 확정 후 owner 반영까지의 지연을 나타냅니다. `UNKNOWN` 또는 `NEEDS_REVIEW`를 성공/실패로 수동 간주하지 않습니다. 승인 대기 재개는 `atlas.payment.recovery.approval.resumed`로 관측합니다.
 - 자세한 단계·crash window·검증은 [ADR-0046](02-decisions/adr/ADR-0046-order-payment-transactional-outbox.md)에 정리했습니다.
 
+## 원장 무결성·런타임 역할·백업과 복원 (EXP-111)
+
+원장 테이블(`settlement_journal`, `settlement_entry`, `settlement_seller_allocation`)은 DB가 지킵니다. 측정과 한계는 [EXP-111](03-experiments/EXP-111-ledger-integrity-durability.md), 결정과 재검토 조건은 [ADR-0100](02-decisions/adr/ADR-0100-settlement-ledger-guards.md)입니다.
+
+### 가드 (마이그레이션 V7, 항상 켜짐)
+
+- 추가 전용: 세 테이블의 `UPDATE`·`DELETE`·`TRUNCATE`를 트리거가 거절합니다(`settlement_ledger_is_append-only`). 슈퍼유저·소유 계정도 같은 거절을 받습니다. 우회는 `ALTER TABLE ... DISABLE TRIGGER`(소유자)와 `session_replication_role = replica`(슈퍼유저)뿐이고 둘 다 일부러 해야 하는 문장입니다.
+- 균형: 분개를 넣은 트랜잭션은 commit 때 항목이 한 건 이상이고 차변 합 = 대변 합이어야 합니다(`settlement_journal_unbalanced`, SQLSTATE 23000). 분개와 항목은 **같은 트랜잭션**에서 넣어야 합니다. 서비스 흐름(`recordCapture`·`recordCheckoutCapture`·`recordRefund`·지급 확정)은 이미 그렇게 합니다. 시험이나 수동 SQL이 분개만 먼저 commit하면 거절됩니다.
+- 기존 행은 검사하지 않습니다. 가드를 켜기 전 데이터는 아래 불변식 점검으로 확인합니다.
+
+### 기존 데이터베이스에 적용하는 순서
+
+1. 백업: `pg_dump -Fc`(아래 백업 절)로 덤프를 만들고 복원이 되는 것까지 확인합니다.
+2. 사전 점검: `psql -At -f atlas-settlement/src/main/resources/ledger-audit/ledger-audit.sql`을 돌려 모든 `violations`가 0인지 봅니다(읽기 전용). 0이 아니면 가드를 켜기 전에 위반을 정정합니다(아래 정정 절차). 위반이 있는 채로 V7을 적용해도 마이그레이션은 성공하지만(기존 행은 검사하지 않음) 그 행은 추가 전용에 막혀 앱이 고칠 수 없습니다.
+3. 적용: 새 이미지를 기동하면 Flyway가 V7을 적용합니다. `CREATE TRIGGER`는 세 테이블에 `SHARE ROW EXCLUSIVE` 잠금을 잠깐 잡아 그동안 쓰기가 기다립니다(조회는 막지 않음). 행을 읽지 않으므로 시간은 원장 크기와 무관합니다.
+4. 확인: `SELECT tgname, tgenabled FROM pg_trigger WHERE tgrelid IN ('settlement_journal'::regclass, 'settlement_entry'::regclass, 'settlement_seller_allocation'::regclass) AND NOT tgisinternal;`가 8개를 `O`(켜짐)로 보여 줍니다.
+5. 롤백: `psql -v ON_ERROR_STOP=1 -1 -f scripts/db/rollback/V7__undo_settlement_ledger_guards.sql`. 트리거와 함수만 지우고 데이터는 건드리지 않습니다. 앱을 V7 이전 이미지로 되돌리는 경우 이 스크립트를 먼저 돌립니다(Flyway 11의 기본 `ignoreMigrationPatterns=*:future`가 로컬에 없는 더 높은 버전의 적용 이력을 경고로만 넘깁니다. 이 저장소는 그 값을 바꾸지 않습니다). 같은 이미지를 다시 적용하려면 스크립트 마지막 줄이 `flyway_schema_history`의 V7 행을 지웁니다.
+
+### 원장 정정 (break-glass)
+
+잘못된 항목은 앱이 고치지 못합니다. 소유 계정이 **한 트랜잭션**에서 트리거를 끄고 고친 뒤 켭니다. 한 트랜잭션이라 다른 세션은 꺼진 상태를 볼 수 없고, `DISABLE TRIGGER`가 잡는 `SHARE ROW EXCLUSIVE` 잠금이 commit까지 쓰기를 막으므로 짧게 끝냅니다.
+
+```sql
+BEGIN;
+ALTER TABLE settlement_entry   DISABLE TRIGGER settlement_entry_append_only;
+ALTER TABLE settlement_journal DISABLE TRIGGER settlement_journal_append_only;
+-- 정정: 분개당 차변 합 = 대변 합이 되게 항목과 분개의 수수료·보류 스냅샷을 함께 고친다.
+UPDATE settlement_entry SET amount_won = 7500 WHERE journal_id = '<journal-id>' AND account_code = 'SELLER_PAYABLE';
+ALTER TABLE settlement_journal ENABLE TRIGGER settlement_journal_append_only;
+ALTER TABLE settlement_entry   ENABLE TRIGGER settlement_entry_append_only;
+COMMIT;
+```
+
+정정 전후에 `ledger-audit.sql`을 돌려 위반이 사라졌는지 봅니다. 정정한 사람, 사유, 분개 ID와 전후 금액을 별도 감사 기록에 남깁니다(DB는 정정 이력을 남기지 않습니다). 같은 위반이 반복되면 정정이 아니라 원인(코드 결함)이 문제이므로 ADR-0100의 재검토 조건을 봅니다. 역분개 분개(반대 방향 항목을 새 분개로 기록)는 현재 스키마가 허용하지 않습니다(`PLATFORM_FEE`는 `CREDIT`만 허용하고 분개 종류는 네 가지로 고정).
+
+### 불변식 점검 (옵트인, 기본 꺼짐)
+
+`atlas-settlement/src/main/resources/ledger-audit/ledger-audit.sql`이 읽기 전용 점검 9개를 한 곳에 둡니다(분개 균형, 판매자별 균형, 항목 없는 분개, 분개 없는 항목, capture 수수료·보류 스냅샷, 환불 청산액, 환불 예약과 분개, checkout 할당, 지급 분개와 지급 행). 정상이면 모든 `violations`가 0입니다. 같은 파일을 앱(`SettlementLedgerAuditRepository`)과 운영자가 씁니다.
+
+- 켜기: `ATLAS_SETTLEMENT_LEDGER_AUDIT_ENABLED=true`(기본 `false`). `ATLAS_SETTLEMENT_LEDGER_AUDIT_POLL_INTERVAL`(기본 `PT1H`), `ATLAS_SETTLEMENT_LEDGER_AUDIT_INITIAL_DELAY`(기본 `PT1M`).
+- 지표: `settlement_ledger_audit_violations{check}`(점검별 건수), `settlement_ledger_audit_lastrunepochseconds`, 실패 계수기 `settlement_ledger_audit_refreshfailures_total`. 알림 예: `max(settlement_ledger_audit_violations) > 0`, `time() - settlement_ledger_audit_lastrunepochseconds > 7200`.
+- 비용: 원장 전체를 읽는 질의라 데이터소스의 `statement_timeout`(기본 URL 30 s)이 적용되고, replica마다 각자 돕니다(읽기 전용). 켜기 전에 운영 크기에서 `psql -f`로 시간을 재고 주기를 정합니다(EXP-111에 합성 원장 크기별 시간).
+
+### 런타임 역할 분리 (옵트인)
+
+앱이 침해돼도 원장을 고치지 못하게 하려면 소유 계정(Flyway)과 런타임 계정을 나눕니다. `scripts/db/runtime-role.sql`이 멱등으로 런타임 역할을 만들고 권한을 줍니다. 런타임 역할은 DML은 받지만 원장 세 테이블의 `UPDATE`·`DELETE`, 모든 테이블의 `TRUNCATE`, Flyway 이력, DDL, 트리거 비활성화, `session_replication_role`은 받지 못합니다.
+
+```bash
+# 1) 소유 계정으로 역할 생성(마이그레이션 전, 한 번)
+psql -v ON_ERROR_STOP=1 -v runtime_role=atlas_runtime -v runtime_password="$ATLAS_RUNTIME_DB_PASSWORD" \
+     -h <host> -U atlas -d atlas -f scripts/db/runtime-role.sql
+# 2) 앱 기동: 런타임 데이터소스는 atlas_runtime, Flyway는 소유 계정(데이터소스 URL의 statement_timeout을 물려받지 않음)
+ATLAS_DB_USER=atlas_runtime ATLAS_DB_PASSWORD=...  \
+SPRING_FLYWAY_URL=jdbc:postgresql://<host>:5432/atlas SPRING_FLYWAY_USER=atlas SPRING_FLYWAY_PASSWORD=... <앱 실행>
+# 3) 첫 기동(마이그레이션) 뒤 같은 스크립트를 한 번 더: 원장 회수를 적용한다. 새 마이그레이션이 만든 테이블은 기본 권한으로 DML이 자동 부여된다.
+```
+
+- `SPRING_FLYWAY_URL`/`USER`/`PASSWORD`는 함께 줍니다. URL을 생략하고 `USER`만 주면 Spring Boot가 데이터소스 URL(`statement_timeout` 옵션 포함)을 그대로 씁니다. Boot는 URL이 null이 아니면 Flyway 전용 연결을 만들기 때문에 `application.yml`에는 빈 기본값을 두지 않았습니다.
+- compose: `app` 서비스 `environment`에 위 변수를 추가하고(`ATLAS_DB_USER=atlas_runtime`), `postgres` 컨테이너에서 `docker compose exec -T postgres psql ... < scripts/db/runtime-role.sql`을 1)과 3)에 돌립니다.
+- Testcontainers: `SettlementLedgerRoleSeparationIntegrationTest`가 같은 구성입니다(컨테이너에 스크립트를 복사해 `psql`로 실행, `spring.flyway.*`로 소유 계정 지정).
+- 새 추가 전용 테이블을 만들면 스크립트의 `REVOKE UPDATE, DELETE` 목록에 넣고 다시 실행합니다.
+- 비밀번호 교체: 스크립트는 역할이 이미 있으면 비밀번호를 바꾸지 않습니다. `ALTER ROLE atlas_runtime PASSWORD '<새 비밀번호>'`로 바꾸고 앱 환경 변수를 같이 바꿉니다.
+- 되돌리기: 앱의 `ATLAS_DB_USER`/`PASSWORD`를 소유 계정으로 되돌리고 `SPRING_FLYWAY_*`를 지운 뒤 `DROP OWNED BY atlas_runtime; DROP ROLE atlas_runtime;`을 실행합니다(역할이 가진 권한만 지워지고 데이터는 그대로입니다).
+
+### 백업과 복원
+
+방식별로 주장할 수 있는 목표(EXP-111 측정, 로컬 단일 호스트)는 ADR-0100의 표를 봅니다. 요약: `pg_dump`는 RPO가 덤프 주기(예: 24 h)이고, WAL 아카이브 PITR은 RPO가 `archive_timeout`(훈련에서 60 s)입니다.
+
+```bash
+# 논리 백업과 복원 (복원 후 반드시 불변식 점검)
+pg_dump -Fc -h <host> -U atlas -d atlas -f atlas.dump
+createdb -U atlas atlas_restored && pg_restore -U atlas -d atlas_restored -j 4 --no-owner atlas.dump
+psql -At -U atlas -d atlas_restored -f atlas-settlement/src/main/resources/ledger-audit/ledger-audit.sql
+
+# WAL 아카이브 + 시점 복구 (서버 설정)
+#   archive_mode=on, archive_command='test ! -f /archive/%f && cp %p /archive/%f', archive_timeout=60
+pg_basebackup -D /base/data -Fp -X stream -c fast -U atlas
+# 복원: 베이스 백업 복사본에 recovery.signal을 만들고 postgresql.auto.conf에
+#   restore_command = 'cp /archive/%f %p'
+#   recovery_target_time = '<사고 직전 시각>'   recovery_target_action = 'promote'
+```
+
+### 시점 복구(PITR) 뒤 PayPal 대조 (제안 절차, 실제 PayPal과는 대조하지 않았음)
+
+복원 시각 T 이후 PayPal에서 일어난 일은 복원된 DB가 모릅니다. **복원 직후 워커를 모두 끈 채로** 시작하고(`ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED=false`, `ATLAS_PAYPAL_PAYOUT_WORKER_ENABLED=false`, webhook 재시도 worker 끔) 아래를 끝낸 뒤 켭니다.
+
+1. 불변식 점검(`ledger-audit.sql`)이 전부 0인지 확인합니다.
+2. T 이후에 만들어진 결제·환불·지급은 DB에 행이 없습니다. PayPal에서 T 이후 구간을 대조합니다.
+   - 캡처·환불: PayPal Balance report를 올려 대사합니다(위 "PayPal Balance report 대사"). DB에 없는 캡처·환불은 `UNMATCHED`로 나옵니다. 구매자가 청구됐으나 주문이 없는 경우이므로 환불 또는 수동 반영을 결정합니다.
+   - 지급: Balance report는 지급 결과를 증명하지 못합니다(`NOT_VERIFIED_FROM_PAYPAL_REPORT_ALONE`). PayPal 지급 내역에서 T 이후 배치를 모두 열어 복원된 `settlement_payout`/`settlement_payout_dispatch_outbox`와 `sender_batch_id`로 맞춥니다. 복원 DB에 없는 지급은 이미 판매자에게 나간 돈이므로 해당 판매자의 지급 가능 잔액이 부풀어 있습니다. 워커를 켜기 전에 수동 해결 절차로 기록하거나 잔액을 정정합니다.
+3. T 이전에 시작해 T 이후 완료된 건은 복원 DB에서 `payment_recovery_job`이 `PENDING`/`WAITING_FOR_BUYER`, `payment_attempt`이 `UNKNOWN`/`CAPTURE_PENDING`, `settlement_payout`이 `DISPATCHING`/`SENT`/`UNKNOWN`으로 보입니다. 이는 기존 복구 흐름이 저장된 요청 ID로 PayPal에 상태를 물어 수렴시키는 상태입니다. 워커를 켜면 수렴하지만, 켜기 전에 지급 대기 건(`DISPATCHING`, `SENT`)의 PayPal 쪽 상태를 사람이 한 번 확인합니다.
+4. 결과(건수와 판단)를 감사 기록에 남깁니다.
+
 ## 주문 재고 recovery 운영
 
 분산 inventory feature가 활성화된 환경에서는 예약 workflow, checkout 확정, 환불 재입고를 세 worker가 각각 bounded poll한다. 세 worker는 poll 간격(`atlas.order-inventory-reservation.recovery.poll-interval`, 기본 `PT1S`)과 batch 크기(`recovery.batch-size`, 기본 100)를 공유하며 `ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_POLL_INTERVAL`, `ATLAS_ORDER_INVENTORY_RESERVATION_RECOVERY_BATCH_SIZE`로 조정한다. 이 값을 worker별로 따로 바꾼 실험이 없어 개별 설정은 두지 않았다. 기능은 기본 비활성화(`ATLAS_ORDER_INVENTORY_RESERVATION_ENABLED=false`)이고, worker만 끄려면 `recovery.worker-enabled=false`(기본 `true`)로 설정한다.

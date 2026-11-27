@@ -237,6 +237,13 @@ atlas:
     # 적용 시점 요율은 journal 에 스냅샷되므로, 값을 바꿔도 과거 분개는 재계산되지 않는다.
     fee-rate-bps: ${ATLAS_SETTLEMENT_FEE_RATE_BPS:0}
     reserve-rate-bps: ${ATLAS_SETTLEMENT_RESERVE_RATE_BPS:0}
+    ledger-audit:
+      # 원장 불변식 점검(탐지 전용, 기본 꺼짐). 켜면 주기적으로 원장 전체를 읽어 점검별 위반 건수를
+      # 게이지 settlement.ledger.audit.violations{check}로 노출한다. 원장 크기에 비례하는 읽기이므로 켜기 전에
+      # 운영 크기에서 질의 시간을 재고 poll-interval 을 정한다(EXP-111, 운영 가이드의 원장 무결성 절).
+      enabled: ${ATLAS_SETTLEMENT_LEDGER_AUDIT_ENABLED:false}
+      initial-delay: ${ATLAS_SETTLEMENT_LEDGER_AUDIT_INITIAL_DELAY:PT1M}
+      poll-interval: ${ATLAS_SETTLEMENT_LEDGER_AUDIT_POLL_INTERVAL:PT1H}
     report:
       operator:
         enabled: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_ENABLED:false}

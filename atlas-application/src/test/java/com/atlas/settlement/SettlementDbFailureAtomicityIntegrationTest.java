@@ -7,6 +7,7 @@ import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.settlement.service.SettlementPayoutService;
+import com.atlas.support.LedgerTestReset;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -75,9 +76,7 @@ class SettlementDbFailureAtomicityIntegrationTest extends PayPalIntegrationTestS
 
     @BeforeEach
     void clearLedger() {
-        jdbc.update("DELETE FROM settlement_entry");
-        jdbc.update("DELETE FROM settlement_seller_allocation");
-        jdbc.update("DELETE FROM settlement_journal");
+        LedgerTestReset.clearLedger(jdbc);
         jdbc.update("DELETE FROM settlement_payout");
     }
 
@@ -140,12 +139,23 @@ class SettlementDbFailureAtomicityIntegrationTest extends PayPalIntegrationTestS
         })).isInstanceOf(RuntimeException.class);
 
         // 재시도: 같은 attempt 로 다시 쓴다.
-        jdbc.update("""
-                INSERT INTO settlement_journal
-                    (source_order_id, source_attempt_id, seller_id, gross_amount_won, recorded_at)
-                VALUES (?, ?, ?, ?, now())
-                ON CONFLICT (source_attempt_id) DO NOTHING
-                """, orderId, attemptId, sellerId, 10_000);
+        // V7 의 분개 균형 검사 때문에 분개와 항목을 한 transaction 으로 쓴다. 항목도 ON CONFLICT 로 멱등이다.
+        template.executeWithoutResult(status -> {
+            jdbc.update("""
+                    INSERT INTO settlement_journal
+                        (source_order_id, source_attempt_id, seller_id, gross_amount_won, recorded_at)
+                    VALUES (?, ?, ?, ?, now())
+                    ON CONFLICT (source_attempt_id) DO NOTHING
+                    """, orderId, attemptId, sellerId, 10_000);
+            jdbc.update("""
+                    INSERT INTO settlement_entry (journal_id, seller_id, account_code, entry_side, amount_won, recorded_at)
+                    SELECT journal_id, seller_id, account_code, entry_side, 10000, now()
+                    FROM settlement_journal, (VALUES ('PSP_CLEARING', 'DEBIT'), ('SELLER_PAYABLE', 'CREDIT'))
+                        AS entry (account_code, entry_side)
+                    WHERE source_attempt_id = ?
+                    ON CONFLICT DO NOTHING
+                    """, attemptId);
+        });
 
         assertThat(count("settlement_journal")).isEqualTo(1);
         assertThat(jdbc.queryForObject(
@@ -244,6 +254,11 @@ class SettlementDbFailureAtomicityIntegrationTest extends PayPalIntegrationTestS
     }
 
     private void postCapture(UUID sellerId, UUID orderId, long gross) {
+        // V7 의 분개 균형 검사는 commit 때 하므로 분개와 항목을 한 transaction 으로 쓴다(서비스도 그렇게 쓴다).
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> insertCapture(sellerId, orderId, gross));
+    }
+
+    private void insertCapture(UUID sellerId, UUID orderId, long gross) {
         jdbc.update("""
                 INSERT INTO settlement_journal
                     (source_order_id, source_attempt_id, seller_id, gross_amount_won, recorded_at)
