@@ -59,11 +59,10 @@ spring:
       connection-timeout: ${ATLAS_DB_CONNECTION_TIMEOUT_MS:500}
       # 커넥션이 살아있는지 확인하는 주기. 장애 후 죽은 커넥션을 빨리 교체한다.
       validation-timeout: ${ATLAS_DB_VALIDATION_TIMEOUT_MS:3000}
-  jdbc:
-    template:
-      # 단일 SQL 상한. 이 값이 없으면 느린 쿼리 하나가 커넥션을 영구 점유한다.
-      # 정산·주문 조회는 수십 ms 이므로 30s 는 정상 경로에 영향이 없다.
-      query-timeout: ${ATLAS_DB_QUERY_TIMEOUT_SECONDS:30}
+  # spring.jdbc.template.query-timeout 은 두지 않는다(ADR-0106 C4, EXP-117 H11). 그 값은 JdbcTemplate 문장마다
+  # 드라이버 취소(setQueryTimeout)를 걸고, autocommit 쓰기가 동기 복제(SyncRep)를 기다리는 중에 취소되면 PgJDBC는
+  # 성공 + 경고를 돌려주며 그 커밋은 failover에서 사라졌다(3/3). 느린 SQL 상한은 위 URL의 statement_timeout 30초가
+  # 서버에서 같은 값으로 걸고, 그것은 동기 복제 대기를 끊지 않는다. SyncReplicationCancelGuardTest 가 고정한다.
   flyway:
     enabled: true
   jpa:

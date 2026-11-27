@@ -113,6 +113,23 @@ F1로 복구가 약 2분이 아니라 24시간 동안 PayPal을 다시 부른다
 - 배포 전제: P-L(PayPal 장애·분할이 2분을 넘는 경우), P-K(강제 종료가 claim을 버리는 경우). 인스턴스 수(P-N)는 결과를 바꾸지 않는다. claim은 `available_at`과 `SKIP LOCKED`를 따르므로 인스턴스가 늘어도 job당 시도 간격은 같다.
 - 한계: 가상 시계는 job 행의 시각만 옮긴다. 실제 24시간 동안의 PayPal 응답, 인스턴스 재시작 빈도는 재지 않았다. 강제 종료는 lease 만료로 흉내 냈고 실제 `kill -9`는 하지 않았다(DB가 보는 상태는 같다: lease 토큰이 남은 채 만료).
 
+### F1 뒤 PayPal 부하 (H10)
+
+방법: 사전 등록대로. 실제 `PaymentRecoveryWorker` 3개(같은 JVM, 각자 poll 스레드, batch 10), PostgreSQL 18.6, PayPal stub(`create-order`가 장애 동안 모두 503). 1,000건이 같은 순간 결과 불명이 되게 만든 뒤(최악의 동기 출발) 시간 축 12배 압축으로 돌렸다: 가상 1초 = 실제 83 ms, backoff 1초→83 ms, 상한 15분→75초, poll 1초→83 ms, lease 60초→5초. 장애 가상 1시간, 회복 뒤 모든 job이 `PENDING`을 벗어날 때까지. 호출 수는 가상 1초 칸마다 셌다. 측정 잠금 아래(load 4.9~8.0), n = 1. 하네스는 커밋하지 않았다.
+
+| 구간(가상) | 1초 칸 수 | 호출 합 | 평균/초 | p99/초 | 최댓값/초 |
+|---|---|---|---|---|---|
+| 장애 전체 0~60분 | 3,600 | 13,259 | 3.68 | 13 | 18 |
+| 장애 20~40분 | 1,200 | — | 2.27 | — | 13 |
+| 장애 40~60분 | 1,200 | — | 1.51 | — | 8 |
+| 회복 뒤 첫 5분 | 300 | 445 | 1.48 | 5 | 6 |
+
+- 회복 뒤 1,000건이 모두 `PENDING`을 벗어나는 데 가상 895초(약 15분 = backoff 상한)가 걸렸다. 회복 순간의 몰림은 없었다(최댓값 6/초). job마다 다음 시도 시각이 이미 `[450초, 900초)`에 흩어져 있어서다.
+- H10 상한 부분 지지: 모든 칸이 상한 30회/초(worker 3 × batch 10 ÷ poll 1초 × job당 호출 1) 이하였다(최댓값 18).
+- H10 동기화 부분은 적은 기준으로는 반증: 20분 이후 최댓값/평균이 13/2.27 = 5.7, 40분 이후 8/1.51 = 5.3으로 3배를 넘었다. 다만 3배 기준 자체가 잘못 잡혔다. 서로 독립인 도착(Poisson, 평균 1.89)이라도 2,400칸 중 8 이상인 칸이 1.85개 기대된다. 40~60분 구간(최댓값 8)은 독립 도착과 맞고, 20~40분 구간의 13은 독립 도착이면 기대 0.0002칸이라 남은 파동이다. 분당 호출 수가 374에서 2까지 출렁이다(20~33분) 40분 이후 53~112로 줄었다. 같은 순간에 시작한 1,000건의 파동이 equal jitter로 몇 주기에 걸쳐 풀리는 모습이고, 회복 뒤에는 다시 맞춰지지 않았다.
+- 판정: 지터는 바꾸지 않는다(사용자 지시: 측정이 요구할 때만). 파동의 최댓값도 상한 안이고 회복 몰림이 없다. 재검토 조건: 장애 중 복구 조회가 PayPal 429를 받거나, 동시 미확정 결제가 상한(30회/초 × 평균 backoff 675초 ≈ 2만 건)에 가까워질 때 full jitter와 비교한다.
+- 한계: n = 1. 압축은 DB·HTTP 처리 시간을 줄이지 않아 압축 실행에서 처리 시간이 가상으로 12배 길어진다. 그래서 처음 파동의 실측 최댓값(18)은 실제 시간에서는 상한 30에 더 가까울 수 있다. 측정 일부는 이 브랜치를 rebase하는 동안 돌았다(결제 복구 코드는 rebase 전후 같다, V11만 추가).
+
 ### F2: 3자 대사 (H6)
 
 코드 읽기(실행 아님). `PaymentServiceImpl.completeApprovalForOwner`는 단계 시작(요청 ID 확정, 복구 job 활성화)을 한 트랜잭션으로 커밋한 뒤(170~188행) PayPal을 부르고(192행) 결과를 다른 트랜잭션으로 쓴다. 요청 ID는 결제 시도와 단계에서 정해진다(`phaseRequestId`).
@@ -139,6 +156,21 @@ F1로 복구가 약 2분이 아니라 24시간 동안 PayPal을 다시 부른다
 - 고아 예약: location은 재고 부족으로 거절한 예약 행을 롤백해 그 키에 기록이 없고(`InventoryReservationService` 89~114행), 주문 쪽 보상은 `FAILED` location에 취소(tombstone)를 보내지 않는다. 늦은 reserve가 새 예약을 만든다. 인스턴스 둘이 필요 없고 한 coordinator의 재시도로도 생긴다(P-L). 영향은 TTL(2분) 동안 재고 1개 묶임이다.
 - 오래된 claim 보고: `claim()`이 마지막 location 호출 뒤 lease로 막힌 쓰기 결과를 보지 않고 `CLAIMED`를 돌려준다. 코드 읽기로는 checkout이 이 값을 보고 capture할 수 있고, 그러면 재고는 풀렸는데 결제는 잡힌다. HTTP 지연만으로는 생기지 않는다(읽기 시간 제한이 lease 절반보다 짧게 시작 시 검사된다). 약 13초 넘는 프로세스 정지(GC, VM 정지)나 인스턴스 사이 시계 차가 필요하다(P-N, P-K).
 - 이 두 결과와 제안 수정(주문 쪽에서 lease로 막힌 완료를 `CLAIMED`로 보고하지 않음. 줄인 시험 3건이 수정 전 1건 실패, 수정 뒤 두 번 0건 실패, 변이에서 1건 실패)은 lease·claim·fencing 변경을 맡은 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘겼다. 이 PR은 G1 코드와 마이그레이션을 바꾸지 않는다. location 쪽 fencing token(G1 원안)은 위 두 경우 어느 쪽도 막지 못한다. 고아 예약은 거절된 키에 대한 기록이 없어 비교할 토큰이 없고, 오래된 claim은 location이 claim을 적용한 시점에 A가 최신 소유자였다.
+
+### C4 뒤 앱 자신의 취소 (H11)
+
+방법: 사전 등록대로. 정족수 구성(`ANY 1 (s1,s2)`, PostgreSQL 18.7)에서 standby 2대를 모두 끊고, 앱과 같은 PgJDBC 42.7.14와 앱 URL(`statement_timeout=30000`, `idle_in_transaction_session_timeout=60000`, `lock_timeout=5000`)로 커밋한 뒤 primary를 죽이고 standby를 승격했다. 각 3회. 확인 = JDBC 호출이 예외 없이 돌아옴. 하위 에이전트 실행: local-only(에이전트 보고).
+
+| 경우 | 40초 안 반환 | 결과 | 확인됐지만 사라짐 |
+|---|---|---|---|
+| (i) `autoCommit=false`, INSERT, `commit()` | 3회 모두 아니오 | primary 종료 때 예외(08006) | 0 / 0 / 0 |
+| (ii) autocommit, `setQueryTimeout(5)`, INSERT | 3회 모두 5초에 반환 | **성공**(1행) + 문장 경고 `canceling wait for synchronous replication due to user request` | **1 / 1 / 1** |
+| (iii) URL + `socketTimeout=10`, `commit()` | 10초에 반환 | 예외(08006), 서버는 계속 대기 | 0 / 0 / 0 |
+
+- H11 지지(세 부분 모두). `statement_timeout`은 COMMIT의 동기 대기를 끊지 않고, `socketTimeout`은 예외만 준다. 드라이버 질의 시간 제한만 내구성 없는 성공을 만든다.
+- 앱 코드 세기: `setQueryTimeout` 직접 호출은 입장 만료 후보 읽기 한 곳(SELECT, xid 없음)뿐이고 `@Transactional(timeout)`은 0곳이다. 그런데 `application.yml`의 `spring.jdbc.template.query-timeout: 30`이 모든 `JdbcTemplate` 문장에 같은 드라이버 시간 제한을 건다(Spring `JdbcTemplate`이 문장마다 `setQueryTimeout`을 부름, 코드 읽기). 트랜잭션 밖 autocommit 쓰기가 동기 대기 30초를 넘기면 (ii)와 같은 경로다.
+- 선택지 비교: (a) COMMIT 경로에서 드라이버 시간 제한을 없앰 — 이 설정은 서버 `statement_timeout 30초`(같은 값, JPA까지 덮음)와 겹쳐 느린 SQL 상한(R1)은 그대로 남는다. (b) 드라이버 경고를 감지해 실패로 바꿈 — JPA·`JdbcTemplate`·직접 연결 경로마다 감싸야 하고, 이미 커밋된 행을 "실패"로 보고하면 결과 불명 처리가 새로 필요하다. (c) 알려진 틈으로 문서화 — 설정 하나로 닫히는 틈을 남긴다.
+- 판정: (a) 채택. `spring.jdbc.template.query-timeout`을 지우고, `SyncReplicationCancelGuardTest`가 설정 키(`query-timeout`, `default-timeout`), `@Transactional(timeout)`, 허용 목록 밖 `setQueryTimeout`을 막는다. 이 시험은 지우기 전 설정에서 실패하고 지운 뒤 통과했다. 남는 틈: 운영자가 `pg_cancel_backend`로 대기 세션을 끊는 경우(운영 가이드 금지 규칙).
 
 ### E3: relay horizon 정지와 CDC (H8)
 
