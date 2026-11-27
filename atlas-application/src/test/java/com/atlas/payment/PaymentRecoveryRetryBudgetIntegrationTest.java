@@ -15,6 +15,7 @@ import com.atlas.order.service.OrderService;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentRecoveryService;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.support.AppendOnlyTestReset;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -113,7 +114,7 @@ class PaymentRecoveryRetryBudgetIntegrationTest extends PayPalIntegrationTestSup
     @BeforeEach
     void setUp() {
         Environment environment = shippedDefaults();
-        jdbc.update("DELETE FROM payment_recovery_operator_action");
+        AppendOnlyTestReset.clear(jdbc, "payment_recovery_operator_action");
         jdbc.update("DELETE FROM payment_recovery_job");
         maxAttempts = environment.getRequiredProperty("atlas.payment.recovery.max-attempts", Integer.class);
         maxAbandonedClaims = environment.getRequiredProperty(
