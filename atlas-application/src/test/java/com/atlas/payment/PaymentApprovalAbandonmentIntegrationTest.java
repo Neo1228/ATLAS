@@ -22,6 +22,7 @@ import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentRecoveryService;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.support.AppendOnlyTestReset;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -82,7 +83,7 @@ class PaymentApprovalAbandonmentIntegrationTest extends PayPalIntegrationTestSup
 
     @BeforeEach
     void setUp() {
-        jdbc.update("DELETE FROM payment_recovery_operator_action");
+        AppendOnlyTestReset.clear(jdbc, "payment_recovery_operator_action");
         jdbc.update("DELETE FROM payment_recovery_job");
         worker = new PaymentRecoveryWorker(
                 recovery, payments, orders, checkouts, refunds, new SimpleMeterRegistry(), 10,

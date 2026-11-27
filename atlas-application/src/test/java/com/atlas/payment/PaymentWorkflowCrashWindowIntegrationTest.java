@@ -30,6 +30,7 @@ import com.atlas.payment.model.PaymentRecoveryWorkStage;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.service.PaymentRecoveryService;
 import com.atlas.payment.service.PaymentService;
+import com.atlas.support.AppendOnlyTestReset;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -107,7 +108,7 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
 
     @BeforeEach
     void isolateRecoveryState() {
-        jdbc.update("DELETE FROM payment_recovery_operator_action");
+        AppendOnlyTestReset.clear(jdbc, "payment_recovery_operator_action");
         jdbc.update("DELETE FROM payment_recovery_job");
         doCallRealMethod().when(paymentsSpy).submitCheckout(any(), any());
         doCallRealMethod().when(paymentsSpy).reconcileCheckout(any(), any());
