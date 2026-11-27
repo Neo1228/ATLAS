@@ -8,6 +8,10 @@ import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 
+import com.atlas.admission.dto.request.AdmissionRequest;
+import com.atlas.admission.dto.response.AdmissionResponse;
+import com.atlas.admission.service.AdmissionService;
+import com.atlas.admission.service.CampaignService;
 import com.atlas.order.dto.response.OrderViewResponse;
 import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.inventory.dto.response.InventoryResponse;
@@ -100,6 +104,10 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
     private InventoryService inventory;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private AdmissionService admission;
+    @Autowired
+    private CampaignService campaigns;
 
     /** 실제 서비스 호출 경로를 유지하면서 provider dispatch 지점에서만 실패를 주입한다. */
     @MockitoSpyBean
@@ -306,6 +314,22 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
                 String.class, checkoutId)).containsOnly(OrderState.PAID.name());
     }
 
+    @Test
+    void staleApprovalSnapshotFromAnotherInstanceDoesNotUndoAPaidCampaignOrder() {
+        // 위 checkout 경로와 같은 순간을 단일 판매자 주문(campaign) 경로에서 본다(OrderServiceImpl.applyPayment).
+        UUID orderId = reservedCampaignOrder();
+        OrderViewResponse.Order pending = orders.submitPayment(orderId);
+        String providerOrderId = approvalToken(pending.paymentApprovalUrl());
+        assertThat(orders.completePaymentApproval(orderId, providerOrderId).state()).isEqualTo(OrderState.PAID);
+        PaymentResponse captured = payments.find(orderId);
+        PaymentResponse staleSnapshot = new PaymentResponse(orderId, null, captured.attemptId(),
+                PaymentState.CAPTURE_PENDING, true, captured.providerOrderId(), null, captured.approvalUrl(),
+                captured.approvalExpiresAt());
+        doReturn(staleSnapshot).when(paymentsSpy).completeApproval(orderId, providerOrderId);
+
+        assertThat(orders.completePaymentApproval(orderId, providerOrderId).state()).isEqualTo(OrderState.PAID);
+    }
+
 
     private CheckoutResponse reservedCheckout() {
         UUID sellerId = sellers.createSeller().sellerId();
@@ -315,6 +339,19 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
         String buyerRef = "crash-window-buyer-" + UUID.randomUUID();
         carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
         return cartCheckouts.checkout(buyerRef, "crash-window-checkout-" + UUID.randomUUID());
+    }
+
+    private UUID reservedCampaignOrder() {
+        UUID sellerId = sellers.createSeller().sellerId();
+        String skuId = "crash-window-campaign-" + UUID.randomUUID();
+        var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Crash window campaign", null));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, 17_200, 1));
+        admission.configureSellerSkuPolicy(new AdmissionRequest.ConfigureSellerSkuPolicy(sellerId, skuId, 5));
+        AdmissionResponse.Campaign campaign = campaigns.open(campaigns.create(
+                new AdmissionRequest.CreateCampaign(sellerId, skuId, Duration.ofMinutes(5))).campaignId());
+        AdmissionResponse.QueueTicket ticket = admission.join(new AdmissionRequest.JoinQueue(campaign.campaignId(),
+                campaign.skuId(), "crash-window-buyer-" + UUID.randomUUID(), "crash-window-key-" + UUID.randomUUID()));
+        return orders.startCheckout(campaign.campaignId(), ticket.ticketId()).orderId();
     }
 
     private Map<String, Object> job(String operationColumn, UUID operationId) {

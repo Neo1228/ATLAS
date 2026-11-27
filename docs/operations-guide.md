@@ -621,6 +621,18 @@ V10 적용: 배분 표에 열을 더하고 기존 행을 한 번 채운다(V7 �
 | 7. 부분 이행·부분 환불 | 부분 | [ADR-0061](02-decisions/adr/ADR-0061-return-restock-source-shipment.md), [EXP-054](03-experiments/EXP-054-location-split-allocation.md), `SplitAllocationCheckoutIntegrationTest` 2, `LocationAllocationPolicyTest` 2, `LocationRestockServiceImplTest` 2, `LocationReservationServiceIntegrationTest` 분할 주문 반품 3건 | location 3곳, SKU A 70·B 65, 주문 70건(결정적 입력 1회). 단일 location만 허용하면 30건, 분할을 허용하면 65건 수락(분할 주문 35건), 초과 판매 0 | 위치 분할 할당과 반품 재입고의 원 shipment 추적까지만 근거가 있다. location별 부분 취소·부분 환불은 근거가 없고 배송비·출고 용량은 입력에 없다 |
 | 8. 장애 주입 | 부분 | [EXP-053](03-experiments/EXP-053-inventory-location-failure-load.md), [EXP-059](03-experiments/EXP-059-order-reservation-load-and-idempotent-replay.md), [EXP-060](03-experiments/EXP-060-hot-sku-admission-gate.md), [EXP-063](03-experiments/EXP-063-redis-gate-failopen-and-paired-rerun.md), [EXP-070](03-experiments/EXP-070-real-stack-fault-injection.md), [EXP-071](03-experiments/EXP-071-production-like-fault-injection.md), [EXP-072](03-experiments/EXP-072-kafka-outage-relay.md) | 응답 유실 replay 1회(20 workflow/s × 5초): proxy가 응답을 폐기한 101건을 같은 key로 재전송했고 workflow 101건이 모두 `RESERVED`였다(EXP-059). JVM 강제 종료 뒤 `RESERVED` 수렴은 10초, 1초 해상도, 1회(EXP-053). Redis 중지(1,000/s)에서 breaker가 없으면 355/s(n=1), 있으면 707~730/s(n=2), 오버셀 없음(EXP-060) | Toxiproxy 지연·중단과 Redis 중지를 단일 호스트에서 탐색적으로 주입했다. 정기 자동 회귀나 다중 호스트 카오스 시험은 없고 Redis 복구 뒤 breaker가 닫히는 동작은 측정하지 못했다 |
 
+## 다중 인스턴스·rolling 배포 전제 (EXP-118, ADR-0107)
+
+app을 여러 대 띄울 때(LB 뒤, rolling 배포, 인스턴스 종료) 지켜야 하는 배포 조건과 되돌리는 방법이다. 전수 조사 표와 측정은 [EXP-118](03-experiments/EXP-118-multi-instance-assumption-audit.md)에 있다.
+
+- **JWT 서명 비밀은 모든 인스턴스가 같아야 한다.** `ATLAS_JWT_SIGNING_SECRET`(Base64, 32바이트 이상)을 같은 값으로 준다. `ATLAS_JWT_ALLOW_EPHEMERAL_KEY=true`는 단일 인스턴스 로컬 전용이다(`compose.yaml`의 기본값 true는 로컬 스택 하나를 위한 것). 키가 다르면 다른 인스턴스가 발급한 토큰을 401로 거절한다.
+- **DB 앞에 transaction pooling을 두지 않는다.** 주문·checkout 만료 sweep은 replica 사이를 session advisory lock으로 직렬화한다(`ExpirySweepLockRepository`). PgBouncer `pool_mode=transaction`은 session-level advisory lock을 지원하지 않는다. pooler가 필요해지면 session pooling을 쓰거나 이 잠금을 lease 행으로 바꾸는 변경을 먼저 한다([sizing-envelope](02-decisions/sizing-envelope.md) 3.4의 T2·T3 pooler 권장도 이 조건을 따른다).
+- **노드 시계는 NTP로 맞춘다.** 표 만료·주문 만료·location 예약·계정 토큰 기한은 앱 시계로 쓰고 다른 인스턴스의 앱 시계로 비교한다. 시계 차이만큼 이르거나 늦게 만료된다. lease(결제 복구·웹훅 재시도·지급 dispatch)는 DB 시계라 영향이 없다.
+- **인스턴스별 한도는 클러스터에서 N배다.** `ATLAS_PAYPAL_BULKHEAD_MAX_CONCURRENT_CALLS`, `ATLAS_ORDER_INVENTORY_RESERVATION_BULKHEAD_MAX_CONCURRENT_CALLS`, 품절 음성 캐시, 환율 캐시는 인스턴스마다 따로 센다. 외부 quota를 지키려면 설정값을 전체 ÷ 인스턴스 수로 잡는다.
+- **게이지는 `sum`이 아니라 `max`로 본다.** `atlas.account.notification.*`, `atlas.db.*`, `settlement.ledger.audit.*`, 지급 위험·반품 검수 게이지는 인스턴스마다 같은 DB 전체 값을 낸다.
+- **rolling 순서.** 새 jar가 기동하며 migration을 적용하는 동안 old jar는 계속 요청을 받는다. Flyway는 old jar가 모르는 새 migration을 무시하므로 old jar 재기동도 된다. 열 이름을 바꾸거나 지우는 변경은 두 번에 나눈다(이번 `auth_subject_bucket.failures`는 의미만 "검증까지 간 시도 수"로 바뀌고 이름은 그대로라 old·new jar가 섞여도 한 시도를 두 번 세지 않는다).
+- **되돌리기.** EXP-118의 두 수정(인증 주체 한도 예약, 결제 결과 재조회)은 스키마를 바꾸지 않는다. 이전 jar로 다시 배포하면 된다. 되돌린 동안에는 동시 로그인 시도가 주체 한도를 넘을 수 있고, 인스턴스가 둘 이상이면 오래된 결제 스냅숏이 `PAID`를 되돌릴 수 있다.
+
 ## 만료 sweep 운영
 
 `RESERVED` 주문과 buyer checkout의 만료 처리는 1초 주기 scheduler가 담당합니다. 한 tick은 후보를 최대 `ATLAS_ORDERS_EXPIRY_SWEEP_BATCH_SIZE`(기본 100)건까지만 조회하고, 경과 시간이 `ATLAS_ORDERS_EXPIRY_SWEEP_TIME_BUDGET`(기본 `PT2S`)을 넘으면 남은 후보를 다음 tick으로 넘깁니다. 후보별 개별 transaction·잠금 순서·상태 전이는 기존과 동일합니다.
