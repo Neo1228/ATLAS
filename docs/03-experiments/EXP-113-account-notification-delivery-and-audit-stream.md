@@ -83,6 +83,22 @@ A3와 측정 구동기는 저장소에 올리지 않는다(실험 전용 패치)
 - H13: C4에서 A1b의 요청 p95는 A1의 1.5배 이하다(전송 위치만 바뀜). 반증: 초과.
 - 측정: C4·C6·C2를 n = 3, 같은 잠금 조건.
 
+## 사용자 지시로 추가: 통합 감사·도메인 이벤트 로그 (구현·측정 전 등록)
+
+2026-11-27 측정 도중 사용자가 "감사 도메인 이벤트 로그는 필요해 도입해도 괜찮다"고 지시했다. H11(요구 문서 없음)은 저장소 문서 기준의 판정이고, 이 지시가 그 요구다. 그래서 만들지 않는 결정 대신 아래 설계를 구현하고 측정한다.
+
+- 설계 D1: 추가 전용 테이블 `domain_audit_event`(V9에 함께 둔다). 열은 `event_id`(uuidv7), `tx_id`(`pg_current_xact_id()`, ADR-0067과 같은 xmin 안전 cursor용), `occurred_at`, `source_table`, `source_id`, `event_type`, `aggregate_type`·`aggregate_id`, `actor`(없으면 NULL), `payload`(원본 행의 jsonb에서 자유 문자열 `reason`, `idempotency_key`, `request_facts_sha256`를 뺀 것). 쓰기는 원본 테이블의 `AFTER INSERT` 행 트리거가 같은 transaction에서 한다(쓰기 코드 수정 없음, 앞으로의 쓰기 경로도 덮음). UPDATE·DELETE·TRUNCATE는 거절한다. 색인은 `(actor, occurred_at DESC)`(actor 있는 행), `(aggregate_type, aggregate_id, occurred_at)`, `(tx_id)`.
+- 대상 9개: 운영자 조치 6개(`account_suspension_action`, `payment_recovery_operator_action`, `paypal_webhook_retry_operator_audit`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `paypal_balance_report_disposition`), 재고 감사 2개(`inventory_capacity_adjustment`, `inventory_transfer`), 돈 도메인 이벤트 1개(`settlement_journal`: capture, checkout capture, 환불, 지급 분개).
+- 대안: (가) 서비스마다 앱 코드로 기록(9곳 수정, 새 쓰기 경로가 빠질 수 있음, 모듈 간 공용 기록기 필요), (나) 기존 `order_inventory_event` 재사용(예약 workflow 전용 열 구조), (다) CDC·Kafka(인프라 추가). 트리거 방식을 고른 이유는 원자성과 누락 방지이고, 비용은 원본 INSERT마다 행 하나가 더 쓰인다는 것이다.
+
+| # | 가설 | 반증 조건 | 지표 |
+|---|---|---|---|
+| H14 | 대상 9개 테이블의 INSERT 한 건마다 로그 행이 정확히 하나 같은 transaction에 생기고, 롤백하면 로그 행도 없다. 실제 저장소 코드(`AccountSuspensionRepository.apply`)로 쓴 조치도 로그에 행위자와 함께 남는다 | 테이블 하나라도 0개 또는 2개 이상, 롤백 뒤 로그 행 존재, 행위자 누락 | 시험 |
+| H15 | 로그의 UPDATE·DELETE·TRUNCATE는 거절된다 | 하나라도 성공 | SQLSTATE |
+| H16 | 트리거가 원본 INSERT 한 건에 더하는 시간은 p50 ≤ 0.3 ms다(`settlement_journal` 복사본, 트리거 유·무, pgbench c = 1, 10초, n = 3) | 중앙값 차이 > 0.3 ms | pgbench 지연 |
+| H17 | 행위자별 조치 질의(최근 100건)는 테이블당 20만 행에서 통합 로그 + 색인이 현재 테이블 UNION ALL(색인 없음)보다 10배 이상 빠르다 | 10배 미만 | 실행 시간 중앙값 |
+| H18 | 로그 `payload`에 `reason`·`idempotency_key`·`request_facts_sha256`·이메일 열이 없다 | 하나라도 있음 | 시험 |
+
 ## 한계 (실행 전에 알고 있는 것)
 
 - 단일 호스트, Colima VM, Apple Silicon, 가짜 SMTP. 실제 메일 제공자의 지연·오류 분포가 아니다.
