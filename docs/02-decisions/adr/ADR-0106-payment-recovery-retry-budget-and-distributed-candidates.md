@@ -40,6 +40,10 @@ F1은 재현됐다. 결제 복구 기본값(시도 8회, backoff 1초부터 두 
 - 버려진 claim은 "lease 60초 안에 결과를 쓰지 못한 claim"이다. 강제 종료뿐 아니라 60초 넘는 GC 정지·DB 분할(인스턴스 여럿)에서도 생긴다. 살아 있는 느린 worker가 나중에 결과를 써도 한 번만 세고, 그 결과는 lease 토큰에 막혀 다시 잡은 인스턴스의 기록을 덮지 않는다(시험으로 확인). 같은 job에 그런 정지가 8번 겹치면 독이 든 job이 아니어도 멈추는 것이 이 한도의 비용이다.
 - 장애가 길면 job마다 PayPal 조회가 7.5~15분에 한 번 이어진다(1,000건이면 초당 약 1~2회).
 
+## 사전 등록에서 벗어난 판단
+
+EXP-117 H10의 동기화 부분은 반증됐다(장애 20~40분·40~60분 최댓값/평균 7.4·6.4, 기준 3). 사전 등록 규칙은 반증 시 코드나 V12로 고치는 것이었지만 지터를 바꾸지 않았다. 이유: 최댓값 18이 상한 30(인스턴스 × batch ÷ poll) 안이고 회복 몰림이 없었다(회복 뒤 5분 최댓값 6). 또 full jitter(지연을 0부터 지수값까지 균등)는 공짜 수정이 아니다: 지연 최솟값이 약 0이 되어 "202회 = 24시간 창" 유도와 그 시험(`PaymentRecoveryWorkerTest.shippedMaxAttemptsIsTheSmallestCountWhoseMinimumBackoffReachesTheWindow`)이 성립하지 않는다. 바꾸려면 `max-attempts`를 다시 유도하거나 하한이 있는 decorrelated jitter를 써야 한다. 재검토 조건: 장애 중 PayPal 429, 또는 동시 미확정 결제가 상한(약 2만 건)에 가까워질 때 full jitter(시도 한도 재유도 포함)·decorrelated jitter와 비교한다.
+
 ## 롤백
 
 - 값만: `ATLAS_PAYMENT_RECOVERY_MAX_ATTEMPTS=8`이면 예전 동작(약 83~116초에 수작업). 버려진 claim 한도는 그대로 남는다.
