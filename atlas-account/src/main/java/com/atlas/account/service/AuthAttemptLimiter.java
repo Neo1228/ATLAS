@@ -19,16 +19,15 @@ import java.time.Instant;
  */
 public interface AuthAttemptLimiter {
     /**
-     * 주체 출처 한도가 모두 남았는지 확인하고, 남았다면 출처 시도를 1 소비한다.
+     * 주체 시도 1을 예약하고 출처 시도를 1 소비한다. 둘 중 하나라도 한도에 닿았으면 false다.
      *
-     * <p>주체 실패는 인증이 실패한 뒤에만 기록해야 하므로 여기서 소비하지 않는다.
+     * <p>주체 시도는 검증 전에 원자적으로 예약한다. 예약된 시도는 결과와 무관하게 창 안의 한 번으로 남고,
+     * 성공한 인증만 {@link #resetSubject}로 비운다. 실패를 검증 뒤에 기록하던 방식은 동시 시도가 기록 전에
+     * 모두 통과해 한도를 넘겼다(EXP-118 H1). 출처 한도에 막힌 시도는 주체 예약을 돌려준다.
      *
      * <p>주체 축이 없는 범위(EMAIL)는 출처 한도만 본다.
      */
     boolean tryAcquire(AuthAttemptScope scope, String subject, String origin, Instant now);
-
-    /** 주체 실패를 1 기록한다. 성공한 인증은 {@link #resetSubject}로 되돌린다. */
-    void recordSubjectFailure(SubjectBucket scope, String subject, Instant now);
 
     /** 인증 성공 시 주체 카운터를 비운다. 정상 사용자가 잠기지 않게 한다. */
     void resetSubject(SubjectBucket scope, String subject);

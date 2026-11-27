@@ -162,6 +162,37 @@ class AuthAttemptLimiterIntegrationTest {
     }
 
     @Test
+    void attemptsStillBeingVerifiedCannotPassTheSubjectLimitTogether() {
+        // 검증(PBKDF2) 중인 시도는 결과가 나오기 전이다. 그 사이 들어온 시도가 같은 카운터 값을 읽고 모두
+        // 통과하면 한도가 동시 시도 수만큼 늘어난다(EXP-118 H1). 결과를 기록하지 않고 tryAcquire만 이어서
+        // 부르는 것이 "모두 검증 중"인 순간과 같다.
+        AuthAttemptLimiter limited = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
+                Duration.ofMinutes(15), 3, 100);
+        Instant now = Instant.now();
+        String subject = "in-flight-" + UUID.randomUUID() + "@example.com";
+        int admitted = 0;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            if (limited.tryAcquire(AuthAttemptScope.LOGIN, subject, "198.51.100." + attempt, now)) admitted++;
+        }
+
+        assertThat(admitted).isEqualTo(3);
+    }
+
+    @Test
+    void attemptRejectedByItsOriginDoesNotSpendTheSubjectLimit() {
+        AuthAttemptLimiter limited = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
+                Duration.ofMinutes(15), 3, 1);
+        Instant now = Instant.now();
+        String subject = "origin-spent-" + UUID.randomUUID() + "@example.com";
+        String origin = "192.0.2." + UUID.randomUUID().toString().substring(0, 8);
+
+        assertThat(limited.tryAcquire(AuthAttemptScope.LOGIN, subject, origin, now)).isTrue();
+        assertThat(limited.tryAcquire(AuthAttemptScope.LOGIN, subject, origin, now)).isFalse();
+
+        assertThat(failures("LOGIN", subject)).isEqualTo(1);
+    }
+
+    @Test
     void everyScopeIsStoredWithinTheBucketConstraints() {
         // 버킷 enum 값이 테이블 CHECK 제약과 어긋나면 PostgreSQL이 INSERT를 거절해 여기서 예외가 난다.
         AuthAttemptLimiter wide = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
@@ -172,9 +203,6 @@ class AuthAttemptLimiterIntegrationTest {
 
         for (AuthAttemptScope scope : AuthAttemptScope.values()) {
             assertThat(wide.tryAcquire(scope, subject, subject, now)).isTrue();
-        }
-        for (SubjectBucket bucket : SubjectBucket.values()) {
-            wide.recordSubjectFailure(bucket, subject, now);
         }
 
         // MFA는 출처 제약에 값이 없어 LOGIN 출처 버킷을 같이 쓴다.

@@ -54,23 +54,25 @@ public class AuthAttemptLimiterImpl implements AuthAttemptLimiter {
 
     @Override
     public boolean tryAcquire(AuthAttemptScope scope, String subject, String origin, Instant now) {
-        // 주체 축이 없는 범위(EMAIL)는 auth_subject_bucket 제약상 row가 있을 수 없으므로 조회하지 않는다.
+        // 주체 축이 없는 범위(EMAIL)는 auth_subject_bucket 제약상 row가 있을 수 없으므로 예약하지 않는다.
+        // 주체 시도는 비밀번호 검증 전에 원자적으로 예약한다. 검증 뒤에 실패를 기록하면 그 사이에 들어온
+        // 동시 시도가 모두 한도 확인을 통과한다(EXP-118 H1). 예약과 소비는 독립 transaction이어야
+        // 인증이 실패해 바깥 transaction이 rollback돼도 시도 횟수가 남는다.
         Optional<SubjectBucket> subjectBucket = scope.subjectBucket();
-        if (subjectBucket.isPresent() && counters.activeSubjectFailures(
-                subjectBucket.get(), key(subject), now, windowMillis()) >= policy.subjectLimit()) {
+        String subjectKey = subjectBucket.isPresent() ? key(subject) : null;
+        if (subjectBucket.isPresent() && !Boolean.TRUE.equals(transactions.execute(status ->
+                counters.reserveSubjectAttempt(subjectBucket.get(), subjectKey, now, windowMillis(),
+                        policy.subjectLimit())))) {
             return false;
         }
-        // 소비도 독립 transaction이어야 한다. 인증이 실패해 바깥 transaction이 rollback돼도
-        // 시도 횟수는 남아야 한도가 실제로 줄어든다.
         Integer attempts = transactions.execute(status ->
                 counters.incrementOriginAttempts(scope.originBucket(), key(origin), now, windowMillis()));
-        return attempts != null && attempts <= policy.originLimit();
-    }
-
-    @Override
-    public void recordSubjectFailure(SubjectBucket scope, String subject, Instant now) {
-        transactions.executeWithoutResult(status ->
-                counters.recordSubjectFailure(scope, key(subject), now, windowMillis()));
+        boolean allowed = attempts != null && attempts <= policy.originLimit();
+        if (!allowed && subjectBucket.isPresent()) {
+            transactions.executeWithoutResult(status ->
+                    counters.releaseSubjectAttempt(subjectBucket.get(), subjectKey));
+        }
+        return allowed;
     }
 
     @Override
