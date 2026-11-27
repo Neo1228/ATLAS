@@ -577,6 +577,14 @@ public class PaymentServiceImpl implements PaymentService {
         };
     }
 
+    /**
+     * provider 결과를 기록한다. 이 커밋은 provider 호출 뒤에 일어난다(authorize·capture면 돈이 이미 움직였다).
+     *
+     * <p>인프라 전제(ADR-0106 C4): 결제 DB는 동기 정족수 복제({@code ANY 1 (s1, s2)})라 확인된 커밋은
+     * failover에서 사라지지 않는다. 비동기 구성(단일 노드 개발)에서 이 커밋을 잃어도 앞선 단계 시작 커밋이
+     * 같은 요청 ID와 복구 job을 쥐고 있어 복구가 provider 조회로 수렴한다(EXP-117 F2). {@code SyncRep}
+     * 대기 중인 이 커밋을 운영자가 취소하면 성공으로 돌아오지만 failover에서 사라질 수 있다(운영 가이드).
+     */
     private PaymentAttempt finalizePhase(PhaseStart start, PaymentProviderResponse result,
             PaymentProviderResponse.Outcome outcome) {
         return transactions.execute(status -> {

@@ -1,6 +1,6 @@
 # EXP-117: 분산 배포 전제에서 남은 업그레이드 후보(F1·F2·F3·G1·C4·E3)를 재현으로 판정한다
 
-- 상태: ✓ 완료. 가설·반증 조건은 첫 측정 전에 커밋했다(이 브랜치의 첫 커밋, 2026-11-27 23:46). 결과: F1 채택(V12, ADR-0106), G1 재현 2건을 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘김, C4 재현·측정 뒤 배포 구성을 [#731](https://github.com/Neo1228/ATLAS/issues/731)로 사용자에게 물음, F2·F3·E3 기각(재검토 조건은 아래 표).
+- 상태: ✓ 완료. 가설·반증 조건은 첫 측정 전에 커밋했다(이 브랜치의 첫 커밋, 2026-11-27 23:46). 결과: F1 채택(V12, ADR-0106), G1 재현 2건을 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘김, C4는 동기 정족수 복제로 결정(가정)([#731](https://github.com/Neo1228/ATLAS/issues/731)), F2·F3·E3 기각(재검토 조건은 아래 표).
 - 날짜: 2026-11-27
 - 관련: [#729](https://github.com/Neo1228/ATLAS/issues/729), [ADR-0038](../02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md), [ADR-0047](../02-decisions/adr/ADR-0047-abandoned-approval-deadline.md), [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md), [ADR-0072](../02-decisions/adr/ADR-0072-infrastructure-inventory-and-assumptions.md), [ADR-0077](../02-decisions/adr/ADR-0077-keep-reorder-idempotency-records.md), [EXP-064](EXP-064-location-fault-convergence.md), [EXP-083](EXP-083-reorder-idempotency-retention.md), [EXP-086](EXP-086-admission-k-ttl-and-authorize-window.md)
 
@@ -188,7 +188,7 @@ F1로 복구가 약 2분이 아니라 24시간 동안 PayPal을 다시 부른다
 - H4 지지(단절 시 손실 = N, 부하 중 5회 중 3회 손실). H5 지지(동기에서 손실 0, 단절 중 확인 0). 단, 대기 중 취소된 커밋은 동기에서도 사라진다.
 - 지연 비는 라운드 사이 변동이 커(1.21~1.94) 자릿수 비교로만 쓴다. 비동기 1라운드와 동기 3라운드의 범위가 겹친다.
 - 앱에 대한 뜻(코드 읽기): ATLAS의 쓰기 경로는 JDBC 질의 시간 제한(취소)을 커밋에 쓰지 않는다(`setQueryTimeout`은 입장 대기열 읽기 한 곳). 그래서 취소로 내구성 없는 성공을 받는 경로는 지금 없지만, 동기 구성에서 standby가 끊기면 커밋이 끝나지 않아 연결 풀(10개)이 묶인다.
-- 판정: 앱 코드는 바꾸지 않는다. 배포 구성(비동기·동기 1대·정족수 2대)은 가용성과 RPO의 교환이라 근거와 선택지를 [#731](https://github.com/Neo1228/ATLAS/issues/731)로 사용자에게 묻는다. 결제 쪽 손실 영향은 F2 절(앞선 커밋이 provider 참조를 쥐어 복구가 수렴).
+- 판정(✓ 결정(가정), 사용자가 묻지 말고 수치로 정하라고 지시): 돈을 다루는 DB(결제 시도·복구 job·원장)는 동기 정족수 `synchronous_standby_names = 'ANY 1 (s1, s2)'`, standby 2대, `synchronous_commit = on`으로 둔다. 근거: 손실 0(부하 중 종료 7회, 정족수 단절 1회)이고 standby 1대가 끊겨도 쓰기가 멈추지 않았다(1회). 비용: 커밋 지연 1.2~1.9배, standby 노드 2대. 단일 노드 개발 구성은 비동기(복제 없음)를 문서화된 대체로 둔다. 운영 규칙: `SyncRep` 대기 세션을 취소·종료하지 않는다(취소된 커밋은 성공으로 돌아오지만 failover에서 사라짐, 3/3), `pg_stat_activity.wait_event = 'SyncRep'` 대기가 5초를 넘으면 경보. 재검토 조건: 동기 대기 경보가 주 1회 이상, 커밋 p99가 이 측정 비(1.9배)를 넘어 결제 요청 지연 목표를 깨뜨릴 때, 또는 standby 2대 중 1대만 남은 상태가 1시간 넘게 이어질 때(그동안 1대 장애로 쓰기 정지). [#731](https://github.com/Neo1228/ATLAS/issues/731)은 이 결정으로 닫는다. 결제 쪽 손실 영향은 F2 절(앞선 커밋이 provider 참조를 쥐어 복구가 수렴).
 - 배포 전제: P-F. 한계: 호스트 손실과 primary·클라이언트 사이 분할은 재지 않았다. 앱 드라이버 없이 psql로 확인을 판정했다. 비동기 부하 회차 1~4와 동기 단절 회차 1~3, 동기 부하 1회차는 다른 에이전트의 측정 잠금과 겹쳤다(건수만 쓰고 시간은 쓰지 않음).
 
 ## 결정 요약 (ADR-0106, D-185)
@@ -199,7 +199,7 @@ F1로 복구가 약 2분이 아니라 24시간 동안 PayPal을 다시 부른다
 | F2 | 돈이 움직인 경로는 ✗(H6 부분 반증) | ✗ 기각: 자동 일 대사 보류 | P-F | 보고서 대사 `UNMATCHED` capture 1건 이상, 또는 LG-1 해제 |
 | F3 | ✗(H9 지지, 문제 없음) | ✗ 기각: ADR-0077 유지 | 없음 | 표 1 GiB(약 346만 행) |
 | G1 | ✓ H7 반증(2건) | ✓ #730으로 넘김(주문 쪽 수정, location fencing token은 효과 없음) | P-N, P-L, P-K | #730에서 결정 |
-| C4 | ✓ H4·H5 | ✓ 앱 변경 없음, 배포 구성은 #731에서 사용자 결정 | P-F | #731 결정, 또는 replica를 둔 배포가 생길 때 |
+| C4 | ✓ H4·H5 | ✓ 결정(가정): 돈 DB는 동기 정족수 `ANY 1 (s1, s2)`, 개발 단일 노드는 비동기 대체, `SyncRep` 대기 취소 금지 | P-F | `SyncRep` 대기 > 5초 경보 주 1회 이상, 커밋 지연 비 > 1.9배로 결제 지연 목표 위반, standby 1대만 남은 상태 1시간 초과 |
 | E3 | ✓ H8(지연 = T) | ✗ 기각: CDC 보류 | P-N | `relay.stalled_seconds` > 30초 하루 1회 이상, 또는 소비 지연 목표 < 30초 |
 
 ## 커밋하지 않은 파일

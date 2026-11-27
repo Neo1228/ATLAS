@@ -286,6 +286,16 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 - Prometheus metric prefix: `atlas.payment.recovery.*` (status별 backlog, stage별 `work_stage`+`status` backlog와 `oldest_due_age_seconds`, operation별 claim/retry/failure/completion, `operation_type`+`work_stage` 처리 duration). `work_stage=APPLY`의 pending count/age가 provider 결과 확정 후 owner 반영까지의 지연을 나타냅니다. `UNKNOWN` 또는 `NEEDS_REVIEW`를 성공/실패로 수동 간주하지 않습니다. 승인 대기 재개는 `atlas.payment.recovery.approval.resumed`로 관측합니다.
 - 자세한 단계·crash window·검증은 [ADR-0046](02-decisions/adr/ADR-0046-order-payment-transactional-outbox.md)에 정리했습니다.
 
+## 결제 DB 복제 (C4, ADR-0106)
+
+결제 시도·복구 job·원장이 있는 DB는 동기 정족수 복제를 전제로 한다(`✓ 결정(가정)`, [ADR-0106](02-decisions/adr/ADR-0106-payment-recovery-retry-budget-and-distributed-candidates.md), 측정은 [EXP-117](03-experiments/EXP-117-distributed-upgrade-candidates-reproduction.md) C4 절).
+
+- 구성: standby 2대(`s1`, `s2`), primary에 `synchronous_standby_names = 'ANY 1 (s1, s2)'`, `synchronous_commit = on`. standby 1대가 끊겨도 쓰기는 계속되고, 커밋은 남은 1대가 받은 뒤 확인된다. 커밋 지연은 비동기의 약 1.2~1.9배였다(로컬 컨테이너, 같은 세션 3라운드).
+- 단일 노드 개발 구성은 복제 없이(비동기와 같은 내구성) 돈다. 이 구성에서는 primary 디스크를 잃으면 마지막 백업 이후 커밋이 사라진다.
+- 금지: `wait_event = 'SyncRep'`으로 기다리는 세션을 `pg_cancel_backend`·`pg_terminate_backend`로 끊지 않는다. 취소된 커밋은 클라이언트에 성공과 경고(`The transaction has already committed locally, but might not have been replicated`)로 돌아오지만 failover 뒤 사라진다(3/3회). `statement_timeout`은 이 대기를 끝내지 않는다.
+- 경보: `SELECT count(*) FROM pg_stat_activity WHERE wait_event = 'SyncRep' AND now() - query_start > interval '5 seconds'`가 0보다 크면 standby 상태부터 본다(`pg_stat_replication.sync_state`). standby가 2대 모두 끊기면 쓰기가 멈추고 앱 연결 풀(10개)이 그대로 묶인다. 이때는 standby를 살리거나, 손실 위험을 받아들이고 `synchronous_standby_names`를 비우는 결정을 기록한 뒤 바꾼다.
+- 재검토: 위 경보가 주 1회 이상, standby 1대만 남은 상태가 1시간을 넘김, 커밋 지연이 결제 지연 목표를 깨뜨림.
+
 ## 원장 무결성·런타임 역할·백업과 복원 (EXP-111)
 
 원장 테이블(`settlement_journal`, `settlement_entry`, `settlement_seller_allocation`)은 DB가 지킵니다. 측정과 한계는 [EXP-111](03-experiments/EXP-111-ledger-integrity-durability.md), 결정과 재검토 조건은 [ADR-0100](02-decisions/adr/ADR-0100-settlement-ledger-guards.md)입니다.

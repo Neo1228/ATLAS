@@ -1,6 +1,6 @@
 # ADR-0106: 결제 복구는 창이 끝내고 버려진 claim은 따로 세며, 분산 배포 후보 다섯은 재검토 조건과 함께 보류한다
 
-- 상태: Accepted(사용자 지시 "증거가 탄탄한 업그레이드만 적극 채택"에 따른 에이전트 결정. 사용자 승인 여부는 확인하지 못함. C4의 배포 구성은 사용자 결정으로 남김)
+- 상태: Accepted(사용자 지시 "증거가 탄탄한 업그레이드만 적극 채택"에 따른 에이전트 결정. 사용자 승인 여부는 확인하지 못함. C4는 사용자가 묻지 말고 수치로 정하라고 해 `✓ 결정(가정)`으로 둠)
 - 날짜: 2026-11-28
 - 관련 결정: [ADR-0038](ADR-0038-durable-payment-recovery-workflow.md)(복구 워크플로), [ADR-0047](ADR-0047-abandoned-approval-deadline.md), [ADR-0067](ADR-0067-event-log-kafka-relay.md), [ADR-0072](ADR-0072-infrastructure-inventory-and-assumptions.md), [ADR-0077](ADR-0077-keep-reorder-idempotency-records.md)
 - 근거: [EXP-117](../../03-experiments/EXP-117-distributed-upgrade-candidates-reproduction.md), 이슈 [#729](https://github.com/Neo1228/ATLAS/issues/729)
@@ -22,7 +22,7 @@ F1은 재현됐다. 결제 복구 기본값(시도 8회, backoff 1초부터 두 
 | F2 3자 대사 | 돈을 움직인 PayPal 호출은 모두 앞선 커밋이 provider 참조를 쥐어 failover 뒤 복구가 수렴(코드 읽기). ATLAS가 모르는 PayPal 주문은 돈이 움직이지 않은 주문뿐 | ✗ 기각(자동 일 대사 보류, 기존 보고서 대사 유지) | 보고서 대사 `UNMATCHED` capture 1건 이상, 또는 LG-1 해제 |
 | F3 멱등 기록 보존 | 1,000만 행 행당 310.4 B, PK 깊이 3, 키 조회 5 버퍼(100만 행과 같음) | ✗ 기각(ADR-0077 유지) | 표 1 GiB(약 346만 행) |
 | G1 location fencing token | 12경우 중 2경우 불일치(늦은 reserve의 고아 예약, lease 잃은 claim의 `CLAIMED` 보고). location 쪽 토큰은 둘 다 못 막음 | ✓ lease·claim 변경을 맡은 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘김 | #730에서 결정 |
-| C4 동기 복제 | 비동기 단절 중 확인된 커밋 200/200 손실(3회), 부하 중 종료 5회 중 3회 손실. 동기는 손실 0(7회)이지만 standby 단절 시 커밋 정지, 취소된 커밋은 사라짐. 지연 비 1.2~1.9 | ✓ 앱 변경 없음, 배포 구성은 [#731](https://github.com/Neo1228/ATLAS/issues/731)에서 사용자 결정 | #731 결정, 또는 replica를 둔 배포 |
+| C4 동기 복제 | 비동기 단절 중 확인된 커밋 200/200 손실(3회), 부하 중 종료 5회 중 3회 손실. 동기는 손실 0(7회)이지만 standby 단절 시 커밋 정지, 취소된 커밋은 사라짐. 지연 비 1.2~1.9 | ✓ 결정(가정): 돈 DB는 동기 정족수 `ANY 1 (s1, s2)`(standby 2대, `synchronous_commit = on`). 개발 단일 노드는 비동기 대체. `SyncRep` 대기 세션 취소·종료 금지(취소된 커밋은 성공으로 돌아오고 failover에서 사라짐), 5초 넘는 대기 경보. 비용: 커밋 지연 1.2~1.9배, 노드 2대. [#731](https://github.com/Neo1228/ATLAS/issues/731) | `SyncRep` 대기 경보 주 1회 이상, 커밋 지연 비 1.9배 초과로 결제 지연 목표 위반, standby 1대만 남은 상태 1시간 초과 |
 | E3 CDC | xid를 쥔 트랜잭션 T초 동안 relay 지연 최대 T±1초(9회), 유실 0. CDC는 이 정지가 없지만 논리 슬롯 failover 구성이 필요 | ✗ 기각 | `atlas.order.inventory.event.relay.stalled_seconds` > 30초 하루 1회 이상, 또는 소비 지연 목표 < 30초 |
 
 ## 대안과 기각 이유
