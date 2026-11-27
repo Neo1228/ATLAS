@@ -414,9 +414,12 @@ public final class OrderServiceImpl implements OrderService {
         return expired;
     }
 
-    private OrderViewResponse.Order applyPayment(UUID orderId, PaymentResponse payment) {
+    private OrderViewResponse.Order applyPayment(UUID orderId, PaymentResponse snapshot) {
         return transactions.execute(status -> {
             PurchaseOrder order = lockOrder(orderId);
+            // 잠금 밖에서 받은 스냅숏 대신 주문 행 잠금 아래에서 결제 상태를 다시 읽는다. 다른 인스턴스가 그
+            // 사이 PAID를 커밋했으면 스냅숏은 오래된 값이다(EXP-118 H2, CheckoutPaymentServiceImpl과 같은 이유).
+            PaymentResponse payment = Objects.requireNonNullElse(payments.find(orderId), snapshot);
             if (order.source() == OrderSource.CAMPAIGN) {
                 buyerLockRepository.lockBuyer(order.campaignId() + ":" + order.buyerRef());
                 admission.releaseCheckoutSlot(order.campaignId(), order.ticketId(),

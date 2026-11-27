@@ -376,15 +376,23 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         return toResponse(checkout);
     }
 
-    private CheckoutResponse applyPaymentResult(UUID checkoutId, PaymentResponse payment) {
-        if (payment == null || !checkoutId.equals(payment.checkoutId())) {
+    private CheckoutResponse applyPaymentResult(UUID checkoutId, PaymentResponse snapshot) {
+        if (snapshot == null || !checkoutId.equals(snapshot.checkoutId())) {
             throw new OrderException(OrderException.Code.CONFLICT, "Payment result does not match checkout");
         }
         boolean[] cancellationRequestedForRemoteCleanup = {false};
         boolean[] remoteReservationForCleanup = {false};
+        PaymentResponse[] applied = {snapshot};
         BuyerCheckout updated = transactions.execute(status -> {
             BuyerCheckout checkout = checkouts.findWithLockByCheckoutId(checkoutId)
                     .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Checkout not found"));
+            // 결제 결과는 checkout 행을 잠근 뒤 다시 읽는다. 호출자가 들고 온 스냅숏은 잠금 밖에서 읽은 값이라,
+            // 다른 인스턴스가 그 사이 캡처를 끝내고 PAID를 커밋했으면 오래된 값이다. 결제 소유자 잠금
+            // (OwnerLockRegistry)은 JVM 안에서만 직렬화하므로 인스턴스가 둘 이상이면 이 재조회만이 PAID를
+            // PAYMENT_PENDING으로 되돌리는 쓰기를 막는다(EXP-118 H2). 결제 상태는 앞으로만 가므로 잠금 아래에서
+            // 읽은 값은 스냅숏보다 오래되지 않는다.
+            PaymentResponse payment = Objects.requireNonNullElse(payments.findCheckout(checkoutId), snapshot);
+            applied[0] = payment;
             List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
             if (children.isEmpty()) throw new OrderException(OrderException.Code.CONFLICT, "Checkout has no orders");
             boolean cancellationRequested = checkout.state() == BuyerCheckoutState.CANCEL_PENDING
@@ -485,6 +493,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
             }
             return checkout;
         });
+        PaymentResponse payment = applied[0];
         if (remoteReservationForCleanup[0]
                 && (payment.state() == PaymentState.DECLINED || payment.state() == PaymentState.VOIDED)
                 && !payment.authorizationActive() && updated.state() == BuyerCheckoutState.CANCEL_PENDING) {

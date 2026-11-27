@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 
 import com.atlas.order.dto.response.OrderViewResponse;
@@ -279,6 +280,30 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
         assertThat(job("payment_refund_operation_id", refundOperationId))
                 .containsEntry("work_stage", PaymentRecoveryWorkStage.APPLY.name())
                 .containsEntry("status", PaymentRecoveryJobStatus.COMPLETED.name());
+    }
+
+    @Test
+    void staleApprovalSnapshotFromAnotherInstanceDoesNotUndoAPaidCheckout() {
+        // 인스턴스 B가 결제 계층에서 CAPTURE_PENDING 스냅숏을 읽은 직후 인스턴스 A가 캡처와 PAID 반영을 끝낸
+        // 순간이다. 결제 소유자 잠금(OwnerLockRegistry)은 JVM 안에서만 직렬화하므로 다른 인스턴스의 읽기를 막지
+        // 못한다(EXP-118 H2). 한 JVM에서 재현하려고 B가 받은 스냅숏을 completeCheckoutApproval의 응답으로 준다.
+        CheckoutResponse reserved = reservedCheckout();
+        UUID checkoutId = reserved.checkoutId();
+        CheckoutResponse pending = checkouts.submit(checkoutId);
+        String providerOrderId = approvalToken(pending.paymentApprovalUrl());
+        assertThat(checkouts.completeApproval(checkoutId, providerOrderId).state())
+                .isEqualTo(BuyerCheckoutState.PAID);
+        PaymentResponse captured = payments.findCheckout(checkoutId);
+        PaymentResponse staleSnapshot = new PaymentResponse(captured.orderId(), checkoutId, captured.attemptId(),
+                PaymentState.CAPTURE_PENDING, true, captured.providerOrderId(), null, captured.approvalUrl(),
+                captured.approvalExpiresAt());
+        doReturn(staleSnapshot).when(paymentsSpy).completeCheckoutApproval(checkoutId, providerOrderId);
+
+        CheckoutResponse afterStale = checkouts.completeApproval(checkoutId, providerOrderId);
+
+        assertThat(afterStale.state()).isEqualTo(BuyerCheckoutState.PAID);
+        assertThat(jdbc.queryForList("SELECT state FROM purchase_order WHERE checkout_id = ?",
+                String.class, checkoutId)).containsOnly(OrderState.PAID.name());
     }
 
 
