@@ -222,6 +222,30 @@ class AuthAttemptLimiterIntegrationTest {
     }
 
     @Test
+    void correctLoginRefusedOnlyBecauseOthersAreStillBeingVerifiedSucceedsOnceTheyFinish() {
+        // 받아들인 대가(ADR-0107, EXP-118 H1f): 한도만큼의 시도가 검증 중이면 그다음 시도는 비밀번호가 맞아도 검증 전에
+        // 거절된다. 서버에서 기다렸다가 다시 예약하는 안은 거절된 시도마다 Tomcat 스레드를 쥐어 같은 인스턴스의 다른
+        // 요청을 늦췄다. 대신 이 거절은 일시적이어야 한다. 검증 중이던 시도가 성공하면 카운터가 지워지고, 같은 사용자의
+        // 다음 시도는 통과해 성공하며 카운터를 남기지 않는다.
+        String email = verifiedAccount();
+        Instant now = Instant.now();
+        for (int inFlight = 0; inFlight < 3; inFlight++) {
+            assertThat(limiter.tryAcquire(AuthAttemptScope.LOGIN, email, "198.51.100." + inFlight, now)).isTrue();
+        }
+
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN))
+                .isInstanceOf(AccountException.class)
+                .hasFieldOrPropertyWithValue("code", AccountException.Code.INVALID_CREDENTIALS);
+        assertThat(failures("LOGIN", email)).isEqualTo(3);
+
+        // 검증 중이던 시도 하나가 성공으로 끝난다(AccountServiceImpl.login의 성공 경로와 같은 호출).
+        limiter.resetSubject(SubjectBucket.LOGIN, email);
+
+        assertThat(accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
+        assertThat(failures("LOGIN", email)).isZero();
+    }
+
+    @Test
     void attemptRejectedByItsOriginDoesNotSpendTheSubjectLimit() {
         AuthAttemptLimiter limited = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
                 Duration.ofMinutes(15), 3, 1);
