@@ -9,7 +9,7 @@ import com.atlas.application.controller.payment.PayPalWebhookRetryHistoryControl
 import com.atlas.application.exception.GlobalExceptionHandler;
 import com.atlas.payment.repository.PayPalWebhookRetryHistoryRepository;
 import com.atlas.payment.service.impl.PayPalWebhookRetryHistoryServiceImpl;
-import com.atlas.schema.BaselineSchema;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,11 +37,15 @@ class PayPalWebhookRetryReadModelIntegrationTest {
     void setUp() {
         jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
-        // 테이블을 손으로 만들면 운영 스키마와 어긋난 컬럼(예: 없는 id)이 결함을 가린다(#724).
-        // 기준 스키마를 그대로 실행해 리포지터리 쿼리를 운영과 같은 모양에서 검증한다.
+        // 테이블을 손으로 만들면 운영 스키마와 어긋난 컬럼(예: 없는 id)이 결함을 가린다(#724). V1 기준 스키마만 실행해도
+        // 뒤 마이그레이션이 바꾼 모양과 어긋날 수 있으므로, 다른 Testcontainers 통합 시험처럼 Flyway 전체 체인으로 만든다.
         jdbc.execute("DROP SCHEMA public CASCADE");
         jdbc.execute("CREATE SCHEMA public");
-        jdbc.execute(BaselineSchema.script());
+        Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .locations("classpath:db/migration")
+                .load()
+                .migrate();
         mvc = MockMvcBuilders.standaloneSetup(new PayPalWebhookRetryHistoryController(
                 new PayPalWebhookRetryHistoryServiceImpl(new PayPalWebhookRetryHistoryRepository(jdbc))))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
