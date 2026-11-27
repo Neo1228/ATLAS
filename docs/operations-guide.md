@@ -33,6 +33,16 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 - 되돌리기: 플래그를 `false`로 바꾸고 재시작하면 즉시 현행 경로로 돌아간다. 남은 대기 행은 보내지 않고 남는다(다시 켜면 보낸다). 계속 끌 것이면 사용자에게 재요청을 안내하고 `DELETE FROM account_notification_outbox;`로 비운다. 테이블까지 없애려면 플래그를 끈 이미지에서 `DROP TABLE account_notification_outbox; DELETE FROM flyway_schema_history WHERE version = '9';`를 소유 계정으로 실행한다(V8 이력은 건드리지 않는다).
 - 기본값 전환 조건: 운영에서 `Account email delivery failed` WARN이 관측되거나 무중단 배포·자동 재시작으로 프로세스 종료가 잦아지면 켠다. 켠 뒤에는 위 지표를 경보에 건다.
 
+## 통합 감사·도메인 이벤트 로그 (V9 `domain_audit_event`, ADR-0102)
+
+- 항상 켜져 있다. 운영자 조치 6개 테이블(`account_suspension_action`, `payment_recovery_operator_action`, `paypal_webhook_retry_operator_audit`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `paypal_balance_report_disposition`), 재고 감사 2개(`inventory_capacity_adjustment`, `inventory_transfer`), 원장 분개(`settlement_journal`)에 행이 들어가면 같은 transaction에서 로그에 한 행이 생긴다. 로그는 UPDATE·DELETE·TRUNCATE를 거절한다.
+- 열: `occurred_at`(원본 `created_at`·`recorded_at`), `source_table`·`source_id`(원본 행), `event_type`(예: `ACCOUNT_SUSPEND`, `PAYOUT_<action>`, `CAPTURE_JOURNAL_POSTED`), `aggregate_type`·`aggregate_id`(예: `payout`/지급 ID, `order`/주문 ID), `actor`(원본에 없으면 NULL), `payload`(원본 행에서 `reason`·`idempotency_key`·`request_facts_sha256`를 뺀 jsonb), `tx_id`.
+- 운영자별 조치: `SELECT occurred_at, event_type, aggregate_type, aggregate_id FROM domain_audit_event WHERE actor = '<account id>' ORDER BY occurred_at DESC LIMIT 100;`
+- 대상별 이력: `SELECT occurred_at, event_type, actor FROM domain_audit_event WHERE aggregate_type = 'payout' AND aggregate_id = '<payout id>' ORDER BY occurred_at;` 사유 원문은 `source_table`·`source_id`로 원본에서 읽는다.
+- 소비자를 붙일 때는 ADR-0067과 같이 `tx_id < pg_snapshot_xmin(pg_current_snapshot())` 범위까지만 읽어 커밋 순서 역전을 피한다.
+- 새 감사 테이블을 만들면 `record_domain_audit_event()`의 `CASE`에 매핑을 더하고 `AFTER INSERT` 트리거를 건다. 매핑이 없으면 그 테이블의 INSERT가 실패한다(누락을 조용히 넘기지 않기 위함).
+- 되돌리기: 트리거만 끄려면 `DROP TRIGGER <table>_audit ON <table>;`, 전부 없애려면 이어서 `DROP TABLE domain_audit_event; DROP FUNCTION record_domain_audit_event(); DROP FUNCTION reject_domain_audit_event_mutation();`(소유 계정).
+
 ## PayPal Balance report 대사
 
 - PayPal merchant portal에서 내려받은 Balance Reconciliation report CSV의 단일 파일 업로드 지원. 공식 [Balance report 문서](https://developer.paypal.com/reports/balance)와 [공개 CSV sample](https://www.paypalobjects.com/ppdevdocs/Sample-Balance%20Report-CCOP.csv) 기준의 header-driven parsing.
