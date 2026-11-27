@@ -102,7 +102,7 @@ public class PayPalWebhookRetryHistoryRepository {
         return jdbc.query("""
                 SELECT category, recorded_at, attempt_number FROM (
                     SELECT outcome AS category, COALESCE(finished_at, claimed_at) AS recorded_at,
-                           attempt_number, CAST(id AS VARCHAR) AS sort_key
+                           attempt_number, lease_token AS sort_key
                     FROM paypal_webhook_retry_attempt_history WHERE event_id = ?
                     UNION ALL
                     SELECT 'MANUAL_REQUEUE' AS category, created_at AS recorded_at,

@@ -9,6 +9,7 @@ import com.atlas.application.controller.payment.PayPalWebhookRetryHistoryControl
 import com.atlas.application.exception.GlobalExceptionHandler;
 import com.atlas.payment.repository.PayPalWebhookRetryHistoryRepository;
 import com.atlas.payment.service.impl.PayPalWebhookRetryHistoryServiceImpl;
+import com.atlas.schema.BaselineSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,23 +37,11 @@ class PayPalWebhookRetryReadModelIntegrationTest {
     void setUp() {
         jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
-        jdbc.execute("DROP TABLE IF EXISTS paypal_webhook_retry_operator_audit CASCADE");
-        jdbc.execute("DROP TABLE IF EXISTS paypal_webhook_retry_attempt_history CASCADE");
-        jdbc.execute("DROP TABLE IF EXISTS paypal_webhook_retry CASCADE");
-        jdbc.execute("CREATE TABLE paypal_webhook_retry (event_id VARCHAR(128) PRIMARY KEY, "
-                + "attempt_count INTEGER NOT NULL, state VARCHAR(16) NOT NULL, event_type VARCHAR(128), "
-                + "next_attempt_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, "
-                + "updated_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, lease_owner VARCHAR(128), lease_until TIMESTAMPTZ)");
-        // V54 와 동일하게 recorded_at 생성 컬럼을 둔다. 요약 쿼리가 COALESCE 대신 이 컬럼을
-        // 쓰므로, 스키마를 손으로 만드는 이 테스트도 같은 모양이어야 한다.
-        jdbc.execute("CREATE TABLE paypal_webhook_retry_attempt_history (id BIGINT GENERATED ALWAYS AS IDENTITY, "
-                + "event_id VARCHAR(128) NOT NULL, event_type VARCHAR(128), attempt_number INTEGER NOT NULL, "
-                + "lease_token VARCHAR(128), outcome VARCHAR(32) NOT NULL, claimed_at TIMESTAMPTZ NOT NULL, "
-                + "finished_at TIMESTAMPTZ, recorded_at TIMESTAMPTZ "
-                + "GENERATED ALWAYS AS (COALESCE(finished_at, claimed_at)) STORED)");
-        jdbc.execute("CREATE TABLE paypal_webhook_retry_operator_audit (idempotency_key VARCHAR(128), "
-                + "event_id VARCHAR(128), actor VARCHAR(128), reason VARCHAR(500), "
-                + "outcome VARCHAR(16), created_at TIMESTAMPTZ)");
+        // 테이블을 손으로 만들면 운영 스키마와 어긋난 컬럼(예: 없는 id)이 결함을 가린다(#724).
+        // 기준 스키마를 그대로 실행해 리포지터리 쿼리를 운영과 같은 모양에서 검증한다.
+        jdbc.execute("DROP SCHEMA public CASCADE");
+        jdbc.execute("CREATE SCHEMA public");
+        jdbc.execute(BaselineSchema.script());
         mvc = MockMvcBuilders.standaloneSetup(new PayPalWebhookRetryHistoryController(
                 new PayPalWebhookRetryHistoryServiceImpl(new PayPalWebhookRetryHistoryRepository(jdbc))))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
@@ -116,12 +105,8 @@ class PayPalWebhookRetryReadModelIntegrationTest {
     @Test
     void historySurvivesQueueRemovalAndUnknownIsNotFound() throws Exception {
         insertRetry("still-queued", 0, "PENDING");
-        jdbc.update("INSERT INTO paypal_webhook_retry_attempt_history "
-                + "(event_id, attempt_number, outcome, claimed_at, finished_at) VALUES (?, ?, ?, ?::timestamptz, ?::timestamptz)",
-                "completed", 2, "PROCESSED", "2026-01-02T00:00:00Z", "2026-01-02T00:00:00Z");
-        jdbc.update("INSERT INTO paypal_webhook_retry_attempt_history "
-                + "(event_id, attempt_number, outcome, claimed_at, finished_at) VALUES (?, ?, ?, ?::timestamptz, ?::timestamptz)",
-                "completed", 1, "CORRELATION_MISS", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
+        insertAttempt("completed", 2, "PROCESSED", "2026-01-02T00:00:00Z", "2026-01-02T00:00:00Z");
+        insertAttempt("completed", 1, "CORRELATION_MISS", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
         mvc.perform(get(BASE + "/completed/history"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.eventId").value("completed"))
@@ -136,13 +121,55 @@ class PayPalWebhookRetryReadModelIntegrationTest {
 
     @Test
     void historyIsBoundedForLongLivedEvents() throws Exception {
-        jdbc.update("INSERT INTO paypal_webhook_retry_attempt_history (event_id, attempt_number, outcome, claimed_at) "
-                + "SELECT 'long-lived', n, 'CLAIMED', CURRENT_TIMESTAMP FROM generate_series(1, 250) n");
+        jdbc.update("INSERT INTO paypal_webhook_retry_attempt_history "
+                + "(lease_token, event_id, attempt_number, outcome, claimed_at) "
+                + "SELECT gen_random_uuid()::text, 'long-lived', n, 'CLAIMED', CURRENT_TIMESTAMP "
+                + "FROM generate_series(1, 250) n");
         String body = mvc.perform(get(BASE + "/long-lived/history"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         JsonNode attempts = mapper.readTree(body).path("entries");
         assertThat(attempts.isArray()).isTrue();
         assertThat(attempts.size()).isLessThanOrEqualTo(100);
+    }
+
+    @Test
+    void historyMergesAttemptsAndManualRequeueInDocumentedOrderWithTotal() throws Exception {
+        insertAttempt("mixed", 1, "TRANSIENT_ERROR", "2026-01-01T00:00:00Z", "2026-01-01T00:00:05Z");
+        insertAttempt("mixed", 2, "EXHAUSTED", "2026-01-02T00:00:00Z", "2026-01-02T00:00:05Z");
+        jdbc.update("INSERT INTO paypal_webhook_retry_operator_audit "
+                + "(idempotency_key, event_id, actor, reason, outcome, created_at) "
+                + "VALUES ('requeue-1', 'mixed', 'operator', 'provider recovered', 'REQUEUED', '2026-01-03T00:00:00Z')");
+        // 재큐 뒤 같은 시각에 끝난 두 시도: 시각이 같으면 category, 그다음 attempt_number 내림차순.
+        insertAttempt("mixed", 4, "PROCESSED", "2026-01-04T00:00:00Z", "2026-01-04T00:00:05Z");
+        insertAttempt("mixed", 3, "LEASE_EXPIRED", "2026-01-04T00:00:00Z", "2026-01-04T00:00:05Z");
+        insertAttempt("other", 1, "PROCESSED", "2026-01-05T00:00:00Z", "2026-01-05T00:00:05Z");
+
+        mvc.perform(get(BASE + "/mixed/history").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(5))
+                .andExpect(jsonPath("$.entries.length()").value(5))
+                .andExpect(jsonPath("$.entries[0].category").value("LEASE_EXPIRED"))
+                .andExpect(jsonPath("$.entries[0].attemptNumber").value(3))
+                .andExpect(jsonPath("$.entries[1].category").value("PROCESSED"))
+                .andExpect(jsonPath("$.entries[1].attemptNumber").value(4))
+                .andExpect(jsonPath("$.entries[2].category").value("MANUAL_REQUEUE"))
+                .andExpect(jsonPath("$.entries[2].attemptNumber").doesNotExist())
+                .andExpect(jsonPath("$.entries[2].recordedAt").value("2026-01-03T00:00:00Z"))
+                .andExpect(jsonPath("$.entries[3].category").value("EXHAUSTED"))
+                .andExpect(jsonPath("$.entries[4].category").value("TRANSIENT_ERROR"));
+        mvc.perform(get(BASE + "/mixed/history").param("page", "1").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(5))
+                .andExpect(jsonPath("$.entries.length()").value(2))
+                .andExpect(jsonPath("$.entries[0].category").value("MANUAL_REQUEUE"))
+                .andExpect(jsonPath("$.entries[1].category").value("EXHAUSTED"));
+    }
+
+    private void insertAttempt(String eventId, int attempt, String outcome, String claimedAt, String finishedAt) {
+        jdbc.update("INSERT INTO paypal_webhook_retry_attempt_history "
+                + "(lease_token, event_id, attempt_number, outcome, claimed_at, finished_at) "
+                + "VALUES (gen_random_uuid()::text, ?, ?, ?, ?::timestamptz, ?::timestamptz)",
+                eventId, attempt, outcome, claimedAt, finishedAt);
     }
 
     private void insertRetry(String eventId, int attempts, String status) {
