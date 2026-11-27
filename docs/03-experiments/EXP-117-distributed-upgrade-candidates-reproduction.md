@@ -57,6 +57,14 @@ F1로 복구가 약 2분이 아니라 24시간 동안 PayPal을 다시 부른다
 
 판정 규칙: 반증되면 V12 또는 코드로 고치고 시험을 둔다. 지지되면 기존 지터를 그대로 두고 상한 식과 수치를 운영 가이드에 적는다. 측정 잠금 아래에서 돈다.
 
+## 추가 사전 등록 2 (C4 결정 뒤 앱 자신의 취소, 2026-11-28 측정 전)
+
+| 번호 | 가설 | 반증 조건 | 방법 |
+|---|---|---|---|
+| H11 | 정족수 구성(`ANY 1 (s1, s2)`)에서 standby 2대를 모두 끊고 앱의 실제 JDBC 설정(PgJDBC, URL `options`의 `statement_timeout=30000`, `lock_timeout`, `idle_in_transaction_session_timeout`, `autoCommit=false` 뒤 `commit()`)으로 커밋하면 (i) `statement_timeout`은 COMMIT의 동기 대기를 끝내지 않는다(40초 동안 확인 0, 클라이언트는 primary 종료 때 예외). (ii) 같은 대기에 JDBC 질의 시간 제한(`setQueryTimeout`, Spring 트랜잭션 시간 제한이 쓰는 경로)이 걸린 autocommit 쓰기는 취소되며 성공 + 경고를 받고 failover 뒤 사라진다. (iii) `socketTimeout`은 클라이언트에 예외를 줄 뿐 성공으로 보고하지 않는다 | (i)에서 확인된 커밋이 사라짐, 또는 (iii)에서 성공 보고 | PostgreSQL 18 컨테이너 primary + standby 2, 각 경우 3회. 확인 = JDBC 호출이 예외 없이 돌아옴. failover 뒤 대조 |
+
+판정 규칙: (i)·(iii)이 지지되고 (ii)만 재현되면, 앱의 쓰기 경로에 질의 시간 제한·트랜잭션 시간 제한이 있는지 코드로 세고, 없으면 (c) 알려진 틈으로 문서화하고 그 부재를 시험으로 고정한다. (i)이 반증되면 (a) COMMIT 경로의 시간 제한 면제 또는 (b) 경고 감지를 비교해 고친다.
+
 ## 결과
 
 측정은 사전 등록 커밋(`docs(experiments): EXP-117 가설과 반증 조건을 측정 전에 등록한다`, 2026-11-27 23:46) 뒤에 했다.
