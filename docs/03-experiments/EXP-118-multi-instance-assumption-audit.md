@@ -40,6 +40,13 @@ TxBacklog(#729, EXP-117)의 F1·F2·F3·G1·C4·E3와 AuditGuards(EXP-116)의 �
 | H3b | old jar 1대 + new jar 1대가 섞인 동안, 코드 수정만으로는 old jar가 낸 결제 결과 역전을 막지 못하고, DB 가드(V13)는 막는다 | R-mix(V13 없음) 대 R-mix(V13) | H2a가 재현되지 않으면 이 칸은 돌리지 않고 V13을 만들지 않는다. 재현되면: V13 없는 칸에서 역전 0회이거나 V13 칸에서 역전 1회 이상 |
 | H3c | (첫 계수 전 추가) 가장 최근 실제 migration V10에서 rolling 배포가 안전하다: V9 jar(16275684)가 checkout 트래픽을 처리하는 중에 V10 jar(57e6ccd7)가 기동해 V10을 적용하고, V9 jar는 그동안과 그 뒤 재기동 후에도 5xx 없이 결제를 `PAID`로 마친다 | R-V10 | 3회 중 한 번이라도 V10 jar 기동 실패(백필 잠금·`lock_timeout`), V9 jar 재기동 실패, 또는 driver 오류(비 2xx) 1건 이상 |
 | H4 | 임시 JWT 키로 인스턴스 2대를 띄우면 로그인 뒤 인증 요청의 약 절반이 401이다 | J-N2 | 401이 0건 |
+| H1d | (첫 계수 전 추가) 예약 수정에서는 올바른 비밀번호도 검증이 끝날 때까지 주체 한 칸을 쓴다. 한 주체에 올바른 로그인 15건을 동시에 보내면(한도 10) 수정 jar는 회차마다 1건 이상을 검증 전에 거절하고 현행 jar는 0건을 거절한다. 두 jar 모두 회차 뒤 카운터는 0이다(성공이 ADR-0048 결정 6대로 지운다) | A-ok | 수정 jar가 5회 모두 거절 0건, 현행 jar가 1건 이상 거절, 또는 어느 jar든 회차 뒤 카운터 > 0 |
+| H1e | (첫 계수 전 추가) 검증 중 `kill -9`로 끝난 시도는 수정 jar에서 예약만 남긴다(유령 실패). 유령 수는 그 순간 검증 중이던 시도 수 이하이고 다음 성공 로그인이나 창 끝에 사라진다. 현행 jar는 유령이 0이다 | A-crash | 수정 jar에서 유령이 보낸 시도 수를 넘거나 성공 로그인 뒤·창 끝 뒤에도 남음, 또는 현행 jar 유령 ≥ 1 |
+| H5a | (첫 계수 전 추가) 현행 session advisory lock(`ExpirySweepLockRepository`)은 PgBouncer `pool_mode=transaction` 뒤에서 상호 배제를 잃거나 sweep이 멈추거나 서버 연결에 lock을 남긴다 | S-pgb-session | 3회 모두 겹침 0, 최장 공백 < 2초, 끝난 뒤 서버에 남은 advisory lock 0 |
+| H5b | (첫 계수 전 추가) 락 연결의 transaction 안에서 잡는 transaction 범위 lock(이 브랜치)은 같은 PgBouncer 뒤에서 겹침 0, 남은 lock 0, xid를 쥔 idle in transaction 0이다 | S-pgb-xact | 어느 회차든 겹침 ≥ 1, 남은 lock ≥ 1, xid 보유 표본 ≥ 1, 또는 오류 ≥ 1 |
+| H5c | (첫 계수 전 추가) pooler 없이도 transaction 범위 lock은 session lock과 같은 상호 배제와 실행 횟수를 낸다 | S-direct-session 대 S-direct-xact | xact 칸 겹침 ≥ 1이나 오류 ≥ 1, 또는 실행 횟수가 session 칸의 90% 미만 |
+
+판정 규칙(측정 전 고정): H5b와 H5c가 모두 서면 만료 sweep 잠금을 transaction 범위 lock으로 바꾸고, sizing-envelope 3.4의 transaction mode 권장에 남는 전제(시작 매개변수 `options`, prepared statement)를 적는다. 하나라도 반증되면 session lock을 그대로 두고 "transaction pooling 금지"를 배포 제약으로 적는다. H1e의 유령이 검증 중 시도 수 이하이고 성공과 창 끝에 사라지면 ADR-0048 범위 안으로 받아들이고, 아니면 예약에 만료를 둔다. A칸 수정 jar는 저장값이 구조상 10을 넘지 못하므로, 독립 신호로 응답 지연을 쓴다. 거절된 시도는 PBKDF2를 건너뛰므로 회차마다 정렬한 지연에서 가장 큰 간격으로 빠른 묶음과 느린 묶음을 가르고 느린 묶음 수를 검증한 시도 수로 본다. 현행 jar 칸에서 느린 묶음 수와 저장값의 차가 회차마다 2 이하일 때만 이 신호를 유효로 본다.
 
 ## 측정 방법
 
@@ -49,6 +56,9 @@ TxBacklog(#729, EXP-117)의 F1·F2·F3·G1·C4·E3와 AuditGuards(EXP-116)의 �
 - **P칸(H2).** 로컬 PayPal·환율 stub(OAuth, 주문 생성·조회, authorize, capture, `PayPal-Request-Id` 멱등). 회차마다 장바구니 → checkout → 결제 제출 → stub에서 구매자 승인 → 같은 checkout에 대해 두 요청을 barrier로 동시에 보낸다. 모드 `double-return`(반환 GET 둘), `return-plus-reconcile`(반환 GET + reconcile POST). proxy가 번갈아 보내므로 두 요청이 다른 인스턴스로 간 회차만 센다(처리 인스턴스를 응답에서 확인). stub 지연: authorize 30 ms ± 20 ms, capture 20 ms ± 20 ms(균등). 결제 복구 worker는 켠 채 5초 정착 뒤 DB에서 결제 시도 상태와 checkout·자식 주문 상태를 읽는다. 위반 = 결제 `CAPTURED`인데 checkout이나 자식 주문이 `PAID`가 아님. 칸·모드마다 n = 100.
 - **R칸(H3).** H3a·H3b: new jar(이 브랜치, V13 포함)가 migration을 적용한 DB에서 old jar를 기동하고 P칸 happy path 10회를 돌린다. R-mix는 old jar 1대 + new jar 1대를 proxy 뒤에 두고 P칸을 100회 돈다. H3c(R-V10): 회차마다 빈 DB `atlas_roll`에 V9 jar를 띄워 V9까지 적용하고, proxy(두 인스턴스, 기동 전인 쪽은 건너뜀)로 `double-return` 40회를 돌리는 도중 12초 뒤 V10 jar를 같은 DB로 기동한다. 트래픽이 끝나면 V9 jar를 재기동하고 V9 jar에만 10회를 더 보낸다. n = 3.
 - **J칸(H4).** 서명 비밀 없이 `ATLAS_JWT_ALLOW_EPHEMERAL_KEY=true`로 2대를 띄우고, 가입·로그인 뒤 인증이 필요한 GET 20건을 proxy로 보내 401 수를 센다. n = 3.
+- **A-ok칸(H1d).** 회차마다 새 계정 1개를 가입·이메일 확인한 뒤 올바른 비밀번호 로그인 15건을 barrier로 동시에 proxy(인스턴스 3대)로 보낸다. 출처는 15개로 나눈다. 성공·거절 수와 회차 뒤 카운터를 센다. jar마다 n = 5.
+- **A-crash칸(H1e).** 인스턴스 1대, 이 칸만 창 `PT60S`. 새 계정 X·Y에 오답 5건씩을 함께 보내고 25 ms 뒤 `kill -9`. 유령 = 저장값 − 실제로 받은 401 수. 재기동 뒤 X는 올바른 비밀번호로 로그인한 뒤 카운터를, Y는 kill 뒤 62초를 기다려 오답 1회 뒤 카운터를 읽는다. jar마다 n = 3.
+- **S칸(H5).** 현행 jar와 이 브랜치 jar에서 꺼낸 실제 `ExpirySweepLockRepository`를 인스턴스 3개 몫(각자 Hikari 10)으로 만들어 같은 workflow에 50~75 ms마다 `runExclusive`를 부른다. sweep 본문은 같은 풀의 다른 연결로 `pg_sleep(0.02)`를 한다(행별 transaction 자리). 겹침(실행 중인데 또 시작), 건너뜀, 오류, 실행 사이 최장 공백, 끝난 뒤 서버의 advisory lock 수, `pg_stat_activity`에서 xid를 가진 idle in transaction 표본 수를 센다. pooler는 PgBouncer 1.24.1(`pool_mode=transaction`, `default_pool_size=5`, `max_prepared_statements=200`). 칸마다 30초 × 3회.
 
 시간 예산: 계수 run 합계 90분. 넘으면 우선순위가 낮은 칸(J, R-mix의 V13 없는 칸)부터 범위 밖 결정으로 닫는다.
 
