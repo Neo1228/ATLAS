@@ -1,6 +1,7 @@
 package com.atlas.account.repository;
 
 import com.atlas.account.model.AccountActionTokenPurpose;
+import com.atlas.account.model.AccountNotificationStatus;
 import com.atlas.account.persistence.projection.ClaimedAccountNotification;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -89,9 +90,9 @@ public class AccountNotificationRepository {
                 """, failure, accountId, purpose.name(), leaseOwner) == 1;
     }
 
-    public long countByStatus(String status) {
+    public long countByStatus(AccountNotificationStatus status) {
         Long count = jdbc.queryForObject(
-                "SELECT count(*) FROM account_notification_outbox WHERE status = ?", Long.class, status);
+                "SELECT count(*) FROM account_notification_outbox WHERE status = ?", Long.class, status.name());
         return count == null ? 0 : count;
     }
 

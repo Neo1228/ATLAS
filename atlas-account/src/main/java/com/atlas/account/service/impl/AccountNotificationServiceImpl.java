@@ -3,6 +3,7 @@ package com.atlas.account.service.impl;
 import com.atlas.account.dto.response.AccountResponse;
 import com.atlas.account.model.AccountActionTokenPurpose;
 import com.atlas.account.model.AccountNotificationOutcome;
+import com.atlas.account.model.AccountNotificationStatus;
 import com.atlas.account.persistence.projection.ClaimedAccountNotification;
 import com.atlas.account.repository.AccountNotificationRepository;
 import com.atlas.account.repository.AccountRepository;
@@ -13,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -70,7 +72,9 @@ public class AccountNotificationServiceImpl implements AccountNotificationServic
         for (int processed = 0; processed < limit; processed++) {
             Claim claim = transactions.execute(status -> claimAndIssue());
             if (claim == null) break;
-            deliveries.add(new AccountResponse.NotificationDelivery(send(claim),
+            AccountNotificationOutcome outcome = send(claim);
+            deliveries.add(new AccountResponse.NotificationDelivery(outcome.name().toLowerCase(Locale.ROOT),
+                    outcome == AccountNotificationOutcome.SENT,
                     Duration.between(claim.row().requestedAt(), clock.instant())));
         }
         return deliveries;
@@ -83,8 +87,8 @@ public class AccountNotificationServiceImpl implements AccountNotificationServic
                 .map(requestedAt -> Duration.between(requestedAt, now))
                 .filter(age -> !age.isNegative())
                 .orElse(Duration.ZERO);
-        return new AccountResponse.NotificationBacklog(notifications.countByStatus("PENDING"),
-                notifications.countByStatus("FAILED"), oldest);
+        return new AccountResponse.NotificationBacklog(notifications.countByStatus(AccountNotificationStatus.PENDING),
+                notifications.countByStatus(AccountNotificationStatus.FAILED), oldest);
     }
 
     private Claim claimAndIssue() {

@@ -1,7 +1,6 @@
 package com.atlas.application.service;
 
 import com.atlas.account.dto.response.AccountResponse;
-import com.atlas.account.model.AccountNotificationOutcome;
 import com.atlas.account.service.AccountNotificationService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -9,7 +8,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
@@ -62,9 +60,9 @@ public class AccountNotificationWorker {
         try {
             List<AccountResponse.NotificationDelivery> deliveries = notifications.deliverDue(batchSize);
             for (AccountResponse.NotificationDelivery delivery : deliveries) {
-                Counter.builder(OUTCOMES_METRIC).tag("outcome", delivery.outcome().name().toLowerCase(Locale.ROOT))
+                Counter.builder(OUTCOMES_METRIC).tag("outcome", delivery.outcome())
                         .register(meters).increment();
-                if (delivery.outcome() == AccountNotificationOutcome.SENT) {
+                if (delivery.sent()) {
                     Timer.builder(DELAY_METRIC).register(meters).record(delivery.sinceRequested());
                 }
             }

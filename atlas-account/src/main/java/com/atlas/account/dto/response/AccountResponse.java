@@ -1,6 +1,5 @@
 package com.atlas.account.dto.response;
 
-import com.atlas.account.model.AccountNotificationOutcome;
 import com.atlas.account.model.AccountSuspensionActionType;
 import java.time.Duration;
 import java.time.Instant;
@@ -70,8 +69,11 @@ public final class AccountResponse {
         }
     }
 
-    /** 알림 outbox 행 하나의 처리 결과. {@code sinceRequested}는 요청 커밋부터 이 처리까지의 시간이다. */
-    public record NotificationDelivery(AccountNotificationOutcome outcome, Duration sinceRequested) {
+    /**
+     * 알림 outbox 행 하나의 처리 결과. {@code outcome}은 {@code AccountNotificationOutcome} 이름의 소문자(지표 태그),
+     * {@code sinceRequested}는 요청 커밋부터 이 처리까지의 시간이다.
+     */
+    public record NotificationDelivery(String outcome, boolean sent, Duration sinceRequested) {
         public NotificationDelivery {
             Objects.requireNonNull(outcome);
             Objects.requireNonNull(sinceRequested);
