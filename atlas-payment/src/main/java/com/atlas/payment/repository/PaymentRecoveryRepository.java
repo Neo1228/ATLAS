@@ -157,28 +157,30 @@ public class PaymentRecoveryRepository {
     }
 
     public List<ClaimedPaymentRecoveryJob> claimDue(
-            int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge) {
-        return claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAge, true);
+            int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, int maxAbandonedClaims,
+            Duration maxAge) {
+        return claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAbandonedClaims, maxAge, true);
     }
 
     public List<ClaimedPaymentRecoveryJob> claimNextDue(
             int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge) {
-        return claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAge, false);
+        // sweep 없이 claim만 한다. 한도 판정은 호출자가 expireExhausted로 따로 돌린다.
+        return claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAttempts, maxAge, false);
     }
 
     private List<ClaimedPaymentRecoveryJob> claimDue(
             int limit, UUID leaseToken, Duration leaseDuration,
-            int maxAttempts, Duration maxAge, boolean sweepExhausted) {
+            int maxAttempts, int maxAbandonedClaims, Duration maxAge, boolean sweepExhausted) {
         if (limit < 1 || limit > MAX_BATCH_SIZE) {
             throw new IllegalArgumentException("limit must be between 1 and 100");
         }
-        if (maxAttempts < 1) {
-            throw new IllegalArgumentException("maxAttempts must be positive");
+        if (maxAttempts < 1 || maxAbandonedClaims < 1) {
+            throw new IllegalArgumentException("maxAttempts and maxAbandonedClaims must be positive");
         }
         Objects.requireNonNull(leaseToken);
         long leaseMillis = positiveMillis(leaseDuration, "leaseDuration");
         long maxAgeMillis = positiveMillis(maxAge, "maxAge");
-        if (sweepExhausted) expireExhausted(maxAttempts, maxAgeMillis);
+        if (sweepExhausted) expireExhausted(maxAttempts, maxAbandonedClaims, maxAgeMillis);
         return jdbc.query("""
                 WITH candidates AS (
                     SELECT recovery_job_id
@@ -194,6 +196,10 @@ public class PaymentRecoveryRepository {
                 SET lease_token = ?,
                     lease_until = CURRENT_TIMESTAMP + (? * INTERVAL '1 millisecond'),
                     attempt_count = job.attempt_count + 1,
+                    -- 만료된 lease가 남아 있으면 앞 claim이 결과를 쓰지 못했다(프로세스 종료, 60초 넘는 정지).
+                    -- 결과를 기록한 재시도(lease를 비움)와 따로 세어 강제 종료를 부르는 job만 멈춘다(ADR-0106).
+                    abandoned_claim_count = job.abandoned_claim_count
+                        + CASE WHEN job.lease_token IS NULL THEN 0 ELSE 1 END,
                     last_attempt_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 FROM candidates
@@ -388,11 +394,11 @@ public class PaymentRecoveryRepository {
     }
 
 
-    public void expireExhausted(int maxAttempts, Duration maxAge) {
-        if (maxAttempts < 1) {
-            throw new IllegalArgumentException("maxAttempts must be positive");
+    public void expireExhausted(int maxAttempts, int maxAbandonedClaims, Duration maxAge) {
+        if (maxAttempts < 1 || maxAbandonedClaims < 1) {
+            throw new IllegalArgumentException("maxAttempts and maxAbandonedClaims must be positive");
         }
-        expireExhausted(maxAttempts, positiveMillis(maxAge, "maxAge"));
+        expireExhausted(maxAttempts, maxAbandonedClaims, positiveMillis(maxAge, "maxAge"));
     }
 
     /**
@@ -412,6 +418,7 @@ public class PaymentRecoveryRepository {
                     available_at = CURRENT_TIMESTAMP,
                     retry_window_started_at = CURRENT_TIMESTAMP,
                     attempt_count = 0,
+                    abandoned_claim_count = 0,
                     manual_requeue_count = manual_requeue_count + 1,
                     lease_token = NULL,
                     lease_until = NULL,
@@ -490,21 +497,30 @@ public class PaymentRecoveryRepository {
                 """, limit);
     }
 
-    private void expireExhausted(int maxAttempts, long maxAgeMillis) {
+    /**
+     * 한도를 넘긴 {@code PENDING} job을 운영자 검토로 넘긴다. 지금 만료된 lease도 버려진 claim 한 번으로 센다.
+     * 그래야 claim할 때마다 프로세스를 죽이는 job이 다음 claim 전에 멈춘다.
+     */
+    private void expireExhausted(int maxAttempts, int maxAbandonedClaims, long maxAgeMillis) {
         jdbc.update("""
                 UPDATE payment_recovery_job
                 SET status = 'NEEDS_REVIEW',
+                    abandoned_claim_count = abandoned_claim_count
+                        + CASE WHEN lease_token IS NULL THEN 0 ELSE 1 END,
                     lease_token = NULL,
                     lease_until = NULL,
                     last_error_code = CASE
+                        WHEN abandoned_claim_count + CASE WHEN lease_token IS NULL THEN 0 ELSE 1 END >= ?
+                            THEN 'ABANDONED_CLAIMS'
                         WHEN attempt_count >= ? THEN 'MAX_ATTEMPTS'
                         ELSE 'RECOVERY_WINDOW_EXPIRED' END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE status = 'PENDING'
                   AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP)
-                  AND (attempt_count >= ? OR retry_window_started_at <= CURRENT_TIMESTAMP
-                        - (? * INTERVAL '1 millisecond'))
-                """, maxAttempts, maxAttempts, maxAgeMillis);
+                  AND (attempt_count >= ?
+                        OR abandoned_claim_count + CASE WHEN lease_token IS NULL THEN 0 ELSE 1 END >= ?
+                        OR retry_window_started_at <= CURRENT_TIMESTAMP - (? * INTERVAL '1 millisecond'))
+                """, maxAbandonedClaims, maxAttempts, maxAttempts, maxAbandonedClaims, maxAgeMillis);
     }
 
     private boolean updateClaimed(

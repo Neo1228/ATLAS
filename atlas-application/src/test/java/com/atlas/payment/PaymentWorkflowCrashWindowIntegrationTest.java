@@ -114,7 +114,7 @@ class PaymentWorkflowCrashWindowIntegrationTest extends PayPalIntegrationTestSup
         doCallRealMethod().when(paymentsSpy).reconcileCheckout(any(), any());
         worker = new PaymentRecoveryWorker(
                 recovery, payments, orders, checkouts, refunds, new SimpleMeterRegistry(), 1,
-                Duration.ofSeconds(60), 8, Duration.ofHours(24), Duration.ofSeconds(1),
+                Duration.ofSeconds(60), 8, 8, Duration.ofHours(24), Duration.ofSeconds(1),
                 Duration.ofMinutes(15));
     }
 

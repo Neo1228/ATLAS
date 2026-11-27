@@ -41,7 +41,7 @@ class PaymentRecoveryWorkerTest {
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private final PaymentRecoveryWorker worker = new PaymentRecoveryWorker(
             recovery, payments, orders, checkouts, refunds, meters, 10,
-            Duration.ofSeconds(60), 8, Duration.ofHours(24), Duration.ofSeconds(1), Duration.ofMinutes(15));
+            Duration.ofSeconds(60), 8, 8, Duration.ofHours(24), Duration.ofSeconds(1), Duration.ofMinutes(15));
 
     @Test
     void unresolvedPaymentReconcilesThroughItsOwningOrderAndStableRecoveryKey() {
@@ -175,7 +175,7 @@ class PaymentRecoveryWorkerTest {
     @Test
     void recordsFailureToMarkExhaustedJobsWithoutClaiming() {
         doThrow(new DataAccessResourceFailureException("database unavailable"))
-                .when(recovery).expireExhausted(8, Duration.ofHours(24));
+                .when(recovery).expireExhausted(8, 8, Duration.ofHours(24));
 
         worker.poll();
 

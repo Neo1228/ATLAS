@@ -87,7 +87,7 @@ class PaymentApprovalAbandonmentIntegrationTest extends PayPalIntegrationTestSup
         jdbc.update("DELETE FROM payment_recovery_job");
         worker = new PaymentRecoveryWorker(
                 recovery, payments, orders, checkouts, refunds, new SimpleMeterRegistry(), 10,
-                Duration.ofSeconds(60), 8, Duration.ofHours(24), Duration.ofSeconds(1),
+                Duration.ofSeconds(60), 8, 8, Duration.ofHours(24), Duration.ofSeconds(1),
                 Duration.ofMinutes(15));
     }
 

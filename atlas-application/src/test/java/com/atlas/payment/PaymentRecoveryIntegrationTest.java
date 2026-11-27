@@ -95,11 +95,11 @@ class PaymentRecoveryIntegrationTest {
         try (var executor = Executors.newFixedThreadPool(2)) {
             Future<List<PaymentRecoveryResponse.Job>> first = executor.submit(() -> {
                 start.await();
-                return recovery.claimDue(1, firstToken, Duration.ofMinutes(1), 8, Duration.ofHours(24));
+                return recovery.claimDue(1, firstToken, Duration.ofMinutes(1), 8, 8, Duration.ofHours(24));
             });
             Future<List<PaymentRecoveryResponse.Job>> second = executor.submit(() -> {
                 start.await();
-                return recovery.claimDue(1, secondToken, Duration.ofMinutes(1), 8, Duration.ofHours(24));
+                return recovery.claimDue(1, secondToken, Duration.ofMinutes(1), 8, 8, Duration.ofHours(24));
             });
             start.countDown();
             List<PaymentRecoveryResponse.Job> firstResult = first.get();
@@ -118,7 +118,7 @@ class PaymentRecoveryIntegrationTest {
 
             UUID reclaimedToken = UUID.randomUUID();
             PaymentRecoveryResponse.Job reclaimed = recovery.claimDue(
-                    1, reclaimedToken, Duration.ofMinutes(1), 8, Duration.ofHours(24)).getFirst();
+                    1, reclaimedToken, Duration.ofMinutes(1), 8, 8, Duration.ofHours(24)).getFirst();
             assertThat(reclaimed.recoveryJobId()).isEqualTo(original.recoveryJobId());
             assertThat(reclaimed.leaseToken()).isEqualTo(reclaimedToken);
             assertThat(reclaimed.attemptCount()).isEqualTo(2);
@@ -142,7 +142,7 @@ class PaymentRecoveryIntegrationTest {
                 """, attemptId);
         recovery.enqueueAttempt(attemptId, Duration.ZERO);
         PaymentRecoveryResponse.Job claimed = recovery.claimDue(
-                1, UUID.randomUUID(), Duration.ofMinutes(1), 8, Duration.ofHours(24)).getFirst();
+                1, UUID.randomUUID(), Duration.ofMinutes(1), 8, 8, Duration.ofHours(24)).getFirst();
 
         recovery.activateAttemptFromBuyer(attemptId, Duration.ZERO);
 
@@ -166,7 +166,7 @@ class PaymentRecoveryIntegrationTest {
                 """, attemptId);
         recovery.enqueueAttempt(attemptId, Duration.ZERO);
         PaymentRecoveryResponse.Job claimed = recovery.claimDue(
-                1, UUID.randomUUID(), Duration.ofMinutes(1), 8, Duration.ofHours(24)).getFirst();
+                1, UUID.randomUUID(), Duration.ofMinutes(1), 8, 8, Duration.ofHours(24)).getFirst();
         jdbc.update("""
                 UPDATE payment_attempt
                 SET state = 'CAPTURE_PENDING', payment_phase = 'CAPTURE', authorization_active = TRUE
@@ -193,7 +193,7 @@ class PaymentRecoveryIntegrationTest {
         recovery.enqueueRefund(refundId, Duration.ZERO);
 
         List<PaymentRecoveryResponse.Job> claimed = recovery.claimDue(
-                10, UUID.randomUUID(), Duration.ofMinutes(1), 8, Duration.ofHours(24));
+                10, UUID.randomUUID(), Duration.ofMinutes(1), 8, 8, Duration.ofHours(24));
         assertThat(claimed).extracting(PaymentRecoveryResponse.Job::operationType)
                 .containsExactlyInAnyOrder(
                         PaymentRecoveryOperationType.PAYMENT_ATTEMPT,
@@ -225,7 +225,7 @@ class PaymentRecoveryIntegrationTest {
         UUID attemptId = createAttempt();
         recovery.enqueueAttempt(attemptId, Duration.ZERO);
         PaymentRecoveryResponse.Job leased = recovery.claimDue(
-                10, UUID.randomUUID(), Duration.ofMinutes(1), 8, Duration.ofHours(24)).getFirst();
+                10, UUID.randomUUID(), Duration.ofMinutes(1), 8, 8, Duration.ofHours(24)).getFirst();
 
         assertThatThrownBy(() -> operator.requeue(leased.recoveryJobId(), "key-not-review", "ops-user", "premature"))
                 .isInstanceOfSatisfying(ApplicationException.class,

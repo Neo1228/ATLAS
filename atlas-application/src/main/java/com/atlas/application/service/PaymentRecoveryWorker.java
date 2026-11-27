@@ -55,6 +55,7 @@ public class PaymentRecoveryWorker {
     private final int batchSize;
     private final Duration leaseDuration;
     private final int maxAttempts;
+    private final int maxAbandonedClaims;
     private final Duration maxAge;
     private final Duration baseBackoff;
     private final Duration maxBackoff;
@@ -71,7 +72,8 @@ public class PaymentRecoveryWorker {
             MeterRegistry meters,
             @Value("${atlas.payment.recovery.batch-size:10}") int batchSize,
             @Value("${atlas.payment.recovery.lease-duration:PT60S}") Duration leaseDuration,
-            @Value("${atlas.payment.recovery.max-attempts:8}") int maxAttempts,
+            @Value("${atlas.payment.recovery.max-attempts:202}") int maxAttempts,
+            @Value("${atlas.payment.recovery.max-abandoned-claims:8}") int maxAbandonedClaims,
             @Value("${atlas.payment.recovery.max-age:PT24H}") Duration maxAge,
             @Value("${atlas.payment.recovery.base-backoff:PT1S}") Duration baseBackoff,
             @Value("${atlas.payment.recovery.max-backoff:PT15M}") Duration maxBackoff) {
@@ -81,7 +83,7 @@ public class PaymentRecoveryWorker {
         this.checkouts = Objects.requireNonNull(checkouts);
         this.refunds = Objects.requireNonNull(refunds);
         this.meters = Objects.requireNonNull(meters);
-        if (batchSize < 1 || batchSize > 100 || maxAttempts < 1
+        if (batchSize < 1 || batchSize > 100 || maxAttempts < 1 || maxAbandonedClaims < 1
                 || leaseDuration.isNegative() || leaseDuration.isZero()
                 || maxAge.isNegative() || maxAge.isZero()
                 || baseBackoff.isNegative() || baseBackoff.isZero()
@@ -91,9 +93,18 @@ public class PaymentRecoveryWorker {
         this.batchSize = batchSize;
         this.leaseDuration = leaseDuration;
         this.maxAttempts = maxAttempts;
+        this.maxAbandonedClaims = maxAbandonedClaims;
         this.maxAge = maxAge;
         this.baseBackoff = baseBackoff;
         this.maxBackoff = maxBackoff;
+        // 시도 한도가 창보다 먼저 닿으면 PayPal 장애가 창보다 짧아도 job이 사람 손으로 넘어간다(EXP-117 H1:
+        // 8회 기본값은 가상 시각 약 80~113초에 소진). 그 구성은 허용하되 시작할 때 드러낸다.
+        Duration span = minimumRetrySpan(maxAttempts, baseBackoff, maxBackoff);
+        if (span.compareTo(maxAge) < 0) {
+            LOGGER.warn("Payment recovery max-attempts={} is exhausted after at least {} of backoff,"
+                    + " before max-age={}; provider outages longer than that go to NEEDS_REVIEW",
+                    maxAttempts, span, maxAge);
+        }
         // 모든 Gauge 가 하나의 TTL 캐시 스냅샷을 공유한다.
         //
         // 이전 구현은 상태 4 + stage×상태 8 + stage 나이 3 + 전체 나이 1 = 16개의 Gauge 가
@@ -131,7 +142,7 @@ public class PaymentRecoveryWorker {
             scheduler = "paymentRecoveryTaskScheduler")
     public void poll() {
         try {
-            recovery.expireExhausted(maxAttempts, maxAge);
+            recovery.expireExhausted(maxAttempts, maxAbandonedClaims, maxAge);
         } catch (RuntimeException exception) {
             recordPollFailure(EXHAUSTED_POLL_STAGE, exception, lastExhaustedFailureLogNanos);
             return;
@@ -290,12 +301,29 @@ public class PaymentRecoveryWorker {
         }
     }
 
-    private Duration backoff(int attempt) {
+    /**
+     * 결과를 기록한 재시도만 이어질 때 {@code maxAttempts}번째 claim까지 쌓이는 backoff의 최솟값.
+     * 재예약은 claim 1회 뒤부터 {@code maxAttempts - 1}번이고, 각 지연은 지수값의 절반 이상이다.
+     */
+    static Duration minimumRetrySpan(int maxAttempts, Duration baseBackoff, Duration maxBackoff) {
+        long total = 0;
+        for (int attempt = 1; attempt < maxAttempts; attempt++) {
+            total += Math.max(1, exponentialMillis(attempt, baseBackoff, maxBackoff) / 2);
+        }
+        return Duration.ofMillis(total);
+    }
+
+    private static long exponentialMillis(int attempt, Duration baseBackoff, Duration maxBackoff) {
         int exponent = Math.min(Math.max(attempt - 1, 0), 20);
         long baseMillis = baseBackoff.toMillis();
         long capMillis = maxBackoff.toMillis();
-        long exponential = baseMillis > (capMillis >> exponent)
+        return baseMillis > (capMillis >> exponent)
                 ? capMillis : Math.min(capMillis, baseMillis << exponent);
+    }
+
+    private Duration backoff(int attempt) {
+        long capMillis = maxBackoff.toMillis();
+        long exponential = exponentialMillis(attempt, baseBackoff, maxBackoff);
         long half = Math.max(1, exponential / 2);
         long jitter = ThreadLocalRandom.current().nextLong(half);
         return Duration.ofMillis(Math.min(capMillis, half + jitter));

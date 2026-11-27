@@ -16,11 +16,16 @@ public interface PaymentRecoveryService {
     void markRefundForApplication(UUID refundOperationId);
     void markAttemptApplied(UUID attemptId);
     void markRefundApplied(UUID refundOperationId);
-    void expireExhausted(int maxAttempts, Duration maxAge);
+    /**
+     * 한도를 넘긴 job을 {@code NEEDS_REVIEW}로 넘긴다. {@code maxAbandonedClaims}는 결과를 쓰지 못하고 lease가
+     * 만료된 claim(프로세스 종료 등)의 한도이고, {@code maxAttempts}는 전체 claim 수의 안전 상한이다(ADR-0106).
+     */
+    void expireExhausted(int maxAttempts, int maxAbandonedClaims, Duration maxAge);
     /** 승인 deadline이 지난 {@code WAITING_FOR_BUYER} job을 다시 worker 대상으로 되돌린다. */
     int resumeExpiredApprovalWaits(int limit);
     List<PaymentRecoveryResponse.Job> claimDue(
-            int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge);
+            int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, int maxAbandonedClaims,
+            Duration maxAge);
     List<PaymentRecoveryResponse.Job> claimNextDue(
             int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge);
     boolean complete(PaymentRecoveryResponse.Job job);

@@ -108,7 +108,7 @@ class PayPalDefinitiveRejectionIntegrationTest extends PayPalIntegrationTestSupp
         jdbc.update("DELETE FROM payment_recovery_job");
         // 재시도 간격만 줄인 실제 worker. 최대 시도 8회, 24시간 window 는 운영 값 그대로다.
         worker = new PaymentRecoveryWorker(recovery, payments, orders, checkouts, refunds,
-                new SimpleMeterRegistry(), 10, Duration.ofSeconds(60), 8, Duration.ofHours(24),
+                new SimpleMeterRegistry(), 10, Duration.ofSeconds(60), 8, 8, Duration.ofHours(24),
                 Duration.ofMillis(1), Duration.ofMillis(5));
     }
 
