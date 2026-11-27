@@ -1,6 +1,6 @@
 # EXP-118: 다중 인스턴스·rolling 배포 전제에서 단일 인스턴스 가정을 전수 조사하고, 인증 시도 제한 초과와 결제 결과 역전을 실제 인스턴스 2~3개에서 센다
 
-- 상태: ✓ 사전 등록(가설·반증 조건·칸을 첫 계수 측정 전에 커밋). 결과 절은 측정 뒤 추가한다.
+- 상태: ✓ 완료. 가설·반증 조건·칸은 각 칸의 첫 계수 전에 커밋했다. 결과: 인증 주체 한도 초과 재현(H1a·H1b)과 예약 수정 채택(H1c, 진행 중 거절은 대안 a로 받아들임 H1d·H1f), 결제 결과 역전은 실제 인스턴스에서 재현되지 않음(H2a 반증, V13 없음), 만료 sweep 잠금을 transaction 범위로 바꿈(H5), G1 수정, V10 rolling 안전(H3c). 결정은 [ADR-0107](../02-decisions/adr/ADR-0107-multi-instance-shared-state-guards.md)과 D-186.
 - 날짜: 2026-11-27
 - 관련: [#730](https://github.com/Neo1228/ATLAS/issues/730), [distributed-readiness](../02-decisions/distributed-readiness.md), [ADR-0048](../02-decisions/adr/ADR-0048-authentication-attempt-throttling.md), [ADR-0053](../02-decisions/adr/ADR-0053-shared-infra-adoption-gates.md), [ADR-0066](../02-decisions/adr/ADR-0066-redis-admission-gate.md), [ADR-0067](../02-decisions/adr/ADR-0067-event-log-kafka-relay.md), [EXP-042](EXP-042-db-concurrency-guard-audit.md)
 
@@ -123,7 +123,148 @@ TxBacklog(#729, EXP-117)의 F1·F2·F3·G1·C4·E3와 AuditGuards(EXP-116)의 �
 | HTTP 세션 | `STATELESS` | 안전 |
 | 앱 시계로 쓴 기한을 다른 인스턴스 시계로 비교: admission 표(`QueueRepository.java:173-175` ↔ `AdmissionServiceImpl.java:240`), 주문 만료(`OrderRepository.java:59`, `OrderServiceImpl.java:408`), location 예약(`InventoryReservationService.java:90`, `:183`), 계정 토큰(`AccountRepository.java:122`, `:279`), 결제 승인 기한(`PaymentServiceImpl.java:544` ↔ `PaymentRecoveryWorker.java:239` `Instant.now()` ↔ `PaymentRecoveryRepository.java:459-481` DB 시계) | 시계 차이만큼 이르거나 늦게 만료. 상태는 행 잠금 + 재확인이 지킨다 | 성능 저하 · 배포 제약(NTP) |
 | DB 시계 lease (`PaymentRecoveryRepository.java:186-195`, `PayPalWebhookRetryRepository.java:61`, `JdbcPayoutDispatchStore.java:63`) | 앱 시계와 무관 | 안전 |
-| location workflow lease 앱 시계(`LocationReservationServiceImpl.java:110-112`) | 시계 차이만큼 이른 재claim. 쓰기 펜스는 EXP-117 G1 소관 | EXP-117로 넘김 |
+| location workflow lease 앱 시계(`LocationReservationServiceImpl.java:110-112`) | 시계 차이만큼 이른 재claim. 쓰기 펜스는 lease token. (결과 뒤 갱신) lease를 잃은 claim이 기록하지 못한 `CLAIMED`를 답하던 결함(EXP-117 G1)은 이 브랜치에서 고쳤다(아래 "G1" 절) | 정합성 결함(고침) |
 | 로컬 파일 | `Files.*`·`FileOutputStream`·임시 파일 0곳, CSV는 메모리에서 읽음 | 안전 |
 | 종료 (`SchedulingConfiguration.java:61-62`) | scheduler는 진행 작업을 10초 기다림. `kill -9`면 lease 만료 뒤 다른 인스턴스가 이어받음 | 안전 |
-| V5~V10 (rolling) | V5·V6은 old jar의 같은 행위자 조작을 23514로 거절(닫힘), V8은 비동시 인덱스 생성 잠금, V10은 백필 중 ACCESS EXCLUSIVE + `lock_timeout` 5초로 기동이 실패할 수 있음(측정하지 않음) | 성능 저하(배포) |
+| V5~V10 (rolling) | V5·V6은 old jar의 같은 행위자 조작을 23514로 거절(닫힘), V8은 비동시 인덱스 생성 잠금, V10은 백필 중 ACCESS EXCLUSIVE + `lock_timeout` 5초로 기동이 실패할 수 있다고 읽었다. (결과 뒤 갱신) V10은 R-V10 3회에서 V9 jar 트래픽 중 7~9초에 기동했고 오류 0이었다(H3c) | 성능 저하(배포), V10은 측정상 안전 |
+
+## 결과 (2026-11-28)
+
+원자료(회차별 JSON, 구동 스크립트, 앱 로그)는 저장소에 올리지 않았다. 아래 수치는 그 원자료를 요약 스크립트로 센 값이다. 계수 run은 호스트 잠금(`measure-lock.sh`) 아래에서 돌렸고, 잠금 없이 돈 첫 1부 실행은 오염으로 따로 적는다(맨 아래 표). bootJar: 현행 `57e6ccd7`, 수정 `fix2`(이 브랜치의 인증 예약·결제 재조회·sweep 잠금 수정, G1 수정 전), H1f의 `fix3`(G1 수정까지 포함한 이 브랜치 코드).
+
+### 판정 요약
+
+| ID | 결과 | 판정 |
+|---|---|---|
+| H1a | 인스턴스 1대에서 검증까지 간 오답 40~48건(한도 10), 5/5회 초과 | ✓ 섬 |
+| H1b | 3대 중앙값 90 > 1대 중앙값 47 | ✓ 섬 |
+| H1c | 수정 jar 1대·3대 모두 회차마다 10건, CPU 추정 4.1~18.3(반증 문턱 20) | ✓ 섬 |
+| H1d | 올바른 로그인 15건 동시: 수정 jar 회차마다 5건 거절, 현행 0건, 회차 뒤 카운터 모두 0 | ✓ 섬 |
+| H1e | 검증 중 `kill -9`: 수정 jar 유령 5·5(보낸 수 이하), 성공과 창 끝에 사라짐. 현행 0 | ✓ 섬 |
+| H1f | 서버 재예약(대안 b)은 올바른 로그인 15건을 모두 받았지만 오답 90건 묶음 동안 같은 인스턴스 탐침 p99 중앙값 93 → 308 ms. 이 브랜치 jar의 거절 5건은 250 ms 뒤 재시도에서 모두 성공 | ✓ 섬, 대안 a 채택 |
+| H2a | 두 요청이 다른 인스턴스로 간 200회(모드마다 100)에서 역전 0 | ✗ 반증 |
+| H2b | 인스턴스 1대 200회에서 역전 0 | ✓ 섬 |
+| H2c | 수정 jar 2대 200회에서 역전 0. 현행도 0이라 이 칸은 수정의 효과를 가르지 못한다 | ✓ 섬 |
+| H3a·H3b | H2a가 재현되지 않아 사전 등록대로 R-old·R-mix를 돌리지 않았다. V13을 만들지 않는다 | ✓ 결정 |
+| H3c | V10 rolling 3회 모두 기동·재기동 성공, 오류 0, 역전 0 | ✓ 섬 |
+| H4 | 임시 키 2대에서 인증 GET 20건 중 401 7·7·14 | ✓ 섬 |
+| H5a·H5b·H5c | session lock은 PgBouncer 뒤 겹침 15~24, 남은 lock 1. transaction 범위 lock은 겹침·남은 lock·xid 보유·오류 0, 직접 연결에서 실행 수 99.8~102.1% | ✓ 셋 다 섬 |
+
+### 잠금 아래 계수: 1부(A, A-ok, P, J)
+
+잠금 `mia-c`, 01:57:53~02:04:51. 시작 때 다른 에이전트의 라벨 컨테이너 0개, 칸 시작 때 load1 2.9~9.4(이 실험의 앱 인스턴스와 하네스 자신의 부하).
+
+| 칸 | n | 결과 | 판정 |
+|---|---|---|---|
+| A-N1-base(H1a) | 5 | 검증까지 간 시도 47·44·40·47·48(중앙 47). 응답은 모두 401 | ✓ H1a 섬 |
+| A-N3-base(H1b) | 5 | 90·90·90·90·89(중앙 90). 5회차에 503 1건 | ✓ H1b 섬 |
+| A-N1-fix(H1c) | 5 | 저장값 10·10·10·10·10. CPU 추정 9.1·11.2·12.2·11.0·9.9 | ✓ H1c 섬 |
+| A-N3-fix(H1c) | 5 | 저장값 10·10·10·10·10. CPU 추정 4.1·11.7·4.7·15.0·18.3 | ✓ H1c 섬 |
+| A-ok-base(H1d) | 5 | 회차마다 성공 15, 거절 0, 회차 뒤 카운터 0 | ✓ H1d 섬 |
+| A-ok-fix(H1d) | 5 | 회차마다 성공 10, 거절 5(거절 응답 최대 79·117·99·66·98 ms), 회차 뒤 카운터 0. 성공 p50 235·204·134·109·145 ms | ✓ H1d 섬 |
+| P-N1-base(H2b) | 100 × 2모드 | `double-return`·`return-plus-reconcile` 모두 역전 0, 오류 0, 최종 `PAID·PAID·CAPTURED` 100 | ✓ H2b 섬 |
+| P-N2-base(H2a) | 100 × 2모드 | 두 요청이 다른 인스턴스로 간 회차 100·100, 역전 0·0, 오류 0. stub의 capture 호출 113·112건(요청 id 100개) | ✗ H2a 반증 |
+| P-N2-fix(H2c) | 100 × 2모드 | 다른 인스턴스 회차 100·100, 역전 0·0, 오류 0. capture 호출 126·110건(요청 id 100개) | ✓ H2c 섬 |
+| J-N2-ephemeral(H4) | 3 | 401 7·7·14건. 401은 모두 로그인하지 않은 인스턴스에서 났고, 로그인한 인스턴스로 간 요청은 인증을 통과했다(대상이 없어 404) | ✓ H4 섬 |
+
+A칸의 독립 신호. CPU 신호는 현행 jar 칸에서 추정이 저장값의 89~110%(A-N1-base 41.8~46.1 대 40~48, A-N3-base 84.4~99.0 대 89~90)라 유효다. 수정 jar 칸의 추정은 모두 20 이하라 H1c를 반증하지 않는다. 지연 간격 신호는 현행 jar 칸에서 느린 묶음 수와 저장값의 차가 −15~42(A-N1-base)와 −5~−1(A-N3-base)로 2를 넘는 회차가 있어 사전 규칙대로 쓰지 않는다.
+
+P칸의 해석. 다른 인스턴스로 간 400회(현행 200, 수정 200)에서 결제 결과 역전은 한 번도 나지 않았다. 역전에는 B가 A의 capture 진행 중에 `CAPTURE_PENDING`을 읽고 A가 `PAID`를 커밋한 뒤에 써야 하는데, stub 지연(capture 20 ± 20 ms)과 실제 요청 경로에서는 그 순서가 나오지 않았다. 반면 같은 장면을 순서를 고정해 만든 PostgreSQL 시험 2개(`staleApprovalSnapshotFromAnotherInstanceDoesNotUndoAPaid*`)는 재조회를 빼면 `PAYMENT_PENDING`으로 실패하고 넣으면 통과한다(아래 변이 표). 그래서 재조회 수정은 남기고(스키마 변경 없음, 이미 잡는 행 잠금 아래 읽기 1회), 판정 규칙대로 V13 DB 가드는 만들지 않는다. 다른 JVM 사이의 중복 PayPal capture 호출(요청 id 100개에 110~126건)은 `PayPal-Request-Id` 멱등이 흡수했고, 1대에서는 100건이었다.
+
+### H1f: 진행 중 예약 거절의 대안 비교
+
+잠금 `mia-d`, 02:12:45~02:14:22. 시작 때 다른 에이전트의 라벨 컨테이너 0개, 칸 시작 때 load1 3.0~4.8. PostgreSQL은 이 잠금 안에서 새로 만들었다. `fix3`은 이 브랜치 코드, `fixb`는 `fix3`에 "예약이 거절되면 200 ms 쉬고 한 번 더 예약"만 더한 실험 jar다(저장소에 넣지 않았다).
+
+| 칸 | n | 결과 |
+|---|---|---|
+| A-cost-N1-fix3 | 5 | 검증 10·10·10·10·10. 묶음 시간 252·263·205·261·231 ms. 탐침 p50 90·24·36·78·65 ms, p99 93·120·56·86·100 ms(중앙 93), 탐침 오류 0 |
+| A-cost-N1-fixb | 5 | 검증 10·10·10·10·10. 묶음 시간 601·572·554·585·622 ms. 탐침 p50 4·3·4·4·3 ms, p99 399·299·308·381·294 ms(중앙 308), 탐침 오류 0 |
+| A-ok-N3-fix3 | 5 | 회차마다 성공 10, 거절 5, 회차 뒤 카운터 0 |
+| A-ok-retry-N3-fix3 | 5 | 회차마다 처음 성공 10, 거절 5. 거절된 5건은 250 ms 뒤 재시도에서 5·5·5·5·5건 성공, 회차 뒤 카운터 0 |
+| A-ok-N3-fixb | 5 | 회차마다 성공 15, 거절 0, 회차 뒤 카운터 0 |
+
+탐침은 묶음 첫 요청부터 마지막 응답 사이에 걸친 것만 세서 묶음마다 3~7개다. 그래서 p99는 사실상 그 묶음의 최댓값이다. `fixb`는 탐침 중앙값을 낮췄지만(거절 80건이 한꺼번에 처리되지 않고 200 ms 뒤로 밀림) 꼬리를 늘렸고, 묶음이 끝날 때까지 2.3배 걸렸다. 거절된 오답도 모두 200 ms를 기다렸다가 다시 거절됐다.
+
+판정: H1f의 반증 조건 넷 모두 나오지 않았다(`fixb` A-ok 회차마다 15건 성공, 탐침 p99 중앙값 +215 ms로 50 ms 초과, `fix3` 재시도가 회차마다 거절 5건을 모두 풂, 어느 칸이든 검증 10). ✓ H1f 섬. 사전 규칙대로 대안 b(서버 재예약)를 채택하지 않고 대안 a를 채택한다. 한도만큼의 시도가 한 주체에 대해 동시에 검증 중일 때만 그다음 올바른 로그인이 401로 거절되고, 검증 중이던 시도가 성공하면 카운터가 지워져 다음 시도는 통과한다. 오답 예약은 성공이 지우기 전까지 남으므로, 한 주체에 한도만큼 오답이 쌓인 공격 중에는 대안 b의 재예약도 다시 거절된다(코드상, 이 칸에서 따로 재지 않음). 즉 대안 b가 살리는 것은 올바른 로그인끼리만 몰린 경우뿐이다. ADR-0048의 순서(추측 방어와 검증 전의 싼 거절이 가용성보다 먼저)와도 맞다. 시험 `correctLoginRefusedOnlyBecauseOthersAreStillBeingVerifiedSucceedsOnceTheyFinish`가 이 동작을 고정한다(변이 2개 모두 실패, 아래 변이 표).
+
+### 잠금 아래 계수: 2부(A-crash, R-V10, S)
+
+잠금 `mia-b`, 01:20:14~01:36:36. 시작 때 다른 에이전트의 라벨 컨테이너(`exp117c4` 5개)가 떠 있었고 load1은 2.7~8.8이었다. 이 칸의 판정은 건수와 불변식(유령 수, 겹침, 남은 lock, 오류)으로 하고, 시간 값(최장 공백)은 맥락으로만 쓴다.
+
+| 칸 | n | 결과 | 판정 |
+|---|---|---|---|
+| A-crash, 현행 jar(H1e) | 3 | 회차마다 X·Y 각 5건 중 받은 401 0, kill 뒤 저장값 0, 유령 0. 재기동 뒤 X 올바른 로그인 200, 카운터 0. Y는 창(60초) 뒤 오답 1회에 카운터 1 | ✓ H1e 섬 |
+| A-crash, 수정 jar(H1e) | 3 | 회차마다 받은 401 0, kill 뒤 저장값 5·5, 유령 5·5(보낸 5건 모두 검증 중이었음). X 올바른 로그인 200 뒤 카운터 0, Y 창 뒤 오답 1회에 카운터 1 | ✓ H1e 섬, 판정 규칙대로 예약 만료를 두지 않음 |
+| R-V10(H3c) | 3 | V10 jar 기동 8·9·7초, migration 오류 0, V9 jar 로그 오류 0, V9 jar 재기동 성공, Flyway 1~10. 트래픽 40회(다른 인스턴스로 간 회차 8·6·6) 오류 0, 역전 0, 재기동 뒤 10회 오류 0, 역전 0 | ✓ H3c 섬 |
+| S-pgb-session(H5a) | 3 | 실행 273·362·435, 겹침 15·19·24, 최장 공백 6469·1783·2472 ms, 끝난 뒤 서버에 남은 advisory lock 1·1·1, 오류 0 | ✓ H5a 섬(현행 session lock은 transaction pooling 뒤에서 안전하지 않음) |
+| S-pgb-xact(H5b) | 3 | 실행 612·607·627, 겹침 0, 남은 lock 0, 오류 0, idle in transaction 표본 156·150·154 중 xid 보유 0, 최장 공백 314·209·206 ms | ✓ H5b 섬 |
+| S-direct-session 대 S-direct-xact(H5c) | 3 + 3 | 실행 617·619·619 대 630·619·619(xact가 session의 99.8~102.1%), 겹침 0 대 0, 오류 0 대 0, 남은 lock 0 대 0 | ✓ H5c 섬 |
+
+판정 규칙대로 H5b와 H5c가 섰으므로 만료 sweep 잠금을 transaction 범위 lock으로 바꿨다(`ExpirySweepLockRepository`). sizing-envelope 3.4에 transaction mode 전제 세 개(advisory lock, 시작 매개변수 `options`, prepared statement)를 적었다.
+
+### G1: lease를 잃은 location claim (EXP-117 H7 인계)
+
+EXP-117 G1 담당(TxBacklog)이 실제 `LocationReservationServiceImpl` 두 개(coordinator A·B), 같은 order PostgreSQL, 가변 시계, MockWebServer location 모형으로 13가지 끼어들기를 돌려 넘긴 결과다. 전체 하네스 3회, 회마다 13개 중 2개가 어긋났다(EXP-117 본문의 "12경우 중 2경우"는 인계 문서에서 13개로 정정됐다). 인계받은 줄인 시험 3건은 수정 전 1건 실패, 수정 뒤 두 번 0건 실패, 변이에서 1건 실패였다. 이 수치는 하위 에이전트가 실행하고 보고한 값이다: local-only(에이전트 보고). 기준 `origin/main` 57e6ccd7.
+
+| 끼어들기 | 결과 | 판정 |
+|---|---|---|
+| I6: A의 마지막 위치 claim은 원격에 적용됐지만 응답이 lease(30초)보다 늦게 오고, 그 사이 B가 취소해 두 위치를 restore | A의 `updateLocation`·`finishWorkflow`는 lease token이 없어 0행인데 결과를 버리고 `CLAIMED`를 답한다. 호출자 `claimBeforeCapture`는 `CLAIMED`면 매입한다 | 결함: 매입된 돈 + 풀린 재고 |
+| I3: `INSUFFICIENT_STOCK`로 실패한 키의 예약 요청이 늦게 도착 | 위치에 고아 예약 1개, 위치 TTL(기본 2분) 뒤 0개. 재고 보존 위반 0 | 채택하지 않음(아래) |
+| 나머지 11개(I0·I1·I2·I4·I5·I6b·I7·I8·I9·I10a·I10b) | 고아 0, 매달림 0, 보존 위반 0. I10b는 `NEEDS_REVIEW`로 운영자에게 드러남 | 이상 없음 |
+
+수정: `finish()`가 lease 펜스 결과를 돌려주고, `claim()`은 `CLAIMED`를 기록했을 때만 `CLAIMED`를 답한다. 기록하지 못했으면 workflow를 다시 읽어 취소·종결은 `REJECTED`, 그 밖은 `PENDING`으로 답한다. 기존 lease token이 펜스라 새 열·토큰이 없다. 회귀 시험은 인계받은 별도 클래스(574줄, 위치 모형 포함) 대신 기존 `LocationReservationServiceIntegrationTest`의 MockWebServer 두 대와 지연 응답으로 같은 장면을 재현했다(35줄). 아래 표는 이 브랜치에서 직접 돌렸다.
+
+| 실행 | 코드 | 결과 |
+|---|---|---|
+| 고치기 전 | 이 브랜치 + `claim()` 원래 코드 | 1/1 실패: `expected: "REJECTED" but was: "CLAIMED"` |
+| 고친 뒤 | 이 브랜치 | `LocationReservationServiceIntegrationTest` 19/19, `LocationFaultConvergenceIntegrationTest` 9/9, `RemoteReservationCheckoutIntegrationTest` 16/16 |
+| 변이 | 펜스 결과 무시(`if (false & !finish(...))`) | 1/1 실패, 같은 메시지 |
+
+I3을 채택하지 않은 이유(인계 그대로, 다시 재지 않음): 위치 TTL이 2분 안에 예약을 지우고 재고는 보존된다. order 쪽 수정(실패 키 취소나 tombstone)은 품절 실패마다 위치 호출이 하나 늘어난다. 재검토: `inventory.reservation-ttl`이 2분을 넘거나 위치 만료 worker가 꺼지거나 밀릴 때, 운영에서 `FAILED` workflow 키의 위치 `RESERVED` 행이 보일 때, 품절 때 위치 요청 대기가 coordinator read timeout을 넘을 때, 위치 서비스가 `INSUFFICIENT_STOCK` 키를 롤백 대신 tombstone으로 남길 수 있게 될 때.
+
+### PgBouncer 기능 확인 (계수 칸 밖, H5 판정 보조)
+
+PgBouncer 1.24.1(`edoburu/pgbouncer:v1.24.1-p0`), `pool_mode=transaction`, `default_pool_size=5`, PostgreSQL 18.6. 한 번씩 실행한 기능 확인이라 건수 판정에는 쓰지 않는다.
+
+| 확인 | 결과 |
+|---|---|
+| 기본 `ATLAS_DB_URL`과 같은 시작 매개변수(`options=-c statement_timeout=30000 -c lock_timeout=5000`)로 연결 | `FATAL: unsupported startup parameter in options: statement_timeout`, 연결 거절 |
+| `track_extra_parameters = statement_timeout, idle_in_transaction_session_timeout, lock_timeout` + 같은 `options` | 연결됨, 세 값 모두 `SHOW` 0(적용되지 않음), 2회 같음 |
+| `options` 없이 + `ALTER ROLE atlas IN DATABASE atlas SET` 세 값 | `SHOW` 30s·5s·1min(적용됨) |
+| 직접 연결(pooler 없음) + `options` | `SHOW statement_timeout` 30s |
+| S칸 probe, `max_prepared_statements=0`, 4초 | 오류 68건: `prepared statement "S_1" does not exist`(SQLSTATE 26000) |
+| S칸 probe, `max_prepared_statements=200`, 4초 | 오류 0건 |
+
+### 변이 시험과 현행 코드 실행
+
+변이마다 소스를 고쳐 해당 시험만 돌리고 파일을 바이트 그대로 되돌렸다(되돌림 확인 9/9, 현행 코드 실행 포함). PostgreSQL 18.6 Testcontainers.
+
+| 변이 | 시험 | 결과 |
+|---|---|---|
+| 예약 SQL `failures < ?` → `<= ?` | `attemptsStillBeingVerifiedCannotPassTheSubjectLimitTogether` | 실패: expected 3 but was 4 |
+| 출처 거절 뒤 예약 반환 제거 | `attemptRejectedByItsOriginDoesNotSpendTheSubjectLimit` | 실패: expected 1 but was 2 |
+| 성공 뒤 카운터 삭제(`resetSubject`) 제거 | `correctPasswordsVerifiedAlongsideAWrongOneDoNotLockTheSubject` | 실패: 저장값 3(≤ 1 기대) |
+| 주문 경로 재조회 제거 | `staleApprovalSnapshotFromAnotherInstanceDoesNotUndoAPaidCampaignOrder` | 실패: expected PAID but was PAYMENT_PENDING |
+| checkout 경로 재조회 제거 | `staleApprovalSnapshotFromAnotherInstanceDoesNotUndoAPaidCheckout` | 실패: expected PAID but was PAYMENT_PENDING |
+| claim이 펜스 결과 무시 | `claimWhoseLeaseWasTakenByACancellationIsNotReportedAsClaimed` | 실패: expected REJECTED but was CLAIMED |
+| sweep 락을 잡은 직후 commit(락이 sweep 전에 풀림) | `concurrentSweepOfTheSameWorkflowIsSkippedWhileAnotherRunsOutsideAnyTransaction` | 실패: 빈 Optional 기대, 2 |
+| sweep 락 연결을 autocommit으로 둠 | `JdbcExpirySweepLockRepositoryTest` 2개 | 실패 2/2(rollback이 25P01로 실패). 상호 배제 변이로는 위 행을 쓴다 |
+| 예약 SQL `failures < ?` → `<= ?` | `correctLoginRefusedOnlyBecauseOthersAreStillBeingVerifiedSucceedsOnceTheyFinish`(H1f 선택 a의 시험) | 실패: 거절을 기대했으나 통과 |
+| 로그인 성공 뒤 `resetSubject` 제거 | 같은 시험 | 실패: expected 0 but was 1 |
+
+현행 `origin/main` 인증 코드(4개 파일)로 `AuthAttemptLimiterIntegrationTest` 11개를 돌리면 3개가 실패한다: `attemptsStillBeingVerifiedCannotPassTheSubjectLimitTogether`(expected 3 but was 8), `attemptRejectedByItsOriginDoesNotSpendTheSubjectLimit`(expected 1 but was 0, 현행은 예약하지 않음), `everyScopeIsStoredWithinTheBucketConstraints`(현행은 검증 전에 주체 행을 만들지 않음). 성공 경로 시험 `correctPasswordsVerifiedAlongsideAWrongOneDoNotLockTheSubject`는 현행 코드에서도 통과한다. 현행은 올바른 시도가 칸을 쓰지 않으므로 성공 경로가 원래 깨지지 않았고, 이 시험은 예약 수정의 성공 경로를 지킨다.
+
+결제 재조회 시험 2개는 이 브랜치에서 `PaymentWorkflowCrashWindowIntegrationTest` 5/5 통과(캠페인 주문 경로 시험은 이번에 처음 실행). 만료 sweep 잠금 변경 뒤 `BuyerFlowIntegrationTest` 50, `ScheduledExpiryMultiInstanceIntegrationTest` 3(애플리케이션 컨텍스트 2개로 checkout 만료가 정확히 한 번인지 확인), `SellerCouponRedemptionIntegrationTest` 7, `ScheduledExpiryMetricsWorkerTest` 4, `JdbcExpirySweepLockRepositoryTest` 2가 모두 통과했다.
+
+### 오염된 첫 1부 실행 (잠금 없이, 판정에 쓰지 않음)
+
+01:12:17~01:20:13에 1부가 잠금 없이 돌았다. 잠금 대기 반복문만 끝나고 구동 스크립트는 계속 돌았기 때문이다(그 뒤 스크립트는 잠금을 실제로 쥐지 않으면 멈추도록 고쳤다). 그 시간은 다른 에이전트의 잠금(`exp117h10`) 창이었고 그 에이전트의 컨테이너가 떠 있었으며 load1은 6.8~12.4였다. 건수는 위 잠금 아래 재실행과 같은 방향이지만 판정에는 재실행 값만 쓴다. 같은 창의 다른 에이전트 측정도 오염됐을 수 있어 그 에이전트에게 알렸다.
+
+| 칸 | 오염된 실행의 결과 |
+|---|---|
+| A-N1-base | 44·45·48·48·46 |
+| A-N3-base | 84·88·87·89·90, 503 6·2·3·1·0건 |
+| A-N1-fix, A-N3-fix | 회차마다 10. CPU 추정 8.9~11.5(1대), 5.5~16.7(3대) |
+| A-ok | 현행 성공 15·거절 0, 수정 성공 10·거절 5(거절 응답 최대 110~173 ms), 카운터 0 |
+| P-N1-base, P-N2-base, P-N2-fix | 모드마다 100회 중 역전 0 |
+| J-N2 | 401 7·7·14 |
