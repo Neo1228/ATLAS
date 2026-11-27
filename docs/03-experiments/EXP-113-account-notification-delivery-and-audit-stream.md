@@ -99,6 +99,21 @@ A3와 측정 구동기는 저장소에 올리지 않는다(실험 전용 패치)
 | H17 | 행위자별 조치 질의(최근 100건)는 테이블당 20만 행에서 통합 로그 + 색인이 현재 테이블 UNION ALL(색인 없음)보다 10배 이상 빠르다 | 10배 미만 | 실행 시간 중앙값 |
 | H18 | 로그 `payload`에 `reason`·`idempotency_key`·`request_facts_sha256`·이메일 열이 없다 | 하나라도 있음 | 시험 |
 
+## 추가 등록: A1b의 유실 칸과 남은 대상 테이블의 트리거 비용 (측정 전 등록, 2026-11-27)
+
+A1b는 C2·C4·C6만 쟀고, H16은 이제 대상에서 뺀 `settlement_journal`로 쟀다. 기본 경로를 고르기 전에 둘을 채운다.
+
+- A1b C1·C3: 위 C1·C3 절차 그대로, 이 브랜치 최종 코드의 bootJar(outbox 꺼짐), n = 3.
+- 트리거 비용 대상: `inventory_capacity_adjustment`. 대상 8개 중 판매자 재고 조정 API(입고·차감)가 SKU마다 부르는 쓰기 경로이고, 나머지 6개는 운영자 예외 조치, `inventory_transfer`는 위치 간 이동이라 호출 빈도가 이보다 낮다고 본다(운영 빈도 자료는 없다). 실제 쓰기 SQL(`CapacityAdjustmentRepository.record`: `inventory_pool` UPDATE + 조정 행 INSERT 한 문장)을 V9까지 적용한 스키마에 그대로 돌리고, 같은 창에서 `ALTER TABLE ... DISABLE/ENABLE TRIGGER inventory_capacity_adjustment_audit`로 트리거 무·유를 번갈아 잰다. pgbench 10초, c = 1과 c = 8(클라이언트마다 다른 SKU 행, 행 잠금 경합 제외), 칸마다 n = 3, run 전마다 `CHECKPOINT`. advisory lock 2개는 두 쪽에 같으므로 뺐다(비율을 보수적으로 키우는 방향). WAL은 run 앞뒤 `pg_current_wal_lsn()` 차이를 처리 건수로 나눈다.
+
+| # | 가설 | 반증 조건 | 지표 |
+|---|---|---|---|
+| H19 | C1에서 A1b는 커밋된 메일을 모두 잃는다(전송이 기록 없이 메모리에만 있음) | 3 run 합계에서 커밋된 메일 1통이라도 재기동 뒤 전달 | 유실/커밋 |
+| H20 | C3에서 A1b는 오류 동안 요청한 메일을 복구 뒤 하나도 전달하지 않는다 | 전달 ≥ 1 | 전달 수 |
+| H21 | 트리거가 조정 쓰기 한 건에 더하는 시간은 c = 1과 c = 8 모두 p50 증가 ≤ 25%이면서 ≤ 0.3 ms, p99 증가 ≤ 25%다(run별 중앙값끼리 비교) | 칸 하나라도 셋 중 하나 초과 | pgbench 지연, WAL 바이트/건(맥락) |
+
+채택 규칙(측정 전 고정): H19 또는 H20이 서면(A1b가 유실을 남기면) outbox(A2)를 기본값으로 바꾸고 플래그는 되돌림 스위치로 둔다. 둘 다 반증되면 A1b를 기본값으로 유지한다. H21이 반증되면 `domain_audit_event`의 `(tx_id)` 색인(아직 소비자 cursor가 없음)을 빼고 같은 절차로 다시 재며, 그래도 반증되면 재고 2개 테이블을 대상에서 뺀다.
+
 ## 한계 (실행 전에 알고 있는 것)
 
 - 단일 호스트, Colima VM, Apple Silicon, 가짜 SMTP. 실제 메일 제공자의 지연·오류 분포가 아니다.
