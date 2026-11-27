@@ -83,6 +83,11 @@ public class PaymentRefundRepository {
 
     public void updateResult(UUID refundOperationId, PaymentRefundState state, String providerRefundId,
             String providerStatus, Instant updatedAt) {
+        // UPDATE 는 FOR NO KEY UPDATE 만 잡는다. 같은 트랜잭션이 뒤이어 FOR UPDATE 로 올리는 사이,
+        // 다른 트랜잭션이 이 행을 가리키는 FK 갱신으로 FOR KEY SHARE 를 쥔 채 FOR UPDATE 로 올리면
+        // 서로의 약한 락을 기다리는 교착(40P01)이 된다. 처음부터 FOR UPDATE 로 잡아 올림 자체를 없앤다.
+        jdbc.query("SELECT 1 FROM payment_refund_operation WHERE refund_operation_id = ? FOR UPDATE",
+                (RowCallbackHandler) resultSet -> { }, refundOperationId);
         int updated = jdbc.update("""
                 UPDATE payment_refund_operation
                 SET refund_state = CASE WHEN refund_state IN ('COMPLETED', 'FAILED') THEN refund_state ELSE ? END,
