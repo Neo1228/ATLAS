@@ -267,6 +267,14 @@ atlas:
       enabled: ${ATLAS_SETTLEMENT_LEDGER_AUDIT_ENABLED:false}
       initial-delay: ${ATLAS_SETTLEMENT_LEDGER_AUDIT_INITIAL_DELAY:PT1M}
       poll-interval: ${ATLAS_SETTLEMENT_LEDGER_AUDIT_POLL_INTERVAL:PT1H}
+    balance-checkpoint:
+      # 판매자 잔액 마감(ADR-0104, 운영 가이드 "판매자 잔액 마감" 절). 끄면 잔액은 정확하지만 마감 이후 이력을 모두 읽는다.
+      enabled: ${ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_ENABLED:true}
+      initial-delay: ${ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_INITIAL_DELAY:PT30S}
+      poll-interval: ${ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_POLL_INTERVAL:PT10S}
+      batch-size: ${ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_BATCH_SIZE:50000}
+      max-batches-per-run: ${ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_MAX_BATCHES_PER_RUN:20}
+      safety-lag: ${ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_SAFETY_LAG:PT5M}
     report:
       operator:
         enabled: ${ATLAS_SETTLEMENT_REPORT_OPERATOR_ENABLED:false}
