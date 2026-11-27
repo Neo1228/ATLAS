@@ -150,12 +150,16 @@ public class PaymentRecoveryWorker {
         }
         for (int index = 0; index < batchSize; index++) {
             List<PaymentRecoveryResponse.Job> claimed;
+            // 청구 질의 지연(EDA 전환 신호 T1·T2, ADR-0103). 큐 표가 부풀면 이 값이 먼저 오른다.
+            Timer.Sample claimSample = Timer.start(meters);
             try {
                 claimed = recovery.claimNextDue(1, UUID.randomUUID(), leaseDuration, maxAttempts, maxAge);
             } catch (RuntimeException exception) {
+                claimSample.stop(claimTimer("failed"));
                 recordPollFailure(CLAIM_POLL_STAGE, exception, lastClaimFailureLogNanos);
                 return;
             }
+            claimSample.stop(claimTimer(claimed.isEmpty() ? "empty" : "claimed"));
             if (claimed.isEmpty()) return;
             PaymentRecoveryResponse.Job job = claimed.getFirst();
             counter("claimed", job.operationType()).increment();
@@ -312,6 +316,11 @@ public class PaymentRecoveryWorker {
         return Counter.builder("atlas.payment.recovery." + outcome)
                 .tag("operation_type", type.name())
                 .register(meters);
+    }
+
+    private Timer claimTimer(String outcome) {
+        return Timer.builder("atlas.queue.claim.duration").tag("queue", "payment_recovery_job")
+                .tag("outcome", outcome).register(meters);
     }
 
     private static boolean terminal(PaymentRefundState state) {

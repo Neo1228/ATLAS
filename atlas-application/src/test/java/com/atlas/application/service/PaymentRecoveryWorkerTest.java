@@ -63,6 +63,28 @@ class PaymentRecoveryWorkerTest {
         verify(recovery).complete(job);
     }
 
+    @Test
+    void claimLatencyIsTimedPerOutcome() {
+        UUID attemptId = UUID.randomUUID();
+        PaymentRecoveryResponse.Job job = job(PaymentRecoveryOperationType.PAYMENT_ATTEMPT, attemptId);
+        when(recovery.claimNextDue(eq(1), any(UUID.class), eq(Duration.ofSeconds(60)), eq(8),
+                eq(Duration.ofHours(24)))).thenReturn(List.of(job)).thenReturn(List.of())
+                .thenThrow(new IllegalStateException("db down"));
+        when(payments.findByAttemptId(attemptId)).thenReturn(null);
+
+        worker.poll();
+        worker.poll();
+
+        assertThat(claimCount("claimed")).isEqualTo(1);
+        assertThat(claimCount("empty")).isEqualTo(1);
+        assertThat(claimCount("failed")).isEqualTo(1);
+    }
+
+    private long claimCount(String outcome) {
+        return meters.get("atlas.queue.claim.duration").tag("queue", "payment_recovery_job")
+                .tag("outcome", outcome).timer().count();
+    }
+
 
     @Test
     void checkoutPaymentReconcilesThroughParentCheckoutService() {

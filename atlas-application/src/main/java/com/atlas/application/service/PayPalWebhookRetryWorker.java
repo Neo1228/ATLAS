@@ -50,8 +50,17 @@ public class PayPalWebhookRetryWorker {
         Timer.Sample sample = Timer.start(meters);
         String outcome = "success";
         try {
-            WebhookRetryResponse.RetryPoll poll = retries.pollDue();
+            // 청구(만료 lease 회수 포함) 질의 지연(EDA 전환 신호 T1·T2, ADR-0103).
+            Timer.Sample claimSample = Timer.start(meters);
+            WebhookRetryResponse.RetryPoll poll;
+            try {
+                poll = retries.pollDue();
+            } catch (RuntimeException failure) {
+                claimSample.stop(claimTimer("failed"));
+                throw failure;
+            }
             List<WebhookRetryResponse.ClaimedWebhookRetry> claimed = poll.claimed();
+            claimSample.stop(claimTimer(claimed.isEmpty() ? "empty" : "claimed"));
             if (poll.reapedCount() > 0) {
                 Counter.builder(REAPED_METRIC).register(meters).increment(poll.reapedCount());
             }
@@ -144,6 +153,11 @@ public class PayPalWebhookRetryWorker {
 
     private void recordOutcome(String outcome) {
         Counter.builder(OUTCOMES_METRIC).tag("outcome", outcome).register(meters).increment();
+    }
+
+    private Timer claimTimer(String outcome) {
+        return Timer.builder("atlas.queue.claim.duration").tag("queue", "paypal_webhook_retry")
+                .tag("outcome", outcome).register(meters);
     }
 
     private void warnPollFailure(RuntimeException failure) {

@@ -340,7 +340,8 @@ class ReservationEventConsumerKafkaIntegrationTest {
 
         private void send(KafkaProducer<String, String> producer, UUID workflowId, int version) {
             ProducerRecord<String, String> record = new ProducerRecord<>(topic, workflowId.toString(),
-                    "{\"workflowId\":\"" + workflowId + "\",\"aggregateVersion\":" + version + "}");
+                    "{\"schemaVersion\":" + KafkaReservationEventPublisher.SCHEMA_VERSION + ",\"workflowId\":\""
+                            + workflowId + "\",\"aggregateVersion\":" + version + "}");
             record.headers().add(KafkaReservationEventPublisher.EVENT_ID_HEADER,
                     (workflowId + ":" + version).getBytes(StandardCharsets.UTF_8));
             producer.send(record);
