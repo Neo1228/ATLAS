@@ -1,0 +1,55 @@
+# ADR-0106: 결제 복구는 창이 끝내고 버려진 claim은 따로 세며, 분산 배포 후보 다섯은 재검토 조건과 함께 보류한다
+
+- 상태: Accepted(사용자 지시 "증거가 탄탄한 업그레이드만 적극 채택"에 따른 에이전트 결정. 사용자 승인 여부는 확인하지 못함. C4는 사용자가 묻지 말고 수치로 정하라고 해 `✓ 결정(가정)`으로 둠)
+- 날짜: 2026-11-28
+- 관련 결정: [ADR-0038](ADR-0038-durable-payment-recovery-workflow.md)(복구 워크플로), [ADR-0047](ADR-0047-abandoned-approval-deadline.md), [ADR-0067](ADR-0067-event-log-kafka-relay.md), [ADR-0072](ADR-0072-infrastructure-inventory-and-assumptions.md), [ADR-0077](ADR-0077-keep-reorder-idempotency-records.md)
+- 근거: [EXP-117](../../03-experiments/EXP-117-distributed-upgrade-candidates-reproduction.md), 이슈 [#729](https://github.com/Neo1228/ATLAS/issues/729)
+
+## 문제
+
+전제는 여러 app 인스턴스, rolling 배포와 강제 종료, DB failover와 replica, app·location·PayPal 사이 지연과 분할이다. 남은 후보 여섯(F1·F2·F3·G1·C4·E3) 중 무엇이 현재 코드에서 실제로 재현되는지 가려야 했다.
+
+F1은 재현됐다. 결제 복구 기본값(시도 8회, backoff 1초부터 두 배)에서 PayPal 503이 이어지면 job은 8번째 claim에서 `NEEDS_REVIEW`가 됐고, 그때까지 기록된 backoff 합은 가상 시각 83.1~116.1초였다(5회. 지터 때문에 이론 범위는 63.5~127초). ADR-0038이 적은 "15분 상한·24시간 창"에 닿지 못했다. 그래서 2분 남짓 넘는 PayPal 장애나 분할은 그 동안의 미확정 결제를 모두 운영자 수작업으로 보낸다. 같은 계수는 처리 중 강제 종료로 버려진 claim도 세고 있어서, 한도를 그냥 올리면 claim할 때마다 프로세스를 죽이는 job도 그만큼 오래 인스턴스를 죽인다(H2).
+
+## 결정
+
+1. 결과를 기록한 재시도는 창(`max-age`, 24시간)이 끝낸다. `max-attempts` 기본값을 202로 올린다. 202는 창과 backoff 상한에서 나온다: 지연은 지수값의 절반 이상이라 10번째 시도까지 최솟값 합 511.5초, 이후 15분 상한의 절반 450초씩이고, 511.5 + (M−11) × 450 ≥ 86,400을 만족하는 가장 작은 M이 202다. 이제 시도 한도는 창보다 먼저 닿지 않는 안전 상한이고, `PaymentRecoveryWorkerTest`가 이 관계를 main 기본값으로 확인한다. 시작할 때 이 관계가 깨진 구성이면 경고를 남긴다.
+2. 결과를 쓰지 못하고 lease가 만료된 claim은 V12의 `abandoned_claim_count`로 따로 세고 `max-abandoned-claims`(기본 8)에서 `ABANDONED_CLAIMS`로 멈춘다. 만료된 lease가 남은 채 다시 claim되면 1을 더하고, sweep은 지금 만료된 lease까지 센다. 운영자 requeue는 두 계수를 0으로 돌린다.
+3. 나머지 다섯은 이 ADR에서 코드를 바꾸지 않는다.
+
+| 후보 | 재현 결과(EXP-117) | 판정 | 재검토 조건 |
+|---|---|---|---|
+| F2 3자 대사 | 돈을 움직인 PayPal 호출은 모두 앞선 커밋이 provider 참조를 쥐어 failover 뒤 복구가 수렴(코드 읽기). ATLAS가 모르는 PayPal 주문은 돈이 움직이지 않은 주문뿐 | ✗ 기각(자동 일 대사 보류, 기존 보고서 대사 유지) | 보고서 대사 `UNMATCHED` capture 1건 이상, 또는 LG-1 해제 |
+| F3 멱등 기록 보존 | 1,000만 행 행당 310.4 B, PK 깊이 3, 키 조회 5 버퍼(100만 행과 같음) | ✗ 기각(ADR-0077 유지) | 표 1 GiB(약 346만 행) |
+| G1 location fencing token | 12경우 중 2경우 불일치(늦은 reserve의 고아 예약, lease 잃은 claim의 `CLAIMED` 보고). location 쪽 토큰은 둘 다 못 막음 | ✓ lease·claim 변경을 맡은 [#730](https://github.com/Neo1228/ATLAS/issues/730)으로 넘김 | #730에서 결정 |
+| C4 동기 복제 | 비동기 단절 중 확인된 커밋 200/200 손실(3회), 부하 중 종료 5회 중 3회 손실. 동기는 손실 0(7회)이지만 standby 단절 시 커밋 정지, 취소된 커밋은 사라짐. 지연 비 1.2~1.9 | ✓ 결정(가정): 돈 DB는 동기 정족수 `ANY 1 (s1, s2)`(standby 2대, `synchronous_commit = on`). 개발 단일 노드는 비동기 대체. `SyncRep` 대기 세션 취소·종료 금지(취소된 커밋은 성공으로 돌아오고 failover에서 사라짐), 5초 넘는 대기 경보. 앱 자신의 취소도 막는다: 드라이버 질의 시간 제한(`setQueryTimeout`)이 autocommit 쓰기의 대기를 취소하면 성공 + 경고 후 손실(3/3, `statement_timeout`·`socketTimeout`은 성공으로 보고하지 않음, EXP-117 H11)이라 `spring.jdbc.template.query-timeout`을 지우고(느린 SQL 상한은 서버 `statement_timeout 30초`가 유지) `SyncReplicationCancelGuardTest`로 고정. 비용: 커밋 지연 1.2~1.9배, 노드 2대. [#731](https://github.com/Neo1228/ATLAS/issues/731) | `SyncRep` 대기 경보 주 1회 이상, 커밋 지연 비 1.9배 초과로 결제 지연 목표 위반, standby 1대만 남은 상태 1시간 초과 |
+| E3 CDC | xid를 쥔 트랜잭션 T초 동안 relay 지연 최대 T±1초(9회), 유실 0. CDC는 이 정지가 없지만 논리 슬롯 failover 구성이 필요 | ✗ 기각 | `atlas.order.inventory.event.relay.stalled_seconds` > 30초 하루 1회 이상, 또는 소비 지연 목표 < 30초 |
+
+## 대안과 기각 이유
+
+| 대안 | 기각 이유 |
+|---|---|
+| 현행 유지(8회) | H1 재현: 가상 83.1~116.1초(5회)에 수작업 전환. ADR-0038이 적은 창과 상한이 쓰이지 않는다 |
+| `max-attempts`만 202로 | H2: 버려진 claim도 같은 계수라 독이 든 job이 인스턴스를 202번까지 죽인다. 변이 확인에서 이 구성은 H3(b) 시험이 실패한다 |
+| 한도를 PayPal authorization 만료(3일 honor)에 맞춤(F1 원안) | 창 24시간이 honor 72시간보다 짧아 창이 먼저 끝난다. 창이 실제로 쓰이게 된 지금 만료 연동이 더할 보호가 없다. `authorization_expires_at`은 이미 검토 목록에 보인다(V3) |
+| 시도 한도 없이 창만 | 창 설정 오류(예: 매우 긴 값) 때 상한이 사라진다. 202는 기본 구성에서 판정에 끼지 않으면서 상한으로 남는다 |
+
+## 결과
+
+- 시험 `PaymentRecoveryRetryBudgetIntegrationTest`(PostgreSQL, 실제 worker, PayPal stub 503, 운영 기본값을 main `application.yml`에서 읽음): 6시간 장애 뒤 회복하면 자동으로 진행, 3일 장애는 창에서 `RECOVERY_WINDOW_EXPIRED`(2회: claim 133·140회, 가상 86,475·86,526초), 버려진 claim 8회에서 `ABANDONED_CLAIMS`, 기록된 재시도는 버려진 claim으로 세지 않음.
+- 버려진 claim은 "lease 60초 안에 결과를 쓰지 못한 claim"이다. 강제 종료뿐 아니라 60초 넘는 GC 정지·DB 분할(인스턴스 여럿)에서도 생긴다. 살아 있는 느린 worker가 나중에 결과를 써도 한 번만 세고, 그 결과는 lease 토큰에 막혀 다시 잡은 인스턴스의 기록을 덮지 않는다(시험으로 확인). 같은 job에 그런 정지가 8번 겹치면 독이 든 job이 아니어도 멈추는 것이 이 한도의 비용이다.
+- 장애가 길면 job마다 PayPal 조회가 7.5~15분에 한 번 이어진다(1,000건이면 초당 약 1~2회).
+
+## 사전 등록에서 벗어난 판단
+
+EXP-117 H10의 동기화 부분은 반증됐다(장애 20~40분·40~60분 최댓값/평균 7.4·6.4, 기준 3). 사전 등록 규칙은 반증 시 코드나 V12로 고치는 것이었지만 지터를 바꾸지 않았다. 이유: 최댓값 18이 상한 30(인스턴스 × batch ÷ poll) 안이고 회복 몰림이 없었다(회복 뒤 5분 최댓값 6). 또 full jitter(지연을 0부터 지수값까지 균등)는 공짜 수정이 아니다: 지연 최솟값이 약 0이 되어 "202회 = 24시간 창" 유도와 그 시험(`PaymentRecoveryWorkerTest.shippedMaxAttemptsIsTheSmallestCountWhoseMinimumBackoffReachesTheWindow`)이 성립하지 않는다. 바꾸려면 `max-attempts`를 다시 유도하거나 하한이 있는 decorrelated jitter를 써야 한다. 재검토 조건: 장애 중 PayPal 429, 또는 동시 미확정 결제가 상한(약 2만 건)에 가까워질 때 full jitter(시도 한도 재유도 포함)·decorrelated jitter와 비교한다.
+
+## 롤백
+
+- 값만: `ATLAS_PAYMENT_RECOVERY_MAX_ATTEMPTS=8`이면 예전 동작(약 83~116초에 수작업). 버려진 claim 한도는 그대로 남는다.
+- 코드: 이 변경을 되돌려도 V12 열은 기본값 0이라 예전 코드와 함께 둘 수 있다. 열을 지우려면 새 마이그레이션으로 지운다(적용한 마이그레이션은 고치지 않는다).
+
+## 재검토 조건
+
+- `ABANDONED_CLAIMS`가 한 주에 1건이라도 나오면 그 job의 종료 원인부터 본다. 정상 배포에서 나오면 한도 8과 lease 60초를 다시 잰다.
+- PayPal 장애 중 복구 조회가 PayPal 429를 받으면 15분 상한을 다시 정한다.

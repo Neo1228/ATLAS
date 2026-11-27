@@ -274,7 +274,10 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 
 `PaymentAttempt`와 `PaymentRefundOperation`은 주문/checkout/refund 업무 변경과 **같은 transaction**에서 PostgreSQL `payment_recovery_job`에 기록됩니다. job은 `PROVIDER`(PayPal 호출/대조) → `APPLY`(주문·재고·fulfillment·정산 반영) 두 단계로 진행하며, owner 적용과 job 완료가 한 transaction이라 중간 종료 시 둘 다 rollback되어 재전달됩니다. lease 기반 worker가 두 단계를 stage별로 claim해 복구합니다. 외부 message broker를 추가하지 않으며, at-least-once 재실행은 저장된 provider request ID와 상태 검증에 의존합니다. 구매자 승인 redirect 대기 상태는 자동 재요청하지 않고 결제·재고는 provider 결과가 확정될 때까지 해제하지 않습니다. 자세한 상태·장애·절충은 [ADR-0038](02-decisions/adr/ADR-0038-durable-payment-recovery-workflow.md)을 참고하세요.
 
-- Worker 기본 활성화: `ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED=true`. Initial delay 30초, poll 1초, batch 최대 10건(각 작업은 개별 claim), lease 60초, 최대 자동 시도 8회/24시간. `ATLAS_PAYMENT_RECOVERY_*` 환경 변수로 조정할 수 있습니다.
+- Worker 기본 활성화: `ATLAS_PAYMENT_RECOVERY_WORKER_ENABLED=true`. Initial delay 30초, poll 1초, batch 최대 10건(각 작업은 개별 claim), lease 60초, backoff 1초부터 두 배씩 15분 상한, 복구 창 24시간(`ATLAS_PAYMENT_RECOVERY_MAX_AGE`). `ATLAS_PAYMENT_RECOVERY_*` 환경 변수로 조정할 수 있습니다.
+- 재시도 한도 두 가지(ADR-0106, EXP-117): 결과를 기록한 재시도(PayPal 503·연결 실패·결과 불명)는 24시간 창이 끝낸다. `ATLAS_PAYMENT_RECOVERY_MAX_ATTEMPTS`(기본 202)는 그 창보다 먼저 닿지 않도록 맞춘 전체 claim 상한이다. 결과를 쓰지 못하고 lease가 만료된 claim(인스턴스 강제 종료, 60초 넘는 정지)은 `ATLAS_PAYMENT_RECOVERY_MAX_ABANDONED_CLAIMS`(기본 8)에서 멈추고 `last_error_code = ABANDONED_CLAIMS`로 `NEEDS_REVIEW`가 된다. 이 코드가 보이면 그 job이 처리 중 프로세스를 죽이는지 로그(`Payment recovery failed`, OOM, 재시작)부터 본다. 운영자 requeue는 두 계수를 모두 0으로 되돌린다.
+- 장애 중 PayPal 호출량: 장애가 약 8.5~17분을 넘기면(backoff가 15분 상한에 닿는 시점) job마다 7.5~15분에 한 번 조회한다(1,000건이면 초당 약 1~2회). 상한은 `인스턴스 수 × batch-size ÷ poll-interval × job당 호출 수`다. 기본값과 인스턴스 3개면 3 × 10 ÷ 1초 × 1 = 초당 30회(주문 생성 재시도는 job당 1회, authorize·capture까지 이어지는 job은 최대 3~4회라 그만큼 곱한다). 1,000건이 동시에 미확정이 된 1시간 장애(EXP-117 H10, 시간 12배 압축)에서 최댓값은 초당 18회, 회복 뒤 5분 최댓값 6회, 모두 처리까지 약 15분이었다(잠금 아래 재실행). 시작할 때 `max-attempts`가 창보다 먼저 소진되는 구성이면 `Payment recovery max-attempts=... is exhausted ...` 경고를 남긴다.
+- 되돌리기: `ATLAS_PAYMENT_RECOVERY_MAX_ATTEMPTS=8`이면 예전처럼 약 83~116초(가상 시각, EXP-117 H1)에 모든 미확정 결제가 `NEEDS_REVIEW`로 간다. V12 열(`abandoned_claim_count`)은 지우지 않아도 된다(예전 코드는 읽지 않는다).
 - 승인 화면 이탈 대비: 승인 대기에 들어가면 `payment_attempt.approval_expires_at`이 기록됩니다(`ATLAS_PAYMENT_APPROVAL_TTL`, 기본 `PT30M`). deadline이 지난 `WAITING_FOR_BUYER` job은 worker가 bounded sweep으로 재개하고, **provider에 실제 상태를 먼저 조회**합니다. 아직 승인 전이면 결제를 닫아 재고 예약과 캠페인 slot을 정리하고, 이미 capture가 확정됐으면 그대로 정상 결제로 수렴합니다. 자세한 판단 근거는 [ADR-0047](02-decisions/adr/ADR-0047-abandoned-approval-deadline.md)입니다.
 - `NEEDS_REVIEW`는 `/api/internal/payment/recovery/needs-review?limit=20&offset=0`에서 조회합니다. `/api/internal/payment/recovery/{recoveryJobId}/requeue`는 Idempotency-Key와 검토 사유가 필요하며 task당 최대 3회입니다.
 - Operator API는 기본 비활성화(`ATLAS_PAYMENT_RECOVERY_OPERATOR_ENABLED=false`)입니다. 활성화 시 별도 Basic-auth 사용자와 32자 이상의 password가 필요하며, 인증정보는 secret manager/environment에서만 공급합니다.
@@ -282,6 +285,16 @@ docker compose --env-file .env.local --profile loadtest run --rm \
 - 위치 서비스 호출 동시 상한(옵트인): `ATLAS_ORDER_INVENTORY_RESERVATION_BULKHEAD_MAX_CONCURRENT_CALLS`(`atlas.order-inventory-reservation.bulkhead.max-concurrent-calls`, 기본 `0` = 상한 없음). 켜면 서블릿 요청 스레드가 위치 서비스 응답을 기다리며 동시에 묶일 수 있는 호출 수를 제한하고, 넘는 호출은 기다리지 않고 위치 서비스에 보내기 전에 `RETRYABLE_UNKNOWN`(`INVENTORY_BUSY`)으로 거절한다(시간 초과와 같은 경로로 같은 멱등 키 재시도로 수렴). 복구 worker의 호출은 세지도 거절하지도 않는다. 값은 `평상시 도착률 × 평균 지연의 1.5배` 이상, Tomcat 최대 스레드(40)보다 작게 둔다. 거절 수는 Micrometer 계수기 `atlas.inventory.location.bulkhead.rejected`. 근거와 재검토 조건: [ADR-0099](02-decisions/adr/ADR-0099-location-call-bulkhead-opt-in.md), [EXP-109](03-experiments/EXP-109-resilience-reapproach.md).
 - Prometheus metric prefix: `atlas.payment.recovery.*` (status별 backlog, stage별 `work_stage`+`status` backlog와 `oldest_due_age_seconds`, operation별 claim/retry/failure/completion, `operation_type`+`work_stage` 처리 duration). `work_stage=APPLY`의 pending count/age가 provider 결과 확정 후 owner 반영까지의 지연을 나타냅니다. `UNKNOWN` 또는 `NEEDS_REVIEW`를 성공/실패로 수동 간주하지 않습니다. 승인 대기 재개는 `atlas.payment.recovery.approval.resumed`로 관측합니다.
 - 자세한 단계·crash window·검증은 [ADR-0046](02-decisions/adr/ADR-0046-order-payment-transactional-outbox.md)에 정리했습니다.
+
+## 결제 DB 복제 (C4, ADR-0106)
+
+결제 시도·복구 job·원장이 있는 DB는 동기 정족수 복제를 전제로 한다(`✓ 결정(가정)`, [ADR-0106](02-decisions/adr/ADR-0106-payment-recovery-retry-budget-and-distributed-candidates.md), 측정은 [EXP-117](03-experiments/EXP-117-distributed-upgrade-candidates-reproduction.md) C4 절).
+
+- 구성: standby 2대(`s1`, `s2`), primary에 `synchronous_standby_names = 'ANY 1 (s1, s2)'`, `synchronous_commit = on`. standby 1대가 끊겨도 쓰기는 계속되고, 커밋은 남은 1대가 받은 뒤 확인된다. 커밋 지연은 비동기의 약 1.2~1.9배였다(로컬 컨테이너, 같은 세션 3라운드).
+- 단일 노드 개발 구성은 복제 없이(비동기와 같은 내구성) 돈다. 이 구성에서는 primary 디스크를 잃으면 마지막 백업 이후 커밋이 사라진다.
+- 금지: `wait_event = 'SyncRep'`으로 기다리는 세션을 `pg_cancel_backend`·`pg_terminate_backend`로 끊지 않는다. 취소된 커밋은 클라이언트에 성공과 경고(`The transaction has already committed locally, but might not have been replicated`)로 돌아오지만 failover 뒤 사라진다(3/3회). `statement_timeout`은 이 대기를 끝내지 않는다. 앱의 JDBC 질의 시간 제한(`setQueryTimeout`, `spring.jdbc.template.query-timeout`, `@Transactional(timeout)`)은 같은 취소를 만들므로 두지 않는다(`SyncReplicationCancelGuardTest`).
+- 경보: `SELECT count(*) FROM pg_stat_activity WHERE wait_event = 'SyncRep' AND now() - query_start > interval '5 seconds'`가 0보다 크면 standby 상태부터 본다(`pg_stat_replication.sync_state`). standby가 2대 모두 끊기면 쓰기가 멈추고 앱 연결 풀(10개)이 그대로 묶인다. 이때는 standby를 살리거나, 손실 위험을 받아들이고 `synchronous_standby_names`를 비우는 결정을 기록한 뒤 바꾼다.
+- 재검토: 위 경보가 주 1회 이상, standby 1대만 남은 상태가 1시간을 넘김, 커밋 지연이 결제 지연 목표를 깨뜨림.
 
 ## 원장 무결성·런타임 역할·백업과 복원 (EXP-111)
 

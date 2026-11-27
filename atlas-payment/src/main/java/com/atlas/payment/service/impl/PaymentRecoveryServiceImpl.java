@@ -114,8 +114,8 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
         recovery.markRefundApplied(refundOperationId);
     }
     @Override
-    public void expireExhausted(int maxAttempts, Duration maxAge) {
-        recovery.expireExhausted(maxAttempts, maxAge);
+    public void expireExhausted(int maxAttempts, int maxAbandonedClaims, Duration maxAge) {
+        recovery.expireExhausted(maxAttempts, maxAbandonedClaims, maxAge);
     }
 
     @Override
@@ -125,8 +125,10 @@ public class PaymentRecoveryServiceImpl implements PaymentRecoveryService {
 
     @Override
     public List<PaymentRecoveryResponse.Job> claimDue(
-            int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, Duration maxAge) {
-        return recovery.claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAge).stream()
+            int limit, UUID leaseToken, Duration leaseDuration, int maxAttempts, int maxAbandonedClaims,
+            Duration maxAge) {
+        return recovery.claimDue(limit, leaseToken, leaseDuration, maxAttempts, maxAbandonedClaims, maxAge)
+                .stream()
                 .map(PaymentRecoveryServiceImpl::toDto)
                 .toList();
     }

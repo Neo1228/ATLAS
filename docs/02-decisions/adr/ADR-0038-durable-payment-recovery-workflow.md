@@ -3,6 +3,7 @@
 - 상태: Proposed
 - 날짜: 2026-11-16
 - 추적: [Issue #293](https://github.com/Neo1228/ATLAS/issues/293)
+- 갱신: 시도 한도 기본값(8 → 202)과 버려진 claim 한도(8)는 [ADR-0106](ADR-0106-payment-recovery-retry-budget-and-distributed-candidates.md)이 바꿨다. 아래 "8회"는 이 ADR 당시 값이다. 8회는 backoff 합이 약 83~116초라 24시간 창과 15분 상한에 닿지 못했다([EXP-117](../../03-experiments/EXP-117-distributed-upgrade-candidates-reproduction.md) H1).
 
 ## 맥락
 
