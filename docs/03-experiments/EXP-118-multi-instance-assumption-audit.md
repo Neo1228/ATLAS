@@ -45,8 +45,11 @@ TxBacklog(#729, EXP-117)의 F1·F2·F3·G1·C4·E3와 AuditGuards(EXP-116)의 �
 | H5a | (첫 계수 전 추가) 현행 session advisory lock(`ExpirySweepLockRepository`)은 PgBouncer `pool_mode=transaction` 뒤에서 상호 배제를 잃거나 sweep이 멈추거나 서버 연결에 lock을 남긴다 | S-pgb-session | 3회 모두 겹침 0, 최장 공백 < 2초, 끝난 뒤 서버에 남은 advisory lock 0 |
 | H5b | (첫 계수 전 추가) 락 연결의 transaction 안에서 잡는 transaction 범위 lock(이 브랜치)은 같은 PgBouncer 뒤에서 겹침 0, 남은 lock 0, xid를 쥔 idle in transaction 0이다 | S-pgb-xact | 어느 회차든 겹침 ≥ 1, 남은 lock ≥ 1, xid 보유 표본 ≥ 1, 또는 오류 ≥ 1 |
 | H5c | (첫 계수 전 추가) pooler 없이도 transaction 범위 lock은 session lock과 같은 상호 배제와 실행 횟수를 낸다 | S-direct-session 대 S-direct-xact | xact 칸 겹침 ≥ 1이나 오류 ≥ 1, 또는 실행 횟수가 session 칸의 90% 미만 |
+| H1f | (첫 계수 전 추가, 2026-11-28) H1d의 진행 중 예약 거절을 서버가 200 ms 뒤 한 번 다시 예약해 풀면(대안 b, 실험 jar `fixb`) 올바른 로그인 15건이 모두 성공하지만, 오답 90건 묶음에서 거절된 시도가 Tomcat 스레드(인스턴스당 40)를 200 ms씩 쥐어 같은 인스턴스의 다른 요청(`/actuator/health` 탐침, 20 ms 간격) 지연이 오른다. 이 브랜치 jar(`fix3`)에서 거절된 올바른 로그인은 250 ms 뒤 클라이언트 재시도 한 번으로 모두 성공한다 | A-cost-N1(fix3 대 fixb), A-ok-N3(fix3, fixb), A-ok-retry-N3(fix3) | fixb A-ok가 한 회차라도 15건 성공이 아님, fixb 탐침 p99 중앙값이 fix3보다 50 ms 넘게 높지 않음, fix3 재시도 성공이 거절 수보다 적은 회차가 있음, 또는 어느 칸이든 검증 수 > 10 |
 
 판정 규칙(측정 전 고정): H5b와 H5c가 모두 서면 만료 sweep 잠금을 transaction 범위 lock으로 바꾸고, sizing-envelope 3.4의 transaction mode 권장에 남는 전제(시작 매개변수 `options`, prepared statement)를 적는다. 하나라도 반증되면 session lock을 그대로 두고 "transaction pooling 금지"를 배포 제약으로 적는다. H1e의 유령이 검증 중 시도 수 이하이고 성공과 창 끝에 사라지면 ADR-0048 범위 안으로 받아들이고, 아니면 예약에 만료를 둔다. A칸 수정 jar는 저장값이 구조상 10을 넘지 못하므로, 독립 신호로 응답 지연을 쓴다. 거절된 시도는 PBKDF2를 건너뛰므로 회차마다 정렬한 지연에서 가장 큰 간격으로 빠른 묶음과 느린 묶음을 가르고 느린 묶음 수를 검증한 시도 수로 본다. 현행 jar 칸에서 느린 묶음 수와 저장값의 차가 회차마다 2 이하일 때만 이 신호를 유효로 본다. (첫 계수 전 추가) 두 번째 독립 신호로 앱 프로세스 CPU 시간을 쓴다. 회차마다 같은 주체에 두 번째 90건을 보내(두 코드 모두 이미 한도라 전부 검증 전 거절) 첫 묶음 CPU − 두 번째 묶음 CPU를 검증한 시도의 CPU로 보고, 같은 회차에 새 주체 10건(두 코드 모두 전부 검증)의 CPU ÷ 10으로 나눠 검증 수를 추정한다. 이 추정은 거칠어서(건조 실행에서 실제 10에 9.3~16.7), 현행 jar 칸에서 추정이 저장값의 ±50% 안일 때만 유효로 보고, 수정 jar 칸에서 어느 회차든 추정 > 20(한도의 2배)이면 H1c를 반증된 것으로 본다.
+
+(첫 계수 전 추가, 2026-11-28) 진행 중 예약 거절(H1d)은 ADR-0048의 순서(추측 방어가 가용성보다 먼저, 거절은 검증 전에 싸게)로 판정한다. fixb가 회차마다 15건을 받고 탐침 p99 중앙값 증가가 50 ms 이하이면 대안 b를 채택한다. 증가가 50 ms를 넘거나 fixb가 한 회차라도 15건을 다 받지 못한 경우, fix3 재시도가 회차마다 거절을 모두 풀면 대안 a(받아들이고 문서화)를 채택한다. fix3 재시도가 거절을 다 풀지 못하면 a도 기각하고 다른 대안을 측정한다.
 
 ## 측정 방법
 
@@ -59,6 +62,7 @@ TxBacklog(#729, EXP-117)의 F1·F2·F3·G1·C4·E3와 AuditGuards(EXP-116)의 �
 - **A-ok칸(H1d).** 회차마다 새 계정 1개를 가입·이메일 확인한 뒤 올바른 비밀번호 로그인 15건을 barrier로 동시에 proxy(인스턴스 3대)로 보낸다. 출처는 15개로 나눈다. 성공·거절 수와 회차 뒤 카운터를 센다. jar마다 n = 5.
 - **A-crash칸(H1e).** 인스턴스 1대, 이 칸만 창 `PT60S`. 새 계정 X·Y에 오답 5건씩을 함께 보내고 50 ms 뒤 `kill -9`(첫 계수 전 25 ms에서 바꿈: 건조 실행에서 25 ms면 예약이 1~2건만 잡혔다). 유령 = 저장값 − 실제로 받은 401 수. 재기동 뒤 X는 올바른 비밀번호로 로그인한 뒤 카운터를, Y는 kill 뒤 62초를 기다려 오답 1회 뒤 카운터를 읽는다. jar마다 n = 3.
 - **S칸(H5).** 현행 jar와 이 브랜치 jar에서 꺼낸 실제 `ExpirySweepLockRepository`를 인스턴스 3개 몫(각자 Hikari 10)으로 만들어 같은 workflow에 50~75 ms마다 `runExclusive`를 부른다. sweep 본문은 같은 풀의 다른 연결로 `pg_sleep(0.02)`를 한다(행별 transaction 자리). 겹침(실행 중인데 또 시작), 건너뜀, 오류, 실행 사이 최장 공백, 끝난 뒤 서버의 advisory lock 수, `pg_stat_activity`에서 xid를 가진 idle in transaction 표본 수를 센다. pooler는 PgBouncer 1.24.1(`pool_mode=transaction`, `default_pool_size=5`, `max_prepared_statements=200`). 칸마다 30초 × 3회.
+- **A-cost·A-ok-retry칸(H1f, 첫 계수 전 추가).** `fix3`은 이 브랜치 코드(G1 fencing 포함), `fixb`는 `fix3`에 "예약이 거절되면 200 ms 쉬고 한 번 더 예약"만 더한 실험 jar다(저장소에 넣지 않는다). A-cost: 인스턴스 1대, 새 주체에 오답 90건을 동시에 보내는 동안 같은 인스턴스의 `/actuator/health`를 20 ms 간격으로 부르고, 묶음 첫 요청부터 마지막 응답 사이에 걸친 탐침의 p50·p99·최대와 검증 수(저장값)를 센다. 예열 1회 뒤 n = 5. A-ok는 위와 같고, A-ok-retry는 401을 받은 요청이 250 ms 뒤 한 번 다시 로그인한다. jar마다 n = 5. 같은 잠금 보유 안에서 PostgreSQL을 새로 만든 뒤 돈다.
 
 시간 예산: 계수 run 합계 90분. 넘으면 우선순위가 낮은 칸(J, R-mix의 V13 없는 칸)부터 범위 밖 결정으로 닫는다.
 
