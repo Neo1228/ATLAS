@@ -9,6 +9,7 @@ import com.atlas.account.repository.AccountRepository;
 import com.atlas.account.service.AccountEmailSender;
 import com.atlas.account.service.AccountNotificationService;
 import com.atlas.account.service.AccountService;
+import com.atlas.application.service.AccountNotificationWorker;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -66,7 +68,7 @@ class AccountNotificationOutboxIntegrationTest {
         registry.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.account.mfa.encryption-key", () -> Base64.getEncoder().encodeToString(new byte[32]));
-        registry.add("atlas.account.notification.outbox.enabled", () -> "true");
+        // outbox.enabled는 일부러 지정하지 않는다. 기본값(application.yml, true)이 outbox 경로임을 이 시험이 지킨다.
         registry.add("atlas.account.notification.worker.initial-delay", () -> "PT24H");
         registry.add("atlas.account.notification.lease-duration", () -> LEASE.toString());
         registry.add("atlas.account.notification.retry.initial-backoff", () -> "PT5S");
@@ -81,6 +83,13 @@ class AccountNotificationOutboxIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private AdjustableClock clock;
     @Autowired private RecordingEmailSender emails;
+    @Autowired private ObjectProvider<AccountNotificationWorker> worker;
+
+    @Test
+    void outboxAndItsWorkerAreOnWithoutAnyFlag() {
+        // 플래그를 지정하지 않은 문맥이다. 기본값이 꺼지면 요청은 바로 보내고 worker는 등록되지 않는다.
+        assertThat(worker.getIfAvailable()).as("기본 문맥에 outbox worker가 있어야 한다").isNotNull();
+    }
 
     @Test
     void committedSignupIsDeliveredAfterProcessDeathAndAfterWorkerDiesHoldingTheLease() {

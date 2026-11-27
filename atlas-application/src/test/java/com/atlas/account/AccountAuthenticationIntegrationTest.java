@@ -65,6 +65,8 @@ class AccountAuthenticationIntegrationTest {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
+        // 메일을 요청 스레드에서 바로 받아 보는 시험이다. 되돌림 경로(outbox 꺼짐)를 고정한다.
+        properties.add("atlas.account.notification.outbox.enabled", () -> "false");
     }
 
     @Autowired

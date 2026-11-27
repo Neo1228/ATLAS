@@ -75,7 +75,7 @@ public class AccountServiceImpl implements AccountService {
             AccountMfaSecretProtector mfaSecrets, Clock clock,
             AccountSuspensionRepository suspensions, AuthAttemptLimiter limiter,
             PlatformTransactionManager transactionManager, AccountNotificationRepository notifications,
-            @Value("${atlas.account.notification.outbox.enabled:false}") boolean notificationOutbox) {
+            @Value("${atlas.account.notification.outbox.enabled:true}") boolean notificationOutbox) {
         this.accounts = accounts;
         this.passwords = passwords;
         this.accessTokens = accessTokens;

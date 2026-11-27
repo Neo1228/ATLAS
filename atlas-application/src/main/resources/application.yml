@@ -124,12 +124,12 @@ atlas:
       purge-batch-size: ${ATLAS_AUTH_THROTTLE_PURGE_BATCH_SIZE:500}
       purge-initial-delay: ${ATLAS_AUTH_THROTTLE_PURGE_INITIAL_DELAY:PT5M}
       purge-interval: ${ATLAS_AUTH_THROTTLE_PURGE_INTERVAL:PT10M}
-  # 인증 메일 outbox(ADR-0102, EXP-113). 끄면(기본) 현행대로 커밋 뒤 요청 스레드에서 보내고 실패는 로그만 남는다.
-  # 켜면 요청 transaction에 전달 의도만 기록하고 전용 worker가 보낸다. 켜기 전 V9가 적용돼 있어야 한다.
+  # 인증 메일 outbox(ADR-0102, EXP-113). 기본으로 켜져 요청 transaction에 전달 의도만 기록하고 전용 worker가 보낸다.
+  # false는 되돌림 스위치다: 커밋 뒤 요청 스레드에서 (연결 반환 뒤) 보내고 실패는 로그만 남아 종료·SMTP 오류 때 메일을 잃는다.
   account:
     notification:
       outbox:
-        enabled: ${ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED:false}
+        enabled: ${ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED:true}
       # 메일 한 통의 최대 전송 시간(위 SMTP timeout 합)보다 길어야 한다. 짧으면 전송 중인 행을 다른 worker가 다시 잡는다.
       lease-duration: ${ATLAS_ACCOUNT_NOTIFICATION_LEASE_DURATION:PT2M}
       retry:

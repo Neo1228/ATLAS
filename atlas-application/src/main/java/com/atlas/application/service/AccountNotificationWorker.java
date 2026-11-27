@@ -21,11 +21,12 @@ import org.springframework.stereotype.Component;
  * 알림 outbox(V9)의 인증 메일을 보낸다(ADR-0102, EXP-113). 전용 scheduler 스레드 1개에서 돌아 SMTP가 멈춰도
  * HTTP 요청 스레드와 다른 sweep을 붙잡지 않는다.
  *
- * <p>{@code atlas.account.notification.outbox.enabled=true}일 때만 등록된다. 같은 키가 요청 경로를 outbox 기록으로
- * 바꾸므로, 켜고 끄는 일은 이 키 하나로 한다. 끄면 남은 대기 행은 그대로 있다가 다시 켤 때 보낸다.
+ * <p>{@code atlas.account.notification.outbox.enabled}가 기본값 {@code true}일 때 등록된다. 같은 키가 요청 경로를 outbox
+ * 기록으로 바꾸므로, 켜고 끄는 일은 이 키 하나로 한다. {@code false}는 되돌림 스위치다(커밋 뒤 요청 스레드에서 직접
+ * 전송). 끄면 남은 대기 행은 그대로 있다가 다시 켤 때 보낸다.
  */
 @Component
-@ConditionalOnProperty(name = "atlas.account.notification.outbox.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "atlas.account.notification.outbox.enabled", havingValue = "true", matchIfMissing = true)
 public class AccountNotificationWorker {
     private static final String OUTCOMES_METRIC = "atlas.account.notification.outcomes";
     private static final String DELAY_METRIC = "atlas.account.notification.delivery.delay";

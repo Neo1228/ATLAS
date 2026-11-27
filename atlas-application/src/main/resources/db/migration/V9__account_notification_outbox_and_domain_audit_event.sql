@@ -33,9 +33,11 @@ CREATE INDEX ix_account_notification_outbox_due
 
 -- (2) 통합 감사·도메인 이벤트 로그
 --
--- 감사 행이 테이블 8개에 흩어져 "운영자 X의 조치 전부"나 "대상 하나의 조치 이력"을 한 질의로 답할 수 없었다.
+-- 운영자 조치 감사 행이 테이블 6개에 흩어져 "운영자 X의 조치 전부"나 "대상 하나의 조치 이력"을 한 질의로 답할 수 없었다.
 -- 도입 근거는 사용자 지시(2026-11-27, "감사 도메인 이벤트 로그는 필요해 도입해도 괜찮아")다. 원장 분개(settlement_journal)는
--- 이미 V7로 추가 전용이고 돈의 정본이라 두 번째 사본을 만들지 않으려고 대상에서 뺐다. 원본 테이블의 AFTER INSERT 트리거가 같은 transaction에서 이 로그에 한 행을 쓴다. 쓰기 코드를 고치지 않으므로
+-- 이미 V7로 추가 전용이고 돈의 정본이라 두 번째 사본을 만들지 않으려고 대상에서 뺐다. 재고 조정·이동은 판매자 쓰기 경로라
+-- 트리거가 조정 한 건의 p99를 45%(c = 1), p50을 49%(c = 8) 늘려(EXP-113 H21) 대상에서 뺐다. 원본 테이블의 AFTER INSERT
+-- 트리거가 같은 transaction에서 이 로그에 한 행을 쓴다. 쓰기 코드를 고치지 않으므로
 -- 앞으로 생기는 쓰기 경로도 빠지지 않고, 원본 쓰기가 롤백되면 로그 행도 없다.
 -- payload는 원본 행의 jsonb에서 자유 문자열(reason)과 멱등 키·요청 해시를 뺀 것이다. 자세한 사유는 source_table과
 -- source_id로 원본에서 읽는다. 로그는 추가 전용이다(UPDATE·DELETE·TRUNCATE 거절).
@@ -91,13 +93,6 @@ BEGIN
             aggregate_type := 'paypal_balance_report_row';
             aggregate_id := (source->>'run_id') || ':' || (source->>'row_number');
             source_id := source->>'disposition_id'; event_type := 'BALANCE_REPORT_' || (source->>'disposition');
-        WHEN 'inventory_capacity_adjustment' THEN
-            aggregate_type := 'sku'; aggregate_id := (source->>'seller_id') || ':' || (source->>'sku_id');
-            source_id := (source->>'seller_id') || ':' || (source->>'idempotency_key');
-            event_type := 'INVENTORY_CAPACITY_ADJUSTED';
-        WHEN 'inventory_transfer' THEN
-            aggregate_type := 'sku'; aggregate_id := (source->>'seller_id') || ':' || (source->>'sku_id');
-            source_id := source->>'transfer_id'; event_type := 'INVENTORY_TRANSFERRED';
         ELSE
             RAISE EXCEPTION 'domain audit event source % is not mapped', TG_TABLE_NAME;
     END CASE;
@@ -135,8 +130,4 @@ CREATE TRIGGER seller_payout_profile_action_audit AFTER INSERT ON seller_payout_
 CREATE TRIGGER settlement_payout_operator_action_audit AFTER INSERT ON settlement_payout_operator_action
     FOR EACH ROW EXECUTE FUNCTION record_domain_audit_event();
 CREATE TRIGGER paypal_balance_report_disposition_audit AFTER INSERT ON paypal_balance_report_disposition
-    FOR EACH ROW EXECUTE FUNCTION record_domain_audit_event();
-CREATE TRIGGER inventory_capacity_adjustment_audit AFTER INSERT ON inventory_capacity_adjustment
-    FOR EACH ROW EXECUTE FUNCTION record_domain_audit_event();
-CREATE TRIGGER inventory_transfer_audit AFTER INSERT ON inventory_transfer
     FOR EACH ROW EXECUTE FUNCTION record_domain_audit_event();
