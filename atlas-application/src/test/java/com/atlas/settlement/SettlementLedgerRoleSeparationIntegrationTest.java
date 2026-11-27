@@ -115,7 +115,10 @@ class SettlementLedgerRoleSeparationIntegrationTest extends PayPalIntegrationTes
     }
 
     @Test
-    void runtimeRoleCannotMutateTheLedgerOrDisableItsGuards() {
+    void runtimeRoleCannotMutateTheLedgerOrDisableItsGuards() throws Exception {
+        // 이전에 잘못 부여된 권한도 스크립트를 다시 실행하면 회수된다(멱등 수렴).
+        owner().execute("GRANT UPDATE, DELETE, TRUNCATE ON settlement_entry TO " + RUNTIME_ROLE);
+        applyRoleScript();
         UUID sellerId = UUID.randomUUID();
         owner().update("INSERT INTO seller(seller_id) VALUES (?)", sellerId);
         settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), sellerId, 10_000));

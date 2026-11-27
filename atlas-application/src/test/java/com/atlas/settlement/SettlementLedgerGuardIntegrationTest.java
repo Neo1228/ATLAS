@@ -74,10 +74,14 @@ class SettlementLedgerGuardIntegrationTest extends PayPalIntegrationTestSupport 
                 "UPDATE settlement_journal SET fee_amount_won = fee_amount_won",
                 "DELETE FROM settlement_journal",
                 "TRUNCATE settlement_entry",
-                "TRUNCATE settlement_journal",
-                "TRUNCATE settlement_seller_allocation")) {
+                "TRUNCATE settlement_seller_allocation",
+                // CASCADE 는 자식 테이블의 TRUNCATE 트리거도 발동시킨다.
+                "TRUNCATE settlement_journal CASCADE")) {
             assertThatThrownBy(() -> jdbc.execute(statement)).as(statement).hasMessageContaining(APPEND_ONLY);
         }
+        // 외래 키가 걸린 settlement_journal 의 일반 TRUNCATE 는 PostgreSQL 이 트리거 전에 거절한다(두 번째 방어선).
+        assertThatThrownBy(() -> jdbc.execute("TRUNCATE settlement_journal"))
+                .hasMessageContaining("cannot truncate a table referenced in a foreign key constraint");
         assertThat(count("settlement_journal")).isEqualTo(journals);
         assertThat(count("settlement_entry")).isEqualTo(entries);
         assertThat(sellerId).isNotNull();
@@ -168,21 +172,23 @@ class SettlementLedgerGuardIntegrationTest extends PayPalIntegrationTestSupport 
         // break-glass: 같은 트랜잭션에서 비활성화 -> 정정 -> 재활성화. 다른 세션은 커밋 전에 비활성 상태를 볼 수 없다.
         transactions.executeWithoutResult(status -> {
             jdbc.execute("ALTER TABLE settlement_entry DISABLE TRIGGER settlement_entry_append_only");
+            jdbc.execute("ALTER TABLE settlement_journal DISABLE TRIGGER settlement_journal_append_only");
             jdbc.update("UPDATE settlement_entry SET amount_won = 7500 WHERE journal_id = ? AND account_code = 'SELLER_PAYABLE'",
                     journalId);
             jdbc.update("UPDATE settlement_entry SET amount_won = 1500 WHERE journal_id = ? AND account_code = 'PLATFORM_FEE'",
                     journalId);
             jdbc.update("UPDATE settlement_journal SET fee_amount_won = 1500, fee_rate_bps = 1500 WHERE journal_id = ?",
                     journalId);
+            jdbc.execute("ALTER TABLE settlement_journal ENABLE TRIGGER settlement_journal_append_only");
             jdbc.execute("ALTER TABLE settlement_entry ENABLE TRIGGER settlement_entry_append_only");
         });
         assertThat(jdbc.queryForObject(
                 "SELECT amount_won FROM settlement_entry WHERE journal_id = ? AND account_code = 'PLATFORM_FEE'",
                 Long.class, journalId)).isEqualTo(1500L);
         assertThat(jdbc.queryForObject("""
-                SELECT count(*) FROM pg_trigger WHERE tgrelid = 'settlement_entry'::regclass AND tgenabled = 'O'
-                    AND tgname = 'settlement_entry_append_only'
-                """, Long.class)).isEqualTo(1L);
+                SELECT count(*) FROM pg_trigger WHERE tgname IN ('settlement_entry_append_only',
+                    'settlement_journal_append_only') AND tgenabled = 'O'
+                """, Long.class)).isEqualTo(2L);
         assertThatThrownBy(() -> jdbc.update("UPDATE settlement_entry SET amount_won = 1 WHERE journal_id = ?", journalId))
                 .hasMessageContaining(APPEND_ONLY);
         // 정정이 두 항목과 분개 스냅샷을 함께 고쳤으므로 점검은 0건이다.
