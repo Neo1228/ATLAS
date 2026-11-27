@@ -21,26 +21,25 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 - SMTP host·자격 증명과 발신 주소는 [.env.example](../.env.example)의 환경 변수 참조. External `ATLAS_ACCOUNT_MAIL_PUBLIC_BASE_URL`은 HTTPS 필수; HTTP는 loopback 개발 주소만 허용. MFA 설정 전 `ATLAS_ACCOUNT_MFA_ENCRYPTION_KEY`에 `openssl rand -base64 32`로 생성한 32-byte key 설정; 평문 key·메일 token은 로그나 저장소에 기록 금지.
 - 사용자용 메일 화면 미구현. Client는 메일의 one-time token을 API 요청 body로 전달; token의 URL·access log 기록 금지.
 
-### 인증 메일 전달 (SMTP timeout, 알림 outbox 옵트인, ADR-0102)
+### 인증 메일 전달 (SMTP timeout, 알림 outbox 기본, ADR-0102)
 
 - SMTP 연결·읽기·쓰기 timeout은 기본 5초(`ATLAS_SMTP_CONNECT_TIMEOUT_MS`, `ATLAS_SMTP_READ_TIMEOUT_MS`, `ATLAS_SMTP_WRITE_TIMEOUT_MS`). 이전에는 설정이 없어 무한 대기였다. 0은 무한이므로 쓰지 않는다.
-- 기본(`ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=false`): 계정 transaction이 커밋된 뒤 요청 스레드에서 보내고, 실패는 WARN 한 줄(`Account email delivery failed`)로만 남는다. 커밋 직후 프로세스 종료나 SMTP 오류에서 메일이 사라지며 사용자가 다시 요청해야 한다(EXP-113 C1·C3).
-- 켜기(`ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=true`): 요청 transaction이 `account_notification_outbox`(V9)에 (계정, 목적) 행만 기록하고, 전용 scheduler 스레드(`atlas-account-notification-`)의 worker가 1초마다 행을 하나씩 청구해 토큰을 발급하고 보낸다. 토큰·토큰 해시·수신 주소는 outbox에 없다. 같은 목적의 재요청은 대기 행 하나로 합쳐진다.
+- 기본(`ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=true`, 설정하지 않아도 켜짐): 요청 transaction이 `account_notification_outbox`(V9)에 (계정, 목적) 행만 기록하고, 전용 scheduler 스레드(`atlas-account-notification-`)의 worker가 1초마다 행을 하나씩 청구해 토큰을 발급하고 보낸다. 토큰·토큰 해시·수신 주소는 outbox에 없다. 같은 목적의 재요청은 대기 행 하나로 합쳐진다. 커밋 직후 종료와 SMTP 오류 30초에서 잃은 메일 0통(EXP-113 C1 0/60, C3 60/60 전달). 비용은 전달 지연(정상 p95 약 2.4초)과, SMTP가 받은 뒤 완료 기록 전에 죽으면 같은 사용자에게 가는 중복 1통이다(앞 메일의 토큰은 무효).
   - 재시도: 실패마다 `ATLAS_ACCOUNT_NOTIFICATION_INITIAL_BACKOFF`(5초)에서 두 배씩, `ATLAS_ACCOUNT_NOTIFICATION_MAX_BACKOFF`(5분)에서 멈춘다. `ATLAS_ACCOUNT_NOTIFICATION_MAX_ATTEMPTS`(10)회 실패하면 `status='FAILED'`로 남고 사용자가 다시 요청하면 대기로 돌아간다.
   - 임대: `ATLAS_ACCOUNT_NOTIFICATION_LEASE_DURATION`(2분)은 메일 한 통의 최대 전송 시간(SMTP timeout 합)보다 길어야 한다. worker가 전송 중 죽으면 임대가 끝난 뒤 다른 worker가 새 토큰으로 다시 보낸다. SMTP가 받은 뒤 완료 기록 전에 죽으면 같은 사용자에게 두 통이 가고 앞 메일의 토큰은 무효다(EXP-113 C5).
   - 지표: `atlas.account.notification.outcomes{outcome=sent|retry_scheduled|failed|skipped|stale_claim|poll_failure}`, `atlas.account.notification.delivery.delay`(요청부터 전송까지), `atlas.account.notification.pending`, `atlas.account.notification.failed`, `atlas.account.notification.oldest_pending_age`(초). `failed`가 0보다 크거나 `oldest_pending_age`가 backoff 상한(5분)을 넘으면 SMTP 장애를 의심한다.
   - FAILED 행 확인: `SELECT purpose, attempts, last_failure, requested_at FROM account_notification_outbox WHERE status = 'FAILED' ORDER BY requested_at;` 다시 보내려면 `UPDATE account_notification_outbox SET status = 'PENDING', attempts = 0, available_at = now() WHERE status = 'FAILED';`(SMTP 복구 뒤).
-- 되돌리기: 플래그를 `false`로 바꾸고 재시작하면 즉시 현행 경로로 돌아간다. 남은 대기 행은 보내지 않고 남는다(다시 켜면 보낸다). 계속 끌 것이면 사용자에게 재요청을 안내하고 `DELETE FROM account_notification_outbox;`로 비운다. 테이블까지 없애려면 플래그를 끈 이미지에서 `DROP TABLE account_notification_outbox; DELETE FROM flyway_schema_history WHERE version = '9';`를 소유 계정으로 실행한다(V8 이력은 건드리지 않는다).
-- 기본값 전환 조건: 운영에서 `Account email delivery failed` WARN이 관측되거나 무중단 배포·자동 재시작으로 프로세스 종료가 잦아지면 켠다. 켠 뒤에는 위 지표를 경보에 건다.
+- 되돌리기(되돌림 스위치 `ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=false`): 재시작하면 커밋 뒤 요청 스레드에서 DB 연결을 돌려준 다음 보내는 경로로 돌아간다(SMTP timeout 5초는 그대로). 이 경로는 실패를 WARN 한 줄(`Account email delivery failed`)로만 남기고 커밋 직후 종료·SMTP 오류에서 메일을 잃는다(EXP-113 A1b C1·C3). 남은 대기 행은 보내지 않고 남는다(다시 켜면 보낸다). 계속 끌 것이면 사용자에게 재요청을 안내하고 `DELETE FROM account_notification_outbox;`로 비운다. 테이블은 남겨 둔다. V9에는 감사 로그도 들어 있으므로 `flyway_schema_history`의 V9 행을 지우면 다음 기동에서 V9가 다시 실행돼 실패한다.
+- 끄는 조건: worker가 SMTP 성공 뒤 완료 기록 전에 반복해 죽어 중복 메일이 문의로 이어지거나, 인증 메일 지연(`atlas.account.notification.delivery.delay` p95)이 사용자 흐름의 한도를 넘을 때. 끄기 전에 원인(worker 재시작 반복, SMTP 처리량)을 먼저 본다.
 
 ## 통합 감사·도메인 이벤트 로그 (V9 `domain_audit_event`, ADR-0102)
 
-- 항상 켜져 있다. 운영자 조치 6개 테이블(`account_suspension_action`, `payment_recovery_operator_action`, `paypal_webhook_retry_operator_audit`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `paypal_balance_report_disposition`), 재고 감사 2개(`inventory_capacity_adjustment`, `inventory_transfer`)에 행이 들어가면 같은 transaction에서 로그에 한 행이 생긴다. 로그는 UPDATE·DELETE·TRUNCATE를 거절한다.
-- 열: `occurred_at`(원본 `created_at`), `source_table`·`source_id`(원본 행), `event_type`(예: `ACCOUNT_SUSPEND`, `PAYOUT_<action>`, `INVENTORY_TRANSFERRED`), `aggregate_type`·`aggregate_id`(예: `payout`/지급 ID, `order`/주문 ID), `actor`(원본에 없으면 NULL), `payload`(원본 행에서 `reason`·`idempotency_key`·`request_facts_sha256`를 뺀 jsonb), `tx_id`.
+- 항상 켜져 있다. 운영자 조치 6개 테이블(`account_suspension_action`, `payment_recovery_operator_action`, `paypal_webhook_retry_operator_audit`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `paypal_balance_report_disposition`)에 행이 들어가면 같은 transaction에서 로그에 한 행이 생긴다. 로그는 UPDATE·DELETE·TRUNCATE를 거절한다. 재고 조정·이동(`inventory_capacity_adjustment`, `inventory_transfer`)은 판매자 쓰기 경로라 대상이 아니다(EXP-113 H21: 트리거가 조정 쓰기 p99를 45% 늘림). 재고 이력은 원본 테이블에서 읽는다.
+- 열: `occurred_at`(원본 `created_at`), `source_table`·`source_id`(원본 행), `event_type`(예: `ACCOUNT_SUSPEND`, `PAYOUT_<action>`, `BALANCE_REPORT_<disposition>`), `aggregate_type`·`aggregate_id`(예: `payout`/지급 ID, `account`/계정 ID), `actor`(원본에 없으면 NULL), `payload`(원본 행에서 `reason`·`idempotency_key`·`request_facts_sha256`를 뺀 jsonb), `tx_id`.
 - 운영자별 조치: `SELECT occurred_at, event_type, aggregate_type, aggregate_id FROM domain_audit_event WHERE actor = '<account id>' ORDER BY occurred_at DESC LIMIT 100;`
 - 대상별 이력: `SELECT occurred_at, event_type, actor FROM domain_audit_event WHERE aggregate_type = 'payout' AND aggregate_id = '<payout id>' ORDER BY occurred_at;` 사유 원문은 `source_table`·`source_id`로 원본에서 읽는다.
 - 소비자를 붙일 때는 ADR-0067과 같이 `tx_id < pg_snapshot_xmin(pg_current_snapshot())` 범위까지만 읽어 커밋 순서 역전을 피한다.
-- 새 감사 테이블을 만들면 `record_domain_audit_event()`의 `CASE`에 매핑을 더하고 `AFTER INSERT` 트리거를 건다. 매핑이 없으면 그 테이블의 INSERT가 실패한다(누락을 조용히 넘기지 않기 위함).
+- 새 감사 테이블을 만들면 `record_domain_audit_event()`의 `CASE`에 매핑을 더하고 `AFTER INSERT` 트리거를 건다. 매핑이 없으면 그 테이블의 INSERT가 실패한다(누락을 조용히 넘기지 않기 위함). 운영자 조치가 아닌 잦은 쓰기 경로(판매자·구매자 요청마다 쓰는 테이블)는 넣기 전에 EXP-113 H21과 같은 방법으로 쓰기 비용을 잰다.
 - 되돌리기: 트리거만 끄려면 `DROP TRIGGER <table>_audit ON <table>;`, 전부 없애려면 이어서 `DROP TABLE domain_audit_event; DROP FUNCTION record_domain_audit_event(); DROP FUNCTION reject_domain_audit_event_mutation();`(소유 계정).
 
 ## PayPal Balance report 대사
