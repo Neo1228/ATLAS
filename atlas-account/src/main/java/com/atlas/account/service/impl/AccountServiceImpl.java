@@ -55,6 +55,7 @@ public class AccountServiceImpl implements AccountService {
     private static final Duration MFA_CHALLENGE_LIFETIME = Duration.ofMinutes(5);
     private static final Logger LOGGER = LoggerFactory.getLogger(AccountServiceImpl.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final Runnable NO_DELIVERY = () -> { };
     private final AccountRepository accounts;
     private final PasswordEncoder passwords;
     private final AccessTokenService accessTokens;
@@ -102,14 +103,15 @@ public class AccountServiceImpl implements AccountService {
         // 독립 transaction이라 바깥 transaction이 연결을 쥔 채 두 번째 연결을 요구하면 풀이 고갈된다.
         if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, clock.instant())) throw invalidRequest();
         String passwordHash = passwords.encode(request.password());
-        return transactions.execute(status -> {
+        Runnable delivery = transactions.execute(status -> {
             Optional<UUID> createdAccount = accounts.createAccount(email, passwordHash);
-            if (createdAccount.isEmpty()) return new AccountResponse.Action(true);
+            if (createdAccount.isEmpty()) return NO_DELIVERY;
             UUID accountId = createdAccount.get();
             accounts.createBuyer(accountId);
-            requestActionEmail(accountId, email, AccountActionTokenPurpose.EMAIL_VERIFICATION);
-            return new AccountResponse.Action(true);
+            return requestActionEmail(accountId, email, AccountActionTokenPurpose.EMAIL_VERIFICATION);
         });
+        sendAfterCommit(delivery);
+        return new AccountResponse.Action(true);
     }
 
     @Override
@@ -117,11 +119,11 @@ public class AccountServiceImpl implements AccountService {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
         if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, now)) return new AccountResponse.Action(true);
-        return transactions.execute(status -> {
-            accounts.findVerifiedAccountIdByEmail(email).ifPresent(accountId ->
-                    requestActionEmail(accountId, email, AccountActionTokenPurpose.PASSWORD_RESET));
-            return new AccountResponse.Action(true);
-        });
+        Runnable delivery = transactions.execute(status -> accounts.findVerifiedAccountIdByEmail(email)
+                .map(accountId -> requestActionEmail(accountId, email, AccountActionTokenPurpose.PASSWORD_RESET))
+                .orElse(NO_DELIVERY));
+        sendAfterCommit(delivery);
+        return new AccountResponse.Action(true);
     }
 
     @Override
@@ -129,11 +131,11 @@ public class AccountServiceImpl implements AccountService {
         String email = normalizeEmail(requestedEmail);
         Instant now = clock.instant();
         if (!limiter.tryAcquire(AuthAttemptScope.EMAIL, email, origin, now)) return new AccountResponse.Action(true);
-        return transactions.execute(status -> {
-            accounts.findUnverifiedAccountIdByEmail(email).ifPresent(accountId ->
-                    requestActionEmail(accountId, email, AccountActionTokenPurpose.EMAIL_VERIFICATION));
-            return new AccountResponse.Action(true);
-        });
+        Runnable delivery = transactions.execute(status -> accounts.findUnverifiedAccountIdByEmail(email)
+                .map(accountId -> requestActionEmail(accountId, email, AccountActionTokenPurpose.EMAIL_VERIFICATION))
+                .orElse(NO_DELIVERY));
+        sendAfterCommit(delivery);
+        return new AccountResponse.Action(true);
     }
 
     @Transactional
@@ -541,15 +543,16 @@ public class AccountServiceImpl implements AccountService {
 
     /**
      * 인증 메일 전달을 건다. outbox를 켜면 같은 transaction에 전달 의도만 기록하고 토큰은 worker가 전송 직전에
-     * 발급한다(토큰을 outbox에 두지 않는다, ADR-0102). 끄면 현행대로 토큰을 지금 발급하고 커밋 뒤 요청 스레드에서 보낸다.
+     * 발급한다(토큰을 outbox에 두지 않는다, ADR-0102). 끄면 현행대로 토큰을 지금 발급하고, 반환한 전송을 호출자가
+     * transaction이 끝난 뒤 요청 스레드에서 실행한다.
      */
-    private void requestActionEmail(UUID accountId, String email, AccountActionTokenPurpose purpose) {
+    private Runnable requestActionEmail(UUID accountId, String email, AccountActionTokenPurpose purpose) {
         if (notificationOutbox) {
             notifications.enqueue(accountId, purpose, clock.instant());
-            return;
+            return NO_DELIVERY;
         }
         String token = actionTokens.issue(accountId, purpose);
-        sendAfterCommit(() -> ActionTokenIssuer.send(emailSender, purpose, email, token));
+        return () -> ActionTokenIssuer.send(emailSender, purpose, email, token);
     }
 
     private AccountActionToken requireActionToken(String presentedToken,
@@ -582,7 +585,13 @@ public class AccountServiceImpl implements AccountService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
     }
 
+    /**
+     * {@code TransactionTemplate.execute}가 커밋하고 DB 연결을 돌려준 뒤에 보낸다. {@code afterCommit} 콜백은 연결을
+     * 쥔 채 실행되므로 SMTP가 멈추면 요청마다 연결 하나가 묶여 Hikari 풀이 고갈되고 무관한 API까지 503이 됐다
+     * (EXP-113 C2). 바깥 transaction에 합류한 호출이면 그 커밋 뒤로 미룬다(현재 호출자는 컨트롤러뿐이라 해당 없음).
+     */
     private static void sendAfterCommit(Runnable delivery) {
+        if (delivery == NO_DELIVERY) return;
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             deliver(delivery);
             return;

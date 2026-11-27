@@ -21,6 +21,18 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 - SMTP host·자격 증명과 발신 주소는 [.env.example](../.env.example)의 환경 변수 참조. External `ATLAS_ACCOUNT_MAIL_PUBLIC_BASE_URL`은 HTTPS 필수; HTTP는 loopback 개발 주소만 허용. MFA 설정 전 `ATLAS_ACCOUNT_MFA_ENCRYPTION_KEY`에 `openssl rand -base64 32`로 생성한 32-byte key 설정; 평문 key·메일 token은 로그나 저장소에 기록 금지.
 - 사용자용 메일 화면 미구현. Client는 메일의 one-time token을 API 요청 body로 전달; token의 URL·access log 기록 금지.
 
+### 인증 메일 전달 (SMTP timeout, 알림 outbox 옵트인, ADR-0102)
+
+- SMTP 연결·읽기·쓰기 timeout은 기본 5초(`ATLAS_SMTP_CONNECT_TIMEOUT_MS`, `ATLAS_SMTP_READ_TIMEOUT_MS`, `ATLAS_SMTP_WRITE_TIMEOUT_MS`). 이전에는 설정이 없어 무한 대기였다. 0은 무한이므로 쓰지 않는다.
+- 기본(`ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=false`): 계정 transaction이 커밋된 뒤 요청 스레드에서 보내고, 실패는 WARN 한 줄(`Account email delivery failed`)로만 남는다. 커밋 직후 프로세스 종료나 SMTP 오류에서 메일이 사라지며 사용자가 다시 요청해야 한다(EXP-113 C1·C3).
+- 켜기(`ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=true`): 요청 transaction이 `account_notification_outbox`(V9)에 (계정, 목적) 행만 기록하고, 전용 scheduler 스레드(`atlas-account-notification-`)의 worker가 1초마다 행을 하나씩 청구해 토큰을 발급하고 보낸다. 토큰·토큰 해시·수신 주소는 outbox에 없다. 같은 목적의 재요청은 대기 행 하나로 합쳐진다.
+  - 재시도: 실패마다 `ATLAS_ACCOUNT_NOTIFICATION_INITIAL_BACKOFF`(5초)에서 두 배씩, `ATLAS_ACCOUNT_NOTIFICATION_MAX_BACKOFF`(5분)에서 멈춘다. `ATLAS_ACCOUNT_NOTIFICATION_MAX_ATTEMPTS`(10)회 실패하면 `status='FAILED'`로 남고 사용자가 다시 요청하면 대기로 돌아간다.
+  - 임대: `ATLAS_ACCOUNT_NOTIFICATION_LEASE_DURATION`(2분)은 메일 한 통의 최대 전송 시간(SMTP timeout 합)보다 길어야 한다. worker가 전송 중 죽으면 임대가 끝난 뒤 다른 worker가 새 토큰으로 다시 보낸다. SMTP가 받은 뒤 완료 기록 전에 죽으면 같은 사용자에게 두 통이 가고 앞 메일의 토큰은 무효다(EXP-113 C5).
+  - 지표: `atlas.account.notification.outcomes{outcome=sent|retry_scheduled|failed|skipped|stale_claim|poll_failure}`, `atlas.account.notification.delivery.delay`(요청부터 전송까지), `atlas.account.notification.pending`, `atlas.account.notification.failed`, `atlas.account.notification.oldest_pending_age`(초). `failed`가 0보다 크거나 `oldest_pending_age`가 backoff 상한(5분)을 넘으면 SMTP 장애를 의심한다.
+  - FAILED 행 확인: `SELECT purpose, attempts, last_failure, requested_at FROM account_notification_outbox WHERE status = 'FAILED' ORDER BY requested_at;` 다시 보내려면 `UPDATE account_notification_outbox SET status = 'PENDING', attempts = 0, available_at = now() WHERE status = 'FAILED';`(SMTP 복구 뒤).
+- 되돌리기: 플래그를 `false`로 바꾸고 재시작하면 즉시 현행 경로로 돌아간다. 남은 대기 행은 보내지 않고 남는다(다시 켜면 보낸다). 계속 끌 것이면 사용자에게 재요청을 안내하고 `DELETE FROM account_notification_outbox;`로 비운다. 테이블까지 없애려면 플래그를 끈 이미지에서 `DROP TABLE account_notification_outbox; DELETE FROM flyway_schema_history WHERE version = '9';`를 소유 계정으로 실행한다(V8 이력은 건드리지 않는다).
+- 기본값 전환 조건: 운영에서 `Account email delivery failed` WARN이 관측되거나 무중단 배포·자동 재시작으로 프로세스 종료가 잦아지면 켠다. 켠 뒤에는 위 지표를 경보에 건다.
+
 ## PayPal Balance report 대사
 
 - PayPal merchant portal에서 내려받은 Balance Reconciliation report CSV의 단일 파일 업로드 지원. 공식 [Balance report 문서](https://developer.paypal.com/reports/balance)와 [공개 CSV sample](https://www.paypalobjects.com/ppdevdocs/Sample-Balance%20Report-CCOP.csv) 기준의 header-driven parsing.
