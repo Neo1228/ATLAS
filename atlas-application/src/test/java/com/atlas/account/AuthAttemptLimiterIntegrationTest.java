@@ -14,7 +14,14 @@ import com.atlas.account.service.AuthAttemptLimiter;
 import com.atlas.account.service.impl.AuthAttemptLimiterImpl;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -99,6 +106,42 @@ class AuthAttemptLimiterIntegrationTest {
         assertThat(failures("LOGIN", email)).isZero();
         // 초기화 후에는 다시 정상 로그인이 가능하다.
         assertThat(accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
+    }
+
+    @Test
+    void correctPasswordsVerifiedAlongsideAWrongOneDoNotLockTheSubject() throws Exception {
+        // 예약은 결과를 모르는 채 검증 전에 잡으므로 올바른 비밀번호도 검증 중에는 한 칸을 쓴다. 성공하면 ADR-0048
+        // 결정 6대로 카운터를 지워 그 칸을 돌려줘야 한다. 돌려주지 않으면 올바른 로그인만으로 주체가 잠긴다.
+        String email = verifiedAccount();
+        List<String> passwords = List.of(PASSWORD, PASSWORD, "wrong-password");
+        CyclicBarrier start = new CyclicBarrier(passwords.size());
+        ExecutorService attempts = Executors.newFixedThreadPool(passwords.size());
+        List<Future<Boolean>> results = new ArrayList<>();
+        try {
+            for (String password : passwords) {
+                results.add(attempts.submit(() -> {
+                    start.await(10, TimeUnit.SECONDS);
+                    try {
+                        accountService.login(new AccountRequest.Login(email, password), ORIGIN);
+                        return true;
+                    } catch (AccountException rejected) {
+                        return false;
+                    }
+                }));
+            }
+            List<Boolean> loggedIn = new ArrayList<>();
+            for (Future<Boolean> result : results) {
+                loggedIn.add(result.get(30, TimeUnit.SECONDS));
+            }
+            assertThat(loggedIn).containsExactly(true, true, false);
+        } finally {
+            attempts.shutdownNow();
+        }
+
+        // 남을 수 있는 값은 마지막 성공보다 늦게 예약한 오답 1건뿐이다. 올바른 시도의 예약이 남으면 3이 되어 잠긴다.
+        assertThat(failures("LOGIN", email)).isLessThanOrEqualTo(1);
+        assertThat(accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
+        assertThat(failures("LOGIN", email)).isZero();
     }
 
     @Test
