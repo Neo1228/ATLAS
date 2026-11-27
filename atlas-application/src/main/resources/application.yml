@@ -42,6 +42,9 @@ spring:
     # 전에 끊어, 잠금을 쥔 쪽이 멈췄을 때 커넥션 풀(10개)이 30초 동안 대기자로 차는 것을 막는다.
     # 값 근거: 한 Seller-SKU에 join 30 스레드를 몰았을 때 지연 최대 1.9초(EXP-090, 공유 호스트)의 약 2.6배.
     # 끊기면 트랜잭션이 롤백되고 503 + Retry-After로 알리며, 클라이언트가 같은 Idempotency-Key로 재시도한다(ADR-0083).
+    # 이 시간 제한은 연결 시작 매개변수(options)로 건다. PgBouncer transaction mode 뒤에서는 options가 거절되고
+    # track_extra_parameters로도 적용되지 않았으므로(EXP-118), pooler를 넣을 때는 options를 빼고 같은 값을 DB 역할
+    # 설정(ALTER ROLE ... IN DATABASE ... SET)으로 옮긴다(sizing-envelope 3.4).
     url: ${ATLAS_DB_URL:jdbc:postgresql://localhost:5432/atlas?options=-c%20statement_timeout%3D30000%20-c%20idle_in_transaction_session_timeout%3D60000%20-c%20lock_timeout%3D5000}
     username: ${ATLAS_DB_USER:atlas}
     password: ${ATLAS_DB_PASSWORD:atlas-local-only}
@@ -113,7 +116,8 @@ atlas:
       issuer: ${ATLAS_JWT_ISSUER:http://127.0.0.1:8080}
       audience: ${ATLAS_JWT_AUDIENCE:atlas-api}
   checkout-window: PT10M
-  # 인증 시도 제한. 실패가 한도를 넘으면 비밀번호 검증(PBKDF2, 수십 ms CPU) 전에 거절한다.
+  # 인증 시도 제한. 창 안에서 검증까지 간 시도(실패와 검증 중인 예약)가 한도에 닿으면 비밀번호 검증(PBKDF2, 수십 ms CPU)
+  # 전에 거절한다. 예약은 검증 전에 한 문장으로 잡는다(EXP-118, ADR-0107).
   auth:
     throttle:
       window: ${ATLAS_AUTH_THROTTLE_WINDOW:PT15M}
