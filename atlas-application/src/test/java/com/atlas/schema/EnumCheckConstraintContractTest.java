@@ -3,6 +3,7 @@ package com.atlas.schema;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.account.model.AccountActionTokenPurpose;
+import com.atlas.account.model.AccountNotificationStatus;
 import com.atlas.account.model.AccountSuspensionActionType;
 import com.atlas.account.model.AuthAttemptScope;
 import com.atlas.admission.model.CampaignStatus;
@@ -111,6 +112,8 @@ class EnumCheckConstraintContractTest {
             Map.entry("paypal_balance_report_row.status", PayPalBalanceReportRowStatus.class),
             Map.entry("paypal_balance_report_disposition.disposition", PayPalBalanceReportDispositionType.class),
             Map.entry("account_action_token.purpose", AccountActionTokenPurpose.class),
+            Map.entry("account_notification_outbox.purpose", AccountActionTokenPurpose.class),
+            Map.entry("account_notification_outbox.status", AccountNotificationStatus.class),
             Map.entry("account_suspension_action.action", AccountSuspensionActionType.class),
             Map.entry("auth_origin_bucket.scope", AuthAttemptScope.OriginBucket.class),
             Map.entry("auth_subject_bucket.scope", AuthAttemptScope.SubjectBucket.class));

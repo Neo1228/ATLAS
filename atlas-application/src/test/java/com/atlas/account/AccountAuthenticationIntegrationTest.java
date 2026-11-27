@@ -44,6 +44,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -64,6 +65,8 @@ class AccountAuthenticationIntegrationTest {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
+        // 메일을 요청 스레드에서 바로 받아 보는 시험이다. 되돌림 경로(outbox 꺼짐)를 고정한다.
+        properties.add("atlas.account.notification.outbox.enabled", () -> "false");
     }
 
     @Autowired
@@ -510,6 +513,22 @@ class AccountAuthenticationIntegrationTest {
             throw new IllegalStateException("Login test interrupted", exception);
         }
     }
+
+    /**
+     * 현행 경로의 가입 메일은 transaction이 DB 연결을 돌려준 뒤에 보낸다. afterCommit 콜백에서 보내면 연결을 쥔 채
+     * SMTP를 기다려, SMTP가 멈췄을 때 요청 10건으로 Hikari 풀이 고갈되고 무관한 API까지 503이 됐다(EXP-113 C2).
+     */
+    @Test
+    void signupMailIsSentAfterTheDatabaseConnectionIsReleased() {
+        String email = "release-" + UUID.randomUUID() + "@example.com";
+        testEmailSender.verificationSentWithBoundResources.clear();
+
+        accountService.registerBuyer(new AccountRequest.RegisterBuyer(email, "long-enough-password-123"),
+                "198.51.100.91");
+
+        assertThat(testEmailSender.verificationSentWithBoundResources).containsExactly(false);
+    }
+
     @TestConfiguration(proxyBeanMethods = false)
     static class TestEmailConfiguration {
         @Bean
@@ -521,9 +540,13 @@ class AccountAuthenticationIntegrationTest {
 
     static class TestAccountEmailSender implements AccountEmailSender {
         private final ConcurrentLinkedQueue<String> passwordResetTokens = new ConcurrentLinkedQueue<>();
+        private final ConcurrentLinkedQueue<Boolean> verificationSentWithBoundResources = new ConcurrentLinkedQueue<>();
 
         @Override
-        public void sendVerification(String email, String token) { }
+        public void sendVerification(String email, String token) {
+            // 전송 시점에 이 스레드에 묶인 transaction 자원(JDBC 연결 등)이 있는지 기록한다.
+            verificationSentWithBoundResources.add(!TransactionSynchronizationManager.getResourceMap().isEmpty());
+        }
 
         @Override
         public void sendPasswordReset(String email, String token) {

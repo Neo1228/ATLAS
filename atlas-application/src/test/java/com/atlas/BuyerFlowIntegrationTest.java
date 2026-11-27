@@ -115,6 +115,8 @@ class BuyerFlowIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.account.mfa.encryption-key",
                 () -> Base64.getEncoder().encodeToString(new byte[32]));
+        // 가입 직후 받은 토큰을 같은 스레드에서 읽는다. 되돌림 경로(outbox 꺼짐)를 고정한다.
+        properties.add("atlas.account.notification.outbox.enabled", () -> "false");
     }
 
     @Autowired private OrderServiceImpl orderServiceImpl;

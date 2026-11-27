@@ -88,6 +88,8 @@ class AccountCredentialLifecycleIntegrationTest {
         registry.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.account.mfa.encryption-key", () -> Base64.getEncoder().encodeToString(new byte[32]));
+        // 요청 직후 받은 토큰을 같은 스레드에서 읽는다. 되돌림 경로(outbox 꺼짐)를 고정한다.
+        registry.add("atlas.account.notification.outbox.enabled", () -> "false");
     }
 
     @Autowired private AccountService accountService;
