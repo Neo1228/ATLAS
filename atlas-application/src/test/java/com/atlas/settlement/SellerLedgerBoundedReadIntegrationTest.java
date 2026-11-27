@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import com.atlas.settlement.dto.request.SettlementPostingRequest;
+import com.atlas.settlement.repository.SettlementBalanceCheckpointRepository;
 import com.atlas.settlement.repository.SettlementJournalRepository;
 import com.atlas.settlement.service.SettlementBalanceCheckpointService;
 import com.atlas.settlement.service.SettlementService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -17,6 +19,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
@@ -47,6 +53,13 @@ import tools.jackson.databind.ObjectMapper;
 @DirtiesContext
 class SellerLedgerBoundedReadIntegrationTest extends PayPalIntegrationTestSupport {
     private static final int HISTORY = 400;
+    private static final int STATEMENT_HISTORY = 50;
+    private static final int OLD_PLATFORM_CHECKOUTS = 50_000;
+    private static final int PERIOD_PLATFORM_CHECKOUTS = 20_000;
+    private static final int SCATTER_FILLER = 99;
+    private static final String FOLD_ROLE = "ledger_fold_probe";
+    private static final String WRITER_ROLE = "ledger_writer_probe";
+    private static final String PROBE_PASSWORD = "probe";
 
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
@@ -65,6 +78,8 @@ class SellerLedgerBoundedReadIntegrationTest extends PayPalIntegrationTestSuppor
         registry.add("atlas.payment.recovery.worker.enabled", () -> "false");
         registry.add("atlas.settlement.fee-rate-bps", () -> "300");
         registry.add("atlas.settlement.reserve-rate-bps", () -> "500");
+        // 마감은 시험이 직접 돌린다(worker 가 같은 커서를 잡으면 시험의 마감 순서가 흔들린다).
+        registry.add("atlas.settlement.balance-checkpoint.enabled", () -> "false");
     }
 
     @Autowired private SettlementService settlement;
@@ -152,6 +167,32 @@ class SellerLedgerBoundedReadIntegrationTest extends PayPalIntegrationTestSuppor
     }
 
     @Test
+    void statementRowsDoNotReadTheSellersScatteredCheckoutHistory() {
+        UUID seller = seller();
+        UUID other = seller();
+        checkout(seller, other);
+        Instant to = Instant.now().plus(Duration.ofDays(1));
+        Instant from = to.minus(Duration.ofDays(31));
+        // 변이 M3(checkout 배분을 분개 날짜로 자름)는 판매자 배분이 운영처럼 표 곳곳에 흩어져 있어야 드러난다. 한꺼번에
+        // 넣은 이력은 몇 페이지에 몰려 판매자 배분 전체를 읽어도 싸다. 그래서 판매자 checkout 배분 한 건마다 다른 판매자
+        // 배분 99건을 사이에 넣고(EXP-115 100k 판매자: 배분 18,000건이 흩어짐), 기간 안 플랫폼 checkout 을 쌓아 분개 날짜
+        // 경로도 싸지 않게 한다. 기간 밖 플랫폼 checkout 은 기간 비율을 운영 모양(작은 몫)에 가깝게 해 올바른 질의의
+        // 계획이 추정 오차로 흔들리지 않게 한다.
+        seedPlatformCheckouts(OLD_PLATFORM_CHECKOUTS, Duration.ofDays(31), Duration.ofDays(730));
+        seedPlatformCheckouts(PERIOD_PLATFORM_CHECKOUTS, Duration.ZERO, Duration.ofDays(30));
+
+        seedScatteredCheckoutHistory(seller, STATEMENT_HISTORY);
+        long rowsSmall = buffers(repo -> repo.sellerStatementRows(seller, from, to, null, null, 21));
+        seedScatteredCheckoutHistory(seller, 3 * STATEMENT_HISTORY);
+        long rowsLarge = buffers(repo -> repo.sellerStatementRows(seller, from, to, null, null, 21));
+
+        System.out.println("BOUNDED-READ scattered rows " + rowsSmall + " -> " + rowsLarge + " (checkout history "
+                + STATEMENT_HISTORY + " -> " + 4 * STATEMENT_HISTORY + ", platform checkouts " + OLD_PLATFORM_CHECKOUTS
+                + " old / " + PERIOD_PLATFORM_CHECKOUTS + " in period)");
+        assertThat(rowsLarge).isLessThanOrEqualTo(rowsSmall * 3 / 2 + 20);
+    }
+
+    @Test
     void sellerBalanceInsideTheSellerLockDoesNotGrowWithHistoryOnceFolded() {
         UUID small = seller();
         UUID large = seller();
@@ -173,32 +214,121 @@ class SellerLedgerBoundedReadIntegrationTest extends PayPalIntegrationTestSuppor
     }
 
     @Test
-    void checkpointPlusTailEqualsTheLedgerAcrossFoldsAndALateCommittingWriter() throws Exception {
+    void foldNeverPassesAnUncommittedEntryOfAWriterUnderAnotherRole() throws Exception {
+        probeRoles();
         UUID seller = seller();
         settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), seller, 30_000));
         foldAll();
         assertThat(balance(seller)).isEqualTo(ledgerSum(seller));
 
-        // 다른 연결이 항목을 넣고 커밋하지 않은 채로 마감이 돈다. 그 항목은 커서 아래로 들어가면 안 된다.
-        try (Connection writer = dataSource.getConnection()) {
+        // 다른 DB 역할로 로그인한 쓰기가 항목을 넣고 커밋하지 않은 채로, 앱 역할이 아닌 마감 역할(pg_stat_activity 에서
+        // 그 세션의 xact_start 를 볼 수 없음)로 마감이 여러 번 돈다. 그 항목은 커서 아래로 들어가면 안 된다.
+        try (Connection writer = DriverManager.getConnection(POSTGRES.getJdbcUrl(), WRITER_ROLE, PROBE_PASSWORD)) {
             writer.setAutoCommit(false);
+            UUID uncommitted;
             try (var statement = writer.prepareStatement("""
                     WITH j AS (
                         INSERT INTO settlement_journal (source_order_id, source_attempt_id, seller_id, currency,
                             gross_amount_won, recorded_at)
-                        VALUES (gen_random_uuid(), gen_random_uuid(), ?, 'KRW', 7000, now()) RETURNING journal_id)
-                    INSERT INTO settlement_entry (journal_id, seller_id, account_code, entry_side, amount_won, recorded_at)
-                    SELECT journal_id, ?, x.account_code, x.side, 7000, now() FROM j
-                    CROSS JOIN (VALUES ('PSP_CLEARING', 'DEBIT'), ('SELLER_PAYABLE', 'CREDIT')) x(account_code, side)
+                        VALUES (gen_random_uuid(), gen_random_uuid(), ?, 'KRW', 7000, now()) RETURNING journal_id),
+                    e AS (
+                        INSERT INTO settlement_entry (journal_id, seller_id, account_code, entry_side, amount_won,
+                            recorded_at)
+                        SELECT journal_id, ?, x.account_code, x.side, 7000, now() FROM j
+                        CROSS JOIN (VALUES ('PSP_CLEARING', 'DEBIT'), ('SELLER_PAYABLE', 'CREDIT')) x(account_code, side)
+                        RETURNING entry_id)
+                    SELECT entry_id FROM e ORDER BY entry_id LIMIT 1
                     """)) {
                 statement.setObject(1, seller);
                 statement.setObject(2, seller);
-                statement.executeUpdate();
+                try (var result = statement.executeQuery()) {
+                    result.next();
+                    uncommitted = result.getObject(1, UUID.class);
+                }
             }
-            Thread.sleep(20);
+            awaitClockPast(uncommitted);
             settlement.recordCapture(new SettlementPostingRequest.Capture(UUID.randomUUID(), UUID.randomUUID(), seller, 11_000));
-            foldAll();
+            for (int round = 0; round < 4; round++) {
+                foldOnceAs(FOLD_ROLE);
+            }
+            assertThat(jdbc.queryForObject("SELECT entry_id <= ?::uuid FROM settlement_balance_checkpoint_cursor",
+                    Boolean.class, uncommitted)).as("cursor stays at or below the uncommitted entry").isTrue();
             writer.commit();
+        }
+        foldAll();
+        assertThat(balance(seller)).isEqualTo(ledgerSum(seller));
+        assertThat(jdbc.queryForObject("SELECT payable_won FROM settlement_seller_balance_checkpoint WHERE seller_id = ?",
+                Long.class, seller)).isEqualTo(ledgerSum(seller).get(0));
+    }
+
+    @Test
+    void anEntryThatIsItsTransactionsFirstWriteHasItsXidBeforeItsIdClock() throws Exception {
+        probeRoles();
+        UUID seller = seller();
+        UUID journalId = UUID.randomUUID();
+        // 항목만 넣는 쓰기(분개가 이미 있음)가 트랜잭션의 첫 쓰기다. 분개는 복제 역할로 미리 넣어 균형 검사를 건너뛴다.
+        transactions.executeWithoutResult(status -> {
+            jdbc.execute("SET LOCAL session_replication_role = replica");
+            jdbc.update("""
+                    INSERT INTO settlement_journal (journal_id, source_order_id, source_attempt_id, seller_id, currency,
+                        gross_amount_won, recorded_at)
+                    VALUES (?, gen_random_uuid(), gen_random_uuid(), ?, 'KRW', 5000, now())
+                    """, journalId, seller);
+        });
+        // 시험 전용 BEFORE INSERT 트리거: 기본값(entry_id)이 계산된 뒤, heap 삽입 전에 advisory 잠금에서 멈춘다.
+        // 멈추는 첫 행은 잔액 계정(SELLER_PAYABLE)이어야 그 행을 잃었을 때 잔액이 원장과 달라진다.
+        jdbc.execute("""
+                CREATE FUNCTION pause_entry_insert_probe() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF current_setting('atlas.pause_entry_insert_probe', true) = 'on' THEN
+                        PERFORM pg_advisory_lock(723723);
+                        PERFORM pg_advisory_unlock(723723);
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$""");
+        jdbc.execute("CREATE TRIGGER pause_entry_insert_probe BEFORE INSERT ON settlement_entry "
+                + "FOR EACH ROW EXECUTE FUNCTION pause_entry_insert_probe()");
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection gate = dataSource.getConnection()) {
+            try (var lock = gate.createStatement()) {
+                lock.execute("SELECT pg_advisory_lock(723723)");
+            }
+            Future<?> writing = executor.submit(() -> {
+                try (Connection writer = DriverManager.getConnection(POSTGRES.getJdbcUrl(), WRITER_ROLE, PROBE_PASSWORD)) {
+                    writer.setAutoCommit(false);
+                    try (var statement = writer.prepareStatement("""
+                            INSERT INTO settlement_entry (journal_id, seller_id, account_code, entry_side, amount_won,
+                                recorded_at)
+                            SELECT ?, ?, x.account_code, x.side, 5000, now()
+                            FROM (VALUES (1, 'SELLER_PAYABLE', 'CREDIT'), (2, 'PSP_CLEARING', 'DEBIT'))
+                                x(ordinal, account_code, side)
+                            ORDER BY x.ordinal
+                            """)) {
+                        try (var pause = writer.createStatement()) {
+                            pause.execute("SET LOCAL atlas.pause_entry_insert_probe = 'on'");
+                        }
+                        statement.setObject(1, journalId);
+                        statement.setObject(2, seller);
+                        statement.executeUpdate();
+                    }
+                    writer.commit();
+                }
+                return null;
+            });
+            Timestamp paused = awaitWriterPaused();
+            awaitClockPast(paused.toInstant());
+            for (int round = 0; round < 4; round++) {
+                checkpoints.foldOnce(100_000, Duration.ZERO);
+            }
+            try (var unlock = gate.createStatement()) {
+                unlock.execute("SELECT pg_advisory_unlock(723723)");
+            }
+            writing.get(30, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+            jdbc.execute("DROP TRIGGER IF EXISTS pause_entry_insert_probe ON settlement_entry");
+            jdbc.execute("DROP FUNCTION IF EXISTS pause_entry_insert_probe()");
         }
         foldAll();
         assertThat(balance(seller)).isEqualTo(ledgerSum(seller));
@@ -232,9 +362,67 @@ class SellerLedgerBoundedReadIntegrationTest extends PayPalIntegrationTestSuppor
                 Boolean.class)).isTrue();
     }
 
+    /** 마감이 이 호출 시각 전에 커밋된 항목을 모두 접을 때까지 마감을 돌린다(시간 상한 안에서 조건을 기다림). */
     private void foldAll() {
-        while (checkpoints.foldOnce(100_000, Duration.ZERO)) {
-            // 따라잡을 때까지
+        UUID target = SettlementBalanceCheckpointRepository.uuidV7Floor(
+                jdbc.queryForObject("SELECT clock_timestamp()", Timestamp.class).toInstant());
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (!jdbc.queryForObject("SELECT entry_id >= ?::uuid FROM settlement_balance_checkpoint_cursor",
+                Boolean.class, target)) {
+            assertThat(System.nanoTime()).as("balance checkpoint caught up").isLessThan(deadline);
+            checkpoints.foldOnce(100_000, Duration.ZERO);
+        }
+    }
+
+    /** 앱 연결이지만 마감 트랜잭션 안에서만 슈퍼유저가 아닌 마감 역할로 돈다(pg_stat_activity 가 다른 역할을 가림). */
+    private void foldOnceAs(String role) {
+        transactions.executeWithoutResult(status -> {
+            jdbc.execute("SET LOCAL ROLE " + role);
+            checkpoints.foldOnce(100_000, Duration.ZERO);
+        });
+    }
+
+    private void probeRoles() {
+        jdbc.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ledger_fold_probe') THEN
+                        CREATE ROLE ledger_fold_probe NOLOGIN;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ledger_writer_probe') THEN
+                        CREATE ROLE ledger_writer_probe LOGIN PASSWORD 'probe';
+                    END IF;
+                END;
+                $$""");
+        jdbc.execute("GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO ledger_fold_probe, ledger_writer_probe");
+    }
+
+    /** DB 시계가 이 항목 id 의 밀리초를 2ms 넘을 때까지 기다린다(마감 경계가 밀리초 하한이라 같은 밀리초를 피함). */
+    private void awaitClockPast(UUID entryId) {
+        awaitClockPast(jdbc.queryForObject("SELECT uuid_extract_timestamp(?::uuid)", Timestamp.class, entryId).toInstant());
+    }
+
+    private void awaitClockPast(Instant at) {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (!jdbc.queryForObject("SELECT clock_timestamp() >= ?::timestamptz + interval '2 milliseconds'",
+                Boolean.class, Timestamp.from(at))) {
+            assertThat(System.nanoTime()).isLessThan(deadline);
+        }
+    }
+
+    /** 쓰기 연결이 시험 트리거의 advisory 잠금을 기다리기 시작한 DB 시각. */
+    private Timestamp awaitWriterPaused() {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (true) {
+            Timestamp at = jdbc.query("""
+                    SELECT clock_timestamp() FROM pg_locks
+                    WHERE locktype = 'advisory' AND objid = 723723 AND NOT granted
+                    LIMIT 1
+                    """, (rs, n) -> rs.getTimestamp(1)).stream().findFirst().orElse(null);
+            if (at != null) {
+                return at;
+            }
+            assertThat(System.nanoTime()).as("writer paused before its heap insert").isLessThan(deadline);
         }
     }
 
@@ -317,6 +505,59 @@ class SellerLedgerBoundedReadIntegrationTest extends PayPalIntegrationTestSuppor
                         ('PLATFORM_FEE', 'CREDIT', x.gross * 3 / 100),
                         ('SELLER_RESERVE', 'CREDIT', x.gross * 5 / 100)) e(account_code, side, amount)
                     """, count, seller, seller, other, seller, seller, other);
+        });
+    }
+
+    /** 지금 − newest 부터 지금 − oldest 까지 고르게 다른 판매자들의 checkout 분개와 배분을 count 건 넣는다(복제 역할). */
+    private void seedPlatformCheckouts(int count, Duration newest, Duration oldest) {
+        transactions.executeWithoutResult(status -> {
+            jdbc.execute("SET LOCAL session_replication_role = replica");
+            jdbc.update("""
+                    WITH g AS (
+                        SELECT now() - make_interval(secs => ? + i * ? / ?) AS at, uuidv7() AS journal_id
+                        FROM generate_series(1, ?) i),
+                    journals AS (
+                        INSERT INTO settlement_journal (journal_id, source_order_id, source_attempt_id, checkout_id,
+                            seller_id, currency, gross_amount_won, recorded_at, fee_amount_won, reserve_amount_won)
+                        SELECT journal_id, NULL, gen_random_uuid(), gen_random_uuid(), NULL, 'KRW', 10000, at, 0, 0
+                        FROM g
+                        RETURNING journal_id)
+                    INSERT INTO settlement_seller_allocation (journal_id, order_id, seller_id, amount_won,
+                        allocation_ordinal, recorded_at)
+                    SELECT journal_id, gen_random_uuid(), gen_random_uuid(), 10000, 0, at FROM g
+                    """, (double) newest.toSeconds(), (double) (oldest.toSeconds() - newest.toSeconds()), (double) count,
+                    count);
+        });
+    }
+
+    /**
+     * 400일 전 판매자 checkout 배분 count 건을, 한 건마다 다른 판매자의 checkout 분개·배분 SCATTER_FILLER 건을 사이에
+     * 두고 같은 문장에서 넣는다(삽입 순서대로 heap 에 놓여 판매자 배분이 페이지마다 흩어진다).
+     */
+    private void seedScatteredCheckoutHistory(UUID seller, int count) {
+        transactions.executeWithoutResult(status -> {
+            jdbc.execute("SET LOCAL session_replication_role = replica");
+            jdbc.update("""
+                    WITH g AS (
+                        SELECT i, now() - interval '400 days' - i * interval '1 minute' AS at, uuidv7() AS journal_id
+                        FROM generate_series(1, ?) i),
+                    x AS (
+                        SELECT i, 0 AS k, journal_id, at FROM g
+                        UNION ALL
+                        SELECT g.i, k, uuidv7(), g.at - k * interval '1 second'
+                        FROM g CROSS JOIN generate_series(1, ?) k),
+                    journals AS (
+                        INSERT INTO settlement_journal (journal_id, source_order_id, source_attempt_id, checkout_id,
+                            seller_id, currency, gross_amount_won, recorded_at, fee_amount_won, reserve_amount_won)
+                        SELECT journal_id, NULL, gen_random_uuid(), gen_random_uuid(), NULL, 'KRW', 10000, at, 0, 0
+                        FROM x ORDER BY i, k
+                        RETURNING journal_id)
+                    INSERT INTO settlement_seller_allocation (journal_id, order_id, seller_id, amount_won,
+                        allocation_ordinal, recorded_at)
+                    SELECT journal_id, gen_random_uuid(), CASE WHEN k = 0 THEN ?::uuid ELSE gen_random_uuid() END,
+                           10000, 0, at
+                    FROM x ORDER BY i, k
+                    """, count, SCATTER_FILLER, seller);
         });
     }
 

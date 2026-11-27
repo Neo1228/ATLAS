@@ -8,9 +8,10 @@ import java.time.Duration;
  */
 public interface SettlementBalanceCheckpointService {
     /**
-     * 마감을 한 번(항목 최대 maxEntries 개) 진행한다. 다른 인스턴스가 마감 중이거나 옮길 범위가 없으면 아무것도 하지 않는다.
+     * 마감을 한 번(항목 최대 maxEntries 개) 진행한다. 다른 인스턴스가 마감 중이거나, 앞 마감이 남긴 경계(pending)보다
+     * 먼저 시작한 쓰기 트랜잭션이 아직 끝나지 않았으면 커서를 옮기지 않는다. 경계까지 옮기면 다음 경계를 남긴다.
      *
-     * @param safetyLag 커서를 지금보다 적어도 이만큼 뒤에 둔다(pg_stat_activity에 보이지 않는 세션 몫)
+     * @param safetyLag 새 경계를 이 트랜잭션 시작 시각보다 이만큼 앞에 둔다(DB 서버 시계가 뒤로 움직일 때의 여유)
      * @return 이번 마감이 maxEntries 에서 끊겨 지금 더 옮길 항목이 남았으면 true
      */
     boolean foldOnce(int maxEntries, Duration safetyLag);

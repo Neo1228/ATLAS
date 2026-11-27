@@ -50,7 +50,7 @@ CREATE INDEX settlement_seller_allocation_seller_recorded_idx
 DROP INDEX settlement_seller_allocation_seller_journal_idx;
 
 -- 2. 판매자 잔액 마감(checkpoint). 커서(entry_id) 아래 항목의 판매자·계정별 합이다. 항목 기록 경로는 이 표를 건드리지
---    않고(쓰기 비용·잠금 불변), SettlementBalanceCheckpointWorker 가 쓰기 경로 밖에서 커서를 옮긴다. 잔액 읽기 =
+--    않고(잠금 불변), SettlementBalanceCheckpointWorker 가 쓰기 경로 밖에서 커서를 옮긴다. 잔액 읽기 =
 --    마감 행 + 커서 이후 항목. 커서는 0에서 시작하므로 배포 직후에는 지금과 같은 양을 읽고, worker 가 따라잡으면
 --    판매자 이력과 무관해진다(EXP-115 Ae). 마감이 멈춰도 잔액은 정확하다.
 CREATE TABLE settlement_seller_balance_checkpoint (
@@ -60,10 +60,28 @@ CREATE TABLE settlement_seller_balance_checkpoint (
     fee_won bigint NOT NULL
 );
 
+-- 커서가 넘을 수 있는 경계는 역할과 무관한 트랜잭션 번호로 정한다. 마감 한 번이 (그 트랜잭션 시작 시각 − 안전 지연의
+-- UUIDv7 하한, 자기 xid)를 pending 으로 남기고, 다음 마감은 pg_snapshot_xmin 이 그 xid 를 넘었을 때만(그보다 먼저
+-- xid를 받은 쓰기 트랜잭션이 모두 끝났을 때만) 커서를 pending 까지 옮긴다. pending 아래 entry_id 를 가진 항목은
+-- pending 시각 전에 xid를 받은 트랜잭션만 쓸 수 있다(아래 entry_id 기본값). 그래서 어느 DB 역할의 늦은 커밋도
+-- 커서 아래로 들어가지 않는다(pg_stat_activity 는 다른 역할 세션의 xact_start 를 보여 주지 않는다. EXP-115).
 CREATE TABLE settlement_balance_checkpoint_cursor (
     singleton boolean PRIMARY KEY DEFAULT true CONSTRAINT settlement_balance_checkpoint_cursor_singleton CHECK (singleton),
     entry_id uuid NOT NULL,
-    folded_at timestamp with time zone
+    folded_at timestamp with time zone,
+    pending_entry_id uuid,
+    pending_xid xid8,
+    CONSTRAINT settlement_balance_checkpoint_cursor_pending_pair
+        CHECK ((pending_entry_id IS NULL) = (pending_xid IS NULL))
 );
 
 INSERT INTO settlement_balance_checkpoint_cursor (entry_id) VALUES ('00000000-0000-0000-0000-000000000000');
+
+-- 항목 id 는 트랜잭션이 xid 를 받은 뒤에 시계를 읽는다. uuidv7() 기본값만 두면 트랜잭션의 첫 쓰기에서 기본값(시계)이
+-- heap 삽입(xid 배정)보다 먼저 계산되므로, "pending 시각 전 id ⇒ pending xid 보다 작은 xid"가 그 틈에서 깨진다.
+-- 앱 경로는 분개를 먼저 넣어 이미 xid 가 있지만, 다른 역할·도구가 항목부터 넣어도 규칙이 서게 DB가 보장한다.
+CREATE FUNCTION settlement_entry_next_id() RETURNS uuid
+    LANGUAGE sql VOLATILE
+    AS $$ SELECT CASE WHEN pg_current_xact_id() IS NOT NULL THEN uuidv7() END $$;
+
+ALTER TABLE settlement_entry ALTER COLUMN entry_id SET DEFAULT settlement_entry_next_id();

@@ -13,14 +13,15 @@ import org.springframework.stereotype.Repository;
  * 판매자 잔액 마감(checkpoint)을 쓰기 경로 밖에서 앞으로 옮긴다(ADR-0104, EXP-115 Ae).
  *
  * <p>마감 행은 커서({@code entry_id}) 아래 항목의 판매자·계정별 합이다. 항목 기록은 이 표를 건드리지 않으므로 capture·
- * checkout·환불·지급의 쓰기 비용과 잠금은 그대로다. 잔액 읽기는 마감 행 + 커서 이후 항목(꼬리)을 더한다
+ * checkout·환불·지급의 잠금은 그대로다. 잔액 읽기는 마감 행 + 커서 이후 항목(꼬리)을 더한다
  * ({@link SettlementJournalRepository#sellerBalance}).
  *
- * <p>커서 규칙: {@code entry_id}는 DB가 INSERT 시각으로 만드는 UUIDv7 이다. 커밋되지 않은 항목은 쓰기를 시작한(xid가
- * 있는) 트랜잭션에만 있고 그 항목의 시각은 그 트랜잭션 시작 이후다. 그래서 커서를 "쓰는 트랜잭션 중 가장 이른 시작"과
- * "지금 − 안전 지연" 중 이른 쪽보다 앞으로 옮기지 않으면, 커서 아래로 나중에 커밋되는 항목이 생기지 않는다. 다른 DB
- * 역할의 세션은 {@code pg_stat_activity}에서 시작 시각이 보이지 않을 수 있어 안전 지연이 그 몫을 막는다(원장 정정 중에는
- * 마감 worker를 끄는 것이 운영 절차다).
+ * <p>커서 규칙(DB 역할과 무관): {@code entry_id}는 DB가 그 트랜잭션의 xid를 받은 뒤 읽은 시계로 만드는 UUIDv7 이다
+ * (V10 {@code settlement_entry_next_id()}). 마감 한 번은 (자기 트랜잭션 시작 시각 − 안전 지연의 UUIDv7 하한, 자기 xid)를
+ * pending 으로 남긴다. 그 하한 아래 id 를 가진 항목은 그 시각 전에 xid를 받은, 즉 pending xid 보다 작은 xid의
+ * 트랜잭션만 쓸 수 있다. 다음 마감은 {@code pg_snapshot_xmin(pg_current_snapshot())}이 pending xid 를 넘었을 때(그
+ * 트랜잭션들이 모두 커밋 또는 롤백으로 끝났을 때)만 커서를 pending 까지 옮긴다. 스냅숏의 xmin 은 클러스터의 모든 쓰기
+ * 트랜잭션을 역할과 무관하게 센다. 안전 지연은 DB 서버 시계가 뒤로 움직이는 경우의 여유다.
  */
 @Repository
 public class SettlementBalanceCheckpointRepository {
@@ -37,13 +38,28 @@ public class SettlementBalanceCheckpointRepository {
                         ? Optional.of(resultSet.getObject("entry_id", UUID.class)) : Optional.empty());
     }
 
-    /** 커서를 이 시각보다 앞으로 옮기지 않는다: 쓰기를 시작한 다른 트랜잭션의 가장 이른 시작과 지금 − 안전 지연 중 이른 쪽. */
-    public Instant writeHorizon(Duration safetyLag) {
-        return jdbc.queryForObject("""
-                SELECT least(now() - make_interval(secs => ?), COALESCE(min(xact_start), now()))
-                FROM pg_stat_activity
-                WHERE backend_xid IS NOT NULL AND pid <> pg_backend_pid()
-                """, Timestamp.class, (double) safetyLag.toMillis() / 1000).toInstant();
+    /**
+     * 앞 마감이 남긴 pending 경계와, 그 xid 보다 먼저 xid를 받은 트랜잭션이 모두 끝났는지. 커서 잠금 뒤 별도 문장으로
+     * 읽어 잠금 이후의 스냅숏으로 판단한다.
+     */
+    public Optional<Pending> pending() {
+        return jdbc.query("""
+                SELECT pending_entry_id,
+                       pending_xid IS NOT NULL AND pg_snapshot_xmin(pg_current_snapshot()) > pending_xid AS settled
+                FROM settlement_balance_checkpoint_cursor
+                WHERE pending_entry_id IS NOT NULL
+                """, resultSet -> resultSet.next()
+                ? Optional.of(new Pending(resultSet.getObject("pending_entry_id", UUID.class),
+                        resultSet.getBoolean("settled")))
+                : Optional.empty());
+    }
+
+    /** 새 pending: 이 트랜잭션 시작 시각 − 안전 지연의 UUIDv7 하한과 이 트랜잭션의 xid. 시작 시각은 xid 배정보다 앞선다. */
+    public void recordPending(Duration safetyLag) {
+        Instant at = jdbc.queryForObject("SELECT now() - make_interval(secs => ?)", Timestamp.class,
+                (double) safetyLag.toMillis() / 1000).toInstant();
+        jdbc.update("UPDATE settlement_balance_checkpoint_cursor SET pending_entry_id = ?, "
+                + "pending_xid = pg_current_xact_id()", uuidV7Floor(at));
     }
 
     /** [from, to) 안 항목이 maxEntries 개를 넘으면 그 경계의 entry_id, 아니면 to. 한 번의 마감이 읽는 양을 묶는다. */
@@ -88,5 +104,9 @@ public class SettlementBalanceCheckpointRepository {
     public static UUID uuidV7Floor(Instant at) {
         long millis = at.toEpochMilli();
         return new UUID((millis << 16) | 0x7000L, 0x8000_0000_0000_0000L);
+    }
+
+    /** 앞 마감이 남긴 경계. {@code settled}면 그 경계 아래 항목을 쓸 수 있는 트랜잭션이 모두 끝났다. */
+    public record Pending(UUID entryId, boolean settled) {
     }
 }
