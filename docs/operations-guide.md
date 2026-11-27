@@ -487,6 +487,44 @@ RATE=10000 CONSUMERS=12 BATCH=5000 POLL_MS=100 DURATION=30 load-tests/run-event-
 
 이벤트 로그 fan-out 측정은 [EXP-061](03-experiments/EXP-061-event-log-fanout-and-replay.md), 그 결과로 Kafka를 기본 경로에 도입하지 않은 판단은 [ADR-0067](02-decisions/adr/ADR-0067-event-log-kafka-relay.md)에 있다.
 
+### 공개 이벤트 계약 (ADR-0103)
+
+topic payload는 `schemaVersion`(현재 1)을 싣는다. 필드를 더하는 것은 같은 버전이고, 이름·형식·뜻을 바꾸거나 지우면 버전을 올린다. 소비자는 모르는 버전을 건너뛰지 말고 멈춘다(건너뛰면 offset이 지나가 그 이벤트를 잃는다). key는 `workflowId`, 중복 제거 헤더는 `event-id`(`workflowId:aggregateVersion`)다. 필드 집합은 `ReservationEventPayloadContractTest`가 고정한다. relay를 켜기 전에 이미 소비 중인 외부 소비자가 있다면 `schemaVersion` 필드가 추가된 것만 달라졌다(필드 추가).
+
+## EDA 전환 신호 (ADR-0103)
+
+[EXP-114](03-experiments/EXP-114-seller-statement-projection-and-transition-signals.md)에서 정한 신호와 임계값이다. 임계를 넘으면 오른쪽 전환을 **검토**한다(자동 전환 아님). 값은 모두 `✓ 결정(가정)`이며 운영 값을 처음 한 주 모은 뒤 다시 본다.
+
+| 신호 | 지표 | 기본 | 검토 임계 | 검토할 전환 |
+|---|---|---|---|---|
+| 큐 표 부풀음(T1) | `atlas.db.queue_table.dead_tuples`·`live_tuples`·`total_bytes`·`seconds_since_vacuum{table}` | 꺼짐 | 죽은 튜플 비율 `dead/(dead+live)`가 1시간 넘게 0.2 이상(autovacuum 기본 `scale_factor` 0.2를 넘었는데 정리가 안 됨), 또는 live가 그대로인데 `total_bytes`가 주 단위로 계속 증가 | 먼저 그 표의 `autovacuum_vacuum_scale_factor`·`cost_limit` 조정, 다음 분할·완료분 DROP, 그래도 부족하면 전용 큐 |
+| 청구 지연(T1·T2) | `atlas.queue.claim.duration{queue,outcome}` | 켜짐(타이머) | `outcome=empty` p95가 100 ms(폴링 간격 1초의 10%)를 15분 넘게 초과 | 큐 표 정리(위), 배치 청구, LISTEN/NOTIFY 깨우기 |
+| relay 정지(T4) | `atlas.order.inventory.event.relay.stalled_seconds`, `lag_events` | relay를 켠 경우 | `stalled_seconds`가 60초(`idle_in_transaction_session_timeout`)를 넘음 | 붙잡은 세션 확인(아래 질의). 반복되면 CDC나 브로커 |
+| 락 대기(T6·T7) | `atlas.db.lock_wait.sessions`·`oldest_seconds{wait_event}` | 꺼짐 | `wait_event=advisory`의 `oldest_seconds`가 2.5초(앱 `lock_timeout` 5초의 절반) 이상이 5분에 3번 이상, 또는 55P03 응답 증가 | 판매자 락 안의 작업 줄이기, 예약 원장 분리, 핫 SKU면 Redis gate(ADR-0066) |
+| 판매자 이력 조회(3.2) | 정산서·지급 화면 라우트의 `http.server.requests` p95, 환불 라우트 p95 | 켜짐 | p95 50 ms 초과(EXP-114: 판매자 항목 약 4만 행에서 정산서 p50 46 ms, 39만 행에서 환불 분개 p50 191 ms) | 덮는 인덱스(ADR-0103 A1, 쓰기 비용 감수 결정 필요) 또는 비동기 투영(A3) |
+
+쓰기 지연이 오르는데 락 대기 게이지가 0이면 락이 아니라 CPU 경합을 먼저 본다. EXP-114에서 정산서 독자 4개가 쓰기 처리량을 약 90% 줄였고 원인은 독자의 병렬 질의였다(독자 쪽 `max_parallel_workers_per_gather = 0`에서 쓰기 처리량 3.4배).
+
+DB 통계 게이지를 켜는 설정(질의 두 개, 둘 다 통계 뷰만 읽는다. EXP-114: 표 통계 19.6 ms, 락 대기 0.3 ms):
+
+| 환경 변수 | 기본값 | 의미 |
+|---|---|---|
+| `ATLAS_OBSERVABILITY_DATABASE_SIGNALS_ENABLED` | `false` | 켜기 |
+| `ATLAS_OBSERVABILITY_DATABASE_SIGNALS_POLL_INTERVAL` | `PT30S` | 표본 주기 |
+| `ATLAS_OBSERVABILITY_DATABASE_SIGNALS_QUEUE_TABLES` | `payment_recovery_job,paypal_webhook_retry,settlement_payout_dispatch_outbox,order_inventory_event` | 볼 표 |
+
+advisory 락은 판매자 지급·SKU 재고·구매자 등 7곳이 같은 함수로 잡아 게이지로는 용도를 가를 수 없다. 임계를 넘으면 붙잡은 세션을 찾는다.
+
+```sql
+SELECT w.pid AS waiting_pid, now() - w.query_start AS waited, b.pid AS blocking_pid, b.state, left(b.query, 120)
+FROM pg_stat_activity w
+JOIN LATERAL unnest(pg_blocking_pids(w.pid)) AS bp(pid) ON true
+JOIN pg_stat_activity b ON b.pid = bp.pid
+WHERE w.wait_event_type = 'Lock';
+```
+
+롤백: 게이지는 설정을 `false`로 되돌리면 빈이 생기지 않는다. 청구 타이머는 지표 하나라 끌 설정이 없다(Micrometer `MeterFilter.denyNameStartsWith("atlas.queue.claim")`로 막을 수 있다).
+
 ## 분산 이행 단계별 근거
 
 주문·재고·결제를 분산 구성으로 옮기는 8단계(4단계의 hot SKU gate는 4a로 따로 적었다) 각각에 어떤 근거가 있는지와 남은 공백을 적는다. 상태는 `검증됨`(근거 문서와 테스트·실험이 있음), `부분`(일부만 근거가 있음), `미구현`이다. 실험은 모두 로컬 단일 호스트의 탐색적 측정이라 운영 보장이 아니며, 수치는 각 문서에 적힌 조건(workload, n, 환경)과 함께 읽는다.

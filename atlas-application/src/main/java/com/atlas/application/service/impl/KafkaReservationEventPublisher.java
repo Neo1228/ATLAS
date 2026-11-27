@@ -35,6 +35,8 @@ import tools.jackson.databind.json.JsonMapper;
 @ConditionalOnProperty(name = "atlas.order-inventory-reservation.event-relay.enabled", havingValue = "true")
 public class KafkaReservationEventPublisher implements ReservationEventPublisher {
     public static final String EVENT_ID_HEADER = "event-id";
+    /** payload {@code schemaVersion}. 하위 호환이 깨지는 변경(이름·형식·뜻 변경, 필드 삭제)에서만 올린다. */
+    public static final int SCHEMA_VERSION = 1;
     /** 덩어리 하나의 추정 크기 상한. producer {@code batch.size}의 절반이라 추정 오차와 한 파티션 쏠림을 흡수한다. */
     public static final int CHUNK_BYTES = 64 * 1024;
     /** 레코드 헤더, key, 길이 필드 등 직렬화 payload 밖의 크기를 넉넉히 잡은 추정값. */
@@ -98,13 +100,17 @@ public class KafkaReservationEventPublisher implements ReservationEventPublisher
     }
 
     private String payload(ReservationWorkflowResponse.ReservationEvent event) {
-        return mapper.writeValueAsString(new Payload(event.eventId(), event.eventSeq(), event.workflowId().toString(),
-                event.orderId().toString(), event.aggregateVersion(), event.eventType(), event.lastErrorCode(),
-                event.occurredAt().toString()));
+        return mapper.writeValueAsString(new Payload(SCHEMA_VERSION, event.eventId(), event.eventSeq(),
+                event.workflowId().toString(), event.orderId().toString(), event.aggregateVersion(), event.eventType(),
+                event.lastErrorCode(), event.occurredAt().toString()));
     }
 
-    /** topic에 실리는 JSON 계약. 필드 이름을 바꾸면 소비자가 깨진다. */
-    record Payload(String eventId, long eventSeq, String workflowId, String orderId, long aggregateVersion,
-            String eventType, String lastErrorCode, String occurredAt) {
+    /**
+     * topic에 실리는 JSON 계약(ADR-0103). 필드를 더하는 것은 같은 버전이다. 필드 이름·형식·뜻을 바꾸거나 지우면
+     * {@link #SCHEMA_VERSION}을 올려야 하고, 소비자는 모르는 버전을 건너뛰지 말고 멈춰야 한다.
+     * 필드 집합과 형식은 {@code ReservationEventPayloadContractTest}가 고정한다.
+     */
+    record Payload(int schemaVersion, String eventId, long eventSeq, String workflowId, String orderId,
+            long aggregateVersion, String eventType, String lastErrorCode, String occurredAt) {
     }
 }

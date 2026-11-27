@@ -85,12 +85,26 @@ public class PayoutDispatchWorker {
     @Scheduled(fixedDelayString = "${atlas.payment.paypal.payouts.worker.poll-interval:PT5S}",
                initialDelayString = "${atlas.payment.paypal.payouts.worker.initial-delay:PT5S}")
     public void dispatchDue() {
-        List<PayoutDispatchRecord> claimed = repository.claim(batchSize, leaseDuration);
+        // 청구 질의 지연(EDA 전환 신호 T1·T2, ADR-0103).
+        Timer.Sample claimSample = Timer.start(metrics);
+        List<PayoutDispatchRecord> claimed;
+        try {
+            claimed = repository.claim(batchSize, leaseDuration);
+        } catch (RuntimeException failure) {
+            claimSample.stop(claimTimer("failed"));
+            throw failure;
+        }
+        claimSample.stop(claimTimer(claimed.isEmpty() ? "empty" : "claimed"));
         try {
             for (PayoutDispatchRecord record : claimed) process(record);
         } finally {
             metricSnapshot.set(repository.metricsSnapshot());
         }
+    }
+
+    private Timer claimTimer(String outcome) {
+        return Timer.builder("atlas.queue.claim.duration").tag("queue", "settlement_payout_dispatch_outbox")
+                .tag("outcome", outcome).register(metrics);
     }
 
     private void process(PayoutDispatchRecord r) {

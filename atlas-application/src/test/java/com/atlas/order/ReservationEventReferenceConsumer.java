@@ -146,6 +146,11 @@ final class ReservationEventReferenceConsumer implements AutoCloseable {
         Header header = record.headers().lastHeader(KafkaReservationEventPublisher.EVENT_ID_HEADER);
         String eventId = new String(header.value(), StandardCharsets.UTF_8);
         JsonNode payload = MAPPER.readTree(record.value());
+        // 모르는 계약 버전은 건너뛰지 않고 멈춘다. 건너뛰면 cursor(offset)가 지나가 그 이벤트를 잃는다(ADR-0103).
+        int schemaVersion = payload.path("schemaVersion").asInt();
+        if (schemaVersion != KafkaReservationEventPublisher.SCHEMA_VERSION) {
+            throw new IllegalStateException("Unsupported reservation event schema version " + schemaVersion);
+        }
         UUID workflowId = UUID.fromString(payload.path("workflowId").asString());
         long version = payload.path("aggregateVersion").asLong();
         receivedEventIds.add(eventId);
