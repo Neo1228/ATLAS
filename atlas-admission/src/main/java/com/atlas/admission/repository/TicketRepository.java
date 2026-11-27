@@ -21,9 +21,8 @@ public interface TicketRepository extends JpaRepository<QueueTicket, UUID> {
      * ({@code admission_ticket_slot_status_consistent})이 있으므로 상태 조건을 함께 걸어 V4 부분 인덱스로 살아 있는 ticket만
      * 읽는다. 상태 조건이 없으면 그 SKU에 남은 종료 ticket 이력 전체를 읽었다(EXP-115 H7: 보존 ticket 7,937개에서 4,115 → 2 버퍼).
      */
-    @Query("select count(t) from QueueTicket t where t.sellerId = :sellerId and t.skuId = :skuId and t.checkoutSlotHeld = true"
-            + " and t.status in (com.atlas.admission.model.TicketStatus.CHECKOUT_ACTIVE,"
-            + " com.atlas.admission.model.TicketStatus.CHECKOUT_STARTED)")
+    @Query(value = "SELECT count(*) FROM admission_ticket WHERE seller_id = :sellerId AND sku_id = :skuId"
+            + " AND checkout_slot_held AND status IN ('CHECKOUT_ACTIVE', 'CHECKOUT_STARTED')", nativeQuery = true)
     long countBySellerIdAndSkuIdAndCheckoutSlotHeldTrue(@Param("sellerId") UUID sellerId, @Param("skuId") String skuId);
 
     @Query("select t.ticketId from QueueTicket t where t.sellerId = :sellerId and t.skuId = :skuId and t.status = :status and t.expiresAt > :now order by t.sequence")
