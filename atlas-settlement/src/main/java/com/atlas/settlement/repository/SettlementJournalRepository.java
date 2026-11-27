@@ -8,9 +8,11 @@ import com.atlas.settlement.persistence.projection.CheckoutSettlementRecord;
 import com.atlas.settlement.persistence.projection.RefundJournalRecord;
 import com.atlas.settlement.persistence.projection.SellerStatementRow;
 import com.atlas.settlement.persistence.projection.SellerStatementTotals;
+import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -125,13 +127,9 @@ public class SettlementJournalRepository {
                 (RowCallbackHandler) resultSet -> { }, "settlement-payout:" + sellerId);
     }
 
-    /** 현재 보류 잔액(대변 − 차변). refund 차감 순서를 정하는 데 쓴다. */
+    /** 현재 보류 잔액(대변 − 차변). refund 차감 순서를 정하는 데 쓴다. 판매자 락 안에서 불리므로 이력 전체를 읽지 않는다. */
     private long reserveBalance(UUID sellerId) {
-        Long reserve = jdbc.queryForObject("""
-                SELECT COALESCE(SUM(CASE WHEN entry_side = 'CREDIT' THEN amount_won ELSE -amount_won END), 0)
-                FROM settlement_entry WHERE seller_id = ? AND account_code = 'SELLER_RESERVE'
-                """, Long.class, sellerId);
-        return reserve == null ? 0 : reserve;
+        return sellerBalance(sellerId).reserveAmountWon().longValueExact();
     }
 
     public void insertEntries(UUID journalId, long grossAmountWon, Instant recordedAt) {
@@ -270,7 +268,7 @@ public class SettlementJournalRepository {
                     SELECT a.amount_won, FALSE
                     FROM settlement_journal j JOIN settlement_seller_allocation a USING (journal_id)
                     WHERE a.seller_id = ? AND j.checkout_id IS NOT NULL
-                      AND j.recorded_at >= ? AND j.recorded_at < ?
+                      AND a.recorded_at >= ? AND a.recorded_at < ?
                     UNION ALL
                     SELECT j.gross_amount_won, TRUE
                     FROM settlement_journal j
@@ -279,6 +277,9 @@ public class SettlementJournalRepository {
                 ), period_entries AS (
                     -- row query 와 같은 기준(journal.recorded_at)으로 자른다. entry.recorded_at 을 쓰면
                     -- 경계 시각이 미세하게 달라질 때 row 합과 요약이 어긋날 수 있다.
+                    -- 판매자 항목 전체를 읽지 않도록 기간 안의 판매자 분개(분개·배분 인덱스)에서 journal_id 로
+                    -- 항목을 찾는다(EXP-115). 판매자 항목은 자기 분개(capture·refund·payout은 journal.seller_id,
+                    -- checkout 은 그 판매자 배분)에만 있다. 배분의 recorded_at 은 V10 트리거가 분개 값으로 채운다.
                     SELECT
                         COALESCE(SUM(CASE WHEN e.account_code = 'PLATFORM_FEE'
                             THEN CASE WHEN e.entry_side = 'CREDIT' THEN e.amount_won ELSE -e.amount_won END
@@ -286,8 +287,16 @@ public class SettlementJournalRepository {
                         COALESCE(SUM(CASE WHEN e.account_code = 'SELLER_RESERVE'
                             THEN CASE WHEN e.entry_side = 'CREDIT' THEN e.amount_won ELSE -e.amount_won END
                             ELSE 0 END), 0) AS reserve
-                    FROM settlement_entry e JOIN settlement_journal j USING (journal_id)
-                    WHERE e.seller_id = ? AND j.recorded_at >= ? AND j.recorded_at < ?
+                    FROM settlement_entry e
+                    WHERE e.seller_id = ? AND e.account_code IN ('PLATFORM_FEE', 'SELLER_RESERVE')
+                      AND e.journal_id IN (
+                          SELECT j.journal_id FROM settlement_journal j
+                          WHERE j.seller_id = ? AND j.recorded_at >= ? AND j.recorded_at < ?
+                          UNION ALL
+                          SELECT a.journal_id
+                          FROM settlement_journal j JOIN settlement_seller_allocation a USING (journal_id)
+                          WHERE a.seller_id = ? AND j.checkout_id IS NOT NULL
+                            AND a.recorded_at >= ? AND a.recorded_at < ?)
                 ), period_flows AS (
                     SELECT COALESCE(SUM(amount) FILTER (WHERE NOT refund), 0) AS captured,
                            COALESCE(-SUM(amount) FILTER (WHERE refund), 0) AS reversal,
@@ -313,6 +322,8 @@ public class SettlementJournalRepository {
                 rs.getBigDecimal("paid_out").toBigIntegerExact()),
                 sellerId, Timestamp.from(from), Timestamp.from(to), sellerId, Timestamp.from(from), Timestamp.from(to),
                 sellerId, Timestamp.from(from), Timestamp.from(to),
+                sellerId,
+                sellerId, Timestamp.from(from), Timestamp.from(to),
                 sellerId, Timestamp.from(from), Timestamp.from(to),
                 sellerId, Timestamp.from(from), Timestamp.from(to));
     }
@@ -324,8 +335,27 @@ public class SettlementJournalRepository {
      * 수수료·보류는 대변으로 쌓이고 지급은 차변으로 나가므로, 계정 잔액을 직접 계산한다.
      * 부호 규칙: SELLER_PAYABLE 은 대변(+) − 차변(−) = 지급 가능 잔액.
      * SELLER_RESERVE 는 대변 − 차변 = 보류 잔액. PLATFORM_FEE 는 대변 누적 = 수수료 수익.
+     *
+     * <p>판매자 이력 전체를 매번 합산하지 않는다(EXP-115). 잔액 = 마감(checkpoint) 행 + 마감 커서 이후 항목(꼬리)의 합.
+     * 마감 행과 커서는 {@link SettlementBalanceCheckpointRepository#fold}가 쓰기 경로 밖에서 한 트랜잭션으로 함께
+     * 옮기므로 첫 문장이 둘을 같은 스냅숏에서 읽는다. 꼬리는 그 커서부터 다시 세므로, 두 문장 사이에 마감이 더 진행돼도
+     * 같은 항목을 두 번 세거나 빠뜨리지 않는다(커서 아래 항목은 모두 커밋됐다는 것이 fold 의 규칙).
      */
     public SellerBalance sellerBalance(UUID sellerId) {
+        long[] base = new long[3];
+        UUID cursor = jdbc.queryForObject("""
+                SELECT c.entry_id, COALESCE(b.payable_won, 0) AS payable, COALESCE(b.reserve_won, 0) AS reserve,
+                       COALESCE(b.fee_won, 0) AS fee
+                FROM settlement_balance_checkpoint_cursor c
+                LEFT JOIN settlement_seller_balance_checkpoint b ON b.seller_id = ?
+                """, (resultSet, rowNumber) -> {
+                    base[0] = resultSet.getLong("payable");
+                    base[1] = resultSet.getLong("reserve");
+                    base[2] = resultSet.getLong("fee");
+                    return resultSet.getObject("entry_id", UUID.class);
+                }, sellerId);
+        // 커서는 바인드 변수가 아니라 리터럴로 넣는다. 일반 계획(generic plan)은 entry_id >= $n 의 선택도를 모르고
+        // 판매자 인덱스로 이력 전체를 읽을 수 있다. 값은 DB가 만든 UUID 라 문자열 주입 경로가 없다.
         return jdbc.queryForObject("""
                 SELECT
                     COALESCE(SUM(CASE WHEN account_code = 'SELLER_PAYABLE'
@@ -338,11 +368,11 @@ public class SettlementJournalRepository {
                         THEN CASE WHEN entry_side = 'CREDIT' THEN amount_won ELSE -amount_won END
                         ELSE 0 END), 0) AS fee
                 FROM settlement_entry
-                WHERE seller_id = ?
-                """, (resultSet, rowNumber) -> new SellerBalance(
-                resultSet.getBigDecimal("payable").toBigIntegerExact(),
-                resultSet.getBigDecimal("reserve").toBigIntegerExact(),
-                resultSet.getBigDecimal("fee").toBigIntegerExact()), sellerId);
+                WHERE seller_id = ? AND entry_id >= '%s'::uuid
+                """.formatted(Objects.requireNonNull(cursor)), (resultSet, rowNumber) -> new SellerBalance(
+                resultSet.getBigDecimal("payable").toBigIntegerExact().add(BigInteger.valueOf(base[0])),
+                resultSet.getBigDecimal("reserve").toBigIntegerExact().add(BigInteger.valueOf(base[1])),
+                resultSet.getBigDecimal("fee").toBigIntegerExact().add(BigInteger.valueOf(base[2]))), sellerId);
     }
 
     /**
@@ -375,10 +405,11 @@ public class SettlementJournalRepository {
                       AND j.source_payout_id IS NULL
                       AND j.recorded_at >= ? AND j.recorded_at < ?
                     UNION ALL
-                    SELECT j.journal_id, a.order_id, j.checkout_id, 'CHECKOUT_ALLOCATION', j.recorded_at, a.amount_won
+                    -- 배분의 recorded_at(V10 트리거가 분개 값으로 채움)으로 잘라 판매자 배분 전체를 읽지 않는다(EXP-115).
+                    SELECT a.journal_id, a.order_id, j.checkout_id, 'CHECKOUT_ALLOCATION', a.recorded_at, a.amount_won
                     FROM settlement_journal j JOIN settlement_seller_allocation a USING (journal_id)
                     WHERE a.seller_id = ? AND j.checkout_id IS NOT NULL
-                      AND j.recorded_at >= ? AND j.recorded_at < ?
+                      AND a.recorded_at >= ? AND a.recorded_at < ?
                     UNION ALL
                     SELECT j.journal_id, j.source_order_id, j.source_refund_id, 'REFUND_REVERSAL', j.recorded_at,
                            -j.gross_amount_won

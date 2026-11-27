@@ -147,7 +147,8 @@ class SettlementLedgerAuditIntegrationTest extends PayPalIntegrationTestSupport 
         assertThat(report.findings()).extracting(LedgerAuditResponse.Finding::check).containsExactly(
                 "JOURNAL_UNBALANCED", "SELLER_UNBALANCED", "JOURNAL_WITHOUT_ENTRIES", "ENTRY_WITHOUT_JOURNAL",
                 "CAPTURE_SPLIT_MISMATCH", "REFUND_CLEARING_MISMATCH", "REFUND_RESERVATION_MISMATCH",
-                "CHECKOUT_ALLOCATION_MISMATCH", "PAYOUT_JOURNAL_MISMATCH");
+                "CHECKOUT_ALLOCATION_MISMATCH", "PAYOUT_JOURNAL_MISMATCH", "ENTRY_SELLER_OUTSIDE_JOURNAL",
+                "ALLOCATION_RECORDED_AT_MISMATCH", "BALANCE_CHECKPOINT_DRIFT");
         assertThat(report.totalViolations()).isZero();
         // 흐름이 네 종류의 분개와 보류 소진·부분 환불·해제 예약을 모두 만들었는지(빈 데이터로 통과하지 않는다)
         assertThat(jdbc.queryForObject("""
@@ -194,6 +195,15 @@ class SettlementLedgerAuditIntegrationTest extends PayPalIntegrationTestSupport 
                 checkoutJournal, checkoutSellerA));
         injections.put("PAYOUT_JOURNAL_MISMATCH", db -> db.update(
                 "UPDATE settlement_payout SET provider_fee_won = provider_fee_won + 1 WHERE payout_id = ?", confirmedPayoutId));
+        injections.put("ENTRY_SELLER_OUTSIDE_JOURNAL", db -> db.update(
+                "UPDATE settlement_entry SET seller_id = ? WHERE journal_id = ? AND account_code = 'PLATFORM_FEE'",
+                UUID.randomUUID(), captureJournal));
+        injections.put("ALLOCATION_RECORDED_AT_MISMATCH", db -> db.update(
+                "UPDATE settlement_seller_allocation SET recorded_at = recorded_at + INTERVAL '1 second' WHERE journal_id = ?",
+                checkoutJournal));
+        injections.put("BALANCE_CHECKPOINT_DRIFT", db -> db.update(
+                "INSERT INTO settlement_seller_balance_checkpoint (seller_id, payable_won, reserve_won, fee_won) "
+                        + "VALUES (?, 1, 0, 0)", UUID.randomUUID()));
 
         assertThat(audits.audit().totalViolations()).as("baseline before injection").isZero();
         for (var injection : injections.entrySet()) {

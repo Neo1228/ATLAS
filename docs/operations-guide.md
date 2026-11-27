@@ -501,7 +501,7 @@ topic payload는 `schemaVersion`(현재 1)을 싣는다. 필드를 더하는 것
 | 청구 지연(T1·T2) | `atlas.queue.claim.duration{queue,outcome}` | 켜짐(타이머) | `outcome=empty` p95가 100 ms(폴링 간격 1초의 10%)를 15분 넘게 초과 | 큐 표 정리(위), 배치 청구, LISTEN/NOTIFY 깨우기 |
 | relay 정지(T4) | `atlas.order.inventory.event.relay.stalled_seconds`, `lag_events` | relay를 켠 경우 | `stalled_seconds`가 60초(`idle_in_transaction_session_timeout`)를 넘음 | 붙잡은 세션 확인(아래 질의). 반복되면 CDC나 브로커 |
 | 락 대기(T6·T7) | `atlas.db.lock_wait.sessions`·`oldest_seconds{wait_event}` | 꺼짐 | `wait_event=advisory`의 `oldest_seconds`가 2.5초(앱 `lock_timeout` 5초의 절반) 이상이 5분에 3번 이상, 또는 55P03 응답 증가 | 판매자 락 안의 작업 줄이기, 예약 원장 분리, 핫 SKU면 Redis gate(ADR-0066) |
-| 판매자 이력 조회(3.2) | 정산서·지급 화면 라우트의 `http.server.requests` p95, 환불 라우트 p95 | 켜짐 | p95 50 ms 초과(EXP-114: 판매자 항목 약 4만 행에서 정산서 p50 46 ms, 39만 행에서 환불 분개 p50 191 ms) | 덮는 인덱스(ADR-0103 A1, 쓰기 비용 감수 결정 필요) 또는 비동기 투영(A3) |
+| 판매자 이력 조회(3.2) | 정산서·지급 화면 라우트의 `http.server.requests` p95, 환불 라우트 p95, 마감 커서 지연(아래 "판매자 잔액 마감" 질의) | 켜짐 | p95 50 ms 초과, 또는 마감 커서 지연이 10분(안전 지연 5분 + 주기의 여러 배)을 넘음 | 먼저 마감 worker 상태(실패 카운터, 로그)를 본다. 커서가 도는데도 넘으면 정산서 기간 조건·배분 인덱스(V10)의 계획을 `EXPLAIN (ANALYZE, BUFFERS)`로 확인(ADR-0104) |
 
 쓰기 지연이 오르는데 락 대기 게이지가 0이면 락이 아니라 CPU 경합을 먼저 본다. EXP-114에서 정산서 독자 4개가 쓰기 처리량을 약 90% 줄였고 원인은 독자의 병렬 질의였다(독자 쪽 `max_parallel_workers_per_gather = 0`에서 쓰기 처리량 3.4배).
 
@@ -524,6 +524,44 @@ WHERE w.wait_event_type = 'Lock';
 ```
 
 롤백: 게이지는 설정을 `false`로 되돌리면 빈이 생기지 않는다. 청구 타이머는 지표 하나라 끌 설정이 없다(Micrometer `MeterFilter.denyNameStartsWith("atlas.queue.claim")`로 막을 수 있다).
+
+## 판매자 잔액 마감과 정산서 기간 읽기 (V10, ADR-0104)
+
+[EXP-115](03-experiments/EXP-115-seller-ledger-scale-hardening-and-growth-table-sweep.md)에서 판매자 락 안의 환불 분개(보류 잔액)와 지급 예약(지급 가능 잔액), 정산서 잔액, 30초마다 도는 음수 지급 가능 노출 지표가 판매자·플랫폼 원장 이력 전체를 읽던 것을 끊었다.
+
+- **잔액 = 마감 행 + 꼬리.** `settlement_seller_balance_checkpoint`는 마감 커서(`settlement_balance_checkpoint_cursor.entry_id`) 아래 항목의 판매자별 합이다. 잔액 읽기는 마감 행에 커서 이후 항목을 더한다. 항목 기록(capture·checkout·환불·지급)은 이 표를 건드리지 않아 잠금이 V10 전과 같다. 항목 id 기본값만 `settlement_entry_next_id()`(xid를 먼저 받고 UUIDv7 시계를 읽음)로 바뀌었다.
+- **마감 worker.** `SettlementBalanceCheckpointWorker`가 10초마다(기본) 커서를 옮긴다. 마감 한 번은 (그 트랜잭션 시작 시각 − 안전 지연, 자기 xid)를 `pending_entry_id`·`pending_xid`로 남기고, 다음 마감은 `pg_snapshot_xmin(pg_current_snapshot())`이 `pending_xid`를 넘었을 때(그보다 먼저 시작한 쓰기 트랜잭션이 어느 DB 역할이든 모두 끝났을 때)만 커서를 `pending_entry_id`까지 옮긴다. 그래서 커서 아래로 늦게 커밋되는 항목이 없다. 마감이 멈춰도 잔액은 정확하고 꼬리를 더 읽을 뿐이다. 배포 직후 커서는 0이라 이력 전체를 따라잡을 때까지(한 주기 최대 batch 20 × 5만 항목) 읽는 양이 V10 전과 같다.
+- **긴 쓰기 트랜잭션은 마감을 멈춘다.** 클러스터 안 어느 DB에서든 xid를 가진 채 열려 있는 트랜잭션(유휴 트랜잭션 포함)이 끝날 때까지 커서는 그 앞 pending에 머문다. 잔액은 정확하지만 꼬리가 길어진다. 아래 `cursor_lag`이 10분을 넘으면 `pg_stat_activity`의 `backend_xid`·`xact_start`(슈퍼유저 또는 `pg_read_all_stats`로 조회)로 그 트랜잭션을 찾는다.
+- **정산서 기간.** checkout 배분에 분개의 `recorded_at`을 트리거가 채우고(`settlement_seller_allocation.recorded_at`), 배분 인덱스를 `(seller_id, recorded_at, journal_id)`로 바꿨다. 30일 합계의 수수료·보류는 기간 안 판매자 분개에서 `journal_id`로 찾는다.
+
+| 환경 변수(접두 `ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_`) / 속성 | 기본값 | 의미 |
+|---|---|---|
+| `atlas.settlement.balance-checkpoint.enabled` | `true` | 마감 worker. 끄면 잔액 읽기는 정확하지만 마감 이후 이력을 모두 읽는다 |
+| `atlas.settlement.balance-checkpoint.poll-interval` | `PT10S` | 주기 |
+| `atlas.settlement.balance-checkpoint.batch-size` | `50000` | 한 트랜잭션이 마감하는 최대 항목 수 |
+| `atlas.settlement.balance-checkpoint.max-batches-per-run` | `20` | 한 주기의 최대 batch 수(따라잡기) |
+| `atlas.settlement.balance-checkpoint.safety-lag` | `PT5M` | 새 pending을 마감 트랜잭션 시작 시각보다 이만큼 앞에 둔다. 늦은 커밋은 xid 경계가 막고, 이 값은 DB 서버 시계가 뒤로 움직일 때의 여유다 |
+
+상태 확인:
+
+```sql
+SELECT now() - uuid_extract_timestamp(entry_id) AS cursor_lag, folded_at,
+       now() - uuid_extract_timestamp(pending_entry_id) AS pending_lag,
+       pg_snapshot_xmin(pg_current_snapshot()) > pending_xid AS pending_settled
+FROM settlement_balance_checkpoint_cursor;
+```
+
+원장 정정(break-glass)으로 어느 DB 역할이 항목을 넣든 마감 worker를 끌 필요는 없다(xid 경계가 늦은 커밋을 막는다). 단 `entry_id`를 직접 넘기지 않는다(기본값이 xid를 먼저 받아야 경계 규칙이 선다). 정정 뒤 원장 점검의 `BALANCE_CHECKPOINT_DRIFT`가 0인지 본다. 0이 아니면 마감을 다시 만든다(원장에서 다시 만들 수 있는 표다):
+
+```sql
+BEGIN;
+TRUNCATE settlement_seller_balance_checkpoint;
+UPDATE settlement_balance_checkpoint_cursor SET entry_id = '00000000-0000-0000-0000-000000000000', folded_at = NULL,
+    pending_entry_id = NULL, pending_xid = NULL;
+COMMIT;
+```
+
+V10 적용: 배분 표에 열을 더하고 기존 행을 한 번 채운다(V7 추가 전용 트리거를 그 트랜잭션 안에서만 끈다). 채우는 동안 배분 표에 `ACCESS EXCLUSIVE` 잠금이 걸려 checkout 기록이 기다린다. 롤백: 앱을 V10 이전으로 되돌린 뒤 `scripts/db/rollback/V10__undo_seller_ledger_history_bounded_reads.sql`.
 
 ## 분산 이행 단계별 근거
 

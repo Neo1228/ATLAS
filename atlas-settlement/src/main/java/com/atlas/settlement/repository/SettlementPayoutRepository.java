@@ -200,21 +200,39 @@ public class SettlementPayoutRepository {
         return total == null ? 0 : total;
     }
 
-    /** Global negative Seller payable exposure after confirmed transfers and refunds. */
+    /**
+     * Global negative Seller payable exposure after confirmed transfers and refunds.
+     *
+     * <p>판매자 잔액 마감 행 + 마감 커서 이후 항목(꼬리)으로 센다(ADR-0104). 30초마다 도는 지표라 원장 이력 전체를
+     * 판매자별로 모으지 않는다. 커서는 리터럴로 넣어(일반 계획이 꼬리 범위를 모르는 것을 피함) 두 번째 문장이 같은
+     * 커서를 다시 확인한다. 그 사이 마감이 커서를 옮겼으면(마감 행이 꼬리 일부를 이미 더함) 다시 읽는다.
+     */
     public NegativePayableExposure negativePayableExposure() {
-        return jdbc.queryForObject("""
-                WITH seller_payables AS (
-                    SELECT seller_id,
-                        SUM(CASE WHEN entry_side = 'CREDIT' THEN amount_won ELSE -amount_won END) AS payable
-                    FROM settlement_entry
-                    WHERE account_code = 'SELLER_PAYABLE' AND seller_id IS NOT NULL
-                    GROUP BY seller_id
-                )
-                SELECT COUNT(*) FILTER (WHERE payable < 0) AS seller_count,
-                    COALESCE(SUM(-payable) FILTER (WHERE payable < 0), 0) AS exposure_amount_won
-                FROM seller_payables
-                """, (row, number) -> new NegativePayableExposure(
-                row.getLong("seller_count"), row.getLong("exposure_amount_won")));
+        for (int attempt = 0; attempt < 3; attempt++) {
+            UUID cursor = jdbc.queryForObject("SELECT entry_id FROM settlement_balance_checkpoint_cursor", UUID.class);
+            List<NegativePayableExposure> exposure = jdbc.query("""
+                    WITH tail AS (
+                        SELECT seller_id,
+                            SUM(CASE WHEN entry_side = 'CREDIT' THEN amount_won ELSE -amount_won END) AS payable
+                        FROM settlement_entry
+                        WHERE account_code = 'SELLER_PAYABLE' AND seller_id IS NOT NULL AND entry_id >= '%1$s'::uuid
+                        GROUP BY seller_id
+                    ), seller_payables AS (
+                        SELECT COALESCE(b.payable_won, 0) + COALESCE(t.payable, 0) AS payable
+                        FROM settlement_seller_balance_checkpoint b
+                        FULL JOIN tail t USING (seller_id)
+                    )
+                    SELECT COUNT(*) FILTER (WHERE payable < 0) AS seller_count,
+                        COALESCE(SUM(-payable) FILTER (WHERE payable < 0), 0) AS exposure_amount_won
+                    FROM seller_payables
+                    HAVING (SELECT entry_id FROM settlement_balance_checkpoint_cursor) = '%1$s'::uuid
+                    """.formatted(cursor), (row, number) -> new NegativePayableExposure(
+                    row.getLong("seller_count"), row.getLong("exposure_amount_won")));
+            if (!exposure.isEmpty()) {
+                return exposure.get(0);
+            }
+        }
+        throw new IllegalStateException("Balance checkpoint cursor kept moving while reading payable exposure");
     }
 
     private static SettlementPayoutRow map(ResultSet resultSet) throws SQLException {

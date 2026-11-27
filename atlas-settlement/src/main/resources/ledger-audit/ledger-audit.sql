@@ -97,3 +97,41 @@ FROM (
                              WHERE e.journal_id = j.journal_id AND e.account_code = 'PSP_CLEARING' AND e.entry_side = 'CREDIT'), 0)
                     <> p.amount_won + p.payout_fx_rounding_expense_won + p.provider_fee_won))
 ) violation;
+
+-- 판매자 항목은 그 판매자의 분개에만 있다(capture·환불·지급은 journal.seller_id, checkout 은 그 판매자 배분).
+-- 정산서 기간 합계가 이 규칙으로 기간 안의 판매자 분개에서 항목을 찾으므로(EXP-115) 어긋나면 합계에서 빠진다.
+SELECT 'ENTRY_SELLER_OUTSIDE_JOURNAL' AS check_name, count(*) AS violations
+FROM settlement_entry e
+JOIN settlement_journal j USING (journal_id)
+WHERE e.seller_id IS NOT NULL
+  AND j.seller_id IS DISTINCT FROM e.seller_id
+  AND NOT EXISTS (SELECT 1 FROM settlement_seller_allocation a
+                  WHERE a.journal_id = e.journal_id AND a.seller_id = e.seller_id);
+
+-- 배분의 recorded_at 은 그 분개의 recorded_at 이다(V10 트리거가 채움). 정산서 checkout 갈래가 이 값으로 기간을 자른다.
+SELECT 'ALLOCATION_RECORDED_AT_MISMATCH' AS check_name, count(*) AS violations
+FROM settlement_seller_allocation a
+JOIN settlement_journal j USING (journal_id)
+WHERE a.recorded_at IS DISTINCT FROM j.recorded_at;
+
+-- 판매자 잔액 마감 행 = 마감 커서 아래 항목의 판매자·계정별 합(V10). 다르면 잔액 읽기(환불 분개의 보류 잔액, 지급
+-- 예약, 정산서 잔액)가 틀린다. 다시 만드는 절차는 운영 가이드 "판매자 잔액 마감" 절.
+SELECT 'BALANCE_CHECKPOINT_DRIFT' AS check_name, count(*) AS violations
+FROM (
+    SELECT e.seller_id,
+           sum(CASE WHEN e.account_code = 'SELLER_PAYABLE'
+               THEN CASE WHEN e.entry_side = 'CREDIT' THEN e.amount_won ELSE -e.amount_won END ELSE 0 END) AS payable,
+           sum(CASE WHEN e.account_code = 'SELLER_RESERVE'
+               THEN CASE WHEN e.entry_side = 'CREDIT' THEN e.amount_won ELSE -e.amount_won END ELSE 0 END) AS reserve,
+           sum(CASE WHEN e.account_code = 'PLATFORM_FEE'
+               THEN CASE WHEN e.entry_side = 'CREDIT' THEN e.amount_won ELSE -e.amount_won END ELSE 0 END) AS fee
+    FROM settlement_entry e
+    CROSS JOIN settlement_balance_checkpoint_cursor c
+    WHERE e.seller_id IS NOT NULL AND e.entry_id < c.entry_id
+      AND e.account_code IN ('SELLER_PAYABLE', 'SELLER_RESERVE', 'PLATFORM_FEE')
+    GROUP BY e.seller_id
+) ledger
+FULL JOIN settlement_seller_balance_checkpoint b USING (seller_id)
+WHERE coalesce(ledger.payable, 0) <> coalesce(b.payable_won, 0)
+   OR coalesce(ledger.reserve, 0) <> coalesce(b.reserve_won, 0)
+   OR coalesce(ledger.fee, 0) <> coalesce(b.fee_won, 0);
