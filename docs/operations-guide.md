@@ -529,8 +529,9 @@ WHERE w.wait_event_type = 'Lock';
 
 [EXP-115](03-experiments/EXP-115-seller-ledger-scale-hardening-and-growth-table-sweep.md)에서 판매자 락 안의 환불 분개(보류 잔액)와 지급 예약(지급 가능 잔액), 정산서 잔액, 30초마다 도는 음수 지급 가능 노출 지표가 판매자·플랫폼 원장 이력 전체를 읽던 것을 끊었다.
 
-- **잔액 = 마감 행 + 꼬리.** `settlement_seller_balance_checkpoint`는 마감 커서(`settlement_balance_checkpoint_cursor.entry_id`) 아래 항목의 판매자별 합이다. 잔액 읽기는 마감 행에 커서 이후 항목을 더한다. 항목 기록(capture·checkout·환불·지급)은 이 표를 건드리지 않아 쓰기 비용과 잠금이 V10 전과 같다.
-- **마감 worker.** `SettlementBalanceCheckpointWorker`가 10초마다(기본) 커서를 옮긴다. 커서는 "쓰기를 시작한 다른 트랜잭션의 가장 이른 시작"과 "지금 − 안전 지연(기본 5분)" 중 이른 쪽을 넘지 않는다. 그래서 커서 아래로 늦게 커밋되는 항목이 없다. 마감이 멈춰도 잔액은 정확하고 꼬리를 더 읽을 뿐이다. 배포 직후 커서는 0이라 이력 전체를 따라잡을 때까지(한 주기 최대 batch 20 × 5만 항목) 읽는 양이 V10 전과 같다.
+- **잔액 = 마감 행 + 꼬리.** `settlement_seller_balance_checkpoint`는 마감 커서(`settlement_balance_checkpoint_cursor.entry_id`) 아래 항목의 판매자별 합이다. 잔액 읽기는 마감 행에 커서 이후 항목을 더한다. 항목 기록(capture·checkout·환불·지급)은 이 표를 건드리지 않아 잠금이 V10 전과 같다. 항목 id 기본값만 `settlement_entry_next_id()`(xid를 먼저 받고 UUIDv7 시계를 읽음)로 바뀌었다.
+- **마감 worker.** `SettlementBalanceCheckpointWorker`가 10초마다(기본) 커서를 옮긴다. 마감 한 번은 (그 트랜잭션 시작 시각 − 안전 지연, 자기 xid)를 `pending_entry_id`·`pending_xid`로 남기고, 다음 마감은 `pg_snapshot_xmin(pg_current_snapshot())`이 `pending_xid`를 넘었을 때(그보다 먼저 시작한 쓰기 트랜잭션이 어느 DB 역할이든 모두 끝났을 때)만 커서를 `pending_entry_id`까지 옮긴다. 그래서 커서 아래로 늦게 커밋되는 항목이 없다. 마감이 멈춰도 잔액은 정확하고 꼬리를 더 읽을 뿐이다. 배포 직후 커서는 0이라 이력 전체를 따라잡을 때까지(한 주기 최대 batch 20 × 5만 항목) 읽는 양이 V10 전과 같다.
+- **긴 쓰기 트랜잭션은 마감을 멈춘다.** 클러스터 안 어느 DB에서든 xid를 가진 채 열려 있는 트랜잭션(유휴 트랜잭션 포함)이 끝날 때까지 커서는 그 앞 pending에 머문다. 잔액은 정확하지만 꼬리가 길어진다. 아래 `cursor_lag`이 10분을 넘으면 `pg_stat_activity`의 `backend_xid`·`xact_start`(슈퍼유저 또는 `pg_read_all_stats`로 조회)로 그 트랜잭션을 찾는다.
 - **정산서 기간.** checkout 배분에 분개의 `recorded_at`을 트리거가 채우고(`settlement_seller_allocation.recorded_at`), 배분 인덱스를 `(seller_id, recorded_at, journal_id)`로 바꿨다. 30일 합계의 수수료·보류는 기간 안 판매자 분개에서 `journal_id`로 찾는다.
 
 | 환경 변수(접두 `ATLAS_SETTLEMENT_BALANCE_CHECKPOINT_`) / 속성 | 기본값 | 의미 |
@@ -539,20 +540,24 @@ WHERE w.wait_event_type = 'Lock';
 | `atlas.settlement.balance-checkpoint.poll-interval` | `PT10S` | 주기 |
 | `atlas.settlement.balance-checkpoint.batch-size` | `50000` | 한 트랜잭션이 마감하는 최대 항목 수 |
 | `atlas.settlement.balance-checkpoint.max-batches-per-run` | `20` | 한 주기의 최대 batch 수(따라잡기) |
-| `atlas.settlement.balance-checkpoint.safety-lag` | `PT5M` | 커서를 지금보다 적어도 이만큼 뒤에 둔다. `pg_stat_activity`에서 시작 시각이 보이지 않는 다른 DB 역할 세션의 몫 |
+| `atlas.settlement.balance-checkpoint.safety-lag` | `PT5M` | 새 pending을 마감 트랜잭션 시작 시각보다 이만큼 앞에 둔다. 늦은 커밋은 xid 경계가 막고, 이 값은 DB 서버 시계가 뒤로 움직일 때의 여유다 |
 
 상태 확인:
 
 ```sql
-SELECT now() - uuid_extract_timestamp(entry_id) AS cursor_lag, folded_at FROM settlement_balance_checkpoint_cursor;
+SELECT now() - uuid_extract_timestamp(entry_id) AS cursor_lag, folded_at,
+       now() - uuid_extract_timestamp(pending_entry_id) AS pending_lag,
+       pg_snapshot_xmin(pg_current_snapshot()) > pending_xid AS pending_settled
+FROM settlement_balance_checkpoint_cursor;
 ```
 
-원장 정정(break-glass)으로 소유 계정이 항목을 넣을 때는 정정 전에 마감 worker를 끄고(`enabled=false`), 정정 뒤 원장 점검의 `BALANCE_CHECKPOINT_DRIFT`가 0인지 본 다음 켠다. 0이 아니면 마감을 다시 만든다(원장에서 다시 만들 수 있는 표다):
+원장 정정(break-glass)으로 어느 DB 역할이 항목을 넣든 마감 worker를 끌 필요는 없다(xid 경계가 늦은 커밋을 막는다). 단 `entry_id`를 직접 넘기지 않는다(기본값이 xid를 먼저 받아야 경계 규칙이 선다). 정정 뒤 원장 점검의 `BALANCE_CHECKPOINT_DRIFT`가 0인지 본다. 0이 아니면 마감을 다시 만든다(원장에서 다시 만들 수 있는 표다):
 
 ```sql
 BEGIN;
 TRUNCATE settlement_seller_balance_checkpoint;
-UPDATE settlement_balance_checkpoint_cursor SET entry_id = '00000000-0000-0000-0000-000000000000', folded_at = NULL;
+UPDATE settlement_balance_checkpoint_cursor SET entry_id = '00000000-0000-0000-0000-000000000000', folded_at = NULL,
+    pending_entry_id = NULL, pending_xid = NULL;
 COMMIT;
 ```
 
