@@ -3,7 +3,7 @@
 - 상태: Accepted(사용자 지시 "조사 문서 후보 1위를 만든다, 최선안은 에이전트가 고른다"에 따른 에이전트 결정. 사용자 승인 여부는 확인하지 못함)
 - 날짜: 2026-11-28
 - 관련 결정: [ADR-0030](ADR-0030-paypal-currency-boundary.md)(PayPal 통화 경계), [ADR-0069](ADR-0069-layered-naming-and-runtime-configuration.md)(계층 패키지 어휘)
-- 근거: [EXP-120](../../03-experiments/EXP-120-shopping-assistant-search-and-tool-safety.md), 이슈 [#736](https://github.com/Neo1228/ATLAS/issues/736)
+- 근거: [EXP-120](../../03-experiments/EXP-120-shopping-assistant-search-and-tool-safety.md), 이슈 [#736](https://github.com/Neo1228/ATLAS/issues/736), [EXP-123](../../03-experiments/EXP-123-product-search-candidate-pruning-at-scale.md)(규모 측정과 후보 탐색, 2026-11-29 갱신, 이슈 [#759](https://github.com/Neo1228/ATLAS/issues/759))
 
 ## 문제
 
@@ -17,6 +17,7 @@
 
 1. **검색은 V14의 n-gram 함수와 생성 열로 한다.** `catalog_search_grams(text)`가 한글 음절 2-gram과 영숫자 3-gram(앞뒤 공백 패딩)을 만들고, `product.search_grams`(이름+설명)와 `search_name_grams`(이름) 생성 열과 GIN 인덱스를 둔다. 검색어는 `catalog_search_terms(text)`가 3음절 이상 어절 끝 조사 하나와 요청 동사("찾아줘", "싶어" 등 16개)를 뗀다. 검색어 n-gram의 40% 이상이 상품에 있어야 후보가 되고, `2 × 이름 겹침 + 전체 겹침` 내림차순, 동점은 이름 n-gram이 적은(짧은) 상품, 그다음 `product_id` 순이다.
    - ctype 무관: 문자 범위(`[가-힣]`, `[0-9a-z]`)는 PostgreSQL 정규식이 코드 포인트로 비교하고, 결과에 ASCII 영숫자와 한글 음절만 남으므로 `lower()`의 ctype 차이가 결과에 닿지 않는다. 같은 컨테이너의 `en_US.utf8`·`C` 데이터베이스에서 64건의 상위 5건이 모두 같다(`ProductSearchRelevanceIntegrationTest`).
+   - 후보 탐색(EXP-123, 2026-11-29 추가): 겹침이 `min_hits = ⌈2n/5⌉` 이상인 상품은 비둘기집 원리로 아무 `n − min_hits + 1`개 n-gram 중 하나를 반드시 가지므로, GIN 조회는 `pg_stats.most_common_elems` 빈도가 낮은 그만큼의 n-gram(`probe`)으로만 한다. 결과는 전체 n-gram 조회와 같고(라벨 64건 상위 5건이 1만·10만·30만 카탈로그에서 모두 같음), 겹치지 않는 합성 카탈로그 30만 개에서 p50 201→65 ms, p95 851→475 ms다. 통계가 없거나 낡으면 덜 줄일 뿐 결과는 같다. 정확한 빈도 테이블(V17)은 읽은 행 차이가 0.3%라 두지 않았고, 후보 상한은 30만 개에서 상위 5건을 62/64 질의에서 바꿔 기각했다.
    - API: `GET /api/products/search?q=&minPriceWon=&maxPriceWon=&limit=`(공개, 1~20건, 기본 10, 커서 없음). LLM이 꺼져 있어도 쓴다. 기존 목록 API(`query=`)는 바꾸지 않는다(커서 페이지 계약이 관련도 순서와 맞지 않는다).
    - compose·Testcontainers의 ctype을 고정하는 안은 쓰지 않는다. 운영 데이터베이스를 고정하지 못하고, 고정해도 같은 SQL이 다른 환경에서 다른 결과를 내는 조건이 남는다.
 2. **LLM 클라이언트는 새 모듈 `atlas-llm`에 둔다.** OpenAI 호환 `POST /chat/completions` 하나를 기존 `RestClient`(JDK `HttpClient`)로 부르고 SDK는 쓰지 않는다. 쓰는 기능이 tool calling이 있는 chat completions 하나라 SDK가 줄이는 코드가 작고, SDK를 넣으면 HTTP 스택·JSON 라이브러리·재시도 정책이 둘이 된다.
@@ -81,17 +82,19 @@ sequenceDiagram
 - LLM이 꺼져 있어도 검색 API가 생긴다. 상품 쓰기 경로는 그대로이고 생성 열이 같은 규칙으로 갱신된다.
 - 비서는 기본 꺼짐이다. 켜면 차례마다 최대 5회 LLM을 부른다(동기 HTTP 요청 안, 호출당 응답 30초 상한).
 - V14의 생성 열 추가는 `product`를 다시 쓴다. 상품 200,040개에서 걸린 시간은 EXP-120 "지연과 마이그레이션 비용" 절에 있다. 대량 데이터 환경은 배포 창에 적용한다.
+- 검색 지연(EXP-123, 겹치지 않는 합성 카탈로그, 측정 잠금): 30만 개에서 p50 65 ms, p95 475 ms(데이터베이스 실행 시간). 두 단어가 모두 흔한 질의("검은색 운동화" 등)는 실제로 조건을 채우는 상품이 많아 0.3~0.7초가 남는다.
 - 구매자가 확인한 금액보다 비싼 주문은 만들어지지 않는다. 더 싸지면(가격 인하) 그대로 진행한다.
 
 ## 롤백
 
 - 기능: `ATLAS_LLM_ENABLED=false`(기본). 대화 API는 503 `ASSISTANT_DISABLED`, 검색 API는 계속 동작한다.
 - 스키마: V14는 열·함수·테이블 추가만 한다. 이전 jar로 돌려도 생성 열과 새 테이블은 쓰이지 않을 뿐 동작을 막지 않는다. 지우려면 `assistant_*` 테이블, `product_search_grams_idx`, 두 생성 열, 두 함수 순서로 지운다.
+- 후보 탐색(EXP-123): 스키마 변경이 없다. `searchPublic`의 `probe` CTE를 빼고 `p.search_grams && q.grams`로 되돌리면 된다(결과는 같고 지연만 EXP-123 A0로 돌아간다).
 
 ## 재검토 조건
 
 - 실제 검색 로그에서 결과 없음 비율이 10%를 넘거나 동의어 실패가 반복되면: 동의어 사전 또는 임베딩(pgvector)을 같은 라벨 집합에 더해 다시 잰다.
-- 상품 수가 200만에 닿거나 검색 p95가 EXP-120 측정의 3배를 넘으면: 후보 n-gram 선택(희귀 n-gram 우선)이나 별도 역색인 테이블을 잰다.
+- 상품 수가 200만에 닿거나 검색 p95가 EXP-123 측정(30만 개 475 ms)의 3배를 넘으면: `load-tests/catalog-search/product-search-scale.sql`로 다시 재고, 흔한 두 단어 질의를 줄이려면 관련도 문턱(40%)이나 상위 K 조기 종료, 별도 역색인 테이블을 같은 라벨로 잰다.
 - 실제 키로 종단 평가를 돌릴 수 있게 되면: EXP-120의 주입 문구 20건을 실제 모델에 넣어 정책 밖 호출 시도 수와 응답 교체 비율을 잰다(현재는 대본 모델로 서버 정책만 확인).
 - 응답 교체가 정상 대화의 5%를 넘으면: 금액 표기 해석 규칙을 넓힌다.
 - 다른 AI 기능이 `atlas-llm`을 쓰기 시작하면: 대화별 예산 외에 전역 비용 상한(일별)이 필요한지 본다.
