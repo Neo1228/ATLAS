@@ -48,6 +48,8 @@ class CheckoutAmountOverflowIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
+        // Buyer 예약 수량 상한(ADR-0113)이 먼저 거절하면 금액 넘침 경로를 지나지 않으므로 상한을 int 최대로 둔다.
+        registry.add("atlas.checkout-buyer-limit.reserved-units", () -> String.valueOf(Integer.MAX_VALUE));
     }
 
     @Autowired private SellerService sellers;

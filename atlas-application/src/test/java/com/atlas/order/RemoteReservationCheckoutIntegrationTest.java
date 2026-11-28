@@ -238,6 +238,28 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
         assertThat(takeCommand(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations/cancel");
     }
 
+    /**
+     * 원격 예약 모드는 RESERVED가 될 때까지 cart를 비우지 않는다. 예약 대기 중 새 Idempotency-Key로
+     * 다시 checkout하면 같은 cart로 두 번째 checkout과 원격 예약이 생겼다(ADR-0113).
+     */
+    @Test
+    void pendingRemoteCheckoutBlocksASecondCheckoutOfTheSameCartWithANewKey() throws Exception {
+        Fixture fixture = fixture("pending-duplicate");
+        INVENTORY.enqueue(new MockResponse().setResponseCode(503));
+        CheckoutResponse pending = checkout(fixture.buyer());
+        assertThat(pending.state()).isEqualTo(BuyerCheckoutState.RESERVATION_PENDING);
+        assertThat(cartItemCount(fixture.buyer())).isEqualTo(1);
+        INVENTORY.enqueue(new MockResponse().setResponseCode(503));
+
+        mockMvc.perform(post("/api/buyers/{buyer}/cart/checkout", fixture.buyer())
+                        .header("Idempotency-Key", "remote-duplicate-" + UUID.randomUUID()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM buyer_checkout WHERE buyer_ref = ?",
+                Integer.class, fixture.buyer())).isEqualTo(1);
+    }
+
     @Test
     void remoteRejectionReleasesCouponForAnotherCheckout() throws Exception {
         Fixture fixture = fixture("rejected-coupon");

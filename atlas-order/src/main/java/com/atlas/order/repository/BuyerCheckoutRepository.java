@@ -14,6 +14,30 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface BuyerCheckoutRepository extends JpaRepository<BuyerCheckout, UUID> {
+    /** Buyer가 지금 재고를 잡고 있는 미결 checkout 수와 그 checkout들이 예약한 수량 합. */
+    interface OpenHold {
+        long getOpenCheckouts();
+        long getReservedUnits();
+    }
+
+    /**
+     * 결제 전이거나 결제·취소가 끝나지 않아 재고를 잡고 있는 Buyer checkout을 센다.
+     * RESERVED는 child order의 checkout window가 지나면 만료 sweep 전이라도 결제할 수 없으므로 세지 않는다.
+     * RESERVATION_PENDING은 원격 예약이 이미 잡혔을 수 있으므로 시간과 관계없이 센다.
+     */
+    @Query(value = """
+            SELECT COUNT(DISTINCT checkout.checkout_id) AS "openCheckouts",
+                   COALESCE(SUM(item.quantity), 0) AS "reservedUnits"
+            FROM buyer_checkout checkout
+            JOIN purchase_order purchase ON purchase.checkout_id = checkout.checkout_id
+            JOIN order_item item ON item.order_id = purchase.order_id
+            WHERE checkout.buyer_ref = :buyerRef
+              AND (checkout.state IN ('RESERVATION_PENDING', 'PAYMENT_PENDING', 'PAYMENT_UNKNOWN',
+                                      'INVENTORY_CLAIM_PENDING', 'CANCEL_PENDING')
+                   OR (checkout.state = 'RESERVED' AND purchase.checkout_expires_at > :now))
+            """, nativeQuery = true)
+    OpenHold findOpenHold(@Param("buyerRef") String buyerRef, @Param("now") Instant now);
+
     Optional<BuyerCheckout> findByBuyerRefAndIdempotencyKey(String buyerRef, String idempotencyKey);
 
     List<BuyerCheckout> findByStateOrderByCreatedAtAsc(BuyerCheckoutState state, Limit limit);

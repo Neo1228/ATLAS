@@ -74,6 +74,8 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
 
     private final boolean splitAllocationEnabled;
     private final Optional<LocationClient> locationClient;
+    private final int maxOpenCheckoutsPerBuyer;
+    private final int maxReservedUnitsPerBuyer;
 
 
 
@@ -86,6 +88,10 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                                   @Value("${atlas.checkout-window:PT10M}") Duration checkoutWindow,
             // 단일 location으로 SellerOrder를 처리할 수 없을 때 여러 location으로 나눠 예약할지 여부(EXP-054).
             @Value("${atlas.order-inventory-reservation.split-allocation-enabled:false}") boolean splitAllocationEnabled,
+            // Buyer 한 명이 동시에 잡을 수 있는 미결 checkout 수와 그 예약 수량 합의 상한(ADR-0113). 기본값은 여기 한 곳이고
+            // 환경 변수 ATLAS_CHECKOUT_BUYER_LIMIT_OPEN_CHECKOUTS, ATLAS_CHECKOUT_BUYER_LIMIT_RESERVED_UNITS로 바꾼다.
+            @Value("${atlas.checkout-buyer-limit.open-checkouts:1}") int maxOpenCheckoutsPerBuyer,
+            @Value("${atlas.checkout-buyer-limit.reserved-units:50}") int maxReservedUnitsPerBuyer,
             Optional<LocationClient> locationClient,
             Optional<LocationReservationService> locationReservations,
             Optional<CheckoutFinalizationService> reservationFinalizer) {
@@ -107,6 +113,11 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         if (checkoutWindow.isZero() || checkoutWindow.isNegative()) {
             throw new IllegalArgumentException("checkoutWindow must be positive");
         }
+        if (maxOpenCheckoutsPerBuyer <= 0 || maxReservedUnitsPerBuyer <= 0) {
+            throw new IllegalArgumentException("Buyer checkout limits must be positive");
+        }
+        this.maxOpenCheckoutsPerBuyer = maxOpenCheckoutsPerBuyer;
+        this.maxReservedUnitsPerBuyer = maxReservedUnitsPerBuyer;
     }
 
     @Override
@@ -161,7 +172,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             checkoutId = transactions.execute(status ->
                     checkoutLocked(buyerRef, idempotencyKey, couponCodes, stock, spendingCapWon));
         } catch (ArithmeticException overflow) {
-            // 장바구니 수량에 상한이 없으므로 가격 × 수량이 long 을 넘칠 수 있다.
+            // 단가에는 상한이 없으므로 Buyer 예약 수량 상한 안에서도 가격 × 수량이 long 을 넘칠 수 있다.
             // 이것은 클라이언트가 만든 입력 오류이며 500 이 아니라 400 이어야 한다.
             // 카트 덧셈(CartServiceImpl)과 환불 경로도 같은 방식으로 변환한다.
             throw new OrderException(OrderException.Code.INVALID_REQUEST,
@@ -202,6 +213,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "Cannot checkout an empty cart");
         }
         Instant now = clock.instant();
+        enforceBuyerHoldLimits(buyerRef, cart.items(), now);
         PricedCart priced = price(cart.items(), couponCodes, now);
         requireWithinCap(priced.totalWon(), spendingCapWon);
         List<SellerLines> snapshotsBySeller = priced.sellers();
@@ -333,6 +345,29 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             snapshotsBySeller.add(new SellerLines(seller.getKey(), lines, coupon));
         }
         return new PricedCart(List.copyOf(snapshotsBySeller), checkoutTotal);
+    }
+
+    /**
+     * 같은 Buyer가 미결 checkout을 겹쳐 열거나 재고를 한도 이상 잡지 못하게 한다(ADR-0113).
+     * 원격 예약 모드에서는 RESERVED가 될 때까지 cart를 비우지 않으므로 이 검사가 없으면
+     * 새 Idempotency-Key로 같은 cart를 두 번 예약할 수 있다.
+     *
+     * <p>확인과 생성 사이에 다른 checkout이 끼어들지 않는다는 전제는 {@code checkoutLocked} 첫 줄의
+     * Buyer cart 행 잠금({@code SELECT ... FOR UPDATE})에 기댄다. 같은 Buyer의 cart checkout은 그 잠금에서
+     * 직렬화된다. cart를 거치지 않고 BuyerCheckout을 만드는 경로가 생기면 이 전제가 깨진다.
+     */
+    private void enforceBuyerHoldLimits(String buyerRef, List<CartItemResponse> items, Instant now) {
+        BuyerCheckoutRepository.OpenHold hold = checkouts.findOpenHold(buyerRef, now);
+        if (hold.getOpenCheckouts() >= maxOpenCheckoutsPerBuyer) {
+            throw new OrderException(OrderException.Code.CONFLICT,
+                    "Buyer already has an open checkout; pay or cancel it before starting another");
+        }
+        long requestedUnits = 0;
+        for (CartItemResponse item : items) requestedUnits += item.quantity();
+        if (hold.getReservedUnits() + requestedUnits > maxReservedUnitsPerBuyer) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST,
+                    "Checkout would hold more than " + maxReservedUnitsPerBuyer + " units for this Buyer");
+        }
     }
 
     private CheckoutResponse toResponse(UUID checkoutId) {
