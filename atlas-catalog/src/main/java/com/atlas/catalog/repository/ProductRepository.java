@@ -149,4 +149,45 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("cursorProduct") UUID cursorProduct, @Param("limit") int limit,
             @Param("minPriceWon") Long minPriceWon, @Param("maxPriceWon") Long maxPriceWon,
             @Param("asOf") Instant asOf, @Param("managementScope") boolean managementScope);
+
+    /**
+     * 공개 구매 가능 상품의 관련도 검색(ADR-0109, EXP-120). V14의 {@code catalog_search_terms}가 조사와 요청 동사를 떼고
+     * {@code catalog_search_grams}가 한글 2-gram·영숫자 3-gram을 만든다. 검색어 n-gram의 40% 이상이 상품명·설명에
+     * 있어야 후보가 되고, 상품명 겹침에 2배 가중을 둔 겹침 수로 정렬한다. 동점은 이름이 짧은(더 구체적인) 상품이 앞선다.
+     * 검색어 n-gram은 MATERIALIZED로 한 번만 계산한다(일반 계획에서 행마다 다시 계산하지 않게).
+     */
+    @Query(value = """
+            WITH q AS MATERIALIZED (
+                SELECT catalog_search_grams(catalog_search_terms(CAST(:query AS text))) AS grams
+            ),
+            candidate AS (
+                SELECT p.product_id, p.seller_id, p.primary_category_id, p.name, p.description, p.status,
+                       cardinality(p.search_name_grams) AS name_size,
+                       (SELECT count(*) FROM unnest(q.grams) g WHERE g = ANY (p.search_grams)) AS hits,
+                       (SELECT count(*) FROM unnest(q.grams) g WHERE g = ANY (p.search_name_grams)) AS name_hits,
+                       cardinality(q.grams) AS query_size
+                FROM product p CROSS JOIN q
+                WHERE p.search_grams && q.grams
+                    AND p.status = 'ACTIVE'
+                    AND EXISTS (SELECT 1 FROM product_channel_availability c
+                        WHERE c.product_id = p.product_id AND c.sales_channel = 'ONLINE_STORE' AND c.available = TRUE)
+                    AND (CAST(:minPriceWon AS bigint) IS NULL AND CAST(:maxPriceWon AS bigint) IS NULL
+                        OR EXISTS (
+                            SELECT 1 FROM seller_sku sku
+                            WHERE sku.product_id = p.product_id
+                              AND (CASE WHEN sku.sale_price_won IS NOT NULL
+                                             AND sku.sale_starts_at <= CAST(:asOf AS timestamptz)
+                                             AND CAST(:asOf AS timestamptz) < sku.sale_ends_at
+                                        THEN sku.sale_price_won ELSE sku.price_won END)
+                                  BETWEEN COALESCE(CAST(:minPriceWon AS bigint), 0)
+                                      AND COALESCE(CAST(:maxPriceWon AS bigint), 9223372036854775807)))
+            )
+            SELECT product_id, seller_id, primary_category_id, name, description, status
+            FROM candidate
+            WHERE hits * 5 >= query_size * 2
+            ORDER BY 2 * name_hits + hits DESC, name_size, product_id
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Product> searchPublic(@Param("query") String query, @Param("minPriceWon") Long minPriceWon,
+            @Param("maxPriceWon") Long maxPriceWon, @Param("asOf") Instant asOf, @Param("limit") int limit);
 }

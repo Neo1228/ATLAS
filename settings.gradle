@@ -9,4 +9,6 @@ include 'atlas-payment'
 include 'atlas-settlement'
 include 'atlas-account'
 include 'atlas-inventory-location'
+include 'atlas-llm'
+include 'atlas-assistant'
 

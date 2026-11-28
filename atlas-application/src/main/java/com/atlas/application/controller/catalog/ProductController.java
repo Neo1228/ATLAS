@@ -41,6 +41,14 @@ public class ProductController {
         return products.listProductsPage(sellerId, categoryId, query, minPriceWon, maxPriceWon, limit, cursor);
     }
 
+    /** 관련도 순 공개 검색(ADR-0109). LLM 없이도 쓰는 API이고, 쇼핑 비서의 search_products 도구도 같은 서비스를 부른다. */
+    @GetMapping("/products/search")
+    public CatalogResponse.ProductListingPage searchProducts(@RequestParam("q") String query,
+            @RequestParam(required = false) Long minPriceWon, @RequestParam(required = false) Long maxPriceWon,
+            @RequestParam(required = false) Integer limit) {
+        return products.searchProducts(query, minPriceWon, maxPriceWon, limit);
+    }
+
     @GetMapping("/sellers/{sellerId}/products")
     public CatalogResponse.ProductListingPage listSellerProducts(@PathVariable UUID sellerId,
             @RequestParam(required = false) String query, @RequestParam(required = false) UUID categoryId,

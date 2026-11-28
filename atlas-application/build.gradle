@@ -11,6 +11,7 @@ dependencies {
     implementation project(':atlas-catalog')
 
     implementation project(':atlas-account')
+    implementation project(':atlas-assistant')
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
@@ -32,6 +33,8 @@ dependencies {
     testImplementation 'com.tngtech.archunit:archunit:1.5.1'
     testImplementation 'com.github.bastiaanjansen:otp-java:2.1.0'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    // LLM 클라이언트 MockWebServer 시험용. 운영 코드는 atlas-assistant를 거쳐서만 쓴다.
+    testImplementation project(':atlas-llm')
     testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'

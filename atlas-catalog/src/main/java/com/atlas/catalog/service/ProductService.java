@@ -26,6 +26,12 @@ public interface ProductService {
             Long minPriceWon, Long maxPriceWon, Integer limit, String cursor);
     CatalogResponse.ProductListing findProduct(UUID productId);
 
+    /**
+     * 공개 구매 가능 상품을 관련도 순으로 최대 {@code limit}(1~20, 기본 10)건 찾는다. {@code nextCursor}는 항상 null.
+     * 결과는 데이터베이스 LC_CTYPE과 무관하다(ADR-0109).
+     */
+    CatalogResponse.ProductListingPage searchProducts(String query, Long minPriceWon, Long maxPriceWon, Integer limit);
+
     /** 공개 구매 가능 상태(ACTIVE + ONLINE_STORE)인지만 확인한다. 전체 상세 조립 없이 존재 검증에 쓴다. */
     boolean isPublicOrderable(UUID productId);
 }
