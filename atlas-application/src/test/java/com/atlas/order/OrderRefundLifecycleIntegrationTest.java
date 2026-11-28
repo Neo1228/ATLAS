@@ -35,6 +35,7 @@ import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -493,6 +494,37 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         assertThat(refundRequestIds()).hasSize(2);
         assertStock(fixture, 2, 0);
         assertThat(journalCountForRefund(completed.refundId())).isEqualTo(1);
+    }
+
+    /**
+     * EXP-119: PayPal은 환불 키를 45일 기억한다. 그 뒤 같은 키로 부분 환불을 다시 보내면 PayPal은 새 환불로 받아
+     * 돈이 두 번 나간다. 키가 그만큼 오래된 결과 불명 환불은 다시 보내지 않는다.
+     */
+    @Test
+    void unknownRefundOlderThanPayPalRequestIdRetentionIsNotResent() {
+        Fixture fixture = paidOrder(2, 3, 125);
+        OrderRequest.Refund request = request(fixture.sellerId(), fixture.orderId(), "refund-stale-key",
+                fixture.orderItemId(), 1);
+        String captureId = jdbc.queryForObject(
+                "SELECT provider_capture_id FROM payment_attempt WHERE attempt_id = ?",
+                String.class, fixture.paymentAttemptId());
+        String refundPost = "POST /v2/payments/captures/" + captureId + "/refund";
+
+        disconnectNextRefundResponse();
+        RefundResponse.Refund unknown = refunds.refund(request);
+        assertThat(unknown.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
+        BigDecimal firstRefund = refundedTotal(captureId);
+        assertThat(firstRefund).isPositive();
+        jdbc.update("UPDATE payment_refund_operation SET created_at = created_at - INTERVAL '46 days'"
+                + " WHERE provider_request_id = ?::uuid", refundRequestIds().getFirst());
+        forgetRefundRequestIds();
+
+        RefundResponse.Refund retried = refunds.refund(request);
+
+        assertThat(refundedTotal(captureId)).isEqualByComparingTo(firstRefund);
+        assertThat(providerCalls().get(refundPost)).isEqualTo(1);
+        assertThat(retried.paymentStatus()).isEqualTo(OrderRefundPaymentStatus.UNKNOWN);
+        assertThat(journalCountForRefund(retried.refundId())).isZero();
     }
 
     @Test

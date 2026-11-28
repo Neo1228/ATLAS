@@ -132,6 +132,15 @@ public abstract class PayPalIntegrationTestSupport {
         }
     }
     protected static List<String> refundRequestIds() { return List.copyOf(REFUND_REQUEST_IDS); }
+    /**
+     * PayPal이 환불 요청의 {@code PayPal-Request-Id}를 잊은 상태(보관 45일이 지남)를 만든다. 이미 처리한 환불 누계는 남긴다.
+     * 출처: https://developer.paypal.com/api/rest/requests/#paypal-request-id
+     */
+    protected static void forgetRefundRequestIds() { REFUNDS_BY_REQUEST_ID.clear(); }
+    /** stub이 캡처에 대해 실제로 처리한 환불 누계. */
+    protected static BigDecimal refundedTotal(String captureId) {
+        return REFUNDED_TOTALS.getOrDefault(captureId, BigDecimal.ZERO);
+    }
 
     @Autowired(required = false)
     private CachingExchangeRateProvider fxCacheUnderTest;
