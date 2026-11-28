@@ -13,6 +13,7 @@ import com.atlas.order.repository.OrderItemRepository;
 import com.atlas.order.repository.OrderRefundRepository;
 import com.atlas.order.repository.OrderReturnRepository;
 import com.atlas.order.repository.OrderShipmentRepository;
+import com.atlas.order.service.ReturnRecommendationReviewer;
 import com.atlas.order.service.ReturnRecommendationRules;
 import com.atlas.order.service.ReturnRecommendationService;
 import java.time.Clock;
@@ -39,16 +40,17 @@ public class ReturnRecommendationServiceImpl implements ReturnRecommendationServ
     private final OrderRefundRepository refundRecords;
     private final OrderShipmentRepository shipments;
     private final ReturnRecommendationRules rules;
+    private final ReturnRecommendationReviewer reviewer;
     private final Clock clock;
 
     public ReturnRecommendationServiceImpl(PlatformTransactionManager manager, OrderReturnRepository returns,
             OrderItemRepository items, OrderRefundRepository refundRecords, OrderShipmentRepository shipments,
-            ReturnRecommendationRules rules, Clock clock) {
+            ReturnRecommendationRules rules, ReturnRecommendationReviewer reviewer, Clock clock) {
         TransactionTemplate template = new TransactionTemplate(Objects.requireNonNull(manager));
         template.setReadOnly(true);
         this.transactions = template;
         this.returns = returns; this.items = items; this.refundRecords = refundRecords;
-        this.shipments = shipments; this.rules = rules; this.clock = clock;
+        this.shipments = shipments; this.rules = rules; this.reviewer = reviewer; this.clock = clock;
     }
 
     @Override
@@ -56,7 +58,7 @@ public class ReturnRecommendationServiceImpl implements ReturnRecommendationServ
             OrderRequest.ReturnRecommendation request) {
         if (sellerId == null || orderId == null || returnId == null || request == null || request.items() == null)
             throw invalid("Seller, order, return and item conditions are required");
-        return Objects.requireNonNull(transactions.execute(tx -> {
+        Evaluated evaluated = Objects.requireNonNull(transactions.execute(tx -> {
             OrderReturn row = returns.findWithItemsByReturnId(returnId)
                     .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND, "Return not found"));
             if (!row.orderId().equals(orderId) || !row.sellerId().equals(sellerId))
@@ -83,11 +85,18 @@ public class ReturnRecommendationServiceImpl implements ReturnRecommendationServ
                         refundedQuantity, refundAmount(item, line.quantity(), refundedQuantity),
                         shipment == null ? null : shipment.deliveredAt(), conditions.get(line.orderItemId())));
             }
-            ReturnRecommendationRules.Outcome outcome = rules.evaluate(
-                    new ReturnRecommendationRules.Facts(row.reason(), row.requestedAt(), lines));
-            return response(row, conditions, outcome);
+            ReturnRecommendationRules.Facts facts =
+                    new ReturnRecommendationRules.Facts(row.reason(), row.requestedAt(), lines);
+            return new Evaluated(row, conditions, facts, rules.evaluate(facts));
         }));
+        // LLM 호출은 네트워크 호출이므로 트랜잭션 밖에서 한다. 검토는 승인을 사람 검토로 내리거나 설명만 붙인다.
+        ReturnRecommendationReviewer.Review review = reviewer.review(
+                evaluated.facts(), evaluated.outcome(), evaluated.row().reasonNote());
+        return response(evaluated.row(), evaluated.conditions(), evaluated.outcome(), review);
     }
+
+    private record Evaluated(OrderReturn row, Map<UUID, ReturnItemCondition> conditions,
+                             ReturnRecommendationRules.Facts facts, ReturnRecommendationRules.Outcome outcome) { }
 
     /** 남은 수량을 넘으면 계산할 수 없으므로 0을 넘기고, 규칙이 그 줄을 이미 환불된 것으로 거절한다. */
     private static long refundAmount(OrderItem item, int quantity, int refundedQuantity) {
@@ -109,7 +118,7 @@ public class ReturnRecommendationServiceImpl implements ReturnRecommendationServ
     }
 
     private ReturnResponse.Recommendation response(OrderReturn row, Map<UUID, ReturnItemCondition> conditions,
-            ReturnRecommendationRules.Outcome outcome) {
+            ReturnRecommendationRules.Outcome outcome, ReturnRecommendationReviewer.Review review) {
         Map<UUID, Integer> quantities = new HashMap<>();
         row.items().forEach(line -> quantities.put(line.orderItemId(), line.quantity()));
         List<ReturnResponse.Recommendation.Item> lines = outcome.lines().stream()
@@ -117,9 +126,9 @@ public class ReturnRecommendationServiceImpl implements ReturnRecommendationServ
                         quantities.get(line.orderItemId()), conditions.get(line.orderItemId()),
                         line.suggestedResult(), line.refundAmountWon(), line.returnWindowEndsAt(), line.reason()))
                 .toList();
-        return new ReturnResponse.Recommendation(row.returnId(), row.orderId(), outcome.decision(), outcome.reasons(),
+        return new ReturnResponse.Recommendation(row.returnId(), row.orderId(), review.decision(), outcome.reasons(),
                 outcome.refundAmountWon(), rules.reviewAmountWon(), row.reason(), row.reasonNote(), clock.instant(),
-                lines);
+                lines, outcome.decision(), review.downgraded(), review.explanation());
     }
 
     private static OrderException conflict(String message) {

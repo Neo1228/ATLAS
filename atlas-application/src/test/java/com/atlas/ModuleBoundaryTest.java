@@ -78,6 +78,9 @@ class ModuleBoundaryTest {
                         "com.atlas.catalog.service", "com.atlas.catalog.model",
                         "com.atlas.catalog.dto.request", "com.atlas.catalog.dto.response",
                         "com.atlas.catalog.exception",
+                        // 반품 권고의 LLM 검토 층(ADR-0110)은 LLM 클라이언트의 공개 계약만 쓴다.
+                        "com.atlas.llm.service", "com.atlas.llm.dto.request", "com.atlas.llm.dto.response",
+                        "com.atlas.llm.model", "com.atlas.llm.exception",
                         "com.atlas.order.service", "com.atlas.order.dto.request", "com.atlas.order.dto.response"));
         enforceAllowedDependencies(source, "com.atlas.payment..",
                 append(javaAndPersistence, "com.atlas.payment..", "tools.jackson.."));

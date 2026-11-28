@@ -51,12 +51,15 @@ public final class ReturnResponse {
      * {@code suggestedResult}를 기존 검수 호출({@code PUT .../inspection})에 보내고, 그 호출만 환불을 실행한다.
      * {@code refundAmountWon}은 서버가 주문 스냅샷으로 계산한 {@code PASSED} 권고 줄의 합계다.
      * {@code HUMAN_REVIEW}이면 규칙이 정하지 못한 줄의 {@code suggestedResult}가 null이다.
-     * {@code reasonNote}는 구매자가 쓴 원문이고 결정에는 쓰이지 않았다. buyerRef는 내보내지 않는다.
+     * {@code reasonNote}는 구매자가 쓴 원문이고 결정 규칙에는 쓰이지 않았다. buyerRef는 내보내지 않는다.
+     * {@code ruleDecision}은 결정 규칙의 결과다. LLM 검토 층이 켜져 있으면 승인을 사람 검토로 내릴 수만 있고
+     * ({@code reviewDowngraded}), 설명({@code explanation}, 없으면 null)을 붙인다. 금액과 줄 결과는 규칙의 값이다.
      */
     public record Recommendation(UUID returnId, UUID orderId, ReturnRecommendationDecision decision,
                                  List<ReturnRecommendationReason> reasons, long refundAmountWon,
                                  long reviewAmountLimitWon, ReturnReason reason, String reasonNote,
-                                 Instant evaluatedAt, List<Item> items) {
+                                 Instant evaluatedAt, List<Item> items, ReturnRecommendationDecision ruleDecision,
+                                 boolean reviewDowngraded, String explanation) {
         public Recommendation {
             reasons = List.copyOf(reasons);
             items = List.copyOf(items);
