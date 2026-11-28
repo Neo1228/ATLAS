@@ -22,6 +22,7 @@ import com.atlas.order.model.OrderRefundPaymentStatus;
 import com.atlas.order.model.OrderRefundStatus;
 import com.atlas.order.model.OrderReturnInspectionResult;
 import com.atlas.order.model.OrderReturnStatus;
+import com.atlas.order.model.ReturnReason;
 import com.atlas.order.model.OrderShipmentStatus;
 import com.atlas.order.model.OrderSource;
 import com.atlas.order.model.OrderState;
@@ -88,6 +89,7 @@ class EnumCheckConstraintContractTest {
             Map.entry("order_shipment.status", OrderShipmentStatus.class),
             Map.entry("order_return.return_status", OrderReturnStatus.class),
             Map.entry("order_return_item.inspection_result", OrderReturnInspectionResult.class),
+            Map.entry("order_return.reason_code", ReturnReason.class),
             Map.entry("order_refund_request.refund_status", OrderRefundStatus.class),
             Map.entry("order_refund_summary.refund_status", OrderRefundStatus.class),
             Map.entry("order_refund_request.payment_refund_status", OrderRefundPaymentStatus.class),

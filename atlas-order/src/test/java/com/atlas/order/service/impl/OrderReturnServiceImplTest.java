@@ -75,7 +75,7 @@ class OrderReturnServiceImplTest {
         OrderRepository orders = mock(OrderRepository.class);
         when(orders.findWithLockByOrderId(orderId)).thenReturn(Optional.of(mock(PurchaseOrder.class)));
         OrderReturnRepository returns = mock(OrderReturnRepository.class);
-        OrderReturn row = new OrderReturn(orderId, sellerId, "buyer", "return-key", now);
+        OrderReturn row = new OrderReturn(orderId, sellerId, "buyer", "return-key", now, null, null);
         row.receive(now);
         row.addItem(new OrderReturnItem(orderItemId, 1));
         when(returns.findWithLockByOrderIdAndReturnId(orderId, returnId)).thenReturn(Optional.of(row));

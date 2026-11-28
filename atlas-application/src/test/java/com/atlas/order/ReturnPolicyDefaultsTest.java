@@ -3,6 +3,7 @@ package com.atlas.order;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.atlas.order.service.ReturnPolicy;
+import com.atlas.order.service.ReturnRecommendationRules;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
@@ -31,5 +32,7 @@ class ReturnPolicyDefaultsTest {
                 .isEqualTo(ReturnPolicy.DEFAULT_INSPECTION_BUSINESS_DAYS);
         assertThat(environment.getProperty("atlas.order.return.business-zone"))
                 .isEqualTo(ReturnPolicy.DEFAULT_BUSINESS_ZONE);
+        assertThat(environment.getProperty("atlas.order.return.recommendation.review-amount-won", Long.class))
+                .isEqualTo(ReturnRecommendationRules.DEFAULT_REVIEW_AMOUNT_WON);
     }
 }

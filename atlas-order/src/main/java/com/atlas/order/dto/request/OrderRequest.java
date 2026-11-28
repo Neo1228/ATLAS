@@ -1,5 +1,7 @@
 package com.atlas.order.dto.request;
 
+import com.atlas.order.model.ReturnItemCondition;
+import com.atlas.order.model.ReturnReason;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -26,11 +28,25 @@ public final class OrderRequest {
         public enum Result { PASSED, FAILED }
     }
 
-    public record Return(String buyerRef, UUID orderId, String idempotencyKey, List<Item> items) {
+    /**
+     * {@code reason}과 {@code note}는 선택이다(사유 이전 클라이언트 호환). {@code note}는 사유가 있을 때만 받고 저장 전
+     * 앞뒤 공백을 지운다. 구매자가 쓴 신뢰할 수 없는 텍스트라 결정 규칙은 읽지 않는다(ADR-0110).
+     */
+    public record Return(String buyerRef, UUID orderId, String idempotencyKey, List<Item> items,
+            ReturnReason reason, String note) {
         /** 분할 출고 반품은 출처 shipment를 지정한다. 유일한 적격 출처면 기존 요청처럼 생략할 수 있다. */
         public record Item(UUID orderItemId, int quantity, UUID shipmentId) {
             public Item(UUID orderItemId, int quantity) { this(orderItemId, quantity, null); }
         }
+    }
+
+    /** 판매자가 수령한 반품 줄마다 하나씩 적은 상태. 권고만 계산하고 저장하지 않는다. */
+    public record ReturnRecommendation(List<Item> items) {
+        public ReturnRecommendation {
+            items = items == null ? null : Collections.unmodifiableList(new ArrayList<>(items));
+        }
+
+        public record Item(UUID orderItemId, ReturnItemCondition condition) { }
     }
 
     public record Shipment(

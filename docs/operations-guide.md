@@ -79,6 +79,16 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 - 롤백: `psql -v ON_ERROR_STOP=1 -1 -f scripts/db/rollback/V11__undo_audit_append_only_guards.sql`(소유 계정). V11의 트리거 14개와 함수 1개만 지우고 V1의 행 가드와 데이터는 남긴다. 마지막 줄이 `flyway_schema_history`의 V11 행을 지워 같은 이미지가 다시 V11을 적용한다. 앱을 V11 이전 이미지로 되돌리는 경우에도 이 스크립트를 먼저 돌린다(V7 롤백과 같은 이유). 역할 스크립트의 회수는 되돌리지 않는다(앱이 이 테이블들을 고치지 않는다).
 - 시험이 이 테이블을 비울 때는 `AppendOnlyTestReset.clear(jdbc, "<테이블>")`(한 연결에서 `session_replication_role = replica`)을 쓴다. 운영 코드는 쓰지 않는다.
 
+## 판매자 반품 권고 (V15, ADR-0110)
+
+- 구매자는 반품 요청 본문에 `reason`(`CHANGED_MIND`, `DEFECTIVE`, `DAMAGED_IN_DELIVERY`, `WRONG_ITEM`, `NOT_AS_DESCRIBED`, `OTHER`)과 선택 `note`(500자 이하)를 보낼 수 있다. 둘 다 선택이고 `note`는 `reason`이 있을 때만 받는다(없으면 400, DB 제약 `order_return_reason_note_check`도 막는다). 같은 `Idempotency-Key` 재요청은 사유·텍스트까지 같아야 하고 다르면 409다.
+- 판매자는 수령한 반품에 `POST /api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/recommendation`을 줄마다 상태 하나씩(`{"items":[{"orderItemId":"…","condition":"OPENED"}]}`) 보내 권고를 받는다. 상태는 `UNOPENED`, `OPENED`, `USED`, `DAMAGED`, `DEFECT_CONFIRMED`, `NOT_RETURNED`. 수령 전이거나 검수 결과가 이미 있으면 409.
+- 응답은 `decision`(`APPROVE_FULL`/`APPROVE_PARTIAL`/`REJECT`/`HUMAN_REVIEW`), 근거 코드 `reasons`, 줄별 `suggestedResult`·`refundAmountWon`·`returnWindowEndsAt`, `PASSED` 권고 줄 합계 `refundAmountWon`, 구매자 `reason`·`reasonNote`다. buyerRef는 내보내지 않는다. `reasonNote`는 구매자 원문이며 결정에 쓰이지 않았다.
+- **권고는 돈을 움직이지 않는다.** 따르려면 줄별 `suggestedResult`를 `PUT .../returns/{returnId}/inspection`에 보낸다. 환불은 그 호출만 실행하고, 그 호출이 주문 행 잠금 아래에서 수량과 금액을 다시 계산한다. `HUMAN_REVIEW`이면 판단하지 못한 줄의 `suggestedResult`가 null이므로 판매자가 직접 정한다.
+- 설정: `ATLAS_ORDER_RETURN_RECOMMENDATION_REVIEW_AMOUNT_WON`(기본 300000, 원, 포함). 승인 쪽 합계가 넘으면 `HUMAN_REVIEW`. 근거 없는 가정값이다. 반품 기간은 `ATLAS_ORDER_RETURN_WINDOW`를 같이 쓰고, `ATLAS_ORDER_RETURN_WINDOW_ENFORCED=false`로 접수 거절을 꺼도 권고는 기간 밖 줄을 거절로 권고한다.
+- 권고는 저장하지 않는다(같은 입력이면 같은 결과). 근거 코드와 판정 표는 ADR-0110, 평가는 EXP-121.
+- 롤백: 앱만 이전 버전으로 되돌린다. V15 컬럼은 nullable이고 이전 앱이 무시한다.
+
 ## PayPal Balance report 대사
 
 - PayPal merchant portal에서 내려받은 Balance Reconciliation report CSV의 단일 파일 업로드 지원. 공식 [Balance report 문서](https://developer.paypal.com/reports/balance)와 [공개 CSV sample](https://www.paypalobjects.com/ppdevdocs/Sample-Balance%20Report-CCOP.csv) 기준의 header-driven parsing.

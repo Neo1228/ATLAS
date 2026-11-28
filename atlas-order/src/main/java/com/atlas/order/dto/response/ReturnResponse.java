@@ -3,6 +3,10 @@ package com.atlas.order.dto.response;
 import com.atlas.order.model.OrderRefundPaymentStatus;
 import com.atlas.order.model.OrderReturnInspectionResult;
 import com.atlas.order.model.OrderReturnStatus;
+import com.atlas.order.model.ReturnItemCondition;
+import com.atlas.order.model.ReturnReason;
+import com.atlas.order.model.ReturnRecommendationDecision;
+import com.atlas.order.model.ReturnRecommendationReason;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +44,27 @@ public final class ReturnResponse {
 
         public record Item(UUID orderItemId, int quantity, OrderReturnInspectionResult inspectionResult,
                            UUID refundId, Long refundAmountWon, Instant inspectedAt) { }
+    }
+
+    /**
+     * 판매자에게 보여 주는 반품 권고(ADR-0110). 상태도 돈도 바꾸지 않는다. 판매자가 따르려면 줄별
+     * {@code suggestedResult}를 기존 검수 호출({@code PUT .../inspection})에 보내고, 그 호출만 환불을 실행한다.
+     * {@code refundAmountWon}은 서버가 주문 스냅샷으로 계산한 {@code PASSED} 권고 줄의 합계다.
+     * {@code HUMAN_REVIEW}이면 규칙이 정하지 못한 줄의 {@code suggestedResult}가 null이다.
+     * {@code reasonNote}는 구매자가 쓴 원문이고 결정에는 쓰이지 않았다. buyerRef는 내보내지 않는다.
+     */
+    public record Recommendation(UUID returnId, UUID orderId, ReturnRecommendationDecision decision,
+                                 List<ReturnRecommendationReason> reasons, long refundAmountWon,
+                                 long reviewAmountLimitWon, ReturnReason reason, String reasonNote,
+                                 Instant evaluatedAt, List<Item> items) {
+        public Recommendation {
+            reasons = List.copyOf(reasons);
+            items = List.copyOf(items);
+        }
+
+        public record Item(UUID orderItemId, int quantity, ReturnItemCondition condition,
+                           OrderReturnInspectionResult suggestedResult, Long refundAmountWon,
+                           Instant returnWindowEndsAt, ReturnRecommendationReason reason) { }
     }
 
     public record SellerOrderReturnPage(List<SellerOrderReturn> returns, String nextCursor) {

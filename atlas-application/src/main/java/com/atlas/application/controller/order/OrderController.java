@@ -12,6 +12,7 @@ import com.atlas.order.model.OrderReturnStatus;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReorderService;
 import com.atlas.order.service.OrderReturnService;
+import com.atlas.order.service.ReturnRecommendationService;
 import com.atlas.order.service.OrderService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -36,6 +37,7 @@ public class OrderController {
     private final OrderReorderService reorders;
     private final OrderRefundService refunds;
     private final OrderReturnService returns;
+    private final ReturnRecommendationService recommendations;
     private final PaymentRecoveryStatusService paymentRecoveryStatus;
 
     @PostMapping("/campaigns/{campaignId}/tickets/{ticketId}/checkout")
@@ -138,7 +140,8 @@ public class OrderController {
             @RequestHeader("Idempotency-Key") String idempotencyKey, @Valid @RequestBody OrderHttpRequest.Return request) {
         OrderRequest.Return command = new OrderRequest.Return(buyerRef, orderId, idempotencyKey,
                 request.items().stream().map(item -> new OrderRequest.Return.Item(
-                        item.orderItemId(), item.quantity(), item.shipmentId())).toList());
+                        item.orderItemId(), item.quantity(), item.shipmentId())).toList(),
+                request.reason(), request.note());
         return returns.request(command);
     }
 
@@ -168,6 +171,18 @@ public class OrderController {
     @PutMapping("/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/receipt")
     public ReturnResponse.OrderReturn receiveReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId, @PathVariable UUID returnId) {
         return returns.receive(sellerId, orderId, returnId);
+    }
+
+    /**
+     * 판매자 반품 권고(ADR-0110). 상태와 돈을 바꾸지 않는 계산이라 본문을 받는 POST지만 멱등이다. 권고를 따르려면
+     * 줄별 {@code suggestedResult}로 아래 검수 호출을 해야 하고, 환불은 그 호출만 실행한다.
+     */
+    @PostMapping("/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/recommendation")
+    public ReturnResponse.Recommendation recommendReturn(@PathVariable UUID sellerId, @PathVariable UUID orderId,
+            @PathVariable UUID returnId, @Valid @RequestBody OrderHttpRequest.ReturnRecommendation request) {
+        return recommendations.recommend(sellerId, orderId, returnId, new OrderRequest.ReturnRecommendation(
+                request.items().stream().map(item -> new OrderRequest.ReturnRecommendation.Item(
+                        item.orderItemId(), item.condition())).toList()));
     }
 
     @PutMapping("/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/inspection")

@@ -283,7 +283,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         String buyerRef = buyerRef(fixture.orderId());
         ReturnResponse.OrderReturn created = returns.request(new OrderRequest.Return(buyerRef, fixture.orderId(),
                 "return-mixed-key", List.of(new OrderRequest.Return.Item(fixture.firstItemId(), 1),
-                new OrderRequest.Return.Item(fixture.secondItemId(), 1))));
+                new OrderRequest.Return.Item(fixture.secondItemId(), 1)), null, null));
         returns.receive(fixture.sellerId(), fixture.orderId(), created.returnId());
         ReturnResponse.OrderReturn inspected = returns.inspect(fixture.sellerId(), fixture.orderId(), created.returnId(),
                 new OrderRequest.ReturnInspection(List.of(
@@ -306,7 +306,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                         new OrderRequest.ReturnInspection.Item(fixture.secondItemId(), OrderRequest.ReturnInspection.Result.FAILED)))))
                 .isEqualTo(inspected);
         assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef, fixture.orderId(),
-                "failed-line-retry", List.of(new OrderRequest.Return.Item(fixture.secondItemId(), 1)))))
+                "failed-line-retry", List.of(new OrderRequest.Return.Item(fixture.secondItemId(), 1)), null, null)))
                 .isInstanceOf(OrderException.class);
     }
     @Test
@@ -1017,7 +1017,7 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     }
 
     private OrderRequest.Return returnRequest(String buyerRef, UUID orderId, String key, OrderRequest.Return.Item item) {
-        return new OrderRequest.Return(buyerRef, orderId, key, List.of(item));
+        return new OrderRequest.Return(buyerRef, orderId, key, List.of(item), null, null);
     }
 
     private void deliver(Fixture fixture) {

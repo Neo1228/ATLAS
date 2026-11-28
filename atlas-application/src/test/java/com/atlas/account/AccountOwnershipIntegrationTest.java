@@ -121,9 +121,9 @@ class AccountOwnershipIntegrationTest {
             if (kind(route) == Kind.UNCLASSIFIED) unclassified.add(route.key());
         }
         assertThat(unclassified).as("소유 검증 규칙도 공개·principal 지정 목록도 아닌 라우트").isEmpty();
-        assertThat(seen).hasSize(102);
+        assertThat(seen).hasSize(103);
         // 69개 ownership, 10개 principal-scoped, 17개 명시 공개 route로 모두 분류한다.
-        assertThat(routes().stream().filter(r -> kind(r) == Kind.OWNERSHIP)).hasSize(73);
+        assertThat(routes().stream().filter(r -> kind(r) == Kind.OWNERSHIP)).hasSize(74);
         assertThat(routes().stream().filter(r -> kind(r) == Kind.PRINCIPAL_SCOPED)).hasSize(11);
         assertThat(routes().stream().filter(r -> kind(r) == Kind.PUBLIC)).hasSize(18);
         // 목록이 썩지 않게: 허용 목록의 모든 항목은 실제 라우트여야 한다.
@@ -146,7 +146,7 @@ class AccountOwnershipIntegrationTest {
                 rejected++;
             }
         }
-        assertThat(rejected).isEqualTo(84);
+        assertThat(rejected).isEqualTo(85);
         assertThat(open).isEqualTo(PUBLIC_AUTH.size() + PUBLIC_CATALOG.size() + PUBLIC_PROVIDER.size());
     }
 

@@ -182,6 +182,10 @@ atlas:
       window-enforced: ${ATLAS_ORDER_RETURN_WINDOW_ENFORCED:true}
       inspection-business-days: ${ATLAS_ORDER_RETURN_INSPECTION_BUSINESS_DAYS:5}
       business-zone: ${ATLAS_ORDER_RETURN_BUSINESS_ZONE:Asia/Seoul}
+      recommendation:
+        # 판매자 반품 권고(ADR-0110)가 승인을 권고하는 환불 합계 상한(원, 포함). 넘으면 사람 검토로 바꾼다.
+        # 30만 원은 근거 있는 정책이 아니라 가정이다. 권고는 돈을 움직이지 않고 환불은 판매자 검수 호출만 실행한다.
+        review-amount-won: ${ATLAS_ORDER_RETURN_RECOMMENDATION_REVIEW_AMOUNT_WON:300000}
   payment:
     provider: ${ATLAS_PAYMENT_PROVIDER:disabled}
     # 원화→USD 환율 공급자. bok-ecos(기본, BOK_ECOS_API_KEY 필요) 또는 frankfurter(가입·key 없는 ECB 기준환율).

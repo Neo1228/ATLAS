@@ -1,6 +1,7 @@
 package com.atlas.order.persistence.entity;
 
 import com.atlas.order.model.OrderReturnStatus;
+import com.atlas.order.model.ReturnReason;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -31,13 +32,19 @@ public class OrderReturn {
     @Column(name = "requested_at", nullable = false) private Instant requestedAt;
     @Column(name = "received_at") private Instant receivedAt;
     @Column(name = "inspected_at") private Instant inspectedAt;
+    @Enumerated(EnumType.STRING) @Column(name = "reason_code", length = 32, updatable = false)
+    private ReturnReason reason;
+    /** 구매자가 쓴 자유 텍스트. 신뢰할 수 없는 데이터라 결정 규칙은 읽지 않는다(ADR-0110). */
+    @Column(name = "reason_note", length = 500, updatable = false) private String reasonNote;
     @OneToMany(mappedBy = "orderReturn", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderReturnItem> items = new ArrayList<>();
 
     protected OrderReturn() { }
-    public OrderReturn(UUID orderId, UUID sellerId, String buyerRef, String idempotencyKey, Instant requestedAt) {
+    public OrderReturn(UUID orderId, UUID sellerId, String buyerRef, String idempotencyKey, Instant requestedAt,
+            ReturnReason reason, String reasonNote) {
         this.orderId = orderId; this.sellerId = sellerId; this.buyerRef = buyerRef;
         this.idempotencyKey = idempotencyKey; this.requestedAt = requestedAt;
+        this.reason = reason; this.reasonNote = reasonNote;
         this.status = OrderReturnStatus.REQUESTED;
     }
     public void addItem(OrderReturnItem item) { items.add(item); item.setOrderReturn(this); }
@@ -52,5 +59,7 @@ public class OrderReturn {
     public Instant requestedAt() { return requestedAt; }
     public Instant receivedAt() { return receivedAt; }
     public Instant inspectedAt() { return inspectedAt; }
+    public ReturnReason reason() { return reason; }
+    public String reasonNote() { return reasonNote; }
     public List<OrderReturnItem> items() { return List.copyOf(items); }
 }
