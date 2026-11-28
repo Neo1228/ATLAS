@@ -68,7 +68,8 @@ class AccountOwnershipIntegrationTest {
             "POST /api/auth/mfa/challenge");
     /** 검토를 거쳐 공개한 읽기 라우트. */
     private static final Set<String> PUBLIC_CATALOG = Set.of(
-            "GET /api/products", "GET /api/products/{productId}", "GET /api/products/{productId}/reviews",
+            "GET /api/products", "GET /api/products/search", "GET /api/products/{productId}",
+            "GET /api/products/{productId}/reviews",
             "GET /api/campaigns/{campaignId}");
     /** 인증은 서명 검증(webhook)이나 저장된 provider 상태·token(결제 복귀)으로 한다. */
     private static final Set<String> PUBLIC_PROVIDER = Set.of(
@@ -80,7 +81,9 @@ class AccountOwnershipIntegrationTest {
             "POST /api/auth/logout", "DELETE /api/auth/account", "GET /api/auth/sessions",
             "DELETE /api/auth/sessions/{familyId}", "POST /api/auth/mfa/enroll", "POST /api/auth/mfa/enable",
             "POST /api/auth/mfa/disable",
-            "POST /api/sellers", "POST /api/campaigns", "POST /api/campaigns/{campaignId}/tickets");
+            "POST /api/sellers", "POST /api/campaigns", "POST /api/campaigns/{campaignId}/tickets",
+            // 쇼핑 비서 도구 목록(ADR-0109). 정적 목록이라 소유할 자원이 없다.
+            "GET /api/assistant/tools");
 
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6")
@@ -118,11 +121,11 @@ class AccountOwnershipIntegrationTest {
             if (kind(route) == Kind.UNCLASSIFIED) unclassified.add(route.key());
         }
         assertThat(unclassified).as("소유 검증 규칙도 공개·principal 지정 목록도 아닌 라우트").isEmpty();
-        assertThat(seen).hasSize(96);
+        assertThat(seen).hasSize(102);
         // 69개 ownership, 10개 principal-scoped, 17개 명시 공개 route로 모두 분류한다.
-        assertThat(routes().stream().filter(r -> kind(r) == Kind.OWNERSHIP)).hasSize(69);
-        assertThat(routes().stream().filter(r -> kind(r) == Kind.PRINCIPAL_SCOPED)).hasSize(10);
-        assertThat(routes().stream().filter(r -> kind(r) == Kind.PUBLIC)).hasSize(17);
+        assertThat(routes().stream().filter(r -> kind(r) == Kind.OWNERSHIP)).hasSize(73);
+        assertThat(routes().stream().filter(r -> kind(r) == Kind.PRINCIPAL_SCOPED)).hasSize(11);
+        assertThat(routes().stream().filter(r -> kind(r) == Kind.PUBLIC)).hasSize(18);
         // 목록이 썩지 않게: 허용 목록의 모든 항목은 실제 라우트여야 한다.
         for (Set<String> declared : List.of(PUBLIC_AUTH, PUBLIC_CATALOG, PUBLIC_PROVIDER, PRINCIPAL_SCOPED)) {
             assertThat(seen).containsAll(declared);
@@ -143,7 +146,7 @@ class AccountOwnershipIntegrationTest {
                 rejected++;
             }
         }
-        assertThat(rejected).isEqualTo(79);
+        assertThat(rejected).isEqualTo(84);
         assertThat(open).isEqualTo(PUBLIC_AUTH.size() + PUBLIC_CATALOG.size() + PUBLIC_PROVIDER.size());
     }
 
