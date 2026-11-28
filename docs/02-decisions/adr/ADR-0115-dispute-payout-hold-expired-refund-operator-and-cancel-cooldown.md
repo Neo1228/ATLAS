@@ -30,7 +30,8 @@
 3. **보류는 단일 계약 위의 빈 하나다.** `DisputePayoutHold implements PayoutHoldCheck`(application)가 `OrderRefundService.disputeHoldWon(sellerId)`로 그 판매자의 진행 중 분쟁 원화 합을 구하고, `SettlementPayoutService.summary`의 지급 가능액(미확정 지급과 환불 예약을 뺀 값) + 보류금이 그 합보다 작으면 `OPEN_DISPUTE`를 돌려준다. 송금 worker는 바뀌지 않는다(ADR-0112 결정 5). "분쟁 금액만큼"의 뜻은 이렇다: 분쟁 금액이 원장에 남는 한 다른 몫의 송금은 막지 않는다. 여러 판매자 checkout의 분쟁은 누구 몫인지 근거가 없어 담긴 판매자 모두에게 분쟁 금액 전부를 센다.
 4. **판매자 패소만 차감한다.** `RESOLVED_BUYER_FAVOUR`이면 `amount_refunded`(통화가 결제 시도와 같아야 함)에서 그 결제 시도에 이미 원장에 넣은 capture 역전을 빼고 capture 남은 금액으로 자른 센트를 차감한다. 원화 환산은 ADR-0111 결정 3과 같다(남은 전부면 남은 원화 전부, 일부면 내림). 0 이하이면 `CLOSED`. 차감이 끝난 분쟁이 있는 결제 시도에 뒤늦게 온 역전은 같은 돈일 수 있어 `REVIEW`(`DISPUTE_ALREADY_DEBITED`)로 보낸다. `RESOLVED_SELLER_FAVOUR`·`RESOLVED_WITH_PAYOUT`·`CANCELED_BY_BUYER`·`NONE`·`DENIED`는 `CLOSED`, 결과 코드가 없거나 `ACCEPTED`(누가 졌는지 문서가 말하지 않음)면 `REVIEW`(`DISPUTE_OUTCOME_UNKNOWN`), 패소인데 금액·통화를 못 읽으면 `REVIEW`(`DISPUTE_LOSS_AMOUNT_UNKNOWN`)다. 이 셋 모두 보류는 풀린다.
 5. **capture 남은 금액의 합(`refundedTotalsForAttempt`)에 차감한 분쟁을 넣는다.** 우리 환불과 대시보드 환불이 패소 분쟁 뒤 남은 capture를 넘지 않는다.
-6. 분쟁 사건은 결제 시도 행을 먼저 잠그고(환불·역전 사건과 같은 순서) adjustment 행을 잠근다. 웹훅 재시도 대기열은 분쟁 결과 필드를 싣지 않으므로 분쟁 경로는 자원 id가 없을 때 말고는 재시도로 돌리지 않는다.
+6. **웹훅 순서와 무관하다.** PayPal은 웹훅 순서를 보장하지 않는다. 같은 capture에서 (A) 역전 → 분쟁 생성 → 패소, (B) 분쟁 생성 → 패소 → 역전, (C) 분쟁 생성 → 역전 → 패소 세 순서 모두 판매자 차감은 한 번이다(`disputeLossAndReversalOfTheSameMoneyDebitOnceInEveryDeliveryOrder`, 일부 금액이라 capture 남은 금액 검사가 막아 주지 않는 경우). (A)·(C)는 결정 4의 역전 빼기가, (B)는 차감 뒤 역전 검토가 막는다.
+7. 분쟁 사건은 결제 시도 행을 먼저 잠그고(환불·역전 사건과 같은 순서) adjustment 행을 잠근다. 웹훅 재시도 대기열은 분쟁 결과 필드를 싣지 않으므로 분쟁 경로는 자원 id가 없을 때 말고는 재시도로 돌리지 않는다.
 
 ### 1.4 대안과 기각 이유
 
@@ -41,14 +42,14 @@
 | 분쟁 생성 때 분쟁 금액을 `SELLER_RESERVE`로 옮기는 분개 | 판매자 승소 때 되돌리는 분개가 하나 더 필요하고, V7 append-only 원장에 분쟁마다 두 쌍이 쌓인다. 보류 계약이 같은 일을 분개 없이 한다 | ✗ 기각 |
 | 결과 코드를 보지 않고 `amount_refunded`가 있으면 차감 | `amount_refunded`는 "merchant or PayPal"이 돌려준 금액이다. `RESOLVED_WITH_PAYOUT`이면 PayPal 돈이다 | ✗ 기각 |
 | 패소 차감 없이 역전 사건만 기다림 | 패소 뒤 역전이 꼭 온다는 문장을 찾지 못했다(ADR-0111 재검토 조건). 오지 않으면 판매자 몫이 그대로 남는다 | ✗ 기각 |
-| 위 1~6 | 회귀 시험 5건이 수정 전 실패·수정 뒤 통과, 아래 변이 6건 모두 잡힘 | ✓ 채택 |
+| 위 1~7 | 회귀 시험 6건이 수정 전 실패·수정 뒤 통과, 아래 변이 6건 모두 잡힘 | ✓ 채택 |
 
 ### 1.5 변이 시험
 
 | 없앤 것 | 결과 |
 |---|---|
-| 차감한 분쟁 뒤 역전을 검토로 보내는 검사 | ✓ 잡힘. 일부 금액 분쟁에서 같은 돈이 두 번 빠짐(4,993원 두 건) |
-| 패소 차감에서 이미 넣은 역전을 빼는 식 | ✓ 잡힘. 기대 375원에 525원 |
+| 차감한 분쟁 뒤 역전을 검토로 보내는 검사 | ✓ 잡힘. 일부 금액 분쟁에서 같은 돈이 두 번 빠짐(4,993원 두 건, "분쟁 생성 → 패소 → 역전" 순서도 같음) |
+| 패소 차감에서 이미 넣은 역전을 빼는 식 | ✓ 잡힘. 기대 375원에 525원, 그리고 "역전 → 분쟁 생성 → 패소" 순서에서 같은 돈이 두 번 빠짐(4,993원 두 건) |
 | 보류 판정이 미확정 지급을 뺀 지급 가능액을 씀 | ✓ 잡힘. 몫 전부를 지급 요청해도 보류 없음 |
 | 진행 중(`HOLD`)일 때만 상태를 바꾸는 조건 | ✓ 잡힘. 끝난 분쟁이 다시 `HOLD`가 되고, 패소 결과 재전송이 한 번 더 차감(1만 원 두 건) |
 | `RESOLVED_WITH_PAYOUT`을 무차감 결과에서 뺌 | ✓ 잡힘. `CLOSED` 대신 `REVIEW` |

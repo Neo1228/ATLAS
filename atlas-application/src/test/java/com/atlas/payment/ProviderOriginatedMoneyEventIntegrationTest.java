@@ -261,6 +261,41 @@ class ProviderOriginatedMoneyEventIntegrationTest extends PayPalIntegrationTestS
         assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before - debited);
     }
 
+    /**
+     * PayPal 은 웹훅 순서를 보장하지 않는다. 같은 capture 의 일부 금액 분쟁이 판매자 패소로 끝나고 PayPal 이 같은 금액을
+     * 역전으로도 알리면, 세 순서 모두 판매자 차감은 그 금액 한 번이다. 일부 금액이라 capture 남은 금액 검사는 두 번째
+     * 차감을 막지 못하므로, 분쟁 차감의 역전 빼기와 "차감한 분쟁 뒤 역전은 검토" 규칙만이 이중 차감을 막는다.
+     */
+    @Test
+    void disputeLossAndReversalOfTheSameMoneyDebitOnceInEveryDeliveryOrder() {
+        for (String order : List.of("REVERSAL_CREATED_RESOLVED", "CREATED_RESOLVED_REVERSAL", "CREATED_REVERSAL_RESOLVED")) {
+            Paid paid = paidOrder(10_000);
+            long before = sellerHeldWon(paid.sellerId());
+            long captureMinor = paid.providerAmount().movePointRight(2).longValueExact();
+            BigDecimal half = BigDecimal.valueOf(captureMinor / 2, 2);
+            String disputeId = "PP-D-" + UUID.randomUUID();
+            String created = disputeEvent("CUSTOMER.DISPUTE.CREATED", disputeId, "OPEN", paid, half, null, null);
+            String resolved = disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid, half,
+                    "RESOLVED_BUYER_FAVOUR", half);
+            String reversal = refundEvent("PAYMENT.CAPTURE.REVERSED", "REV-" + UUID.randomUUID(), paid.captureId(),
+                    half).replace("@EVENT@", "WH-" + UUID.randomUUID());
+            List<String> deliveries = switch (order) {
+                case "REVERSAL_CREATED_RESOLVED" -> List.of(reversal, created, resolved);
+                case "CREATED_RESOLVED_REVERSAL" -> List.of(created, resolved, reversal);
+                default -> List.of(created, reversal, resolved);
+            };
+
+            deliveries.forEach(body -> webhooks.handle(SIGNATURE, body));
+
+            List<Long> journals = providerRefundJournals(paid.orderId());
+            long expectedWon = paid.totalWon() * (captureMinor / 2) / captureMinor;
+            assertThat(journals).as(order).hasSize(1);
+            assertThat(journals.getFirst()).as(order).isEqualTo(expectedWon);
+            assertThat(sellerHeldWon(paid.sellerId())).as(order).isEqualTo(before - expectedWon);
+            assertThat(disputeHold.holdReason(paid.sellerId())).as(order).isEmpty();
+        }
+    }
+
     /** PayPal 보호로 끝난 분쟁(RESOLVED_WITH_PAYOUT)은 판매자 돈이 빠지지 않는다. 결과 코드가 없으면 검토로 보낸다. */
     @Test
     void disputeResolvedWithPayPalProtectionOrUnknownOutcomeDoesNotDebitTheSeller() {
