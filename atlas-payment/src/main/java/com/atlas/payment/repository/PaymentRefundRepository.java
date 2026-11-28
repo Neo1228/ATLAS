@@ -101,7 +101,7 @@ public class PaymentRefundRepository {
     }
 
     /**
-     * capture 남은 금액을 정하는 유일한 합. 우리 환불({@code PaymentRefundWorkflow})과 provider 발 환불·역전
+     * capture 남은 금액을 정하는 유일한 합. 우리 환불({@code PaymentRefundWorkflow})과 provider 발 환불·역전·판매자 패소 분쟁(ADR-0115)
      * ({@code ProviderAdjustmentRecorder})이 둘 다 이 값을 빼므로 한쪽이 다른 쪽을 모르고 capture를 넘겨 환불하지 않는다.
      * 두 표의 원화·센트는 방향이 다르게 환산된다(ADR-0113 "환불 합"): 우리 환불은 원화가 기준이고 센트는 누적 원화를
      * HALF_UP 한 값, provider 사건은 센트가 기준이고 원화는 capture 비율로 내린 값이다. 어느 쪽이든 각 행의 원화·센트는
@@ -116,7 +116,8 @@ public class PaymentRefundRepository {
                     WHERE attempt_id = ? AND refund_state <> 'FAILED'
                     UNION ALL
                     SELECT provider_amount_minor, amount_won FROM payment_provider_adjustment
-                    WHERE attempt_id = ? AND kind IN ('REFUND', 'REVERSAL') AND status IN ('POSTING', 'POSTED')
+                    WHERE attempt_id = ? AND kind IN ('REFUND', 'REVERSAL', 'DISPUTE')
+                      AND status IN ('POSTING', 'POSTED')
                 ) refunded
                 """, (resultSet, rowNumber) -> new RefundedTotals(
                         resultSet.getLong("provider_amount_minor"), resultSet.getLong("amount_won")),
@@ -144,6 +145,50 @@ public class PaymentRefundRepository {
                     WHERE attempt_id = ? AND refund_state <> 'FAILED' AND provider_refund_id IS NULL
                 )
                 """, Boolean.class, attemptId);
+        return Boolean.TRUE.equals(exists);
+    }
+
+    /**
+     * PayPal refund id 가 이미 우리 환불이나 PayPal 쪽 환불·역전({@code payment_provider_adjustment}, 같은 id 공간)으로
+     * 기록됐는가. 기록된 id 를 다른 환불로 다시 확정하면 판매자 원장에서 같은 돈을 두 번 뺀다.
+     */
+    public boolean isProviderRefundIdRecorded(String providerRefundId) {
+        Boolean exists = jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM payment_refund_operation WHERE provider_refund_id = ?)
+                    OR EXISTS (SELECT 1 FROM payment_provider_adjustment
+                               WHERE provider_resource_id = ? AND kind IN ('REFUND', 'REVERSAL'))
+                """, Boolean.class, providerRefundId, providerRefundId);
+        return Boolean.TRUE.equals(exists);
+    }
+
+    /**
+     * 운영자가 결과 불명 환불을 닫은 사실을 {@code domain_audit_event}에 남긴다. 상태 변경과 같은 트랜잭션에서 부른다.
+     * payload 에는 자유 텍스트를 넣지 않고 결과와 증거(PayPal refund id 또는 {@code NOT_FOUND})만 둔다(V9 규약).
+     */
+    public void recordOperatorResolution(PaymentRefundOperation operation, PaymentRefundState outcome,
+            String evidence, String actor, Instant occurredAt) {
+        jdbc.update("""
+                INSERT INTO domain_audit_event(occurred_at, source_table, source_id, event_type, aggregate_type,
+                                               aggregate_id, actor, payload)
+                VALUES (?, 'payment_refund_operation', ?, 'PAYMENT_REFUND_RESOLVED_BY_OPERATOR',
+                        'payment_refund_operation', ?, ?,
+                        jsonb_build_object('refund_operation_id', ?::text, 'attempt_id', ?::text,
+                                           'outcome', ?::text, 'evidence', ?::text, 'amount_won', ?::bigint))
+                """, Timestamp.from(occurredAt), operation.refundOperationId().toString(),
+                operation.refundOperationId().toString(), actor, operation.refundOperationId().toString(),
+                operation.attemptId().toString(), outcome.name(), evidence, operation.amountWon());
+    }
+
+    /** 같은 결과와 증거로 운영자가 이미 닫은 작업인가. 같은 요청의 재전송을 같은 결과로 돌려주는 데 쓴다. */
+    public boolean hasOperatorResolution(UUID refundOperationId, PaymentRefundState outcome, String evidence) {
+        Boolean exists = jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM domain_audit_event
+                    WHERE aggregate_type = 'payment_refund_operation' AND aggregate_id = ?
+                      AND event_type = 'PAYMENT_REFUND_RESOLVED_BY_OPERATOR'
+                      AND payload->>'outcome' = ? AND payload->>'evidence' = ?
+                )
+                """, Boolean.class, refundOperationId.toString(), outcome.name(), evidence);
         return Boolean.TRUE.equals(exists);
     }
     private Optional<PaymentRefundOperation> queryOne(String sql, Object... parameters) {

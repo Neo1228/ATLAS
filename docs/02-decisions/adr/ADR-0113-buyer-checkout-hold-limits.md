@@ -41,7 +41,7 @@ Buyer checkout의 유일성은 `(buyer_ref, idempotency_key)`뿐이었다(`V1__b
 ## 결과
 
 - Buyer 한 명은 한 번에 checkout 하나만 열 수 있다. 결제하지 않고 떠난 checkout이 있으면 window(10분)가 끝나거나 취소할 때까지 새 checkout이 409를 받는다.
-- 한 Buyer가 한 번에 잡는 재고는 기본 50개 이하다. 재고가 상한보다 적은 SKU는 여전히 한 Buyer가 모두 잡을 수 있다. 그런 SKU를 지키려면 상한을 낮추거나 캠페인 대기열(ADR-0088)을 쓴다. 결제하지 않고 만료시킨 Buyer는 같은 SKU를 30분 동안 다시 잡지 못한다(결정 6). 남은 노출: (1) 취소는 쿨다운에 넣지 않았다. 취소는 재고를 바로 돌려주므로 취소와 재checkout 사이에 다른 Buyer가 살 틈이 있지만, 자동화한 Buyer가 이를 빠르게 되풀이하면 사실상 계속 잡을 수 있다. (2) Buyer 식별자를 여럿 쓰면 식별자마다 따로 잡는다. 식별자 발급 통제는 이 결정 밖이다. 이런 SKU를 확실히 지키려면 캠페인 대기열(ADR-0088)을 쓴다.
+- 한 Buyer가 한 번에 잡는 재고는 기본 50개 이하다. 재고가 상한보다 적은 SKU는 여전히 한 Buyer가 모두 잡을 수 있다. 그런 SKU를 지키려면 상한을 낮추거나 캠페인 대기열(ADR-0088)을 쓴다. 결제하지 않고 만료시킨 Buyer는 같은 SKU를 30분 동안 다시 잡지 못한다(결정 6). 남은 노출: (1) 취소는 처음에 쿨다운에 넣지 않았다. window 끝 직전 취소를 되풀이하면 계속 잡을 수 있어서, [ADR-0115](ADR-0115-dispute-payout-hold-expired-refund-operator-and-cancel-cooldown.md) 3절이 취소한 hold의 보유 시간 합(30분 안 5분 이상)도 같은 쿨다운에 넣었다. (2) Buyer 식별자를 여럿 쓰면 식별자마다 따로 잡는다. 식별자 발급 통제는 이 결정 밖이다. 이런 SKU를 확실히 지키려면 캠페인 대기열(ADR-0088)을 쓴다.
 - checkout마다 Buyer의 미결 checkout을 세는 질의가 한 번 더 돈다. `buyer_checkout_key_unique(buyer_ref, ...)`, `purchase_order_checkout_seller_unique(checkout_id, ...)`, `order_item_order_sku_unique(order_id, ...)` 인덱스를 탄다.
 
 ## 롤백
@@ -51,6 +51,6 @@ Buyer checkout의 유일성은 `(buyer_ref, idempotency_key)`뿐이었다(`V1__b
 ## 재검토 조건
 
 - 409(미결 checkout) 거절이 하루 checkout 시도의 1%를 넘거나 "이전 checkout 때문에 주문할 수 없다"는 민원이 생기면: 미결 상한을 2 이상으로 올리거나 새 checkout이 이전 RESERVED checkout을 자동 취소하는 안을 잰다.
-- 409(만료 쿨다운) 거절 민원이 생기면: 쿨다운을 줄이거나 `PT0S`로 끈다. 취소 반복 독점이 관측되면 취소도 쿨다운에 넣는다.
+- 409(만료 쿨다운) 거절 민원이 생기면: 쿨다운을 줄이거나 `PT0S`로 끈다. 취소 반복 독점은 ADR-0115 3절이 취소 보유 시간 합으로 넣었다.
 - 400(수량 상한) 거절이 대량 구매 Buyer에게서 나오면: 기본값 50을 올리거나 Buyer 등급별 상한을 잰다.
 - cart를 거치지 않고 BuyerCheckout을 만드는 경로가 생기면: 결정 4의 잠금 전제가 깨지므로 그 경로도 같은 잠금을 잡게 하거나 DB 제약을 다시 잰다.

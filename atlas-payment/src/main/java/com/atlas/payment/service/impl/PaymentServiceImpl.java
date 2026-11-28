@@ -11,12 +11,14 @@ import com.atlas.payment.dto.request.PaymentRequest;
 import com.atlas.payment.model.PaymentPhase;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.model.PaymentState;
+import com.atlas.payment.model.PaymentRefundState;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.dto.response.PaymentDisputeHoldResponse;
 import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
@@ -28,6 +30,7 @@ import java.time.Instant;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -501,6 +504,12 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    public PaymentRefundResponse resolveExpiredRefund(UUID refundOperationId, PaymentRefundState outcome,
+            String providerRefundId, String actor) {
+        return refundWorkflow.resolveExpiredRefund(refundOperationId, outcome, providerRefundId, actor);
+    }
+
+    @Override
     public PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
         return webhookProcessor.verifyPayPalWebhook(signature, rawBody);
     }
@@ -518,6 +527,11 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentProviderAdjustmentResponse findProviderAdjustment(UUID adjustmentId) {
         return webhookProcessor.findProviderAdjustment(adjustmentId);
+    }
+
+    @Override
+    public List<PaymentDisputeHoldResponse> heldDisputes() {
+        return webhookProcessor.heldDisputes();
     }
 
     @Override

@@ -41,7 +41,8 @@ public interface BuyerCheckoutRepository extends JpaRepository<BuyerCheckout, UU
 
     /**
      * Buyer가 결제하지 않고 window를 넘긴 checkout 중 {@code [since, now]}에 만료된 것이 이 cart의 SKU를 잡았던 수량.
-     * 만료 sweep 전의 RESERVED도 센다. 취소(CANCELLED)는 재고를 바로 돌려주므로 세지 않는다(ADR-0113 결정 6).
+     * 만료 sweep 전의 RESERVED도 센다. 취소(CANCELLED)는 재고를 바로 돌려주므로 여기서 세지 않고
+     * {@link #findSkuOverCancelledHoldBudget}가 보유 시간 합으로 따로 센다(ADR-0113 결정 6).
      */
     @Query(value = """
             SELECT item.sku_id
@@ -56,6 +57,32 @@ public interface BuyerCheckoutRepository extends JpaRepository<BuyerCheckout, UU
             """, nativeQuery = true)
     Optional<String> findRecentlyExpiredHeldSku(@Param("buyerRef") String buyerRef,
             @Param("skuIds") Collection<String> skuIds, @Param("since") Instant since, @Param("now") Instant now);
+
+    /**
+     * {@code since} 뒤에 Buyer가 취소한(CANCELLED) checkout들이 이 cart의 SKU를 잡고 있던 시간의 합이
+     * {@code budgetSeconds} 이상인 SKU. CANCELLED는 Buyer 취소 요청으로만 생긴다. 만료는 EXPIRED, 결제 실패는
+     * FAILED로 끝나므로 세지 않는다. 취소 시각은 결제·원격 예약이 있어 CANCEL_PENDING을 거쳤으면 그 요청 시각,
+     * 곧바로 CANCELLED가 됐으면 마지막 갱신 시각이다.
+     */
+    @Query(value = """
+            SELECT held.sku_id
+            FROM (SELECT DISTINCT checkout.checkout_id, item.sku_id,
+                         EXTRACT(EPOCH FROM COALESCE(checkout.cancellation_requested_at, checkout.updated_at)
+                                 - checkout.created_at) AS held_seconds
+                  FROM buyer_checkout checkout
+                  JOIN purchase_order purchase ON purchase.checkout_id = checkout.checkout_id
+                  JOIN order_item item ON item.order_id = purchase.order_id
+                  WHERE checkout.buyer_ref = :buyerRef
+                    AND item.sku_id IN (:skuIds)
+                    AND checkout.state = 'CANCELLED'
+                    AND COALESCE(checkout.cancellation_requested_at, checkout.updated_at) > :since) held
+            GROUP BY held.sku_id
+            HAVING SUM(held.held_seconds) >= :budgetSeconds
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<String> findSkuOverCancelledHoldBudget(@Param("buyerRef") String buyerRef,
+            @Param("skuIds") Collection<String> skuIds, @Param("since") Instant since,
+            @Param("budgetSeconds") long budgetSeconds);
 
     Optional<BuyerCheckout> findByBuyerRefAndIdempotencyKey(String buyerRef, String idempotencyKey);
 

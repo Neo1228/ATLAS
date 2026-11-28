@@ -13,6 +13,8 @@ import com.atlas.order.model.BuyerCheckoutState;
 import com.atlas.order.service.CartCheckoutService;
 import com.atlas.order.service.CartService;
 import com.atlas.order.service.CheckoutPaymentService;
+import com.atlas.payment.PayPalIntegrationTestSupport;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,10 +33,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * 재고 5개인 SKU를 Buyer 한 명이 5개 담아 checkout하면 checkout window(10분) 동안 다른 Buyer는
  * {@code INVENTORY_UNAVAILABLE}을 받고, 만료 뒤 같은 일을 되풀이할 수 있었다. 수량 합 상한(기본 50)만으로는
  * 재고 50개 이하 SKU를 여전히 통째로 잡을 수 있어, 만료된 hold의 SKU에 재checkout 쿨다운을 더했다.
+ * 만료 대신 window 끝 직전에 취소하면 쿨다운을 피하므로, 취소한 hold의 보유 시간 합에도 같은 쿨다운을 건다.
+ *
+ * <p>결제까지 이어지는 정상 흐름을 확인하려고 PayPal stub을 쓴다.
  */
 @Testcontainers
 @SpringBootTest
-class CheckoutBuyerHoldLimitIntegrationTest {
+class CheckoutBuyerHoldLimitIntegrationTest extends PayPalIntegrationTestSupport {
     private static final int STOCK = 5;
     /** 운영 기본 예약 수량 상한(CartCheckoutServiceImpl). 이 클래스는 운영 기본값으로 돈다. */
     private static final int RESERVED_UNIT_LIMIT = 50;
@@ -134,6 +139,83 @@ class CheckoutBuyerHoldLimitIntegrationTest {
         carts.setItemQuantity(next.sellerId(), buyer, next.skuId(), 1);
         assertThat(checkouts.checkout(buyer, "after-expiry-" + UUID.randomUUID()).state())
                 .isEqualTo(BuyerCheckoutState.RESERVED);
+    }
+
+    /**
+     * 만료 쿨다운만 있으면 window(10분) 끝 직전에 취소하고 곧바로 다시 잡아 SKU를 끝없이 독점할 수 있었다.
+     * 취소한 hold의 보유 시간 합이 운영 기본 상한(5분)을 넘으면 같은 SKU는 쿨다운(30분) 동안 거절하고,
+     * 그 사이 다른 Buyer가 살 수 있다. 다른 SKU는 막지 않는다.
+     */
+    @Test
+    void buyerWhoCancelsWholeStockHoldsJustBeforeTheWindowEndsCannotLoopThem() {
+        Sku sku = sku("cancel-loop");
+        String hoarder = "cancel-loop-" + UUID.randomUUID();
+        String firstKey = "loop-first-" + UUID.randomUUID();
+        int holds = 0;
+        OrderException rejected = null;
+        while (rejected == null && holds < 4) {
+            carts.setItemQuantity(sku.sellerId(), hoarder, sku.skuId(), STOCK);
+            try {
+                CheckoutResponse held = checkouts.checkout(hoarder, holds == 0 ? firstKey : "loop-" + UUID.randomUUID());
+                holds++;
+                heldFor(held.checkoutId(), Duration.ofMinutes(9).plusSeconds(59));
+                checkoutPayments.cancel(held.checkoutId(), "loop-cancel-" + UUID.randomUUID());
+            } catch (OrderException e) {
+                rejected = e;
+            }
+        }
+        assertThat(rejected).isNotNull();
+        assertThat(rejected.code()).isEqualTo(OrderException.Code.CONFLICT);
+        assertThat(holds).isEqualTo(1);
+        assertThat(inventory.find(sku.sellerId(), sku.skuId()).reserved()).isZero();
+        // 같은 Idempotency-Key 재시도는 새 hold가 아니므로 쿨다운에 걸리지 않고 기존 checkout을 돌려준다.
+        assertThat(checkouts.checkout(hoarder, firstKey).state()).isEqualTo(BuyerCheckoutState.CANCELLED);
+
+        String other = "cancel-loop-other-" + UUID.randomUUID();
+        carts.setItemQuantity(sku.sellerId(), other, sku.skuId(), STOCK);
+        CheckoutResponse otherHold = checkouts.checkout(other, "other-" + UUID.randomUUID());
+        assertThat(otherHold.state()).isEqualTo(BuyerCheckoutState.RESERVED);
+
+        carts.removeItem(sku.sellerId(), hoarder, sku.skuId());
+        Sku next = sku("cancel-loop-next");
+        carts.setItemQuantity(next.sellerId(), hoarder, next.skuId(), STOCK);
+        CheckoutResponse nextHold = checkouts.checkout(hoarder, "next-sku-" + UUID.randomUUID());
+        assertThat(nextHold.state()).isEqualTo(BuyerCheckoutState.RESERVED);
+
+        // 쿨다운(기본 30분)이 지나면 같은 Buyer도 그 SKU를 다시 살 수 있다. 보유 시간은 그대로 두고 시각만 옮긴다.
+        checkoutPayments.cancel(nextHold.checkoutId(), "next-release-" + UUID.randomUUID());
+        checkoutPayments.cancel(otherHold.checkoutId(), "other-release-" + UUID.randomUUID());
+        jdbc.update("UPDATE buyer_checkout SET created_at = created_at - interval '31 minutes', "
+                + "updated_at = updated_at - interval '31 minutes' WHERE buyer_ref = ?", hoarder);
+        carts.setItemQuantity(sku.sellerId(), hoarder, sku.skuId(), 1);
+        assertThat(checkouts.checkout(hoarder, "after-cooldown-" + UUID.randomUUID()).state())
+                .isEqualTo(BuyerCheckoutState.RESERVED);
+    }
+
+    /** 마음을 바꿔 곧바로 취소하고 수량을 바꿔 다시 사는 흐름은 운영 기본값에서 두 번까지 막히지 않고 결제된다. */
+    @Test
+    void buyerWhoQuicklyCancelsAndChecksOutTheSameSkuAgainCanStillPay() {
+        Sku sku = sku("cancel-then-buy");
+        String buyer = "cancel-then-buy-" + UUID.randomUUID();
+        for (int quantity = 1; quantity <= 2; quantity++) {
+            carts.setItemQuantity(sku.sellerId(), buyer, sku.skuId(), quantity);
+            CheckoutResponse changedMind = checkouts.checkout(buyer, "changed-mind-" + UUID.randomUUID());
+            heldFor(changedMind.checkoutId(), Duration.ofMinutes(2));
+            checkoutPayments.cancel(changedMind.checkoutId(), "changed-mind-cancel-" + UUID.randomUUID());
+        }
+
+        carts.setItemQuantity(sku.sellerId(), buyer, sku.skuId(), STOCK);
+        CheckoutResponse kept = checkouts.checkout(buyer, "kept-" + UUID.randomUUID());
+        assertThat(kept.state()).isEqualTo(BuyerCheckoutState.RESERVED);
+        CheckoutResponse pending = checkoutPayments.submit(kept.checkoutId());
+        assertThat(checkoutPayments.completeApproval(kept.checkoutId(), approvalToken(pending.paymentApprovalUrl()))
+                .state()).isEqualTo(BuyerCheckoutState.PAID);
+    }
+
+    /** checkout을 {@code held}만큼 일찍 만든 것으로 옮겨, 지금 취소하면 그만큼 잡고 있다가 취소한 것이 되게 한다. */
+    private void heldFor(UUID checkoutId, Duration held) {
+        jdbc.update("UPDATE buyer_checkout SET created_at = created_at - ? * interval '1 second' WHERE checkout_id = ?",
+                held.toSeconds(), checkoutId);
     }
 
     private Sku sku(String label) {

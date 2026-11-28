@@ -2,11 +2,14 @@ package com.atlas.payment.service;
 
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.dto.response.PaymentDisputeHoldResponse;
 import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.model.PaymentRefundState;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -86,11 +89,20 @@ public interface PaymentService {
     PaymentRefundResponse refundOrder(UUID orderId, String idempotencyKey, long amountWon);
     PaymentRefundResponse refundCheckout(UUID checkoutId, String idempotencyKey, long amountWon);
     PaymentRefundResponse findRefundOperation(UUID refundOperationId);
+    /**
+     * provider 재전송 기한(ADR-0108)이 지나 결과 불명으로 멈춘 환불을 운영자가 provider에서 확인한 결과로 닫는다.
+     * {@code COMPLETED}는 PayPal refund id가, {@code FAILED}는 "PayPal에 그 환불이 없다"는 뜻이라 id가 없어야 한다.
+     * 감사 행을 같은 트랜잭션에 남기고 주문 계층 적용 대기로 넘긴다. 원장 반영은 호출자가 웹훅 확정과 같은 경로로 한다.
+     */
+    PaymentRefundResponse resolveExpiredRefund(UUID refundOperationId, PaymentRefundState outcome,
+            String providerRefundId, String actor);
     PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody);
     <T> T withPayPalWebhookOwnerLock(PaymentWebhookEventResponse event, Supplier<T> action);
     PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEventResponse event);
     /** PayPal 쪽에서 시작된 환불·역전·분쟁 기록(ADR-0111). 원장 반영은 주문 계층이 한다. */
     PaymentProviderAdjustmentResponse findProviderAdjustment(UUID adjustmentId);
+    /** 판매자 송금을 보류해야 하는 진행 중 분쟁(ADR-0115). */
+    List<PaymentDisputeHoldResponse> heldDisputes();
     /** 판매자 원장 차감을 남긴 뒤에만 부른다. */
     void markProviderAdjustmentPosted(UUID adjustmentId);
     /** 자동으로 판매자에게 귀속할 수 없을 때 돈을 움직이지 않고 운영자 검토로 넘긴다. */

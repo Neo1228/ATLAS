@@ -79,9 +79,15 @@ public class PayPalPaymentProvider implements PaymentProvider {
 
 
     @Override
+    public boolean refundRetryExpired(Instant firstRequestedAt, Instant now) {
+        return !now.isBefore(firstRequestedAt.plus(REFUND_REQUEST_ID_REUSE_LIMIT));
+    }
+
+    @Override
     public PaymentRefundProviderResponse refund(PaymentRefundRequest request) {
-        if (!clock.instant().isBefore(request.firstRequestedAt().plus(REFUND_REQUEST_ID_REUSE_LIMIT))) {
+        if (refundRetryExpired(request.firstRequestedAt(), clock.instant())) {
             // 결과를 모르는 채로 두고(상태 COALESCE로 이전 값 유지) 복구 worker가 창 끝에 NEEDS_REVIEW로 넘기게 한다.
+            // 그 뒤에는 운영자가 PayPal에서 확인한 결과로 닫는다(PaymentService.resolveExpiredRefund).
             LOGGER.warn("PayPal refund was not resent: its PayPal-Request-Id was first used more than {} ago",
                     REFUND_REQUEST_ID_REUSE_LIMIT);
             return new PaymentRefundProviderResponse(PaymentRefundProviderResponse.Outcome.UNKNOWN, null, null);

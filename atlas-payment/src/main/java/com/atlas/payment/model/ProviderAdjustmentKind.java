@@ -8,7 +8,7 @@ public enum ProviderAdjustmentKind {
     REVERSAL,
     /** capture 거절. PAYMENT.CAPTURE.DENIED. 돈을 움직이지 않고 검토로 보낸다. */
     DENIAL,
-    /** 구매자 분쟁. CUSTOMER.DISPUTE.*. 결과가 돈으로 이어지면 REVERSAL/REFUND 사건이 따로 온다. */
+    /** 구매자 분쟁. CUSTOMER.DISPUTE.*. 진행 중에는 송금을 보류하고, 판매자 패소로 끝나면 돌려준 금액을 차감한다(ADR-0115). */
     DISPUTE;
 
     public boolean movesMoney() {

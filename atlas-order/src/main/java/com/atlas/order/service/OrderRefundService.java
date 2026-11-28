@@ -22,5 +22,10 @@ public interface OrderRefundService {
      * 속하면 기존 환불 분개(보류금 먼저, 그다음 지급 가능액)를 쓰고, 여러 판매자에 걸치면 돈을 움직이지 않고 검토로 넘긴다.
      */
     void applyProviderAdjustment(UUID adjustmentId);
+    /**
+     * 이 판매자의 송금에서 남겨 둬야 할 진행 중 분쟁 원화 합(ADR-0115). 분쟁 결제 시도가 여러 판매자 주문을 담았으면
+     * 누구 몫인지 정할 근거가 없어 담긴 판매자 모두에게 분쟁 금액 전부를 센다.
+     */
+    long disputeHoldWon(UUID sellerId);
     RefundResponse.RefundSummary find(UUID sellerId, UUID orderId);
 }

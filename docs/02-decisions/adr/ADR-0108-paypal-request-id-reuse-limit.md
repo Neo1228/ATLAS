@@ -51,7 +51,7 @@
 
 ## 결과
 
-- 첫 요청 뒤 30일이 지난 결과 불명 환불은 자동으로 끝나지 않는다. 그 수는 `NEEDS_REVIEW` 환불 job과 WARN 로그 `PayPal refund was not resent`로 보인다. 그런 환불 작업을 완료·실패로 닫는 운영자 API는 없어 PayPal 대시보드 확인 뒤 수동 처리한다(운영 가이드). 이전에는 같은 키 재전송이 이 경우를 자동으로 닫았지만 45일 뒤에는 이중 환불 위험과 맞바꾼 것이었다.
+- 첫 요청 뒤 30일이 지난 결과 불명 환불은 자동으로 끝나지 않는다. 그 수는 `NEEDS_REVIEW` 환불 job과 WARN 로그 `PayPal refund was not resent`로 보인다. 운영자는 PayPal 대시보드에서 확인한 뒤 그 환불 작업을 `POST /api/internal/payment/refunds/{id}/resolve-expired`로 완료(PayPal refund id)·실패('없음')로 닫는다([ADR-0115](ADR-0115-dispute-payout-hold-expired-refund-operator-and-cancel-cooldown.md) 2절, 처음에는 API가 없어 수동 처리였다). 이전에는 같은 키 재전송이 이 경우를 자동으로 닫았지만 45일 뒤에는 이중 환불 위험과 맞바꾼 것이었다.
 - 30일 안의 재시도는 지금처럼 같은 키로 다시 보낸다(EXP-119 H3).
 - 다른 JVM 사이의 중복 capture 호출(EXP-118: 요청 id 100개에 110~126건)은 원 요청이 진행 중일 때 같은 키로 나간 것이라 어떤 보관 기간보다도 짧고, capture는 `final_capture: true`라 이 결정과 무관하다(ADR-0107 "PayPal 멱등 의존" 절).
 

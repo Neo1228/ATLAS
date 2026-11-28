@@ -77,6 +77,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     private final int maxOpenCheckoutsPerBuyer;
     private final int maxReservedUnitsPerBuyer;
     private final Duration expiredHoldCooldown;
+    private final Duration cancelledHoldBudget;
 
 
 
@@ -96,6 +97,12 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             // 결제하지 않고 만료된 hold의 SKU를 같은 Buyer가 다시 잡지 못하는 시간(ADR-0113 결정 6). 수량 합 상한만으로는
             // 재고 50개 이하 SKU를 통째로 잡고 만료 뒤 되풀이할 수 있다. 환경 변수 ATLAS_CHECKOUT_BUYER_LIMIT_EXPIRED_HOLD_COOLDOWN.
             @Value("${atlas.checkout-buyer-limit.expired-hold-cooldown:PT30M}") Duration expiredHoldCooldown,
+            // Buyer가 결제하지 않고 취소한 hold의 SKU 쿨다운(ADR-0113 결정 6을 취소로 넓힌다). 만료 쿨다운과 같은 구간
+            // 안에 취소한 checkout들이 그 SKU를 잡고 있던 시간의 합이 이 값 이상이면 거절한다. 취소를 세지 않으면 window
+            // 끝 직전에 취소하고 다시 잡기를 끝없이 되풀이할 수 있다. 한 번에 막지 않는 것은 마음을 바꿔 곧바로 취소하고
+            // 다시 사는 흐름을 남기기 위해서다. 구간은 expired-hold-cooldown을 함께 쓰므로 그 값이 0이면 이 검사도 꺼진다.
+            // 0을 주면 취소 한 번에 쿨다운이 걸린다. 환경 변수 ATLAS_CHECKOUT_BUYER_LIMIT_CANCELLED_HOLD_BUDGET.
+            @Value("${atlas.checkout-buyer-limit.cancelled-hold-budget:PT5M}") Duration cancelledHoldBudget,
             Optional<LocationClient> locationClient,
             Optional<LocationReservationService> locationReservations,
             Optional<CheckoutFinalizationService> reservationFinalizer) {
@@ -117,12 +124,14 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         if (checkoutWindow.isZero() || checkoutWindow.isNegative()) {
             throw new IllegalArgumentException("checkoutWindow must be positive");
         }
-        if (maxOpenCheckoutsPerBuyer <= 0 || maxReservedUnitsPerBuyer <= 0 || expiredHoldCooldown.isNegative()) {
+        if (maxOpenCheckoutsPerBuyer <= 0 || maxReservedUnitsPerBuyer <= 0 || expiredHoldCooldown.isNegative()
+                || cancelledHoldBudget.isNegative()) {
             throw new IllegalArgumentException("Buyer checkout limits must be positive");
         }
         this.maxOpenCheckoutsPerBuyer = maxOpenCheckoutsPerBuyer;
         this.maxReservedUnitsPerBuyer = maxReservedUnitsPerBuyer;
         this.expiredHoldCooldown = expiredHoldCooldown;
+        this.cancelledHoldBudget = cancelledHoldBudget;
     }
 
     @Override
@@ -375,10 +384,20 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         }
         if (!expiredHoldCooldown.isZero()) {
             List<String> skuIds = items.stream().map(CartItemResponse::skuId).toList();
-            checkouts.findRecentlyExpiredHeldSku(buyerRef, skuIds, now.minus(expiredHoldCooldown), now)
+            Instant since = now.minus(expiredHoldCooldown);
+            checkouts.findRecentlyExpiredHeldSku(buyerRef, skuIds, since, now)
                     .ifPresent(skuId -> {
                         throw new OrderException(OrderException.Code.CONFLICT, "Buyer let an unpaid hold of SKU "
                                 + skuId + " expire; retry after " + expiredHoldCooldown);
+                    });
+            // 취소는 재고를 바로 돌려주지만, window 끝 직전 취소를 되풀이하면 만료 쿨다운을 피해 SKU를 계속 잡는다.
+            // 그래서 지난 쿨다운 구간에 취소한 hold의 보유 시간 합으로 막는다. 40분 동안 한 Buyer가 잡을 수 있는 시간은
+            // 합 상한(5분) 바로 아래까지 짧게 잡고 취소한 뒤 window(10분)를 한 번 더 채우는 약 15분이다.
+            checkouts.findSkuOverCancelledHoldBudget(buyerRef, skuIds, since, cancelledHoldBudget.toSeconds())
+                    .ifPresent(skuId -> {
+                        throw new OrderException(OrderException.Code.CONFLICT, "Buyer cancelled unpaid holds of SKU "
+                                + skuId + " for " + cancelledHoldBudget + " or more; retry after "
+                                + expiredHoldCooldown);
                     });
         }
     }
