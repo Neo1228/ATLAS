@@ -344,8 +344,11 @@ class CheckoutBehaviorTest {
         when(checkouts.findById(checkoutId)).thenReturn(Optional.of(checkout));
         when(orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId)).thenReturn(List.of(order));
         when(items.findByOrderOrderIdOrderBySkuIdAsc(order.orderId())).thenReturn(List.of(item));
-        when(payments.findCheckout(checkoutId))
-                .thenReturn(new PaymentResponse(null, checkoutId, null, PaymentState.NOT_STARTED, false));
+        // 결제 계층의 커밋된 상태. 결과 반영은 checkout 행 잠금 아래에서 이 값을 다시 읽으므로(ADR-0107 결정 2),
+        // submit이 CAPTURED를 돌려준 뒤에는 조회도 CAPTURED여야 실제 결제 계층과 같다.
+        AtomicReference<PaymentResponse> committedPayment = new AtomicReference<>(
+                new PaymentResponse(null, checkoutId, null, PaymentState.NOT_STARTED, false));
+        when(payments.findCheckout(checkoutId)).thenAnswer(invocation -> committedPayment.get());
         when(payments.prepareCheckout(eq(checkoutId), any()))
                 .thenReturn(new PaymentResponse(null, checkoutId, attemptId, PaymentState.NOT_STARTED, false));
 
@@ -356,7 +359,8 @@ class CheckoutBehaviorTest {
         AtomicReference<BuyerCheckoutState> cancellationState = new AtomicReference<>();
         when(payments.submitCheckout(eq(checkoutId), any())).thenAnswer(invocation -> {
             cancellationState.set(service.cancel(checkoutId, "cancel-racing-submit").state());
-            return new PaymentResponse(null, checkoutId, attemptId, PaymentState.CAPTURED, false);
+            committedPayment.set(new PaymentResponse(null, checkoutId, attemptId, PaymentState.CAPTURED, false));
+            return committedPayment.get();
         });
 
         service.submit(checkoutId);

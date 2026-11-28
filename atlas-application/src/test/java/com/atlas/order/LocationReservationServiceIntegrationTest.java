@@ -15,6 +15,7 @@ import com.atlas.order.service.StockAdmissionControl;
 import com.atlas.order.service.impl.LocationReservationServiceImpl;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.io.IOException;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -232,6 +233,40 @@ class LocationReservationServiceIntegrationTest extends PayPalIntegrationTestSup
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/reservations/cancel");
         assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/restore");
         assertThat(INVENTORY_A.takeRequest(200, TimeUnit.MILLISECONDS)).isNull();
+    }
+
+    @Test
+    void claimWhoseLeaseWasTakenByACancellationIsNotReportedAsClaimed() throws Exception {
+        // EXP-117 G1(I6): A의 마지막 원격 claim 응답이 lease보다 늦게 왔고 그 사이 B가 취소해 재고를 되돌렸다. lease
+        // token이 막은 CLAIMED 기록이 실패했으면 원격 응답이 아니라 기록된 상태로 답해야 호출자가 매입하지 않는다.
+        UUID reservationA = UUID.randomUUID();
+        UUID reservationB = UUID.randomUUID();
+        INVENTORY_A.enqueue(reserved(reservationA));
+        INVENTORY_B.enqueue(reserved(reservationB));
+        UUID workflowId = coordinator.submit("stale-claim-" + UUID.randomUUID(), request(UUID.randomUUID(),
+                allocation(LOCATION_A, "stale-a"), allocation(LOCATION_B, "stale-b"))).workflowId();
+        drain(INVENTORY_A);
+        drain(INVENTORY_B);
+        INVENTORY_A.enqueue(transitioned(reservationA, "CLAIMED"));
+        INVENTORY_B.enqueue(transitioned(reservationB, "CLAIMED").setHeadersDelay(2, TimeUnit.SECONDS));
+
+        try (ExecutorService coordinatorA = Executors.newSingleThreadExecutor()) {
+            Future<String> claim = coordinatorA.submit(() -> coordinator.claim(workflowId).name());
+            assertThat(INVENTORY_A.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/claim");
+            assertThat(INVENTORY_B.takeRequest(5, TimeUnit.SECONDS).getPath()).endsWith("/claim");
+            // A가 B 위치의 응답을 기다리는 동안 lease가 끝났다(프로세스 정지나 인스턴스 간 시계 차이와 같은 효과).
+            jdbc.update("UPDATE order_inventory_reservation_workflow SET lease_until = ? WHERE workflow_id = ?",
+                    Timestamp.from(clock.instant().minusSeconds(60)), workflowId);
+            INVENTORY_A.enqueue(transitioned(reservationA, "RELEASED"));
+            INVENTORY_B.enqueue(new MockResponse().setResponseCode(409)
+                    .addHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                    .setBody("{\"code\":\"INVALID_STATE\",\"message\":\"Claimed stock cannot be cancelled\"}"));
+            INVENTORY_B.enqueue(transitioned(reservationB, "RELEASED"));
+
+            assertThat(coordinator.cancel(workflowId).status()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
+            assertThat(claim.get(10, TimeUnit.SECONDS)).isEqualTo("REJECTED");
+        }
+        assertThat(repository.findByWorkflowId(workflowId).state()).isEqualTo(LocationReservationWorkflowState.CANCELLED);
     }
 
     @Test

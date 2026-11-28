@@ -83,10 +83,16 @@ ATLAS 기준:
 | Tier | 앱 인스턴스 | Hikari/인스턴스 | 필요 DB 연결 | pooler |
 | --- | ---: | ---: | ---: | --- |
 | T1 | 2 | 10 | 20 | 불필요 |
-| T2 | 6 | 10 | 60 | 권장 (transaction mode) |
+| T2 | 6 | 10 | 60 | 권장 (transaction mode, 아래 전제 3개) |
 | T3 | 오토스케일 12 | 10 | 120 | 필수 |
 
 T3에서 pooler 없이 120 연결을 유지하면 PostgreSQL은 연결 관리에 CPU를 쓰고, 실제 쿼리 처리량은 늘지 않습니다. PgBouncer를 두면 DB 쪽 실제 연결을 **32–48**로 고정할 수 있습니다.
+
+transaction mode 전제([EXP-118](../03-experiments/EXP-118-multi-instance-assumption-audit.md) H5, [ADR-0107](adr/ADR-0107-multi-instance-shared-state-guards.md)). transaction pooling은 서버 연결을 transaction 동안만 고정합니다. ATLAS가 연결에 기대는 세 가지를 PgBouncer 1.24.1(`pool_mode=transaction`) 뒤에서 확인했습니다.
+
+1. **session advisory lock.** 운영 코드의 session 범위 advisory lock은 만료 sweep 잠금 1곳뿐이었고, 락 연결의 transaction 안에서 잡는 transaction 범위 lock으로 바꿨습니다. session lock은 PgBouncer 뒤에서 상호 배제를 잃거나 sweep이 멈추고 서버 연결에 lock이 남았습니다.
+2. **시작 매개변수.** 기본 `ATLAS_DB_URL`은 `options=-c statement_timeout=...`로 시간 제한 세 개를 겁니다. PgBouncer는 이 연결을 `unsupported startup parameter in options: statement_timeout`으로 거절합니다. `track_extra_parameters`에 세 이름을 넣으면 연결은 되지만 세 값 모두 `SHOW`가 0이었습니다(적용되지 않음). DB 역할에 둔 값(`ALTER ROLE atlas IN DATABASE atlas SET statement_timeout = '30s'` 등)은 `options` 없는 연결에서 PgBouncer 뒤에서도 30s·5s·1min으로 적용됐습니다. pooler를 넣을 때는 URL에서 `options`를 빼고 역할 설정으로 옮긴 뒤 `SHOW`로 확인합니다. `ignore_startup_parameters=options`는 PgBouncer 문서대로 `options` 안의 모르는 매개변수를 무시하므로 역시 시간 제한이 빠집니다(실행해 보지 않음).
+3. **prepared statement.** PgJDBC는 같은 문장의 5회째부터 이름 있는 서버 prepared statement를 씁니다. `max_prepared_statements=0`이면 `prepared statement "S_1" does not exist`(SQLSTATE 26000)로 실패했고, 200(문서 기본값)이면 오류가 없었습니다. 0으로 두는 PgBouncer라면 JDBC `prepareThreshold=0`을 씁니다.
 
 ### 3.5 캐시 계층
 
@@ -148,7 +154,7 @@ ATLAS 기준:
 | read replica | Aurora SIGMOD'17: 1,000→10,000 writes/s에서 lag 2.62→5.38 ms. MySQL은 1초→300초 | replica는 **낙관적 하한**이며, ATLAS는 read-after-write 경로를 replica로 보내면 안 됨 |
 | replica offload | GitHub freno: replica로 30% 라우팅, 지연 작업은 lag 기반 대기(<600ms p95) | ATLAS read offload 상한은 30% 수준으로 보수적으로 |
 | pooler | PgBouncer 45K→210K q/s, 128 연결 고정, PG CPU 22→97% | 연결 증설이 아니라 **다중화**가 해법 |
-| pooler 주의 | transaction mode는 세션 상태를 보존하지 않음 | prepared statement·advisory lock을 문장 간 유지하지 않는지 확인 필요 |
+| pooler 주의 | transaction mode는 세션 상태를 보존하지 않음 | 확인함(EXP-118 H5): session advisory lock 0곳(만료 sweep을 transaction 범위로 바꿈), 시간 제한은 URL `options`가 아니라 DB 역할 설정으로, prepared statement는 `max_prepared_statements` > 0. 3.4 전제 참고 |
 
 ## 7. 이 문서의 한계
 

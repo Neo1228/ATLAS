@@ -24,16 +24,48 @@ public class AuthThrottleRepository {
         this.jdbc = Objects.requireNonNull(jdbc);
     }
 
-    /** 현재 창 안의 주체 실패 횟수. 창이 지났거나 기록이 없으면 0이다. */
-    public int activeSubjectFailures(SubjectBucket scope, String subjectKey, Instant now, long windowMillis) {
-        List<Integer> failures = jdbc.query("""
-                SELECT CASE
-                    WHEN window_started_at <= CAST(? AS timestamptz) - (?::bigint * INTERVAL '1 millisecond') THEN 0
-                    ELSE failures END
-                FROM auth_subject_bucket
-                WHERE subject_key = ? AND scope = ?
-                """, (row, number) -> row.getInt(1), ts(now), windowMillis, subjectKey, scope.name());
-        return failures.stream().findFirst().orElse(0);
+    /**
+     * 현재 창에 주체 시도 1을 예약한다. 한도에 닿았으면 아무것도 바꾸지 않고 false를 돌려준다.
+     *
+     * <p>읽고 판단한 뒤 나중에 기록하면, 기록 전에 들어온 동시 시도가 모두 같은 값을 읽어 한도를 넘는다
+     * (EXP-118 H1: 한 주체에 오답 90건을 동시에 보내면 한도 10인데 인스턴스 1대에서 40~48건, 3대에서 89~90건이
+     * 검증까지 갔다). 비교와 증가를 한 문장에 두면 같은 행의 upsert가 직렬화되므로 인스턴스 수와 무관하게 한도만큼만
+     * 통과한다(같은 측정에서 1대·3대 모두 회차마다 10건).
+     *
+     * <p>열 이름 {@code failures}는 이제 "창 안에서 검증까지 간 시도 수"다. rolling 배포 동안 old jar가
+     * 같은 열을 읽고 쓰므로 이름을 바꾸지 않는다(old jar는 실패 뒤에 1을 더하고, 이 코드는 검증 전에 1을 더해
+     * 한 시도가 두 번 세지지 않는다).
+     */
+    public boolean reserveSubjectAttempt(SubjectBucket scope, String subjectKey, Instant now, long windowMillis,
+            int limit) {
+        List<Integer> reserved = jdbc.query("""
+                INSERT INTO auth_subject_bucket (subject_key, scope, window_started_at, failures, updated_at)
+                VALUES (?, ?, CAST(? AS timestamptz), 1, CAST(? AS timestamptz))
+                ON CONFLICT (subject_key, scope) DO UPDATE SET
+                    failures = CASE
+                        WHEN auth_subject_bucket.window_started_at <= EXCLUDED.window_started_at
+                                     - (CAST(? AS bigint) * INTERVAL '1 millisecond')
+                        THEN 1 ELSE auth_subject_bucket.failures + 1 END,
+                    window_started_at = CASE
+                        WHEN auth_subject_bucket.window_started_at <= EXCLUDED.window_started_at
+                                     - (CAST(? AS bigint) * INTERVAL '1 millisecond')
+                        THEN EXCLUDED.window_started_at ELSE auth_subject_bucket.window_started_at END,
+                    updated_at = EXCLUDED.updated_at
+                WHERE auth_subject_bucket.window_started_at <= EXCLUDED.window_started_at
+                              - (CAST(? AS bigint) * INTERVAL '1 millisecond')
+                   OR auth_subject_bucket.failures < ?
+                RETURNING failures
+                """, (row, number) -> row.getInt(1),
+                subjectKey, scope.name(), ts(now), ts(now), windowMillis, windowMillis, windowMillis, limit);
+        return !reserved.isEmpty();
+    }
+
+    /** 예약한 주체 시도 1을 돌려준다. 출처 한도에 막혀 검증하지 않은 시도가 주체 한도를 쓰지 않게 한다. */
+    public void releaseSubjectAttempt(SubjectBucket scope, String subjectKey) {
+        jdbc.update("""
+                UPDATE auth_subject_bucket SET failures = failures - 1
+                WHERE subject_key = ? AND scope = ? AND failures > 0
+                """, subjectKey, scope.name());
     }
 
     /** 출처 시도를 1 더하고, 더한 뒤의 현재 창 시도 횟수를 돌려준다. */
@@ -55,23 +87,6 @@ public class AuthThrottleRepository {
                 """, (row, number) -> row.getInt(1),
                 originKey, scope.name(), ts(now), ts(now), windowMillis, windowMillis);
         return attempts.stream().findFirst().orElse(Integer.MAX_VALUE);
-    }
-
-    public void recordSubjectFailure(SubjectBucket scope, String subjectKey, Instant now, long windowMillis) {
-        jdbc.update("""
-                INSERT INTO auth_subject_bucket (subject_key, scope, window_started_at, failures, updated_at)
-                VALUES (?, ?, CAST(? AS timestamptz), 1, CAST(? AS timestamptz))
-                ON CONFLICT (subject_key, scope) DO UPDATE SET
-                    failures = CASE
-                        WHEN auth_subject_bucket.window_started_at <= EXCLUDED.window_started_at
-                                     - (CAST(? AS bigint) * INTERVAL '1 millisecond')
-                        THEN 1 ELSE auth_subject_bucket.failures + 1 END,
-                    window_started_at = CASE
-                        WHEN auth_subject_bucket.window_started_at <= EXCLUDED.window_started_at
-                                     - (CAST(? AS bigint) * INTERVAL '1 millisecond')
-                        THEN EXCLUDED.window_started_at ELSE auth_subject_bucket.window_started_at END,
-                    updated_at = EXCLUDED.updated_at
-                """, subjectKey, scope.name(), ts(now), ts(now), windowMillis, windowMillis);
     }
 
     public void deleteSubject(SubjectBucket scope, String subjectKey) {

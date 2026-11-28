@@ -14,7 +14,14 @@ import com.atlas.account.service.AuthAttemptLimiter;
 import com.atlas.account.service.impl.AuthAttemptLimiterImpl;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -102,6 +109,42 @@ class AuthAttemptLimiterIntegrationTest {
     }
 
     @Test
+    void correctPasswordsVerifiedAlongsideAWrongOneDoNotLockTheSubject() throws Exception {
+        // 예약은 결과를 모르는 채 검증 전에 잡으므로 올바른 비밀번호도 검증 중에는 한 칸을 쓴다. 성공하면 ADR-0048
+        // 결정 6대로 카운터를 지워 그 칸을 돌려줘야 한다. 돌려주지 않으면 올바른 로그인만으로 주체가 잠긴다.
+        String email = verifiedAccount();
+        List<String> passwords = List.of(PASSWORD, PASSWORD, "wrong-password");
+        CyclicBarrier start = new CyclicBarrier(passwords.size());
+        ExecutorService attempts = Executors.newFixedThreadPool(passwords.size());
+        List<Future<Boolean>> results = new ArrayList<>();
+        try {
+            for (String password : passwords) {
+                results.add(attempts.submit(() -> {
+                    start.await(10, TimeUnit.SECONDS);
+                    try {
+                        accountService.login(new AccountRequest.Login(email, password), ORIGIN);
+                        return true;
+                    } catch (AccountException rejected) {
+                        return false;
+                    }
+                }));
+            }
+            List<Boolean> loggedIn = new ArrayList<>();
+            for (Future<Boolean> result : results) {
+                loggedIn.add(result.get(30, TimeUnit.SECONDS));
+            }
+            assertThat(loggedIn).containsExactly(true, true, false);
+        } finally {
+            attempts.shutdownNow();
+        }
+
+        // 남을 수 있는 값은 마지막 성공보다 늦게 예약한 오답 1건뿐이다. 올바른 시도의 예약이 남으면 3이 되어 잠긴다.
+        assertThat(failures("LOGIN", email)).isLessThanOrEqualTo(1);
+        assertThat(accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
+        assertThat(failures("LOGIN", email)).isZero();
+    }
+
+    @Test
     void expiredWindowReleasesTheSubjectWithoutOperatorAction() {
         String email = verifiedAccount();
         for (int attempt = 1; attempt <= 3; attempt++) {
@@ -162,6 +205,61 @@ class AuthAttemptLimiterIntegrationTest {
     }
 
     @Test
+    void attemptsStillBeingVerifiedCannotPassTheSubjectLimitTogether() {
+        // 검증(PBKDF2) 중인 시도는 결과가 나오기 전이다. 그 사이 들어온 시도가 같은 카운터 값을 읽고 모두
+        // 통과하면 한도가 동시 시도 수만큼 늘어난다(EXP-118 H1). 결과를 기록하지 않고 tryAcquire만 이어서
+        // 부르는 것이 "모두 검증 중"인 순간과 같다.
+        AuthAttemptLimiter limited = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
+                Duration.ofMinutes(15), 3, 100);
+        Instant now = Instant.now();
+        String subject = "in-flight-" + UUID.randomUUID() + "@example.com";
+        int admitted = 0;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            if (limited.tryAcquire(AuthAttemptScope.LOGIN, subject, "198.51.100." + attempt, now)) admitted++;
+        }
+
+        assertThat(admitted).isEqualTo(3);
+    }
+
+    @Test
+    void correctLoginRefusedOnlyBecauseOthersAreStillBeingVerifiedSucceedsOnceTheyFinish() {
+        // 받아들인 대가(ADR-0107, EXP-118 H1f): 한도만큼의 시도가 검증 중이면 그다음 시도는 비밀번호가 맞아도 검증 전에
+        // 거절된다. 서버에서 기다렸다가 다시 예약하는 안은 거절된 시도마다 Tomcat 스레드를 쥐어 같은 인스턴스의 다른
+        // 요청을 늦췄다. 대신 이 거절은 일시적이어야 한다. 검증 중이던 시도가 성공하면 카운터가 지워지고, 같은 사용자의
+        // 다음 시도는 통과해 성공하며 카운터를 남기지 않는다.
+        String email = verifiedAccount();
+        Instant now = Instant.now();
+        for (int inFlight = 0; inFlight < 3; inFlight++) {
+            assertThat(limiter.tryAcquire(AuthAttemptScope.LOGIN, email, "198.51.100." + inFlight, now)).isTrue();
+        }
+
+        assertThatThrownBy(() -> accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN))
+                .isInstanceOf(AccountException.class)
+                .hasFieldOrPropertyWithValue("code", AccountException.Code.INVALID_CREDENTIALS);
+        assertThat(failures("LOGIN", email)).isEqualTo(3);
+
+        // 검증 중이던 시도 하나가 성공으로 끝난다(AccountServiceImpl.login의 성공 경로와 같은 호출).
+        limiter.resetSubject(SubjectBucket.LOGIN, email);
+
+        assertThat(accountService.login(new AccountRequest.Login(email, PASSWORD), ORIGIN).mfaRequired()).isFalse();
+        assertThat(failures("LOGIN", email)).isZero();
+    }
+
+    @Test
+    void attemptRejectedByItsOriginDoesNotSpendTheSubjectLimit() {
+        AuthAttemptLimiter limited = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
+                Duration.ofMinutes(15), 3, 1);
+        Instant now = Instant.now();
+        String subject = "origin-spent-" + UUID.randomUUID() + "@example.com";
+        String origin = "192.0.2." + UUID.randomUUID().toString().substring(0, 8);
+
+        assertThat(limited.tryAcquire(AuthAttemptScope.LOGIN, subject, origin, now)).isTrue();
+        assertThat(limited.tryAcquire(AuthAttemptScope.LOGIN, subject, origin, now)).isFalse();
+
+        assertThat(failures("LOGIN", subject)).isEqualTo(1);
+    }
+
+    @Test
     void everyScopeIsStoredWithinTheBucketConstraints() {
         // 버킷 enum 값이 테이블 CHECK 제약과 어긋나면 PostgreSQL이 INSERT를 거절해 여기서 예외가 난다.
         AuthAttemptLimiter wide = new AuthAttemptLimiterImpl(new AuthThrottleRepository(jdbc), transactionManager,
@@ -172,9 +270,6 @@ class AuthAttemptLimiterIntegrationTest {
 
         for (AuthAttemptScope scope : AuthAttemptScope.values()) {
             assertThat(wide.tryAcquire(scope, subject, subject, now)).isTrue();
-        }
-        for (SubjectBucket bucket : SubjectBucket.values()) {
-            wide.recordSubjectFailure(bucket, subject, now);
         }
 
         // MFA는 출처 제약에 값이 없어 LOGIN 출처 버킷을 같이 쓴다.

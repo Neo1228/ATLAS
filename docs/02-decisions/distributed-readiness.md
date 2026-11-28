@@ -163,5 +163,6 @@ read replica 도입 시 **read-after-write 경로는 절대 replica로 보내지
 ## 9. 이 문서의 한계
 
 - 코드 정적 분석과 EXP-037/038 측정에 근거하며, 다중 인스턴스에서 owner 락 경쟁을 직접 측정하지는 않았습니다.
+- 다중 인스턴스 경합은 이후 [EXP-118](../03-experiments/EXP-118-multi-instance-assumption-audit.md)에서 실제 bootJar 인스턴스 2~3대와 PostgreSQL 하나로 셌습니다(인증 주체 한도, 다른 인스턴스의 결제 스냅숏, 임시 JWT 키, 만료 sweep 잠금과 transaction pooler, V10 rolling 배포). 그 결과의 결정은 [ADR-0107](adr/ADR-0107-multi-instance-shared-state-guards.md)과 [D-186](../00-governance/decision-log.md)에 있습니다. 위 1절의 owner 락 분류는 이 문서의 코드 읽기 그대로이고, 결제 경로의 판정은 EXP-118 P칸을 따릅니다.
 - "안전"으로 분류한 항목도 DB predicate에 의존하므로, 새 상태 전이를 추가할 때 그 predicate를 유지해야 합니다.
 - 이 문서는 결정 기록이 아니라 **점검 기록**입니다. 실제 도입은 각 항목의 측정 근거가 생긴 뒤 별도 ADR로 진행합니다.
