@@ -22,11 +22,11 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @ConditionalOnProperty(name = "atlas.order-inventory-reservation.enabled", havingValue = "true")
-public class InternalApiTokenAuthorizationManager implements AuthorizationManager<RequestAuthorizationContext> {
+public class InternalApiTokenAuthorization implements AuthorizationManager<RequestAuthorizationContext> {
     private static final String TOKEN_HEADER = "X-Atlas-Service-Token";
     private final byte[] expectedToken;
 
-    public InternalApiTokenAuthorizationManager(
+    public InternalApiTokenAuthorization(
             @Value("${atlas.order-inventory-reservation.api-token:}") String token) {
         if (token == null || token.length() < 32) {
             throw new IllegalStateException("ATLAS_ORDER_INVENTORY_RESERVATION_API_TOKEN must contain at least 32 characters");

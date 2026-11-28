@@ -6,7 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.atlas.application.config.ApiSecurityConfiguration;
 import com.atlas.application.security.AccountOwnershipInterceptor;
-import com.atlas.application.security.InternalApiTokenAuthorizationManager;
+import com.atlas.application.security.InternalApiTokenAuthorization;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -142,7 +142,7 @@ abstract class InternalApiTokenPathBypassTest {
             HttpMessageConvertersAutoConfiguration.class, SecurityAutoConfiguration.class,
             SecurityFilterAutoConfiguration.class})
     @EnableWebSecurity
-    @Import({ApiSecurityConfiguration.class, InternalApiTokenAuthorizationManager.class, InternalProbe.class})
+    @Import({ApiSecurityConfiguration.class, InternalApiTokenAuthorization.class, InternalProbe.class})
     static class ProbeApplication {
     }
 

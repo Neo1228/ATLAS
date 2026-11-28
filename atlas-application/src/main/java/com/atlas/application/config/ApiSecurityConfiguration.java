@@ -2,7 +2,7 @@ package com.atlas.application.config;
 
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import com.atlas.application.security.PublicReadCacheHeaderWriter;
-import com.atlas.application.security.InternalApiTokenAuthorizationManager;
+import com.atlas.application.security.InternalApiTokenAuthorization;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,8 +33,8 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
 
     @Bean
     SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
-            ObjectProvider<InternalApiTokenAuthorizationManager> internalApiToken) throws Exception {
-        InternalApiTokenAuthorizationManager available = internalApiToken.getIfAvailable();
+            ObjectProvider<InternalApiTokenAuthorization> internalApiToken) throws Exception {
+        InternalApiTokenAuthorization available = internalApiToken.getIfAvailable();
         AuthorizationManager<RequestAuthorizationContext> internalApiTokenCheck = available != null
                 ? available
                 : (authentication, context) -> new AuthorizationDecision(false);
