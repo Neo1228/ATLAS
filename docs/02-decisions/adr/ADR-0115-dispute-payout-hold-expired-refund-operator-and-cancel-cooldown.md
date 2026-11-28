@@ -7,11 +7,11 @@
 
 ## 1. 분쟁: 보류와 판매자 패소 차감
 
-### 문제
+### 1.1 문제
 
 `CUSTOMER.DISPUTE.*`는 `payment_provider_adjustment`에 `REVIEW` 행 하나만 남겼다(ADR-0111 결정 6). 그동안 판매자 송금은 그대로 나갔다. 수정 전 코드에서 분쟁이 열린 판매자의 몫 전부를 지급 요청해도 보류 사유가 비어 있었고(`openDisputeHoldsPayout...` 실패), 판매자 패소로 끝난 분쟁은 원장을 바꾸지 않았다(`lostDispute...` 실패, 상태 `REVIEW`).
 
-### PayPal 문서로 확인한 사실
+### 1.2 PayPal 문서로 확인한 사실
 
 | 문장 | 출처 |
 |---|---|
@@ -23,7 +23,7 @@
 
 판단: PayPal이 분쟁 금액을 플랫폼 계정에 묶어 두는 동안 ATLAS가 판매자에게 그 몫까지 송금하면, 구매자 승소 때 차감할 판매자 몫이 남지 않고 손실이 플랫폼으로 넘어간다. 그래서 **보류해야 한다**. 판매자 패소 결과 코드가 하나(`RESOLVED_BUYER_FAVOUR`)로 정해져 있으므로 ADR-0111이 기각한 "결과 코드만으로는 차감 여부를 정할 수 없다"는 `RESOLVED_WITH_PAYOUT`을 차감 대상에서 빼면 풀린다. 분쟁 패소 뒤 PayPal이 capture 역전 사건을 반드시 보내는지는 문서에서 찾지 못했다. 그래서 패소 차감과 역전 사건이 둘 다 와도 같은 돈을 두 번 빼지 않는 규칙이 필요하다(결정 4).
 
-### 결정
+### 1.3 결정
 
 1. **분쟁 행의 상태를 늘린다(V18).** 진행 중인 분쟁은 `HOLD`, 차감 없이 끝난 분쟁은 `CLOSED`다. 판매자 패소면 같은 행이 `POSTING → POSTED`로 가며 기존 환불 분개(`source_refund_id = adjustment_id`, V7 균형·append-only)를 쓴다. `HOLD`·`CLOSED`는 분쟁에만, `HOLD`는 결제 시도와 보류 원화가 있을 때만 허용하는 CHECK를 둔다. V16이 `REVIEW`로 남긴 진행 중 분쟁은 결제 시도 원화 전부를 보류하는 `HOLD`로 옮긴다.
 2. **보류 원화는 분쟁 금액을 capture 비율로 올림한 값**이고 capture 남은 원화를 넘지 않는다. 금액이나 통화를 읽지 못하면 남은 원화 전부를 보류한다. 분쟁 중 갱신 사건은 보류 원화를 다시 계산한다. 끝난 분쟁(`POSTING`·`POSTED`·`CLOSED`·`REVIEW`)은 늦게 온 사건이 되살리지 못하고 마지막 provider 상태만 남긴다.
@@ -32,7 +32,7 @@
 5. **capture 남은 금액의 합(`refundedTotalsForAttempt`)에 차감한 분쟁을 넣는다.** 우리 환불과 대시보드 환불이 패소 분쟁 뒤 남은 capture를 넘지 않는다.
 6. 분쟁 사건은 결제 시도 행을 먼저 잠그고(환불·역전 사건과 같은 순서) adjustment 행을 잠근다. 웹훅 재시도 대기열은 분쟁 결과 필드를 싣지 않으므로 분쟁 경로는 자원 id가 없을 때 말고는 재시도로 돌리지 않는다.
 
-### 대안과 기각 이유
+### 1.4 대안과 기각 이유
 
 | 안 | 근거 | 결정 |
 |---|---|---|
@@ -43,7 +43,7 @@
 | 패소 차감 없이 역전 사건만 기다림 | 패소 뒤 역전이 꼭 온다는 문장을 찾지 못했다(ADR-0111 재검토 조건). 오지 않으면 판매자 몫이 그대로 남는다 | ✗ 기각 |
 | 위 1~6 | 회귀 시험 5건이 수정 전 실패·수정 뒤 통과, 아래 변이 6건 모두 잡힘 | ✓ 채택 |
 
-### 변이 시험
+### 1.5 변이 시험
 
 | 없앤 것 | 결과 |
 |---|---|
@@ -56,11 +56,11 @@
 
 ## 2. 30일 넘은 결과 불명 환불의 운영자 종료
 
-### 문제
+### 2.1 문제
 
 ADR-0108 뒤로 첫 요청 뒤 30일이 지난 결과 불명 환불은 PayPal에 다시 보내지 않고 복구 job이 `NEEDS_REVIEW`가 된다. 그 환불을 끝낼 경로가 없었다. 정산 환불 예약이 남아 판매자 지급 가능액을 계속 줄이고, 주문 환불 상태가 끝나지 않는다. 운영 가이드는 "운영자 API는 없다"고 적었다.
 
-### 결정
+### 2.2 결정
 
 1. `POST /api/internal/payment/refunds/{refundOperationId}/resolve-expired`. 본문은 `{"outcome":"COMPLETED","providerRefundId":"..."}` 또는 `{"outcome":"FAILED","providerRefundNotFound":true}`다. PayPal 대시보드에서 그 capture의 환불을 찾았으면 refund id를, 없으면 '없음'을 증거로 낸다. 증거가 없거나 결과와 어긋나면 400이다.
 2. **인증은 지급 운영자 경계를 그대로 쓴다.** `SettlementPayoutOperatorSecurityConfiguration`의 경로 목록에 더해 계정 JWT, `payout_operator_account` 권한, MFA 세션 검사를 받는다(ADR-0092). 같은 `atlas.settlement.payout.operator.enabled`로 켜지므로 경계 없이 경로만 열리는 구성은 없다. 공용 Basic 로그인(결제 복구·계정 정지)은 사람 식별과 MFA가 없어 기각했다.
@@ -69,7 +69,7 @@ ADR-0108 뒤로 첫 요청 뒤 30일이 지난 결과 불명 환불은 PayPal에
 5. **원장은 기존 경로로 맞춘다.** 결과를 기존 `updateResult`로 쓰고 복구 job을 APPLY 단계로 옮긴 뒤, `OrderRefundService.reconcilePayPalRefund`가 웹훅·복구와 같은 마무리를 한다. COMPLETED는 `settlement.recordRefund`로 환불 분개를 남기고, FAILED는 주문 환불을 실패로 두고 `releaseRefundReservation`으로 예약을 푼다. 두 번째 단계가 실패해도 job이 APPLY에 남아 복구 worker가 마무리한다.
 6. **감사 행 하나.** 같은 트랜잭션에서 `domain_audit_event`에 `PAYMENT_REFUND_RESOLVED_BY_OPERATOR`(actor = 운영자 계정 id, payload `refund_operation_id`·`attempt_id`·`outcome`·`evidence`(refund id 또는 `NOT_FOUND`)·`amount_won`)를 남긴다. 자유 텍스트는 넣지 않는다(V9 규약). 같은 결과·증거의 반복은 200으로 다시 돌려주고 다시 반영하지 않으며, 다른 결과의 두 번째 표시는 409다.
 
-### 대안과 기각 이유
+### 2.3 대안과 기각 이유
 
 | 안 | 근거 | 결정 |
 |---|---|---|
@@ -79,7 +79,7 @@ ADR-0108 뒤로 첫 요청 뒤 30일이 지난 결과 불명 환불은 PayPal에
 | 30일 전에도 운영자 종료 허용 | 30일 안에는 같은 키 재전송이 PayPal 멱등으로 결과를 정한다(ADR-0108). 사람 판단이 자동 경로와 엇갈릴 수 있다 | ✗ 기각 |
 | 위 1~6 | 시험 4건이 수정 전 404로 실패·수정 뒤 통과, 변이 2건 잡힘 | ✓ 채택 |
 
-### 변이 시험
+### 2.4 변이 시험
 
 | 없앤 것 | 결과 |
 |---|---|
@@ -88,17 +88,17 @@ ADR-0108 뒤로 첫 요청 뒤 30일이 지난 결과 불명 환불은 PayPal에
 
 ## 3. 취소·재checkout 반복
 
-### 문제
+### 3.1 문제
 
 ADR-0113 결정 6의 SKU 재checkout 쿨다운은 만료(결제하지 않고 window를 넘긴 hold)만 셌다. 재고 5개 SKU를 통째로 잡고 window(10분) 끝 직전에 취소한 뒤 다시 checkout하면 쿨다운 없이 다시 잡혔다. 회귀 시험 `buyerWhoCancelsWholeStockHoldsJustBeforeTheWindowEndsCannotLoopThem`(운영 기본값, 9분 59초 보유 뒤 취소를 4번 되풀이)은 수정 전 코드에서 한 번도 거절되지 않았다.
 
-### 결정
+### 3.2 결정
 
 1. **취소한 hold의 보유 시간 합으로 막는다.** 지난 쿨다운 구간(`expired-hold-cooldown`, 기본 30분) 안에 Buyer가 취소한 checkout들이 이 cart의 SKU를 잡고 있던 시간(취소 시각 − `created_at`)의 합이 `atlas.checkout-buyer-limit.cancelled-hold-budget`(기본 `PT5M`) 이상이면 409 `CONFLICT`로 거절한다. 같은 cart 잠금 아래, 재고·쿠폰을 바꾸기 전에 확인하고, 같은 Idempotency-Key 재시도는 그보다 먼저 기존 checkout을 돌려준다.
 2. **Buyer 취소만 센다.** `CANCELLED`는 Buyer 취소 요청으로만 생긴다(만료는 `EXPIRED`, 결제 실패는 `FAILED`, Seller 정지는 checkout을 취소하지 않음, `CheckoutPaymentServiceImpl`의 상태 기록 전부를 확인). 취소 시각은 `CANCEL_PENDING`을 거쳤으면 `cancellation_requested_at`, 곧바로 취소됐으면 `updated_at`이다. 스키마는 바꾸지 않는다.
 3. **구간은 만료 쿨다운과 같은 값을 쓴다.** 한 SKU 쿨다운에 계기가 둘(만료, 취소 시간 합)이다. `expired-hold-cooldown=PT0S`면 둘 다 꺼진다. `cancelled-hold-budget=PT0S`면 취소 한 번에 쿨다운이 걸린다. 기본값은 `CartCheckoutServiceImpl` 생성자의 `@Value` 한 곳이고(ADR-0113 결정 5), Compose는 `ATLAS_CHECKOUT_BUYER_LIMIT_CANCELLED_HOLD_BUDGET`로 넘긴다.
 
-### 안 비교
+### 3.3 안 비교
 
 한 Buyer가 재고 전부를 1~10분 단위로 잡고 취소하거나 만료시키며, 허용될 때마다 다시 잡는 경우를 모두 세어(window 10분, 구간 30분) 가장 오래 잡는 시간을 구했다.
 
@@ -114,7 +114,7 @@ ADR-0113 결정 6의 SKU 재checkout 쿨다운은 만료(결제하지 않고 win
 
 채택안의 한도는 만료 쿨다운(40분 중 10분)과 같은 크기다. 횟수 상한(b)은 짧게 여러 번 바꾸는 정상 Buyer와 window 끝까지 잡는 Buyer를 구분하지 못한다. 보유 시간은 독점의 실제 비용(다른 Buyer가 사지 못한 시간)을 그대로 잰다.
 
-### 시험
+### 3.4 시험
 
 - 수정 전: 취소 반복 시험 실패(4번 다 다시 잡힘), 정상 흐름 시험 통과. 수정 뒤: 두 시험 모두 통과(클래스 5건). 반복 시험은 거절 중에 다른 Buyer가 재고 5개를 모두 사고, 다른 SKU는 막히지 않으며, 같은 key 재시도는 409가 아니라 기존 `CANCELLED` checkout을 받고, 31분 뒤에는 다시 살 수 있음을 함께 본다.
 - 정상 흐름(`buyerWhoQuicklyCancelsAndChecksOutTheSameSkuAgainCanStillPay`): 2분 보유 뒤 수량을 바꿔 두 번 취소하고 다시 checkout한 5개를 PayPal 승인까지 마쳐 `PAID`가 된다.
