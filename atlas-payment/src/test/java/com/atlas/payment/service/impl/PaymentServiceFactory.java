@@ -1,7 +1,10 @@
 package com.atlas.payment.service.impl;
 
+import static org.mockito.Mockito.mock;
+
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.repository.PaymentAttemptRepository;
+import com.atlas.payment.repository.PaymentProviderAdjustmentRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
@@ -29,7 +32,8 @@ final class PaymentServiceFactory {
         PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, attempts, refunds, recovery,
                 transactions, psp, RECOVERY_INITIAL_DELAY, ids, Clock.systemUTC());
         PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, attempts, refunds,
-                webhookEvents, recovery, transactions, psp, Clock.systemUTC());
+                webhookEvents, recovery, mock(PaymentProviderAdjustmentRepository.class), transactions, psp, ids,
+                Clock.systemUTC());
         return new PaymentServiceImpl(attempts, recovery, transactionManager, psp, fxConversionService, locks,
                 refundWorkflow, webhookProcessor, ids, Clock.systemUTC(), publicBaseUrl, RECOVERY_INITIAL_DELAY, APPROVAL_TTL);
     }

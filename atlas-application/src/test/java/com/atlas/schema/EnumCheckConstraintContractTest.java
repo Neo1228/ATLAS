@@ -30,6 +30,8 @@ import com.atlas.payment.model.PaymentPhase;
 import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.model.PaymentRecoveryOperationType;
 import com.atlas.payment.model.PaymentRecoveryWorkStage;
+import com.atlas.payment.model.ProviderAdjustmentKind;
+import com.atlas.payment.model.ProviderAdjustmentStatus;
 import com.atlas.payment.model.PaymentRefundState;
 import com.atlas.payment.model.PaymentState;
 import com.atlas.payment.model.WebhookRequeueOutcome;
@@ -102,6 +104,8 @@ class EnumCheckConstraintContractTest {
             Map.entry("payment_recovery_job.status", PaymentRecoveryJobStatus.class),
             Map.entry("payment_recovery_job.operation_type", PaymentRecoveryOperationType.class),
             Map.entry("payment_recovery_job.work_stage", PaymentRecoveryWorkStage.class),
+            Map.entry("payment_provider_adjustment.kind", ProviderAdjustmentKind.class),
+            Map.entry("payment_provider_adjustment.status", ProviderAdjustmentStatus.class),
             Map.entry("paypal_webhook_retry_attempt_history.outcome", WebhookRetryAttemptOutcome.class),
             Map.entry("paypal_webhook_retry_operator_audit.outcome", WebhookRequeueOutcome.class),
             Map.entry("product.status", ProductStatus.class),

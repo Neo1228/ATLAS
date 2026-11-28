@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
@@ -37,6 +39,7 @@ public class PayPalRestClient {
     private static final String REQUEST_ID = "PayPal-Request-Id";
     private static final String PREFER = "Prefer";
     private static final String REGISTRATION_ID = "paypal";
+    private static final Pattern CAPTURE_LINK = Pattern.compile("/v2/payments/captures/([^/?#]+)$");
 
     private final RestClient.Builder builder;
     private final PayPalProperties properties;
@@ -204,7 +207,8 @@ public class PayPalRestClient {
                     new TypeReference<Map<String, Object>>() { });
             Object rawResource = event.get("resource");
             Map<?, ?> resource = rawResource instanceof Map<?, ?> map ? map : Map.of();
-            Object rawAmount = resource.get("amount");
+            // 분쟁(CUSTOMER.DISPUTE.*) 자원은 id/amount 대신 dispute_id/dispute_amount 를 쓴다(customer_disputes_v1).
+            Object rawAmount = resource.containsKey("amount") ? resource.get("amount") : resource.get("dispute_amount");
             Map<?, ?> amount = rawAmount instanceof Map<?, ?> map ? map : Map.of();
             Object rawSupplementary = resource.get("supplementary_data");
             Map<?, ?> supplementary = rawSupplementary instanceof Map<?, ?> map ? map : Map.of();
@@ -212,7 +216,7 @@ public class PayPalRestClient {
             Map<?, ?> relatedIds = rawRelatedIds instanceof Map<?, ?> map ? map : Map.of();
             Object eventId = event.get("id");
             Object eventType = event.get("event_type");
-            Object resourceId = resource.get("id");
+            Object resourceId = resource.containsKey("id") ? resource.get("id") : resource.get("dispute_id");
             Object resourceStatus = resource.get("status");
             Object amountValue = amount.get("value");
             BigDecimal resourceAmount = amountValue instanceof String value
@@ -221,6 +225,8 @@ public class PayPalRestClient {
             Object providerOrderId = relatedIds.get("order_id");
             Object relatedCaptureId = resource.get("capture_id");
             if (relatedCaptureId == null) relatedCaptureId = relatedIds.get("capture_id");
+            if (relatedCaptureId == null) relatedCaptureId = upCaptureId(resource.get("links"));
+            if (relatedCaptureId == null) relatedCaptureId = disputedCaptureId(resource.get("disputed_transactions"));
             return new PaymentWebhookEventResponse(
                     eventId instanceof String value ? value : null,
                     eventType instanceof String value ? value : null,
@@ -233,6 +239,29 @@ public class PayPalRestClient {
         } catch (JacksonException exception) {
             throw new IllegalArgumentException("PayPal webhook body is not valid JSON", exception);
         }
+    }
+
+    /**
+     * refund 자원(PAYMENT.CAPTURE.REFUNDED/REVERSED, PAYMENT.REFUND.*)에는 capture_id 필드가 없고 HATEOAS
+     * {@code rel=up} 링크만 capture 를 가리킨다(PayPal payments_payment_v2.json 의 capture_refunded 예시).
+     */
+    private static String upCaptureId(Object rawLinks) {
+        if (!(rawLinks instanceof List<?> links)) return null;
+        for (Object rawLink : links) {
+            if (rawLink instanceof Map<?, ?> link && "up".equals(link.get("rel"))
+                    && link.get("href") instanceof String href) {
+                Matcher matcher = CAPTURE_LINK.matcher(href);
+                if (matcher.find()) return matcher.group(1);
+            }
+        }
+        return null;
+    }
+
+    /** 분쟁 자원은 거래를 disputed_transactions[].seller_transaction_id(판매자 쪽 capture id)로 가리킨다. 한 건만 받는다. */
+    private static String disputedCaptureId(Object rawTransactions) {
+        if (!(rawTransactions instanceof List<?> transactions) || transactions.size() != 1) return null;
+        return transactions.getFirst() instanceof Map<?, ?> transaction
+                && transaction.get("seller_transaction_id") instanceof String id ? id : null;
     }
 
     private Map<String, Object> postWebhook(Object body) {

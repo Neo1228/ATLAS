@@ -17,5 +17,10 @@ public interface OrderRefundService {
     RefundResponse.Refund processInspectedReturnRefund(UUID returnId);
     RefundResponse.Refund prepareInspectedReturnRefund(UUID returnId);
     RefundResponse.Refund reconcilePayPalRefund(UUID paymentOperationId);
+    /**
+     * PayPal 쪽에서 시작된 환불·역전을 판매자 원장에서 차감한다(ADR-0111). 결제 시도가 한 판매자 주문에만
+     * 속하면 기존 환불 분개(보류금 먼저, 그다음 지급 가능액)를 쓰고, 여러 판매자에 걸치면 돈을 움직이지 않고 검토로 넘긴다.
+     */
+    void applyProviderAdjustment(UUID adjustmentId);
     RefundResponse.RefundSummary find(UUID sellerId, UUID orderId);
 }

@@ -2,6 +2,7 @@ package com.atlas.payment.service;
 
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
@@ -88,4 +89,10 @@ public interface PaymentService {
     PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody);
     <T> T withPayPalWebhookOwnerLock(PaymentWebhookEventResponse event, Supplier<T> action);
     PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEventResponse event);
+    /** PayPal 쪽에서 시작된 환불·역전·분쟁 기록(ADR-0111). 원장 반영은 주문 계층이 한다. */
+    PaymentProviderAdjustmentResponse findProviderAdjustment(UUID adjustmentId);
+    /** 판매자 원장 차감을 남긴 뒤에만 부른다. */
+    void markProviderAdjustmentPosted(UUID adjustmentId);
+    /** 자동으로 판매자에게 귀속할 수 없을 때 돈을 움직이지 않고 운영자 검토로 넘긴다. */
+    void markProviderAdjustmentForReview(UUID adjustmentId, String reason);
 }
