@@ -21,6 +21,12 @@ Buyer checkout의 유일성은 `(buyer_ref, idempotency_key)`뿐이었다(`V1__b
 5. **기본값은 `CartCheckoutServiceImpl` 생성자의 `@Value` 한 곳에 둔다.** 시험용 `application.yml`이 운영 파일을 가리므로 `atlas.checkout-window`처럼 코드 기본값을 쓴다. Compose는 Spring 환경 변수 규칙의 이름을 넘기며 같은 값을 적는다. 환경 변수 `ATLAS_CHECKOUT_BUYER_LIMIT_OPEN_CHECKOUTS`, `ATLAS_CHECKOUT_BUYER_LIMIT_RESERVED_UNITS`, `ATLAS_CHECKOUT_BUYER_LIMIT_EXPIRED_HOLD_COOLDOWN`으로 바꾼다. 한 Buyer로 결제하지 않은 checkout을 반복해 만드는 k6 하네스(`buyer-checkout.js`, `coupon-redemption.js`)는 운영 가이드대로 두 값을 올려서 돌린다.
 6. **만료된 hold의 SKU 재checkout 쿨다운(`atlas.checkout-buyer-limit.expired-hold-cooldown`, 기본 30분).** 수량 합 상한(50)만으로는 재고 50개 이하 SKU를 한 Buyer가 통째로 잡고, window(10분)가 끝나면 다시 잡는 일을 끝없이 되풀이할 수 있었다. Buyer가 결제하지 않고 window를 넘긴 checkout(만료 sweep 전 RESERVED, EXPIRED)이 지난 30분 안에 만료됐고 이번 cart와 같은 SKU를 담았으면 409 `CONFLICT`로 거절한다. 그러면 한 Buyer가 같은 SKU를 잡는 시간은 40분 중 최대 10분이고, 그 사이 다른 Buyer가 살 수 있다. 회귀 시험 `buyerWhoLetAWholeStockHoldExpireCannotImmediatelyHoldItAgain`은 운영 기본값으로 돈다.
 
+
+### 환불 합(capture 남은 금액)
+
+7. **capture 남은 금액은 `PaymentRefundRepository.refundedTotalsForAttempt` 하나로 정한다.** 실패하지 않은 우리 환불(`payment_refund_operation`)과 원장 차감 대상인 provider 발 환불·역전(`payment_provider_adjustment`, POSTING·POSTED)의 원화·센트 합이다. 우리 환불(`PaymentRefundWorkflow`)과 provider 사건 기록(`ProviderAdjustmentRecorder`)이 둘 다 이 값을 뺀다. 전에는 우리 환불이 우리 operation만 세서, 대시보드 환불·역전 뒤의 우리 환불이 남은 capture를 넘겨 요청됐다. 회귀 시험 `ProviderOriginatedMoneyEventIntegrationTest.ourRefundDashboardRefundAndReversalShareOneRemainingCapture`는 수정 전 실패했고, 두 경로 중 하나가 다른 쪽 합을 빼지 않는 변이 둘 다에서 실패한다.
+8. **환산 방향은 사건의 기준 통화를 따라 둘로 둔다.** 우리 환불은 운영자가 원화로 정하므로 센트는 누적 원화를 HALF_UP 한 값에서 이미 보낸 센트를 뺀다(ADR-0030, 캡처 센트도 같은 반올림이라 전액 환불 합이 캡처와 같다). provider 사건은 PayPal이 센트로 정하므로 원화는 capture 비율로 내린다(판매자 차감이 실제보다 커지지 않게). 남은 센트 전부를 가져가는 마지막 사건은 남은 원화 전부를 받아 1원 미만 차이를 메운다. 한 방향으로 통일하면 한쪽 사건의 기준 금액을 바꿔 PayPal 금액이나 운영자가 정한 원화와 어긋난다.
+
 ## 대안과 기각 이유
 
 | 안 | 근거 | 결정 |

@@ -372,8 +372,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentAttempt attempt = paymentAttempts.findById(captured.attemptId()).orElseThrow();
         assertThat(attempt.getTotalWon()).isEqualTo(1000L);
         assertThat(attempt.getProviderAmountMinor()).isEqualTo(75L);
-        assertThat(paymentRefunds.refundedAmountForAttempt(captured.attemptId())).isEqualTo(1000L);
-        assertThat(paymentRefunds.refundedProviderAmountForAttempt(captured.attemptId())).isEqualTo(75L);
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).amountWon()).isEqualTo(1000L);
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).providerAmountMinor()).isEqualTo(75L);
     }
 
     /**
@@ -398,8 +398,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                     .isEqualTo(PaymentRefundState.COMPLETED);
         }
 
-        assertThat(paymentRefunds.refundedAmountForAttempt(captured.attemptId())).isEqualTo(10_000L);
-        assertThat(paymentRefunds.refundedProviderAmountForAttempt(captured.attemptId())).isEqualTo(751L);
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).amountWon()).isEqualTo(10_000L);
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).providerAmountMinor()).isEqualTo(751L);
     }
     @Test
     void webhookSignatureIsVerifiedAndDuplicateCaptureEventIsIdempotent() throws Exception {

@@ -83,7 +83,7 @@ class ConcurrentRefundGuardTest extends PayPalIntegrationTestSupport {
             }
         }
 
-        long refundedTotal = refunds.refundedAmountForAttempt(attemptId);
+        long refundedTotal = refunds.refundedTotalsForAttempt(attemptId).amountWon();
         System.out.printf("CONCURRENT_REFUND captured_won=%d refunded_won=%d%n",
                 amount.longValueExact(), refundedTotal);
 

@@ -9,7 +9,7 @@ import com.atlas.payment.model.ProviderAdjustmentKind;
 import com.atlas.payment.model.ProviderAdjustmentStatus;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.persistence.projection.ProviderAdjustment;
-import com.atlas.payment.persistence.projection.ProviderAdjustmentTotals;
+import com.atlas.payment.persistence.projection.RefundedTotals;
 import com.atlas.payment.provider.paypal.PayPalRefundStatus;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.repository.PaymentProviderAdjustmentRepository;
@@ -161,11 +161,9 @@ final class ProviderAdjustmentRecorder {
                 || !attempt.getProviderCurrency().equalsIgnoreCase(event.resourceCurrency())) {
             return Pricing.review("AMOUNT_OR_CURRENCY_MISMATCH");
         }
-        ProviderAdjustmentTotals prior = adjustments.activeMoneyTotals(attempt.getAttemptId());
-        long remainingMinor = attempt.getProviderAmountMinor()
-                - refunds.refundedProviderAmountForAttempt(attempt.getAttemptId()) - prior.providerAmountMinor();
-        long remainingWon = attempt.getTotalWon()
-                - refunds.refundedAmountForAttempt(attempt.getAttemptId()) - prior.amountWon();
+        RefundedTotals refunded = refunds.refundedTotalsForAttempt(attempt.getAttemptId());
+        long remainingMinor = attempt.getProviderAmountMinor() - refunded.providerAmountMinor();
+        long remainingWon = attempt.getTotalWon() - refunded.amountWon();
         if (providerMinor > remainingMinor || remainingWon <= 0) {
             return Pricing.review("EXCEEDS_REMAINING_CAPTURE");
         }

@@ -3,7 +3,6 @@ package com.atlas.payment.repository;
 import com.atlas.payment.model.ProviderAdjustmentKind;
 import com.atlas.payment.model.ProviderAdjustmentStatus;
 import com.atlas.payment.persistence.projection.ProviderAdjustment;
-import com.atlas.payment.persistence.projection.ProviderAdjustmentTotals;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Objects;
@@ -43,17 +42,6 @@ public class PaymentProviderAdjustmentRepository {
     public Optional<ProviderAdjustment> findById(UUID adjustmentId) {
         return jdbc.query("SELECT * FROM payment_provider_adjustment WHERE adjustment_id = ?",
                 ROW_MAPPER, adjustmentId).stream().findFirst();
-    }
-
-    /** POSTING·POSTED 인 환불·역전의 합. REVIEW 는 운영자가 정하기 전이라 넣지 않는다. */
-    public ProviderAdjustmentTotals activeMoneyTotals(UUID attemptId) {
-        return jdbc.queryForObject("""
-                SELECT COALESCE(SUM(provider_amount_minor), 0) AS provider_amount_minor,
-                       COALESCE(SUM(amount_won), 0) AS amount_won
-                FROM payment_provider_adjustment
-                WHERE attempt_id = ? AND kind IN ('REFUND', 'REVERSAL') AND status IN ('POSTING', 'POSTED')
-                """, (resultSet, rowNumber) -> new ProviderAdjustmentTotals(
-                        resultSet.getLong("provider_amount_minor"), resultSet.getLong("amount_won")), attemptId);
     }
 
     /** 환불·역전 한 건을 기록한다. 같은 refund id 가 이미 있으면 기록하지 않고 false. */

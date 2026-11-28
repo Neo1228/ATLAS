@@ -4,6 +4,7 @@ import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest
 import static com.atlas.payment.service.impl.PaymentPreconditions.notFound;
 import static com.atlas.payment.service.impl.PaymentPreconditions.validateOwnerAndKey;
 
+import com.atlas.payment.persistence.projection.RefundedTotals;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
@@ -151,10 +152,11 @@ public final class PaymentRefundWorkflow {
                 }
                 return prior;
             }
+            // 우리 환불과 provider 발 환불·역전(대시보드 환불, capture 역전)을 함께 뺀다. 한쪽만 보면 남은 capture를 넘겨 환불한다.
+            RefundedTotals refunded = refunds.refundedTotalsForAttempt(attempt.getAttemptId());
             long totalAfterRefund;
             try {
-                totalAfterRefund = Math.addExact(
-                        refunds.refundedAmountForAttempt(attempt.getAttemptId()), amountWon);
+                totalAfterRefund = Math.addExact(refunded.amountWon(), amountWon);
             } catch (ArithmeticException overflow) {
                 throw invalidRequest("Refund amount is too large");
             }
@@ -166,7 +168,7 @@ public final class PaymentRefundWorkflow {
             }
             long providerRefundAmount = amountWon;
             if (psp.requiresFxSnapshot()) {
-                long refundedProviderAmount = refunds.refundedProviderAmountForAttempt(attempt.getAttemptId());
+                long refundedProviderAmount = refunded.providerAmountMinor();
                 long remainingProviderAmount = attempt.getProviderAmountMinor() - refundedProviderAmount;
                 if (remainingProviderAmount <= 0) {
                     throw invalidRequest("Refund exceeds the remaining PayPal capture amount");
