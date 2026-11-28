@@ -107,6 +107,10 @@ public abstract class PayPalIntegrationTestSupport {
         REJECTIONS.computeIfAbsent(operation, ignored -> new ConcurrentLinkedQueue<>())
                 .add(status + ":" + issue);
     }
+    /** {@code operation}에 쌓였지만 소비되지 않은 거절을 비운다. */
+    protected static void discardRejections(String operation) {
+        REJECTIONS.remove(operation);
+    }
     protected static void queueRefundStatus(String status) { REFUND_STATUSES.add(status); }
     protected static void queueWebhookVerificationStatus(String status) { WEBHOOK_SIGNATURE_STATUSES.add(status); }
     protected static void disconnectNextCaptureResponse() { DISCONNECT_NEXT_CAPTURE.set(true); }
