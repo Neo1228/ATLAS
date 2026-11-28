@@ -229,6 +229,7 @@ Location A/B API는 각각 `http://127.0.0.1:8090`·`http://127.0.0.1:8091`이�
 - 요약은 기본 stdout 출력. 파일 저장 시 `SUMMARY_FILE`을 지정하고 `atlas-application/build/k6-results/` 사용
 - 테스트 계정 비밀번호·PayPal credential은 무시 파일 `.env.local`에 보관. 코드·명령 인자·결과 파일에 기록 금지
 - Buyer checkout 진단: `K6_DEBUG_ERRORS=true`는 stage·HTTP status·error code만 출력. Response body·token 미출력
+- Buyer 미결 checkout 상한: `buyer-checkout.js`·`coupon-redemption.js`는 VU마다 Buyer 하나로 결제하지 않은 checkout을 반복해 만든다. 운영 기본값(Buyer당 미결 checkout 1건, 예약 수량 합 50개, 만료 hold SKU 재checkout 30분 쿨다운, ADR-0113)이면 두 번째 반복부터 409·400이 난다. `coupon-redemption.js` limited 모드는 409를 쿠폰 상한 경합으로 세므로 결과가 조용히 틀린다. 실행 전 `.env.local`에 `ATLAS_CHECKOUT_BUYER_LIMIT_OPEN_CHECKOUTS=1000000`, `ATLAS_CHECKOUT_BUYER_LIMIT_RESERVED_UNITS=2147483647`, `ATLAS_CHECKOUT_BUYER_LIMIT_EXPIRED_HOLD_COOLDOWN=PT0S`을 넣고 application을 다시 띄운다
 
 `ATLAS_PAYMENT_PROVIDER` 기본값은 `disabled`. Compose의 OAuth client ID/secret 기본값도 `disabled`이며, PayPal API 호출 비활성. 실행마다 고유한 `RUN_ID` 사용.
 

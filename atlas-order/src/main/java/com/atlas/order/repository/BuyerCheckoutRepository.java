@@ -4,6 +4,7 @@ import com.atlas.order.persistence.entity.BuyerCheckout;
 import com.atlas.order.model.BuyerCheckoutState;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,6 +15,48 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface BuyerCheckoutRepository extends JpaRepository<BuyerCheckout, UUID> {
+    /** Buyer가 지금 재고를 잡고 있는 미결 checkout 수와 그 checkout들이 예약한 수량 합. */
+    interface OpenHold {
+        long getOpenCheckouts();
+        long getReservedUnits();
+    }
+
+    /**
+     * 결제 전이거나 결제·취소가 끝나지 않아 재고를 잡고 있는 Buyer checkout을 센다.
+     * RESERVED는 child order의 checkout window가 지나면 만료 sweep 전이라도 결제할 수 없으므로 세지 않는다.
+     * RESERVATION_PENDING은 원격 예약이 이미 잡혔을 수 있으므로 시간과 관계없이 센다.
+     */
+    @Query(value = """
+            SELECT COUNT(DISTINCT checkout.checkout_id) AS "openCheckouts",
+                   COALESCE(SUM(item.quantity), 0) AS "reservedUnits"
+            FROM buyer_checkout checkout
+            JOIN purchase_order purchase ON purchase.checkout_id = checkout.checkout_id
+            JOIN order_item item ON item.order_id = purchase.order_id
+            WHERE checkout.buyer_ref = :buyerRef
+              AND (checkout.state IN ('RESERVATION_PENDING', 'PAYMENT_PENDING', 'PAYMENT_UNKNOWN',
+                                      'INVENTORY_CLAIM_PENDING', 'CANCEL_PENDING')
+                   OR (checkout.state = 'RESERVED' AND purchase.checkout_expires_at > :now))
+            """, nativeQuery = true)
+    OpenHold findOpenHold(@Param("buyerRef") String buyerRef, @Param("now") Instant now);
+
+    /**
+     * Buyer가 결제하지 않고 window를 넘긴 checkout 중 {@code [since, now]}에 만료된 것이 이 cart의 SKU를 잡았던 수량.
+     * 만료 sweep 전의 RESERVED도 센다. 취소(CANCELLED)는 재고를 바로 돌려주므로 세지 않는다(ADR-0113 결정 6).
+     */
+    @Query(value = """
+            SELECT item.sku_id
+            FROM buyer_checkout checkout
+            JOIN purchase_order purchase ON purchase.checkout_id = checkout.checkout_id
+            JOIN order_item item ON item.order_id = purchase.order_id
+            WHERE checkout.buyer_ref = :buyerRef
+              AND item.sku_id IN (:skuIds)
+              AND checkout.state IN ('RESERVED', 'EXPIRED')
+              AND purchase.checkout_expires_at <= :now AND purchase.checkout_expires_at > :since
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<String> findRecentlyExpiredHeldSku(@Param("buyerRef") String buyerRef,
+            @Param("skuIds") Collection<String> skuIds, @Param("since") Instant since, @Param("now") Instant now);
+
     Optional<BuyerCheckout> findByBuyerRefAndIdempotencyKey(String buyerRef, String idempotencyKey);
 
     List<BuyerCheckout> findByStateOrderByCreatedAtAsc(BuyerCheckoutState state, Limit limit);

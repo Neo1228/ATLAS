@@ -66,6 +66,8 @@ class RefundOperationRowLockIntegrationTest extends PayPalIntegrationTestSupport
         registry.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
         registry.add("atlas.payment.recovery.worker.enabled", () -> "false");
         registry.add("atlas.payment.paypal.webhook-retry.worker.enabled", () -> "false");
+        // 환불할 단위를 넉넉히 사려고 Buyer 예약 수량 상한(ADR-0113, 기본 50)을 넘는 수량을 담는다.
+        registry.add("atlas.checkout-buyer-limit.reserved-units", () -> String.valueOf(Integer.MAX_VALUE));
     }
 
     @Autowired private SellerService sellers;

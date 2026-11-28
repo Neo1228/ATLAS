@@ -372,8 +372,34 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentAttempt attempt = paymentAttempts.findById(captured.attemptId()).orElseThrow();
         assertThat(attempt.getTotalWon()).isEqualTo(1000L);
         assertThat(attempt.getProviderAmountMinor()).isEqualTo(75L);
-        assertThat(paymentRefunds.refundedAmountForAttempt(captured.attemptId())).isEqualTo(1000L);
-        assertThat(paymentRefunds.refundedProviderAmountForAttempt(captured.attemptId())).isEqualTo(75L);
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).amountWon()).isEqualTo(1000L);
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).providerAmountMinor()).isEqualTo(75L);
+    }
+
+    /**
+     * 환불마다 KRW를 따로 센트로 반올림하면 부분 환불의 합이 캡처 센트보다 작아진다.
+     * 환율 1332.4에서 10,000원은 751센트로 캡처되지만 1,000원은 75센트이므로 열 번 나눠 환불하면 750센트였다.
+     */
+    @Test
+    void partialRefundsSumToTheCapturedUsdAmountExactly() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        PaymentResponse pending = payments.submitInitial(orderId, BigDecimal.valueOf(10_000));
+        payments.completeApproval(orderId, pending.providerOrderId());
+        PaymentResponse captured = payments.reconcile(orderId, "capture-cumulative-refund-" + orderId);
+        assertThat(captured.state()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(paymentAttempts.findById(captured.attemptId()).orElseThrow().getProviderAmountMinor())
+                .isEqualTo(751L);
+        // 1센트 미만으로 반올림되는 환불은 500(IllegalArgumentException)이 아니라 요청 오류다.
+        assertThatThrownBy(() -> payments.refundOrder(orderId, "below-one-cent-" + orderId, 5))
+                .isInstanceOf(PaymentException.class);
+
+        for (int refund = 0; refund < 10; refund++) {
+            assertThat(payments.refundOrder(orderId, "cumulative-" + refund + "-" + orderId, 1_000).status())
+                    .isEqualTo(PaymentRefundState.COMPLETED);
+        }
+
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).amountWon()).isEqualTo(10_000L);
+        assertThat(paymentRefunds.refundedTotalsForAttempt(captured.attemptId()).providerAmountMinor()).isEqualTo(751L);
     }
     @Test
     void webhookSignatureIsVerifiedAndDuplicateCaptureEventIsIdempotent() throws Exception {

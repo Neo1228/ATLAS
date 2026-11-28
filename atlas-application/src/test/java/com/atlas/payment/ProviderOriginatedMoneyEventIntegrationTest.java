@@ -1,6 +1,7 @@
 package com.atlas.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.application.service.PayPalWebhookService;
 import com.atlas.catalog.dto.request.ProductRequest;
@@ -108,6 +109,41 @@ class ProviderOriginatedMoneyEventIntegrationTest extends PayPalIntegrationTestS
         assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before - paid.totalWon());
     }
 
+    /**
+     * 우리 부분 환불, 대시보드 부분 환불, 나머지 역전이 한 capture에 섞여도 원화 합이 capture와 정확히 같고,
+     * 그 뒤 우리 환불은 남은 금액을 넘는다고 거절된다. 두 경로 중 하나라도 다른 쪽 합을 빼지 않으면 깨진다.
+     */
+    @Test
+    void ourRefundDashboardRefundAndReversalShareOneRemainingCapture() {
+        Paid paid = paidOrder(3_333, 3);
+        OrderRequest.Refund oneUnit = new OrderRequest.Refund(paid.sellerId(), paid.orderId(), "atlas-1",
+                List.of(new OrderRequest.Refund.Item(paid.orderItemId(), 1)));
+        assertThat(refunds.refund(oneUnit).paymentStatus()).isEqualTo(OrderRefundPaymentStatus.COMPLETED);
+        long ourMinor = jdbc.queryForObject("SELECT provider_amount_minor FROM payment_refund_operation WHERE attempt_id = ?",
+                Long.class, paid.attemptId());
+        long captureMinor = paid.providerAmount().movePointRight(2).longValueExact();
+        // 역전 원화가 capture 비율 내림으로는 나머지와 맞지 않게 고른다. 그래야 역전이 "남은 전부"로 인식돼 남은 원화를
+        // 통째로 받는지(우리 환불까지 뺀 남은 금액을 알아야 한다)가 원화 합으로 드러난다.
+        long dashboardMinor = (captureMinor - ourMinor) / 2;
+        while ((captureMinor - ourMinor - dashboardMinor) * paid.totalWon() % captureMinor == 0) dashboardMinor--;
+
+        webhooks.handle(SIGNATURE, refundEvent("PAYMENT.CAPTURE.REFUNDED", "DASH-" + UUID.randomUUID(), paid.captureId(),
+                BigDecimal.valueOf(dashboardMinor, 2)).replace("@EVENT@", "WH-" + UUID.randomUUID()));
+        webhooks.handle(SIGNATURE, refundEvent("PAYMENT.CAPTURE.REVERSED", "REV-" + UUID.randomUUID(), paid.captureId(),
+                BigDecimal.valueOf(captureMinor - ourMinor - dashboardMinor, 2))
+                .replace("@EVENT@", "WH-" + UUID.randomUUID()));
+
+        assertThat(providerRefundJournals(paid.orderId())).hasSize(3);
+        assertThat(providerRefundJournals(paid.orderId()).stream().mapToLong(Long::longValue).sum())
+                .isEqualTo(paid.totalWon());
+        OrderRequest.Refund another = new OrderRequest.Refund(paid.sellerId(), paid.orderId(), "atlas-2",
+                List.of(new OrderRequest.Refund.Item(paid.orderItemId(), 1)));
+        assertThatThrownBy(() -> refunds.refund(another))
+                .hasMessageContaining("Refund exceeds the captured payment amount");
+        assertThat(providerRefundJournals(paid.orderId()).stream().mapToLong(Long::longValue).sum())
+                .isEqualTo(paid.totalWon());
+    }
+
     @Test
     void disputeIsHeldForReviewWithoutMovingMoney() {
         Paid paid = paidOrder(10_000);
@@ -172,12 +208,16 @@ class ProviderOriginatedMoneyEventIntegrationTest extends PayPalIntegrationTestS
     }
 
     private Paid paidOrder(long unitPriceWon) {
+        return paidOrder(unitPriceWon, 1);
+    }
+
+    private Paid paidOrder(long unitPriceWon, int quantity) {
         UUID sellerId = sellers.createSeller().sellerId();
         var product = products.createProduct(sellerId, new ProductRequest.CreateProduct("Provider event product", null));
         String skuId = "provider-event-" + UUID.randomUUID();
-        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, unitPriceWon, 1));
+        products.registerSku(sellerId, product.productId(), new ProductRequest.RegisterSellerSku(skuId, unitPriceWon, quantity));
         String buyerRef = "provider-event-buyer-" + UUID.randomUUID();
-        carts.setItemQuantity(sellerId, buyerRef, skuId, 1);
+        carts.setItemQuantity(sellerId, buyerRef, skuId, quantity);
         CheckoutResponse checkout = checkouts.checkout(buyerRef, "provider-event-checkout-" + UUID.randomUUID());
         CheckoutResponse pending = checkoutPayments.submit(checkout.checkoutId());
         OrderViewResponse.Order order = checkoutPayments.completeApproval(checkout.checkoutId(),
