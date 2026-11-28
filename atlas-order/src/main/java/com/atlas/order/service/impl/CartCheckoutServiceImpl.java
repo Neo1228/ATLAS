@@ -76,6 +76,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     private final Optional<LocationClient> locationClient;
     private final int maxOpenCheckoutsPerBuyer;
     private final int maxReservedUnitsPerBuyer;
+    private final Duration expiredHoldCooldown;
 
 
 
@@ -92,6 +93,9 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             // 환경 변수 ATLAS_CHECKOUT_BUYER_LIMIT_OPEN_CHECKOUTS, ATLAS_CHECKOUT_BUYER_LIMIT_RESERVED_UNITS로 바꾼다.
             @Value("${atlas.checkout-buyer-limit.open-checkouts:1}") int maxOpenCheckoutsPerBuyer,
             @Value("${atlas.checkout-buyer-limit.reserved-units:50}") int maxReservedUnitsPerBuyer,
+            // 결제하지 않고 만료된 hold의 SKU를 같은 Buyer가 다시 잡지 못하는 시간(ADR-0113 결정 6). 수량 합 상한만으로는
+            // 재고 50개 이하 SKU를 통째로 잡고 만료 뒤 되풀이할 수 있다. 환경 변수 ATLAS_CHECKOUT_BUYER_LIMIT_EXPIRED_HOLD_COOLDOWN.
+            @Value("${atlas.checkout-buyer-limit.expired-hold-cooldown:PT30M}") Duration expiredHoldCooldown,
             Optional<LocationClient> locationClient,
             Optional<LocationReservationService> locationReservations,
             Optional<CheckoutFinalizationService> reservationFinalizer) {
@@ -113,11 +117,12 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         if (checkoutWindow.isZero() || checkoutWindow.isNegative()) {
             throw new IllegalArgumentException("checkoutWindow must be positive");
         }
-        if (maxOpenCheckoutsPerBuyer <= 0 || maxReservedUnitsPerBuyer <= 0) {
+        if (maxOpenCheckoutsPerBuyer <= 0 || maxReservedUnitsPerBuyer <= 0 || expiredHoldCooldown.isNegative()) {
             throw new IllegalArgumentException("Buyer checkout limits must be positive");
         }
         this.maxOpenCheckoutsPerBuyer = maxOpenCheckoutsPerBuyer;
         this.maxReservedUnitsPerBuyer = maxReservedUnitsPerBuyer;
+        this.expiredHoldCooldown = expiredHoldCooldown;
     }
 
     @Override
@@ -367,6 +372,14 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         if (hold.getReservedUnits() + requestedUnits > maxReservedUnitsPerBuyer) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST,
                     "Checkout would hold more than " + maxReservedUnitsPerBuyer + " units for this Buyer");
+        }
+        if (!expiredHoldCooldown.isZero()) {
+            List<String> skuIds = items.stream().map(CartItemResponse::skuId).toList();
+            checkouts.findRecentlyExpiredHeldSku(buyerRef, skuIds, now.minus(expiredHoldCooldown), now)
+                    .ifPresent(skuId -> {
+                        throw new OrderException(OrderException.Code.CONFLICT, "Buyer let an unpaid hold of SKU "
+                                + skuId + " expire; retry after " + expiredHoldCooldown);
+                    });
         }
     }
 
