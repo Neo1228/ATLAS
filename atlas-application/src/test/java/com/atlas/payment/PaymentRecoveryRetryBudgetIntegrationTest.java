@@ -20,6 +20,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -144,7 +145,13 @@ class PaymentRecoveryRetryBudgetIntegrationTest extends PayPalIntegrationTestSup
         assertThat(outage.virtualMillis()).isGreaterThanOrEqualTo(Duration.ofHours(6).toMillis());
 
         // PayPal 회복: 거절을 더 넣지 않는다. 같은 Request-Id로 주문 생성이 성공해 구매자 승인 대기로 간다.
+        // 이 poll이 provider를 부르지 않으면 결제가 UNKNOWN에 남으므로, 호출 수와 그때의 job 상태를 함께 단정한다(#743).
+        int callsBefore = callCount(CREATE_ORDER_CALL);
+        OffsetDateTime pollStartedBefore = jdbc.queryForObject("SELECT clock_timestamp()", OffsetDateTime.class);
         worker.poll();
+        assertThat(callCount(CREATE_ORDER_CALL) - callsBefore)
+                .as("recovery poll must call PayPal once; job: %s", jobState(attemptId, pollStartedBefore))
+                .isEqualTo(1);
         assertThat(payments.findByAttemptId(attemptId).state()).isEqualTo(PaymentState.AUTHORIZATION_PENDING);
         assertThat(jobStatus(attemptId)).isEqualTo("WAITING_FOR_BUYER");
     }
@@ -275,10 +282,21 @@ class PaymentRecoveryRetryBudgetIntegrationTest extends PayPalIntegrationTestSup
         while ("PENDING".equals(jobStatus(attemptId)) && virtualMillis < duration.toMillis() && claims < 1_000) {
             int callsBefore = callCount(CREATE_ORDER_CALL);
             queueRejection("create-order", 503, "INTERNAL_SERVER_ERROR");
+            OffsetDateTime pollStartedBefore = jdbc.queryForObject("SELECT clock_timestamp()", OffsetDateTime.class);
             worker.poll();
             // poll 첫 단계의 sweep이 창 만료로 job을 넘기면 claim 없이 끝난다(provider 호출 0).
             int calls = callCount(CREATE_ORDER_CALL) - callsBefore;
             assertThat(calls).as("at most one provider call per poll").isBetween(0, 1);
+            if (calls == 0) {
+                // 소비되지 않은 503이 남으면 뒤의 "PayPal 회복" poll이 그것을 먹어 시험이 흔들린다(#743, CI에서 1/5 재현).
+                // 창 만료 sweep(NEEDS_REVIEW)이나 아직 due가 아닌·임대 중인 job이면 정상이라 남은 거절을 비운다.
+                // poll 시작 전에 이미 due였고 임대도 없는 PENDING job을 worker가 건너뛰었다면 운영 결함이므로 상태를 담아 실패한다.
+                Map<String, Object> state = jobState(attemptId, pollStartedBefore);
+                boolean skippedClaimableJob = "PENDING".equals(state.get("status"))
+                        && Boolean.TRUE.equals(state.get("due")) && !Boolean.TRUE.equals(state.get("leased"));
+                assertThat(skippedClaimableJob).as("poll skipped a due, unleased PENDING job: %s", state).isFalse();
+                discardRejections("create-order");
+            }
             claims += calls;
             if ("PENDING".equals(jobStatus(attemptId))) virtualMillis += advanceToNextAttempt(attemptId);
         }
@@ -308,7 +326,7 @@ class PaymentRecoveryRetryBudgetIntegrationTest extends PayPalIntegrationTestSup
      */
     private long advanceToNextAttempt(UUID attemptId) {
         Long delay = jdbc.queryForObject("""
-                SELECT CAST(GREATEST(0, EXTRACT(EPOCH FROM (available_at - CURRENT_TIMESTAMP)) * 1000) AS bigint)
+                SELECT CAST(CEIL(GREATEST(0, EXTRACT(EPOCH FROM (available_at - CURRENT_TIMESTAMP)) * 1000)) AS bigint)
                 FROM payment_recovery_job WHERE payment_attempt_id = ?
                 """, Long.class, attemptId);
         long millis = delay == null ? 0 : delay;
@@ -320,6 +338,17 @@ class PaymentRecoveryRetryBudgetIntegrationTest extends PayPalIntegrationTestSup
                 WHERE payment_attempt_id = ?
                 """, millis, millis, millis, attemptId);
         return millis;
+    }
+
+    /** poll 직전 DB 시각 기준으로 claim 가능했는지와 임대·상태를 돌려준다(진단용). */
+    private Map<String, Object> jobState(UUID attemptId, OffsetDateTime pollStartedBefore) {
+        return jdbc.queryForMap("""
+                SELECT status, lease_token IS NOT NULL AS leased,
+                       available_at <= ? AS due,
+                       EXTRACT(EPOCH FROM (available_at - CURRENT_TIMESTAMP)) * 1000 AS due_in_ms,
+                       EXTRACT(EPOCH FROM (lease_until - CURRENT_TIMESTAMP)) * 1000 AS lease_left_ms
+                FROM payment_recovery_job WHERE payment_attempt_id = ?
+                """, pollStartedBefore, attemptId);
     }
 
     private String jobStatus(UUID attemptId) {

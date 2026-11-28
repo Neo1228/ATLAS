@@ -90,9 +90,11 @@ class SlowQueryDataSourceConfigurationTest extends PayPalIntegrationTestSupport 
                 }
             }
 
+            // The appender sits on a shared class logger: under host load, the Spring context's own wrapped
+            // datasource and the unscoped `SELECT 1` above can also cross 200 ms and log. Count only this request.
             List<String> slowMessages = appender.list.stream()
                     .map(ILoggingEvent::getFormattedMessage)
-                    .filter(message -> message.startsWith("slow_sql requestId="))
+                    .filter(message -> message.startsWith("slow_sql requestId=slow-query-request-123 "))
                     .toList();
             assertThat(slowMessages).hasSize(1);
             assertThat(slowMessages.get(0))
