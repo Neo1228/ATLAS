@@ -67,7 +67,7 @@ docker compose up -d --wait postgres
 ./gradlew :atlas-application:bootRun
 ```
 
-DB 스키마는 `atlas-application/src/main/resources/db/migration/V1__baseline.sql` 하나로 시작한다. 아직 배포하지 않아 이전 증분 마이그레이션(V1~V75)을 같은 최종 스키마를 만드는 기준 마이그레이션으로 대체했다. 이전 버전으로 만든 로컬 DB는 Flyway 이력이 맞지 않으므로 `docker compose down -v`로 볼륨을 지우고 다시 올린다. 이후 변경은 `V2__...`부터 추가한다.
+DB 스키마는 `atlas-application/src/main/resources/db/migration/V1__baseline.sql` 하나로 시작한다. 아직 배포하지 않아 이전 증분 마이그레이션(V1~V75)을 같은 최종 스키마를 만드는 기준 마이그레이션으로 대체했다. 이전 버전으로 만든 로컬 DB는 Flyway 이력이 맞지 않으므로 `docker compose down -v`로 볼륨을 지우고 다시 올린다. 이후 변경은 이미 있는 마지막 번호 다음 번호(`V<다음 번호>__...`)로 추가한다.
 
 선택 구성(PayPal Payouts, 독립 inventory-location 실행, 부하 측정, 핫 SKU gate, Kafka relay)의 설정과 절차는 [운영 가이드](docs/operations-guide.md)로 옮겼다.
 

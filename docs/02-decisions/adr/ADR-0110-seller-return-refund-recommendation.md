@@ -1,6 +1,6 @@
 # ADR-0110: 판매자 반품 권고는 결정 규칙이 판정하고 돈을 움직이지 않으며, 환불은 판매자의 기존 검수 호출만 실행한다
 
-- 상태: Accepted(1단계. 이슈 [#737](https://github.com/Neo1228/ATLAS/issues/737)의 에이전트 결정이며 사용자 승인 여부는 확인하지 못함)
+- 상태: Accepted(1단계 규칙 권고 구현 완료, 2단계 LLM 검토 층 구현 완료·기본 꺼짐. 이슈 [#737](https://github.com/Neo1228/ATLAS/issues/737)의 에이전트 결정이며 사용자 승인 여부는 확인하지 못함)
 - 날짜: 2026-11-28
 - 관련 결정: [ADR-0089](ADR-0089-return-window-and-inspection-deadline.md)(반품 기간·검수 마감), [ADR-0061](ADR-0061-return-restock-source-shipment.md)(반품 줄의 출고 출처), [ADR-0030](ADR-0030-paypal-currency-boundary.md)(환불 금액 경계)
 - 근거: [EXP-121](../../03-experiments/EXP-121-seller-return-refund-recommendation.md), D-189
