@@ -3,6 +3,7 @@ package com.atlas.payment.service.impl;
 import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest;
 
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.model.PaymentPhase;
@@ -13,7 +14,9 @@ import com.atlas.payment.persistence.entity.PaymentRefundOperation;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.provider.paypal.PayPalCaptureStatus;
 import com.atlas.payment.provider.paypal.PayPalRefundStatus;
+import com.atlas.payment.model.ProviderAdjustmentKind;
 import com.atlas.payment.repository.PaymentAttemptRepository;
+import com.atlas.payment.repository.PaymentProviderAdjustmentRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
@@ -26,6 +29,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.IdGenerator;
 
 /**
  * PayPal webhook 검증과 처리. webhook은 provider가 보내는 사실 통지이므로, 저장된 결제·환불의 금액·통화·ID가
@@ -41,11 +45,12 @@ public final class PaymentWebhookProcessor {
     private final TransactionTemplate transactions;
     private final PaymentProvider psp;
     private final Clock clock;
+    private final ProviderAdjustmentRecorder adjustments;
 
     public PaymentWebhookProcessor(OwnerLockRegistry ownerLocks, PaymentAttemptRepository repository,
             PaymentRefundRepository refunds, PaymentWebhookEventRepository webhookEvents,
-            PaymentRecoveryRepository recovery, TransactionTemplate transactions, PaymentProvider psp,
-            Clock clock) {
+            PaymentRecoveryRepository recovery, PaymentProviderAdjustmentRepository providerAdjustments,
+            TransactionTemplate transactions, PaymentProvider psp, IdGenerator ids, Clock clock) {
         this.ownerLocks = Objects.requireNonNull(ownerLocks);
         this.repository = Objects.requireNonNull(repository);
         this.refunds = Objects.requireNonNull(refunds);
@@ -54,6 +59,7 @@ public final class PaymentWebhookProcessor {
         this.transactions = Objects.requireNonNull(transactions);
         this.psp = Objects.requireNonNull(psp);
         this.clock = Objects.requireNonNull(clock);
+        this.adjustments = new ProviderAdjustmentRecorder(repository, refunds, providerAdjustments, webhookEvents, ids);
     }
 
     PaymentWebhookEventResponse verifyPayPalWebhook(PaymentWebhookSignatureRequest signature, String rawBody) {
@@ -130,7 +136,9 @@ public final class PaymentWebhookProcessor {
                 }
                 var operation = refunds.findByProviderRefundIdForUpdate(event.resourceId());
                 if (operation.isEmpty()) {
-                    return new PaymentWebhookResponse(false, false, null, null, null, false, true);
+                    // 우리 operation 과 짝이 없는 환불: PayPal 대시보드 등에서 낸 환불이거나, 우리 환불의 id 를 아직
+                    // 저장하지 못한 경우다. 둘을 가르고 앞의 것은 판매자 원장 차감 대상으로 기록한다(ADR-0111).
+                    return adjustments.recordMoney(event, ProviderAdjustmentKind.REFUND, now);
                 }
                 PaymentRefundOperation current = operation.get();
                 PayPalRefundStatus expectedStatus = switch (refundState) {
@@ -161,12 +169,32 @@ public final class PaymentWebhookProcessor {
                         refundState, null, false);
             }
 
+            ProviderAdjustmentKind providerKind = ProviderAdjustmentRecorder.kindOf(event.eventType());
+            if (providerKind != null) {
+                return providerKind.movesMoney()
+                        ? adjustments.recordMoney(event, providerKind, now)
+                        : adjustments.recordReview(event, providerKind, now);
+            }
+
             if (!webhookEvents.insertReceived(event.eventId(), event.eventType(), event.resourceId(), now)) {
                 return new PaymentWebhookResponse(true, true, null, null, null, false);
             }
             webhookEvents.markProcessed(event.eventId(), now);
             return new PaymentWebhookResponse(false, true, null, null, null, false);
         }));
+    }
+
+    PaymentProviderAdjustmentResponse findProviderAdjustment(UUID adjustmentId) {
+        if (adjustmentId == null) throw invalidRequest("Provider adjustment id is required");
+        return adjustments.find(adjustmentId);
+    }
+
+    void markProviderAdjustmentPosted(UUID adjustmentId) {
+        adjustments.markPosted(Objects.requireNonNull(adjustmentId), clock.instant());
+    }
+
+    void markProviderAdjustmentForReview(UUID adjustmentId, String reason) {
+        adjustments.markForReview(Objects.requireNonNull(adjustmentId), reason, clock.instant());
     }
 
     private PaymentWebhookResponse rejectedWebhook(PaymentWebhookEventResponse event, Instant now) {

@@ -125,6 +125,20 @@ public class PaymentRefundRepository {
                 """, Boolean.class, attemptId);
         return Boolean.TRUE.equals(exists);
     }
+
+    /**
+     * PayPal 에 보냈을 수 있지만 refund id 를 아직 저장하지 못한 우리 환불이 있는가. operation 은 PayPal 호출 전에
+     * commit 되므로, 그 호출이 만든 refund 의 웹훅이 도착할 때는 이 행이 반드시 보인다.
+     */
+    public boolean hasProviderRefundInFlight(UUID attemptId) {
+        Boolean exists = jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM payment_refund_operation
+                    WHERE attempt_id = ? AND refund_state <> 'FAILED' AND provider_refund_id IS NULL
+                )
+                """, Boolean.class, attemptId);
+        return Boolean.TRUE.equals(exists);
+    }
     private Optional<PaymentRefundOperation> queryOne(String sql, Object... parameters) {
         return jdbc.query(sql, ROW_MAPPER, parameters).stream().findFirst();
     }

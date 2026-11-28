@@ -145,6 +145,8 @@ public abstract class PayPalIntegrationTestSupport {
     protected static BigDecimal refundedTotal(String captureId) {
         return REFUNDED_TOTALS.getOrDefault(captureId, BigDecimal.ZERO);
     }
+    /** stub 이 PayPal-Request-Id 에 배정한 refund id. 응답이 끊겨 우리 쪽에 저장되지 않은 id 를 웹훅에 싣는 데 쓴다. */
+    protected static String stubRefundIdForRequest(String requestId) { return REFUNDS_BY_REQUEST_ID.get(requestId); }
 
     @Autowired(required = false)
     private CachingExchangeRateProvider fxCacheUnderTest;

@@ -24,9 +24,11 @@ import com.atlas.order.persistence.projection.RefundRecord;
 import com.atlas.order.persistence.projection.RefundSummary;
 import com.atlas.order.service.LocationRestockService;
 import com.atlas.order.service.OrderRefundService;
+import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.model.PaymentRefundState;
+import com.atlas.payment.model.ProviderAdjustmentStatus;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.settlement.service.SettlementService;
 import java.nio.charset.StandardCharsets;
@@ -382,6 +384,31 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         .orElseThrow(() -> new OrderException(OrderException.Code.NOT_FOUND,
                                 "Order refund request not found"))));
         return finalizeRefund(reserved, payments.findRefundOperation(paymentOperationId));
+    }
+
+    @Override
+    public void applyProviderAdjustment(UUID adjustmentId) {
+        if (adjustmentId == null) throw invalidRequest("Provider adjustment id is required");
+        transactions.executeWithoutResult(transaction -> {
+            PaymentProviderAdjustmentResponse adjustment = payments.findProviderAdjustment(adjustmentId);
+            if (adjustment.status() != ProviderAdjustmentStatus.POSTING) return;
+            List<PurchaseOrder> owners = adjustment.orderId() != null
+                    ? orders.findById(adjustment.orderId()).map(List::of).orElse(List.of())
+                    : orders.findAllByCheckoutIdOrderBySellerIdAsc(adjustment.checkoutId());
+            if (owners.size() != 1) {
+                // 여러 판매자가 한 capture 를 나눠 가졌으면 provider 금액을 누구에게서 뺄지 정할 근거가 사건에 없다.
+                payments.markProviderAdjustmentForReview(adjustmentId,
+                        owners.isEmpty() ? "OWNER_ORDER_MISSING" : "MULTI_SELLER_CAPTURE");
+                return;
+            }
+            PurchaseOrder order = owners.getFirst();
+            // 우리 환불과 같은 분개를 쓴다: 예약이 미지급 송금을 취소하고, 기록이 보류금 먼저 차감한다(V7 균형).
+            SettlementPostingRequest.Refund posting = new SettlementPostingRequest.Refund(
+                    order.orderId(), adjustmentId, order.sellerId(), adjustment.amountWon());
+            settlement.reserveRefund(posting);
+            settlement.recordRefund(posting);
+            payments.markProviderAdjustmentPosted(adjustmentId);
+        });
     }
 
     private RefundResponse.Refund finalizeRefund(RefundRecord reserved, PaymentRefundResponse payment) {

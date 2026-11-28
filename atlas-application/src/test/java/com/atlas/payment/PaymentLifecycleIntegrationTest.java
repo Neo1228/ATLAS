@@ -44,6 +44,7 @@ import com.atlas.payment.provider.PaymentOperation;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.repository.PayPalWebhookRetryRepository;
 import com.atlas.payment.repository.PaymentAttemptRepository;
+import com.atlas.payment.repository.PaymentProviderAdjustmentRepository;
 import com.atlas.payment.repository.PaymentRecoveryRepository;
 import com.atlas.payment.repository.PaymentRefundRepository;
 import com.atlas.payment.repository.PaymentWebhookEventRepository;
@@ -134,6 +135,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     private PaymentWebhookEventRepository paymentWebhookEvents;
     @Autowired
     private PaymentRecoveryRepository paymentRecovery;
+    @Autowired
+    private PaymentProviderAdjustmentRepository providerAdjustments;
     @Autowired
     private PlatformTransactionManager transactionManager;
     @Autowired
@@ -1255,7 +1258,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, paymentAttempts, paymentRefunds,
                 paymentRecovery, transactions, provider, recoveryDelay, ids, Clock.systemUTC());
         PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, paymentAttempts,
-                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider, Clock.systemUTC());
+                paymentRefunds, paymentWebhookEvents, paymentRecovery, providerAdjustments, transactions, provider, ids,
+                Clock.systemUTC());
         return new ObservedPaymentService(paymentAttempts, paymentRecovery, transactionManager, provider,
                 fxConversionService, locks, refundWorkflow, webhookProcessor, ids, publicBaseUrl,
                 webhookLockAttempted, webhookLockThread);
@@ -1269,7 +1273,8 @@ class PaymentLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         PaymentRefundWorkflow refundWorkflow = new PaymentRefundWorkflow(locks, paymentAttempts, paymentRefunds,
                 paymentRecovery, transactions, provider, recoveryDelay, ids, Clock.systemUTC());
         PaymentWebhookProcessor webhookProcessor = new PaymentWebhookProcessor(locks, paymentAttempts,
-                paymentRefunds, paymentWebhookEvents, paymentRecovery, transactions, provider, Clock.systemUTC());
+                paymentRefunds, paymentWebhookEvents, paymentRecovery, providerAdjustments, transactions, provider, ids,
+                Clock.systemUTC());
         return new PaymentServiceImpl(paymentAttempts, paymentRecovery, transactionManager, provider,
                 fxConversionService, locks, refundWorkflow, webhookProcessor, ids, Clock.systemUTC(), publicBaseUrl, recoveryDelay,
                 Duration.ofMinutes(30));

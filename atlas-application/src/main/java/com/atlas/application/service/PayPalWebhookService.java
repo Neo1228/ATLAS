@@ -53,6 +53,9 @@ public class PayPalWebhookService {
                     if (webhookResult.duplicate() || !webhookResult.accepted()) return webhookResult;
                     if (webhookResult.refundOperationId() != null)
                         refunds.reconcilePayPalRefund(webhookResult.refundOperationId());
+                    // PayPal 쪽에서 시작된 환불·역전은 기록과 판매자 원장 차감을 한 트랜잭션에 묶는다(ADR-0111).
+                    if (webhookResult.providerAdjustmentId() != null)
+                        refunds.applyProviderAdjustment(webhookResult.providerAdjustmentId());
                     return webhookResult;
                 }));
         if (result.captureConfirmed() && result.paymentAttemptId() != null) {

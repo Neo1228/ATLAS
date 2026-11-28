@@ -17,6 +17,7 @@ import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
@@ -512,6 +513,21 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentWebhookResponse processVerifiedPayPalWebhook(PaymentWebhookEventResponse event) {
         return webhookProcessor.processVerifiedPayPalWebhook(event);
+    }
+
+    @Override
+    public PaymentProviderAdjustmentResponse findProviderAdjustment(UUID adjustmentId) {
+        return webhookProcessor.findProviderAdjustment(adjustmentId);
+    }
+
+    @Override
+    public void markProviderAdjustmentPosted(UUID adjustmentId) {
+        webhookProcessor.markProviderAdjustmentPosted(adjustmentId);
+    }
+
+    @Override
+    public void markProviderAdjustmentForReview(UUID adjustmentId, String reason) {
+        webhookProcessor.markProviderAdjustmentForReview(adjustmentId, reason);
     }
 
     private record PhaseStart(PaymentAttempt attempt, PaymentRequest request,
