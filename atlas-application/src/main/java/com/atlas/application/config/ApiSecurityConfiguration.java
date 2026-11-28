@@ -2,13 +2,18 @@ package com.atlas.application.config;
 
 import com.atlas.application.security.AccountOwnershipInterceptor;
 import com.atlas.application.security.PublicReadCacheHeaderWriter;
+import com.atlas.application.security.InternalApiTokenAuthorization;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -27,7 +32,12 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
     }
 
     @Bean
-    SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
+            ObjectProvider<InternalApiTokenAuthorization> internalApiToken) throws Exception {
+        InternalApiTokenAuthorization available = internalApiToken.getIfAvailable();
+        AuthorizationManager<RequestAuthorizationContext> internalApiTokenCheck = available != null
+                ? available
+                : (authentication, context) -> new AuthorizationDecision(false);
         return http.csrf(AbstractHttpConfigurer::disable)
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
@@ -54,8 +64,11 @@ public class ApiSecurityConfiguration implements WebMvcConfigurer {
                                 "/api/products/*/reviews", "/api/campaigns/*", "/actuator/health",
                                 "/actuator/health/**", "/actuator/prometheus")
                         .permitAll()
+                        // 서비스 토큰으로만 연다. 기능이 꺼져 토큰 검사기가 없으면 아예 닫는다.
+                        // 매처는 컨테이너가 디코딩·정규화한 경로로 판정하고, `;`·`//`·인코딩된 `/` 같은
+                        // 모호한 경로는 그보다 앞서 StrictHttpFirewall 이 거절한다.
                         .requestMatchers("/api/internal/order-inventory/**")
-                        .permitAll()
+                        .access(internalApiTokenCheck)
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> { }))
                 .headers(headers -> headers

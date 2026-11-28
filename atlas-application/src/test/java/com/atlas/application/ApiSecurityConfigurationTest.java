@@ -88,4 +88,13 @@ class ApiSecurityConfigurationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void internalOrderInventoryRoutesAreClosedWhenTokenCheckIsNotConfigured() throws Exception {
+        // 기능이 꺼져 있으면 토큰 검사기 빈이 없다. 그때는 토큰을 대든 JWT 를 대든 열리지 않아야 한다.
+        mockMvc.perform(get("/api/internal/order-inventory/reservations/needs-review"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/internal/order-inventory/reservations/needs-review").with(jwt())
+                        .header("X-Atlas-Service-Token", "any-token-value-that-is-long-enough-32"))
+                .andExpect(status().isForbidden());
+    }
 }
