@@ -207,22 +207,27 @@ class ProviderOriginatedMoneyEventIntegrationTest extends PayPalIntegrationTestS
     void lostDisputeDebitsTheRefundedAmountOnceAndALaterReversalIsNotDebitedAgain() {
         Paid paid = paidOrder(10_000);
         long before = sellerHeldWon(paid.sellerId());
+        // 일부 금액 분쟁이라야 뒤따르는 역전이 capture 남은 금액 검사에 막히지 않는다. 그래서 같은 돈의 이중 차감을
+        // 막는 것은 "패소 차감한 분쟁 뒤의 역전은 검토로" 규칙뿐이다.
+        BigDecimal half = BigDecimal.valueOf(paid.providerAmount().movePointRight(2).longValueExact() / 2, 2);
         String disputeId = "PP-D-" + UUID.randomUUID();
-        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.CREATED", disputeId, "OPEN", paid,
-                paid.providerAmount(), null, null));
-        String resolved = disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid,
-                paid.providerAmount(), "RESOLVED_BUYER_FAVOUR", paid.providerAmount());
+        String reversalId = "REV-" + UUID.randomUUID();
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.CREATED", disputeId, "OPEN", paid, half, null, null));
+        String resolved = disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid, half,
+                "RESOLVED_BUYER_FAVOUR", half);
 
         webhooks.handle(SIGNATURE, resolved);
         webhooks.handle(SIGNATURE, resolved);
-        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid,
-                paid.providerAmount(), "RESOLVED_BUYER_FAVOUR", paid.providerAmount()));
-        webhooks.handle(SIGNATURE, refundEvent("PAYMENT.CAPTURE.REVERSED", "REV-" + UUID.randomUUID(),
-                paid.captureId(), paid.providerAmount()).replace("@EVENT@", "WH-" + UUID.randomUUID()));
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid, half,
+                "RESOLVED_BUYER_FAVOUR", half));
+        webhooks.handle(SIGNATURE, refundEvent("PAYMENT.CAPTURE.REVERSED", reversalId, paid.captureId(), half)
+                .replace("@EVENT@", "WH-" + UUID.randomUUID()));
 
-        assertThat(providerRefundJournals(paid.orderId())).containsExactly(paid.totalWon());
-        assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before - paid.totalWon());
+        List<Long> journals = providerRefundJournals(paid.orderId());
+        assertThat(journals).hasSize(1);
+        assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before - journals.getFirst());
         assertThat(adjustmentStatus(disputeId)).isEqualTo("POSTED");
+        assertThat(adjustmentStatus(reversalId)).isEqualTo("REVIEW");
         assertThat(disputeHold.holdReason(paid.sellerId())).isEmpty();
     }
 
