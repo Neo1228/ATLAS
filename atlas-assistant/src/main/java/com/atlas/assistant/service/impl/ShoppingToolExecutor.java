@@ -169,7 +169,10 @@ final class ShoppingToolExecutor {
         ToolArguments args = ToolArguments.parse(mapper, argumentsJson, Set.of("query", "max_price_won", "limit"));
         String query = args.text("query", MAX_QUERY_LENGTH);
         Long maxPrice = args.optionalInteger("max_price_won", 1, MAX_PRICE_FILTER_WON);
-        Long limit = args.optionalInteger("limit", 1, MAX_SEARCH_RESULTS);
+        // limit은 결과 수 힌트일 뿐 정책과 무관하다. 작은 모델이 스키마 제약 객체({"maximum":10,"minimum":1})를
+        // 값으로 베껴 보내 검색 전체가 거절되던 것을(EXP-122, qwen2.5:3b의 search_products 호출 22번 중 13번)
+        // 기본값으로 처리한다.
+        Long limit = args.optionalHint("limit", 1, MAX_SEARCH_RESULTS);
         CatalogResponse.ProductListingPage page = products.searchProducts(query, null, maxPrice,
                 limit == null ? 5 : limit.intValue());
         List<Map<String, Object>> found = page.items().stream()
@@ -192,6 +195,9 @@ final class ShoppingToolExecutor {
         Optional<CheckoutPreviewResponse.Line> current = before.lines().stream()
                 .filter(line -> line.sellerId().equals(sellerId) && line.skuId().equals(skuId)).findFirst();
         int currentQuantity = current.map(CheckoutPreviewResponse.Line::quantity).orElse(0);
+        // update_cart는 장바구니에 있는 줄만 바꾼다. 없는 줄의 0개 설정이 실행 성공으로 돌아가면 모델이 지어낸 ID로
+        // "삭제했다"고 답한다(EXP-122). 거절해야 모델이 preview_checkout으로 실제 ID를 읽는다.
+        if (!add && current.isEmpty()) throw new ToolRefusal("LINE_NOT_IN_CART");
         int target = add ? currentQuantity + quantity : quantity;
         if (target > MAX_LINE_QUANTITY) throw new ToolRefusal("QUANTITY_LIMIT");
         if (target == 0) {

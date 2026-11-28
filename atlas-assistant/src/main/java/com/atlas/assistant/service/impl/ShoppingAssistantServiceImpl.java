@@ -63,6 +63,7 @@ public class ShoppingAssistantServiceImpl implements ShoppingAssistantService {
     static final String REPLACED_REPLY = "응답에 서버 값과 다른 금액이나 링크가 있어 표시하지 않았습니다. "
             + "금액과 결제 링크는 화면의 서버 계산 값을 확인해 주세요.";
     static final String ROUND_LIMIT_REPLY = "요청을 한 번에 처리하지 못했습니다. 조금 더 구체적으로 다시 요청해 주세요.";
+    static final String EMPTY_REPLY = "답변을 만들지 못했습니다. 다시 요청해 주세요.";
     private static final int MAX_MESSAGE_CHARS = 1000;
     private static final long MAX_SPENDING_CAP_WON = 100_000_000L;
 
@@ -178,6 +179,11 @@ public class ShoppingAssistantServiceImpl implements ShoppingAssistantService {
         boolean replaced = false;
         if (reply == null) {
             reply = ROUND_LIMIT_REPLY;
+            turn.add(ChatCompletionRequest.Message.assistant(reply, List.of()));
+        } else if (reply.isBlank()) {
+            // 도구 호출도 문장도 없는 빈 응답(EXP-122, qwen2.5:1.5b)을 빈 문자열로 보내지 않는다.
+            reply = EMPTY_REPLY;
+            turn.removeLast();
             turn.add(ChatCompletionRequest.Message.assistant(reply, List.of()));
         } else if (!ReplyAmountGuard.matchesServer(reply, serverAmounts(history, turn), state.approvalUrl)) {
             reply = REPLACED_REPLY;

@@ -9,4 +9,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     compileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
     annotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+    // 실제 모델 평가 하네스(ReturnRecommendationLiveReviewEvaluation, EXP-122)가 운영과 같은 LLM 클라이언트를 만든다.
+    testImplementation 'org.springframework.boot:spring-boot-starter-restclient'
+    testImplementation 'org.springframework.boot:spring-boot-starter-json'
 }
