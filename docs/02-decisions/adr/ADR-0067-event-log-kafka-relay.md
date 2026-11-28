@@ -1,6 +1,6 @@
 # ADR-0067: 독립 consumer를 위한 xmin 안전 이벤트 로그와 Kafka relay
 
-- 상태: Accepted(구현 완료, Kafka relay는 옵트인·기본 꺼짐) — [EXP-061](../../03-experiments/EXP-061-event-log-fanout-and-replay.md)가 무손실을 검증하지 못했다는 지적을 재현으로 확인했고, xmin 안전 로그(V75)와 lease 기반 Kafka relay를 구현해 통합 테스트 3건으로 확인했다.
+- 상태: Accepted(구현 완료, Kafka relay는 옵트인·기본 꺼짐) — [EXP-061](../../03-experiments/EXP-061-event-log-fanout-and-replay.md)가 무손실을 검증하지 못했다는 지적을 재현으로 확인했고, xmin 안전 로그(V75, 현재는 `V1__baseline.sql`에 합쳐짐)와 lease 기반 Kafka relay를 구현해 통합 테스트 3건으로 확인했다.
 - 날짜: 2026-11-23
 - 관련 결정: [ADR-0053](ADR-0053-shared-infra-adoption-gates.md), [ADR-0046](ADR-0046-order-payment-transactional-outbox.md), [ADR-0066](ADR-0066-redis-admission-gate.md)
 - 근거 실험: [EXP-061](../../03-experiments/EXP-061-event-log-fanout-and-replay.md)
@@ -15,7 +15,7 @@
 
 ## 구현(2026-11-23)
 
-- V75: `order_inventory_event`(`tx_id xid8`, 전이마다 trigger가 같은 트랜잭션에서 한 건 기록), `order_inventory_event_cursor`(consumer group별 cursor와 relay lease).
+- V75(현재는 `V1__baseline.sql`에 합쳐짐): `order_inventory_event`(`tx_id xid8`, 전이마다 trigger가 같은 트랜잭션에서 한 건 기록), `order_inventory_event_cursor`(consumer group별 cursor와 relay lease).
 - 읽기: `tx_id < pg_snapshot_xmin(pg_current_snapshot())` 아래만 `(tx_id, event_seq)` 순으로 읽는다. DB 안 consumer는 이 cursor로, 외부 consumer는 Kafka relay로 받는다.
 - relay(`atlas.order-inventory-reservation.event-relay.enabled`, 기본 꺼짐): lease 선점 → 짧은 읽기 트랜잭션 → **트랜잭션 없이** Kafka 전송(acks=all) → 같은 lease일 때만 cursor 전진. 전송 실패 시 cursor는 그대로라 재시도로 전달되고, 중복은 `event-id`(`workflowId:aggregateVersion`) 헤더로 consumer가 걸러낸다. 키는 workflowId라 workflow 안의 순서가 보존된다. 기본값은 topic `atlas.order-inventory.events`, batch-size 500, poll-interval PT0.2S, send-timeout PT10S, lease-duration PT30S다.
 - 통합 테스트 3건: `ReservationEventReadIntegrationTest`(쓰기 8개 × 40건 = 320건, 커밋 전 0~15ms 임의 지연, 열린 트랜잭션 1개를 둔 채 읽어 `consumed == committed`와 열린 트랜잭션의 행 비노출 확인), `ReservationEventTriggerIntegrationTest`(상태 변화당 정확히 1건, 연속 version), `ReservationEventKafkaIntegrationTest`(`apache/kafka:3.9.1` 컨테이너, 전송 실패 시 cursor 보존과 재시도 전달, stale lease 거부). 이 테스트들은 정정 재현(1,013건 손실)과 같은 조건이 아니다.
