@@ -139,6 +139,7 @@ class PackageLayoutRulesTest {
                 .and().haveSimpleNameEndingWith("Controller")
                 .should().resideInAnyPackage(
                         "com.atlas.application.controller.account", "com.atlas.application.controller.admission",
+                        "com.atlas.application.controller.assistant",
                         "com.atlas.application.controller.catalog", "com.atlas.application.controller.inventory",
                         "com.atlas.application.controller.order", "com.atlas.application.controller.payment",
                         "com.atlas.application.controller.settlement")

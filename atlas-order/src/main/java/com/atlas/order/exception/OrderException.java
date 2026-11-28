@@ -11,7 +11,9 @@ public final class OrderException extends RuntimeException {
         CONFLICT,
         INVALID_REQUEST,
         RETURN_WINDOW_EXPIRED,
-        INVENTORY_UNAVAILABLE
+        INVENTORY_UNAVAILABLE,
+        /** 구매자가 정한 지출 상한을 넘는 checkout(ADR-0109). */
+        SPENDING_CAP_EXCEEDED
     }
 
     private final Code code;

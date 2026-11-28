@@ -43,6 +43,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductServiceImpl implements ProductService {
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int DEFAULT_SEARCH_LIMIT = 10;
+    private static final int MAX_SEARCH_LIMIT = 20;
+    private static final int MAX_SEARCH_QUERY_LENGTH = 100;
     private final SellerRepository sellers;
     private final ProductRepository products;
     private final ProductCategoryRepository categories;
@@ -267,8 +270,46 @@ public class ProductServiceImpl implements ProductService {
                         minPriceWon, maxPriceWon, asOf);
         boolean hasMore = fetched.size() > limit;
         List<Product> page = fetched.stream().limit(limit).toList();
+        if (page.isEmpty()) return new CatalogResponse.ProductListingPage(List.of(), null);
+        List<CatalogResponse.ProductListing> items = toListings(page, asOf);
+        String nextCursor = null;
+        if (hasMore) {
+            Product last = page.getLast();
+            nextCursor = encodeCursor(sellerId, categoryId, keyword, minPriceWon, maxPriceWon,
+                    last.getSellerId(), last.getProductId(), managementScope);
+        }
+        return new CatalogResponse.ProductListingPage(items, nextCursor);
+    }
+
+    /**
+     * 공개 상품 관련도 검색(EXP-120, ADR-0109). 상품명·설명의 한글 2-gram과 영숫자 3-gram 겹침으로 순위를 매긴다.
+     * 목록 API의 커서 페이지와 달리 상위 {@code limit}건만 돌려준다(관련도 순서는 커서로 이어 받을 안정 키가 없다).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public CatalogResponse.ProductListingPage searchProducts(String query, Long minPriceWon, Long maxPriceWon,
+            Integer requestedLimit) {
+        String text = query == null ? "" : query.strip();
+        if (text.isEmpty() || text.length() > MAX_SEARCH_QUERY_LENGTH) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Search query must be 1-" + MAX_SEARCH_QUERY_LENGTH
+                    + " characters");
+        }
+        int limit = requestedLimit == null ? DEFAULT_SEARCH_LIMIT : requestedLimit;
+        if (limit < 1 || limit > MAX_SEARCH_LIMIT) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Search limit is out of range");
+        }
+        if (minPriceWon != null && minPriceWon < 0 || maxPriceWon != null && maxPriceWon < 0
+                || minPriceWon != null && maxPriceWon != null && minPriceWon > maxPriceWon) {
+            throw new CatalogException(Code.INVALID_REQUEST, "Invalid product price range");
+        }
+        Instant asOf = clock.instant().truncatedTo(ChronoUnit.MICROS);
+        List<Product> ranked = products.searchPublic(text, minPriceWon, maxPriceWon, asOf, limit);
+        return new CatalogResponse.ProductListingPage(ranked.isEmpty() ? List.of() : toListings(ranked, asOf), null);
+    }
+
+    /** 상품 한 묶음을 목록 응답으로 만든다. 순서는 입력 순서를 그대로 지킨다. */
+    private List<CatalogResponse.ProductListing> toListings(List<Product> page, Instant asOf) {
         List<UUID> productIds = page.stream().map(Product::getProductId).toList();
-        if (productIds.isEmpty()) return new CatalogResponse.ProductListingPage(List.of(), null);
         Map<UUID, Product> productsById = page.stream().collect(Collectors.toMap(Product::getProductId, product -> product));
         // 채널·카테고리는 읽기 모델에서 한 번에 읽는다. 원본 3개 테이블을 다시 읽으면
         // buffer 1,132, 이 투영을 쓰면 103 이다(로컬 2M 상품 실측, 이슈 #389).
@@ -287,18 +328,11 @@ public class ProductServiceImpl implements ProductService {
         Map<UUID, List<CatalogResponse.SellerSku>> variantsByProductId = sellerSkus.findAllByProductIdIn(productIds).stream()
                 .map(sku -> toResponse(productsById.get(sku.getProductId()), sku, pricingAt))
                 .collect(Collectors.groupingBy(CatalogResponse.SellerSku::productId));
-        List<CatalogResponse.ProductListing> items = page.stream().map(product -> new CatalogResponse.ProductListing(
+        return page.stream().map(product -> new CatalogResponse.ProductListing(
                 toResponse(product, categoryIdsByProductId.getOrDefault(product.getProductId(), List.of()),
                         availableChannelsByProductId.getOrDefault(product.getProductId(), List.of())),
                 variantsByProductId.getOrDefault(product.getProductId(), List.of()).stream()
                         .sorted(Comparator.comparing(CatalogResponse.SellerSku::skuId)).toList())).toList();
-        String nextCursor = null;
-        if (hasMore) {
-            Product last = page.getLast();
-            nextCursor = encodeCursor(sellerId, categoryId, keyword, minPriceWon, maxPriceWon,
-                    last.getSellerId(), last.getProductId(), managementScope);
-        }
-        return new CatalogResponse.ProductListingPage(items, nextCursor);
     }
 
     @Override

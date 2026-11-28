@@ -7,6 +7,7 @@ import com.atlas.account.model.AccountNotificationStatus;
 import com.atlas.account.model.AccountSuspensionActionType;
 import com.atlas.account.model.AuthAttemptScope;
 import com.atlas.admission.model.CampaignStatus;
+import com.atlas.llm.model.ChatRole;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.model.ProductStatus;
@@ -77,6 +78,7 @@ class EnumCheckConstraintContractTest {
     /** "table.column" -> 그 컬럼의 값 집합을 소유하는 enum. */
     private static final Map<String, Class<? extends Enum<?>>> OWNERS = Map.ofEntries(
             Map.entry("admission_ticket.status", TicketStatus.class),
+            Map.entry("assistant_message.role", ChatRole.class),
             Map.entry("inventory_reservation.status", ReservationStatus.class),
             Map.entry("campaign.status", CampaignStatus.class),
             Map.entry("buyer_checkout.state", BuyerCheckoutState.class),
@@ -120,6 +122,8 @@ class EnumCheckConstraintContractTest {
 
     /** enum 에는 있지만 DB 에는 저장되지 않는 값. 환불 요약 행이 없을 때 응답이 만드는 NONE 이 그렇다. */
     private static final Map<String, Set<String>> NOT_STORED = Map.of(
+            // 시스템 프롬프트는 코드 상수라 저장하지 않는다(ADR-0109).
+            "assistant_message.role", Set.of("SYSTEM"),
             "order_refund_request.refund_status", Set.of("NONE"),
             "order_refund_summary.refund_status", Set.of("NONE"));
 

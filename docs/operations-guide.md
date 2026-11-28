@@ -12,6 +12,22 @@ Verified buyer 상품 리뷰는 배송 완료된 본인 주문 상품만 작성�
 인증 시도는 주체(이메일)·출처(주소) 두 축으로 제한합니다. PBKDF2 검증 1회가 수십 ms의 CPU를 쓰므로, 실패 한도를 넘으면 **비밀번호 검증 전에** 거절하고 응답은 실제 인증 실패와 동일하게 유지합니다. 실패 기록은 인증 transaction과 분리해 rollback되어도 남으며, 정상 로그인은 카운터를 초기화합니다. MFA 코드 시도와 비밀번호 재설정·이메일 인증 메일 발송도 같은 한도를 공유합니다. 설정과 판단 근거는 [ADR-0048](02-decisions/adr/ADR-0048-authentication-attempt-throttling.md)입니다.
 Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범위를 필터링하며, 기간 판매가가 활성인 동안에는 effective price 기준으로 cursor 페이지 조회합니다.
 
+## 상품 검색과 쇼핑 비서 (V14, ADR-0109)
+
+- 검색: `GET /api/products/search?q=<1~100자>&minPriceWon=&maxPriceWon=&limit=<1~20, 기본 10>`(공개). 공개 판매 중(`ACTIVE` + `ONLINE_STORE`)인 상품을 관련도 순으로 돌려주고 `nextCursor`는 항상 null이다. LLM 설정과 무관하게 동작한다. 기존 `GET /api/products?query=`(상품명 부분 문자열, 커서 페이지)는 그대로다.
+  - 규칙은 V14 함수 두 개다. `catalog_search_grams(text)`는 한글 음절 2-gram과 영숫자 3-gram을 만들고, `catalog_search_terms(text)`는 검색어에서 조사 하나와 요청 동사를 뗀다. 상품의 `search_grams`·`search_name_grams`는 생성 열이라 상품 쓰기 경로를 바꾸지 않아도 같은 규칙으로 갱신된다.
+  - 데이터베이스 `LC_CTYPE`과 무관하다(`C`에서도 한국어가 검색된다). `pg_trgm`으로 바꾸면 `C` ctype에서 한글이 사라진다(EXP-120). ctype 확인: `SELECT datctype FROM pg_database WHERE datname = current_database();`(PostgreSQL 18은 `SHOW lc_ctype`이 없다).
+  - V14는 `product`에 생성 열 두 개를 더하면서 테이블을 다시 쓰고 GIN 인덱스를 만든다. 그동안 `product` 쓰기와 읽기가 기다린다. 소요 시간은 EXP-120 "지연과 마이그레이션 비용"을 보고 상품 수에 비례해 잡는다.
+- 쇼핑 비서(기본 꺼짐): `ATLAS_LLM_ENABLED=true`, `ATLAS_LLM_BASE_URL`(OpenAI 호환, 예 `https://api.openai.com/v1`), `ATLAS_LLM_MODEL`, `ATLAS_LLM_API_KEY`(필요한 공급자만)를 실행 shell에 export한다. key는 `.env.local`에만 두고 커밋·로그 금지. 켰는데 base URL이나 model이 없으면 기동이 실패한다.
+  - 조정 값(기본): `atlas.llm.connect-timeout`(PT2S), `atlas.llm.read-timeout`(PT30S), `atlas.llm.max-attempts`(2, 연결 실패·429·502·503·504만 재시도), `atlas.assistant.conversation-token-budget`(30000, 대화별), `atlas.assistant.max-completion-tokens`(600), `atlas.assistant.max-rounds`(5), `atlas.assistant.max-tool-calls`(8), `atlas.assistant.history-messages`(40). 비용 상한은 토큰 상한 × 모델 단가로 환산한다(대화당 최대 = 예산 + 호출 한 번의 프롬프트).
+  - 구매자 API(본인 `buyerRef`만): `PUT /api/buyers/{buyerRef}/assistant/spending-cap` `{"capWon": 1~100000000}`, `GET`·`DELETE` 같은 경로. 상한이 없으면 비서는 checkout을 시작하지 않는다.
+  - 대화: `POST /api/buyers/{buyerRef}/assistant/turns` `{"conversationId": null|<uuid>, "message": "...", "confirmedTotalWon": <선택>}`. 응답의 `cart`(서버 계산 장바구니), `paymentApprovalUrl`(PayPal 승인 링크), `toolCalls`(도구별 `EXECUTED`·`REFUSED`·`FAILED`와 사유), `replyReplaced`가 정본이다. 앱은 금액을 `reply` 문장이 아니라 `cart.totalWon`으로 보여 준다.
+  - 결제 시작 순서: 비서가 `preview_checkout`으로 합계를 보여 주면 앱이 그 `cart.totalWon`을 구매자에게 확인받고, 다음 차례 요청에 `confirmedTotalWon`으로 보낸다. 서버 합계와 같고 상한 이하일 때만 `start_checkout`이 checkout을 만들고 기존 `POST /api/checkouts/{id}/payment`와 같은 경로로 승인 링크를 받는다. 승인·authorize·capture는 기존 흐름 그대로다. 만든 checkout을 구매자가 승인하지 않으면 기존 checkout 만료(`atlas.checkout-window`)가 재고를 푼다.
+  - 오류: `ASSISTANT_DISABLED`(503, LLM 꺼짐), `ASSISTANT_UNAVAILABLE`(503, 공급자 장애·시간 초과), `ASSISTANT_BUDGET_EXHAUSTED`(409, 새 대화 필요), `CONVERSATION_NOT_FOUND`(404, 다른 구매자의 대화도 같은 응답), `SPENDING_CAP_EXCEEDED`(409, checkout 트랜잭션이 상한 초과를 거절).
+  - 도구 목록: `GET /api/assistant/tools`(인증 필요)가 MCP `tools/list` 모양으로 도구 6개와 입력 스키마를 돌려준다. MCP 실행 서버는 없다.
+  - 확인 SQL: 대화별 토큰 `SELECT conversation_id, tokens_used, updated_at FROM assistant_conversation ORDER BY updated_at DESC LIMIT 20;` 대화 기록에는 구매자가 쓴 문장과 상품 정보가 남으므로 보관 기간 정책을 정하기 전에는 운영 데이터에 켜지 않는다.
+- 되돌리기: `ATLAS_LLM_ENABLED=false`로 재시작한다. 검색 API는 남는다. 스키마를 지우려면 ADR-0109 "롤백"의 순서를 따른다.
+
 ## 계정 인증·복구
 
 - `POST /api/auth/signup`은 검증 메일 전송 요청을 접수하고 `202` 반환. 이미 사용 중인 이메일에도 같은 HTTP status/body 반환; SMTP delivery timing 평준화는 미지원. 메일 token 검증 후 `POST /api/auth/verify-email`을 호출해야 login 가능.

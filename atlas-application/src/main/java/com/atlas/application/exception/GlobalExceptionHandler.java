@@ -1,6 +1,7 @@
 package com.atlas.application.exception;
 
 import com.atlas.account.exception.AccountException;
+import com.atlas.assistant.exception.AssistantException;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.catalog.exception.CatalogException;
@@ -53,6 +54,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             ApplicationException.class,
             AccountException.class,
+            AssistantException.class,
             CampaignException.class,
             AdmissionException.class,
             CartException.class,
@@ -79,6 +81,18 @@ public class GlobalExceptionHandler {
                 case MFA_CONFLICT -> response(HttpStatus.CONFLICT, "CONFLICT", account.getMessage());
                 case RESOURCE_NOT_OWNED -> response(HttpStatus.FORBIDDEN, "FORBIDDEN", account.getMessage());
                 case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", account.getMessage());
+            };
+        }
+        if (exception instanceof AssistantException assistant) {
+            return switch (assistant.code()) {
+                case INVALID_REQUEST -> response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", assistant.getMessage());
+                case CONVERSATION_NOT_FOUND ->
+                        response(HttpStatus.NOT_FOUND, "CONVERSATION_NOT_FOUND", assistant.getMessage());
+                case DISABLED -> response(HttpStatus.SERVICE_UNAVAILABLE, "ASSISTANT_DISABLED", assistant.getMessage());
+                case BUDGET_EXHAUSTED ->
+                        response(HttpStatus.CONFLICT, "ASSISTANT_BUDGET_EXHAUSTED", assistant.getMessage());
+                case UNAVAILABLE ->
+                        response(HttpStatus.SERVICE_UNAVAILABLE, "ASSISTANT_UNAVAILABLE", assistant.getMessage());
             };
         }
         if (exception instanceof CampaignException campaign) {
@@ -134,6 +148,8 @@ public class GlobalExceptionHandler {
                         response(HttpStatus.CONFLICT, "RETURN_WINDOW_EXPIRED", order.getMessage());
                 case INVENTORY_UNAVAILABLE ->
                         response(HttpStatus.SERVICE_UNAVAILABLE, "INVENTORY_UNAVAILABLE", order.getMessage());
+                case SPENDING_CAP_EXCEEDED ->
+                        response(HttpStatus.CONFLICT, "SPENDING_CAP_EXCEEDED", order.getMessage());
             };
         }
         if (exception instanceof PaymentException payment) {

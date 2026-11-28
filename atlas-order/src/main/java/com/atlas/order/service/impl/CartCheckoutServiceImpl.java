@@ -16,6 +16,7 @@ import com.atlas.order.dto.request.LocationReservationRequest.Item;
 import com.atlas.order.dto.request.LocationReservationRequest.LocationAllocation;
 import com.atlas.order.dto.request.LocationReservationRequest;
 import com.atlas.order.dto.request.SellerCouponRequest;
+import com.atlas.order.dto.response.CheckoutPreviewResponse;
 import com.atlas.order.dto.response.CheckoutResponse;
 import com.atlas.order.exception.LocationClientException;
 import com.atlas.order.exception.OrderException;
@@ -116,13 +117,49 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     @Override
     public CheckoutResponse checkout(String buyerRef, String idempotencyKey,
                                      List<SellerCouponRequest> selections) {
+        return checkout(buyerRef, idempotencyKey, selections, null);
+    }
+
+    @Override
+    public CheckoutResponse checkoutWithinCap(String buyerRef, String idempotencyKey, long spendingCapWon) {
+        if (spendingCapWon <= 0) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "Spending cap must be positive");
+        }
+        return checkout(buyerRef, idempotencyKey, List.of(), spendingCapWon);
+    }
+
+    @Override
+    public CheckoutPreviewResponse preview(String buyerRef) {
+        if (buyerRef == null || buyerRef.isBlank() || buyerRef.length() > 256) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST, "buyer is required");
+        }
+        CartResponse cart = carts.find(buyerRef);
+        if (cart.items().isEmpty()) return new CheckoutPreviewResponse(buyerRef, List.of(), 0);
+        PricedCart priced;
+        try {
+            priced = price(cart.items(), Map.of(), clock.instant());
+        } catch (ArithmeticException overflow) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST,
+                    "Checkout amount exceeds the supported range");
+        }
+        List<CheckoutPreviewResponse.Line> lines = priced.sellers().stream()
+                .flatMap(seller -> seller.lines().stream())
+                .map(line -> new CheckoutPreviewResponse.Line(line.sku().sellerId(), line.sku().productId(),
+                        line.sku().skuId(), line.sku().productName(), line.cartItem().quantity(),
+                        line.sku().effectivePriceWon(), line.lineTotalWon()))
+                .toList();
+        return new CheckoutPreviewResponse(buyerRef, lines, priced.totalWon());
+    }
+
+    private CheckoutResponse checkout(String buyerRef, String idempotencyKey,
+                                      List<SellerCouponRequest> selections, Long spendingCapWon) {
         validate(buyerRef, idempotencyKey);
         Map<UUID, String> couponCodes = normalizeCouponSelections(selections);
         UUID checkoutId;
         RemoteStock stock = locationReservationEnabled() ? remoteCandidates(buyerRef) : RemoteStock.NONE;
         try {
             checkoutId = transactions.execute(status ->
-                    checkoutLocked(buyerRef, idempotencyKey, couponCodes, stock));
+                    checkoutLocked(buyerRef, idempotencyKey, couponCodes, stock, spendingCapWon));
         } catch (ArithmeticException overflow) {
             // 장바구니 수량에 상한이 없으므로 가격 × 수량이 long 을 넘칠 수 있다.
             // 이것은 클라이언트가 만든 입력 오류이며 500 이 아니라 400 이어야 한다.
@@ -140,7 +177,7 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
     }
 
     private UUID checkoutLocked(String buyerRef, String idempotencyKey, Map<UUID, String> couponCodes,
-                                RemoteStock stock) {
+                                RemoteStock stock, Long spendingCapWon) {
         CartResponse cart = carts.lockForCheckout(buyerRef);
         BuyerCheckout existing = checkouts.findByBuyerRefAndIdempotencyKey(buyerRef, idempotencyKey)
                 .orElse(null);
@@ -158,56 +195,17 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
                 throw new OrderException(OrderException.Code.CONFLICT,
                         "Checkout key was already used for different cart contents");
             }
+            requireWithinCap(existing.totalWon(), spendingCapWon);
             return existing.checkoutId();
         }
         if (cart.items().isEmpty()) {
             throw new OrderException(OrderException.Code.INVALID_REQUEST, "Cannot checkout an empty cart");
         }
         Instant now = clock.instant();
-
-        TreeMap<UUID, List<CartItemResponse>> sellerItems = groupItems(cart.items());
-        if (!sellerItems.keySet().containsAll(couponCodes.keySet())) {
-            throw new OrderException(OrderException.Code.INVALID_REQUEST,
-                    "A selected coupon Seller has no cart items");
-        }
-        List<SellerLines> snapshotsBySeller = new ArrayList<>(sellerItems.size());
-        long checkoutTotal = 0;
-        for (Map.Entry<UUID, List<CartItemResponse>> seller : sellerItems.entrySet()) {
-            List<CartItemResponse> items = seller.getValue().stream()
-                    .sorted(Comparator.comparing(CartItemResponse::skuId)).toList();
-            List<String> skuIds = items.stream().map(CartItemResponse::skuId).toList();
-            List<CatalogResponse.SellerSku> found = sellerSkus.findOrderableSellerSkus(
-                    seller.getKey(), skuIds, ProductSalesChannel.ONLINE_STORE, now);
-            Map<String, CatalogResponse.SellerSku> bySku = new HashMap<>();
-            if (found != null) {
-                for (CatalogResponse.SellerSku sku : found) {
-                    if (sku == null || sku.skuId() == null
-                            || bySku.putIfAbsent(sku.skuId(), sku) != null) {
-                        throw new OrderException(OrderException.Code.CONFLICT,
-                                "Catalog returned invalid or duplicate seller SKUs for checkout");
-                    }
-                }
-            }
-            List<Line> lines = items.stream()
-                    .map(item -> snapshot(seller.getKey(), item, bySku.get(item.skuId())))
-                    .toList();
-            String couponCode = couponCodes.get(seller.getKey());
-            CatalogResponse.SellerCoupon coupon = couponCode == null ? null
-                    : sellerCoupons.findActive(seller.getKey(), couponCode, now);
-            if (coupon != null) {
-                if (lines.stream().anyMatch(line -> line.sku().effectivePriceWon() < line.sku().priceWon())) {
-                    throw new OrderException(OrderException.Code.CONFLICT,
-                            "Seller coupon cannot be combined with an active SKU sale price");
-                }
-                Map<String, Long> allocations = allocateCouponDiscount(lines, coupon.discountAmountWon());
-                lines = lines.stream().map(line -> new Line(line.cartItem(), line.sku(),
-                        allocations.getOrDefault(line.sku().skuId(), 0L))).toList();
-            }
-            long sellerTotal = 0;
-            for (Line line : lines) sellerTotal = Math.addExact(sellerTotal, line.lineTotalWon());
-            checkoutTotal = Math.addExact(checkoutTotal, sellerTotal);
-            snapshotsBySeller.add(new SellerLines(seller.getKey(), lines, coupon));
-        }
+        PricedCart priced = price(cart.items(), couponCodes, now);
+        requireWithinCap(priced.totalWon(), spendingCapWon);
+        List<SellerLines> snapshotsBySeller = priced.sellers();
+        long checkoutTotal = priced.totalWon();
 
         BuyerCheckout checkout = checkouts.save(new BuyerCheckout(buyerRef, idempotencyKey,
                 locationReservationEnabled() ? BuyerCheckoutState.RESERVATION_PENDING : BuyerCheckoutState.RESERVED,
@@ -284,6 +282,57 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
             carts.clearForCheckout(buyerRef);
         }
         return checkoutId;
+    }
+
+    /**
+     * 장바구니를 현재 판매 가능한 SKU 가격으로 계산한다. checkout과 미리보기가 같은 계산을 쓰므로
+     * 미리보기 금액과 checkout 금액이 갈라지지 않는다(같은 시각, 같은 장바구니라면 같은 값).
+     */
+    private PricedCart price(List<CartItemResponse> cartItems, Map<UUID, String> couponCodes, Instant now) {
+        TreeMap<UUID, List<CartItemResponse>> sellerItems = groupItems(cartItems);
+        if (!sellerItems.keySet().containsAll(couponCodes.keySet())) {
+            throw new OrderException(OrderException.Code.INVALID_REQUEST,
+                    "A selected coupon Seller has no cart items");
+        }
+        List<SellerLines> snapshotsBySeller = new ArrayList<>(sellerItems.size());
+        long checkoutTotal = 0;
+        for (Map.Entry<UUID, List<CartItemResponse>> seller : sellerItems.entrySet()) {
+            List<CartItemResponse> items = seller.getValue().stream()
+                    .sorted(Comparator.comparing(CartItemResponse::skuId)).toList();
+            List<String> skuIds = items.stream().map(CartItemResponse::skuId).toList();
+            List<CatalogResponse.SellerSku> found = sellerSkus.findOrderableSellerSkus(
+                    seller.getKey(), skuIds, ProductSalesChannel.ONLINE_STORE, now);
+            Map<String, CatalogResponse.SellerSku> bySku = new HashMap<>();
+            if (found != null) {
+                for (CatalogResponse.SellerSku sku : found) {
+                    if (sku == null || sku.skuId() == null
+                            || bySku.putIfAbsent(sku.skuId(), sku) != null) {
+                        throw new OrderException(OrderException.Code.CONFLICT,
+                                "Catalog returned invalid or duplicate seller SKUs for checkout");
+                    }
+                }
+            }
+            List<Line> lines = items.stream()
+                    .map(item -> snapshot(seller.getKey(), item, bySku.get(item.skuId())))
+                    .toList();
+            String couponCode = couponCodes.get(seller.getKey());
+            CatalogResponse.SellerCoupon coupon = couponCode == null ? null
+                    : sellerCoupons.findActive(seller.getKey(), couponCode, now);
+            if (coupon != null) {
+                if (lines.stream().anyMatch(line -> line.sku().effectivePriceWon() < line.sku().priceWon())) {
+                    throw new OrderException(OrderException.Code.CONFLICT,
+                            "Seller coupon cannot be combined with an active SKU sale price");
+                }
+                Map<String, Long> allocations = allocateCouponDiscount(lines, coupon.discountAmountWon());
+                lines = lines.stream().map(line -> new Line(line.cartItem(), line.sku(),
+                        allocations.getOrDefault(line.sku().skuId(), 0L))).toList();
+            }
+            long sellerTotal = 0;
+            for (Line line : lines) sellerTotal = Math.addExact(sellerTotal, line.lineTotalWon());
+            checkoutTotal = Math.addExact(checkoutTotal, sellerTotal);
+            snapshotsBySeller.add(new SellerLines(seller.getKey(), lines, coupon));
+        }
+        return new PricedCart(List.copyOf(snapshotsBySeller), checkoutTotal);
     }
 
     private CheckoutResponse toResponse(UUID checkoutId) {
@@ -432,6 +481,18 @@ public final class CartCheckoutServiceImpl implements CartCheckoutService {
         }
     }
     private record SellerLines(UUID sellerId, List<Line> lines, CatalogResponse.SellerCoupon coupon) { }
+    private record PricedCart(List<SellerLines> sellers, long totalWon) { }
+
+    /**
+     * 구매자가 정한 지출 상한(ADR-0109). 주문·예약을 만들기 전, 장바구니 잠금을 잡은 같은 트랜잭션에서 서버가
+     * 계산한 합계로 판정한다. 미리보기 뒤 가격이 바뀌어도 이 검사가 마지막 관문이다.
+     */
+    private static void requireWithinCap(long totalWon, Long spendingCapWon) {
+        if (spendingCapWon != null && totalWon > spendingCapWon) {
+            throw new OrderException(OrderException.Code.SPENDING_CAP_EXCEEDED,
+                    "Checkout total exceeds the buyer spending cap");
+        }
+    }
     /**
      * 장바구니 Seller별로 활성 location의 원격 판매 가능 수량을 조회한다. 원격 예약만 재고를 차감하므로
      * 로컬 inventory_pool은 원격 모드에서 판매량을 반영하지 못한다. 조회 실패 location은 이번 계획에서 제외한다.

@@ -40,6 +40,8 @@ class ModuleBoundaryTest {
                 "com.atlas.order.dto.response", "com.atlas.order.exception",
                 "com.atlas.account.service", "com.atlas.account.dto.request",
                 "com.atlas.account.dto.response", "com.atlas.account.exception",
+                "com.atlas.assistant.service", "com.atlas.assistant.dto.request",
+                "com.atlas.assistant.dto.response", "com.atlas.assistant.exception",
                 "net.ttddyy.dsproxy..",
                 "com.nimbusds..",
                 "io.micrometer..",
@@ -83,6 +85,18 @@ class ModuleBoundaryTest {
                 append(javaAndPersistence, "com.atlas.settlement..", "org.apache.commons.csv.."));
         enforceAllowedDependencies(source, "com.atlas.account..",
                 append(javaAndPersistence, "com.atlas.account..", "com.bastiaanjansen.otp.."));
+        // LLM 클라이언트는 어떤 도메인 모듈에도 의존하지 않는다(ADR-0109). 그래야 여러 도메인 모듈이 순환 없이 쓴다.
+        enforceAllowedDependencies(source, "com.atlas.llm..",
+                append(javaAndFramework, "com.atlas.llm..", "tools.jackson.."));
+        // 쇼핑 비서는 다른 모듈의 공개 계약(service, dto, model, exception)만 쓴다. 저장소·엔티티·구현에는 닿지 않는다.
+        enforceAllowedDependencies(source, "com.atlas.assistant..",
+                append(javaAndFramework, "com.atlas.assistant..", "tools.jackson..",
+                        "com.atlas.llm.service", "com.atlas.llm.dto.request", "com.atlas.llm.dto.response",
+                        "com.atlas.llm.model", "com.atlas.llm.exception",
+                        "com.atlas.catalog.service", "com.atlas.catalog.dto.response", "com.atlas.catalog.model",
+                        "com.atlas.catalog.exception",
+                        "com.atlas.order.service", "com.atlas.order.dto.response", "com.atlas.order.exception",
+                        "com.atlas.payment.exception"));
         noClasses().that().resideInAPackage("com.atlas..")
                 .and().resideOutsideOfPackage("..persistence.entity..")
                 .should().dependOnClassesThat()
