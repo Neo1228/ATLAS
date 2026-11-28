@@ -1,8 +1,8 @@
 package com.atlas.order.service;
 
-import com.atlas.llm.dto.request.ChatCompletionRequest;
-import com.atlas.llm.dto.response.ChatCompletionResponse;
-import com.atlas.llm.service.ChatCompletionService;
+import com.atlas.ai.dto.request.ChatCompletionRequest;
+import com.atlas.ai.dto.response.ChatCompletionResponse;
+import com.atlas.ai.service.ChatCompletionService;
 import com.atlas.order.model.ReturnReason;
 import com.atlas.order.model.ReturnRecommendationDecision;
 import java.util.List;

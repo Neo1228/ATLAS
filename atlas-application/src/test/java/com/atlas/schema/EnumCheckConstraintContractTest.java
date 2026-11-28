@@ -7,7 +7,7 @@ import com.atlas.account.model.AccountNotificationStatus;
 import com.atlas.account.model.AccountSuspensionActionType;
 import com.atlas.account.model.AuthAttemptScope;
 import com.atlas.admission.model.CampaignStatus;
-import com.atlas.llm.model.ChatRole;
+import com.atlas.ai.model.ChatRole;
 import com.atlas.admission.model.TicketStatus;
 import com.atlas.catalog.model.ProductSalesChannel;
 import com.atlas.catalog.model.ProductStatus;

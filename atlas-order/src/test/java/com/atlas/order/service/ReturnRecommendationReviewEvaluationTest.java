@@ -2,10 +2,10 @@ package com.atlas.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.atlas.llm.dto.request.ChatCompletionRequest;
-import com.atlas.llm.dto.response.ChatCompletionResponse;
-import com.atlas.llm.exception.LlmException;
-import com.atlas.llm.service.ChatCompletionService;
+import com.atlas.ai.dto.request.ChatCompletionRequest;
+import com.atlas.ai.dto.response.ChatCompletionResponse;
+import com.atlas.ai.exception.LlmException;
+import com.atlas.ai.service.ChatCompletionService;
 import com.atlas.order.model.ReturnRecommendationDecision;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

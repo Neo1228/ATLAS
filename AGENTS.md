@@ -21,8 +21,8 @@ ATLAS는 **PayPal AI Hackathon** 참가를 위해 만드는 이커머스 플랫�
 |`atlas-order/`|Buyer checkout, Seller order, shipment, return/refund와 반품 권고, Buyer cart와 item|
 |`atlas-payment/`|PayPal Sandbox authorization/capture/refund, webhook, payment recovery|
 |`atlas-settlement/`|내부 capture/refund ledger와 Seller statement·payout|
-|`atlas-llm/`|OpenAI 호환 LLM 클라이언트(도메인 모듈에 의존하지 않음, 기본 꺼짐)|
-|`atlas-assistant/`|대화형 쇼핑 비서(구매자 권한·지출 상한 아래 도구 실행, 돈은 PayPal 승인으로만)|
+|`atlas-ai/`|OpenAI 호환 LLM 클라이언트(도메인 모듈에 의존하지 않음, 기본 꺼짐)|
+|`atlas-agent/`|대화형 쇼핑 비서(구매자 권한·지출 상한 아래 도구 실행, 돈은 PayPal 승인으로만)|
 
 이 표는 에이전트 지침에 자동으로 실리는 요약이고, 설명의 정본은 README [현재 기능과 모듈](README.md#현재-기능과-모듈)이다. 모듈을 추가·변경하면 두 표를 함께 고친다. 아래 계층 규칙과 [패키지 구조와 명명](#패키지-구조와-명명)은 모든 `atlas-*` 모듈에 적용한다.
 

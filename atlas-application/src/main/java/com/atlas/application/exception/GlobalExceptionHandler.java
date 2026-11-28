@@ -1,7 +1,7 @@
 package com.atlas.application.exception;
 
 import com.atlas.account.exception.AccountException;
-import com.atlas.assistant.exception.AssistantException;
+import com.atlas.agent.exception.AssistantException;
 import com.atlas.admission.exception.AdmissionException;
 import com.atlas.admission.exception.CampaignException;
 import com.atlas.catalog.exception.CatalogException;
