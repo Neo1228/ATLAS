@@ -48,9 +48,16 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 - 되돌리기(되돌림 스위치 `ATLAS_ACCOUNT_NOTIFICATION_OUTBOX_ENABLED=false`): 재시작하면 커밋 뒤 요청 스레드에서 DB 연결을 돌려준 다음 보내는 경로로 돌아간다(SMTP timeout 5초는 그대로). 이 경로는 실패를 WARN 한 줄(`Account email delivery failed`)로만 남기고 커밋 직후 종료·SMTP 오류에서 메일을 잃는다(EXP-113 A1b C1·C3). 남은 대기 행은 보내지 않고 남는다(다시 켜면 보낸다). 계속 끌 것이면 사용자에게 재요청을 안내하고 `DELETE FROM account_notification_outbox;`로 비운다. 테이블은 남겨 둔다. V9에는 감사 로그도 들어 있으므로 `flyway_schema_history`의 V9 행을 지우면 다음 기동에서 V9가 다시 실행돼 실패한다.
 - 끄는 조건: worker가 SMTP 성공 뒤 완료 기록 전에 반복해 죽어 중복 메일이 문의로 이어지거나, 인증 메일 지연(`atlas.account.notification.delivery.delay` p95)이 사용자 흐름의 한도를 넘을 때. 끄기 전에 원인(worker 재시작 반복, SMTP 처리량)을 먼저 본다.
 
+## Seller 계정 정지·폐쇄의 판매·환불·지급 효과 (ADR-0112)
+
+- 정지(`POST /api/internal/accounts/{accountId}/suspension`)나 본인 폐쇄로 Seller에 연결된 계정이 `DISABLED`가 되면 바로 적용된다. 새 checkout은 `409 PRODUCT_NOT_ORDERABLE`, 정지 전에 만든 checkout의 결제 제출은 `409 CONFLICT`다(예약은 checkout 만료 sweep이 푼다). 캠페인 개설·입장도 같은 판정으로 막힌다. 해제하면 다시 팔린다.
+- 결제 완료 주문 찾기: `GET /api/internal/accounts/{accountId}/sellers/{sellerId}/orders`(운영자 Basic 인증, `limit`·`cursor`). 환불: `POST .../orders/{orderId}/refund`에 `Idempotency-Key` 헤더. 남은 수량 전부를 Seller 환불과 같은 경로로 돌려주고 PayPal 환불 결과를 응답에 담는다. 같은 key 재시도는 같은 환불을 돌려준다. 계정이 활성이면 409, 출고가 시작된 주문은 409("Refunds not allowed after shipment begins")다. 출고 시작 주문은 아직 운영자 경로가 없다.
+- 지급: 승인은 원래 계정 `ACTIVE`를 요구한다. 승인된 지급은 송금 worker가 PayPal을 부르기 전에 다시 확인하고, 막혀 있으면 outbox를 미룬다(보류 계약 `PayoutHoldCheck`, `last_error_code = 'SELLER_ACCOUNT_DISABLED'`, 지표 `payout.dispatch.outcomes{result=held}`). 시도 한도(`max-attempts`, 기본 8)를 넘기면 `NEEDS_REVIEW`가 되고, 해제 뒤 requeue하거나 취소한다. 수동 지급 경로는 막지 않는다(운영자 판단 경로).
+
 ## 통합 감사·도메인 이벤트 로그 (V9 `domain_audit_event`, ADR-0102)
 
 - 항상 켜져 있다. 운영자 조치 6개 테이블(`account_suspension_action`, `payment_recovery_operator_action`, `paypal_webhook_retry_operator_audit`, `seller_payout_profile_action`, `settlement_payout_operator_action`, `paypal_balance_report_disposition`)에 행이 들어가면 같은 transaction에서 로그에 한 행이 생긴다. 로그는 UPDATE·DELETE·TRUNCATE를 거절한다. 재고 조정·이동(`inventory_capacity_adjustment`, `inventory_transfer`)은 판매자 쓰기 경로라 대상이 아니다(EXP-113 H21: 트리거가 조정 쓰기 p99를 45% 늘림). 재고 이력은 원본 테이블에서 읽는다.
+- 예외 하나: 정지 Seller 주문의 운영자 환불은 `order_refund_request`가 Seller 환불과 같은 표라 트리거를 걸지 않고, 환불 예약과 같은 transaction에서 `event_type = 'ORDER_REFUND_BY_OPERATOR'`(`aggregate_type = 'order'`)로 직접 한 행을 쓴다(ADR-0112).
 - 열: `occurred_at`(원본 `created_at`), `source_table`·`source_id`(원본 행), `event_type`(예: `ACCOUNT_SUSPEND`, `PAYOUT_<action>`, `BALANCE_REPORT_<disposition>`), `aggregate_type`·`aggregate_id`(예: `payout`/지급 ID, `account`/계정 ID), `actor`(원본에 없으면 NULL), `payload`(원본 행에서 `reason`·`idempotency_key`·`request_facts_sha256`를 뺀 jsonb), `tx_id`.
 - 운영자별 조치: `SELECT occurred_at, event_type, aggregate_type, aggregate_id FROM domain_audit_event WHERE actor = '<account id>' ORDER BY occurred_at DESC LIMIT 100;`
 - 대상별 이력: `SELECT occurred_at, event_type, actor FROM domain_audit_event WHERE aggregate_type = 'payout' AND aggregate_id = '<payout id>' ORDER BY occurred_at;` 사유 원문은 `source_table`·`source_id`로 원본에서 읽는다.

@@ -458,6 +458,12 @@ public class AccountServiceImpl implements AccountService {
 
     @Transactional(readOnly = true)
     @Override
+    public boolean isSellerAccountDisabled(UUID sellerId) {
+        return sellerId != null && accounts.isSellerAccountDisabled(sellerId);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
     public Optional<AccountResponse.VerifiedSellerAccount> findVerifiedSellerAccount(UUID accountId, UUID sellerId) {
         if (accountId == null || sellerId == null || !accounts.ownsSeller(accountId, sellerId)) {
             throw new AccountException(Code.RESOURCE_NOT_OWNED, "Seller identity is not available");

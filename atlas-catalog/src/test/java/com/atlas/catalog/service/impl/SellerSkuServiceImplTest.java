@@ -22,7 +22,7 @@ class SellerSkuServiceImplTest {
     private final SellerSkuRepository sellerSkus = mock(SellerSkuRepository.class);
     private final ProductRepository products = mock(ProductRepository.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-11-08T00:00:00Z"), ZoneOffset.UTC);
-    private final SellerSkuServiceImpl service = new SellerSkuServiceImpl(sellerSkus, products, clock);
+    private final SellerSkuServiceImpl service = new SellerSkuServiceImpl(sellerSkus, products, seller -> false, clock);
     private final UUID sellerId = UUID.randomUUID();
 
     @Test

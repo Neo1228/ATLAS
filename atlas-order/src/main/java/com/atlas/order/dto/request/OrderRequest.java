@@ -14,6 +14,10 @@ public final class OrderRequest {
         }
     }
 
+    /** 운영자 환불. 품목은 서버가 남은 수량 전부로 정한다. {@code actor}는 감사 기록에 남는 운영자 식별자다. */
+    public record OperatorRefund(UUID sellerId, UUID orderId, String idempotencyKey, String actor) {
+    }
+
     public record Reorder(UUID orderId, String idempotencyKey, boolean confirmMerge) {
     }
 

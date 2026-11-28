@@ -95,6 +95,14 @@ public interface AccountService {
     boolean ownsSeller(UUID accountId, UUID sellerId);
 
     /**
+     * Seller에 연결된 계정이 운영자 정지나 본인 폐쇄로 {@code DISABLED}인지 확인한다.
+     *
+     * <p>판매 차단(checkout, 결제 제출, 캠페인), 운영자 환불, 지급 보류가 모두 이 한 판정을 쓴다.
+     * 계정이 연결되지 않은 Seller는 막지 않는다(정지할 계정이 없다).
+     */
+    boolean isSellerAccountDisabled(UUID sellerId);
+
+    /**
      * Seller와 연결된 active account 중 이메일 검증이 완료된 identity를 조회한다.
      * 호출 account가 해당 Seller를 소유하지 않으면 조회를 거부한다.
      */

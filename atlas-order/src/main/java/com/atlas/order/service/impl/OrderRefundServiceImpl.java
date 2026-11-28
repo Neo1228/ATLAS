@@ -1,5 +1,6 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.catalog.service.SellerAccountStanding;
 import com.atlas.settlement.dto.request.SettlementPostingRequest;
 import com.atlas.order.dto.response.RefundResponse;
 import com.atlas.order.dto.request.OrderRequest;
@@ -66,13 +67,15 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     private final Clock clock;
     private final TransactionTemplate transactions;
     private final Optional<LocationRestockService> restockService;
+    private final SellerAccountStanding sellerStanding;
 
 
     public OrderRefundServiceImpl(PlatformTransactionManager transactionManager, OrderRepository orders,
                                   OrderItemRepository items, OrderFulfillmentRepository fulfillments,
                                   OrderRefundRepository refunds, OrderReturnRepository returns, InventoryService inventory,
                                   SettlementService settlement, PaymentService payments, Clock clock,
-            Optional<LocationRestockService> restockService) {
+            Optional<LocationRestockService> restockService, SellerAccountStanding sellerStanding) {
+        this.sellerStanding = Objects.requireNonNull(sellerStanding);
         this.restockService = restockService;
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.orders = Objects.requireNonNull(orders);
@@ -138,7 +141,54 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
     private RefundResponse.Refund refund(OrderRequest.Refund request, UUID returnId) {
         if (request == null) throw invalidRequest("Refund request is required");
-        RefundRecord reserved = reserveRefund(request, returnId);
+        return submitReserved(reserveRefund(request, returnId));
+    }
+
+    @Override
+    public RefundResponse.Refund refundForDisabledSeller(OrderRequest.OperatorRefund request) {
+        if (request == null) throw invalidRequest("Refund request is required");
+        validateRequest(request.sellerId(), request.orderId(), request.idempotencyKey());
+        if (request.actor() == null || request.actor().isBlank() || request.actor().length() > 128) {
+            throw invalidRequest("Operator identity is required");
+        }
+        // 운영자가 Seller 대신 환불하는 것은 Seller가 더 이행할 수 없을 때만이다. 활성 Seller의 주문은
+        // Seller 환불 경로가 맡는다.
+        if (!sellerStanding.isDisabled(request.sellerId())) {
+            throw conflict("Operator refunds are limited to suspended or closed Sellers");
+        }
+        RefundRecord reserved = Objects.requireNonNull(transactions.execute(transaction -> {
+            List<OrderRequest.Refund.Item> lines = operatorRefundLines(request);
+            RefundRecord record = reserveRefund(new OrderRequest.Refund(request.sellerId(), request.orderId(),
+                    request.idempotencyKey(), lines), null);
+            refunds.recordOperatorRefundAudit(record.refundId(), record.orderId(), record.sellerId(),
+                    record.recordedAmountWon(), request.actor().trim(), clock.instant());
+            return record;
+        }));
+        return submitReserved(reserved);
+    }
+
+    /**
+     * 같은 key 재시도는 처음 예약한 품목을 그대로 쓴다. 새 요청은 아직 환불되지 않은 수량 전부다.
+     * 출고 전 주문만 받으므로(아래 {@code reserveRefund}가 확인) 반품이 잡아 둔 수량은 없다.
+     */
+    private List<OrderRequest.Refund.Item> operatorRefundLines(OrderRequest.OperatorRefund request) {
+        var prior = refunds.findByIdempotencyKey(request.orderId(), request.idempotencyKey());
+        if (prior.isPresent()) {
+            return prior.get().items().stream()
+                    .map(item -> new OrderRequest.Refund.Item(item.orderItemId(), item.quantity())).toList();
+        }
+        requireOrder(request.orderId());
+        Map<UUID, Integer> alreadyRefunded = refunds.refundedQuantitiesByOrder(request.orderId());
+        List<OrderRequest.Refund.Item> lines = items.findByOrderOrderIdOrderBySkuIdAsc(request.orderId()).stream()
+                .map(item -> new OrderRequest.Refund.Item(item.orderItemId(),
+                        item.quantity() - alreadyRefunded.getOrDefault(item.orderItemId(), 0)))
+                .filter(line -> line.quantity() > 0)
+                .toList();
+        if (lines.isEmpty()) throw conflict("Order has no refundable quantity");
+        return lines;
+    }
+
+    private RefundResponse.Refund submitReserved(RefundRecord reserved) {
         OrderRefundPaymentStatus currentStatus = refunds.paymentStatus(reserved.refundId());
         if (currentStatus == OrderRefundPaymentStatus.NOT_APPLICABLE) {
             return response(reserved, currentStatus, null);

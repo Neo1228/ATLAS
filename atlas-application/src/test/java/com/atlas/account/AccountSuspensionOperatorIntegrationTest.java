@@ -90,6 +90,17 @@ class AccountSuspensionOperatorIntegrationTest {
                         .content("{\"reason\":\"attempt by user token\"}"))
                 .andExpect(status().isUnauthorized());
 
+        // 같은 운영자 체인이 정지 Seller 주문 환불 경로도 지킨다(ADR-0112). 계정에 연결되지 않은 Seller는 404다.
+        String sellerRefund = "/api/internal/accounts/{id}/sellers/{sellerId}/orders/{orderId}/refund";
+        mockMvc.perform(post(sellerRefund, accountId, UUID.randomUUID(), UUID.randomUUID())
+                        .header("Authorization", "Bearer " + session.tokens().accessToken())
+                        .header("Idempotency-Key", "user-token-refund"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post(sellerRefund, accountId, UUID.randomUUID(), UUID.randomUUID())
+                        .with(httpBasic(OPERATOR, OPERATOR_PASSWORD))
+                        .header("Idempotency-Key", "unlinked-seller-refund"))
+                .andExpect(status().isNotFound());
+
         // 사유가 비어 있으면 거부된다.
         mockMvc.perform(post("/api/internal/accounts/{id}/suspension", accountId)
                         .with(httpBasic(OPERATOR, OPERATOR_PASSWORD))

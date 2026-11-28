@@ -1,6 +1,7 @@
 package com.atlas.application.service.payout;
 
 import com.atlas.application.security.PayoutRecipientCipher;
+import com.atlas.settlement.service.PayoutHoldCheck;
 import com.atlas.payment.dto.request.PayPalPayoutRequest;
 import com.atlas.payment.dto.response.PayPalPayoutBatchResponse;
 import com.atlas.payment.provider.paypal.payouts.PayPalPayoutException.Classification;
@@ -19,6 +20,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +42,7 @@ public class PayoutDispatchWorker {
     private final PayPalPayoutsProvider provider;
     private final PayoutRecipientCipher cipher;
     private final PayoutFxConversionService conversions;
+    private final List<PayoutHoldCheck> holds;
     private final Clock clock;
     private final MeterRegistry metrics;
     private final AtomicReference<PayoutDispatchMetrics> metricSnapshot;
@@ -48,7 +52,7 @@ public class PayoutDispatchWorker {
 
     public PayoutDispatchWorker(PayoutDispatchStore repository, PayoutDispatchOutcomeService outcomes,
             SettlementPayoutService payouts, PayPalPayoutsProvider provider, PayoutRecipientCipher cipher,
-            PayoutFxConversionService conversions, Clock clock, MeterRegistry metrics,
+            PayoutFxConversionService conversions, List<PayoutHoldCheck> holds, Clock clock, MeterRegistry metrics,
             @Value("${atlas.payment.paypal.payouts.worker.batch-size:1}") int batchSize,
             @Value("${atlas.payment.paypal.payouts.worker.lease-duration:PT60S}") Duration leaseDuration,
             @Value("${atlas.payment.paypal.payouts.worker.max-attempts:8}") int maxAttempts,
@@ -60,6 +64,7 @@ public class PayoutDispatchWorker {
         this.provider = Objects.requireNonNull(provider);
         this.cipher = Objects.requireNonNull(cipher);
         this.conversions = Objects.requireNonNull(conversions);
+        this.holds = List.copyOf(holds);
         this.clock = Objects.requireNonNull(clock);
         this.metrics = Objects.requireNonNull(metrics);
         if (batchSize <= 0 || maxAttempts <= 0 || leaseDuration.isNegative() || leaseDuration.isZero()
@@ -120,6 +125,14 @@ public class PayoutDispatchWorker {
         try {
             PayPalPayoutBatchResponse batch;
             if (r.providerBatchId() == null) {
+                // 보류 사유(PayoutHoldCheck, 예: 정지·폐쇄된 Seller 계정)가 있으면 PayPal을 부르지 않고 PENDING으로 미룬다.
+                // 지급 상태는 바꾸지 않아 사유가 풀리면 다음 시도에서 나가고, 계속 막혀 시도·나이 한도를 넘기면 위 만료
+                // 경로가 NEEDS_REVIEW로 넘긴다(ADR-0112).
+                Optional<String> hold = holdReason(payouts.find(r.payoutId()).sellerId());
+                if (hold.isPresent()) {
+                    if (outcomes.retry(r, backoff(r), hold.get())) outcome("held");
+                    return;
+                }
                 // Linearization fence prevents a payout already cancelled from reaching PayPal.
                 if (!payouts.beginDispatch(r.payoutId())) { outcomes.cancel(r); outcome("cancelled"); return; }
                 String recipient = cipher.decrypt(r.recipientEmailCiphertext());
@@ -258,6 +271,14 @@ public class PayoutDispatchWorker {
         } else {
             retryOrReview(r, "PROVIDER_UNKNOWN");
         }
+    }
+
+    private Optional<String> holdReason(UUID sellerId) {
+        for (PayoutHoldCheck check : holds) {
+            Optional<String> reason = check.holdReason(sellerId);
+            if (reason.isPresent()) return reason;
+        }
+        return Optional.empty();
     }
 
     private void retryOrReview(PayoutDispatchRecord r, String code) {

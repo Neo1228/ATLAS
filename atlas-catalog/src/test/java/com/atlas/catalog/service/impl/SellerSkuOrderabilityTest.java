@@ -26,7 +26,7 @@ class SellerSkuOrderabilityTest {
     private final SellerSkuRepository skus = mock(SellerSkuRepository.class);
     private final ProductRepository products = mock(ProductRepository.class);
     private final Clock clock = Clock.fixed(Instant.EPOCH, ZoneOffset.UTC);
-    private final SellerSkuServiceImpl service = new SellerSkuServiceImpl(skus, products, clock);
+    private final SellerSkuServiceImpl service = new SellerSkuServiceImpl(skus, products, seller -> false, clock);
     private final UUID sellerId = UUID.randomUUID();
 
     @Test
