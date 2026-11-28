@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -35,6 +36,11 @@ import org.springframework.util.IdGenerator;
  */
 @Component
 public final class PaymentRefundWorkflow {
+    /** 운영자가 PayPal에서 그 환불을 찾지 못했다는 증거 표식. PayPal refund id 자리를 대신한다. */
+    private static final String PROVIDER_REFUND_NOT_FOUND = "NOT_FOUND";
+    /** {@code payment_refund_operation.provider_refund_id}(varchar 64)에 들어가는 PayPal 자원 id 모양. */
+    private static final Pattern PROVIDER_REFUND_ID = Pattern.compile("[A-Za-z0-9_-]{1,64}");
+    private static final int MAX_ACTOR_LENGTH = 128;
     private final OwnerLockRegistry ownerLocks;
     private final PaymentAttemptRepository repository;
     private final PaymentRefundRepository refunds;
@@ -258,6 +264,78 @@ public final class PaymentRefundWorkflow {
             return latest;
         }));
         return refundResponse(persisted, persisted.state(), persisted.providerRefundId(), persisted.updatedAt());
+    }
+
+    /**
+     * 같은 요청 id로 다시 보낼 수 없어 결과 불명으로 멈춘 환불을 운영자가 PayPal에서 확인한 결과로 닫는다(ADR-0108).
+     *
+     * <p>미확정이고 첫 요청이 provider 재전송 기한({@link PaymentProvider#refundRetryExpired})을 넘은 작업만 받는다.
+     * 기한 안의 작업은 복구 worker가 같은 요청 id로 스스로 닫으므로 운영자가 앞질러 닫으면 결과가 둘이 될 수 있다.
+     * 상태 변경, 주문 계층 적용 대기({@code APPLY}) 표시, 감사 행은 한 트랜잭션이다. 원장 반영은 웹훅 확정과 같은
+     * 적용 경로(주문 계층 {@code reconcilePayPalRefund})가 맡는다. 같은 결과·증거의 재요청은 같은 작업을 돌려준다.
+     */
+    PaymentRefundResponse resolveExpiredRefund(UUID refundOperationId, PaymentRefundState outcome,
+            String providerRefundId, String actor) {
+        validateResolution(refundOperationId, outcome, providerRefundId, actor);
+        String evidence = outcome == PaymentRefundState.COMPLETED ? providerRefundId : PROVIDER_REFUND_NOT_FOUND;
+        UUID attemptId = Objects.requireNonNull(transactions.execute(status ->
+                refunds.findByOperationIdForUpdate(refundOperationId)
+                        .orElseThrow(() -> notFound("Refund operation not found")).attemptId()));
+        PaymentRefundOperation resolved = Objects.requireNonNull(transactions.execute(status -> {
+            // 웹훅이 PayPal 쪽 환불을 기록하는 경로와 같은 순서(결제 시도 → 환불 작업)로 잠근다. 그래야 같은 refund id 가
+            // 그 경로와 이 경로에서 동시에 원장에 들어가지 못하고 교착도 없다.
+            repository.findWithLockByAttemptId(attemptId)
+                    .orElseThrow(() -> notFound("Payment attempt for refund was not found"));
+            PaymentRefundOperation operation = refunds.findByOperationIdForUpdate(refundOperationId)
+                    .orElseThrow(() -> notFound("Refund operation not found"));
+            if (operation.state() == PaymentRefundState.COMPLETED || operation.state() == PaymentRefundState.FAILED) {
+                if (operation.state() == outcome && refunds.hasOperatorResolution(refundOperationId, outcome, evidence)) {
+                    return operation;
+                }
+                throw conflict("Refund operation is already resolved");
+            }
+            Instant now = clock.instant();
+            if (!psp.refundRetryExpired(operation.createdAt(), now)) {
+                throw conflict("Refund operation is still within the provider retry period");
+            }
+            // 이미 받은 PayPal refund id 가 있으면 그 환불만 완료로 닫을 수 있다. "PayPal에 없다"와는 모순이다.
+            if (operation.providerRefundId() != null && !operation.providerRefundId().equals(providerRefundId)) {
+                throw conflict("Refund evidence does not match the PayPal refund already recorded");
+            }
+            if (operation.providerRefundId() == null && outcome == PaymentRefundState.COMPLETED
+                    && refunds.isProviderRefundIdRecorded(providerRefundId)) {
+                throw conflict("PayPal refund id is already recorded for another refund");
+            }
+            refunds.updateResult(refundOperationId, outcome, providerRefundId, null, now);
+            recovery.markRefundForApplication(refundOperationId);
+            refunds.recordOperatorResolution(operation, outcome, evidence, actor.trim(), now);
+            return refunds.findByOperationIdForUpdate(refundOperationId)
+                    .orElseThrow(() -> notFound("Refund operation not found"));
+        }));
+        return refundResponse(resolved, resolved.state(), resolved.providerRefundId(), resolved.updatedAt());
+    }
+
+    private static void validateResolution(UUID refundOperationId, PaymentRefundState outcome,
+            String providerRefundId, String actor) {
+        if (refundOperationId == null) throw invalidRequest("Refund operation id is required");
+        if (actor == null || actor.isBlank() || actor.length() > MAX_ACTOR_LENGTH) {
+            throw invalidRequest("Operator identity is required");
+        }
+        if (outcome == PaymentRefundState.COMPLETED) {
+            if (providerRefundId == null || !PROVIDER_REFUND_ID.matcher(providerRefundId).matches()) {
+                throw invalidRequest("A completed refund requires its PayPal refund id");
+            }
+        } else if (outcome == PaymentRefundState.FAILED) {
+            if (providerRefundId != null) {
+                throw invalidRequest("A failed refund means PayPal has no such refund; omit the refund id");
+            }
+        } else {
+            throw invalidRequest("Refund resolution must be COMPLETED or FAILED");
+        }
+    }
+
+    private static PaymentException conflict(String message) {
+        return new PaymentException(PaymentException.Code.CONFLICT, message);
     }
 
     PaymentRefundResponse findRefundOperation(UUID refundOperationId) {

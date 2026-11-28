@@ -11,6 +11,7 @@ import com.atlas.payment.dto.request.PaymentRequest;
 import com.atlas.payment.model.PaymentPhase;
 import com.atlas.payment.service.PaymentService;
 import com.atlas.payment.model.PaymentState;
+import com.atlas.payment.model.PaymentRefundState;
 import com.atlas.payment.exception.PaymentException;
 import com.atlas.payment.dto.response.PaymentResponse;
 import com.atlas.payment.persistence.entity.PaymentAttempt;
@@ -500,6 +501,12 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentRefundResponse findRefundOperation(UUID refundOperationId) {
         return refundWorkflow.findRefundOperation(refundOperationId);
+    }
+
+    @Override
+    public PaymentRefundResponse resolveExpiredRefund(UUID refundOperationId, PaymentRefundState outcome,
+            String providerRefundId, String actor) {
+        return refundWorkflow.resolveExpiredRefund(refundOperationId, outcome, providerRefundId, actor);
     }
 
     @Override

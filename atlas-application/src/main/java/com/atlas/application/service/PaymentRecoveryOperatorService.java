@@ -1,11 +1,15 @@
 package com.atlas.application.service;
 
+import com.atlas.application.dto.request.PaymentHttpRequest;
 import com.atlas.application.dto.response.PaymentHttpResponse;
+import com.atlas.order.dto.response.RefundResponse;
+import com.atlas.order.service.OrderRefundService;
 import com.atlas.payment.dto.response.PaymentRecoveryResponse;
 import com.atlas.application.exception.ApplicationException.Code;
 import com.atlas.application.exception.ApplicationException;
 import com.atlas.payment.model.PaymentRecoveryJobStatus;
 import com.atlas.payment.service.PaymentRecoveryService;
+import com.atlas.payment.service.PaymentService;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -25,9 +29,14 @@ public class PaymentRecoveryOperatorService {
     private static final int MAX_REASON_LENGTH = 500;
 
     private final PaymentRecoveryService recovery;
+    private final PaymentService payments;
+    private final OrderRefundService orderRefunds;
 
-    public PaymentRecoveryOperatorService(PaymentRecoveryService recovery) {
+    public PaymentRecoveryOperatorService(PaymentRecoveryService recovery, PaymentService payments,
+            OrderRefundService orderRefunds) {
         this.recovery = Objects.requireNonNull(recovery);
+        this.payments = Objects.requireNonNull(payments);
+        this.orderRefunds = Objects.requireNonNull(orderRefunds);
     }
 
     public PaymentHttpResponse.RecoveryReviewPage listNeedsReview(int limit, int offset) {
@@ -46,6 +55,20 @@ public class PaymentRecoveryOperatorService {
         return recovery.requeueNeedsReview(
                         recoveryJobId, idempotencyKey.trim(), actor.trim(), reason.trim(), MAX_MANUAL_REQUEUES)
                 .orElseThrow(() -> new ApplicationException(Code.CONFLICT, "Recovery work is not eligible for operator requeue"));
+    }
+
+    /**
+     * 재전송 기한이 지나 {@code NEEDS_REVIEW}로 멈춘 환불을 운영자가 PayPal에서 확인한 결과로 닫는다(ADR-0108).
+     *
+     * <p>payment 모듈이 상태와 감사 행을 한 트랜잭션에 쓰고 작업을 적용 단계로 넘긴 뒤, 웹훅·복구 worker가 확정을
+     * 반영할 때와 같은 {@code reconcilePayPalRefund}로 원장·주문 환불 상태를 맞춘다(완료는 환불 분개, 실패는 예약 해제).
+     * 그 반영이 여기서 실패해도 작업이 적용 단계로 남아 복구 worker가 다시 반영하고, 같은 요청을 다시 보내도 된다.
+     */
+    public RefundResponse.Refund resolveExpiredRefund(UUID refundOperationId, String actor,
+            PaymentHttpRequest.ExpiredRefundResolution request) {
+        if (request == null) throw new ApplicationException(Code.INVALID_REQUEST, "Refund resolution is required");
+        payments.resolveExpiredRefund(refundOperationId, request.outcome(), request.providerRefundId(), actor);
+        return orderRefunds.reconcilePayPalRefund(refundOperationId);
     }
 
     private static void validate(UUID recoveryJobId, String idempotencyKey, String actor, String reason) {

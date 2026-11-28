@@ -25,7 +25,11 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 
 /**
- * Seller 지급 프로필 검증과 지급 승인·수동 처리 경로의 인증 경계.
+ * Seller 지급 프로필 검증, 지급 승인·수동 처리, 결과 불명 환불의 운영자 확정 경로의 인증 경계.
+ *
+ * <p>환불 확정({@code /api/internal/payment/refunds/**}, ADR-0108)도 판매자 원장을 움직이는 운영자 행위라 지급
+ * 운영자와 같은 사람·같은 권한 목록({@code payout_operator_account})·같은 MFA 요구를 쓴다. 지급 provider 검토 해소
+ * ({@code resolve-provider-review})와 같이 provider 증거 하나로 한 사람이 닫는 단계다.
  *
  * <p>신원 모드는 {@code atlas.settlement.payout.operator.identity}로 고른다(ADR-0092).
  * <ul>
@@ -47,7 +51,8 @@ public class SettlementPayoutOperatorSecurityConfiguration {
     private static final Logger LOGGER = LoggerFactory.getLogger(SettlementPayoutOperatorSecurityConfiguration.class);
     private static final String[] PATHS = {
         "/api/internal/settlement/payouts/**",
-        "/api/internal/settlement/payout-profiles/**"
+        "/api/internal/settlement/payout-profiles/**",
+        "/api/internal/payment/refunds/**"
     };
     private static final String ROLE = "SETTLEMENT_PAYOUT_OPERATOR";
     private static final int MINIMUM_PASSWORD_LENGTH = 32;
