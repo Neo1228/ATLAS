@@ -10,6 +10,7 @@ import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -26,6 +27,14 @@ public class PayPalPaymentProvider implements PaymentProvider {
      * 그 구분은 cause 체인에만 남아 있다.
      */
     private static final Logger LOGGER = LoggerFactory.getLogger(PayPalPaymentProvider.class);
+    /**
+     * PayPal은 환불 요청의 {@code PayPal-Request-Id}를 45일 기억한다("The user can make the call again with the same
+     * ID in the PayPal-Request-Id header for up to 45 days", https://developer.paypal.com/api/rest/requests/#paypal-request-id).
+     * 그 뒤의 같은 키는 문서가 멱등을 약속하지 않아 새 환불로 받힐 수 있고, ATLAS는 금액을 명시해 보내므로 부분 환불이면
+     * 돈이 두 번 나간다(EXP-119: 키를 잊는 stub에서 3/3 재현, 실제 PayPal에서는 확인하지 않음). 첫 요청 뒤 이 기간이
+     * 지난 결과 불명 환불은 다시 보내지 않는다(ADR-0108).
+     */
+    static final Duration REFUND_REQUEST_ID_REUSE_LIMIT = Duration.ofDays(30);
     private final PayPalRestClient client;
     private final Clock clock;
 
@@ -71,6 +80,12 @@ public class PayPalPaymentProvider implements PaymentProvider {
 
     @Override
     public PaymentRefundProviderResponse refund(PaymentRefundRequest request) {
+        if (!clock.instant().isBefore(request.firstRequestedAt().plus(REFUND_REQUEST_ID_REUSE_LIMIT))) {
+            // 결과를 모르는 채로 두고(상태 COALESCE로 이전 값 유지) 복구 worker가 창 끝에 NEEDS_REVIEW로 넘기게 한다.
+            LOGGER.warn("PayPal refund was not resent: its PayPal-Request-Id was first used more than {} ago",
+                    REFUND_REQUEST_ID_REUSE_LIMIT);
+            return new PaymentRefundProviderResponse(PaymentRefundProviderResponse.Outcome.UNKNOWN, null, null);
+        }
         try {
             PayPalRestClient.RefundResult refund = client.refundCapture(request.captureId(),
                     BigDecimal.valueOf(request.providerAmountMinor(), 2), request.providerCurrency(),

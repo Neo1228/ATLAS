@@ -146,6 +146,8 @@ read replica 도입 시 **read-after-write 경로는 절대 replica로 보내지
 
 즉 ATLAS가 의존하는 요청 형식과 응답 필드(`id`, `status`, `links`, `purchase_units.amount`)가 실제 Sandbox에서 유효함을 확인했습니다.
 
+이 멱등성은 PayPal이 요청 ID를 기억하는 기간 안에서만 성립합니다(엔드포인트별 기간과 그보다 늦게 재전송하는 경로는 [ADR-0108](adr/ADR-0108-paypal-request-id-reuse-limit.md)).
+
 **검증 중 발견한 워크플로 버그:** 첫 실행에서 토큰 발급과 주문 생성은 성공했지만 응답 검증이 `JSONDecodeError`로 실패했습니다. `printf ... | python3 - <<'PY'` 형태는 heredoc이 stdin을 차지해 파이프 데이터가 전달되지 않습니다. 검증 스크립트를 파일로 쓰고 응답도 파일로 넘기도록 고쳤습니다.
 
 **실측에서 확인한 PayPal 동작:** `payment_source`를 포함해 주문을 만들면 PayPal은 `approve` 대신 **`payer-action`** rel을 반환합니다. ATLAS 클라이언트는 두 rel을 모두 처리하므로 코드는 정상입니다.

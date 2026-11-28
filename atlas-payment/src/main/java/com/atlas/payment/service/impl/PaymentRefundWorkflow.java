@@ -212,7 +212,8 @@ public final class PaymentRefundWorkflow {
         try {
             result = operation.providerRefundId() == null
                     ? psp.refund(new PaymentRefundRequest(operation.captureId(), operation.providerAmountMinor(),
-                            operation.providerCurrency(), operation.providerRequestId().toString()))
+                            operation.providerCurrency(), operation.providerRequestId().toString(),
+                            operation.createdAt()))
                     : psp.getRefund(operation.providerRefundId());
         } catch (PaymentException exception) {
             if (exception.code() != PaymentException.Code.PAYMENT_PROVIDER_UNAVAILABLE) throw exception;

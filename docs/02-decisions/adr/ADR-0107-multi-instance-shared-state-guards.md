@@ -43,6 +43,13 @@ app이 한 대라는 가정이 JVM 잠금·메모리 상태·스케줄 작업·�
 - claim 결과가 lease 펜스와 어긋나지 않으므로 "매입은 됐는데 재고는 풀림"이 이 경로로는 생기지 않는다.
 - 만료 sweep의 락 연결은 sweep 동안(시간 예산 2초 + 행 잠금 대기 5초 이내) idle in transaction으로 보인다. xid를 받지 않아 마감 worker의 스냅숏 경계를 붙잡지 않는다(S칸 idle in transaction 표본 150~156개 중 xid 보유 0).
 
+## PayPal 멱등 의존 (2026-11-28 추가, [ADR-0108](ADR-0108-paypal-request-id-reuse-limit.md))
+
+- 중복 호출 수: 인스턴스 2대에서 요청 id 100개에 capture 호출 113·112건(P-N2-base), 126·110건(P-N2-fix), 1대에서는 100건이었다(EXP-118 P칸 표). 결제 결과 위반 없이 흡수됐다.
+- 출처: `OwnerLockRegistry`는 JVM 안의 잠금이라, 같은 checkout의 두 요청이 다른 인스턴스로 가면 둘 다 `CAPTURE_PENDING`에서 capture 단계를 예약할 수 있고(`PaymentServiceImpl.canExecutePhase`) 같은 capture 요청 id로 보낸다.
+- 의존: 이 흡수는 PayPal이 그 id를 아직 기억할 때만 성립한다. 중복은 원 요청이 진행 중(`CAPTURE_PENDING`)일 때 나가므로 원 요청과의 간격이 capture 응답 시간 이내라 어떤 문서상 보관 기간(6시간~45일)보다도 짧다. capture는 전액에 `final_capture: true`라 보관 기간이 지난 뒤 다시 보내도 `AUTHORIZATION_ALREADY_CAPTURED`로 거절된다(PayPal Payments v2 `x-errors`). 중복을 줄이는 guard(단계 예약 시 인스턴스 사이 claim)는 호출 수만 줄이고 돈의 정합성은 바꾸지 않아 두지 않는다.
+- 보관 기간보다 늦게 같은 id로 다시 보내는 경로와 엔드포인트별 보관 기간은 ADR-0108에 있다. 그중 돈이 두 번 움직일 수 있는 것은 환불뿐이고, 첫 요청 뒤 30일이 지나면 다시 보내지 않는다.
+
 ## 롤백
 
 - 네 변경 모두 스키마를 바꾸지 않는다. 이전 jar로 다시 배포하면 된다. 되돌린 동안에는 위 "문제"의 세 결함이 다시 생기고, transaction mode pooler 뒤에서는 만료 sweep이 겹치거나 멈춘다.
