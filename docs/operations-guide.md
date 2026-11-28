@@ -105,7 +105,7 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 - **권고는 돈을 움직이지 않는다.** 따르려면 줄별 `suggestedResult`를 `PUT .../returns/{returnId}/inspection`에 보낸다. 환불은 그 호출만 실행하고, 그 호출이 주문 행 잠금 아래에서 수량과 금액을 다시 계산한다. `HUMAN_REVIEW`이면 판단하지 못한 줄의 `suggestedResult`가 null이므로 판매자가 직접 정한다.
 - 설정: `ATLAS_ORDER_RETURN_RECOMMENDATION_REVIEW_AMOUNT_WON`(기본 300000, 원, 포함). 승인 쪽 합계가 넘으면 `HUMAN_REVIEW`. 근거 없는 가정값이다. 반품 기간은 `ATLAS_ORDER_RETURN_WINDOW`를 같이 쓰고, `ATLAS_ORDER_RETURN_WINDOW_ENFORCED=false`로 접수 거절을 꺼도 권고는 기간 밖 줄을 거절로 권고한다.
 - 권고는 저장하지 않는다(같은 입력이면 같은 결과). 근거 코드와 판정 표는 ADR-0110, 평가는 EXP-121.
-- LLM 검토 층: 쇼핑 비서와 같은 `ATLAS_LLM_*` 설정을 쓴다([상품 검색과 쇼핑 비서](#상품-검색과-쇼핑-비서-v14-adr-0109)의 쇼핑 비서 항목). 켜면 권고가 LLM을 한 번 부른다. LLM은 승인을 `HUMAN_REVIEW`로 내리거나(`reviewDowngraded=true`) `explanation`을 붙일 수만 있고 `ruleDecision`이 규칙 결과다. 꺼짐·실패·형식 위반이면 규칙 결과만 낸다. 실제 판매자에게 켜기 전에 권고 감사 저장을 먼저 넣는다(ADR-0110 결정 5).
+- LLM 검토 층: 쇼핑 비서와 같은 `ATLAS_LLM_*` 연결 설정을 쓰되, 켜는 스위치는 따로 `ATLAS_ORDER_RETURN_RECOMMENDATION_LLM_REVIEW_ENABLED`(기본 false)다([상품 검색과 쇼핑 비서](#상품-검색과-쇼핑-비서-v14-adr-0109)의 쇼핑 비서 항목, ADR-0114). 둘 다 켜면 구매자 글이 있는 권고만 LLM을 한 번 부른다. 라벨 60건 평가(`ReturnRecommendationLiveReviewEvaluation`, EXP-122)의 통과 기준을 넘은 모델에만 켠다. qwen2.5 3b·1.5b는 넘지 못했다. LLM은 승인을 `HUMAN_REVIEW`로 내리거나(`reviewDowngraded=true`) `explanation`을 붙일 수만 있고 `ruleDecision`이 규칙 결과다. 꺼짐·실패·형식 위반이면 규칙 결과만 낸다. 실제 판매자에게 켜기 전에 권고 감사 저장을 먼저 넣는다(ADR-0110 결정 5).
 - 롤백: 앱만 이전 버전으로 되돌린다. V15 컬럼은 nullable이고 이전 앱이 무시한다.
 
 ## PayPal Balance report 대사
