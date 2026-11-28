@@ -1,6 +1,6 @@
 # EXP-121: 판매자 반품 권고의 결정 규칙을 라벨 60건으로 평가하고, 권고만으로는 돈이 움직이지 않음을 PostgreSQL로 확인한다
 
-- 상태: ✓ 1단계 완료(결정 규칙, 라벨 60건, 오프라인 평가기, PostgreSQL 시험, 변이 점검). 2단계(LLM 층)는 이 문서의 "2단계" 절에 범위 밖 결정으로 닫았다. 결정은 [ADR-0110](../02-decisions/adr/ADR-0110-seller-return-refund-recommendation.md)과 D-189.
+- 상태: ✓ 1단계 완료(결정 규칙, 라벨 60건, 오프라인 평가기, PostgreSQL 시험, 변이 점검). ✓ 2단계 완료(LLM 검토 층, 정해 둔 응답 모델로 경계 평가. 실제 모델 평가는 "2단계" 절의 조건). 결정은 [ADR-0110](../02-decisions/adr/ADR-0110-seller-return-refund-recommendation.md)과 D-189.
 - 날짜: 2026-11-28
 - 관련: [#737](https://github.com/Neo1228/ATLAS/issues/737), [ADR-0089](../02-decisions/adr/ADR-0089-return-window-and-inspection-deadline.md), [EXP-093](EXP-093-return-window-and-inspection-deadline.md)
 
@@ -119,12 +119,27 @@ sequenceDiagram
 - 15건 모두 시험 실패로 잡혔다. 같은 변이를 `:atlas-order:compileJava`만으로 다시 적용해 15건 모두 컴파일되는 것을 확인했으므로 실패는 컴파일 오류가 아니라 시험 단정이다.
 - 변이 전 같은 시험은 통과했다(`ReturnRecommendationIntegrationTest` 3건, `ReturnRecommendationRulesEvaluationTest` 2건).
 
-## 2단계 (LLM 층): 범위 밖 결정
+## 2단계 (LLM 검토 층)
 
-- ✓ 결정: 이 PR은 1단계만 담는다. 2단계는 공유 LLM 클라이언트(`atlas-llm`, ADR-0109)가 `main`에 병합되면 #737에서 이어 간다. 그 클라이언트가 이 PR을 만들 때 `main`에 없어서 같은 클라이언트를 두 번 만들지 않으려고 기다린다(SSOT).
-- 2단계 계약(ADR-0110 결정 5): LLM은 `APPROVE_*` → `HUMAN_REVIEW` 강등과 설명만 할 수 있다. 승인 쪽으로 바꾸는 출력·금액·줄 결과를 바꾸는 출력은 버린다. LLM이 꺼져 있거나 실패하면 규칙 결과를 쓴다.
-- 2단계 평가: 같은 60건, 같은 평가기(`ReturnRecommendationEvaluation`)로 규칙 + LLM을 돌린다. 합격 기준은 거짓 승인 0/17 유지, 규칙 승인·정답 사람 검토 4건(C38·C39·C55·C60) 중 강등 수, 정답 승인 24건 중 잘못 강등한 수, C55·C56의 프롬프트에 전화번호·이메일이 남지 않음.
-- LLM 평가는 실행하지 않았다. 이 PR을 만든 환경에 `ATLAS_LLM_API_KEY`·`OPENAI_API_KEY`가 없었고(값은 출력하지 않고 설정 여부만 확인) 2단계 코드도 없다. 1단계 표는 결정 규칙만의 결과다.
+- 구현: `ReturnRecommendationReviewer`(ADR-0110 결정 5). 공유 LLM 클라이언트 `ChatCompletionService`(ADR-0109)를 쓰고 기본은 꺼짐이다.
+- 평가: 같은 60건, 같은 평가기. 이 환경에 LLM 키가 없어(설정 여부만 확인, 값은 출력하지 않음) 실제 모델 대신 응답을 정해 둔 모델로 돌렸다. 이 결과는 모델의 판단 품질이 아니라 **경계와 배선**을 보여 준다. 정해 둔 모델이 쓰는 단서 네 개("입고", "대신 넣", "현금", "빼고")는 라벨을 보고 고른 것이라 실제 모델의 정확도로 읽으면 안 된다.
+- 명령: `./gradlew :atlas-order:test --tests '*ReturnRecommendationReviewEvaluationTest'`(표는 `atlas-order/build/reports/return-recommendation/rules-plus-scripted-review.md`).
+
+| 지표 | 결정 규칙만 | 규칙 + 정해 둔 응답 모델 |
+|---|---|---|
+| 정확도 | 52/60 (0.867) | 56/60 (0.933) |
+| 매크로 F1 | 0.888 | 0.943 |
+| 거짓 승인(정답 `REJECT` → `APPROVE_*`) | 0/17 | 0/17 |
+| 승인 정답이 아닌데 승인 권고 | 4 | 0 |
+| 사람 검토 이관 | 19/60 | 23/60 |
+| 불일치 사례 | C38, C39, C41~C44, C55, C60 | C41~C44 |
+
+- 경계 시험(`noModelOutputMovesARuleResultTowardApproval`): 응답 여섯 가지(`APPROVE_FULL` 지시, `KEEP`, `HUMAN_REVIEW`, `REJECT`, 빈 응답, 소문자 `keep`)마다 60건 모두 검토 결과가 규칙 결과와 같거나 "규칙 승인 → 사람 검토"뿐이다. 거짓 승인은 모두 0이다.
+- 실패·꺼짐: 시간 초과 예외를 던지는 모델과 꺼진 모델은 60건 모두 규칙 결과 그대로, 설명 없음. 꺼진 모델은 호출되지 않는다.
+- 개인정보: C55·C56의 프롬프트에 전화번호·이메일이 남지 않고 `[전화번호]`·`[이메일]`로 바뀐다. 구매자 텍스트는 `<buyer_note>` 블록 안에만 들어간다.
+- PostgreSQL 시험 1은 LLM이 꺼진 기본 구성에서 응답이 규칙 결과(`ruleDecision`)와 같고 `reviewDowngraded=false`, 설명 없음을 확인한다.
+- 변이 점검(2단계): `ReturnRecommendationReviewer`에 네 가지를 넣고 `ReturnRecommendationReviewEvaluationTest`만 돌렸다. B1 승인 아닌 결정도 강등, B2 모르는 첫 줄(`APPROVE_FULL`)을 승인으로 해석, B3 연락처 마스킹 제거, B4 LLM 실패를 예외로 전파. 4건 모두 컴파일되고 모두 시험 실패로 잡혔다(✓). 변이는 클래스를 record로 바꾸기 전 코드에서 돌렸고, 바꾼 것은 선언뿐이라 변이한 줄은 같다.
+- 실제 모델 평가는 실행하지 않았다. 켜기 전 조건은 ADR-0110 결정 5와 재검토 조건에 있다.
 
 ## 한계
 
@@ -142,4 +157,5 @@ sequenceDiagram
 | 자유 텍스트는 결정에 영향이 없다 | `Facts`에 텍스트 필드 없음, 주입 4건과 PostgreSQL 시험 1 | 높음 |
 | 결정 규칙은 라벨 60건에서 거짓 승인 0/17 | 평가 시험 | 높음(합성 라벨 한계) |
 | 규칙의 기간·중복·상한·상태 분기는 시험이 지킨다 | 변이 점검 | 높음 |
-| LLM 층이 C38·C39·C55·C60을 강등할 수 있다 | 없음(2단계) | 해당 없음 |
+| LLM 검토 층은 규칙 결과를 승인 쪽으로 옮기지 못한다 | 경계 시험(응답 6종 × 60건), 변이 점검 | 높음 |
+| 실제 모델이 C38·C39·C55·C60을 강등한다 | 없음(실제 모델 평가 안 함) | 낮음 |

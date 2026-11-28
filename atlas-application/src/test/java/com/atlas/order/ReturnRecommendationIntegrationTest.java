@@ -35,6 +35,7 @@ import com.atlas.order.service.OrderRefundService;
 import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderShipmentService;
 import com.atlas.order.service.ReturnPolicy;
+import com.atlas.order.service.ReturnRecommendationReviewer;
 import com.atlas.order.service.ReturnRecommendationRules;
 import com.atlas.order.service.ReturnRecommendationService;
 import com.atlas.order.service.impl.OrderReturnServiceImpl;
@@ -99,6 +100,7 @@ class ReturnRecommendationIntegrationTest extends PayPalIntegrationTestSupport {
     @Autowired private OrderRefundService refunds;
     @Autowired private ReturnRecommendationService recommendations;
     @Autowired private ReturnRecommendationRules rules;
+    @Autowired private ReturnRecommendationReviewer reviewer;
     @Autowired private ReturnPolicy policy;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private MockMvc mockMvc;
@@ -149,7 +151,11 @@ class ReturnRecommendationIntegrationTest extends PayPalIntegrationTestSupport {
                     .andExpect(jsonPath("$.refundAmountWon").value(12_000))
                     .andExpect(jsonPath("$.reason").value("CHANGED_MIND"))
                     .andExpect(jsonPath("$.reasonNote").value(INJECTION))
-                    .andExpect(jsonPath("$.buyerRef").doesNotExist());
+                    .andExpect(jsonPath("$.buyerRef").doesNotExist())
+                    // LLM은 기본으로 꺼져 있어 규칙 결과가 그대로 나가고 설명이 없다.
+                    .andExpect(jsonPath("$.ruleDecision").value("APPROVE_PARTIAL"))
+                    .andExpect(jsonPath("$.reviewDowngraded").value(false))
+                    .andExpect(jsonPath("$.explanation").doesNotExist());
         }
         assertThat(count("SELECT COUNT(*) FROM order_refund_request WHERE order_id = ?", fixture.orderId())).isZero();
         assertThat(count("SELECT COUNT(*) FROM settlement_refund_reservation WHERE order_id = ?", fixture.orderId()))
@@ -266,7 +272,7 @@ class ReturnRecommendationIntegrationTest extends PayPalIntegrationTestSupport {
 
     private ReturnRecommendationService serviceWithReviewLimit(long limitWon) {
         return new ReturnRecommendationServiceImpl(transactionManager, returnRepository, itemRepository,
-                refundRepository, shipmentRepository, new ReturnRecommendationRules(rules.policy(), limitWon), clock);
+                refundRepository, shipmentRepository, new ReturnRecommendationRules(rules.policy(), limitWon), reviewer, clock);
     }
 
     private static OrderRequest.ReturnRecommendation conditions(Fixture fixture, ReturnItemCondition... values) {
