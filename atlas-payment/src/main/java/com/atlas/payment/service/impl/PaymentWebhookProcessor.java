@@ -3,6 +3,7 @@ package com.atlas.payment.service.impl;
 import static com.atlas.payment.service.impl.PaymentPreconditions.invalidRequest;
 
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.payment.dto.response.PaymentDisputeHoldResponse;
 import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
@@ -23,6 +24,7 @@ import com.atlas.payment.repository.PaymentWebhookEventRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -171,8 +173,9 @@ public final class PaymentWebhookProcessor {
 
             ProviderAdjustmentKind providerKind = ProviderAdjustmentRecorder.kindOf(event.eventType());
             if (providerKind != null) {
-                return providerKind.movesMoney()
-                        ? adjustments.recordMoney(event, providerKind, now)
+                if (providerKind.movesMoney()) return adjustments.recordMoney(event, providerKind, now);
+                return providerKind == ProviderAdjustmentKind.DISPUTE
+                        ? adjustments.recordDispute(event, now)
                         : adjustments.recordReview(event, providerKind, now);
             }
 
@@ -187,6 +190,10 @@ public final class PaymentWebhookProcessor {
     PaymentProviderAdjustmentResponse findProviderAdjustment(UUID adjustmentId) {
         if (adjustmentId == null) throw invalidRequest("Provider adjustment id is required");
         return adjustments.find(adjustmentId);
+    }
+
+    List<PaymentDisputeHoldResponse> heldDisputes() {
+        return adjustments.heldDisputes();
     }
 
     void markProviderAdjustmentPosted(UUID adjustmentId) {

@@ -17,6 +17,7 @@ import com.atlas.payment.persistence.entity.PaymentAttempt;
 import com.atlas.payment.provider.PaymentProvider;
 import com.atlas.payment.repository.PaymentAttemptRepository;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
+import com.atlas.payment.dto.response.PaymentDisputeHoldResponse;
 import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentWebhookResponse;
 import com.atlas.payment.dto.response.PaymentWebhookEventResponse;
@@ -28,6 +29,7 @@ import java.time.Instant;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -518,6 +520,11 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentProviderAdjustmentResponse findProviderAdjustment(UUID adjustmentId) {
         return webhookProcessor.findProviderAdjustment(adjustmentId);
+    }
+
+    @Override
+    public List<PaymentDisputeHoldResponse> heldDisputes() {
+        return webhookProcessor.heldDisputes();
     }
 
     @Override

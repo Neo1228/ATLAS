@@ -227,6 +227,14 @@ public class PayPalRestClient {
             if (relatedCaptureId == null) relatedCaptureId = relatedIds.get("capture_id");
             if (relatedCaptureId == null) relatedCaptureId = upCaptureId(resource.get("links"));
             if (relatedCaptureId == null) relatedCaptureId = disputedCaptureId(resource.get("disputed_transactions"));
+            // 분쟁 결과(customer_disputes_v1 dispute_outcome): 결과 코드와 구매자에게 돌려준 금액. 판매자 차감 판정에 쓴다.
+            Object rawOutcome = resource.get("dispute_outcome");
+            Map<?, ?> outcome = rawOutcome instanceof Map<?, ?> map ? map : Map.of();
+            Object rawRefunded = outcome.get("amount_refunded");
+            Map<?, ?> refunded = rawRefunded instanceof Map<?, ?> map ? map : Map.of();
+            Object refundedValue = refunded.get("value");
+            Object outcomeCode = outcome.get("outcome_code");
+            Object refundedCurrency = refunded.get("currency_code");
             return new PaymentWebhookEventResponse(
                     eventId instanceof String value ? value : null,
                     eventType instanceof String value ? value : null,
@@ -235,7 +243,10 @@ public class PayPalRestClient {
                     providerOrderId instanceof String value ? value : null,
                     relatedCaptureId instanceof String value ? value : null,
                     resourceAmount,
-                    resourceCurrency instanceof String value ? value : null);
+                    resourceCurrency instanceof String value ? value : null,
+                    outcomeCode instanceof String value ? value : null,
+                    refundedValue instanceof String value ? new BigDecimal(value) : null,
+                    refundedCurrency instanceof String value ? value : null);
         } catch (JacksonException exception) {
             throw new IllegalArgumentException("PayPal webhook body is not valid JSON", exception);
         }

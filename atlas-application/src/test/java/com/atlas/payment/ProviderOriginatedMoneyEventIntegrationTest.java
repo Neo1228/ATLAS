@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.atlas.application.service.PayPalWebhookService;
+import com.atlas.application.service.payout.DisputePayoutHold;
 import com.atlas.catalog.dto.request.ProductRequest;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
@@ -17,7 +18,10 @@ import com.atlas.order.service.CartService;
 import com.atlas.order.service.CheckoutPaymentService;
 import com.atlas.order.service.OrderRefundService;
 import com.atlas.payment.dto.request.PaymentWebhookSignatureRequest;
+import com.atlas.settlement.service.SettlementPayoutService;
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -65,6 +69,8 @@ class ProviderOriginatedMoneyEventIntegrationTest extends PayPalIntegrationTestS
     @Autowired private OrderRefundService refunds;
     @Autowired private PayPalWebhookService webhooks;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private SettlementPayoutService payouts;
+    @Autowired private DisputePayoutHold disputeHold;
 
     @Test
     void dashboardRefundDebitsSellerOnceAcrossDuplicateDeliveries() {
@@ -145,26 +151,130 @@ class ProviderOriginatedMoneyEventIntegrationTest extends PayPalIntegrationTestS
     }
 
     @Test
-    void disputeIsHeldForReviewWithoutMovingMoney() {
+    void openDisputeIsHeldWithoutMovingMoney() {
         Paid paid = paidOrder(10_000);
         long before = sellerHeldWon(paid.sellerId());
         String disputeId = "PP-D-" + UUID.randomUUID();
-        String body = """
-                {"id":"@EVENT@","event_type":"CUSTOMER.DISPUTE.CREATED","resource_type":"dispute",
-                 "resource":{"dispute_id":"%s","status":"OPEN","reason":"MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
-                  "dispute_amount":{"currency_code":"%s","value":"%s"},
-                  "disputed_transactions":[{"seller_transaction_id":"%s"}]}}
-                """.formatted(disputeId, paid.providerCurrency(), paid.providerAmount().toPlainString(),
-                paid.captureId());
 
-        webhooks.handle(SIGNATURE, body.replace("@EVENT@", "WH-" + UUID.randomUUID()));
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.CREATED", disputeId, "OPEN", paid,
+                paid.providerAmount(), null, null));
 
         assertThat(providerRefundJournals(paid.orderId())).isEmpty();
         assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before);
         assertThat(jdbc.queryForList("""
-                SELECT kind, status, attempt_id FROM payment_provider_adjustment WHERE provider_resource_id = ?
-                """, disputeId)).containsExactly(Map.of("kind", "DISPUTE", "status", "REVIEW",
-                "attempt_id", paid.attemptId()));
+                SELECT kind, status, attempt_id, amount_won FROM payment_provider_adjustment WHERE provider_resource_id = ?
+                """, disputeId)).containsExactly(Map.of("kind", "DISPUTE", "status", "HOLD",
+                "attempt_id", paid.attemptId(), "amount_won", paid.totalWon()));
+    }
+
+    /**
+     * PayPal 은 분쟁 금액을 묶어 둔다. 분쟁 중에 판매자 몫을 모두 송금하면 패소 차감을 받을 돈이 남지 않으므로 송금을
+     * 보류하고, 판매자 승소로 끝나면 차감 없이 보류를 푼다. 분쟁 금액을 남기고도 송금할 몫이 있으면 막지 않는다.
+     */
+    @Test
+    void openDisputeHoldsPayoutThatWouldLeaveLessThanTheDisputedAmountUntilSellerWins() {
+        Paid paid = paidOrder(10_000);
+        String disputeId = "PP-D-" + UUID.randomUUID();
+        assertThat(disputeHold.holdReason(paid.sellerId())).isEmpty();
+
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.CREATED", disputeId, "OPEN", paid,
+                paid.providerAmount(), null, null));
+        // 송금 전에는 분쟁 금액이 원장에 그대로 남아 있다.
+        assertThat(disputeHold.holdReason(paid.sellerId())).isEmpty();
+        Instant now = Instant.now();
+        payouts.request(paid.sellerId(), now.minus(Duration.ofDays(1)), now.plus(Duration.ofDays(1)),
+                "dispute-hold-" + UUID.randomUUID());
+        assertThat(disputeHold.holdReason(paid.sellerId())).contains("OPEN_DISPUTE");
+
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.UPDATED", disputeId, "UNDER_REVIEW", paid,
+                paid.providerAmount(), null, null));
+        assertThat(disputeHold.holdReason(paid.sellerId())).contains("OPEN_DISPUTE");
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid,
+                paid.providerAmount(), "RESOLVED_SELLER_FAVOUR", null));
+
+        assertThat(disputeHold.holdReason(paid.sellerId())).isEmpty();
+        assertThat(providerRefundJournals(paid.orderId())).isEmpty();
+        assertThat(adjustmentStatus(disputeId)).isEqualTo("CLOSED");
+        // 끝난 분쟁에 늦게 온 갱신 사건이 보류를 되살리지 않는다.
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.UPDATED", disputeId, "OPEN", paid,
+                paid.providerAmount(), null, null));
+        assertThat(adjustmentStatus(disputeId)).isEqualTo("CLOSED");
+        assertThat(disputeHold.holdReason(paid.sellerId())).isEmpty();
+    }
+
+    /** 판매자 패소면 돌려준 금액을 한 번 차감하고 보류를 푼다. 그 뒤 같은 capture 의 역전은 자동으로 빼지 않는다. */
+    @Test
+    void lostDisputeDebitsTheRefundedAmountOnceAndALaterReversalIsNotDebitedAgain() {
+        Paid paid = paidOrder(10_000);
+        long before = sellerHeldWon(paid.sellerId());
+        String disputeId = "PP-D-" + UUID.randomUUID();
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.CREATED", disputeId, "OPEN", paid,
+                paid.providerAmount(), null, null));
+        String resolved = disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid,
+                paid.providerAmount(), "RESOLVED_BUYER_FAVOUR", paid.providerAmount());
+
+        webhooks.handle(SIGNATURE, resolved);
+        webhooks.handle(SIGNATURE, resolved);
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid,
+                paid.providerAmount(), "RESOLVED_BUYER_FAVOUR", paid.providerAmount()));
+        webhooks.handle(SIGNATURE, refundEvent("PAYMENT.CAPTURE.REVERSED", "REV-" + UUID.randomUUID(),
+                paid.captureId(), paid.providerAmount()).replace("@EVENT@", "WH-" + UUID.randomUUID()));
+
+        assertThat(providerRefundJournals(paid.orderId())).containsExactly(paid.totalWon());
+        assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before - paid.totalWon());
+        assertThat(adjustmentStatus(disputeId)).isEqualTo("POSTED");
+        assertThat(disputeHold.holdReason(paid.sellerId())).isEmpty();
+    }
+
+    /** 분쟁 중 PayPal 이 capture 일부를 먼저 역전했으면(차지백) 패소 차감은 나머지만이다. 합이 돌려준 금액과 같다. */
+    @Test
+    void reversalDuringDisputeIsSubtractedFromTheLossDebit() {
+        Paid paid = paidOrder(9_999);
+        long before = sellerHeldWon(paid.sellerId());
+        long captureMinor = paid.providerAmount().movePointRight(2).longValueExact();
+        BigDecimal disputed = BigDecimal.valueOf(captureMinor / 2, 2);
+        BigDecimal reversed = BigDecimal.valueOf(captureMinor / 5, 2);
+        String disputeId = "PP-D-" + UUID.randomUUID();
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.CREATED", disputeId, "OPEN", paid, disputed,
+                null, null));
+        webhooks.handle(SIGNATURE, refundEvent("PAYMENT.CAPTURE.REVERSED", "REV-" + UUID.randomUUID(),
+                paid.captureId(), reversed).replace("@EVENT@", "WH-" + UUID.randomUUID()));
+
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.RESOLVED", disputeId, "RESOLVED", paid, disputed,
+                "RESOLVED_BUYER_FAVOUR", disputed));
+
+        List<Long> journals = providerRefundJournals(paid.orderId());
+        assertThat(journals).hasSize(2);
+        long debited = journals.stream().mapToLong(Long::longValue).sum();
+        // 센트 합은 돌려준 금액과 같다. 원화는 두 건이 각각 내림하므로 한 번에 환산한 값보다 최대 1원 작다.
+        assertThat(jdbc.queryForObject("""
+                SELECT SUM(provider_amount_minor) FROM payment_provider_adjustment
+                WHERE attempt_id = ? AND status = 'POSTED'
+                """, Long.class, paid.attemptId())).isEqualTo(captureMinor / 2);
+        long oneShotWon = paid.totalWon() * (captureMinor / 2) / captureMinor;
+        assertThat(debited).isBetween(oneShotWon - 1, oneShotWon);
+        assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before - debited);
+    }
+
+    /** PayPal 보호로 끝난 분쟁(RESOLVED_WITH_PAYOUT)은 판매자 돈이 빠지지 않는다. 결과 코드가 없으면 검토로 보낸다. */
+    @Test
+    void disputeResolvedWithPayPalProtectionOrUnknownOutcomeDoesNotDebitTheSeller() {
+        Paid paid = paidOrder(10_000);
+        long before = sellerHeldWon(paid.sellerId());
+        String protectedId = "PP-D-" + UUID.randomUUID();
+        String unknownId = "PP-D-" + UUID.randomUUID();
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.CREATED", protectedId, "OPEN", paid,
+                paid.providerAmount(), null, null));
+
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.RESOLVED", protectedId, "RESOLVED", paid,
+                paid.providerAmount(), "RESOLVED_WITH_PAYOUT", paid.providerAmount()));
+        webhooks.handle(SIGNATURE, disputeEvent("CUSTOMER.DISPUTE.RESOLVED", unknownId, "RESOLVED", paid,
+                paid.providerAmount(), null, paid.providerAmount()));
+
+        assertThat(adjustmentStatus(protectedId)).isEqualTo("CLOSED");
+        assertThat(adjustmentStatus(unknownId)).isEqualTo("REVIEW");
+        assertThat(providerRefundJournals(paid.orderId())).isEmpty();
+        assertThat(sellerHeldWon(paid.sellerId())).isEqualTo(before);
     }
 
     @Test
@@ -205,6 +315,28 @@ class ProviderOriginatedMoneyEventIntegrationTest extends PayPalIntegrationTestS
                   "links":[{"href":"https://api.paypal.com/v2/payments/refunds/%s","rel":"self","method":"GET"},
                            {"href":"https://api.paypal.com/v2/payments/captures/%s","rel":"up","method":"GET"}]}}
                 """.formatted(eventType, refundId, amount.toPlainString(), refundId, captureId);
+    }
+
+    /** PayPal 공식 명세(customer_disputes_v1.json)의 분쟁 자원 모양. 결과는 dispute_outcome 에 있다. */
+    private static String disputeEvent(String eventType, String disputeId, String status, Paid paid,
+            BigDecimal disputed, String outcome, BigDecimal refunded) {
+        String outcomeJson = outcome == null && refunded == null ? "" : """
+                ,"dispute_outcome":{%s%s}""".formatted(
+                outcome == null ? "" : "\"outcome_code\":\"" + outcome + "\"",
+                refunded == null ? "" : (outcome == null ? "" : ",") + "\"amount_refunded\":{\"currency_code\":\""
+                        + paid.providerCurrency() + "\",\"value\":\"" + refunded.toPlainString() + "\"}");
+        return """
+                {"id":"WH-%s","event_type":"%s","resource_type":"dispute",
+                 "resource":{"dispute_id":"%s","status":"%s","reason":"MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                  "dispute_amount":{"currency_code":"%s","value":"%s"},
+                  "disputed_transactions":[{"seller_transaction_id":"%s"}]%s}}
+                """.formatted(UUID.randomUUID(), eventType, disputeId, status, paid.providerCurrency(),
+                disputed.toPlainString(), paid.captureId(), outcomeJson.strip());
+    }
+
+    private String adjustmentStatus(String providerResourceId) {
+        return jdbc.queryForObject("SELECT status FROM payment_provider_adjustment WHERE provider_resource_id = ?",
+                String.class, providerResourceId);
     }
 
     private Paid paidOrder(long unitPriceWon) {

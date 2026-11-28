@@ -101,7 +101,7 @@ public class PaymentRefundRepository {
     }
 
     /**
-     * capture 남은 금액을 정하는 유일한 합. 우리 환불({@code PaymentRefundWorkflow})과 provider 발 환불·역전
+     * capture 남은 금액을 정하는 유일한 합. 우리 환불({@code PaymentRefundWorkflow})과 provider 발 환불·역전·판매자 패소 분쟁(ADR-0115)
      * ({@code ProviderAdjustmentRecorder})이 둘 다 이 값을 빼므로 한쪽이 다른 쪽을 모르고 capture를 넘겨 환불하지 않는다.
      * 두 표의 원화·센트는 방향이 다르게 환산된다(ADR-0113 "환불 합"): 우리 환불은 원화가 기준이고 센트는 누적 원화를
      * HALF_UP 한 값, provider 사건은 센트가 기준이고 원화는 capture 비율로 내린 값이다. 어느 쪽이든 각 행의 원화·센트는
@@ -116,7 +116,8 @@ public class PaymentRefundRepository {
                     WHERE attempt_id = ? AND refund_state <> 'FAILED'
                     UNION ALL
                     SELECT provider_amount_minor, amount_won FROM payment_provider_adjustment
-                    WHERE attempt_id = ? AND kind IN ('REFUND', 'REVERSAL') AND status IN ('POSTING', 'POSTED')
+                    WHERE attempt_id = ? AND kind IN ('REFUND', 'REVERSAL', 'DISPUTE')
+                      AND status IN ('POSTING', 'POSTED')
                 ) refunded
                 """, (resultSet, rowNumber) -> new RefundedTotals(
                         resultSet.getLong("provider_amount_minor"), resultSet.getLong("amount_won")),

@@ -24,6 +24,7 @@ import com.atlas.order.persistence.projection.RefundRecord;
 import com.atlas.order.persistence.projection.RefundSummary;
 import com.atlas.order.service.LocationRestockService;
 import com.atlas.order.service.OrderRefundService;
+import com.atlas.payment.dto.response.PaymentDisputeHoldResponse;
 import com.atlas.payment.dto.response.PaymentProviderAdjustmentResponse;
 import com.atlas.payment.dto.response.PaymentRefundResponse;
 import com.atlas.payment.exception.PaymentException;
@@ -409,6 +410,21 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             settlement.recordRefund(posting);
             payments.markProviderAdjustmentPosted(adjustmentId);
         });
+    }
+
+    @Override
+    public long disputeHoldWon(UUID sellerId) {
+        if (sellerId == null) throw invalidRequest("Seller is required");
+        long heldWon = 0;
+        for (PaymentDisputeHoldResponse hold : payments.heldDisputes()) {
+            List<PurchaseOrder> owners = hold.orderId() != null
+                    ? orders.findById(hold.orderId()).map(List::of).orElse(List.of())
+                    : orders.findAllByCheckoutIdOrderBySellerIdAsc(hold.checkoutId());
+            if (owners.stream().anyMatch(order -> sellerId.equals(order.sellerId()))) {
+                heldWon = Math.addExact(heldWon, hold.amountWon());
+            }
+        }
+        return heldWon;
     }
 
     private RefundResponse.Refund finalizeRefund(RefundRecord reserved, PaymentRefundResponse payment) {
