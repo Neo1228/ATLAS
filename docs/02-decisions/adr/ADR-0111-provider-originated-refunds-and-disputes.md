@@ -29,7 +29,7 @@ main(f00412d3)에서 PostgreSQL 18.6과 실제 웹훅 경로(`PayPalWebhookServi
 3. 금액은 결제 시도의 capture 비율로 원화로 바꾼다. capture에서 남은 금액(우리 환불과 이미 잡힌 외부 환불을 뺀 값) 전부면 남은 원화 전부를 쓰고, 일부면 내림한다. 판매자 차감은 실제보다 커지지 않고, 여러 번에 나눠도 마지막 건이 나머지를 맞춘다. 남은 금액을 넘거나 통화가 다르거나 결제 시도가 `CAPTURED`가 아니면 돈을 움직이지 않고 `REVIEW`로 둔다.
 4. 원장 반영은 주문 계층(`OrderRefundService.applyProviderAdjustment`)이 웹훅과 같은 트랜잭션에서 한다. 우리 환불과 같은 두 단계를 그대로 쓴다. `settlement.reserveRefund`가 미지급 송금을 취소하고, `settlement.recordRefund`가 `PSP_CLEARING` 대변과 `SELLER_RESERVE`→`SELLER_PAYABLE` 차변을 남긴다. `source_refund_id`는 adjustment id다. 그래서 V7 균형 트리거·append-only 트리거, V10 마감 꼬리 합산, 정산서의 환불 합계가 바뀌지 않고 적용된다. 멱등은 세 겹이다. 웹훅 event id, provider 자원 id 유일 인덱스, `settlement_journal.source_refund_id` 유일과 사실 비교.
 5. 결제 시도가 여러 판매자 주문을 담은 checkout이면 provider 금액을 누구에게서 뺄지 정할 근거가 사건에 없다. 그래서 `MULTI_SELLER_CAPTURE` 사유로 `REVIEW`에 둔다.
-6. 분쟁과 capture 거절은 `REVIEW`로 기록하고 돈을 움직이지 않는다. 같은 분쟁의 후속 사건은 마지막 provider 상태만 갱신한다.
+6. 분쟁과 capture 거절은 `REVIEW`로 기록하고 돈을 움직이지 않는다. 같은 분쟁의 후속 사건은 마지막 provider 상태만 갱신한다. (분쟁 부분은 [ADR-0115](ADR-0115-dispute-payout-hold-expired-refund-operator-and-cancel-cooldown.md) 1절이 대체했다: 진행 중에는 분쟁 금액만큼 송금을 보류하고, `RESOLVED_BUYER_FAVOUR`일 때만 돌려준 금액을 차감한다.)
 7. capture를 우리 결제 시도로 찾지 못하는 환불·역전은 이전처럼 재시도 뒤 운영자 dead letter로 보낸다(ADR-0032).
 
 ## 대안과 기각 이유
