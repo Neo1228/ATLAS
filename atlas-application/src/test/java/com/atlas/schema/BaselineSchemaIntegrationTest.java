@@ -110,7 +110,7 @@ class BaselineSchemaIntegrationTest {
         assertThat(columnExists(jdbc, "purchase_order", "fulfillment_location_id")).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'",
-                Integer.class, schema)).isEqualTo(83); // 애플리케이션 테이블 82개(V5 payout_operator_account, V9 account_notification_outbox·domain_audit_event, V10 settlement_seller_balance_checkpoint·settlement_balance_checkpoint_cursor, V14 assistant_spending_cap·assistant_conversation·assistant_message 포함)와 Flyway 이력 테이블
+                Integer.class, schema)).isEqualTo(84); // 애플리케이션 테이블 83개(V5 payout_operator_account, V9 account_notification_outbox·domain_audit_event, V10 settlement_seller_balance_checkpoint·settlement_balance_checkpoint_cursor, V14 assistant_spending_cap·assistant_conversation·assistant_message, V16 payment_provider_adjustment 포함)와 Flyway 이력 테이블
     }
 
     @Test
