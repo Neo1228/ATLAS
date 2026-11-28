@@ -345,3 +345,4 @@
 | [ADR-0111 — PayPal 쪽에서 시작된 환불·capture 역전은 기존 환불 분개로 차감하고, 분쟁·capture 거절은 검토로 둔다](../02-decisions/adr/ADR-0111-provider-originated-refunds-and-disputes.md) | 제공자 시작 환불은 기존 환불 분개 재사용, 분쟁·거절은 돈을 움직이지 않음 | D-191 |
 | [ADR-0112 — 정지·폐쇄된 Seller는 판매·결제 제출·지급 송금을 막는다](../02-decisions/adr/ADR-0112-seller-suspension-stops-sales-and-holds-payouts.md) | 판매·결제 제출·지급 차단, 결제 완료 주문은 운영자가 Seller 환불 경로로 돌려줌 | D-192 |
 | [ADR-0113 — Buyer 한 명의 미결 checkout은 1건, 예약 수량 합은 50개로 제한한다](../02-decisions/adr/ADR-0113-buyer-checkout-hold-limits.md) | cart 잠금 아래 서버 확인, 상한은 설정으로 조정 | D-193 |
+| [ADR-0115 — 분쟁 중 분쟁 금액만큼 송금 보류와 패소 차감, 30일 넘은 환불의 운영자 종료, 취소 쿨다운](../02-decisions/adr/ADR-0115-dispute-payout-hold-expired-refund-operator-and-cancel-cooldown.md) | 단일 보류 계약의 분쟁 빈, 지급 운영자 경계의 환불 종료 API, 취소 보유 시간 합 5분 | D-196 |
