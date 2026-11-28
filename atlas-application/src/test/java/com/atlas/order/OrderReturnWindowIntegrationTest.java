@@ -191,7 +191,7 @@ class OrderReturnWindowIntegrationTest extends PayPalIntegrationTestSupport {
                         error -> assertThat(error.code()).isEqualTo(OrderException.Code.RETURN_WINDOW_EXPIRED));
         assertThatThrownBy(() -> returns.request(new OrderRequest.Return(fixture.buyerRef(), fixture.orderId(),
                 "key-mixed", List.of(new OrderRequest.Return.Item(fixture.itemIds().get(0), 1),
-                        new OrderRequest.Return.Item(fixture.itemIds().get(1), 1)))))
+                        new OrderRequest.Return.Item(fixture.itemIds().get(1), 1)), null, null)))
                 .isInstanceOfSatisfying(OrderException.class,
                         error -> assertThat(error.code()).isEqualTo(OrderException.Code.RETURN_WINDOW_EXPIRED));
         assertThat(count("SELECT COUNT(*) FROM order_return WHERE order_id = ?", fixture.orderId())).isZero();
@@ -364,7 +364,7 @@ class OrderReturnWindowIntegrationTest extends PayPalIntegrationTestSupport {
 
     private static OrderRequest.Return returnRequest(Fixture fixture, String key, int itemIndex, int quantity) {
         return new OrderRequest.Return(fixture.buyerRef(), fixture.orderId(), key,
-                List.of(new OrderRequest.Return.Item(fixture.itemIds().get(itemIndex), quantity)));
+                List.of(new OrderRequest.Return.Item(fixture.itemIds().get(itemIndex), quantity)), null, null);
     }
 
     /** {@code from} 이후 첫 월요일 10:00(서울). 시험이 시계를 다음 영업일 시나리오로 옮길 때 쓴다. */

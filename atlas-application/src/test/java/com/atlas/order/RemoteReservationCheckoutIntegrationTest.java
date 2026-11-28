@@ -510,7 +510,7 @@ class RemoteReservationCheckoutIntegrationTest extends PayPalIntegrationTestSupp
 
         var requested = returns.request(new OrderRequest.Return(paid.buyerRef(), paid.orderId(),
                 "return-request-" + UUID.randomUUID(),
-                List.of(new OrderRequest.Return.Item(paid.orderItemId(), 1, shipment.shipmentId()))));
+                List.of(new OrderRequest.Return.Item(paid.orderItemId(), 1, shipment.shipmentId())), null, null));
         returns.receive(paid.sellerId(), paid.orderId(), requested.returnId());
         INVENTORY.enqueue(transitioned(paid.reservationId(), "CLAIMED"));
         var inspected = returns.inspect(paid.sellerId(), paid.orderId(), requested.returnId(),

@@ -45,6 +45,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class OrderReturnServiceImpl implements OrderReturnService {
+    private static final int MAX_NOTE_LENGTH = 500;
     private final TransactionTemplate transactions;
     private final OrderRepository orders;
     private final OrderItemRepository items;
@@ -74,6 +75,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             throw invalid("Buyer, order, key, and return lines are required");
         }
         List<OrderRequest.Return.Item> lines = normalize(request.items());
+        String note = normalizeNote(request);
         return Objects.requireNonNull(transactions.execute(tx -> {
             PurchaseOrder order = lockOrder(request.orderId());
             if (!order.buyerRef().equals(request.buyerRef())) throw conflict("Buyer does not own order");
@@ -81,7 +83,8 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             if (existing.isPresent()) {
                 OrderReturn prior = existing.get();
                 if (!prior.buyerRef().equals(request.buyerRef()) || !prior.sellerId().equals(order.sellerId())
-                        || !sameFacts(prior, lines)) throw conflict("Idempotency key was used for different return facts");
+                        || !sameFacts(prior, lines) || prior.reason() != request.reason()
+                        || !Objects.equals(prior.reasonNote(), note)) throw conflict("Idempotency key was used for different return facts");
                 return response(prior);
             }
             if (order.state() != OrderState.PAID) throw conflict("Only paid orders can be returned");
@@ -118,7 +121,8 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                 }
                 shipmentByItem.put(line.orderItemId(), shipment.shipmentId());
             }
-            OrderReturn entity = new OrderReturn(order.orderId(), order.sellerId(), request.buyerRef(), request.idempotencyKey(), now);
+            OrderReturn entity = new OrderReturn(order.orderId(), order.sellerId(), request.buyerRef(), request.idempotencyKey(), now,
+                    request.reason(), note);
             lines.forEach(line -> entity.addItem(new OrderReturnItem(
                     line.orderItemId(), line.quantity(), shipmentByItem.get(line.orderItemId()))));
             return response(returns.saveAndFlush(entity));
@@ -370,6 +374,15 @@ public class OrderReturnServiceImpl implements OrderReturnService {
             return line != null && line.quantity() == item.quantity()
                     && (line.shipmentId() == null || line.shipmentId().equals(item.shipmentId()));
         });
+    }
+
+    /** 앞뒤 공백을 지우고 빈 텍스트는 없는 것으로 본다. 사유 없는 텍스트와 500자 초과는 거절한다(V15 제약과 같다). */
+    private static String normalizeNote(OrderRequest.Return request) {
+        if (request.note() == null || request.note().isBlank()) return null;
+        String note = request.note().strip();
+        if (request.reason() == null) throw invalid("Return note requires a return reason");
+        if (note.codePointCount(0, note.length()) > MAX_NOTE_LENGTH) throw invalid("Return note is too long");
+        return note;
     }
 
     private static List<OrderRequest.Return.Item> normalize(List<OrderRequest.Return.Item> lines) {

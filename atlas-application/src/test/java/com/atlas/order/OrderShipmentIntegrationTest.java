@@ -194,7 +194,7 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PARTIALLY_SHIPPED"));
         assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef(fixture.orderId()),
                 fixture.orderId(), "early-return-" + fixture.orderId(),
-                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)))))
+                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)), null, null)))
                 .isInstanceOf(OrderException.class);
         var second = shipments.create(shipmentRequest(fixture, "partial-b-" + fixture.orderId(), 1));
         assertThatThrownBy(() -> shipments.create(shipmentRequest(fixture, "partial-c-" + fixture.orderId(), 1)))
@@ -203,14 +203,14 @@ class OrderShipmentIntegrationTest extends PayPalIntegrationTestSupport {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SHIPPED"));
         assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef(fixture.orderId()),
                 fixture.orderId(), "return-before-delivery-" + fixture.orderId(),
-                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)))))
+                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)), null, null)))
                 .isInstanceOf(OrderException.class);
         shipments.deliver(fixture.sellerId(), fixture.orderId(), first.shipmentId());
         mockMvc.perform(get("/api/orders/{orderId}/fulfillment", fixture.orderId()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SHIPPED"));
         assertThatThrownBy(() -> returns.request(new OrderRequest.Return(buyerRef(fixture.orderId()),
                 fixture.orderId(), "return-after-one-delivery-" + fixture.orderId(),
-                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)))))
+                List.of(new OrderRequest.Return.Item(fixture.orderItemId(), 1)), null, null)))
                 .isInstanceOf(OrderException.class);
         shipments.deliver(fixture.sellerId(), fixture.orderId(), second.shipmentId());
         mockMvc.perform(get("/api/orders/{orderId}/fulfillment", fixture.orderId()))
