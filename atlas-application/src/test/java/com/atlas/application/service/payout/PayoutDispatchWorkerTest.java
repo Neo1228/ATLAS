@@ -19,6 +19,8 @@ import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.model.PayoutDispatchState;
 import com.atlas.settlement.service.PayoutDispatchStore;
 import com.atlas.settlement.service.SettlementPayoutService;
+import com.atlas.settlement.dto.response.PayoutResponse;
+import com.atlas.settlement.model.SettlementPayoutState;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -29,6 +31,8 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -41,10 +45,31 @@ class PayoutDispatchWorkerTest {
     private final SettlementPayoutService payouts = mock(SettlementPayoutService.class);
     private final PayPalPayoutsProvider provider = mock(PayPalPayoutsProvider.class);
     private final PayoutRecipientCipher cipher = new PayoutRecipientCipher(KEY);
+    private final AtomicBoolean sellerDisabled = new AtomicBoolean(false);
     private final PayoutDispatchWorker worker = new PayoutDispatchWorker(repository, outcomes, payouts, provider,
-            cipher, new PayoutFxConversionService(), Clock.fixed(NOW, ZoneOffset.UTC), new SimpleMeterRegistry(),
-            1, Duration.ofSeconds(60), 8, Duration.ofDays(29), Duration.ofDays(60));
+            cipher, new PayoutFxConversionService(), seller -> sellerDisabled.get(), Clock.fixed(NOW, ZoneOffset.UTC),
+            new SimpleMeterRegistry(), 1, Duration.ofSeconds(60), 8, Duration.ofDays(29), Duration.ofDays(60));
     private final UUID payoutId = UUID.randomUUID();
+
+    @BeforeEach
+    void payoutBelongsToSeller() {
+        when(payouts.find(payoutId)).thenReturn(new PayoutResponse.SellerPayout(payoutId, UUID.randomUUID(), NOW, NOW,
+                1_000, 0, SettlementPayoutState.APPROVED, NOW, null, null, null));
+    }
+
+    @Test
+    void disabledSellerPayoutIsHeldWithoutReachingProviderOrChangingPayoutState() {
+        PayoutDispatchRecord record = leasedRecord();
+        when(repository.claim(1, Duration.ofSeconds(60))).thenReturn(List.of(record));
+        when(repository.metricsSnapshot()).thenReturn(new PayoutDispatchMetrics(1, 0, 0, 0, 0, 0));
+        sellerDisabled.set(true);
+
+        worker.dispatchDue();
+
+        verify(outcomes).retry(eq(record), any(Duration.class), eq("SELLER_ACCOUNT_DISABLED"));
+        verify(payouts, never()).beginDispatch(any());
+        verify(provider, never()).createBatch(any());
+    }
 
     @Test
     void createsBatchOnlyAfterFenceAndUsesEncryptedRecipientSnapshot() {

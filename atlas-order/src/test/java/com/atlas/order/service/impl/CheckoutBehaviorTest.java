@@ -93,7 +93,8 @@ class CheckoutBehaviorTest {
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(),
                 checkouts, orders, mock(OrderItemRepository.class), inventory,
                 mock(OrderFulfillmentService.class), payments, mock(SettlementService.class),
-                mock(SellerCouponService.class), fixedClock(), 100, Duration.ofSeconds(2), sweepLock(), Optional.empty());
+                mock(SellerCouponService.class), seller -> false, fixedClock(), 100, Duration.ofSeconds(2),
+                sweepLock(), Optional.empty());
 
         service.reconcile(checkoutId, "reconcile");
 
@@ -354,7 +355,7 @@ class CheckoutBehaviorTest {
 
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
                 orders, items, inventory, fulfillment, payments, settlement, mock(SellerCouponService.class),
-                fixedClock(), 100, Duration.ofSeconds(2),
+                seller -> false, fixedClock(), 100, Duration.ofSeconds(2),
                 sweepLock(), Optional.empty());
         AtomicReference<BuyerCheckoutState> cancellationState = new AtomicReference<>();
         when(payments.submitCheckout(eq(checkoutId), any())).thenAnswer(invocation -> {
@@ -424,7 +425,7 @@ class CheckoutBehaviorTest {
         CheckoutPaymentServiceImpl service = new CheckoutPaymentServiceImpl(transactionManager(), checkouts,
                 orders, items, inventory, mock(OrderFulfillmentService.class), payments,
                 mock(SettlementService.class), mock(SellerCouponService.class),
-                fixedClock(), 100, Duration.ofSeconds(2),
+                seller -> false, fixedClock(), 100, Duration.ofSeconds(2),
                 sweepLock(), Optional.empty());
 
         service.find(checkoutId);

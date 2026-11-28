@@ -13,7 +13,10 @@ import com.atlas.order.dto.response.RefundResponse;
 import com.atlas.order.dto.response.ReturnResponse;
 import com.atlas.order.dto.request.OrderRequest;
 import com.atlas.inventory.dto.response.InventoryResponse;
+import com.atlas.account.repository.AccountRepository;
+import com.atlas.account.service.AccountService;
 import com.atlas.catalog.dto.request.ProductRequest;
+import com.atlas.catalog.exception.CatalogException;
 import com.atlas.order.service.CartService;
 import com.atlas.catalog.service.ProductService;
 import com.atlas.catalog.service.SellerService;
@@ -36,6 +39,7 @@ import com.atlas.order.service.OrderReturnService;
 import com.atlas.order.service.OrderService;
 import com.atlas.payment.PayPalIntegrationTestSupport;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -75,6 +79,10 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
         properties.add("spring.datasource.password", POSTGRES::getPassword);
         properties.add("atlas.admission.expiry-poll-interval", () -> "PT24H");
         properties.add("atlas.orders.expiry-poll-interval", () -> "PT24H");
+        // 운영자 환불 API(ADR-0112)를 켠다. 이 클래스는 MockMvc 필터를 끄므로 운영자 식별자는 principal로 넣는다.
+        properties.add("atlas.account.suspension.operator.enabled", () -> "true");
+        properties.add("atlas.account.suspension.operator.username", () -> "operator-7");
+        properties.add("atlas.account.suspension.operator.password", () -> "operator-password-at-least-32-chars-long");
     }
 
     @Autowired private SellerService sellers;
@@ -94,6 +102,8 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
     @Autowired private OrderRefundRepository refundRepository;
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private AccountService accountService;
+    @Autowired private AccountRepository accountRepository;
 
     @Test
     void returnRequestIsDeliveryGatedAndReceiptDoesNotRefundOrRestock() {
@@ -862,6 +872,46 @@ class OrderRefundLifecycleIntegrationTest extends PayPalIntegrationTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PARTIALLY_RECORDED"))
                 .andExpect(jsonPath("$.totalRecordedAmountWon").value(200));
+    }
+
+    /** Seller 계정 정지가 판매와 결제를 막고, 이미 결제된 주문은 운영자가 Seller 환불 경로로 돌려준다(ADR-0112). */
+    @Test
+    void suspendedSellerStopsSellingAndOperatorRefundsPaidOrderThroughSellerRefundPath() throws Exception {
+        Fixture paid = paidOrder(2, 5, 125);
+        UUID accountId = accountRepository.createAccount("suspended-seller-" + UUID.randomUUID() + "@example.com",
+                "not-a-login-hash").orElseThrow();
+        accountRepository.verifyEmail(accountId, Instant.now());
+        accountService.linkSeller(accountId, paid.sellerId());
+        String cartBuyer = "suspended-cart-" + UUID.randomUUID();
+        carts.setItemQuantity(paid.sellerId(), cartBuyer, paid.skuId(), 1);
+        String checkoutBuyer = "suspended-checkout-" + UUID.randomUUID();
+        carts.setItemQuantity(paid.sellerId(), checkoutBuyer, paid.skuId(), 1);
+        CheckoutResponse reservedBeforeSuspension = checkouts.checkout(checkoutBuyer, "before-" + UUID.randomUUID());
+        String refundPath = "/api/internal/accounts/{accountId}/sellers/{sellerId}/orders/{orderId}/refund";
+
+        accountService.suspendAccount(accountId, "fraud review", "operator-7", "suspend-" + UUID.randomUUID());
+
+        assertThatThrownBy(() -> checkouts.checkout(cartBuyer, "after-" + UUID.randomUUID()))
+                .isInstanceOfSatisfying(CatalogException.class, error ->
+                        assertThat(error.code()).isEqualTo(CatalogException.Code.PRODUCT_NOT_ORDERABLE));
+        assertThatThrownBy(() -> checkoutPayments.submit(reservedBeforeSuspension.checkoutId()))
+                .isInstanceOfSatisfying(OrderException.class, error ->
+                        assertThat(error.code()).isEqualTo(OrderException.Code.CONFLICT));
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post(refundPath, accountId, paid.sellerId(), paid.orderId())
+                            .principal(() -> "operator-7").header("Idempotency-Key", "operator-refund-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.refundAmountWon").value(250))
+                    .andExpect(jsonPath("$.status").value("FULLY_RECORDED"))
+                    .andExpect(jsonPath("$.paymentStatus").value("COMPLETED"));
+        }
+        assertThat(refundRequestCount(paid.orderId())).isEqualTo(1);
+        assertStock(paid, 4, 1, 0);
+        assertThat(jdbc.queryForList("""
+                SELECT actor FROM domain_audit_event
+                WHERE aggregate_type = 'order' AND aggregate_id = ? AND event_type = 'ORDER_REFUND_BY_OPERATOR'
+                """, String.class, paid.orderId().toString())).containsExactly("operator-7");
     }
 
     @Test

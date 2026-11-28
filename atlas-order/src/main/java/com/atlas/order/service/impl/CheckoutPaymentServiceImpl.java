@@ -1,5 +1,6 @@
 package com.atlas.order.service.impl;
 
+import com.atlas.catalog.service.SellerAccountStanding;
 import com.atlas.catalog.service.SellerCouponService;
 import com.atlas.inventory.dto.response.InventoryResponse;
 import com.atlas.inventory.model.ReservationStatus;
@@ -55,6 +56,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     private final PaymentService payments;
     private final SettlementService settlement;
     private final SellerCouponService sellerCoupons;
+    private final SellerAccountStanding sellerStanding;
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final ExpirySweepPolicy expirySweep;
@@ -66,7 +68,8 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
     public CheckoutPaymentServiceImpl(PlatformTransactionManager transactionManager,
             BuyerCheckoutRepository checkouts, OrderRepository orders, OrderItemRepository items,
             InventoryService inventory, OrderFulfillmentService fulfillment, PaymentService payments,
-            SettlementService settlement, SellerCouponService sellerCoupons, Clock clock,
+            SettlementService settlement, SellerCouponService sellerCoupons, SellerAccountStanding sellerStanding,
+            Clock clock,
             @Value("${atlas.orders.expiry-sweep-batch-size:100}") int expirySweepBatchSize,
             @Value("${atlas.orders.expiry-sweep-time-budget:PT2S}") Duration expirySweepTimeBudget,
             ExpirySweepLockRepository expirySweepLock,
@@ -81,6 +84,7 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
         this.payments = Objects.requireNonNull(payments);
         this.settlement = Objects.requireNonNull(settlement);
         this.sellerCoupons = Objects.requireNonNull(sellerCoupons);
+        this.sellerStanding = Objects.requireNonNull(sellerStanding);
         this.clock = Objects.requireNonNull(clock);
         this.expirySweep = new ExpirySweepPolicy(expirySweepBatchSize, expirySweepTimeBudget);
         this.expirySweepLock = expirySweepLock;
@@ -101,6 +105,11 @@ public class CheckoutPaymentServiceImpl implements CheckoutPaymentService {
                 List<PurchaseOrder> children = orders.findAllByCheckoutIdOrderBySellerIdAsc(checkoutId);
                 if (children.isEmpty()) {
                     throw new OrderException(OrderException.Code.CONFLICT, "Checkout has no Seller orders");
+                }
+                // checkout을 만든 뒤 Seller가 정지·폐쇄됐으면 결제로 넘어가지 않는다. 상태를 바꾸지 않고 거절하므로
+                // 예약은 checkout 만료 sweep이 풀어 준다.
+                if (children.stream().map(PurchaseOrder::sellerId).distinct().anyMatch(sellerStanding::isDisabled)) {
+                    throw new OrderException(OrderException.Code.CONFLICT, "Seller is not accepting orders");
                 }
                 Instant now = clock.instant();
                 if (children.stream().anyMatch(order -> order.state() != OrderState.RESERVED)) {

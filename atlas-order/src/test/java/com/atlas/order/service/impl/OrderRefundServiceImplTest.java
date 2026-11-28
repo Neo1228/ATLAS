@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.atlas.order.dto.response.RefundResponse;
@@ -73,7 +74,8 @@ class OrderRefundServiceImplTest {
         OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders,
                 mock(OrderItemRepository.class), fulfillments, refunds,
                 mock(OrderReturnRepository.class), mock(InventoryService.class), mock(SettlementService.class),
-                mock(PaymentService.class), Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC), Optional.empty());
+                mock(PaymentService.class), Clock.fixed(Instant.parse("2026-01-02T00:00:00Z"), ZoneOffset.UTC), Optional.empty(),
+                seller -> false);
 
         RefundResponse.Refund response = service.refund(new OrderRequest.Refund(sellerId, orderId, idempotencyKey,
                 List.of(new OrderRequest.Refund.Item(javaSecond, 1), new OrderRequest.Refund.Item(javaFirst, 1))));
@@ -87,11 +89,29 @@ class OrderRefundServiceImplTest {
                 mock(PlatformTransactionManager.class), mock(OrderRepository.class), mock(OrderItemRepository.class),
                 mock(OrderFulfillmentRepository.class), mock(OrderRefundRepository.class),
                 mock(OrderReturnRepository.class), mock(InventoryService.class),
-                mock(SettlementService.class), mock(PaymentService.class), Clock.systemUTC(), Optional.empty());
+                mock(SettlementService.class), mock(PaymentService.class), Clock.systemUTC(), Optional.empty(),
+                seller -> false);
 
         OrderException exception = assertThrows(OrderException.class, () -> service.refund(null));
 
         assertEquals(OrderException.Code.INVALID_REQUEST, exception.code());
+    }
+
+    @Test
+    void operatorRefundIsRejectedWhileSellerIsActive() {
+        OrderRefundRepository refunds = mock(OrderRefundRepository.class);
+        OrderRefundServiceImpl service = new OrderRefundServiceImpl(
+                mock(PlatformTransactionManager.class), mock(OrderRepository.class), mock(OrderItemRepository.class),
+                mock(OrderFulfillmentRepository.class), refunds,
+                mock(OrderReturnRepository.class), mock(InventoryService.class),
+                mock(SettlementService.class), mock(PaymentService.class), Clock.systemUTC(), Optional.empty(),
+                seller -> false);
+
+        OrderException exception = assertThrows(OrderException.class, () -> service.refundForDisabledSeller(
+                new OrderRequest.OperatorRefund(UUID.randomUUID(), UUID.randomUUID(), "operator-key", "operator-7")));
+
+        assertEquals(OrderException.Code.CONFLICT, exception.code());
+        verifyNoInteractions(refunds);
     }
     @Test
     void directRefundCannotConsumeQuantityClaimedByOpenReturn() {
@@ -136,7 +156,7 @@ class OrderRefundServiceImplTest {
 
         OrderRefundServiceImpl service = new OrderRefundServiceImpl(transactions, orders, items, fulfillments,
                 refunds, returns, mock(InventoryService.class), mock(SettlementService.class),
-                mock(PaymentService.class), Clock.systemUTC(), Optional.empty());
+                mock(PaymentService.class), Clock.systemUTC(), Optional.empty(), seller -> false);
             OrderException exception = assertThrows(OrderException.class, () -> service.refund(
                     new OrderRequest.Refund(sellerId, orderId, "direct-refund-" + returnStatus,
                             List.of(new OrderRequest.Refund.Item(orderItemId, 2)))));

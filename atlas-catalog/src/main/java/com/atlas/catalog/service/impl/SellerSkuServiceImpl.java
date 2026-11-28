@@ -8,6 +8,7 @@ import com.atlas.catalog.persistence.entity.SellerSku;
 import com.atlas.catalog.repository.ProductRepository;
 import com.atlas.catalog.repository.SellerSkuRepository;
 import com.atlas.catalog.model.ProductSalesChannel;
+import com.atlas.catalog.service.SellerAccountStanding;
 import com.atlas.catalog.service.SellerSkuService;
 import java.time.Clock;
 import java.time.Instant;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SellerSkuServiceImpl implements SellerSkuService {
     private final SellerSkuRepository sellerSkus;
     private final ProductRepository products;
+    private final SellerAccountStanding sellerStanding;
     private final Clock clock;
 
     @Override
@@ -76,6 +78,10 @@ public class SellerSkuServiceImpl implements SellerSkuService {
         SellerSkuProducts loaded = loadSellerSkuProducts(sellerId, ids);
         List<SellerSku> skus = loaded.skus();
         if (skus.isEmpty()) return List.of();
+        // 정지·폐쇄된 Seller의 상품은 주문 경로(checkout, 재주문, 입장권 주문, 캠페인 개설·입장) 전부에서 막는다.
+        if (sellerStanding.isDisabled(sellerId)) {
+            throw new CatalogException(Code.PRODUCT_NOT_ORDERABLE, "Seller is not accepting orders: " + sellerId);
+        }
         List<UUID> productIds = loaded.productIds();
         Map<UUID, Product> productById = loaded.productById();
         List<UUID> orderableIds = products.findOrderableProductIds(productIds, channel.name());

@@ -166,6 +166,32 @@ public class OrderRefundRepository {
                 resultSet.getString("payment_refund_status")), refundId);
     }
 
+    /**
+     * 운영자 환불을 {@code domain_audit_event}에 한 번 남긴다. 같은 환불의 재시도는 행을 더 만들지 않는다
+     * (같은 key는 {@link #lockIdempotencyKey}로 직렬화된 같은 트랜잭션에서 부른다).
+     *
+     * <p>다른 운영자 행위는 원천 표의 INSERT trigger가 이 표를 채운다(V9). 환불 요청 행은 Seller 환불과
+     * 같은 표라 trigger를 걸면 Seller 환불까지 운영자 행위로 기록되므로, 운영자 경로에서만 직접 쓴다.
+     * payload에는 자유 텍스트와 idempotency key를 넣지 않는다(V9 규약).
+     */
+    public void recordOperatorRefundAudit(UUID refundId, UUID orderId, UUID sellerId, long amountWon, String actor,
+            Instant occurredAt) {
+        jdbc.update("""
+                INSERT INTO domain_audit_event(occurred_at, source_table, source_id, event_type, aggregate_type,
+                                               aggregate_id, actor, payload)
+                SELECT ?, 'order_refund_request', ?, 'ORDER_REFUND_BY_OPERATOR', 'order', ?, ?,
+                       jsonb_build_object('refund_id', ?::text, 'order_id', ?::text, 'seller_id', ?::text,
+                                          'amount_won', ?::bigint)
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM domain_audit_event
+                    WHERE aggregate_type = 'order' AND aggregate_id = ?
+                      AND source_table = 'order_refund_request' AND source_id = ?
+                      AND event_type = 'ORDER_REFUND_BY_OPERATOR')
+                """, Timestamp.from(occurredAt), refundId.toString(), orderId.toString(), actor,
+                refundId.toString(), orderId.toString(), sellerId.toString(), amountWon,
+                orderId.toString(), refundId.toString());
+    }
+
     public void linkPaymentOperation(UUID refundId, UUID paymentOperationId) {
         int updated = jdbc.update("""
                 UPDATE order_refund_request SET payment_refund_operation_id = ?

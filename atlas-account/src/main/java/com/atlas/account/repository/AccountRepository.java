@@ -323,6 +323,17 @@ public class AccountRepository {
         return Boolean.TRUE.equals(found);
     }
 
+    /** 정지와 폐쇄는 모두 {@code status = 'DISABLED'}다({@code closeAccount}, {@code AccountSuspensionRepository#apply}). */
+    public boolean isSellerAccountDisabled(UUID sellerId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM seller_account AS owner
+                            JOIN user_account AS account ON account.account_id = owner.account_id
+                            WHERE owner.seller_id = ? AND account.status = 'DISABLED'
+                        )
+                        """, Boolean.class, sellerId));
+    }
+
     public List<UUID> findSellerIds(UUID accountId) {
         return jdbc.query("""
                         SELECT seller_id FROM seller_account WHERE account_id = ? ORDER BY seller_id
