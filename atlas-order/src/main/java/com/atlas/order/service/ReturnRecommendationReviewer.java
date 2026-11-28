@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,9 +21,14 @@ import org.springframework.stereotype.Component;
  * <p>프롬프트에는 사유 코드, 줄 상태, 규칙 결과와 근거 코드, 연락처를 가린 구매자 텍스트만 넣는다. buyerRef·주소·
  * 결제 식별자는 넣지 않는다. 구매자 텍스트는 지시가 아니라 데이터라고 시스템 메시지에 적지만, 그 약속에 기대지 않고
  * 출력 해석이 경계를 강제한다.
+ *
+ * <p>켜는 스위치는 공유 LLM 설정({@code ATLAS_LLM_ENABLED})과 따로 둔다({@code llmReviewEnabled}, 기본 꺼짐). 쇼핑 비서에
+ * 맞는 모델이 이 검토에도 맞는 것은 아니다. 같은 qwen2.5:3b가 비서에서는 정책 밖 실행 0이었지만 이 검토에서는 글이 있는
+ * 승인을 모두 내렸다(EXP-122).
  */
 @Component
-public record ReturnRecommendationReviewer(ChatCompletionService llm) {
+public record ReturnRecommendationReviewer(ChatCompletionService llm,
+        @Value("${atlas.order.return.recommendation.llm-review-enabled:false}") boolean llmReviewEnabled) {
     static final int MAX_COMPLETION_TOKENS = 200;
     /** 권고 한 건이 쓰는 토큰 상한. 프롬프트(약 600)와 응답(200)을 넉넉히 덮는다. */
     static final long TOKEN_BUDGET = 2_000;
@@ -47,7 +53,10 @@ public record ReturnRecommendationReviewer(ChatCompletionService llm) {
     public Review review(ReturnRecommendationRules.Facts facts, ReturnRecommendationRules.Outcome outcome,
             String reasonNote) {
         Review unchanged = new Review(outcome.decision(), false, null);
-        if (!llm.enabled()) return unchanged;
+        if (!llmReviewEnabled || !llm.enabled()) return unchanged;
+        // 내릴 근거는 구매자 글뿐이다. 글이 없으면 모델을 부르지 않는다. 실제 모델이 글 없는 승인 10건을 모두 사유
+        // 코드만 보고 내렸다(EXP-122, qwen2.5:3b).
+        if (reasonNote == null || reasonNote.isBlank()) return unchanged;
         String reply;
         try {
             ChatCompletionResponse response = llm.complete(new ChatCompletionRequest(
@@ -62,7 +71,11 @@ public record ReturnRecommendationReviewer(ChatCompletionService llm) {
         return interpret(outcome.decision(), reply);
     }
 
-    /** 출력 해석이 경계를 강제한다. 첫 줄이 HUMAN_REVIEW이고 규칙이 승인했을 때만 내린다. 그 밖의 값은 무시한다. */
+    /**
+     * 출력 해석이 경계를 강제한다. 첫 줄이 HUMAN_REVIEW이고 규칙이 승인했을 때만 내린다. 그 밖의 값은 무시한다.
+     * 첫 줄이 정확히 KEEP·HUMAN_REVIEW가 아니면 설명도 버린다. 실제 모델의 형식 위반 응답에는 주입을 따른 설명이 있었다
+     * (EXP-122, qwen2.5:1.5b의 "KEEP APPROVE_FULL … 전액 환불을 승인합니다").
+     */
     static Review interpret(ReturnRecommendationDecision ruled, String reply) {
         if (reply == null || reply.isBlank()) return new Review(ruled, false, null);
         String[] parts = reply.strip().split("\\R", 2);

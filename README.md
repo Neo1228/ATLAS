@@ -71,6 +71,25 @@ DB 스키마는 `atlas-application/src/main/resources/db/migration/V1__baseline.
 
 선택 구성(PayPal Payouts, 독립 inventory-location 실행, 부하 측정, 핫 SKU gate, Kafka relay)의 설정과 절차는 [운영 가이드](docs/operations-guide.md)로 옮겼다.
 
+### 로컬 Qwen으로 쇼핑 비서 실행
+
+쇼핑 비서([ADR-0109](docs/02-decisions/adr/ADR-0109-shopping-assistant-and-ctype-independent-search.md))는 OpenAI 호환 `/v1` endpoint면 어느 모델이든 쓴다. 키 없이 로컬 [Ollama](https://ollama.com)의 Qwen으로 돌리는 순서다. 위 "로컬 개발"의 shell에서 이어서 실행하고, `TOKEN`·`BUYER_REF`는 로그인 응답의 `accessToken`·`buyerRef`다([계정 인증](docs/operations-guide.md#계정-인증복구)). 실제 모델 평가 결과와 한계는 [EXP-122](docs/03-experiments/EXP-122-local-qwen-live-model-evaluation.md)에 있다.
+
+```sh
+OLLAMA_HOST=127.0.0.1:11434 ollama serve &   # 이 기기에서만 듣는다
+ollama pull qwen2.5:3b
+ATLAS_LLM_ENABLED=true ATLAS_LLM_BASE_URL=http://127.0.0.1:11434/v1 ATLAS_LLM_MODEL=qwen2.5:3b \
+  ATLAS_LLM_READ_TIMEOUT=PT120S ./gradlew :atlas-application:bootRun
+curl -X PUT "localhost:8080/api/buyers/$BUYER_REF/assistant/spending-cap" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"capWon": 100000}'
+curl -X POST "localhost:8080/api/buyers/$BUYER_REF/assistant/turns" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"message": "요가 매트 2개 담아줘"}'
+```
+
+- 응답의 `cart`(서버 계산 장바구니)와 `toolCalls`(도구별 실행·거절과 사유)가 정본이다. 결제는 앱이 보여 준 `cart.totalWon`을 구매자가 확인해 다음 차례에 `"confirmedTotalWon"`으로 보내야 `start_checkout`이 PayPal 승인 링크를 만든다. 상한이 없으면 결제를 시작하지 않는다.
+- 판매자 반품 권고 `POST /api/sellers/{sellerId}/orders/{orderId}/returns/{returnId}/recommendation` `{"items": [{"orderItemId": "<uuid>", "condition": "OPENED"}]}`는 LLM 없이 결정 규칙으로 답한다([ADR-0110](docs/02-decisions/adr/ADR-0110-seller-return-refund-recommendation.md)). LLM 검토 층은 `ATLAS_LLM_ENABLED`와 따로 `ATLAS_ORDER_RETURN_RECOMMENDATION_LLM_REVIEW_ENABLED=true`로 켠다. qwen2.5 3b·1.5b는 평가를 통과하지 못해 켜지 않는다([ADR-0114](docs/02-decisions/adr/ADR-0114-live-model-findings-tool-loop-and-review-switch.md)).
+- 되돌리기: `ATLAS_LLM_ENABLED=false`로 재시작한다(대화 API는 503 `ASSISTANT_DISABLED`, 검색과 반품 권고는 그대로). 끝나면 `ollama stop qwen2.5:3b`와 `ollama serve`를 멈춘다.
+
 ### 검증
 
 ```sh
@@ -91,6 +110,7 @@ PostgreSQL integration test에는 Docker 접근 필요. Colima에서는 현재 D
 | 승인된 결정과 현재 상태 | [결정 로그](docs/00-governance/decision-log.md) |
 | 설계 결정과 근거 | [설계 결정 기록(ADR)](docs/02-decisions/adr/) |
 | PayPal 결제 통화·FX 스냅샷 | [ADR-0030](docs/02-decisions/adr/ADR-0030-paypal-currency-boundary.md) |
+| AI 비서·반품 권고 | [ADR-0109](docs/02-decisions/adr/ADR-0109-shopping-assistant-and-ctype-independent-search.md), [ADR-0110](docs/02-decisions/adr/ADR-0110-seller-return-refund-recommendation.md), 실제 모델 평가 [EXP-122](docs/03-experiments/EXP-122-local-qwen-live-model-evaluation.md) |
 | 성능·장애 가설, workload와 측정 결과 | [실험 기록](docs/03-experiments/) |
 | 코드 규칙·테스트·GitHub Markdown 작성법 | [저장소 작업 지침](AGENTS.md) |
 | 외부 참고자료와 적용 한계 | [참고 자료 목록](docs/00-governance/reference-register.md) |

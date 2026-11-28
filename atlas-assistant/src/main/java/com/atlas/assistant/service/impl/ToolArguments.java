@@ -70,4 +70,15 @@ final class ToolArguments {
         JsonNode value = node.get(key);
         return value == null || value.isNull() ? null : integer(key, min, max);
     }
+
+    /**
+     * 정책과 무관한 선택 힌트(결과 수 등)만 위한 해석. 정수가 아니거나 범위 밖이면 거절하지 않고 null(기본값)을 돌려준다.
+     * 금액·수량·식별자에는 쓰지 않는다.
+     */
+    Long optionalHint(String key, long min, long max) {
+        JsonNode value = node.get(key);
+        if (value == null || !value.isIntegralNumber() || !value.canConvertToLong()) return null;
+        long number = value.asLong();
+        return number < min || number > max ? null : number;
+    }
 }
