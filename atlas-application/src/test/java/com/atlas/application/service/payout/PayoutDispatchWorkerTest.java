@@ -18,6 +18,7 @@ import com.atlas.settlement.model.PayoutDispatchMetrics;
 import com.atlas.settlement.model.PayoutDispatchRecord;
 import com.atlas.settlement.model.PayoutDispatchState;
 import com.atlas.settlement.service.PayoutDispatchStore;
+import com.atlas.settlement.service.PayoutHoldCheck;
 import com.atlas.settlement.service.SettlementPayoutService;
 import com.atlas.settlement.dto.response.PayoutResponse;
 import com.atlas.settlement.model.SettlementPayoutState;
@@ -30,6 +31,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,8 +48,10 @@ class PayoutDispatchWorkerTest {
     private final PayPalPayoutsProvider provider = mock(PayPalPayoutsProvider.class);
     private final PayoutRecipientCipher cipher = new PayoutRecipientCipher(KEY);
     private final AtomicBoolean sellerDisabled = new AtomicBoolean(false);
+    private final PayoutHoldCheck hold = seller -> sellerDisabled.get()
+            ? Optional.of("SELLER_ACCOUNT_DISABLED") : Optional.empty();
     private final PayoutDispatchWorker worker = new PayoutDispatchWorker(repository, outcomes, payouts, provider,
-            cipher, new PayoutFxConversionService(), seller -> sellerDisabled.get(), Clock.fixed(NOW, ZoneOffset.UTC),
+            cipher, new PayoutFxConversionService(), List.of(hold), Clock.fixed(NOW, ZoneOffset.UTC),
             new SimpleMeterRegistry(), 1, Duration.ofSeconds(60), 8, Duration.ofDays(29), Duration.ofDays(60));
     private final UUID payoutId = UUID.randomUUID();
 

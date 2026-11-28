@@ -52,7 +52,7 @@ Buyer 상품 목록은 `minPriceWon`/`maxPriceWon`으로 SKU 유효 가격 범�
 
 - 정지(`POST /api/internal/accounts/{accountId}/suspension`)나 본인 폐쇄로 Seller에 연결된 계정이 `DISABLED`가 되면 바로 적용된다. 새 checkout은 `409 PRODUCT_NOT_ORDERABLE`, 정지 전에 만든 checkout의 결제 제출은 `409 CONFLICT`다(예약은 checkout 만료 sweep이 푼다). 캠페인 개설·입장도 같은 판정으로 막힌다. 해제하면 다시 팔린다.
 - 결제 완료 주문 찾기: `GET /api/internal/accounts/{accountId}/sellers/{sellerId}/orders`(운영자 Basic 인증, `limit`·`cursor`). 환불: `POST .../orders/{orderId}/refund`에 `Idempotency-Key` 헤더. 남은 수량 전부를 Seller 환불과 같은 경로로 돌려주고 PayPal 환불 결과를 응답에 담는다. 같은 key 재시도는 같은 환불을 돌려준다. 계정이 활성이면 409, 출고가 시작된 주문은 409("Refunds not allowed after shipment begins")다. 출고 시작 주문은 아직 운영자 경로가 없다.
-- 지급: 승인은 원래 계정 `ACTIVE`를 요구한다. 승인된 지급은 송금 worker가 PayPal을 부르기 전에 다시 확인하고, 막혀 있으면 outbox를 미룬다(`last_error_code = 'SELLER_ACCOUNT_DISABLED'`, 지표 `payout.dispatch.outcomes{result=held}`). 시도 한도(`max-attempts`, 기본 8)를 넘기면 `NEEDS_REVIEW`가 되고, 해제 뒤 requeue하거나 취소한다. 수동 지급 경로는 막지 않는다(운영자 판단 경로).
+- 지급: 승인은 원래 계정 `ACTIVE`를 요구한다. 승인된 지급은 송금 worker가 PayPal을 부르기 전에 다시 확인하고, 막혀 있으면 outbox를 미룬다(보류 계약 `PayoutHoldCheck`, `last_error_code = 'SELLER_ACCOUNT_DISABLED'`, 지표 `payout.dispatch.outcomes{result=held}`). 시도 한도(`max-attempts`, 기본 8)를 넘기면 `NEEDS_REVIEW`가 되고, 해제 뒤 requeue하거나 취소한다. 수동 지급 경로는 막지 않는다(운영자 판단 경로).
 
 ## 통합 감사·도메인 이벤트 로그 (V9 `domain_audit_event`, ADR-0102)
 

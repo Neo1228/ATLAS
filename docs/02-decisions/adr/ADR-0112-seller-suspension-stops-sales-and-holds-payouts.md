@@ -25,7 +25,7 @@
    - `POST /api/internal/accounts/{accountId}/sellers/{sellerId}/orders/{orderId}/refund`(Idempotency-Key 헤더)와 찾기용 `GET .../orders`를 둔다. 계정 정지 API와 같은 보안 체인(`/api/internal/accounts/**`, HTTP Basic, `ACCOUNT_SUSPENSION_OPERATOR`)과 같은 프로퍼티(`atlas.account.suspension.operator.enabled`)로 켠다. 계정에 연결되지 않은 Seller는 404다.
    - `OrderRefundService.refundForDisabledSeller`가 남은 수량 전부를 서버에서 정하고, Seller 환불과 같은 `reserveRefund`(멱등 key 잠금, 수량·출고 검사, PSP 환불 준비, 정산 예약)와 송금 단계를 지난다. 같은 key 재시도는 처음 예약한 품목을 다시 쓴다. Seller가 활성이면 `CONFLICT`다. 활성 Seller의 주문은 Seller 환불 경로가 맡는다.
    - 운영자 식별자는 예약과 같은 트랜잭션에서 `domain_audit_event`에 `ORDER_REFUND_BY_OPERATOR`로 한 번 남긴다. payload에는 `refund_id`, `order_id`, `seller_id`, `amount_won`만 넣고 자유 텍스트와 key는 넣지 않는다(V9 규약).
-5. **지급은 송금 직전에 보류한다.** `PayoutDispatchWorker`는 PayPal 배치를 처음 만들기 전에 판정을 다시 본다. 정지·폐쇄돼 있으면 PayPal을 부르지 않고 outbox를 `PENDING`으로 미룬다(오류 코드 `SELLER_ACCOUNT_DISABLED`). 지급 상태는 바꾸지 않는다. 해제되면 다음 시도에서 나가고, 계속 막혀 시도·나이 한도(기본 8회, 29일)를 넘기면 기존 만료 경로가 `NEEDS_REVIEW`로 넘긴다. 운영자는 기존 requeue나 취소로 처리한다.
+5. **지급은 송금 직전에 보류하고, 보류는 계약 하나로 둔다.** settlement의 `PayoutHoldCheck`(`Optional<String> holdReason(sellerId)`, 사유는 `[A-Za-z0-9_-]{1,64}` 코드)가 지급 보류의 유일한 메커니즘이다. `PayoutDispatchWorker`는 PayPal 배치를 처음 만들기 전에 등록된 판정을 모두 묻고, 사유가 하나라도 있으면 PayPal을 부르지 않고 outbox를 `PENDING`으로 미루며 사유를 `last_error_code`로 남긴다. 이 PR은 `SellerAccountPayoutHold`(코드 `SELLER_ACCOUNT_DISABLED`, 1의 판정) 하나를 둔다. 다른 보류 이유(예: 분쟁 `OPEN_DISPUTE`)는 worker를 고치지 않고 구현 빈을 더한다(제공자 기원 환불·분쟁 작업 #741과 합의). 지급 상태는 바꾸지 않는다. 해제되면 다음 시도에서 나가고, 계속 막혀 시도·나이 한도(기본 8회, 29일)를 넘기면 기존 만료 경로가 `NEEDS_REVIEW`로 넘긴다. 운영자는 기존 requeue나 취소로 처리한다.
 6. **마이그레이션을 만들지 않는다.** V17은 쓰지 않는다. 기존 `user_account.status`, `seller_account`, `domain_audit_event`만 쓴다.
 
 ## 대안과 기각 이유
