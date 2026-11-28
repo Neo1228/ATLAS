@@ -1,0 +1,6 @@
+// OpenAI 호환 chat completions 클라이언트(ADR-0109). 도메인 모듈에 의존하지 않으므로
+// 쇼핑 비서(atlas-agent)와 다른 AI 기능(예: order의 반품 판정 보조)이 순환 없이 함께 쓴다.
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-restclient'
+    implementation 'org.springframework.boot:spring-boot-starter-json'
+}

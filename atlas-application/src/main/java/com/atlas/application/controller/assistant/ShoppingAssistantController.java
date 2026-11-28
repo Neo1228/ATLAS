@@ -1,11 +1,11 @@
 package com.atlas.application.controller.assistant;
 
 import com.atlas.application.dto.request.AssistantHttpRequest;
-import com.atlas.assistant.dto.request.AssistantTurnRequest;
-import com.atlas.assistant.dto.response.AssistantToolResponse;
-import com.atlas.assistant.dto.response.AssistantTurnResponse;
-import com.atlas.assistant.dto.response.SpendingCapResponse;
-import com.atlas.assistant.service.ShoppingAssistantService;
+import com.atlas.agent.dto.request.AssistantTurnRequest;
+import com.atlas.agent.dto.response.AssistantToolResponse;
+import com.atlas.agent.dto.response.AssistantTurnResponse;
+import com.atlas.agent.dto.response.SpendingCapResponse;
+import com.atlas.agent.service.ShoppingAssistantService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;

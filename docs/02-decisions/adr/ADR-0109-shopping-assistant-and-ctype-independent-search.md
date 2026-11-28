@@ -4,6 +4,7 @@
 - 날짜: 2026-11-28
 - 관련 결정: [ADR-0030](ADR-0030-paypal-currency-boundary.md)(PayPal 통화 경계), [ADR-0069](ADR-0069-layered-naming-and-runtime-configuration.md)(계층 패키지 어휘)
 - 근거: [EXP-120](../../03-experiments/EXP-120-shopping-assistant-search-and-tool-safety.md), 이슈 [#736](https://github.com/Neo1228/ATLAS/issues/736), [EXP-123](../../03-experiments/EXP-123-product-search-candidate-pruning-at-scale.md)(규모 측정과 후보 탐색, 2026-11-29 갱신, 이슈 [#759](https://github.com/Neo1228/ATLAS/issues/759))
+- 이름 변경(D-197, [#761](https://github.com/Neo1228/ATLAS/issues/761)): 모듈 `atlas-llm`은 `atlas-ai`로, `atlas-assistant`는 `atlas-agent`로 바뀌었다(패키지도 `com.atlas.ai`, `com.atlas.agent`). 이 문서는 새 이름으로 고쳤다. 설정 키 `atlas.llm.*`와 환경 변수 `ATLAS_LLM_*`는 설정 대상인 LLM 엔드포인트를 가리키는 운영 계약이라 그대로 둔다.
 
 ## 문제
 
@@ -20,13 +21,13 @@
    - 후보 탐색(EXP-123, 2026-11-29 추가): 겹침이 `min_hits = ⌈2n/5⌉` 이상인 상품은 비둘기집 원리로 아무 `n − min_hits + 1`개 n-gram 중 하나를 반드시 가지므로, GIN 조회는 `pg_stats.most_common_elems` 빈도가 낮은 그만큼의 n-gram(`probe`)으로만 한다. 결과는 전체 n-gram 조회와 같고(라벨 64건 상위 5건이 1만·10만·30만 카탈로그에서 모두 같음), 겹치지 않는 합성 카탈로그 30만 개에서 p50 201→65 ms, p95 851→475 ms다. 통계가 없거나 낡으면 덜 줄일 뿐 결과는 같다. 정확한 빈도 테이블(V17)은 읽은 행 차이가 0.3%라 두지 않았고, 후보 상한은 30만 개에서 상위 5건을 62/64 질의에서 바꿔 기각했다.
    - API: `GET /api/products/search?q=&minPriceWon=&maxPriceWon=&limit=`(공개, 1~20건, 기본 10, 커서 없음). LLM이 꺼져 있어도 쓴다. 기존 목록 API(`query=`)는 바꾸지 않는다(커서 페이지 계약이 관련도 순서와 맞지 않는다).
    - compose·Testcontainers의 ctype을 고정하는 안은 쓰지 않는다. 운영 데이터베이스를 고정하지 못하고, 고정해도 같은 SQL이 다른 환경에서 다른 결과를 내는 조건이 남는다.
-2. **LLM 클라이언트는 새 모듈 `atlas-llm`에 둔다.** OpenAI 호환 `POST /chat/completions` 하나를 기존 `RestClient`(JDK `HttpClient`)로 부르고 SDK는 쓰지 않는다. 쓰는 기능이 tool calling이 있는 chat completions 하나라 SDK가 줄이는 코드가 작고, SDK를 넣으면 HTTP 스택·JSON 라이브러리·재시도 정책이 둘이 된다.
+2. **LLM 클라이언트는 새 모듈 `atlas-ai`에 둔다.** OpenAI 호환 `POST /chat/completions` 하나를 기존 `RestClient`(JDK `HttpClient`)로 부르고 SDK는 쓰지 않는다. 쓰는 기능이 tool calling이 있는 chat completions 하나라 SDK가 줄이는 코드가 작고, SDK를 넣으면 HTTP 스택·JSON 라이브러리·재시도 정책이 둘이 된다.
    - 계약: `ChatCompletionService`(`enabled()`, `complete(ChatCompletionRequest)`), 값 타입은 `ChatCompletionRequest.Message/ToolCall/Tool`, `ChatCompletionResponse.Usage`, 오류는 `LlmException`(`DISABLED`, `BUDGET_EXHAUSTED`, `TIMEOUT`, `UNAVAILABLE`, `INVALID_RESPONSE`).
    - 설정: `ATLAS_LLM_ENABLED`(기본 false), `ATLAS_LLM_BASE_URL`, `ATLAS_LLM_MODEL`, `ATLAS_LLM_API_KEY`(선택, 헤더에만 쓰고 로그·예외에 남기지 않음), 연결 2초, 응답 30초, 시도 2회.
    - 재시도: 연결 실패·연결 시간 초과·429·502·503·504만. 응답 시간 초과는 공급자가 이미 처리·과금했을 수 있어 재시도하지 않는다.
    - 예산: 호출자가 대화별 남은 토큰을 넘기면 0 이하일 때 호출하지 않고 `max_tokens`를 남은 토큰으로 줄인다. 공급자가 `usage`를 보내지 않으면 프롬프트 문자 수 + `max_tokens`로 과대 추정한다. 프롬프트 토큰은 호출 전에 모르므로 상한은 호출 한 번의 프롬프트만큼 넘을 수 있다.
-   - 모듈 위치: 도메인 모듈에 의존하지 않으므로 `atlas-order`(반품 판정 보조 같은 다음 AI 기능)와 `atlas-assistant`가 순환 없이 함께 쓴다. `ModuleBoundaryTest`가 `com.atlas.llm..`의 의존을 Java·Spring·Jackson으로 묶는다.
-3. **쇼핑 비서는 새 모듈 `atlas-assistant`에 둔다.** catalog 검색, order 장바구니·checkout, llm을 함께 쓰는 기능이고 대화·상한 테이블을 소유한다. `atlas-order`에 넣으면 order가 LLM 대화 상태와 프롬프트까지 소유하고, `atlas-application`에 넣으면 SQL과 도메인 규칙이 진입점 모듈로 들어간다. `ModuleBoundaryTest`는 이 모듈이 다른 모듈의 `service`·`dto`·`model`·`exception`만 쓰게 묶는다.
+   - 모듈 위치: 도메인 모듈에 의존하지 않으므로 `atlas-order`(반품 판정 보조 같은 다음 AI 기능)와 `atlas-agent`가 순환 없이 함께 쓴다. `ModuleBoundaryTest`가 `com.atlas.ai..`의 의존을 Java·Spring·Jackson으로 묶는다.
+3. **쇼핑 비서는 새 모듈 `atlas-agent`에 둔다.** catalog 검색, order 장바구니·checkout, llm을 함께 쓰는 기능이고 대화·상한 테이블을 소유한다. `atlas-order`에 넣으면 order가 LLM 대화 상태와 프롬프트까지 소유하고, `atlas-application`에 넣으면 SQL과 도메인 규칙이 진입점 모듈로 들어간다. `ModuleBoundaryTest`는 이 모듈이 다른 모듈의 `service`·`dto`·`model`·`exception`만 쓰게 묶는다.
 4. **도구는 6개이고 모두 서버가 다시 검증한다.** `search_products`, `get_product`, `add_to_cart`, `update_cart`, `preview_checkout`, `start_checkout`.
    - 구매자는 HTTP 경로 `/api/buyers/{buyerRef}/assistant/...`에서 정하고 `AccountOwnershipInterceptor`가 인증 주체 소유를 확인한다. 도구 인자로는 구매자를 받지 않는다.
    - 인자는 JSON Schema를 모델에 주되 믿지 않는다. 서버가 모르는 키(`price_won`, `buyer_ref` 등), 정수가 아닌 수량, 범위 밖 값(수량 1~10), UUID·SKU 형식 위반을 거절한다. 가격은 인자로 받지 않고 판매 가능한 SKU에서 다시 읽는다.
@@ -41,7 +42,7 @@
 ```mermaid
 sequenceDiagram
     participant B as 구매자 앱
-    participant A as atlas-assistant
+    participant A as atlas-agent
     participant L as LLM(OpenAI 호환)
     participant O as atlas-order
     participant P as PayPal
@@ -70,7 +71,7 @@ sequenceDiagram
 | 검색: n-gram, 패딩 없음 | 영어 오타 recall 1.00 → 0.75 | ✗ 기각 |
 | 검색: n-gram + 정규화(출시안) | 두 ctype에서 recall@5 0.956, nDCG@5 0.771 | ✓ 채택 |
 | LLM: SDK 의존 추가 | 엔드포인트 하나. HTTP·JSON·재시도 경로가 둘이 됨 | ✗ 기각 |
-| LLM 클라이언트를 `atlas-assistant` 안에 | order의 다음 AI 기능이 assistant에 의존하면 assistant → order → assistant 순환 | ✗ 기각 |
+| LLM 클라이언트를 `atlas-agent` 안에 | order의 다음 AI 기능이 assistant에 의존하면 assistant → order → assistant 순환 | ✗ 기각 |
 | 비서를 `atlas-order`·`atlas-application`에 | 위 결정 3 | ✗ 기각 |
 | 무상태 대화(클라이언트가 기록 전송) | 위 결정 7 | ✗ 기각 |
 | 상한 검사를 도구에만 | 미리보기와 checkout 사이 가격 상승을 놓침(EXP-120 변이 M1) | ✗ 기각 |
@@ -97,4 +98,4 @@ sequenceDiagram
 - 상품 수가 200만에 닿거나 검색 p95가 EXP-123 측정(30만 개 475 ms)의 3배를 넘으면: `load-tests/catalog-search/product-search-scale.sql`로 다시 재고, 흔한 두 단어 질의를 줄이려면 관련도 문턱(40%)이나 상위 K 조기 종료, 별도 역색인 테이블을 같은 라벨로 잰다.
 - 실제 키로 종단 평가를 돌릴 수 있게 되면: EXP-120의 주입 문구 20건을 실제 모델에 넣어 정책 밖 호출 시도 수와 응답 교체 비율을 잰다(현재는 대본 모델로 서버 정책만 확인).
 - 응답 교체가 정상 대화의 5%를 넘으면: 금액 표기 해석 규칙을 넓힌다.
-- 다른 AI 기능이 `atlas-llm`을 쓰기 시작하면: 대화별 예산 외에 전역 비용 상한(일별)이 필요한지 본다.
+- 다른 AI 기능이 `atlas-ai`을 쓰기 시작하면: 대화별 예산 외에 전역 비용 상한(일별)이 필요한지 본다.

@@ -4,7 +4,7 @@ dependencies {
     implementation project(':atlas-payment')
     implementation project(':atlas-catalog')
     implementation project(':atlas-settlement')
-    implementation project(':atlas-llm')
+    implementation project(':atlas-ai')
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     compileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"

@@ -7,7 +7,7 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 
 ![ATLAS 실행 구조](docs/images/architecture.png)
 
-로컬 compose 기준 실행 구조다. 파란 영역은 ATLAS 본체(application, 주 PostgreSQL, 개발용 메일 서버)이고, 모듈 7개가 한 프로세스에서 실행된다(그림 이후 추가한 `atlas-llm`, `atlas-assistant`도 같은 프로세스이고 기본 꺼짐이다). 회색 영역(재고 예약, 결제, Redis와 Kafka)은 설정을 켜야 동작하며 기본은 꺼져 있다. compose에서 기본으로 뜨는 것은 PostgreSQL뿐이고, application과 메일 서버는 `observability`, `loadtest`, `edge-cache` 프로파일에서 뜬다. 카탈로그 캐시는 `edge-cache`, 초록 영역은 `observability` 프로파일이다. Spring, Redis 아이콘은 [Technology Logos](https://github.com/excalidraw/excalidraw-libraries/blob/297a349eaff859e678f78d4dbc8e68df5fce42e5/libraries/maeddes/technology-logos.excalidrawlib)(maeddes), Prometheus, Grafana 아이콘은 [Redis Grafana](https://github.com/excalidraw/excalidraw-libraries/blob/297a349eaff859e678f78d4dbc8e68df5fce42e5/libraries/mikhailredis/redis-grafana.excalidrawlib)(mikhailredis) Excalidraw 라이브러리의 것이다([excalidraw-libraries](https://github.com/excalidraw/excalidraw-libraries), MIT, Copyright (c) 2020 Excalidraw). 각 제품의 상표는 소유자에게 있다.
+로컬 compose 기준 실행 구조다. 파란 영역은 ATLAS 본체(application, 주 PostgreSQL, 개발용 메일 서버)이고, 모듈 7개가 한 프로세스에서 실행된다(그림 이후 추가한 `atlas-ai`, `atlas-agent`도 같은 프로세스이고 기본 꺼짐이다). 회색 영역(재고 예약, 결제, Redis와 Kafka)은 설정을 켜야 동작하며 기본은 꺼져 있다. compose에서 기본으로 뜨는 것은 PostgreSQL뿐이고, application과 메일 서버는 `observability`, `loadtest`, `edge-cache` 프로파일에서 뜬다. 카탈로그 캐시는 `edge-cache`, 초록 영역은 `observability` 프로파일이다. Spring, Redis 아이콘은 [Technology Logos](https://github.com/excalidraw/excalidraw-libraries/blob/297a349eaff859e678f78d4dbc8e68df5fce42e5/libraries/maeddes/technology-logos.excalidrawlib)(maeddes), Prometheus, Grafana 아이콘은 [Redis Grafana](https://github.com/excalidraw/excalidraw-libraries/blob/297a349eaff859e678f78d4dbc8e68df5fce42e5/libraries/mikhailredis/redis-grafana.excalidrawlib)(mikhailredis) Excalidraw 라이브러리의 것이다([excalidraw-libraries](https://github.com/excalidraw/excalidraw-libraries), MIT, Copyright (c) 2020 Excalidraw). 각 제품의 상표는 소유자에게 있다.
 
 ## 현재 기능과 모듈
 
@@ -22,8 +22,8 @@ ATLAS는 **PayPal AI Hackathon 참가용 이커머스 플랫폼**. 상품 탐색
 | `atlas-order/` | Seller별 주문·항목, Buyer 주문 내역(cursor), 배송·반품·환불, Buyer cart와 cart item |
 | `atlas-payment/` | PayPal Sandbox authorization/capture/refund, webhook과 payment recovery |
 | `atlas-settlement/` | Capture/refund 내부 ledger, Seller별 allocation과 statement |
-| `atlas-llm/` | OpenAI 호환 chat completions 클라이언트(tool calling, 시간 제한, 재시도, 대화별 토큰 예산). 도메인 모듈에 의존하지 않아 여러 AI 기능이 공유. 기본 꺼짐 |
-| `atlas-assistant/` | 대화형 쇼핑 비서: 상품 검색·장바구니·checkout 도구를 구매자 권한과 구매자 지출 상한 아래 실행하고, 결제는 기존 PayPal 승인 링크로만 시작([ADR-0109](docs/02-decisions/adr/ADR-0109-shopping-assistant-and-ctype-independent-search.md)) |
+| `atlas-ai/` | OpenAI 호환 chat completions 클라이언트(tool calling, 시간 제한, 재시도, 대화별 토큰 예산). 도메인 모듈에 의존하지 않아 여러 AI 기능이 공유. 기본 꺼짐 |
+| `atlas-agent/` | 대화형 쇼핑 비서: 상품 검색·장바구니·checkout 도구를 구매자 권한과 구매자 지출 상한 아래 실행하고, 결제는 기존 PayPal 승인 링크로만 시작([ADR-0109](docs/02-decisions/adr/ADR-0109-shopping-assistant-and-ctype-independent-search.md)) |
 
 상품 관련도 검색 `GET /api/products/search`는 한국어(조사·오타 포함)와 영어를 찾고 LLM 없이 동작한다(라벨 질의 64건 recall@5 0.956, [EXP-120](docs/03-experiments/EXP-120-shopping-assistant-search-and-tool-safety.md)).
 
